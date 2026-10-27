@@ -284,7 +284,7 @@ func TestCompactionRoutes_PassTheLeafOnScreen(t *testing.T) {
 	for _, tc := range []struct {
 		query string
 		leaf  int
-	}{{"?leaf_seq=6", 6}, {"?leaf_seq=8", 8}, {"", 0}} {
+	}{{"?leaf_seq=6", 6}, {"?leaf_seq=8", 8}, {"?leaf_seq=1", 1}, {"", 0}} {
 		if code, body := doCompactionReq(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/compact"+tc.query); code != http.StatusOK {
 			t.Fatalf("POST %q = %d: %s", tc.query, code, body)
 		}
@@ -331,5 +331,27 @@ func TestCompactionRoutes_RefuseALeafThatNamesNoTurn(t *testing.T) {
 	}
 	if run.calls != 0 || conv.reads != 0 {
 		t.Fatalf("a refused leaf reached the work: %d compactions, %d reads", run.calls, conv.reads)
+	}
+}
+
+// The check of a leaf reads the turn written last. When that read fails, the request fails
+// with it, before any work.
+func TestCompactionRoutes_AnUnreadableLastTurnIsAnError(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
+	conv := &compactionAwareConv{fakeConvStore: knownConv()}
+	conv.latestErr = errors.New("boom")
+	srv := newTestServer(t, run, conv)
+
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/compact?leaf_seq=3"},
+		{http.MethodGet, "/compaction?leaf_seq=3"},
+	} {
+		code, body := doCompactionReq(t, srv, route.method, "/api/conversations/"+goodID+route.path)
+		if code != http.StatusInternalServerError {
+			t.Errorf("%s %s = %d, want 500: %s", route.method, route.path, code, body)
+		}
+	}
+	if run.calls != 0 || conv.reads != 0 {
+		t.Fatalf("an unreadable leaf reached the work: %d compactions, %d reads", run.calls, conv.reads)
 	}
 }

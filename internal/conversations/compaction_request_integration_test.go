@@ -241,8 +241,62 @@ func TestCompact_CondensesTheBranchItsLeafNames(t *testing.T) {
 		got.Summary != older.summary || got.CoversThroughSeq != 4 {
 		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v): compacting one branch moved the other's row", got, ok, err)
 	}
+	// Turn 1 is on both paths, and its branch is the canonical one, where leaf 6 filed.
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 1); err != nil || !ok || got.Summary != older.summary {
+		t.Fatalf("LoadPathCompaction(1) = (%+v, %v, %v), want the canonical branch's summary", got, ok, err)
+	}
 	if _, _, err := store.LoadPathCompaction(ownerCtx(), convID, 99); !errors.Is(err, ErrTurnNotFound) {
 		t.Fatalf("LoadPathCompaction(99) = %v, want ErrTurnNotFound", err)
+	}
+}
+
+// A thread with no turn has nothing compacted, which is an answer and not an error; an id
+// that is not a uuid is an error, and not a missing turn.
+func TestLoadPathCompaction_NoTurnAndAMalformedID(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 0); err != nil || ok {
+		t.Fatalf("LoadPathCompaction on a thread with no turn = (%+v, %v, %v), want none and no error", got, ok, err)
+	}
+	if _, _, err := store.LoadPathCompaction(ownerCtx(), "not-a-uuid", 3); err == nil || errors.Is(err, ErrTurnNotFound) {
+		t.Fatalf("LoadPathCompaction on a malformed id = %v, want a parse error", err)
+	}
+}
+
+// The row's own guards: a malformed key is an error, and a summary must say something about
+// at least one turn. One turn is enough.
+func TestCompactionRow_RefusesWhatItCannotFile(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+
+	if _, _, err := store.LoadCompaction(ownerCtx(), "not-a-uuid", ""); err == nil {
+		t.Fatal("LoadCompaction on a malformed conversation id succeeded")
+	}
+	if _, _, err := store.LoadCompaction(ownerCtx(), convID, "not-a-uuid"); err == nil {
+		t.Fatal("LoadCompaction on a malformed branch id succeeded")
+	}
+	if err := store.SaveCompaction(ownerCtx(), "not-a-uuid", "", Compaction{Summary: "s", CoversThroughSeq: 1}); err == nil {
+		t.Fatal("SaveCompaction on a malformed conversation id succeeded")
+	}
+	for name, c := range map[string]Compaction{
+		"no turn":    {Summary: "s", CoversThroughSeq: 0},
+		"no summary": {Summary: "", CoversThroughSeq: 3},
+	} {
+		if err := store.SaveCompaction(ownerCtx(), convID, "", c); err == nil {
+			t.Fatalf("SaveCompaction with %s succeeded", name)
+		}
+	}
+	if _, ok, err := store.LoadCompaction(ownerCtx(), convID, ""); err != nil || ok {
+		t.Fatalf("a refused save left a row: (%v, %v)", ok, err)
+	}
+	if err := store.SaveCompaction(ownerCtx(), convID, "", Compaction{Summary: "one turn", CoversThroughSeq: 1}); err != nil {
+		t.Fatalf("SaveCompaction covering one turn: %v", err)
+	}
+	if got, ok, err := store.LoadCompaction(ownerCtx(), convID, ""); err != nil || !ok || got.CoversThroughSeq != 1 {
+		t.Fatalf("LoadCompaction after a one-turn save = (%+v, %v, %v)", got, ok, err)
 	}
 }
 

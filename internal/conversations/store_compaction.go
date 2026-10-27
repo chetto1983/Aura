@@ -128,19 +128,16 @@ func (s *Store) LoadPathCompaction(ctx context.Context, conversationID string, l
 // branch; not knowing it, the canonical row is the honest place.
 func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leafSeq int) string {
 	branch, err := s.branchOfTurn(ctx, conversationID, leafSeq)
-	if err != nil {
-		if !errors.Is(err, ErrTurnNotFound) {
-			slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
-				"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq,
-				"err", redact.Line(err.Error()))
-		}
-		return ""
+	if err != nil && !errors.Is(err, ErrTurnNotFound) {
+		slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
+			"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq,
+			"err", redact.Line(err.Error()))
 	}
 	return branch
 }
 
-// branchOfTurn reads the branch id of the turn at seq, "" for the canonical branch. A seq
-// that names no turn is ErrTurnNotFound.
+// branchOfTurn reads the branch id of the turn at seq, "" for the canonical branch, and ""
+// with ErrTurnNotFound when seq names no turn.
 func (s *Store) branchOfTurn(ctx context.Context, conversationID string, seq int) (string, error) {
 	if seq <= 0 || seq > math.MaxInt32 {
 		return "", ErrTurnNotFound

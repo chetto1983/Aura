@@ -49,12 +49,16 @@ func TestRunParentSeq_RefusesWhatNamesNoTurn(t *testing.T) {
 		"far past":      {"9999", http.StatusNotFound},
 		"the last":      {"6", http.StatusOK},
 		"an older turn": {"2", http.StatusOK},
+		"the first":     {"1", http.StatusOK},
 	} {
 		t.Run(name, func(t *testing.T) {
 			run := &scriptedRunner{events: textTurn("ok")}
 			code, body := postOn(t, branchServer(t, run), runPayloadOn(goodID, tc.seq))
 			if code != tc.want {
 				t.Fatalf("parent_seq %s = %d, want %d: %s", tc.seq, code, tc.want, body)
+			}
+			if refused := code != http.StatusOK; refused && run.turnCalled {
+				t.Fatalf("parent_seq %s was refused, and the run started anyway", tc.seq)
 			}
 		})
 	}
