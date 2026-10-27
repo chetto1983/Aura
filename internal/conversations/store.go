@@ -338,7 +338,7 @@ func (s *Store) SetTitleIfNull(ctx context.Context, conversationID, title string
 		})
 }
 
-// scopedSeq folds the single-integer reads — CountTurns here and CanonicalBranchLeaf in
+// scopedSeq folds the single-integer reads — CountTurns here and LatestTurnSeq in
 // store_branch.go. Same shape down to the error wrap: parse, one scoped transaction, one
 // query, widen to int.
 func scopedSeq[T ~int32 | ~int64](

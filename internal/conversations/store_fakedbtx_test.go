@@ -517,16 +517,22 @@ func TestLoadHistory_FakePartiallyRecoversToolGroup(t *testing.T) {
 // TestLoadManagedHistory_FakeAppliesLadder proves the managed-history entry point
 // loads turns via the fake, runs the offline encoder, and applies the L1/L2/L2.5
 // ladder (here a small history stays under the hard cap → returned as-is, no rot row).
+// The fake answers every query with the same rows, so it serves them as the protected
+// head of a conversation whose latest seq reads 0; the path walk itself is the
+// db_integration tier's.
 func TestLoadManagedHistory_FakeAppliesLadder(t *testing.T) {
 	t.Parallel()
 	_, conv := mustUUID(t)
-	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
-		turnRowValues(conv, 1, "system", "you are aura", "", "", nil),
-		turnRowValues(conv, 2, "user", "hello", "", "", nil),
-		turnRowValues(conv, 3, "assistant", "hi there", "", "", nil),
-	}}}
+	fake := &fakeDBTX{
+		queryRows: &fakeRows{rows: [][]any{
+			turnRowValues(conv, 1, "system", "you are aura", "", "", nil),
+			turnRowValues(conv, 2, "user", "hello", "", "", nil),
+			turnRowValues(conv, 3, "assistant", "hi there", "", "", nil),
+		}},
+		queryRowVal: &fakeRow{values: []any{int32(0)}},
+	}
 	s := fakeStore(t, fake)
-	msgs, err := s.LoadManagedHistory(context.Background(), uuid.Must(uuid.NewV7()).String(),
+	msgs, err := s.LoadManagedHistory(context.Background(), uuid.Must(uuid.NewV7()).String(), 0,
 		ContextConfig{ContextWindow: 200000, MaxOutputTokens: 4096, ToolEvictAfterTurns: 10})
 	if err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
@@ -542,7 +548,7 @@ func TestLoadManagedHistory_FakeLoadError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("load turns failed")
 	s := fakeStore(t, &fakeDBTX{queryErr: boom})
-	if _, err := s.LoadManagedHistory(context.Background(), uuid.Must(uuid.NewV7()).String(),
+	if _, err := s.LoadManagedHistory(context.Background(), uuid.Must(uuid.NewV7()).String(), 3,
 		ContextConfig{ContextWindow: 1000, MaxOutputTokens: 1}); !errors.Is(err, boom) {
 		t.Errorf("LoadManagedHistory load error must propagate: %v", err)
 	}

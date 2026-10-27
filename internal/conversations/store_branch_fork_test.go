@@ -103,9 +103,9 @@ func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 	convID := seedLinear(t, s)
 
 	// The original canonical leaf (assistant turn seq 3) still walks the full linear path.
-	origLeaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	origLeaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	origPath, err := s.LoadBranchHistory(ctx, convID, origLeaf)
 	if err != nil {

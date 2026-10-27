@@ -11,25 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const canonicalBranchLeafSeq = `-- name: CanonicalBranchLeafSeq :one
-SELECT COALESCE(MAX(seq), 0)::int AS leaf_seq
-FROM aura.conversation_turns
-WHERE conversation_id = $1
-  AND branch_id = '00000000-0000-0000-0000-000000000000'
-`
-
-// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
-// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
-// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
-// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
-// 0 when the conversation has no turns.
-func (q *Queries) CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, canonicalBranchLeafSeq, conversationID)
-	var leaf_seq int32
-	err := row.Scan(&leaf_seq)
-	return leaf_seq, err
-}
-
 const countTurns = `-- name: CountTurns :one
 SELECT count(*) AS turn_count
 FROM aura.conversation_turns
@@ -186,6 +167,22 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const latestTurnSeq = `-- name: LatestTurnSeq :one
+SELECT COALESCE(MAX(seq), 0)::int AS seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+`
+
+// The turn written last, which is where a run that names no head continues (a resume, a
+// scheduled delivery, a channel without a branch picker) and where a reload opens. 0 for a
+// conversation with no turns.
+func (q *Queries) LatestTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, latestTurnSeq, conversationID)
+	var seq int32
+	err := row.Scan(&seq)
+	return seq, err
 }
 
 const listAssistantTurnReasoning = `-- name: ListAssistantTurnReasoning :many
@@ -444,71 +441,6 @@ func (q *Queries) ListManagedHistoryHead(ctx context.Context, conversationID pgt
 	items := []ListManagedHistoryHeadRow{}
 	for rows.Next() {
 		var i ListManagedHistoryHeadRow
-		if err := rows.Scan(
-			&i.ConversationID,
-			&i.Seq,
-			&i.Role,
-			&i.Content,
-			&i.ContentSidecarPath,
-			&i.ToolCallID,
-			&i.ToolCalls,
-			&i.CreatedAt,
-			&i.InputTokens,
-			&i.OutputTokens,
-			&i.CachedTokens,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listManagedTurnsPageBySeq = `-- name: ListManagedTurnsPageBySeq :many
-SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
-FROM aura.conversation_turns
-WHERE conversation_id = $1
-  AND role <> 'system'
-  AND seq <= $2
-ORDER BY seq DESC
-LIMIT $3
-`
-
-type ListManagedTurnsPageBySeqParams struct {
-	TargetConversationID pgtype.UUID `json:"target_conversation_id"`
-	CursorSeq            int32       `json:"cursor_seq"`
-	PageSize             int32       `json:"page_size"`
-}
-
-type ListManagedTurnsPageBySeqRow struct {
-	ConversationID     pgtype.UUID        `json:"conversation_id"`
-	Seq                int32              `json:"seq"`
-	Role               string             `json:"role"`
-	Content            pgtype.Text        `json:"content"`
-	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
-	ToolCallID         pgtype.Text        `json:"tool_call_id"`
-	ToolCalls          []byte             `json:"tool_calls"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	InputTokens        int32              `json:"input_tokens"`
-	OutputTokens       int32              `json:"output_tokens"`
-	CachedTokens       int32              `json:"cached_tokens"`
-}
-
-// AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
-// caller keeps paging until the exact durable watermark or the root is observed.
-func (q *Queries) ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error) {
-	rows, err := q.db.Query(ctx, listManagedTurnsPageBySeq, arg.TargetConversationID, arg.CursorSeq, arg.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListManagedTurnsPageBySeqRow{}
-	for rows.Next() {
-		var i ListManagedTurnsPageBySeqRow
 		if err := rows.Scan(
 			&i.ConversationID,
 			&i.Seq,

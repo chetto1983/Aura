@@ -36,15 +36,14 @@ var ErrTurnNotFound = errors.New("conversations: turn not found")
 // branches (plan 25-07 edit/regenerate) mint a fresh uuid instead.
 var CanonicalBranchID = uuid.UUID{}
 
-// CanonicalBranchLeaf returns the deepest seq of a conversation's canonical branch — the
-// default leaf LoadBranchHistory walks from when no specific branch is selected. It is 0
-// for a conversation with no turns. The walk from this leaf over a properly-chained
-// canonical branch (the 0017 backfill produces parent_seq = seq-1) yields the linear
-// history (Pitfall 3: only body turns differ per branch; the head stays byte-identical).
-func (s *Store) CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error) {
-	return scopedSeq(ctx, s, "canonical branch leaf", "conversation_id", conversationID,
+// LatestTurnSeq returns the seq of the turn written last, 0 for a conversation with no
+// turns. It is the head a run continues when nothing names another, and the branch a reload
+// opens on: every append chains to the turn before it unless told otherwise, so the turn
+// written last ends the branch that was being written.
+func (s *Store) LatestTurnSeq(ctx context.Context, conversationID string) (int, error) {
+	return scopedSeq(ctx, s, "latest turn seq", "conversation_id", conversationID,
 		func(q *sqlc.Queries, id pgtype.UUID) (int32, error) {
-			return q.CanonicalBranchLeafSeq(ctx, id)
+			return q.LatestTurnSeq(ctx, id)
 		})
 }
 

@@ -35,38 +35,38 @@ func sqlcBranchPathRowFixture(conv pgtype.UUID) sqlc.ListTurnsByBranchPathRow {
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeSuccess projects the scalar leaf seq.
-func TestCanonicalBranchLeaf_FakeSuccess(t *testing.T) {
+// TestLatestTurnSeq_FakeSuccess projects the scalar leaf seq.
+func TestLatestTurnSeq_FakeSuccess(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7()).String()
 	fake := &fakeDBTX{queryRowVal: &fakeRow{values: []any{int32(7)}}}
 	s := fakeStore(t, fake)
-	leaf, err := s.CanonicalBranchLeaf(context.Background(), id)
+	leaf, err := s.LatestTurnSeq(context.Background(), id)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	if leaf != 7 {
 		t.Errorf("leaf: want 7, got %d", leaf)
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeBadID rejects a malformed conversation id at the boundary.
-func TestCanonicalBranchLeaf_FakeBadID(t *testing.T) {
+// TestLatestTurnSeq_FakeBadID rejects a malformed conversation id at the boundary.
+func TestLatestTurnSeq_FakeBadID(t *testing.T) {
 	t.Parallel()
 	s := fakeStore(t, &fakeDBTX{})
-	if _, err := s.CanonicalBranchLeaf(context.Background(), "not-a-uuid"); err == nil {
-		t.Fatal("CanonicalBranchLeaf with bad id: want error, got nil")
+	if _, err := s.LatestTurnSeq(context.Background(), "not-a-uuid"); err == nil {
+		t.Fatal("LatestTurnSeq with bad id: want error, got nil")
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeDBError wraps a failing scan.
-func TestCanonicalBranchLeaf_FakeDBError(t *testing.T) {
+// TestLatestTurnSeq_FakeDBError wraps a failing scan.
+func TestLatestTurnSeq_FakeDBError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("leaf query failed")
 	fake := &fakeDBTX{queryRowVal: &fakeRow{scanErr: boom}}
 	s := fakeStore(t, fake)
-	if _, err := s.CanonicalBranchLeaf(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
-		t.Errorf("CanonicalBranchLeaf DB error must propagate: %v", err)
+	if _, err := s.LatestTurnSeq(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
+		t.Errorf("LatestTurnSeq DB error must propagate: %v", err)
 	}
 }
 

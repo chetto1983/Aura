@@ -42,7 +42,7 @@ func TestManagedHistoryFilesTheSummaryUnderTheReplayedBranch(t *testing.T) {
 	branchID := pointersOf(t, store, conversationID, forkSeq).branch
 
 	cfg := compactingConfig(&fixedSummarizer{text: "branch summary"})
-	if _, err := store.LoadManagedHistoryForBranch(ctx, conversationID, forkSeq, cfg); err != nil {
+	if _, err := store.LoadManagedHistory(ctx, conversationID, forkSeq, cfg); err != nil {
 		t.Fatalf("LoadManagedHistoryForBranch: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestManagedHistoryFilesTheCanonicalSummaryUnderTheCanonicalBranch(t *testin
 
 	seedCompactableTurns(t, ctx, store, conversationID, 20)
 	cfg := compactingConfig(&fixedSummarizer{text: "canonical summary"})
-	if _, err := store.LoadManagedHistory(ctx, conversationID, cfg); err != nil {
+	if _, err := store.LoadManagedHistory(ctx, conversationID, 0, cfg); err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
 	}
 

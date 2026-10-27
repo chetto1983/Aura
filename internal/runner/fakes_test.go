@@ -62,8 +62,8 @@ type fakeConvStore struct {
 	createEr  error // injectable Create error (EnsureConversation classification test)
 	createRow bool  // when true, store the row even though Create returns createEr (a lost concurrent-create race the re-Get reconciles)
 	lastCfg   conversations.ContextConfig
-	// lastBranchLeaf records the leaf passed to LoadManagedHistoryForBranch so the
-	// TurnBranch re-run-from-branch path is assertable (D-09).
+	// lastBranchLeaf records the leaf passed to LoadManagedHistory, the head a run
+	// loaded its path from.
 	lastBranchLeaf int
 	// compacted records the ids CompactConversation routed here, so the `/compact`
 	// wiring is assertable without a summarizer.
@@ -250,10 +250,14 @@ func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message
 	return f.messagesLocked(id), nil
 }
 
-func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg conversations.ContextConfig) ([]llm.Message, error) {
+// LoadManagedHistory records the leaf it was asked for, so a run's head is assertable,
+// then returns the in-memory history (the fake has no branch topology — the path walk is
+// the conversations integration tests' job).
+func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lastCfg = cfg
+	f.lastBranchLeaf = leafSeq
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
@@ -273,21 +277,6 @@ func (f *fakeConvStore) Compact(_ context.Context, id string, cfg conversations.
 	return conversations.CompactionResult{
 		Summary: "compacted", CoversThroughSeq: 4, SourceTurns: 4, TokensBefore: 400, TokensAfter: 40,
 	}, nil
-}
-
-// LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
-// (TurnBranch) is assertable, then returns the same in-memory history as the linear
-// loader (the fake has no branch topology — the path-walk fidelity is the conversations
-// integration test's job; here we only prove TurnBranch routes through this method).
-func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.lastCfg = cfg
-	f.lastBranchLeaf = leafSeq
-	if f.manErr != nil {
-		return nil, f.manErr
-	}
-	return f.managedMessagesLocked(id, cfg), nil
 }
 
 // managedMessagesLocked is messagesLocked plus the messages[1] context block, which the

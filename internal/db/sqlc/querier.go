@@ -59,12 +59,6 @@ type Querier interface {
 	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
 	// reason to the paused status).
 	CancelTask(ctx context.Context, id pgtype.UUID) error
-	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
-	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
-	// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
-	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
-	// 0 when the conversation has no turns.
-	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	// job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
 	// worker's own call) claims across every job_type exactly as before this
@@ -352,6 +346,10 @@ type Querier interface {
 	// turn (equal to the newest conversation_turns.created_at on the lab VM, 2026-09-24), so a
 	// chat that calls no tool still counts and the turns table is never scanned.
 	LatestConversationActivity(ctx context.Context) (pgtype.Timestamptz, error)
+	// The turn written last, which is where a run that names no head continues (a resume, a
+	// scheduled delivery, a channel without a branch picker) and where a reload opens. 0 for a
+	// conversation with no turns.
+	LatestTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	// The grantee's half of the two-query read LibreChat runs (findAccessibleResources → the
 	// domain query filtered on those ids): which resources of this type may this identity see
 	// with AT LEAST these permission bits. The bitmask test is `& want = want`, so a view query
@@ -486,9 +484,6 @@ type Querier interface {
 	// The protected system root is fetched once, independently of body pagination. :many
 	// deliberately represents an empty conversation without pgx.ErrNoRows.
 	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
-	// AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
-	// caller keeps paging until the exact durable watermark or the root is observed.
-	ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	// A phone notification does not consume the coordinator's saved input.

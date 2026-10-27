@@ -16,6 +16,8 @@ type fakeConvStore struct {
 	history  map[string][]llm.Message
 	loadErr  error
 	branches []conversations.Branch // ListBranches result (WR-01 membership tests)
+	// latestSeq is what LatestTurnSeq reports: the turn written last.
+	latestSeq int
 	// reasonings seeds ListTurnReasoning (amendment #91 display rehydration);
 	// reasoningErr injects a read failure for the fail-soft snapshot test.
 	reasonings   map[string][]conversations.TurnReasoning

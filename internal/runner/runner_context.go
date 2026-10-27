@@ -23,18 +23,15 @@ const (
 	memoryRecallFooter  = "</memory_recall>"
 )
 
+// loadTurnHistory loads the path the run is on: the one ending at its head, or at the turn
+// written last when it has none (a resume).
 func (r *Runner) loadTurnHistory(
 	ctx context.Context,
 	conversationID string,
 	cfg conversations.ContextConfig,
-	branchLeaf int,
+	head int,
 ) ([]llm.Message, error) {
-	if branchLeaf > 0 {
-		return r.Conv.LoadManagedHistoryForBranch(
-			ctx, conversationID, branchLeaf, cfg,
-		)
-	}
-	return r.Conv.LoadManagedHistory(ctx, conversationID, cfg)
+	return r.Conv.LoadManagedHistory(ctx, conversationID, head, cfg)
 }
 
 func (r *Runner) contextConfig(ctx context.Context, memory *conversations.TransientContext) conversations.ContextConfig {

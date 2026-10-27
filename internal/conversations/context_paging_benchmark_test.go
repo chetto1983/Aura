@@ -42,8 +42,8 @@ func BenchmarkManagedHistoryWork(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
-					loaded, loadErr := store.loadManagedLinearTurns(
-						ownerCtx(), conversationID, "", defaultHistoryPageTurns, 0)
+					loaded, loadErr := store.loadManagedBranchTurns(
+						ownerCtx(), conversationID, "", turns, defaultHistoryPageTurns, 0)
 					if loadErr != nil {
 						b.Fatalf("load %d turns: %v", turns, loadErr)
 					}

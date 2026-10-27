@@ -82,7 +82,7 @@ func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) 
 	return 0, e.err
 }
 
-func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, e.err }
+func (e *errConvStore) LatestTurnSeq(context.Context, string) (int, error) { return 0, e.err }
 
 // Phase 36 owner-scoped surface — the error fake returns its injected err (or (0,err)
 // for the rows-affected mutates) so the handler's error/404 projections stay unit-coverable.

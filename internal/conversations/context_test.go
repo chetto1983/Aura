@@ -47,7 +47,9 @@ func TestLoadManagedHistory_SC1_NoRotEventOnL1Alone(t *testing.T) {
 		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "go"},
 		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "ok"},
 		{ConversationID: convID, Seq: 4, Role: llm.RoleTool, Content: bigTool, ToolCallID: "call_a"},
-		{ConversationID: convID, Seq: 20, Role: llm.RoleUser, Content: "more"},
+		// Seq 20 puts the tool turn past ToolEvictAfterTurns; it continues seq 4, the turn
+		// before it on this path, as a run that appended it would have recorded.
+		{ConversationID: convID, Seq: 20, Role: llm.RoleUser, Content: "more", ParentSeq: new(4)},
 	}
 	for _, tp := range turns {
 		if err := s.AppendTurn(ctx, tp); err != nil {
@@ -56,7 +58,7 @@ func TestLoadManagedHistory_SC1_NoRotEventOnL1Alone(t *testing.T) {
 	}
 
 	cfg := ContextConfig{ContextWindow: 50000, MaxOutputTokens: 1000, ToolEvictAfterTurns: 10}
-	msgs, err := s.LoadManagedHistory(ctx, convID, cfg)
+	msgs, err := s.LoadManagedHistory(ctx, convID, 0, cfg)
 	if err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
 	}
@@ -94,7 +96,7 @@ func TestLoadManagedHistory_L2_5_WritesRotEvent(t *testing.T) {
 	}
 
 	cfg := ContextConfig{ContextWindow: 8000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
-	msgs, err := s.LoadManagedHistory(ctx, convID, cfg)
+	msgs, err := s.LoadManagedHistory(ctx, convID, 0, cfg)
 	if err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
 	}

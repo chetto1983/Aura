@@ -61,18 +61,6 @@ WHERE conversation_id = $1 AND role = 'system'
 ORDER BY seq ASC
 LIMIT 1;
 
--- name: ListManagedTurnsPageBySeq :many
--- AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
--- caller keeps paging until the exact durable watermark or the root is observed.
-SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
-FROM aura.conversation_turns
-WHERE conversation_id = sqlc.arg(target_conversation_id)
-  AND role <> 'system'
-  AND seq <= sqlc.arg(cursor_seq)
-ORDER BY seq DESC
-LIMIT sqlc.arg(page_size);
-
 -- name: CountTurns :one
 SELECT count(*) AS turn_count
 FROM aura.conversation_turns
@@ -163,16 +151,13 @@ WHERE sqlc.arg(query) <% content
 ORDER BY sim DESC, created_at DESC
 LIMIT sqlc.arg(max_hits);
 
--- name: CanonicalBranchLeafSeq :one
--- D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
--- all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
--- conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
--- the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
--- 0 when the conversation has no turns.
-SELECT COALESCE(MAX(seq), 0)::int AS leaf_seq
+-- name: LatestTurnSeq :one
+-- The turn written last, which is where a run that names no head continues (a resume, a
+-- scheduled delivery, a channel without a branch picker) and where a reload opens. 0 for a
+-- conversation with no turns.
+SELECT COALESCE(MAX(seq), 0)::int AS seq
 FROM aura.conversation_turns
-WHERE conversation_id = $1
-  AND branch_id = '00000000-0000-0000-0000-000000000000';
+WHERE conversation_id = $1;
 
 -- name: ListTurnsByBranchPath :many
 -- D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,

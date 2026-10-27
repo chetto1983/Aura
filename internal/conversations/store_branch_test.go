@@ -40,9 +40,9 @@ func TestBranchPath_DeterministicWalk(t *testing.T) {
 		}
 	}
 
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	if leaf != 3 {
 		t.Fatalf("canonical leaf: want 3, got %d", leaf)
@@ -98,9 +98,9 @@ func TestBranchPath_NonBranchedByteIdenticalToLinear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
 	}
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	branch, err := s.LoadBranchHistory(ctx, convID, leaf)
 	if err != nil {
@@ -176,9 +176,9 @@ func TestBranchPath_EmptyLeafYieldsEmpty(t *testing.T) {
 	convID := newConversation(t, s)
 	ctx := ownerCtx()
 
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf on empty: %v", err)
+		t.Fatalf("LatestTurnSeq on empty: %v", err)
 	}
 	if leaf != 0 {
 		t.Fatalf("empty conversation canonical leaf: want 0, got %d", leaf)
