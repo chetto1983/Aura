@@ -32,7 +32,10 @@ async function sameOriginJSON(page: Page, url: string, method = 'GET', body?: un
   );
 }
 
-/** Wait for the run a click or a key starts, and return the body it posted. */
+/** Wait until the run a click or a key starts has ended, and return the body it posted. The
+ *  footer still reads "Run complete" from the run before, so the stream closing and the stop
+ *  button leaving are the end of this one: a step taken earlier acts on a thread whose last
+ *  answer has no action bar yet. */
 async function runOnce(page: Page, path: RegExp, start: () => Promise<void>) {
   const request = page.waitForRequest(
     (candidate) => candidate.method() === 'POST' && path.test(new URL(candidate.url()).pathname),
@@ -40,9 +43,12 @@ async function runOnce(page: Page, path: RegExp, start: () => Promise<void>) {
   );
   await start();
   const posted = await request;
-  await expect(page.getByTestId('footer-settled-status')).toContainText('Run complete', {
-    timeout: turnTimeout,
-  });
+  const response = await posted.response();
+  expect(response?.ok(), `${posted.url()} answered ${String(response?.status())}`).toBe(true);
+  expect(await response?.finished()).toBeNull();
+  await expect(
+    page.getByRole('button', { name: 'Stop the current response', exact: true }),
+  ).toHaveCount(0, { timeout: turnTimeout });
   return JSON.parse(posted.postData() ?? '{}') as Record<string, unknown>;
 }
 
@@ -68,10 +74,10 @@ test.describe('conversation branches against a live model', () => {
     });
     expect(created.status, created.text).toBe(201);
     const threadId = (JSON.parse(created.text) as { readonly ID: string }).ID;
-    const historyReads: string[] = [];
+    const historyReads: number[] = [];
     page.on('request', (request) => {
       if (new URL(request.url()).pathname === `/threads/${threadId}/messages`) {
-        historyReads.push(request.url());
+        historyReads.push(Date.now());
       }
     });
     await page.goto(`/c/${encodeURIComponent(threadId)}`, { waitUntil: 'domcontentloaded' });
@@ -88,10 +94,19 @@ test.describe('conversation branches against a live model', () => {
     );
     expect(edit).toMatchObject({ diverge_seq: 1, role: 'user' });
 
-    const readsBeforeSwitch = historyReads.length;
+    // A run that ends refreshes what it changed; the switch is measured once that has settled.
+    await expect
+      .poll(() => Date.now() - (historyReads.at(-1) ?? 0), { timeout: 30_000 })
+      .toBeGreaterThan(3_000);
+    const switchedAt = Date.now();
     await page.getByRole('button', { name: 'Previous branch' }).first().click();
     await expect(page.getByText('the capital of France.')).toBeVisible();
-    expect(historyReads).toHaveLength(readsBeforeSwitch);
+    await page.waitForTimeout(3_000);
+    await testInfo.attach('history reads', {
+      body: JSON.stringify(historyReads.map((at) => at - switchedAt)),
+      contentType: 'application/json',
+    });
+    expect(historyReads.filter((at) => at >= switchedAt)).toEqual([]);
 
     const second = await send(page, 'Answer with one word only: the capital of Spain.');
     expect((second.aura as Record<string, unknown> | undefined)?.parent_seq).toBe(2);
