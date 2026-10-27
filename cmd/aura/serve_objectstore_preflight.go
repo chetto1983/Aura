@@ -1,7 +1,7 @@
 // serve_objectstore_preflight.go — the boot-time half of the server_production durability
 // gate (PROF-06/F-018). config.gateReplication, which must stay free of I/O like the rest of
 // Config.ValidateProfile, has already required the garage backend and its admin credential.
-// This reads what those make reachable: the copies Garage's cluster layout stores. Until
+// This reads what those make reachable: the copies Garage's cluster layout places. Until
 // 2026-10-27 the gate trusted AURA_OBJECTSTORE_REPLICATION_FACTOR, a number the operator
 // typed and nothing compared with Garage's own replication_factor = 1, so setting it to 2
 // passed the gate and changed no durability.
@@ -26,8 +26,9 @@ type replicaCounter interface {
 	PlacedReplicas(ctx context.Context) (int, error)
 }
 
-// objectStoreReplicationPreflight refuses to boot server_production unless the object store
-// keeps at least two copies of the data. Every other profile returns nil at once.
+// objectStoreReplicationPreflight refuses to boot server_production unless Garage's current
+// cluster layout places at least two copies of the data. Every other profile returns nil at
+// once.
 func objectStoreReplicationPreflight(ctx context.Context, cfg *config.Config) error {
 	if cfg == nil || cfg.Profile != config.ProfileServerProduction {
 		return nil
@@ -57,6 +58,6 @@ func checkPlacedReplicas(ctx context.Context, counter replicaCounter) error {
 			"the layout that many storage nodes, and apply it (garage layout apply)",
 			copies, noun, minProductionReplicas, minProductionReplicas)
 	}
-	slog.Info("aura serve: object store replication verified from the Garage layout", "copies", copies)
+	slog.Info("aura serve: Garage's cluster layout places the copies server_production needs", "copies", copies)
 	return nil
 }

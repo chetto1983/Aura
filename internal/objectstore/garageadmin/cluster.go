@@ -22,15 +22,16 @@ type clusterHealth struct {
 	Partitions int64 `json:"partitions"`
 }
 
-// PlacedReplicas is how many copies of the data the cluster's current layout stores: the
-// partitions placed on every node, summed, over the cluster's partition count. It is read,
+// PlacedReplicas is how many copies of the data the cluster's current layout places: the
+// partitions assigned to every node, summed, over the cluster's partition count. It is read,
 // not configured. The Garage v2.4 admin API returns replication_factor only from
 // ApplyClusterLayout and PreviewClusterLayoutChanges, which write or stage a layout, while
 // a layout cannot hold more copies than that factor nor exist with fewer nodes than it
 // (ApplyClusterLayout refuses: "The number of nodes with positive capacity (1) is smaller
 // than the replication factor (2)"). Measured on v2.4.1, 2026-10-27: 256/256 at factor 1 on
 // one node, 512/256 at factor 2 on two, and 0 before any layout. A remainder, a layout
-// between versions, rounds down: the answer is the copies every partition is sure to have.
+// between versions, rounds down to the copies every partition is assigned. It reads
+// placement: whether a rebalance after a layout change has finished copying is not in it.
 func (c *Client) PlacedReplicas(ctx context.Context) (int, error) {
 	var layout clusterLayout
 	if err := c.getJSON(ctx, "GetClusterLayout", &layout); err != nil {
