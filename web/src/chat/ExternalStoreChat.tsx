@@ -382,8 +382,11 @@ export function ExternalStoreChat({
     messages,
     isRunning,
     convertMessage: (m) => m,
-    // A branch switch and an import hand back the host messages of the branch on screen.
+    // A branch switch and an import hand back the host messages of the branch on screen. A
+    // switch is the operator's, like a send: a history read already in flight, such as the
+    // refresh after a run, no longer owns the list.
     setMessages: (next) => {
+      historyRequestRef.current += 1;
       setMessages([...next]);
     },
     onImport: (imported) => {

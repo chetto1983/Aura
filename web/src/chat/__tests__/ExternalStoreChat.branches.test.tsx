@@ -1,10 +1,12 @@
 import type { ReactElement } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantRuntime } from '@assistant-ui/react';
 import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
+import { WorkerWatchContext, type WorkerWatchController } from '../workers/workerWatchControls';
+import type { CoordinatorRunStatus } from '../workers/workerStream';
 import {
   isHistoryURL,
   jsonResponse,
@@ -50,7 +52,12 @@ function answer(text: string, headSeq: number, leafSeq: number) {
       { type: 'TEXT_MESSAGE_START', messageId: `m-${text}` },
       { type: 'TEXT_MESSAGE_CONTENT', messageId: `m-${text}`, delta: text },
       { type: 'TEXT_MESSAGE_END', messageId: `m-${text}` },
-      { type: 'RUN_FINISHED', threadId: 'conv-1', runId: `run-${text}`, outcome: { type: 'success' } },
+      {
+        type: 'RUN_FINISHED',
+        threadId: 'conv-1',
+        runId: `run-${text}`,
+        outcome: { type: 'success' },
+      },
     ],
     headSeq,
     leafSeq,
@@ -66,13 +73,16 @@ function stubServer(history: Record<string, readonly Record<string, unknown>[]>)
   const posted: Posted[] = [];
   const historyReads: string[] = [];
   const replies: (readonly Record<string, unknown>[])[] = [];
+  /** Each history read waits for the next gate, when one is queued. */
+  const gates: Promise<void>[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string, init?: RequestInit) => {
       if (isHistoryURL(url)) {
         const thread = /^\/threads\/([^/]+)\/messages/.exec(url)?.[1] ?? '';
         historyReads.push(thread);
-        return Promise.resolve(messagesSnapshotResponse(history[thread] ?? []));
+        const gate = gates.shift() ?? Promise.resolve();
+        return gate.then(() => messagesSnapshotResponse(history[thread] ?? []));
       }
       if (init?.method === 'POST' && (url === '/agent/run' || url.includes('/edit'))) {
         const raw = typeof init.body === 'string' ? init.body : '{}';
@@ -82,7 +92,26 @@ function stubServer(history: Record<string, readonly Record<string, unknown>[]>)
       return Promise.resolve(jsonResponse([]));
     }),
   );
-  return { posted, historyReads, replies };
+  return { posted, historyReads, replies, gates };
+}
+
+function watching(coordinator?: CoordinatorRunStatus): WorkerWatchController {
+  return {
+    workers: [],
+    statuses: new Map(),
+    ...(coordinator !== undefined ? { coordinator } : {}),
+    registerWorkers: () => () => undefined,
+    watchWorker: () => undefined,
+    viewReport: () => undefined,
+  };
+}
+
+function watchedChat(controller: WorkerWatchController) {
+  return (
+    <WorkerWatchContext.Provider value={controller}>
+      <ExternalStoreChat threadId="conv-1" />
+    </WorkerWatchContext.Provider>
+  );
 }
 
 function renderChat(ui: ReactElement) {
@@ -173,6 +202,35 @@ describe('ExternalStoreChat conversation branches', () => {
       expect(server.posted).toHaveLength(3);
     });
     expect(server.posted[2]?.body).toMatchObject({ diverge_seq: 8, role: 'assistant' });
+  });
+
+  // A run that ends re-reads the history once the coordinator reports it finished, and puts
+  // the branch written last on screen. A switch made while that read is in flight is the
+  // operator's, and the late read must not take the thread back.
+  it('keeps the branch switched to while the read after a run is in flight', async () => {
+    const server = stubServer({ 'conv-1': twoBranches });
+    const rerender = renderChat(watchedChat(watching()));
+    await screen.findByText('answer to the rewrite');
+    let release: () => void = () => undefined;
+    server.gates.push(
+      new Promise((done) => {
+        release = done;
+      }),
+    );
+    rerender(watchedChat(watching({ run_id: 'run-1', status: 'finished' })));
+    await waitFor(() => {
+      expect(server.historyReads).toHaveLength(2);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous branch' }));
+    await screen.findByText('first answer');
+    await act(async () => {
+      release();
+      await new Promise((settled) => setTimeout(settled, 50));
+    });
+
+    expect(screen.getByText('first answer')).toBeTruthy();
+    expect(screen.queryByText('answer to the rewrite')).toBeNull();
   });
 
   it('sends no parent_seq when the thread has no turn yet', async () => {
