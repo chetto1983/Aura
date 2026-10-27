@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -115,29 +113,12 @@ func (s *Store) LoadPathCompaction(ctx context.Context, conversationID string, l
 	return s.LoadCompaction(ctx, conversationID, branchID)
 }
 
-// branchIDForLeaf names the branch a replayed path belongs to: the leaf's own branch id.
+// branchOfTurn names the branch a path belongs to: its leaf's own branch id, "" for the
+// canonical branch, and "" with ErrTurnNotFound when seq names no turn.
 //
-// It costs one primary-key read per branch load, and it buys the thing the compaction row
-// is keyed on. Without it both call sites passed "", so every branch of a conversation
-// wrote and read ONE row: branch B would be handed a summary describing branch A's turns
-// at the same seq numbers, and B's watermark would then bury A's.
-//
-// A failure degrades to the canonical branch rather than failing the turn — that is the
-// behaviour every conversation had before branches existed, and a summary filed under the
-// wrong branch is a worse outcome than an extra summarizer call only when we KNOW the
-// branch; not knowing it, the canonical row is the honest place.
-func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leafSeq int) string {
-	branch, err := s.branchOfTurn(ctx, conversationID, leafSeq)
-	if err != nil && !errors.Is(err, ErrTurnNotFound) {
-		slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
-			"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq,
-			"err", redact.Line(err.Error()))
-	}
-	return branch
-}
-
-// branchOfTurn reads the branch id of the turn at seq, "" for the canonical branch, and ""
-// with ErrTurnNotFound when seq names no turn.
+// The compaction row is keyed on it. Until 2026-08-16 both call sites passed "", so every
+// branch of a conversation wrote and read ONE row: branch B was handed a summary describing
+// branch A's turns at the same seq numbers, and B's watermark then buried A's.
 func (s *Store) branchOfTurn(ctx context.Context, conversationID string, seq int) (string, error) {
 	if seq <= 0 || seq > math.MaxInt32 {
 		return "", ErrTurnNotFound

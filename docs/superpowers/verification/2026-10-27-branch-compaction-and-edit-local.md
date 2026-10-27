@@ -52,6 +52,13 @@ which forks at seq 3.
     assertion.
   - The count is now polled. After that, 8 runs in 8 passed with all 11 tests.
 
+**A branch that cannot be read now fails the load** (CodeRabbit on #195). `loadManagedPath`
+used to fall back to the canonical row when `GetTurnPointers` failed with anything but "no
+row". A fork could then reuse the canonical summary, or file its own summary there. It now
+returns the error. `TestCompact_AnUnreadableBranchFailsBeforeAnySummary` drives a failing
+read through the fake DBTX: the error comes back, and neither the summarizer nor a write is
+reached. Before the fix the test panicked inside the path walk the fallback let it reach.
+
 **Mutation (`go-mutesting`)** ran in a separate worktree. The exec timeout was 180 s for
 `internal/agui` and 300 s for `internal/conversations` with db_integration.
 - **A first run was discarded.** go-mutesting's default `--exec-timeout` is 10 s, and the agui
@@ -72,7 +79,8 @@ which forks at seq 3.
     - two survivors change only the warn line.
 
     The other three need an injected database error. Without the equivalent mutants the
-    score is 29/32, 90.6%.
+    score is 29/32, 90.6%. This was measured before `branchIDForLeaf` was removed (see the
+    fallback paragraph above), and its two warn-line mutants went with it.
   - `server_run_branch.go`: 32/58, **55.2%**, on the unit tier.
     - The six survivors in `requireTurnSeq` are values returned beside a refusal, which
       callers ignore.
