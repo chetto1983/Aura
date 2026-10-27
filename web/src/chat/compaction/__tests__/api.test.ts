@@ -33,7 +33,7 @@ describe('compactConversation', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(compactConversation('conv-1')).resolves.toMatchObject({
+    await expect(compactConversation('conv-1', undefined)).resolves.toMatchObject({
       covers_through_seq: 12,
       source_turns: 9,
     });
@@ -52,7 +52,7 @@ describe('compactConversation', () => {
       vi.fn(() => Promise.resolve(jsonResponse(status, {}))),
     );
 
-    await expect(compactConversation('conv-1')).rejects.toMatchObject(
+    await expect(compactConversation('conv-1', undefined)).rejects.toMatchObject(
       new CompactionError(reason as 'nothing'),
     );
   });
@@ -63,7 +63,7 @@ describe('compactConversation', () => {
       vi.fn(() => Promise.reject(new TypeError('offline'))),
     );
 
-    await expect(compactConversation('conv-1')).rejects.toBeInstanceOf(CompactionError);
+    await expect(compactConversation('conv-1', undefined)).rejects.toBeInstanceOf(CompactionError);
   });
 });
 
@@ -78,7 +78,22 @@ describe('fetchCompaction', () => {
       ),
     );
 
-    await expect(fetchCompaction('conv-1')).resolves.toMatchObject({ covers_through_seq: 7 });
+    await expect(fetchCompaction('conv-1', undefined)).resolves.toMatchObject({
+      covers_through_seq: 7,
+    });
+  });
+
+  it('names the leaf of the branch on screen on both routes', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(200, { covers_through_seq: 4 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCompaction('conv-1', 6);
+    await compactConversation('conv-1', 6);
+
+    expect(fetchMock.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+      '/api/conversations/conv-1/compaction?leaf_seq=6',
+      '/api/conversations/conv-1/compact?leaf_seq=6',
+    ]);
   });
 
   // The marker annotates the transcript. Failing the read must not read as "compacted at
@@ -89,6 +104,6 @@ describe('fetchCompaction', () => {
       vi.fn(() => Promise.resolve(jsonResponse(500, {}))),
     );
 
-    await expect(fetchCompaction('conv-1')).resolves.toEqual(NO_COMPACTION);
+    await expect(fetchCompaction('conv-1', undefined)).resolves.toEqual(NO_COMPACTION);
   });
 });

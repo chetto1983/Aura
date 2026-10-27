@@ -40,8 +40,10 @@ acceptance 11–14).
 - **A strict branch read for the HTTP path.** `branchIDForLeaf` falls back to the canonical
   branch on any error, which the ladder needs. `LoadPathCompaction` must not draw the canonical
   marker on a read failure, so it uses a strict `branchOfTurn` that `branchIDForLeaf` wraps.
-- **The on-screen leaf is the last message with a known seq.** A message whose run did not
-  report one was written by this tab, on this branch.
+- **The on-screen leaf is the one a send would continue:** `leafSeqOf` of the last message.
+  When that message has no seq yet, the request names no leaf and the server takes the turn
+  written last. Such a message was written by this tab's run, so that turn is on the branch
+  on screen.
 
 ## File structure
 
@@ -53,7 +55,7 @@ acceptance 11–14).
 | `internal/agui/server_run_branch.go` | `requireTurnSeq`, shared with the compaction routes. |
 | `internal/agui/conversations_compaction_api.go` | `?leaf_seq` on both routes. |
 | `web/src/chat/compaction/api.ts`, `useCompaction.ts`, `useThreadCompaction.ts` | The leaf in the POST, the read and the key. |
-| `web/src/chat/messageSeq.ts` | `backendSeqOf`, `branchLeafSeq`, `showsSeq`. |
+| `web/src/chat/messageSeq.ts` | `backendSeqOf`, `showsSeq`. |
 | `web/src/chat/ExternalStoreChat_messages.tsx` | Edit and Regenerate gated on a known seq. |
 
 ## Tasks
@@ -76,10 +78,14 @@ acceptance 11–14).
 - [x] Commit `feat: compact the branch the client names`, with Task 1.
 
 ### Task 3 — The cockpit compacts and marks the branch on screen (D14, acceptance 13)
-- [ ] Red, Vitest: the POST and the read name the on-screen leaf after Previous, and the
-  marker stays while a run grows the branch.
-- [ ] Green: `api.ts`, `useCompaction.ts`, `useThreadCompaction.ts`, `messageSeq.ts`.
-- [ ] Commit `feat(web): /compact condenses the branch on screen`.
+- [x] Red, Vitest: the POST and the read name the on-screen leaf after Previous, and the
+  marker stays while a run grows the branch. A switch drops the marker of the branch left.
+- [x] Green: `api.ts`, `useCompaction.ts`, `useThreadCompaction.ts`, `messageSeq.ts`.
+  - The read waits for a drawn transcript. Without that, opening a thread read the marker
+    twice: once with no leaf before the history landed, then with its leaf.
+  - Two hand mutations of the placeholder rule each fail their own case: "never keep" and
+    "always keep".
+- [x] Commit `feat(web): /compact condenses the branch on screen`.
 
 ### Task 4 — No refused edit (D15, acceptance 14)
 - [ ] Red, Vitest:
