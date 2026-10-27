@@ -53,8 +53,15 @@ interface Notice {
   readonly text: string;
 }
 
-/** What the frame's corner says: a refused save, then an edit not yet saved, then the last save. */
-function noticeOf(t: TFunction, saving: SaveState, dirty: boolean, held: boolean): Notice | null {
+/** What the frame's corner says: a refused save, then an edit not yet saved, then the last save,
+ *  which the chat's tier reports as attached to the message rather than saved to the library. */
+function noticeOf(
+  t: TFunction,
+  saving: SaveState,
+  dirty: boolean,
+  held: boolean,
+  intoMessage: boolean,
+): Notice | null {
   if (saving.kind === 'failed') {
     const text = t('artifacts.preview.saveFailed', { message: saving.message });
     return { role: 'alert', tone: 'bg-danger', text };
@@ -72,9 +79,12 @@ function noticeOf(t: TFunction, saving: SaveState, dirty: boolean, held: boolean
     return {
       role: 'status',
       tone: 'bg-warning',
-      text: t('artifacts.preview.savedAs', { name: saving.name }),
+      text: t(intoMessage ? 'artifacts.preview.attachedAs' : 'artifacts.preview.savedAs', {
+        name: saving.name,
+      }),
     };
-  const key = saving.kind === 'saved' ? 'artifacts.preview.saved' : 'artifacts.preview.notSaved';
+  const saved = intoMessage ? 'artifacts.preview.attached' : 'artifacts.preview.saved';
+  const key = saving.kind === 'saved' ? saved : 'artifacts.preview.notSaved';
   return { role: 'status', tone: 'bg-warning', text: t(key) };
 }
 
@@ -89,7 +99,7 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
   const [saving, setSaving] = useState<SaveState>({ kind: 'none' });
   const [dirty, setDirty] = useState(false);
   const retry = useRef<(() => void) | null>(null);
-  const { save } = useAssetSource();
+  const { save, savesInto } = useAssetSource();
   const guard = useContext(PreviewCloseGuardContext);
   const setUnsaved = guard?.setUnsaved;
 
@@ -195,7 +205,7 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
 
   const problem = error ?? failed;
   if (problem !== undefined) return <PreviewError detail={problem} />;
-  const notice = noticeOf(t, saving, dirty, guard?.held === true);
+  const notice = noticeOf(t, saving, dirty, guard?.held === true, savesInto === 'message');
   return (
     <div ref={root} className="relative h-full w-full bg-bg">
       {document.fullscreenEnabled ? <FullscreenAction target={root} /> : null}

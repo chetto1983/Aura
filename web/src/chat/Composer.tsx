@@ -6,6 +6,7 @@ import { AttachmentChip } from './attachments/AttachmentChip';
 import { GarageMentionPicker } from './composer/GarageMentionPicker';
 import { SkillPicker } from './composer/SkillPicker';
 import type { ComposerSkillRow } from './composer/api';
+import { registerComposerAttach } from './composer/composerAttach';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -90,6 +91,9 @@ export function Composer({
   const { caps, markTurnDictated } = useVoiceMode();
   const fallbackComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const composerInputRef = inputRef ?? fallbackComposerInputRef;
+
+  // An artifact edited in the preview goes into this composer's next message (composerAttach.ts).
+  useEffect(() => registerComposerAttach((file) => aui.composer.addAttachment(file)), [aui]);
   const previousApprovalLockedRef = useRef(approvalLocked);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
   const returnedDraftId = useRef<string | undefined>(undefined);

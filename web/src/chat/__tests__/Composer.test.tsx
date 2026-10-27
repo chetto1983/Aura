@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
+import { attachToComposer } from '../composer/composerAttach';
 import { chooseOption, optionNames, shownOption } from '../../test/chooseOption';
 import type { ComposerSkillRow } from '../composer/api';
 
@@ -75,6 +76,15 @@ afterEach(() => {
 });
 
 describe('Composer attachments', () => {
+  it('takes a file the Artifacts preview attaches, until it unmounts', async () => {
+    const { unmount } = render(<Composer />);
+    const file = new File(['x'], 'generated.png', { type: 'image/png' });
+    await attachToComposer(file);
+    expect(h.addAttachment).toHaveBeenCalledWith(file);
+    unmount();
+    await expect(attachToComposer(file)).rejects.toThrow(/composer/);
+  });
+
   it('prefills a document draft prompt and focuses the editable input', () => {
     render(<Composer draftPrompt={{ text: 'Answer from Manual.pdf', nonce: 1 }} />);
 

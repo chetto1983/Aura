@@ -6,14 +6,14 @@ import { AssetSourceContext, IDENTITY_SCOPED, type AssetSource } from './assetSo
 import { PreviewCloseGuardContext } from './previewCloseGuardContext';
 
 afterEach(() => vi.unstubAllGlobals());
-function mount(save: NonNullable<AssetSource['save']>) {
+function mount(save: NonNullable<AssetSource['save']>, source: Partial<AssetSource> = {}) {
   vi.stubGlobal(
     'fetch',
     vi.fn(() => new Response(new Uint8Array([1, 2]))),
   );
   const setUnsaved = vi.fn();
   const view = render(
-    <AssetSourceContext.Provider value={{ ...IDENTITY_SCOPED, save }}>
+    <AssetSourceContext.Provider value={{ ...IDENTITY_SCOPED, ...source, save }}>
       <PreviewCloseGuardContext.Provider value={{ setUnsaved, held: false }}>
         <CraftFrame app="wordcraft" assetId="a" fileName="memo.doc" mimeType="" />
       </PreviewCloseGuardContext.Provider>
@@ -123,5 +123,16 @@ it('persists repeated saves in order and keeps the guard until the last acknowle
   });
   await waitFor(() => {
     expect(setUnsaved).toHaveBeenLastCalledWith(false);
+  });
+});
+
+it('says an edit saved into the chat went into the message', async () => {
+  const save = vi.fn<NonNullable<AssetSource['save']>>().mockResolvedValue(undefined);
+  const { send } = mount(save, { savesInto: 'message' });
+  send();
+  await waitFor(() => {
+    expect(screen.getByRole('status').textContent).toMatch(
+      /attached to your message as memo\.docx|allegato al messaggio come memo\.docx/i,
+    );
   });
 });

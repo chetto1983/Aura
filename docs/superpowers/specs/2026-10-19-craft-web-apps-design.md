@@ -82,6 +82,14 @@ aura's own static-app handler).
    detail) has `save`; the chat's artifacts, the Studio and the share page do not, and there the viewer
    stays alone: an edit that cannot be stored could only be lost. GridCraft and DeckCraft, which are the
    preview, keep the existing notice that changes made there are not stored.
+   - **Amended 2026-10-27: the chat's artifacts store an edit in the next message.** The operator
+     opened a generated image from the chat, found no Edit, and chose where its save goes: "Allegato
+     al messaggio". `ChatPreviewModal` gives the chat's preview `composerSource`: every save becomes
+     an attachment of the composer's next message, beside the artifact, which is never overwritten,
+     and the frame says "Attached to your message". The agent sees the edit the way it sees any file
+     the operator sends. The Artifacts panel lists only what the agent delivered, so the edit
+     appears in the thread with the message, not in the panel. A FilmCraft Ctrl+S attaches its
+     `.fcproj` too; the operator can remove it from the composer.
 6. **A file is cached for good only when its URL names its content** (FINDINGS 11): a content hash in
    the name, or a `?v=` version in the query; anything else revalidates.
 7. **One component frames every app** (`web/src/chat/artifacts/renderers/CraftFrame.tsx`, from
@@ -99,7 +107,8 @@ aura's own static-app handler).
 
 ## What this does not do
 
-- **No editing in the chat's artifacts, the Studio or the share page**: they have no source to save to.
+- **No editing in the Studio or the share page**: they have no source to save to. (The chat's
+  artifacts gained one on 2026-10-27, decision 5.)
 - **No `.ppt`**: DeckCraft reads `.pptx`; a `.ppt` stays download-only.
 - **A FilmCraft project in the library is not reopened**: `.fcproj` has no preview, and its media are
   FilmCraft's own in-page files. Ctrl+S stores it beside the clip (as `Untitled.fcproj`); the export is
