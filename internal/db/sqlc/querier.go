@@ -256,8 +256,8 @@ type Querier interface {
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
-	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
+	GetTelegramAccountCandidatesByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error)
 	GetTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
 	GetToolInvocationEnd(ctx context.Context, arg GetToolInvocationEndParams) (AuraToolInvocations, error)
 	// D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the

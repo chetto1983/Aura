@@ -40,20 +40,22 @@ constraint: existing duplicates cannot safely be reconciled by a migration.
 
 - [x] Confirm the unchecked lookup on current upstream and open issue #196.
 - [x] Record the production repair's evidence and limits in the spec and PRD.
-- [ ] Commit the documentation decision before implementation.
+- [x] Commit the documentation decision before implementation (`3ba538c`).
 
 ### Task 2: reproduce and fix the resolver
 
-- [ ] Write a PostgreSQL regression for zero, one, two and three accounts.
-- [ ] Run it on the base implementation and observe failure for multiple matches.
-- [ ] Change the query to return at most two rows and regenerate with sqlc 1.31.1.
-- [ ] Add the cardinality check, error classification and daemon-free unit tests.
-- [ ] Run the regression with the fix, including text/conversation/approval delivery.
+- [x] Write a PostgreSQL regression for zero, one, two and three accounts.
+- [x] Run it on the base implementation and observe failure for multiple matches.
+- [x] Change the query to return at most two rows and regenerate with sqlc 1.31.1.
+- [x] Add the cardinality check, error classification and daemon-free unit tests.
+- [x] Run the regression with the fix, including text/conversation/approval delivery.
 
 ### Task 3: validate and publish
 
-- [ ] Run package tests and race/leak checks, vet and build.
-- [ ] Attempt the repository's disposable coverage gate; record exact limitations.
-- [ ] Review the diff and record verification evidence.
-- [ ] Commit, push to the contributor fork and open a linked PR.
-- [ ] Check CI on the published commit and stop the temporary local test VM.
+- [x] Run package tests and race/leak checks, vet and build.
+- [x] Attempt the repository's disposable coverage gate; record exact limitations.
+- [x] Review the diff and record verification evidence.
+
+Evidence: `docs/superpowers/verification/2026-10-27-telegram-recipient.md`.
+Publication and CI status are tracked on the linked PR. Full-stack acceptance
+remains a pre-merge gate; the operational repair is not patch acceptance.

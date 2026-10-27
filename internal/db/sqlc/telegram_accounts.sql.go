@@ -22,26 +22,6 @@ func (q *Queries) CountTelegramAccounts(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const getTelegramAccountByIdentity = `-- name: GetTelegramAccountByIdentity :one
-SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
-FROM aura.telegram_accounts
-WHERE identity_id = $1
-`
-
-func (q *Queries) GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error) {
-	row := q.db.QueryRow(ctx, getTelegramAccountByIdentity, identityID)
-	var i AuraTelegramAccounts
-	err := row.Scan(
-		&i.TelegramUserID,
-		&i.IdentityID,
-		&i.Username,
-		&i.FirstName,
-		&i.AddedAt,
-		&i.LastSeenAt,
-	)
-	return i, err
-}
-
 const getTelegramAccountByTelegramID = `-- name: GetTelegramAccountByTelegramID :one
 SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
 FROM aura.telegram_accounts
@@ -60,6 +40,40 @@ func (q *Queries) GetTelegramAccountByTelegramID(ctx context.Context, telegramUs
 		&i.LastSeenAt,
 	)
 	return i, err
+}
+
+const getTelegramAccountCandidatesByIdentity = `-- name: GetTelegramAccountCandidatesByIdentity :many
+SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
+FROM aura.telegram_accounts
+WHERE identity_id = $1
+LIMIT 2
+`
+
+func (q *Queries) GetTelegramAccountCandidatesByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error) {
+	rows, err := q.db.Query(ctx, getTelegramAccountCandidatesByIdentity, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraTelegramAccounts{}
+	for rows.Next() {
+		var i AuraTelegramAccounts
+		if err := rows.Scan(
+			&i.TelegramUserID,
+			&i.IdentityID,
+			&i.Username,
+			&i.FirstName,
+			&i.AddedAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertTelegramAccount = `-- name: InsertTelegramAccount :one

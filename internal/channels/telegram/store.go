@@ -33,9 +33,10 @@ import (
 // single-use credential); ErrTokenNotFound is an unknown token; ErrAccountExists
 // is a duplicate telegram_user_id (SQLSTATE 23505 on the account INSERT).
 var (
-	ErrTokenConsumed = errors.New("onboarding token already consumed or expired")
-	ErrTokenNotFound = errors.New("onboarding token not found")
-	ErrAccountExists = errors.New("telegram account already exists")
+	ErrTokenConsumed    = errors.New("onboarding token already consumed or expired")
+	ErrTokenNotFound    = errors.New("onboarding token not found")
+	ErrAccountExists    = errors.New("telegram account already exists")
+	ErrAmbiguousAccount = errors.New("ambiguous Telegram recipient: multiple accounts linked to this identity; reconcile the Telegram account links before retrying")
 )
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape. Non-tx
@@ -176,27 +177,35 @@ func (s *Store) GetAccountByTelegramID(ctx context.Context, telegramUserID int64
 	return accountFromRow(row), nil
 }
 
-// GetAccountByIdentity fetches one account by its owning identity_id, the key the
-// scheduler's identity-routed delivery uses (Phase 20 R3). It mirrors
-// GetAccountByTelegramID's error classification but adds the parseUUID boundary the
-// generated query needs (identity_id is uuid). A non-UUID identity (e.g. the CLI's
-// 'local') can never match a real account, so a parse failure maps to a wrapped
-// pgx.ErrNoRows — the same not-found signal as a missing row. That lets Deliver
-// use a single errors.Is(err, pgx.ErrNoRows) branch to mean "not my user" for both
-// the no-account case AND the 'local' case (Pitfall 6), never surfacing an error.
+// GetAccountByIdentity requires an unambiguous push recipient. identity_id is not
+// unique, so two matches suffice to refuse a destination without choosing by row
+// order or activity. Missing/non-UUID identities retain pgx.ErrNoRows; ambiguity
+// must remain an error so delivery cannot fall back to another channel.
 func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Account, error) {
 	idID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
 	}
-	row, err := s.q.GetTelegramAccountByIdentity(ctx, idID)
+	rows, err := s.q.GetTelegramAccountCandidatesByIdentity(ctx, idID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
-		}
 		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, err)
 	}
-	return accountFromRow(row), nil
+	account, err := singleRecipientAccount(rows)
+	if err != nil {
+		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, err)
+	}
+	return account, nil
+}
+
+func singleRecipientAccount(rows []sqlc.AuraTelegramAccounts) (Account, error) {
+	switch len(rows) {
+	case 0:
+		return Account{}, pgx.ErrNoRows
+	case 1:
+		return accountFromRow(rows[0]), nil
+	default:
+		return Account{}, ErrAmbiguousAccount
+	}
 }
 
 // TouchLastSeen bumps last_seen_at for an account (best-effort activity marker).
