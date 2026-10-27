@@ -4244,6 +4244,34 @@ configuration omits those keys or still selects a development profile. An explic
 prerequisites. Since 2026-10-11 it has no container-runtime prerequisite: gVisor is retired
 and every box runs on runc (§12).
 
+**The durability prerequisite is measured, not declared.** Until 2026-10-27
+`server_production` required `AURA_OBJECTSTORE_REPLICATION_FACTOR >= 2`, a number the
+operator typed and nothing compared with Garage, whose shipped `garage.toml` keeps
+`replication_factor = 1`; setting it to 2 passed the gate and changed no durability. The knob
+is retired:
+- `config validate` now requires the `garage` backend and the Garage admin credential under
+  `server_production`. An `s3` backend is refused, because Aura cannot read another
+  provider's durability.
+- At boot, `aura serve` counts the copies the cluster layout stores: the partitions placed on
+  every node (`GET /v2/GetClusterLayout`, `storedPartitions`) over the partition count
+  (`GET /v2/GetClusterHealth`). Fewer than 2 refuses the boot and names the count.
+
+The Garage v2.4 admin API returns `replication_factor` itself only from the calls that apply
+or preview a layout. Measured 2026-10-27 on `dxflrs/garage:v2.4.1`:
+- one node at factor 1: 256/256;
+- two nodes at factor 2: 512/256;
+- before any layout: 0;
+- a factor-2 layout over one node: refused by Garage itself.
+
+Aura's preflight refused the first cluster and booted on the second. A `server_production`
+deployment whose Garage keeps one copy no longer boots.
+
+What this does not show:
+- a cluster of three or more nodes;
+- a layout in the middle of a rebalance (the count rounds down);
+- any appliance actually running `server_production`. None of the repository's stacks
+  does.
+
 An unset or unrecognised `AURA_PROFILE` is `single_user_hardened` everywhere: in the
 binary and in bare Compose, not only on an installed appliance. `dev` is an explicit
 opt-in. Development harnesses that boot the daemon on sample credentials state it
