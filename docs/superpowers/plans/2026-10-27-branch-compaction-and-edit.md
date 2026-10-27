@@ -1,8 +1,7 @@
 # `/compact` on the branch on screen, and no refused edit — Implementation Plan
 
-**Status (2026-10-27):** done, in PR #195. Open:
-- a live `/compact` with a real summarizer;
-- the db_integration mutation tier of `server_run_branch.go`.
+**Status (2026-10-27):** done, in PR #195. The three files are above the 70% mutation floor.
+Open: a live `/compact` with a real summarizer.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -113,10 +112,10 @@ acceptance 11–14).
     polled, and 8 runs in 8 passed.
 - [x] Mutation on the three files. The scores and their survivors are in the verification
   file.
-  - `conversations_compaction_api.go`: 91.4%.
-  - `store_compaction.go`: 59.2% raw, 90.6% without its equivalent mutants.
-  - `server_run_branch.go`: 55.2% on the unit tier. Its non-equivalent survivors are in #193's
-    `reportTurnSeqs` and `startTurn`.
+  After the tests in `271e27e`:
+  - `conversations_compaction_api.go`: 91.4%;
+  - `store_compaction.go`: 95.7%;
+  - `server_run_branch.go`: 75.0% on the unit tier.
 - [x] PRD §7: the two items leave "Still open".
 - [x] Write `docs/superpowers/verification/2026-10-27-branch-compaction-and-edit-local.md`.
 - [x] Set this plan's status.

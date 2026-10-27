@@ -70,33 +70,44 @@ reached. Before the fix the test panicked inside the path walk the fallback let 
 
   The survivors in code this PR adds or moves got tests in `1350da1` and `bdadd05`.
 - **Round 2, on `bdadd05`:**
-  - `conversations_compaction_api.go`: 32/35, **91.4%**.
-  - `store_compaction.go`: 29/49, **59.2%**. 17 of the 20 survivors are equivalent:
-    - the save guard repeats migration 0096's CHECKs (`covers_through_seq > 0`,
-      `btrim(summary) <> ''`), and the database refuses the same rows;
-    - the `seq <= 0` guards return what the query's "no row" returns;
-    - `""` and the canonical uuid string are one key in `compactionKey`;
-    - two survivors change only the warn line.
+  - `conversations_compaction_api.go`: 32/35, **91.4%**;
+  - `store_compaction.go`: 29/49, 59.2%;
+  - `server_run_branch.go`: 32/58, 55.2%.
 
-    The other three need an injected database error. Without the equivalent mutants the
-    score is 29/32, 90.6%. This was measured before `branchIDForLeaf` was removed (see the
-    fallback paragraph above), and its two warn-line mutants went with it.
-  - `server_run_branch.go`: 32/58, **55.2%**, on the unit tier.
-    - The six survivors in `requireTurnSeq` are values returned beside a refusal, which
-      callers ignore.
-    - The other twenty are in `reportTurnSeqs`, `startTurn` and `threadHasPendingPause`,
-      which come from #193. The db_integration HTTP E2E (`branch_http_e2e_integration_test.go`)
-      asserts `head_seq` there, and this run did not include that tier.
+  The operator asked to close the two gaps with tests. `271e27e` added them:
+  - **`store_compaction.go`, through the fake DBTX.** Under db_integration the database
+    answers for these guards: its CHECKs refuse an empty summary, and a seq that names no turn
+    finds no row. The fake answers every statement, so each guard is observable on its own.
+    The tests cover the seq bounds of `branchOfTurn`, a canonical turn and a forked one, a
+    failing read and write, and the save guards.
+  - **`server_run_branch.go`.**
+    - `requireTurnSeq` now has named results, so a refusal returns zero values instead of
+      six literals nobody reads.
+    - A failing pause check is a 500 that starts no run.
+    - `leaf_seq` 1 is reported.
+    - A run with no recorded head reports no `head_seq`.
+- **Round 3, on `271e27e`:**
+  - `store_compaction.go`: 44/46, **95.7%**. The two survivors are equivalent:
+    - the `err != nil` arm of `LoadPathCompaction`'s empty-thread check returns that error
+      either way;
+    - a NULL branch id has the canonical id's zero bytes.
+  - `server_run_branch.go`: 39/52, **75.0%**, on the unit tier. The 13 survivors are in
+    #193's code:
+    - nine need a head the real runner records (`runner.WithTurnHead`). The db_integration
+      HTTP E2E asserts `head_seq` there;
+    - two are the returns after a consumer stops reading;
+    - two survive in `startTurn`: they would dereference a nil message, but no caller passes
+      one.
+  - `conversations_compaction_api.go` is unchanged since round 2: 91.4%.
 
 ## What this does not show
 
 - **A live `/compact` with a real summarizer.** The store test uses a scripted summarizer.
   Nothing here calls a model.
 - **The lab VM, WebKit or iOS.**
-- **A raw mutation score of 70% on two files.** `store_compaction.go` and `server_run_branch.go`
-  are below it. The previous section explains each survivor. Two measurements were not made:
-  a database fault injection for the three store error paths, and a db_integration mutation
-  run of `server_run_branch.go`, at about 90 s per mutant.
+- **`server_run_branch.go` under db_integration.** Its head paths are measured on the unit tier
+  only, where no head is recorded. The db_integration mutation run would take about 90 s per
+  mutant.
 - **Pre-0095 forks.** PRD §7 keeps them open.
 - **The interaction of the two refreshes.** The marker read after a run and the history read
   after a run are separate requests. Their ordering on a slow link was not measured.
