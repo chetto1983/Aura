@@ -908,6 +908,30 @@ preserves the recent working tail and enforces a hard budget. Summaries retain t
 correct source version and branch. Failures are reported; fallback truncation records
 what was dropped. Token estimates and provider usage are separate measurements.
 
+The token estimate cost seconds per turn (2026-10-27). Every turn counts the replayed
+history with tiktoken-go before the model sees it. Measured on 4 cores, against
+`BenchmarkTokenEstimate` and an 800-turn history of mixed prose:
+- **One long run is quadratic.** The byte-pair merge scans all parts once per merge, so a regex
+  piece of length n costs n². 64 KiB of base64 over zeroed bytes, one run of `A` as an
+  attachment encodes, took 3.46 s; prose of the same size takes 19 ms.
+- **The drop recounted the history once per round.** Over the hard cap, L2.5 dropped a round
+  and recounted everything left. At a 128k window: 37.5 s and 12.4 GB allocated per turn.
+- **Nothing was remembered.** Every turn recounted every turn: 224 ms at a 1M window.
+
+What changed:
+- **A piece the encoder sees is bounded.** A run of one character class is cut at 256 bytes.
+  Prose, JSON and base64 of varied bytes never hold such a run, so their counts are unchanged;
+  a longer run can only gain a token per cut. The 64 KiB case is 19 ms.
+- **The drop subtracts each round from one total.** 217 ms and 79 MB, cold.
+- **A count is remembered by a hash of its text.** Two bounded generations of 32,768 counts;
+  the cache holds no conversation text. The turn after: 0.56 ms at 1M and 0.81 ms at 128k.
+- **The runner's overhead uses the same estimate.** Its own encoder downloaded the vocabulary
+  when it ran before the ladder's offline loader was set.
+
+What this does not show: a real conversation's mix of content; the cost of the summarizer
+call, which dominates a compacting turn; the sidecar reads, which are now the largest cost of a
+1000-turn load (46 ms, almost all syscalls); and any host but this 4-core container.
+
 The stable prompt prefix excludes volatile per-turn data. Worker framing and current
 budgets do not mutate that prefix. Definitions and dynamic context obey the same cache
 contract in interactive and delegated runs.
