@@ -94,7 +94,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
   test('the real agent generates a visible image', async ({ page }, info) => {
     test.setTimeout(600_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
-    const image = page.locator('[data-slot="image-preview"] img');
+    const image = page.locator('[data-slot="image-root"] [data-slot="image"] img');
     await sendPrompt(page, conversationId, imagePrompt);
 
     await expect(frameOrResult(page, image)).toBeVisible({ timeout: 120_000 });
