@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"slices"
-	"strconv"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/runner"
@@ -15,80 +13,24 @@ import (
 // conversations_branch_api.go is the D-09 / CHAT-05 branch sub-adapter (plan 25-07),
 // split out of conversations_api.go to keep both files ≤600 LOC. It rides the SAME
 // /api/conversations/{id}/ subtree (NO new bare /api/) and inherits RequireAuth from the
-// parent-mux mount; the two MUTATING routes (edit / branch-select re-run) interpose
-// RequireCapability like POST /agent/run (cmd/aura/serve_webui.go), because re-running a
-// (possibly background) thread is privileged (T-25-25 / V4).
+// parent-mux mount; the mutating route interposes RequireCapability like POST /agent/run
+// (cmd/aura/serve_webui.go), because re-running a (possibly background) thread is
+// privileged (T-25-25 / V4).
 //
-// The endpoints:
+//	POST /api/conversations/{id}/edit — fork + re-run (edit a user turn, or regenerate an
+//	                                    answer); SSE stream
 //
-//	GET  /api/conversations/{id}/branches                       — the navigable branch set
-//	POST /api/conversations/{id}/edit                           — fork+re-run (edit a turn /
-//	                                                              regenerate); SSE stream
-//	POST /api/conversations/{id}/branches/{branchSeq}/select    — re-run the selected branch
-//	                                                              path; SSE stream
-//
-// Both mutating routes drive the re-run over the path-aware loader from plan 25-06
-// (TurnBranch → LoadManagedHistoryForBranch) so the messages[0] head stays byte-identical
-// across a branch switch — the CAP-04 cache invariant (T-25-24). They do NOT re-implement
-// the walk; they call the runner primitive. ids are uuid.Parse-guarded to a clean 404
-// (T-25-26); errors are redacted with sanitizeErr.
+// Moving between branches needs no route: the history snapshot carries the whole tree, and
+// the cockpit switches branches in its own runtime (spec 2026-10-27, D1). The list and
+// select routes had no caller, and select re-ran the model, so a click would have answered
+// again. Both were removed. A send on another branch names it with aura.parent_seq on
+// /agent/run.
 
-// registerConversationBranchRoutes mounts the D-09 branch routes on the supplied mux.
+// registerConversationBranchRoutes mounts the D-09 branch route on the supplied mux.
 // Called by registerConversationRoutes (conversations_api.go) so the whole conversation
 // subtree registers in one place.
 func (s *Server) registerConversationBranchRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/conversations/{id}/branches", s.handleListBranches)
 	mux.HandleFunc("POST /api/conversations/{id}/edit", s.handleEditBranch)
-	mux.HandleFunc("POST /api/conversations/{id}/branches/{branchSeq}/select", s.handleSelectBranch)
-}
-
-// branchItem is the JSON projection of one navigable branch (D-09). branchSeq is the
-// leaf seq the BranchPicker selects (and the select route's path param); branchId is the
-// owning branch uuid; parentSeq is the divergence point (0 = root).
-type branchItem struct {
-	BranchSeq int    `json:"branch_seq"`
-	BranchID  string `json:"branch_id"`
-	ParentSeq int    `json:"parent_seq"`
-}
-
-// ownBranchConvOr404 gates a branch route to the authenticated owner (MUSR-01 / D-06):
-// a foreign or absent conversation id both 404 via ErrConversationNotFound — hiding the
-// existence of another identity's thread. It mirrors the read gate in conversations_api.go
-// (handleConversationRotEvents) and MUST run before any ListBranches/ForkBranch/TurnBranch
-// call so identity B can neither enumerate nor fork+re-run identity A's conversation.
-func (s *Server) ownBranchConvOr404(w http.ResponseWriter, r *http.Request, id string) bool {
-	if _, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context())); err != nil {
-		writeStoreErr(w, err)
-		return false
-	}
-	return true
-}
-
-// handleListBranches returns the conversation's navigable branch set (ListBranches). A
-// non-branched conversation reports exactly one branch (its canonical leaf), so the
-// picker stays hidden until an edit/regenerate forks a sibling.
-func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseConvID(w, r)
-	if !ok {
-		return
-	}
-	if !s.ownBranchConvOr404(w, r, id) {
-		return
-	}
-	branches, err := s.conv.ListBranches(scopedCtx(r.Context()), id)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	items := make([]branchItem, 0, len(branches))
-	for _, b := range branches {
-		items = append(items, branchItem{
-			BranchSeq: b.LeafSeq,
-			BranchID:  b.BranchID.String(),
-			ParentSeq: b.ParentSeq,
-		})
-	}
-	writeJSON(w, items)
 }
 
 // editBranchBody is the POST /edit request payload: divergeSeq is the turn being edited
@@ -101,12 +43,10 @@ type editBranchBody struct {
 	Content    string `json:"content"`
 }
 
-// handleEditBranch forks a NEW sibling branch off the diverging turn's parent then
+// handleEditBranch forks a NEW sibling branch off the diverging turn's parent, then
 // re-runs over that branch (the edit-a-user-turn / regenerate path). The fork is durable
-// (ForkBranch) and the old branch stays queryable (full tree, RESEARCH OQ3). The re-run
-// streams the agent turn as SSE over the rehydrated SELECTED-branch history. A non-UUID
-// id / unknown diverging seq → 404. The fork+re-run is serialized on the per-thread lock
-// (409 if a run is already active).
+// (ForkBranch), and the old branch stays queryable (full tree, RESEARCH OQ3). A non-UUID id
+// or an unknown diverging seq is a 404; a run already active on the thread is a 409.
 func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
@@ -114,7 +54,8 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	}
 	// Owner gate BEFORE the durable ForkBranch: a foreign identity must not fork+re-run
 	// another's thread (MUSR-01 / D-06 — 404 hides existence).
-	if !s.ownBranchConvOr404(w, r, id) {
+	if _, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context())); err != nil {
+		writeStoreErr(w, err)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
@@ -131,65 +72,16 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	if role == "" {
 		role = "user"
 	}
-	leaf, _, err := s.conv.ForkBranch(scopedCtx(r.Context()), id, body.DivergeSeq, role, body.Content)
-	if err != nil {
-		if errors.Is(err, conversations.ErrTurnNotFound) {
-			http.Error(w, "turn not found", http.StatusNotFound)
-			return
-		}
-		writeStoreErr(w, err)
-		return
-	}
-	s.rerunBranch(w, r, id, leaf)
+	s.forkAndRerun(w, r, id, body.DivergeSeq, role, body.Content)
 }
 
-// handleSelectBranch re-runs the conversation over an EXISTING selected branch leaf (the
-// {branchSeq} path param — the leaf seq ListBranches reported). It drives the path loader
-// (LoadManagedHistoryForBranch) so the head is byte-identical; the body diverges per
-// branch. The leaf MUST be one ListBranches reports for this conversation (WR-01): a
-// numeric-but-absent leaf is a clean 404 with NO re-run — a privileged mutating route must
-// not drive a re-run over an empty walk for an arbitrary client integer.
-func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseConvID(w, r)
-	if !ok {
-		return
-	}
-	if !s.ownBranchConvOr404(w, r, id) {
-		return
-	}
-	leaf, ok := parseBranchSeq(w, r)
-	if !ok {
-		return
-	}
-	branches, err := s.conv.ListBranches(scopedCtx(r.Context()), id)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	if !slices.ContainsFunc(branches, func(b conversations.Branch) bool { return b.LeafSeq == leaf }) {
-		http.Error(w, "branch not found", http.StatusNotFound)
-		return
-	}
-	s.rerunBranch(w, r, id, leaf)
-}
-
-// rerunBranch is the shared SSE re-run tail for the edit + select routes. It resolves the
-// thread (404), acquires the per-thread lock (409 on contention), and streams the
-// translated TurnBranch(leaf) over the SELECTED-branch rehydrated history. leaf <= 0 falls
-// back to the canonical leaf (the same history a linear Turn would load). Mirrors
-// handleRun's lock + SSE machinery (server.go) so a branch re-run behaves exactly like a
-// normal turn on the wire — only the loaded history differs.
-func (s *Server) rerunBranch(w http.ResponseWriter, r *http.Request, convID string, leaf int) {
+// forkAndRerun takes the thread lock, forks, and re-runs over the fork, in that order. The
+// re-run chains every turn it writes to the turn before it, so the fork must be the turn
+// written last when it starts. Forked before the lock, a run that appended in between
+// became the fork's child (spec 2026-10-27, D10). The re-run streams exactly as handleRun
+// does; only the loaded history differs.
+func (s *Server) forkAndRerun(w http.ResponseWriter, r *http.Request, convID string, divergeSeq int, role, content string) {
 	ctx := r.Context()
-	if _, err := s.conv.Get(scopedCtx(ctx), convID); err != nil {
-		if errors.Is(err, conversations.ErrConversationNotFound) {
-			http.Error(w, "thread not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
-		return
-	}
-
 	var unlock func()
 	if locker, ok := s.run.(threadTryLocker); ok {
 		var locked bool
@@ -201,6 +93,15 @@ func (s *Server) rerunBranch(w http.ResponseWriter, r *http.Request, convID stri
 		defer unlock()
 		ctx = runner.WithThreadLockHeld(ctx)
 	}
+	leaf, err := s.conv.ForkBranch(scopedCtx(ctx), convID, divergeSeq, role, content)
+	if err != nil {
+		if errors.Is(err, conversations.ErrTurnNotFound) {
+			http.Error(w, "turn not found", http.StatusNotFound)
+			return
+		}
+		writeStoreErr(w, err)
+		return
+	}
 
 	runID := "run-" + uuid.NewString()
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -209,20 +110,10 @@ func (s *Server) rerunBranch(w http.ResponseWriter, r *http.Request, convID stri
 	// Shutdown cancels the re-run, not its stream, as in handleRun.
 	turnCtx, endTurn := s.untilShutdown(ctx)
 	defer endTurn()
-	turn := s.run.TurnBranch(turnCtx, convID, leaf)
+	head := &runner.TurnHead{}
+	turnCtx = runner.WithTurnHead(turnCtx, head)
+	turn := s.reportTurnSeqs(turnCtx, convID, head, s.run.TurnBranch(turnCtx, convID, leaf))
 	// Cockpit reasoning-on (D-01), same as handleRun: the only viewer is the
 	// authenticated operator (whole-origin private), so the live CoT stream is surfaced.
 	s.streamSSE(ctx, w, Translate(convID, runID, s.idgen, turn, true))
-}
-
-// parseBranchSeq resolves the {branchSeq} path param to a positive int. A non-numeric or
-// non-positive value can never be a valid leaf seq → clean 404 (never a 500), mirroring
-// the uuid.Parse-before-store-call guard for the {id}.
-func parseBranchSeq(w http.ResponseWriter, r *http.Request) (int, bool) {
-	seq, err := strconv.Atoi(r.PathValue("branchSeq"))
-	if err != nil || seq <= 0 {
-		http.Error(w, "branch not found", http.StatusNotFound)
-		return 0, false
-	}
-	return seq, true
 }

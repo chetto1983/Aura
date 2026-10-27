@@ -53,7 +53,7 @@ func detachedRunContext(reqCtx context.Context, maxWallclock time.Duration) (con
 // into RunRegistry.Start (§1.2 — the producer's terminal cleanup releases it, so the
 // lock now spans the run's true duration), SubmitAnswers unchanged, then the
 // producer goroutine + subscriber-#0 drain.
-func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx context.Context, in types.RunAgentInput, userMsg, modelUserMsg *string) {
+func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx context.Context, in types.RunAgentInput, parentSeq *int, userMsg, modelUserMsg *string) {
 	if s.runs.atCapacity() {
 		w.Header().Set("Retry-After", detachRetryAfterSec)
 		http.Error(w, "too many live runs", http.StatusServiceUnavailable)
@@ -77,6 +77,12 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 		if unlock != nil {
 			unlock()
 		}
+	}
+	// Under the lock, as on the inline path.
+	var branchOK bool
+	if ctx, branchOK = s.continueBranch(ctx, w, in.ThreadID, parentSeq); !branchOK {
+		release()
+		return
 	}
 
 	if len(in.Resume) > 0 {
@@ -118,12 +124,7 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 	// session can never gap, so ok is structural.
 	ch, cancelSub, _ := sess.subscribeFrom(0)
 
-	turn := s.run.Turn(dctx, in.ThreadID, modelUserMsg)
-	if userMsg != nil && modelUserMsg != nil && *userMsg != *modelUserMsg {
-		if split, ok := s.run.(modelUserMessageRunner); ok {
-			turn = split.TurnWithModelUserMessage(dctx, in.ThreadID, *userMsg, *modelUserMsg)
-		}
-	}
+	turn := s.startTurn(dctx, in.ThreadID, userMsg, modelUserMsg)
 	// showReasoning=true is the same cockpit-scoped D-01 override the flag-off tail
 	// documents (server_run.go) — the registry is fed ONLY by handleRun.
 	go s.runProducer(dctx, dcancel, sess, Translate(in.ThreadID, runID, s.idgen, turn, true))

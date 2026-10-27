@@ -18,27 +18,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/google/uuid"
 )
-
-// chainCanonical sets parent_seq = seq-1 on every turn of conv through SetBranchPointers,
-// modelling what migration 0017 backfilled onto the rows that pre-dated it — a state the
-// live database still holds for those rows.
-//
-// It is no longer the ONLY way to reach that shape: AppendTurn now derives the same chain
-// in its INSERT. Until it did, this helper was the only thing producing it, and every
-// branch test seeding through it therefore asserted against a state production never
-// wrote — which is how a total context loss on edit/regenerate stayed green. The test
-// that seeds WITHOUT it is TestBranchFork_ProductionAppendChainsParentSeq.
-func chainCanonical(t *testing.T, s *Store, convID string, seqs ...int) {
-	t.Helper()
-	for _, seq := range seqs {
-		parent := seq - 1 // 0 for the root => NULL parent
-		if err := s.SetBranchPointers(ownerCtx(), convID, seq, CanonicalBranchID, parent); err != nil {
-			t.Fatalf("chain canonical seq %d: %v", seq, err)
-		}
-	}
-}
 
 // TestBranchPath_DeterministicWalk persists a canonical linear chain and asserts the
 // leaf->root walk returns the root->leaf ordered list AND two consecutive calls are
@@ -59,11 +39,10 @@ func TestBranchPath_DeterministicWalk(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3)
 
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	if leaf != 3 {
 		t.Fatalf("canonical leaf: want 3, got %d", leaf)
@@ -114,15 +93,14 @@ func TestBranchPath_NonBranchedByteIdenticalToLinear(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3, 4, 5)
 
 	linear, err := s.LoadHistory(ctx, convID)
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
 	}
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	branch, err := s.LoadBranchHistory(ctx, convID, leaf)
 	if err != nil {
@@ -155,22 +133,12 @@ func TestBranchPath_ProtectedHeadByteIdenticalAcrossBranches(t *testing.T) {
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "answer me"},
 		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "answer A"},
-		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B"},
+		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B", ParentSeq: new(2)},
 	}
 	for _, tp := range head {
 		if err := s.AppendTurn(ctx, tp); err != nil {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
-	}
-	// seq 1 root, seq 2 parent=1 on the canonical branch.
-	chainCanonical(t, s, convID, 1, 2)
-	branchA := uuid.Must(uuid.NewV7())
-	branchB := uuid.Must(uuid.NewV7())
-	if err := s.SetBranchPointers(ctx, convID, 3, branchA, 2); err != nil {
-		t.Fatalf("set branch A pointers: %v", err)
-	}
-	if err := s.SetBranchPointers(ctx, convID, 4, branchB, 2); err != nil {
-		t.Fatalf("set branch B pointers: %v", err)
 	}
 
 	histA, err := s.LoadBranchHistory(ctx, convID, 3)
@@ -208,9 +176,9 @@ func TestBranchPath_EmptyLeafYieldsEmpty(t *testing.T) {
 	convID := newConversation(t, s)
 	ctx := ownerCtx()
 
-	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
+	leaf, err := s.LatestTurnSeq(ctx, convID)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf on empty: %v", err)
+		t.Fatalf("LatestTurnSeq on empty: %v", err)
 	}
 	if leaf != 0 {
 		t.Fatalf("empty conversation canonical leaf: want 0, got %d", leaf)

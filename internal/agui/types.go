@@ -28,7 +28,11 @@ import (
 // depends only on the methods it calls, never the whole Store.
 type ConversationStore interface {
 	Get(ctx context.Context, conversationID string) (conversations.Conversation, error)
+	// LoadHistory is the owner export's read: every turn as the model context repairs it.
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
+	// LoadDisplayTurns is the history snapshot's read: the same turns, each with its place
+	// in the conversation tree (spec 2026-10-27, D5).
+	LoadDisplayTurns(ctx context.Context, conversationID string) ([]conversations.DisplayTurn, error)
 	// ListTurnReasoning is the amendment #91 (fix-plan 1.12) DISPLAY-ONLY read:
 	// the persisted per-turn CoT + duration for the snapshot projection, kept
 	// separate from LoadHistory so llm.Message stays structurally reasoning-free.
@@ -63,15 +67,13 @@ type ConversationStore interface {
 	// jsonb (no migration). rows-affected==0 = the caller does not own the id. On the read
 	// side the value rides Conversation.ReasoningEffort (surfaced by conversationFromRow).
 	UpdateReasoningEffortForIdentity(ctx context.Context, conversationID, identityID, effort string) (int64, error)
-	// D-09 / CHAT-05 branch surface (plan 25-07). ListBranches enumerates the navigable
-	// branch leaves; ForkBranch writes a new sibling branch (edit-a-user-turn /
-	// regenerate) chained off the diverging turn's parent and returns the new leaf seq.
-	// CanonicalBranchLeaf is the default selection (the conversation's canonical tip).
-	// All three are on the concrete *conversations.Store; declared here so agui depends
+	// D-09 / CHAT-05 branch surface (plan 25-07). ForkBranch writes a new sibling branch
+	// (edit-a-user-turn / regenerate) chained off the diverging turn's parent and returns
+	// the new leaf seq. LatestTurnSeq is the turn written last, which ends the branch a run
+	// writes. Both are on the concrete *conversations.Store; declared here so agui depends
 	// only on the methods it calls.
-	ListBranches(ctx context.Context, conversationID string) ([]conversations.Branch, error)
-	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, uuid.UUID, error)
-	CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error)
+	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, error)
+	LatestTurnSeq(ctx context.Context, conversationID string) (int, error)
 }
 
 // ErrEmptyThreadID is the Aura-semantic validation sentinel ValidateRunInput returns.

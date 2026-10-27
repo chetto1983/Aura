@@ -89,7 +89,7 @@ func TestCompact_StoresTheSummaryTheLadderThenReplays(t *testing.T) {
 
 	// The point of the whole command: the NEXT turn's history replays the summary instead of
 	// the turns, without the ladder being over any budget and without a second model call.
-	msgs, err := store.LoadManagedHistory(ownerCtx(), convID, compactConfig(sum))
+	msgs, err := store.LoadManagedHistory(ownerCtx(), convID, 0, compactConfig(sum))
 	if err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
 	}

@@ -14,17 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Branch is one navigable branch path of a conversation tree (D-09 / CHAT-05): the
-// LeafSeq tip the BranchPicker selects + the BranchID it belongs to. ParentSeq is the
-// divergence point (NULL → 0 for a root branch). The canonical (all-zero) branch sorts
-// first (ListBranchLeaves ORDER BY branch_id ASC), so a non-branched conversation reports
-// exactly one branch whose leaf is its last turn.
-type Branch struct {
-	LeafSeq   int
-	BranchID  uuid.UUID
-	ParentSeq int
-}
-
 // ErrTurnNotFound is returned when a fork targets a seq that does not exist in the
 // conversation — mapped to a clean 404 at the REST boundary (T-25-26).
 var ErrTurnNotFound = errors.New("conversations: turn not found")
@@ -36,15 +25,14 @@ var ErrTurnNotFound = errors.New("conversations: turn not found")
 // branches (plan 25-07 edit/regenerate) mint a fresh uuid instead.
 var CanonicalBranchID = uuid.UUID{}
 
-// CanonicalBranchLeaf returns the deepest seq of a conversation's canonical branch — the
-// default leaf LoadBranchHistory walks from when no specific branch is selected. It is 0
-// for a conversation with no turns. The walk from this leaf over a properly-chained
-// canonical branch (the 0017 backfill produces parent_seq = seq-1) yields the linear
-// history (Pitfall 3: only body turns differ per branch; the head stays byte-identical).
-func (s *Store) CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error) {
-	return scopedSeq(ctx, s, "canonical branch leaf", "conversation_id", conversationID,
+// LatestTurnSeq returns the seq of the turn written last, 0 for a conversation with no
+// turns. It is the head a run continues when nothing names another, and the branch a reload
+// opens on: every append chains to the turn before it unless told otherwise, so the turn
+// written last ends the branch that was being written.
+func (s *Store) LatestTurnSeq(ctx context.Context, conversationID string) (int, error) {
+	return scopedSeq(ctx, s, "latest turn seq", "conversation_id", conversationID,
 		func(q *sqlc.Queries, id pgtype.UUID) (int32, error) {
-			return q.CanonicalBranchLeafSeq(ctx, id)
+			return q.LatestTurnSeq(ctx, id)
 		})
 }
 
@@ -109,142 +97,58 @@ func branchPathRowAsSeqRow(r sqlc.ListTurnsByBranchPathRow) sqlc.ListTurnsBySeqR
 	return sqlc.ListTurnsBySeqRow(r)
 }
 
-// LoadBranchHistory reconstructs the loop history for the SELECTED branch path, the
-// path-aware analog of LoadHistory (store.go:255). It walks leaf->root from the given
-// leaf seq, projects each turn to an llm.Message, and repairs tool-message pairs along
-// the path exactly like LoadHistory. For the canonical branch leaf of a non-branched
-// conversation the result is byte-identical to LoadHistory (the migration backfilled a
-// complete parent_seq = seq-1 chain — RESEARCH A3). The returned slice is raw; the
-// L1/L2/L2.5 ladder (context.go) is applied by the caller around it.
+// LoadBranchHistory reconstructs the history of one path: the turns from leafSeq up to its
+// root, repaired exactly like LoadHistory. A leafSeq <= 0 is the branch written last, the one
+// a run continues when nothing names another, which is what a share shows (spec 2026-10-27,
+// D12). For a non-branched conversation the result is byte-identical to LoadHistory. The
+// returned slice is raw; the L1/L2/L2.5 ladder (context.go) is applied by the caller.
 func (s *Store) LoadBranchHistory(ctx context.Context, conversationID string, leafSeq int) ([]llm.Message, error) {
+	if leafSeq <= 0 {
+		latest, err := s.LatestTurnSeq(ctx, conversationID)
+		if err != nil {
+			return nil, err
+		}
+		leafSeq = latest
+	}
 	turns, err := s.loadBranchTurns(ctx, conversationID, leafSeq)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]llm.Message, 0, len(turns))
-	for _, t := range turns {
-		msg, err := turnToMessage(t)
-		if err != nil {
-			return nil, fmt.Errorf("load branch history %s seq %d: %w", conversationID, t.Seq, err)
-		}
-		out = append(out, msg)
-	}
-	return repairToolMessagePairs(out), nil
+	return rebuildMessages(conversationID, turns)
 }
 
-// SetBranchPointers sets a turn's branch/parent pointers — the branch-write seam plan
-// 25-07 uses when an edit/regenerate forks a new sibling branch off an existing parent
-// turn. parentSeq <= 0 writes a NULL parent (a branch root). It validates the ids at the
-// boundary (Pitfall 5) and routes through the SetTurnBranchPointers sqlc query.
-func (s *Store) SetBranchPointers(ctx context.Context, conversationID string, seq int, branchID uuid.UUID, parentSeq int) error {
+// ForkBranch appends a sibling of the turn at divergeSeq: a fresh turn that chains off the
+// SAME parent, so it replaces divergeSeq on a new branch rather than continuing after it.
+// This is an edit of a user turn or a regenerate. The old branch is left as it is. The
+// append gives the fork a branch id of its own, because its parent already has a child,
+// and every turn appended after it inherits that id. It returns the new turn's seq, which
+// the caller re-runs over (LoadManagedHistoryForBranch). divergeSeq must exist
+// (ErrTurnNotFound).
+func (s *Store) ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
-		return fmt.Errorf("set branch pointers: %w", err)
+		return 0, fmt.Errorf("fork branch: %w", err)
 	}
-	parent := pgtype.Int4{}
-	if parentSeq > 0 {
-		parent = pgtype.Int4{Int32: int32(parentSeq), Valid: true}
+	if divergeSeq <= 0 || divergeSeq > math.MaxInt32 {
+		return 0, fmt.Errorf("fork branch %s seq %d: %w", conversationID, divergeSeq, ErrTurnNotFound)
 	}
-	return s.scoped(ctx, func(q *sqlc.Queries) error {
-		if pErr := q.SetTurnBranchPointers(ctx, sqlc.SetTurnBranchPointersParams{
-			ConversationID: id,
-			Seq:            int32(seq),
-			BranchID:       pgtype.UUID{Bytes: branchID, Valid: true},
-			ParentSeq:      parent,
-		}); pErr != nil {
-			return fmt.Errorf("set branch pointers %s seq %d: %w", conversationID, seq, pErr)
-		}
-		return nil
-	})
-}
-
-// ListBranches returns the conversation's navigable branch set — one Branch per leaf
-// turn (a turn no other turn chains off of). The BranchPicker navigates among sibling
-// leaves; a re-run continues over the selected leaf's path (LoadManagedHistoryForBranch).
-// A non-branched conversation reports exactly one branch (its canonical leaf), so the
-// picker stays hidden until an edit/regenerate forks a sibling. The order is stable
-// (canonical branch first, then by seq).
-func (s *Store) ListBranches(ctx context.Context, conversationID string) ([]Branch, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("list branches: %w", err)
-	}
-	var rows []sqlc.ListBranchLeavesRow
+	parent := 0
 	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		listed, lErr := q.ListBranchLeaves(ctx, id)
-		if lErr != nil {
-			return fmt.Errorf("list branches %s: %w", conversationID, lErr)
+		diverge, qErr := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{ConversationID: id, Seq: int32(divergeSeq)})
+		if qErr != nil {
+			return qErr
 		}
-		rows = listed
+		if diverge.ParentSeq.Valid {
+			parent = int(diverge.ParentSeq.Int32)
+		}
 		return nil
 	}); err != nil {
-		return nil, err
-	}
-	out := make([]Branch, 0, len(rows))
-	for _, r := range rows {
-		b := Branch{LeafSeq: int(r.Seq)}
-		if r.BranchID.Valid {
-			b.BranchID = r.BranchID.Bytes
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("fork branch %s seq %d: %w", conversationID, divergeSeq, ErrTurnNotFound)
 		}
-		if r.ParentSeq.Valid {
-			b.ParentSeq = int(r.ParentSeq.Int32)
-		}
-		out = append(out, b)
+		return 0, fmt.Errorf("fork branch %s seq %d: read diverge turn: %w", conversationID, divergeSeq, err)
 	}
-	return out, nil
-}
-
-// ForkBranch creates a new sibling branch by appending a fresh turn that chains off the
-// SAME parent as the diverging turn at divergeSeq — so the new turn REPLACES divergeSeq
-// on a new branch rather than continuing after it (the edit-a-user-turn / regenerate
-// semantics, RESEARCH OQ3 full tree). The old branch stays queryable (the diverging turn
-// and its descendants are untouched). It allocates the next global seq, inserts the turn,
-// and sets its branch_id (a fresh uuid) + parent_seq in ONE transaction so a partial fork
-// can never leave a turn with default (canonical) pointers. Returns the new leaf seq and
-// its branch id; the caller re-runs over LoadManagedHistoryForBranch(newLeaf). The
-// messages[0] head is unchanged by construction — only body turns differ per branch
-// (Pitfall 3 / the CAP-04 cache invariant). divergeSeq must exist (→ ErrTurnNotFound).
-func (s *Store) ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, uuid.UUID, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return 0, uuid.UUID{}, fmt.Errorf("fork branch: %w", err)
-	}
-	branchID := uuid.New()
-	var newSeq int
-	var spilledPath string
-	run := func() error {
-		return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
-			diverge, err := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{ConversationID: id, Seq: int32(divergeSeq)})
-			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return fmt.Errorf("fork branch %s seq %d: %w", conversationID, divergeSeq, ErrTurnNotFound)
-				}
-				return fmt.Errorf("fork branch %s seq %d: read diverge turn: %w", conversationID, divergeSeq, err)
-			}
-			seq, err := s.allocateTurnSeq(ctx, q, conversationID)
-			if err != nil {
-				return err
-			}
-			newSeq = seq
-			p := AppendTurnParams{ConversationID: conversationID, Seq: seq, Role: role, Content: content}
-			turn, agg, err := s.appendTurnWrites(p)
-			if err != nil {
-				return err
-			}
-			spilledPath = turn.ContentSidecarPath.String
-			if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
-				return err
-			}
-			return q.SetTurnBranchPointers(ctx, sqlc.SetTurnBranchPointersParams{
-				ConversationID: id,
-				Seq:            int32(seq),
-				BranchID:       pgtype.UUID{Bytes: branchID, Valid: true},
-				ParentSeq:      diverge.ParentSeq, // same parent as the diverging turn → a sibling
-			})
-		})
-	}
-	if err := cleanupSidecarOnTxError(run, func() string { return spilledPath }); err != nil {
-		return 0, uuid.UUID{}, err
-	}
-	return newSeq, branchID, nil
+	return s.AppendTurnSeq(ctx, AppendTurnParams{
+		ConversationID: conversationID, Role: role, Content: content, ParentSeq: &parent,
+	})
 }

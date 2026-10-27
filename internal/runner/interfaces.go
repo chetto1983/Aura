@@ -29,7 +29,7 @@ import (
 
 // ConversationStore is the narrow conversation surface the Runner consumes
 // (D-A2-02). *conversations.Store satisfies it implicitly. LoadManagedHistory
-// returns the L1/L2/L2.5-ladder-applied history; LoadHistory is the raw
+// returns the L1/L2/L2.5-ladder-applied history of one path; LoadHistory is the raw
 // byte-identical reconstruction (used by the auto-title worker so the title sees
 // the full opening turns, not the compacted view).
 type ConversationStore interface {
@@ -46,11 +46,10 @@ type ConversationStore interface {
 	AppendTurnSeq(ctx context.Context, p conversations.AppendTurnParams) (int, error)
 	AppendAssistantTurnWithCacheMetric(ctx context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
-	LoadManagedHistory(ctx context.Context, conversationID string, cfg conversations.ContextConfig) ([]llm.Message, error)
-	// LoadManagedHistoryForBranch is the D-09 / CHAT-05 path-aware variant: it walks the
-	// SELECTED branch leaf->root and feeds that into the same ladder. TurnBranch uses it
-	// for the re-run-from-a-point; *conversations.Store satisfies it (plan 25-06).
-	LoadManagedHistoryForBranch(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error)
+	// LoadManagedHistory walks the path that ends at leafSeq (<= 0: the turn written last)
+	// and feeds it into the ladder. A run passes its own head, so the model sees its branch
+	// and no other.
+	LoadManagedHistory(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error)
 	// Compact is the operator-requested L2.4 (`/compact`): it condenses everything before
 	// the active round into the branch's durable summary, which the ladder then keeps in
 	// force on every later turn. *conversations.Store satisfies it.

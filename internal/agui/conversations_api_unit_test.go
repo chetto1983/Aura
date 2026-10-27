@@ -12,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/google/uuid"
 )
 
 // errConvStore is a ConversationStore double whose every method returns a configurable
@@ -38,6 +37,10 @@ func (e *errConvStore) Get(context.Context, string) (conversations.Conversation,
 }
 
 func (e *errConvStore) LoadHistory(context.Context, string) ([]llm.Message, error) {
+	return nil, e.err
+}
+
+func (e *errConvStore) LoadDisplayTurns(context.Context, string) ([]conversations.DisplayTurn, error) {
 	return nil, e.err
 }
 
@@ -75,15 +78,11 @@ func (e *errConvStore) ListContextRotEvents(context.Context, string) ([]conversa
 
 // D-09 branch surface — the error fake returns its injected err so the handler
 // error-redaction paths (500 via sanitizeErr) are unit-coverable.
-func (e *errConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
-	return nil, e.err
+func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	return 0, e.err
 }
 
-func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, e.err
-}
-
-func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, e.err }
+func (e *errConvStore) LatestTurnSeq(context.Context, string) (int, error) { return 0, e.err }
 
 // Phase 36 owner-scoped surface — the error fake returns its injected err (or (0,err)
 // for the rows-affected mutates) so the handler's error/404 projections stay unit-coverable.
@@ -216,17 +215,14 @@ func TestConversationsAPI_StoreError500(t *testing.T) {
 	}
 }
 
-// TestBranchAPI_StoreError500AndRedaction proves the D-09 branch handlers map a generic
-// store failure to a 500 with a sanitized body (no DSN leak): GET /branches (ListBranches),
-// POST /edit (ForkBranch), and POST /branches/{seq}/select (rerunBranch's Get fails).
+// TestBranchAPI_StoreError500AndRedaction proves the D-09 edit handler maps a generic
+// store failure to a 500 with a sanitized body (no DSN leak).
 func TestBranchAPI_StoreError500AndRedaction(t *testing.T) {
 	leak := errors.New("dial postgres://aura_app:s3cr3t@db:5432/aura failed")
 	srv := convAPIServer(t, &errConvStore{err: leak})
 
 	cases := []struct{ method, path, body string }{
-		{http.MethodGet, "/api/conversations/" + goodID + "/branches", ""},
 		{http.MethodPost, "/api/conversations/" + goodID + "/edit", `{"diverge_seq":2,"content":"x"}`},
-		{http.MethodPost, "/api/conversations/" + goodID + "/branches/3/select", ""},
 	}
 	for _, c := range cases {
 		code, body := req(t, srv, c.method, c.path, c.body)
@@ -240,19 +236,14 @@ func TestBranchAPI_StoreError500AndRedaction(t *testing.T) {
 }
 
 // TestBranchAPI_MalformedAndBadInput proves the parse guards: a non-UUID conv id → 404,
-// a non-numeric branch seq → 404, and an empty/zero diverge_seq → 400 — all before any
-// store round-trip (T-25-26).
+// and an empty/zero diverge_seq → 400 — all before any store round-trip (T-25-26).
 func TestBranchAPI_MalformedAndBadInput(t *testing.T) {
-	// ownsGate: the caller owns the conversation so the owner-gate passes; the branch
-	// STORE methods (ListBranches/ForkBranch) still must-not-be-called — the input guards
-	// reject before any branch round-trip.
+	// ownsGate: the caller owns the conversation so the owner-gate passes; ForkBranch still
+	// must-not-be-called — the input guards reject before any branch round-trip.
 	srv := convAPIServer(t, &errConvStore{err: errors.New("must-not-be-called"), ownsGate: true})
 
-	if code, _ := req(t, srv, http.MethodGet, "/api/conversations/not-a-uuid/branches", ""); code != http.StatusNotFound {
-		t.Errorf("non-UUID id /branches status = %d, want 404", code)
-	}
-	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/not-a-seq/select", ""); code != http.StatusNotFound {
-		t.Errorf("non-numeric branch seq status = %d, want 404", code)
+	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/not-a-uuid/edit", `{"diverge_seq":1}`); code != http.StatusNotFound {
+		t.Errorf("non-UUID id /edit status = %d, want 404", code)
 	}
 	if code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/edit", `{"diverge_seq":0}`); code != http.StatusBadRequest {
 		t.Errorf("zero diverge_seq status = %d, want 400", code)
@@ -272,38 +263,6 @@ func TestBranchAPI_ForkTurnNotFound404(t *testing.T) {
 	if code != http.StatusNotFound {
 		t.Errorf("fork unknown turn status = %d, want 404", code)
 	}
-}
-
-// TestBranchSelect_ValidatesLeafMembership (WR-01): POST /branches/{seq}/select re-runs
-// ONLY a leaf ListBranches reports for this conversation. A numeric-but-absent leaf is a
-// clean 404 with NO re-run — a privileged mutating route must not drive a re-run over an
-// empty walk for an arbitrary client integer.
-func TestBranchSelect_ValidatesLeafMembership(t *testing.T) {
-	branches := []conversations.Branch{{LeafSeq: 5}}
-
-	t.Run("known leaf re-runs", func(t *testing.T) {
-		run := &scriptedRunner{events: textTurn("ok")}
-		srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{goodID: true}, branches: branches})
-		code, body := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/5/select", "")
-		if code != http.StatusOK {
-			t.Fatalf("select known leaf status = %d, want 200: %s", code, body)
-		}
-		if run.gotBranchLeaf != 5 {
-			t.Errorf("TurnBranch leaf = %d, want 5 (the selected leaf)", run.gotBranchLeaf)
-		}
-	})
-
-	t.Run("absent leaf is 404 with no re-run", func(t *testing.T) {
-		run := &scriptedRunner{events: textTurn("ok")}
-		srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{goodID: true}, branches: branches})
-		code, _ := req(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/branches/999/select", "")
-		if code != http.StatusNotFound {
-			t.Fatalf("select absent leaf status = %d, want 404", code)
-		}
-		if run.gotBranchLeaf != 0 {
-			t.Errorf("an absent-leaf 404 still drove a re-run (leaf=%d); want no re-run", run.gotBranchLeaf)
-		}
-	})
 }
 
 // TestConversationsAPI_NotFoundProjection proves a store ErrConversationNotFound maps

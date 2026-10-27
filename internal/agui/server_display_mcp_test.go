@@ -130,7 +130,7 @@ func TestMCPViewAndReadCardReplayTogether(t *testing.T) {
 			"mcp_view":            map[string]any{"server": "pim", "resource_uri": "ui://calendar/view.html", "text_content": preview},
 		},
 	}
-	snap := projectDisplaySnapshotWithFacts(history, convID, []toolinvocations.Event{fact}, nil)
+	snap := projectDisplaySnapshotWithFacts(linearTurns(history), convID, []toolinvocations.Event{fact}, nil)
 	got := snap.Messages[0].ToolCalls[0]
 	if got.Display == nil || got.Display.Table == nil || got.MCPView == nil {
 		t.Fatalf("replay lost card or view: %+v", got)
@@ -139,7 +139,7 @@ func TestMCPViewAndReadCardReplayTogether(t *testing.T) {
 		t.Fatalf("view correlation mismatch: %+v", got.MCPView)
 	}
 	for _, bad := range [][]toolinvocations.Event{nil, {fact, fact}} {
-		degraded := projectDisplaySnapshotWithFacts(history, convID, bad, nil).Messages[0].ToolCalls[0]
+		degraded := projectDisplaySnapshotWithFacts(linearTurns(history), convID, bad, nil).Messages[0].ToolCalls[0]
 		if degraded.Display != nil || degraded.MCPView != nil {
 			t.Fatalf("unverified fact retained card or view: %+v", degraded)
 		}

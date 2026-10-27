@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/google/uuid"
 )
 
 func branchCtxCfg() ContextConfig {
@@ -26,8 +25,9 @@ func branchCtxCfg() ContextConfig {
 	return ContextConfig{ContextWindow: 128000, MaxOutputTokens: 20000, ToolEvictAfterTurns: 0}
 }
 
-// TestBranchManaged_NonBranchedByteIdenticalToLinear: for a canonical-chained
-// conversation, LoadManagedHistoryForBranch(default leaf) == LoadManagedHistory.
+// TestBranchManaged_NonBranchedByteIdenticalToLinear: on a conversation that never forked,
+// the default leaf (the turn written last) and that leaf named explicitly load the same
+// bytes, and the path holds every turn, which is what the linear loader used to return.
 func TestBranchManaged_NonBranchedByteIdenticalToLinear(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
@@ -46,20 +46,18 @@ func TestBranchManaged_NonBranchedByteIdenticalToLinear(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3, 4, 5)
 
 	cfg := branchCtxCfg()
-	linear, err := s.LoadManagedHistory(ctx, convID, cfg)
+	linear, err := s.LoadManagedHistory(ctx, convID, 0, cfg)
 	if err != nil {
-		t.Fatalf("LoadManagedHistory: %v", err)
+		t.Fatalf("LoadManagedHistory(default leaf): %v", err)
 	}
-	// leafSeq <= 0 selects the canonical branch leaf.
-	branch, err := s.LoadManagedHistoryForBranch(ctx, convID, 0, cfg)
+	branch, err := s.LoadManagedHistory(ctx, convID, 5, cfg)
 	if err != nil {
-		t.Fatalf("LoadManagedHistoryForBranch: %v", err)
+		t.Fatalf("LoadManagedHistory(leaf 5): %v", err)
 	}
 	if fmt.Sprintf("%#v", linear) != fmt.Sprintf("%#v", branch) {
-		t.Errorf("managed branch (default leaf) != linear managed history:\nlinear %#v\nbranch %#v", linear, branch)
+		t.Errorf("the default leaf != leaf 5:\nlinear %#v\nbranch %#v", linear, branch)
 	}
 	if len(branch) != 5 {
 		t.Fatalf("managed branch history: want 5 messages, got %d", len(branch))
@@ -79,27 +77,20 @@ func TestBranchManaged_ProtectedHeadAcrossBranches(t *testing.T) {
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "answer me"},
 		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "answer A"},
-		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B"},
+		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B", ParentSeq: new(2)},
 	}
 	for _, tp := range head {
 		if err := s.AppendTurn(ctx, tp); err != nil {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2)
-	if err := s.SetBranchPointers(ctx, convID, 3, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Fatalf("set branch A: %v", err)
-	}
-	if err := s.SetBranchPointers(ctx, convID, 4, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Fatalf("set branch B: %v", err)
-	}
 
 	cfg := branchCtxCfg()
-	histA, err := s.LoadManagedHistoryForBranch(ctx, convID, 3, cfg)
+	histA, err := s.LoadManagedHistory(ctx, convID, 3, cfg)
 	if err != nil {
 		t.Fatalf("managed branch A: %v", err)
 	}
-	histB, err := s.LoadManagedHistoryForBranch(ctx, convID, 4, cfg)
+	histB, err := s.LoadManagedHistory(ctx, convID, 4, cfg)
 	if err != nil {
 		t.Fatalf("managed branch B: %v", err)
 	}
@@ -135,21 +126,20 @@ func TestManagedHistoryPageSizeDoesNotBoundRecall(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", turn.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3, 4, 5, 6, 7)
 
 	cfg := branchCtxCfg()
 	cfg.HistoryHardCapTurns = 4
-	linear, err := s.LoadManagedHistory(ctx, convID, cfg)
+	linear, err := s.LoadManagedHistory(ctx, convID, 0, cfg)
 	if err != nil {
 		t.Fatalf("linear managed history: %v", err)
 	}
-	branch, err := s.LoadManagedHistoryForBranch(ctx, convID, 7, cfg)
+	branch, err := s.LoadManagedHistory(ctx, convID, 7, cfg)
 	if err != nil {
 		t.Fatalf("branch managed history: %v", err)
 	}
 	for name, history := range map[string][]llm.Message{
-		"linear": linear,
-		"branch": branch,
+		"default leaf": linear,
+		"branch":       branch,
 	} {
 		if len(history) != len(turns) {
 			t.Fatalf("%s history length = %d, want %d", name, len(history), len(turns))
@@ -180,11 +170,11 @@ func TestManagedHistoryPageSizeDoesNotBoundRecall(t *testing.T) {
 		t.Fatalf("save invalid-boundary compaction: %v", err)
 	}
 	for name, load := range map[string]func() ([]llm.Message, error){
-		"linear": func() ([]llm.Message, error) {
-			return s.LoadManagedHistory(ctx, convID, cfg)
+		"default leaf": func() ([]llm.Message, error) {
+			return s.LoadManagedHistory(ctx, convID, 0, cfg)
 		},
 		"branch": func() ([]llm.Message, error) {
-			return s.LoadManagedHistoryForBranch(ctx, convID, 7, cfg)
+			return s.LoadManagedHistory(ctx, convID, 7, cfg)
 		},
 	} {
 		history, loadErr := load()
@@ -231,11 +221,11 @@ func TestManagedHistoryExactWatermarkSkipsCoveredSidecars(t *testing.T) {
 	cfg := branchCtxCfg()
 	cfg.HistoryHardCapTurns = 4
 	for name, load := range map[string]func() ([]llm.Message, error){
-		"linear": func() ([]llm.Message, error) {
-			return s.LoadManagedHistory(ctx, convID, cfg)
+		"default leaf": func() ([]llm.Message, error) {
+			return s.LoadManagedHistory(ctx, convID, 0, cfg)
 		},
 		"branch": func() ([]llm.Message, error) {
-			return s.LoadManagedHistoryForBranch(ctx, convID, 8, cfg)
+			return s.LoadManagedHistory(ctx, convID, 8, cfg)
 		},
 	} {
 		history, err := load()
@@ -273,7 +263,7 @@ func TestManagedHistoryBranchRejectsNonOlderParent(t *testing.T) {
 		WHERE conversation_id = $1 AND seq = 2`, convID); err != nil {
 		t.Fatalf("seed non-older parent: %v", err)
 	}
-	_, err := s.LoadManagedHistoryForBranch(ctx, convID, 3, branchCtxCfg())
+	_, err := s.LoadManagedHistory(ctx, convID, 3, branchCtxCfg())
 	if !errors.Is(err, ErrManagedHistoryPath) {
 		t.Fatalf("non-older parent error = %v, want ErrManagedHistoryPath", err)
 	}

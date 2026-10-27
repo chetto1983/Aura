@@ -299,7 +299,7 @@ func TestNormalizeSearchLimitBoundsInt32(t *testing.T) {
 func TestLoadManagedHistory_BadUUID(t *testing.T) {
 	t.Parallel()
 	s := New(nil, Config{RunDir: "/x"})
-	if _, err := s.LoadManagedHistory(context.Background(), "not-a-uuid",
+	if _, err := s.LoadManagedHistory(context.Background(), "not-a-uuid", 0,
 		ContextConfig{ContextWindow: 1000, MaxOutputTokens: 1}); err == nil {
 		t.Error("LoadManagedHistory(bad id): want error")
 	}

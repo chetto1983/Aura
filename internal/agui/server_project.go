@@ -114,10 +114,6 @@ func lastUserMessage(msgs []types.Message) (*string, error) {
 	return nil, nil
 }
 
-// msgID is the stable 1-based snapshot message id, shared by the plain projection and
-// the D-06 display-aware projection so both number messages identically.
-func msgID(i int) string { return fmt.Sprintf("msg-%d", i+1) }
-
 // redactEvent is the server-side belt-and-suspenders for T-12-10: the pure translator
 // forwards a runner error as a RUN_ERROR event carrying the raw err.Error() string. The
 // server sanitizes that message in-flight (before it reaches the wire) so a tool/infra

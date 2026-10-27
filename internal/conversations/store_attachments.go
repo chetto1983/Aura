@@ -23,23 +23,17 @@ import (
 // TurnAttachments is one turn's attachment id list. Only turns that carry attachments are
 // returned at all, so an empty IDs slice never occurs here — the absence of a row is how
 // "sent with nothing" is expressed.
-//
-// UserOrdinal is the turn's index among USER turns, which is what a snapshot consumer can
-// match on: the messages it merges into carry no seq, while user turns rebuild
-// one-for-one and in order. Seq is kept for logs and tests, where the real turn number is
-// the useful identifier.
 type TurnAttachments struct {
-	Seq         int
-	UserOrdinal int
-	IDs         []string
+	Seq int
+	IDs []string
 }
 
 // ListTurnAttachments returns the attachment ids of every turn that has any, in seq order,
-// over the same conversation-wide scope LoadHistory reads.
+// over the same conversation-wide scope LoadDisplayTurns reads.
 //
-// The caller pairs by UserOrdinal, never by the row's position in this slice: rows are
-// sparse (only turns that carry attachments), so matching the k-th row to the k-th user
-// message would reproduce the very bug the column was added to end.
+// The caller pairs by Seq, never by the row's position in this slice: rows are sparse (only
+// turns that carry attachments), so matching the k-th row to the k-th user message would
+// reproduce the very bug the column was added to end.
 func (s *Store) ListTurnAttachments(ctx context.Context, conversationID string) ([]TurnAttachments, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
@@ -62,9 +56,7 @@ func (s *Store) ListTurnAttachments(ctx context.Context, conversationID string) 
 		if len(ids) == 0 {
 			continue
 		}
-		out = append(out, TurnAttachments{
-			Seq: int(r.Seq), UserOrdinal: int(r.Ordinal), IDs: ids,
-		})
+		out = append(out, TurnAttachments{Seq: int(r.Seq), IDs: ids})
 	}
 	return out, nil
 }

@@ -5,8 +5,6 @@ import (
 	"iter"
 
 	"github.com/chetto1983/aura/internal/agent"
-	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/google/uuid"
 )
 
 // server_branch_fakes_test.go holds the D-09 / CHAT-05 branch fake methods split out of
@@ -14,17 +12,14 @@ import (
 // ConversationStore + Runner interfaces on the existing unit fakes; the route→store
 // mapping is asserted live in conversations_branch_api_test.go against the real store.
 
-// ListBranches returns the fake's configured branch set (nil by default); ForkBranch and
-// CanonicalBranchLeaf are unit no-ops on the in-memory conv fake.
-func (f *fakeConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
-	return f.branches, nil
+// ForkBranch counts the forks and answers forkLeaf, so a test can tell a fork that happened
+// from one the lock refused.
+func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	f.forks.Add(1)
+	return f.forkLeaf, nil
 }
 
-func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, nil
-}
-
-func (f *fakeConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, nil }
+func (f *fakeConvStore) LatestTurnSeq(context.Context, string) (int, error) { return f.latestSeq, nil }
 
 // TurnBranch records the selected leaf and replays the same scripted events as Turn, so
 // the branch re-run wiring is assertable through the fake (the path-walk fidelity is the

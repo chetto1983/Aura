@@ -12,22 +12,29 @@ import (
 
 type runAgentRequest struct {
 	RunAgentInput types.RunAgentInput
-	Aura          struct {
-		AttachmentIDs []string `json:"attachment_ids"`
-		// DocumentScope is the operator's structured @file/@folder selection. It narrows
-		// document_search for this run; identity is always taken from the server context.
-		DocumentScope []documents.SourceScope `json:"document_scope"`
-		// Skill is the optional pinned skill NAME (37D / WEBSKILL-02). handleRun resolves it
-		// to a body via the loader snapshot and applies Mechanism A; it is a loader key only,
-		// never a filesystem path (T-37D-02).
-		Skill string `json:"skill"`
-		// Effort is the optional per-turn reasoning-effort SYMBOL (37E / WEBMODEL-02, D-05):
-		// one of {auto,off,low,mid,high,extra,max} ("" == auto). handleRun two-stage-validates
-		// it (parseEffortSymbol enum + capability), threads a fixed level via
-		// runner.WithReasoningOverride, and persists the symbol owner-scoped. The client sends a
-		// symbol only, NEVER a raw ReasoningConfig — that is the WEBMODEL-03 no-bypass control.
-		Effort string `json:"effort"`
-	}
+	Aura          runAuraOptions
+}
+
+// runAuraOptions is the run envelope's aura namespace: what Aura reads beside the AG-UI
+// RunAgentInput.
+type runAuraOptions struct {
+	AttachmentIDs []string `json:"attachment_ids"`
+	// DocumentScope is the operator's structured @file/@folder selection. It narrows
+	// document_search for this run; identity is always taken from the server context.
+	DocumentScope []documents.SourceScope `json:"document_scope"`
+	// Skill is the optional pinned skill NAME (37D / WEBSKILL-02). handleRun resolves it
+	// to a body via the loader snapshot and applies Mechanism A; it is a loader key only,
+	// never a filesystem path (T-37D-02).
+	Skill string `json:"skill"`
+	// Effort is the optional per-turn reasoning-effort SYMBOL (37E / WEBMODEL-02, D-05):
+	// one of {auto,off,low,mid,high,extra,max} ("" == auto). handleRun two-stage-validates
+	// it (parseEffortSymbol enum + capability), threads a fixed level via
+	// runner.WithReasoningOverride, and persists the symbol owner-scoped. The client sends a
+	// symbol only, NEVER a raw ReasoningConfig — that is the WEBMODEL-03 no-bypass control.
+	Effort string `json:"effort"`
+	// ParentSeq is the last turn of the branch the client has on screen, which the new user
+	// turn continues (spec 2026-10-27, D2). Absent, the turn continues the one written last.
+	ParentSeq *int `json:"parent_seq"`
 }
 
 func strictDecodeRunAgentRequest(w http.ResponseWriter, r *http.Request) (runAgentRequest, error) {
@@ -59,7 +66,7 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 		}
 		for key := range auraFields {
 			switch key {
-			case "attachment_ids", "document_scope", "skill", "effort":
+			case "attachment_ids", "document_scope", "skill", "effort", "parent_seq":
 			default:
 				return runAgentRequest{}, fmt.Errorf("json: unknown field %q in aura", key)
 			}
@@ -75,12 +82,7 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 		return runAgentRequest{}, err
 	}
 	var ext struct {
-		Aura struct {
-			AttachmentIDs []string                `json:"attachment_ids"`
-			DocumentScope []documents.SourceScope `json:"document_scope"`
-			Skill         string                  `json:"skill"`
-			Effort        string                  `json:"effort"`
-		} `json:"aura"`
+		Aura runAuraOptions `json:"aura"`
 	}
 	if err := json.Unmarshal(raw, &ext); err != nil {
 		return runAgentRequest{}, err

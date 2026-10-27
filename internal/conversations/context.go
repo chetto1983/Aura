@@ -68,14 +68,20 @@ const toolSearchName = "tool_search"
 // `aura chat new`), NEVER the iter.Seq2 error slot.
 var ErrContextWindowExceeded = errors.New("conversation context exceeds the model window; start a new chat with `aura chat new`")
 
-// LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
-// entry point the Runner calls (D-A2-06: the ladder is applied in/around
-// LoadHistory). It uses the Store as the rot emitter. The database retains the
-// protected system head and keyset-pages to the exact durable watermark or root. The
-// configured turn count bounds each query, never recall.
-func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, cfg ContextConfig) ([]llm.Message, error) {
-	loaded, err := s.loadManagedLinearTurns(ctx, conversationID, cfg.branchID,
-		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
+// LoadManagedHistory loads the path that ends at leafSeq (leaf -> root via parent_seq,
+// returned root -> leaf) in HistoryHardCapTurns-sized pages and applies the L1/L2/L2.5
+// ladder: the entry point the Runner calls (D-A2-06). The configured turn count bounds each
+// query, never recall: paging continues to the exact durable watermark or the root. A
+// leafSeq <= 0 means the turn written last (LatestTurnSeq), which on a conversation that
+// never forked is the whole linear history.
+//
+// It loads a path, never the whole table: until 2026-10-27 a run read every turn in seq
+// order, so after an edit the model was sent both the old branch and the new one,
+// interleaved. The protected head (system seq=1 + the always-block) is rebuilt by the
+// ladder whatever the path, so messages[0] stays byte-identical across branches (the
+// CAP-04 cache invariant).
+func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, leafSeq int, cfg ContextConfig) ([]llm.Message, error) {
+	loaded, err := s.loadManagedPath(ctx, conversationID, leafSeq, &cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -83,35 +89,22 @@ func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, c
 	return s.managedFromTurns(ctx, conversationID, loaded.turns, cfg)
 }
 
-// LoadManagedHistoryForBranch is the path-aware variant (D-09 / CHAT-05): it walks the
-// SELECTED branch path (leaf -> root via parent_seq, returned root -> leaf) with
-// recursion in HistoryHardCapTurns-sized pages, then feeds that deterministic turn list
-// into the SAME L1/L2/L2.5 ladder. A leafSeq <= 0 selects
-// the conversation's canonical branch leaf, so the default selection reconstructs the
-// linear history (the 0017 backfill chains the canonical branch parent_seq = seq-1).
-// The protected head (system seq=1 + the always-block) is rebuilt by the ladder
-// exactly as in the linear case — only the body turns differ per branch (Pitfall 3),
-// so messages[0] stays byte-identical across branches (the CAP-04 cache invariant).
-func (s *Store) LoadManagedHistoryForBranch(ctx context.Context, conversationID string, leafSeq int, cfg ContextConfig) ([]llm.Message, error) {
+// loadManagedPath resolves the leaf, files cfg under that leaf's branch and loads the path.
+// The branch is the one the durable summary is keyed on: the leaf's branch id is the path's
+// identity and stays the same while the path grows, because every turn appended to it
+// inherits it, so the watermark keeps advancing on one row instead of colliding with a
+// sibling's.
+func (s *Store) loadManagedPath(ctx context.Context, conversationID string, leafSeq int, cfg *ContextConfig) (managedHistoryLoad, error) {
 	if leafSeq <= 0 {
-		leaf, err := s.CanonicalBranchLeaf(ctx, conversationID)
+		latest, err := s.LatestTurnSeq(ctx, conversationID)
 		if err != nil {
-			return nil, err
+			return managedHistoryLoad{}, err
 		}
-		leafSeq = leaf
+		leafSeq = latest
 	}
-	// Which branch this path belongs to, so the durable summary is filed under it. The
-	// leaf's branch id is the path's identity and it is stable while the branch grows:
-	// every turn appended to it carries the same id, so the watermark keeps advancing on
-	// one row instead of colliding with a sibling's.
 	cfg.branchID = s.branchIDForLeaf(ctx, conversationID, leafSeq)
-	loaded, err := s.loadManagedBranchTurns(ctx, conversationID, cfg.branchID, leafSeq,
+	return s.loadManagedBranchTurns(ctx, conversationID, cfg.branchID, leafSeq,
 		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
-	if err != nil {
-		return nil, err
-	}
-	cfg.compactionCache = loaded.cache
-	return s.managedFromTurns(ctx, conversationID, loaded.turns, cfg)
 }
 
 func normalizeHistoryPageSize(value int) int {
@@ -122,8 +115,7 @@ func normalizeHistoryPageSize(value int) int {
 }
 
 // managedFromTurns applies the deterministic L1/L2/L2.5 ladder to an already-loaded
-// turn list — the shared tail of both the linear (LoadManagedHistory) and path-aware
-// (LoadManagedHistoryForBranch) entry points. It uses the Store as the rot emitter.
+// turn list. It uses the Store as the rot emitter.
 func (s *Store) managedFromTurns(ctx context.Context, conversationID string, turns []Turn, cfg ContextConfig) ([]llm.Message, error) {
 	enc, err := encoder()
 	if err != nil {

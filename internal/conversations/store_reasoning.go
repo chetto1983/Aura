@@ -25,10 +25,8 @@ type TurnReasoning struct {
 
 // ListTurnReasoning returns one row per answer-shaped assistant turn (role
 // assistant, no tool_calls payload) in seq order — the SAME conversation-wide,
-// branch-unfiltered scope LoadHistory reads — so a snapshot consumer can pair the
-// rows positionally with the assistant no-tool-call messages LoadHistory yields:
-// repairToolMessagePairs never drops, adds, or reorders such messages, so the two
-// ordered lists are index-aligned by construction (pinned in agui's attach tests).
+// branch-unfiltered scope LoadDisplayTurns reads — so a snapshot consumer can put each
+// row on the message of the same seq.
 func (s *Store) ListTurnReasoning(ctx context.Context, conversationID string) ([]TurnReasoning, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {

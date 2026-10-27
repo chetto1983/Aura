@@ -120,6 +120,12 @@ func TestWorkerControlsWithRealAuthulaCookies(t *testing.T) {
 		}
 		req.AddCookie(cookie)
 		req.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			// The operation registry is durable: a fixed key that the next run of this
+			// test replays on the same database, with another run id in its body, is a
+			// conflict (409). One conversation per run keeps the replays within a run.
+			key += "-" + conv
+		}
 		req.Header.Set("Idempotency-Key", key)
 		// A client assertion cannot override the principal from its real session.
 		req.Header.Set("X-Aura-Identity", localIdentityID)

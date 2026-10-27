@@ -11,25 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const canonicalBranchLeafSeq = `-- name: CanonicalBranchLeafSeq :one
-SELECT COALESCE(MAX(seq), 0)::int AS leaf_seq
-FROM aura.conversation_turns
-WHERE conversation_id = $1
-  AND branch_id = '00000000-0000-0000-0000-000000000000'
-`
-
-// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
-// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
-// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
-// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
-// 0 when the conversation has no turns.
-func (q *Queries) CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, canonicalBranchLeafSeq, conversationID)
-	var leaf_seq int32
-	err := row.Scan(&leaf_seq)
-	return leaf_seq, err
-}
-
 const countTurns = `-- name: CountTurns :one
 SELECT count(*) AS turn_count
 FROM aura.conversation_turns
@@ -112,11 +93,23 @@ const insertConversationTurn = `-- name: InsertConversationTurn :execrows
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key,
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, branch_id, delivery_key,
     attachment_ids
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-    NULLIF($2::int - 1, 0), $14, $15
+    $14::int,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM aura.conversation_turns sibling
+            WHERE sibling.conversation_id = $1
+              AND sibling.parent_seq IS NOT DISTINCT FROM $14::int
+        ) THEN gen_random_uuid()
+        ELSE COALESCE(
+            (SELECT parent.branch_id FROM aura.conversation_turns parent
+             WHERE parent.conversation_id = $1 AND parent.seq = $14::int),
+            '00000000-0000-0000-0000-000000000000'::uuid)
+    END,
+    $15, $16
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO NOTHING
@@ -136,19 +129,21 @@ type InsertConversationTurnParams struct {
 	Reasoning           pgtype.Text   `json:"reasoning"`
 	ReasoningDurationMs pgtype.Int8   `json:"reasoning_duration_ms"`
 	ContextTokens       int32         `json:"context_tokens"`
+	ParentSeq           pgtype.Int4   `json:"parent_seq"`
 	DeliveryKey         pgtype.Text   `json:"delivery_key"`
 	AttachmentIds       []pgtype.UUID `json:"attachment_ids"`
 }
 
-// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
-// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
-// than bound as a parameter so no call site can forget it — which is exactly what
-// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
-// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
-// NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
-// measured 2026-08-13 against the live schema, one turn, not even the system head — and
-// the model lost the whole prior conversation on any edit/regenerate.
-// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
+// parent_seq is the turn this one continues, and the caller always names it
+// (appendTurnWrites is the one place that builds these params): seq - 1 for a run
+// appending to itself, an explicit seq for a fork or a send on another branch, NULL for a
+// root. Before it was named, 0017 had given the column no default and every turn appended
+// since carried NULL, so a forked branch reconstructed to the forked turn alone (measured
+// 2026-08-13).
+// branch_id is read here, under the conversation row lock the append path holds: the
+// parent's branch, or a fresh one when the parent already has a child, so siblings never
+// share one and a path keeps one while it grows (spec 2026-10-27, D4). An absent parent
+// falls back to the canonical branch; an explicit parent is checked before this runs.
 func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertConversationTurn,
 		arg.ConversationID,
@@ -164,6 +159,7 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.Reasoning,
 		arg.ReasoningDurationMs,
 		arg.ContextTokens,
+		arg.ParentSeq,
 		arg.DeliveryKey,
 		arg.AttachmentIds,
 	)
@@ -171,6 +167,22 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const latestTurnSeq = `-- name: LatestTurnSeq :one
+SELECT COALESCE(MAX(seq), 0)::int AS seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+`
+
+// The turn written last, which is where a run that names no head continues (a resume, a
+// scheduled delivery, a channel without a branch picker) and where a reload opens. 0 for a
+// conversation with no turns.
+func (q *Queries) LatestTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, latestTurnSeq, conversationID)
+	var seq int32
+	err := row.Scan(&seq)
+	return seq, err
 }
 
 const listAssistantTurnReasoning = `-- name: ListAssistantTurnReasoning :many
@@ -193,7 +205,7 @@ type ListAssistantTurnReasoningRow struct {
 // answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
 // SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
 // reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
-// filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+// filter); the snapshot merge pairs each row with the message of the same seq.
 // The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 // decode to zero calls ('[]'/'null') count as answer-shaped there too.
 func (q *Queries) ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error) {
@@ -211,50 +223,6 @@ func (q *Queries) ListAssistantTurnReasoning(ctx context.Context, conversationID
 			&i.ReasoningDurationMs,
 			&i.DeliveryKey,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listBranchLeaves = `-- name: ListBranchLeaves :many
-SELECT leaf.seq, leaf.branch_id, leaf.parent_seq
-FROM aura.conversation_turns leaf
-WHERE leaf.conversation_id = $1
-  AND NOT EXISTS (
-      SELECT 1
-      FROM aura.conversation_turns child
-      WHERE child.conversation_id = leaf.conversation_id
-        AND child.parent_seq = leaf.seq
-  )
-ORDER BY leaf.branch_id ASC, leaf.seq ASC
-`
-
-type ListBranchLeavesRow struct {
-	Seq       int32       `json:"seq"`
-	BranchID  pgtype.UUID `json:"branch_id"`
-	ParentSeq pgtype.Int4 `json:"parent_seq"`
-}
-
-// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
-// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
-// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
-// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
-// (all-zero) branch sorts first and the order is stable across calls.
-func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error) {
-	rows, err := q.db.Query(ctx, listBranchLeaves, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListBranchLeavesRow{}
-	for rows.Next() {
-		var i ListBranchLeavesRow
-		if err := rows.Scan(&i.Seq, &i.BranchID, &i.ParentSeq); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -397,7 +365,8 @@ func (q *Queries) ListManagedBranchPathPage(ctx context.Context, arg ListManaged
 
 const listManagedHistoryHead = `-- name: ListManagedHistoryHead :many
 SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
+       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens,
+       parent_seq
 FROM aura.conversation_turns
 WHERE conversation_id = $1 AND role = 'system'
 ORDER BY seq ASC
@@ -416,10 +385,12 @@ type ListManagedHistoryHeadRow struct {
 	InputTokens        int32              `json:"input_tokens"`
 	OutputTokens       int32              `json:"output_tokens"`
 	CachedTokens       int32              `json:"cached_tokens"`
+	ParentSeq          pgtype.Int4        `json:"parent_seq"`
 }
 
 // The protected system root is fetched once, independently of body pagination. :many
-// deliberately represents an empty conversation without pgx.ErrNoRows.
+// deliberately represents an empty conversation without pgx.ErrNoRows. The column list
+// mirrors ListTurnsBySeq so turnFromRow projects it unchanged.
 func (q *Queries) ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error) {
 	rows, err := q.db.Query(ctx, listManagedHistoryHead, conversationID)
 	if err != nil {
@@ -441,71 +412,7 @@ func (q *Queries) ListManagedHistoryHead(ctx context.Context, conversationID pgt
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CachedTokens,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listManagedTurnsPageBySeq = `-- name: ListManagedTurnsPageBySeq :many
-SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
-FROM aura.conversation_turns
-WHERE conversation_id = $1
-  AND role <> 'system'
-  AND seq <= $2
-ORDER BY seq DESC
-LIMIT $3
-`
-
-type ListManagedTurnsPageBySeqParams struct {
-	TargetConversationID pgtype.UUID `json:"target_conversation_id"`
-	CursorSeq            int32       `json:"cursor_seq"`
-	PageSize             int32       `json:"page_size"`
-}
-
-type ListManagedTurnsPageBySeqRow struct {
-	ConversationID     pgtype.UUID        `json:"conversation_id"`
-	Seq                int32              `json:"seq"`
-	Role               string             `json:"role"`
-	Content            pgtype.Text        `json:"content"`
-	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
-	ToolCallID         pgtype.Text        `json:"tool_call_id"`
-	ToolCalls          []byte             `json:"tool_calls"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	InputTokens        int32              `json:"input_tokens"`
-	OutputTokens       int32              `json:"output_tokens"`
-	CachedTokens       int32              `json:"cached_tokens"`
-}
-
-// AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
-// caller keeps paging until the exact durable watermark or the root is observed.
-func (q *Queries) ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error) {
-	rows, err := q.db.Query(ctx, listManagedTurnsPageBySeq, arg.TargetConversationID, arg.CursorSeq, arg.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListManagedTurnsPageBySeqRow{}
-	for rows.Next() {
-		var i ListManagedTurnsPageBySeqRow
-		if err := rows.Scan(
-			&i.ConversationID,
-			&i.Seq,
-			&i.Role,
-			&i.Content,
-			&i.ContentSidecarPath,
-			&i.ToolCallID,
-			&i.ToolCalls,
-			&i.CreatedAt,
-			&i.InputTokens,
-			&i.OutputTokens,
-			&i.CachedTokens,
+			&i.ParentSeq,
 		); err != nil {
 			return nil, err
 		}
@@ -653,7 +560,7 @@ WITH RECURSIVE path AS (
 )
 SELECT path.conversation_id, path.seq, path.role, path.content, path.content_sidecar_path,
        path.tool_call_id, path.tool_calls, path.created_at, path.input_tokens,
-       path.output_tokens, path.cached_tokens
+       path.output_tokens, path.cached_tokens, path.parent_seq
 FROM path
 ORDER BY path.seq ASC
 `
@@ -675,6 +582,7 @@ type ListTurnsByBranchPathRow struct {
 	InputTokens        int32              `json:"input_tokens"`
 	OutputTokens       int32              `json:"output_tokens"`
 	CachedTokens       int32              `json:"cached_tokens"`
+	ParentSeq          pgtype.Int4        `json:"parent_seq"`
 }
 
 // D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,
@@ -704,6 +612,7 @@ func (q *Queries) ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBran
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CachedTokens,
+			&i.ParentSeq,
 		); err != nil {
 			return nil, err
 		}
@@ -717,7 +626,8 @@ func (q *Queries) ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBran
 
 const listTurnsBySeq = `-- name: ListTurnsBySeq :many
 SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
+       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens,
+       parent_seq
 FROM aura.conversation_turns
 WHERE conversation_id = $1
 ORDER BY seq ASC
@@ -735,8 +645,11 @@ type ListTurnsBySeqRow struct {
 	InputTokens        int32              `json:"input_tokens"`
 	OutputTokens       int32              `json:"output_tokens"`
 	CachedTokens       int32              `json:"cached_tokens"`
+	ParentSeq          pgtype.Int4        `json:"parent_seq"`
 }
 
+// parent_seq places each turn in the conversation tree: the history snapshot draws every
+// branch from it (spec 2026-10-27, D5). The llm.Message rebuild never reads it.
 func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error) {
 	rows, err := q.db.Query(ctx, listTurnsBySeq, conversationID)
 	if err != nil {
@@ -758,6 +671,7 @@ func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CachedTokens,
+			&i.ParentSeq,
 		); err != nil {
 			return nil, err
 		}
@@ -770,16 +684,11 @@ func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID
 }
 
 const listUserTurnAttachments = `-- name: ListUserTurnAttachments :many
-SELECT seq, attachment_ids, ordinal
-FROM (
-    SELECT seq,
-           attachment_ids,
-           (row_number() OVER (ORDER BY seq ASC) - 1)::int AS ordinal
-    FROM aura.conversation_turns
-    WHERE conversation_id = $1
-      AND role = 'user'
-) AS user_turns
-WHERE attachment_ids IS NOT NULL
+SELECT seq, attachment_ids
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND role = 'user'
+  AND attachment_ids IS NOT NULL
   AND cardinality(attachment_ids) > 0
 ORDER BY seq ASC
 `
@@ -787,17 +696,12 @@ ORDER BY seq ASC
 type ListUserTurnAttachmentsRow struct {
 	Seq           int32         `json:"seq"`
 	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
-	Ordinal       int32         `json:"ordinal"`
 }
 
 // Display-only read, deliberately separate from ListTurnsBySeq for the same reason
 // ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
-//
-// `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
-// snapshot consumer can actually match on: the messages it merges into carry no seq, and
-// user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
-// tool/assistant pairing). Computing it here rather than returning every user turn keeps
-// the result sparse -- a long conversation with one attachment costs one row.
+// Sparse: a long conversation with one attachment costs one row, which the snapshot puts on
+// the message of the same seq.
 func (q *Queries) ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error) {
 	rows, err := q.db.Query(ctx, listUserTurnAttachments, conversationID)
 	if err != nil {
@@ -807,7 +711,7 @@ func (q *Queries) ListUserTurnAttachments(ctx context.Context, conversationID pg
 	items := []ListUserTurnAttachmentsRow{}
 	for rows.Next() {
 		var i ListUserTurnAttachmentsRow
-		if err := rows.Scan(&i.Seq, &i.AttachmentIds, &i.Ordinal); err != nil {
+		if err := rows.Scan(&i.Seq, &i.AttachmentIds); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -976,31 +880,6 @@ func (q *Queries) SearchConversationTurns(ctx context.Context, arg SearchConvers
 		return nil, err
 	}
 	return items, nil
-}
-
-const setTurnBranchPointers = `-- name: SetTurnBranchPointers :exec
-UPDATE aura.conversation_turns
-SET branch_id = $3, parent_seq = $4
-WHERE conversation_id = $1 AND seq = $2
-`
-
-type SetTurnBranchPointersParams struct {
-	ConversationID pgtype.UUID `json:"conversation_id"`
-	Seq            int32       `json:"seq"`
-	BranchID       pgtype.UUID `json:"branch_id"`
-	ParentSeq      pgtype.Int4 `json:"parent_seq"`
-}
-
-// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
-// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
-func (q *Queries) SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error {
-	_, err := q.db.Exec(ctx, setTurnBranchPointers,
-		arg.ConversationID,
-		arg.Seq,
-		arg.BranchID,
-		arg.ParentSeq,
-	)
-	return err
 }
 
 const upsertConversationCompaction = `-- name: UpsertConversationCompaction :one

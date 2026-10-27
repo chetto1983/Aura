@@ -16,7 +16,7 @@ func userSnapshot(texts ...string) displaySnapshotEvent {
 			role = llm.RoleAssistant
 		}
 		snap.Messages = append(snap.Messages, displaySnapshotMessage{
-			ID: text, Role: types.Role(role), Content: text,
+			ID: text, Role: types.Role(role), Content: text, seq: i + 1,
 		})
 	}
 	return snap
@@ -29,7 +29,7 @@ func TestAttachTurnAttachmentsAddressesTheTurnThatSentThem(t *testing.T) {
 	snap := userSnapshot("ciao", "hello", "chi sei?", "aura", "guarda")
 
 	attachTurnAttachments(&snap, []conversations.TurnAttachments{
-		{Seq: 9, UserOrdinal: 2, IDs: []string{"asset-a", "asset-b"}},
+		{Seq: 5, IDs: []string{"asset-a", "asset-b"}},
 	})
 
 	if got := snap.Messages[0].AttachmentIDs; len(got) != 0 {
@@ -45,13 +45,13 @@ func TestAttachTurnAttachmentsAddressesTheTurnThatSentThem(t *testing.T) {
 }
 
 // Rows are sparse -- only turns that carry attachments -- so the merge must address them
-// by ordinal and never by their index in the slice.
-func TestAttachTurnAttachmentsIsAddressedByOrdinalNotRowOrder(t *testing.T) {
+// by seq and never by their index in the slice.
+func TestAttachTurnAttachmentsIsAddressedBySeqNotRowOrder(t *testing.T) {
 	snap := userSnapshot("one", "a", "two", "b", "three")
 
 	attachTurnAttachments(&snap, []conversations.TurnAttachments{
-		{Seq: 3, UserOrdinal: 1, IDs: []string{"second"}},
-		{Seq: 7, UserOrdinal: 2, IDs: []string{"third"}},
+		{Seq: 3, IDs: []string{"second"}},
+		{Seq: 5, IDs: []string{"third"}},
 	})
 
 	if got := snap.Messages[0].AttachmentIDs; len(got) != 0 {
@@ -65,14 +65,14 @@ func TestAttachTurnAttachmentsIsAddressedByOrdinalNotRowOrder(t *testing.T) {
 	}
 }
 
-// Additive display data degrades, never panics: an ordinal past the end of a snapshot
-// (a branch read, a truncated history) attaches nothing.
-func TestAttachTurnAttachmentsIgnoresAnOrdinalItCannotPlace(t *testing.T) {
+// Additive display data degrades, never panics: a seq the snapshot does not draw (a
+// truncated history) attaches nothing.
+func TestAttachTurnAttachmentsIgnoresASeqItCannotPlace(t *testing.T) {
 	snap := userSnapshot("only")
 
 	attachTurnAttachments(&snap, []conversations.TurnAttachments{
-		{Seq: 40, UserOrdinal: 12, IDs: []string{"stray"}},
-		{Seq: 41, UserOrdinal: -1, IDs: []string{"impossible"}},
+		{Seq: 40, IDs: []string{"stray"}},
+		{Seq: -1, IDs: []string{"impossible"}},
 	})
 
 	if got := snap.Messages[0].AttachmentIDs; len(got) != 0 {

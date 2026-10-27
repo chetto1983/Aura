@@ -35,38 +35,38 @@ func sqlcBranchPathRowFixture(conv pgtype.UUID) sqlc.ListTurnsByBranchPathRow {
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeSuccess projects the scalar leaf seq.
-func TestCanonicalBranchLeaf_FakeSuccess(t *testing.T) {
+// TestLatestTurnSeq_FakeSuccess projects the scalar leaf seq.
+func TestLatestTurnSeq_FakeSuccess(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7()).String()
 	fake := &fakeDBTX{queryRowVal: &fakeRow{values: []any{int32(7)}}}
 	s := fakeStore(t, fake)
-	leaf, err := s.CanonicalBranchLeaf(context.Background(), id)
+	leaf, err := s.LatestTurnSeq(context.Background(), id)
 	if err != nil {
-		t.Fatalf("CanonicalBranchLeaf: %v", err)
+		t.Fatalf("LatestTurnSeq: %v", err)
 	}
 	if leaf != 7 {
 		t.Errorf("leaf: want 7, got %d", leaf)
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeBadID rejects a malformed conversation id at the boundary.
-func TestCanonicalBranchLeaf_FakeBadID(t *testing.T) {
+// TestLatestTurnSeq_FakeBadID rejects a malformed conversation id at the boundary.
+func TestLatestTurnSeq_FakeBadID(t *testing.T) {
 	t.Parallel()
 	s := fakeStore(t, &fakeDBTX{})
-	if _, err := s.CanonicalBranchLeaf(context.Background(), "not-a-uuid"); err == nil {
-		t.Fatal("CanonicalBranchLeaf with bad id: want error, got nil")
+	if _, err := s.LatestTurnSeq(context.Background(), "not-a-uuid"); err == nil {
+		t.Fatal("LatestTurnSeq with bad id: want error, got nil")
 	}
 }
 
-// TestCanonicalBranchLeaf_FakeDBError wraps a failing scan.
-func TestCanonicalBranchLeaf_FakeDBError(t *testing.T) {
+// TestLatestTurnSeq_FakeDBError wraps a failing scan.
+func TestLatestTurnSeq_FakeDBError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("leaf query failed")
 	fake := &fakeDBTX{queryRowVal: &fakeRow{scanErr: boom}}
 	s := fakeStore(t, fake)
-	if _, err := s.CanonicalBranchLeaf(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
-		t.Errorf("CanonicalBranchLeaf DB error must propagate: %v", err)
+	if _, err := s.LatestTurnSeq(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
+		t.Errorf("LatestTurnSeq DB error must propagate: %v", err)
 	}
 }
 
@@ -169,95 +169,11 @@ func TestLoadBranchHistory_FakeQueryError(t *testing.T) {
 	}
 }
 
-// TestSetBranchPointers_FakeSuccess sets a branch turn with a real parent.
-func TestSetBranchPointers_FakeSuccess(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 3, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Errorf("SetBranchPointers: %v", err)
-	}
-}
-
-// TestSetBranchPointers_FakeRootNullParent sets a branch root (parentSeq <= 0 => NULL).
-func TestSetBranchPointers_FakeRootNullParent(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 1, CanonicalBranchID, 0); err != nil {
-		t.Errorf("SetBranchPointers root: %v", err)
-	}
-}
-
-// TestSetBranchPointers_FakeBadID rejects a malformed id.
-func TestSetBranchPointers_FakeBadID(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), "bad", 1, CanonicalBranchID, 0); err == nil {
-		t.Fatal("SetBranchPointers with bad id: want error, got nil")
-	}
-}
-
-// TestSetBranchPointers_FakeDBError wraps a failing Exec.
-func TestSetBranchPointers_FakeDBError(t *testing.T) {
-	t.Parallel()
-	boom := errors.New("update failed")
-	s := fakeStore(t, &fakeDBTX{execErr: boom})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 1, CanonicalBranchID, 0); !errors.Is(err, boom) {
-		t.Errorf("SetBranchPointers DB error must propagate: %v", err)
-	}
-}
-
-// TestListBranches_FakeProjection projects the leaf rows onto []Branch (seq + branch +
-// parent), exercising the valid/invalid pgtype branches.
-func TestListBranches_FakeProjection(t *testing.T) {
-	t.Parallel()
-	_, conv := mustUUID(t)
-	bid := uuid.Must(uuid.NewV7())
-	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
-		// canonical leaf: all-zero branch, root parent (NULL).
-		{int32(3), pgtype.UUID{Bytes: CanonicalBranchID, Valid: true}, pgtype.Int4{}},
-		// forked sibling: fresh branch, parent seq 1.
-		{int32(4), pgtype.UUID{Bytes: bid, Valid: true}, pgtype.Int4{Int32: 1, Valid: true}},
-	}}}
-	s := fakeStore(t, fake)
-	branches, err := s.ListBranches(context.Background(), uuid.UUID(conv.Bytes).String())
-	if err != nil {
-		t.Fatalf("ListBranches: %v", err)
-	}
-	if len(branches) != 2 {
-		t.Fatalf("want 2 branches, got %d", len(branches))
-	}
-	if branches[0].LeafSeq != 3 || branches[0].BranchID != CanonicalBranchID || branches[0].ParentSeq != 0 {
-		t.Errorf("canonical branch projection wrong: %+v", branches[0])
-	}
-	if branches[1].LeafSeq != 4 || branches[1].BranchID != bid || branches[1].ParentSeq != 1 {
-		t.Errorf("forked branch projection wrong: %+v", branches[1])
-	}
-}
-
-// TestListBranches_FakeBadID rejects a malformed id before the query.
-func TestListBranches_FakeBadID(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if _, err := s.ListBranches(context.Background(), "bad"); err == nil {
-		t.Fatal("ListBranches with bad id: want error, got nil")
-	}
-}
-
-// TestListBranches_FakeQueryError wraps a failing Query.
-func TestListBranches_FakeQueryError(t *testing.T) {
-	t.Parallel()
-	boom := errors.New("leaves query failed")
-	s := fakeStore(t, &fakeDBTX{queryErr: boom})
-	if _, err := s.ListBranches(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
-		t.Errorf("ListBranches query error must propagate: %v", err)
-	}
-}
-
 // TestForkBranch_FakeBadID rejects a malformed id at the boundary (before any tx).
 func TestForkBranch_FakeBadID(t *testing.T) {
 	t.Parallel()
 	s := fakeStore(t, &fakeDBTX{})
-	if _, _, err := s.ForkBranch(context.Background(), "bad", 2, llm.RoleUser, "x"); err == nil {
+	if _, err := s.ForkBranch(context.Background(), "bad", 2, llm.RoleUser, "x"); err == nil {
 		t.Fatal("ForkBranch with bad id: want error, got nil")
 	}
 }

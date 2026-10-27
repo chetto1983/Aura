@@ -25,7 +25,7 @@ func TestRecoveredToolResultIsNotProjectedAsSuccess(t *testing.T) {
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
 			{Role: llm.RoleTool, ToolCallID: call.ID, Content: content},
 		}
-		encoded, err := json.Marshal(projectDisplaySnapshotWithFacts(history, "", nil, nil))
+		encoded, err := json.Marshal(projectDisplaySnapshotWithFacts(linearTurns(history), "", nil, nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,11 +65,11 @@ func TestPendingPauseIsAwaitingNotFailed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			snap := projectDisplaySnapshotWithFacts([]llm.Message{
+			snap := projectDisplaySnapshotWithFacts(linearTurns([]llm.Message{
 				{Role: llm.RoleUser, Content: "remind me a week before"},
 				{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
 				{Role: llm.RoleTool, ToolCallID: call.ID, Content: conversations.RecoveryToolResultContent(call)},
-			}, "", nil, nil)
+			}), "", nil, nil)
 			markAwaitingInput(&snap, tc.pending)
 			if len(snap.Messages) != tc.wantMessages {
 				t.Fatalf("messages = %d, want %d", len(snap.Messages), tc.wantMessages)
@@ -143,7 +143,7 @@ func TestSnapshotReplaysTheLedgerOutcome(t *testing.T) {
 		endRow("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "r1", "ok", "error", nil),
 		{ConversationID: convID, ToolCallID: "ok", Event: toolinvocations.EventStart, Status: "error"},
 	}
-	messages := replayed(t, projectDisplaySnapshotWithFacts(outcomeTurn("failed", "refused", "stamped", "ok"), convID, facts, nil))
+	messages := replayed(t, projectDisplaySnapshotWithFacts(linearTurns(outcomeTurn("failed", "refused", "stamped", "ok")), convID, facts, nil))
 	want := map[string][2]bool{"failed": {true, false}, "refused": {true, true}, "stamped": {true, true}, "ok": {false, false}}
 	for _, m := range messages[2:] {
 		if got := [2]bool{m.IsError, m.Refused}; got != want[m.ToolCallID] {
@@ -180,7 +180,7 @@ func TestSnapshotDecoratesOnlyACallItCanPin(t *testing.T) {
 		"a declined call made twice": {twice, []toolinvocations.Event{solo,
 			endRow(convID, "r1", id, "ok", nil), endRow(convID, "r2", id, "ok", nil)}, []string{id}},
 	} {
-		for _, m := range replayed(t, projectDisplaySnapshotWithFacts(tc.history, convID, tc.facts, tc.declined)) {
+		for _, m := range replayed(t, projectDisplaySnapshotWithFacts(linearTurns(tc.history), convID, tc.facts, tc.declined)) {
 			if m.ToolCallID == "solo" && !m.IsError {
 				t.Errorf("%s: the call it can pin lost its failure: %+v", name, m)
 			}
@@ -197,7 +197,7 @@ func TestPendingPauseKeepsARealFailedResult(t *testing.T) {
 	const convID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	history := outcomeTurn("pause-call")
 	history[1].ToolCalls[0].Function.Name = "ask_user"
-	snap := projectDisplaySnapshotWithFacts(history, convID, []toolinvocations.Event{
+	snap := projectDisplaySnapshotWithFacts(linearTurns(history), convID, []toolinvocations.Event{
 		endRow(convID, "r1", "pause-call", "error", nil)}, nil)
 	markAwaitingInput(&snap, map[string]struct{}{"pause-call": {}})
 	if len(snap.Messages) != 3 || !snap.Messages[2].IsError || !snap.Messages[1].ToolCalls[0].AwaitingInput {

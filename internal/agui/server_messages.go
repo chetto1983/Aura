@@ -21,9 +21,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// handleMessages resolves the thread (404) and returns the persisted history as a
-// MESSAGES_SNAPSHOT JSON body (one-shot read, NOT SSE — OQ2). Each persisted
-// llm.Message is projected to an events.Message.
+// handleMessages resolves the thread (404) and returns the persisted conversation as a
+// MESSAGES_SNAPSHOT JSON body (one-shot read, NOT SSE — OQ2): every turn of every branch,
+// each projected to an events.Message that names the message it continues.
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// A malformed thread id (non-UUID) is definitionally not an existing thread —
@@ -47,7 +47,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
 		return
 	}
-	hist, err := s.conv.LoadHistory(scopedCtx(ctx), id)
+	turns, err := s.conv.LoadDisplayTurns(scopedCtx(ctx), id)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -66,7 +66,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// thread renders typed displays identically to live. The envelope is byte-compatible
 	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
 	// cockpit replay reads.
-	snap := projectDisplaySnapshotWithFacts(hist, id, facts, s.declinedToolCalls(ctx, id))
+	snap := projectDisplaySnapshotWithFacts(turns, id, facts, s.declinedToolCalls(ctx, id))
 	// Amendment #91 (fix-plan 1.12) display rehydration: merge the persisted per-turn
 	// CoT onto the assistant answer messages so the ReasoningDrawer survives reload.
 	// Fail-soft: reasoning is additive display data — a read failure degrades to a
@@ -93,6 +93,8 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	markAwaitingInput(&snap, s.pendingToolCalls(ctx, id))
+	// After the reasoning merge: a placeholder is an empty answer with no reasoning (D6).
+	hideMessages(&snap, regeneratePlaceholder)
 	if err := json.NewEncoder(w).Encode(snap); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)
 	}

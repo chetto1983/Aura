@@ -72,72 +72,6 @@ func (w *managedHistoryWork) pageSize(configured int) int {
 	return min(configured, maxManagedHistoryRows-w.rows+1)
 }
 
-func (s *Store) loadManagedLinearTurns(
-	ctx context.Context,
-	conversationID, branchID string,
-	pageSize, evictAfter int,
-) (managedHistoryLoad, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return managedHistoryLoad{}, fmt.Errorf("load managed turns: %w", err)
-	}
-	stored, hasStored := loadStoredCompaction(ctx, s, conversationID, branchID)
-	work := &managedHistoryWork{}
-	var head, descending []Turn
-	foundBoundary := false
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		rows, qErr := q.ListManagedHistoryHead(ctx, id)
-		if qErr != nil {
-			return fmt.Errorf("load managed history head %s: %w", conversationID, qErr)
-		}
-		for _, row := range rows {
-			turn := turnFromRow(sqlc.ListTurnsBySeqRow(row))
-			if err := work.add(turn); err != nil {
-				return err
-			}
-			head = append(head, turn)
-		}
-		cursor := int32(math.MaxInt32)
-		for {
-			rows, pageErr := q.ListManagedTurnsPageBySeq(ctx, sqlc.ListManagedTurnsPageBySeqParams{
-				TargetConversationID: id,
-				CursorSeq:            cursor,
-				PageSize:             int32(work.pageSize(pageSize)),
-			})
-			if pageErr != nil {
-				return fmt.Errorf("load managed turns page %s before %d: %w", conversationID, cursor, pageErr)
-			}
-			if len(rows) == 0 {
-				break
-			}
-			for _, row := range rows {
-				turn := turnFromRow(sqlc.ListTurnsBySeqRow(row))
-				if err := work.add(turn); err != nil {
-					return err
-				}
-				if usableCompactionBoundary(stored, hasStored) && turn.Seq == stored.CoversThroughSeq {
-					foundBoundary = true
-					break
-				}
-				descending = append(descending, turn)
-			}
-			if foundBoundary {
-				break
-			}
-			last := rows[len(rows)-1].Seq
-			if last <= 1 {
-				break
-			}
-			cursor = last - 1
-		}
-		return nil
-	}); err != nil {
-		return managedHistoryLoad{}, err
-	}
-	return s.finishManagedHistory(ctx, conversationID, head, descending, stored, hasStored,
-		foundBoundary, evictAfter)
-}
-
 func (s *Store) loadManagedBranchTurns(
 	ctx context.Context,
 	conversationID, branchID string,
@@ -304,5 +238,6 @@ func managedBranchPageTurn(row sqlc.ListManagedBranchPathPageRow) Turn {
 		InputTokens:        row.InputTokens,
 		OutputTokens:       row.OutputTokens,
 		CachedTokens:       row.CachedTokens,
+		ParentSeq:          row.ParentSeq,
 	})
 }

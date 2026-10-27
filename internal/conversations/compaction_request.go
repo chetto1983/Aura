@@ -71,9 +71,10 @@ type CompactionResult struct {
 // keeps: an operator asking for this is asking for the room, and leaving a quarter of the
 // budget verbatim because the ladder would have is not what they asked for.
 //
-// cfg.branchID is unexported and therefore zero here — the canonical branch, the same one
-// LoadManagedHistory files under. A conversation being read on a fork keeps its own row and
-// is left alone (applyStoredCompaction only replaces turns the watermark covers).
+// It compacts the path that ends at the turn written last and files the summary under that
+// path's branch. Every other branch keeps its own row and is left alone. The branch on the
+// operator's screen is not known here: a /compact after switching to an older branch still
+// condenses the one written last (spec 2026-10-27, open item).
 func (s *Store) Compact(ctx context.Context, conversationID string, cfg ContextConfig) (CompactionResult, error) {
 	if cfg.Summarizer == nil {
 		return CompactionResult{}, ErrCompactionUnavailable
@@ -82,8 +83,7 @@ func (s *Store) Compact(ctx context.Context, conversationID string, cfg ContextC
 	if err != nil {
 		return CompactionResult{}, fmt.Errorf("compact %s: tiktoken encoder: %w", conversationID, err)
 	}
-	loaded, err := s.loadManagedLinearTurns(ctx, conversationID, cfg.branchID,
-		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
+	loaded, err := s.loadManagedPath(ctx, conversationID, 0, &cfg)
 	if err != nil {
 		return CompactionResult{}, err
 	}

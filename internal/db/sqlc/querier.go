@@ -59,12 +59,6 @@ type Querier interface {
 	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
 	// reason to the paused status).
 	CancelTask(ctx context.Context, id pgtype.UUID) error
-	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
-	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
-	// conversation this is just MAX(seq), so a branch-path walk from this leaf reconstructs
-	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
-	// 0 when the conversation has no turns.
-	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	// job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
 	// worker's own call) claims across every job_type exactly as before this
@@ -305,15 +299,16 @@ type Querier interface {
 	// identity's or a chat delivery.
 	InsertCompletedMediaJob(ctx context.Context, arg InsertCompletedMediaJobParams) (AuraMediaJob, error)
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
-	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
-	// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
-	// than bound as a parameter so no call site can forget it — which is exactly what
-	// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
-	// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
-	// NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
-	// measured 2026-08-13 against the live schema, one turn, not even the system head — and
-	// the model lost the whole prior conversation on any edit/regenerate.
-	// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
+	// parent_seq is the turn this one continues, and the caller always names it
+	// (appendTurnWrites is the one place that builds these params): seq - 1 for a run
+	// appending to itself, an explicit seq for a fork or a send on another branch, NULL for a
+	// root. Before it was named, 0017 had given the column no default and every turn appended
+	// since carried NULL, so a forked branch reconstructed to the forked turn alone (measured
+	// 2026-08-13).
+	// branch_id is read here, under the conversation row lock the append path holds: the
+	// parent's branch, or a fresh one when the parent already has a child, so siblings never
+	// share one and a path keeps one while it grows (spec 2026-10-27, D4). An absent parent
+	// falls back to the canonical branch; an explicit parent is checked before this runs.
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error)
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
 	// Writes a key only when the identity has none. The reconciler and the provisioning saga can
@@ -351,6 +346,10 @@ type Querier interface {
 	// turn (equal to the newest conversation_turns.created_at on the lab VM, 2026-09-24), so a
 	// chat that calls no tool still counts and the turns table is never scanned.
 	LatestConversationActivity(ctx context.Context) (pgtype.Timestamptz, error)
+	// The turn written last, which is where a run that names no head continues (a resume, a
+	// scheduled delivery, a channel without a branch picker) and where a reload opens. 0 for a
+	// conversation with no turns.
+	LatestTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	// The grantee's half of the two-query read LibreChat runs (findAccessibleResources → the
 	// domain query filtered on those ids): which resources of this type may this identity see
 	// with AT LEAST these permission bits. The bitmask test is `& want = want`, so a view query
@@ -390,19 +389,13 @@ type Querier interface {
 	// answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
 	// SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
 	// reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
-	// filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+	// filter); the snapshot merge pairs each row with the message of the same seq.
 	// The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 	// decode to zero calls ('[]'/'null') count as answer-shaped there too.
 	ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error)
 	ListBoardCards(ctx context.Context, boardID pgtype.UUID) ([]AuraBoardCards, error)
 	ListBoardColumnCards(ctx context.Context, arg ListBoardColumnCardsParams) ([]AuraBoardCards, error)
 	ListBoardViews(ctx context.Context, identityID pgtype.UUID) ([]AuraBoardViews, error)
-	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
-	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
-	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
-	// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
-	// (all-zero) branch sorts first and the order is stable across calls.
-	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
@@ -483,11 +476,9 @@ type Querier interface {
 	// monotonicity/cycles, and stops only at the exact durable watermark or NULL root.
 	ListManagedBranchPathPage(ctx context.Context, arg ListManagedBranchPathPageParams) ([]ListManagedBranchPathPageRow, error)
 	// The protected system root is fetched once, independently of body pagination. :many
-	// deliberately represents an empty conversation without pgx.ErrNoRows.
+	// deliberately represents an empty conversation without pgx.ErrNoRows. The column list
+	// mirrors ListTurnsBySeq so turnFromRow projects it unchanged.
 	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
-	// AURA_HISTORY_HARD_CAP_TURNS is a keyset page size, never a recall boundary. The
-	// caller keeps paging until the exact durable watermark or the root is observed.
-	ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	// A phone notification does not consume the coordinator's saved input.
@@ -539,6 +530,8 @@ type Querier interface {
 	// ListTurnsBySeq exactly so turnFromRow rehydrates it unchanged. A leaf seq of 0 (or one
 	// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
+	// parent_seq places each turn in the conversation tree: the history snapshot draws every
+	// branch from it (spec 2026-10-27, D5). The llm.Message rebuild never reads it.
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	// Plan 51-10's absent-operator leg: delegation_result rows the operator never drained
 	// (drained_at IS NULL), not expired, not already nudged, past the nudge grace window.
@@ -549,12 +542,8 @@ type Querier interface {
 	ListUnnudgedDelegationResults(ctx context.Context, arg ListUnnudgedDelegationResultsParams) ([]AuraSteerQueue, error)
 	// Display-only read, deliberately separate from ListTurnsBySeq for the same reason
 	// ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
-	//
-	// `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
-	// snapshot consumer can actually match on: the messages it merges into carry no seq, and
-	// user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
-	// tool/assistant pairing). Computing it here rather than returning every user turn keeps
-	// the result sparse -- a long conversation with one attachment costs one row.
+	// Sparse: a long conversation with one attachment costs one row, which the snapshot puts on
+	// the message of the same seq.
 	ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error)
 	ListWorkerSteers(ctx context.Context, arg ListWorkerSteersParams) ([]AuraSteerQueue, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
@@ -747,9 +736,6 @@ type Querier interface {
 	// Move a task into the conversation it answers in from now on, when the one it was
 	// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
 	SetTaskOriginRow(ctx context.Context, arg SetTaskOriginRowParams) (int64, error)
-	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
-	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
-	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	// The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
 	// read and every status write, so a job finishing on it later cannot bring it back;
 	// FinalizeAsset or MarkAssetDeleted then ends it once its object is gone.

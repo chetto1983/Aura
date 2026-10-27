@@ -10,10 +10,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestListTurnAttachmentsPairsByUserOrdinal pins why the column exists (migration 0116):
-// rows are sparse and carry the index among USER turns, so an attachment sent with the
-// third user message never lands on the first.
-func TestListTurnAttachmentsPairsByUserOrdinal(t *testing.T) {
+// TestListTurnAttachmentsCarryTheirTurnsSeq pins why the column exists (migration 0116):
+// rows are sparse and carry the seq of the turn they were sent with, which the snapshot
+// message of that turn carries too, so an attachment sent with the third user message never
+// lands on the first.
+func TestListTurnAttachmentsCarryTheirTurnsSeq(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
@@ -37,8 +38,8 @@ func TestListTurnAttachmentsPairsByUserOrdinal(t *testing.T) {
 		t.Fatalf("ListTurnAttachments: %v", err)
 	}
 	want := []TurnAttachments{
-		{Seq: 2, UserOrdinal: 0, IDs: []string{first}},
-		{Seq: 5, UserOrdinal: 2, IDs: []string{second, third}},
+		{Seq: 2, IDs: []string{first}},
+		{Seq: 5, IDs: []string{second, third}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTurnAttachments = %+v, want %+v", got, want)

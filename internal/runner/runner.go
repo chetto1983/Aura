@@ -179,19 +179,17 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 }
 
 // TurnBranch is the D-09 / CHAT-05 re-run-from-a-point primitive: it drives a fresh
-// agent round over the SELECTED branch path (leafSeq) instead of the full linear
-// history, with no fresh user message (continue-after-resume semantics, userMsg=nil) —
-// the new branch's turns were already persisted by ForkBranch. The messages[0] head is
-// byte-identical to the linear case (LoadManagedHistoryForBranch preserves the protected
-// head; only body turns differ per branch — the CAP-04 cache invariant). leafSeq <= 0
-// falls back to the canonical branch leaf (the same history Turn would load).
+// agent round over the path that ends at leafSeq, with no fresh user message
+// (continue-after-resume semantics, userMsg=nil) — the new branch's turns were already
+// persisted by ForkBranch. The messages[0] head is byte-identical across branches
+// (LoadManagedHistory preserves the protected head; only body turns differ per branch —
+// the CAP-04 cache invariant). leafSeq <= 0 falls back to the turn written last.
 func (r *Runner) TurnBranch(ctx context.Context, convID string, leafSeq int) iter.Seq2[*agent.Event, error] {
 	return r.runTurn(ctx, convID, turnInput{branchLeaf: leafSeq})
 }
 
 // runTurn dispatches a turn under the per-conversation lock (or directly when the lock
-// is already held). branchLeaf > 0 selects the path-aware branch history loader; 0 is
-// the linear full-history default Turn uses. Both lock paths funnel through the SAME
+// is already held). Both lock paths funnel through the SAME
 // leftover-steer auto-delivery wrap (runner_steer.go, 52-05) so a leftover steer
 // auto-delivers exactly once, under whichever lock hold produced this turn — never a
 // second Lock().
@@ -240,8 +238,11 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		}
 		ctx = tools.WithRequestID(ctx, requestID.String())
 
-		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
+		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it. The
+		// turn the run loads its path from is that user turn, the fork it re-runs, or, for
+		// a resume, the turn written last (0).
 		userTurnSeq := 0
+		head := input.branchLeaf
 		if input.visibleUserMsg != nil {
 			seq, err := r.appendUserTurn(ctx, convID, *input.visibleUserMsg)
 			if err != nil {
@@ -249,6 +250,10 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 				return
 			}
 			userTurnSeq = seq
+			head = seq
+		}
+		recordTurnHead(ctx, head)
+		if input.visibleUserMsg != nil {
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
 				r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(*input.visibleUserMsg))
 				ev := fastReplyEvent(convID, requestID, answer)
@@ -271,7 +276,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		// internal/conversations/context_offload.go.
 		cfg.ProjectedThroughSeq = r.conversationProjector.ProjectedThroughSeq(
 			ctx, identityctx.IdentityID(ctx), convID)
-		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
+		history, err := r.loadTurnHistory(ctx, convID, cfg, head)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -382,11 +387,17 @@ func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) 
 // decision is written back to exactly that row. The ids ride the context because the
 // ingress (the web chat, Telegram) is where they are known and validated; a turn that
 // attached nothing carries none and the column stays NULL.
+// appendUserTurn appends the user turn under the branch WithBranchLeaf names, or after the
+// turn written last.
 func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) (int, error) {
-	seq, err := r.Conv.AppendTurnSeq(ctx, conversations.AppendTurnParams{
+	p := conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
 		AttachmentIDs: assets.TurnAttachments(ctx),
-	})
+	}
+	if leaf := branchLeaf(ctx); leaf > 0 {
+		p.ParentSeq = &leaf
+	}
+	seq, err := r.Conv.AppendTurnSeq(ctx, p)
 	if err != nil {
 		return 0, err
 	}

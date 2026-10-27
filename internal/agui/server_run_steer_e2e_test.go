@@ -130,14 +130,16 @@ func (f *steerE2EConvStore) LoadHistory(_ context.Context, id string) ([]llm.Mes
 	return f.messagesLocked(id), nil
 }
 
-func (f *steerE2EConvStore) LoadManagedHistory(_ context.Context, id string, _ conversations.ContextConfig) ([]llm.Message, error) {
+func (f *steerE2EConvStore) LoadDisplayTurns(_ context.Context, id string) ([]conversations.DisplayTurn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return linearTurns(f.messagesLocked(id)), nil
+}
+
+func (f *steerE2EConvStore) LoadManagedHistory(_ context.Context, id string, _ int, _ conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.messagesLocked(id), nil
-}
-
-func (f *steerE2EConvStore) LoadManagedHistoryForBranch(ctx context.Context, id string, _ int, cfg conversations.ContextConfig) ([]llm.Message, error) {
-	return f.LoadManagedHistory(ctx, id, cfg)
 }
 
 func (f *steerE2EConvStore) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
@@ -186,13 +188,10 @@ func (f *steerE2EConvStore) ListTurnReasoning(context.Context, string) ([]conver
 func (f *steerE2EConvStore) UpdateReasoningEffortForIdentity(context.Context, string, string, string) (int64, error) {
 	return 1, nil
 }
-func (f *steerE2EConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
-	return nil, nil
+func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	return 0, nil
 }
-func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, nil
-}
-func (f *steerE2EConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, nil }
+func (f *steerE2EConvStore) LatestTurnSeq(context.Context, string) (int, error) { return 0, nil }
 
 type steerE2EPauseStore struct{}
 

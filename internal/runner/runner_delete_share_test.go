@@ -50,8 +50,8 @@ func (a shareConvReaderAdapter) GetForIdentity(ctx context.Context, conversation
 	return share.ConvMeta{Title: conv.Title, Model: conv.Model, CreatedAt: createdAt}, nil
 }
 
-func (a shareConvReaderAdapter) LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error) {
-	return a.store.LoadHistory(ctx, conversationID)
+func (a shareConvReaderAdapter) LoadLatestBranch(ctx context.Context, conversationID string) ([]llm.Message, error) {
+	return a.store.LoadBranchHistory(ctx, conversationID, 0)
 }
 
 // emptyArtifactLister/emptyArtifactOpener satisfy share.ArtifactLister/share.ArtifactOpener

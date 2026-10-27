@@ -168,7 +168,10 @@ func (m *memConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message,
 	return m.messagesLocked(id)
 }
 
-func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, cfg conversations.ContextConfig) ([]llm.Message, error) {
+// LoadManagedHistory returns the whole managed history whatever leafSeq names: this
+// in-memory fake has no branch topology (the path walk is the conversations integration
+// tests' concern).
+func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, _ int, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	msgs, err := m.messagesLocked(id)
@@ -188,14 +191,6 @@ func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, cfg conv
 	out = append(out, llm.Message{Role: llm.RoleUser, Content: block})
 	out = append(out, msgs[insertAt:]...)
 	return out, nil
-}
-
-// LoadManagedHistoryForBranch satisfies the D-09 path-aware loader on the cache fake.
-// This in-memory fake has no branch topology, so it returns the same managed history
-// as the linear loader regardless of leafSeq (the path-walk fidelity is the
-// conversations integration test's concern).
-func (m *memConvStore) LoadManagedHistoryForBranch(ctx context.Context, id string, _ int, cfg conversations.ContextConfig) ([]llm.Message, error) {
-	return m.LoadManagedHistory(ctx, id, cfg)
 }
 
 // Compact satisfies the operator-requested compaction seam. The cmd-level fakes drive

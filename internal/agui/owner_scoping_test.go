@@ -76,7 +76,6 @@ func TestConversationsAPI_ForeignReadIs404(t *testing.T) {
 	for _, path := range []string{
 		"/api/conversations/" + goodID,
 		"/api/conversations/" + goodID + "/rot-events",
-		"/api/conversations/" + goodID + "/branches", // D-09 branch enumeration is owner-gated too
 	} {
 		if code, body := req(t, srv, http.MethodGet, path, ""); code != http.StatusNotFound {
 			t.Errorf("GET %s of a foreign conversation = %d, want 404: %s", path, code, body)
@@ -84,17 +83,16 @@ func TestConversationsAPI_ForeignReadIs404(t *testing.T) {
 	}
 }
 
-// TestConversationsBranchAPI_ForeignMutateIsHidden proves the D-09 branch mutating routes
-// (edit = fork+re-run, select = re-run a leaf) are owner-gated: a foreign identity gets 404
-// (existence hidden) and can neither fork nor drive another identity's thread. Regression
-// guard for the Phase-36 branch-route isolation hole (the routes previously ran unscoped).
+// TestConversationsBranchAPI_ForeignMutateIsHidden proves the D-09 edit (fork + re-run) is
+// owner-gated: a foreign identity gets 404 (existence hidden) and can neither fork nor drive
+// another identity's thread. Regression guard for the Phase-36 branch-route isolation hole
+// (the routes previously ran unscoped).
 func TestConversationsBranchAPI_ForeignMutateIsHidden(t *testing.T) {
 	foreignOwner := uuid.Must(uuid.NewV7()).String()
 	srv := convAPIServer(t, newOwnerConvStore(goodID, foreignOwner))
 
 	cases := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/conversations/" + goodID + "/edit", `{"diverge_seq":1,"content":"x"}`},
-		{http.MethodPost, "/api/conversations/" + goodID + "/branches/1/select", ""},
 	}
 	for _, c := range cases {
 		if code, body := req(t, srv, c.method, c.path, c.body); code != http.StatusNotFound {
