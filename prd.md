@@ -1189,6 +1189,16 @@ Still open:
 - `/compact` condenses the path written last, not the branch on screen, and the marker follows
   it. A leaf-aware compact changes the compaction API.
 - A refused edit loses its text: assistant-ui's edit composer closes on send.
+- Turns forked before migration 0095 can still have a NULL `parent_seq` mid-conversation. The
+  old `ForkBranch` copied the diverging turn's parent, which was NULL everywhere before 0095.
+  - A run that walks through such a turn stops there and loses the turns before the fork.
+    Before this change, the same run got the flat history instead.
+  - Code cannot tell these rows from a legitimate root fork, which also has no parent, and the
+    row does not record its divergence point.
+  - Operator decision (2026-10-27, CodeRabbit on #194): measure on the lab VM before choosing
+    between leaving them and a targeted repair. Count forked turns with `parent_seq IS NULL AND
+    seq > 1` written before 0095, and the conversations they sit in. They are candidates, not
+    confirmed breaks.
 
 What this does not show:
 - a real model;
