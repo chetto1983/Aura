@@ -89,6 +89,12 @@ ensure_embed_model() {
   }
   rm -f "$tmp_model"
   trap - EXIT
+  # llama-server loads its GGUF at start, and the `compose up -d` that follows leaves a
+  # container whose config did not change alone, so a running sidecar would keep serving the
+  # model this replaced. A sidecar only created is started on the new file by that up.
+  if [ -n "$(docker compose ps -q --status running aura-llama-embed 2>/dev/null)" ]; then
+    docker compose restart aura-llama-embed >/dev/null
+  fi
   echo "embedding model installed at ${model_path}"
 }
 

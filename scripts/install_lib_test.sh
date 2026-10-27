@@ -389,6 +389,7 @@ embed_case() {
   mkdir -p "$embed_fixture/scripts"
   printf 'AURA_EMBED_REVISION=%s\nAURA_EMBED_FINGERPRINT=%s\n' "$1" "$2" > "$embed_fixture/.env"
   printf '%s' "$3" > "$embed_fixture/volume-sha"
+  if [ "${4:-}" = running ]; then echo embed-cid > "$embed_fixture/running"; fi
   cat > "$embed_fixture/scripts/fetch_embedding_model.sh" <<'FETCH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$(dirname "$0")/../fetch-args"
@@ -398,7 +399,14 @@ FETCH
 docker() {
   case "$1 $2" in
     "compose create") ;;
-    "compose ps") echo embed-cid ;;
+    "compose ps")
+      if [ "$*" = "compose ps -q --status running aura-llama-embed" ]; then
+        cat "$embed_fixture/running" 2>/dev/null || true
+      else
+        echo embed-cid
+      fi
+      ;;
+    "compose restart") printf '%s\n' "$*" >> "$embed_fixture/restarts" ;;
     "run --rm") cat "$embed_fixture/volume-sha" ;;
     "cp "*) printf '%s\n' "$3" > "$embed_fixture/cp-target" ;;
     *) echo "FAIL: unexpected docker $*" >&2; exit 1 ;;
@@ -406,11 +414,12 @@ docker() {
 }
 want_fp="b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
 (
-  embed_case 0f741b5 "$want_fp" "$want_fp"
+  embed_case 0f741b5 "$want_fp" "$want_fp" running
   cd "$embed_fixture"
   ensure_embed_model >/dev/null
   [ ! -e fetch-args ] && [ ! -e cp-target ] \
     || { echo "FAIL: a model already hashing to AURA_EMBED_FINGERPRINT was fetched again" >&2; exit 1; }
+  [ ! -e restarts ] || { echo "FAIL: the sidecar was restarted with its model unchanged" >&2; exit 1; }
 )
 (
   embed_case 0f741b5 "$(printf '%s' "$want_fp" | tr a-f A-F)" "$(printf '%064d' 7)"
@@ -422,6 +431,16 @@ want_fp="b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
     || { echo "FAIL: the fetch was not pinned to AURA_EMBED_FINGERPRINT, lower-cased" >&2; exit 1; }
   [ "$(cat cp-target)" = "embed-cid:$EMBED_MODEL_PATH" ] \
     || { echo "FAIL: the fetched model was not placed in the sidecar volume" >&2; exit 1; }
+  [ ! -e restarts ] || { echo "FAIL: a sidecar that was not running was restarted" >&2; exit 1; }
+)
+# llama-server loads its GGUF at start, and `compose up -d` leaves a container whose config
+# did not change alone: a running sidecar would keep serving the file it replaced.
+(
+  embed_case 0f741b5 "$want_fp" "$(printf '%064d' 7)" running
+  cd "$embed_fixture"
+  ensure_embed_model >/dev/null
+  [ "$(cat restarts 2>/dev/null)" = "compose restart aura-llama-embed" ] \
+    || { echo "FAIL: a running sidecar was not restarted onto the model placed under it" >&2; exit 1; }
 )
 (
   embed_case "" "$want_fp" ""
