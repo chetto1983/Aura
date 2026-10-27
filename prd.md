@@ -2001,8 +2001,8 @@ none of them (see "A billed media call runs once per file content").
 `deleting` with `deleted_at`, which hides it from every identity-scoped read and from every
 status write, so a job finishing late cannot bring it back. The object is then removed from
 the owner's bucket, a missing key counting as removed, and the row is hard-deleted; its
-`asset_events` and `ingestion_jobs` cascade, and since migration 0133 so do the jobs'
-`ingestion_events`. A row a `media_job` points at stays as a `deleted` tombstone instead, because a paid clip
+`ingestion_jobs` cascade, and since migration 0133 so do the jobs' `ingestion_events`
+(`asset_events` cascaded too until migration 0143 dropped it). A row a `media_job` points at stays as a `deleted` tombstone instead, because a paid clip
 keeps its pointer (migration 0128 gives that key no `ON DELETE`). When the object removal or
 the row removal fails, the row stays `deleting` and a warning names the asset; the asset API
 still answers success. The daily `retention_sweep` visits every identity, takes its oldest
@@ -2068,6 +2068,25 @@ the CHECK has never admitted them, and nothing writes them. What this does not s
 state of appliances not measured here, which is why the migration checks instead of
 assuming.
 
+**Tables and columns nothing uses are dropped.** Migration 0143 drops
+`aura.benchmark_settings_overrides` with `aura.benchmark_settings_override_rows`, the journal
+of a benchmark whose queries had no caller; `aura.asset_events`, whose insert had no caller;
+`aura.audit_logs`, which nothing ever wrote and whose `ON DELETE RESTRICT` key would have
+failed every de-provisioning once something did; and `pipeline_generation` on `aura.assets`,
+`aura.ingestion_jobs` and `aura.ingestion_events`, a generation of the document catalog 0098
+retired, which no producer sets. Found by the 2026-10-26 scan
+(`docs/unwired-and-duplicates-2026-10-26.md`). Measured 2026-10-27 on a database migrated to
+0142: the four tables were empty, and all owned by `aura_migrate` without forced row security,
+so the migration's own count sees every row. The migration refuses to run while any of the four
+holds a row, naming the counts. A row there would mean the "nothing writes it" reading was
+wrong on that deployment, and an open benchmark journal is a settings override still waiting
+to be restored. `pipeline_generation` is dropped whatever it holds: a non-zero value can only
+be 0093's backfill from `aura.documents`, which no longer exists. The queue's CHECK keeps
+fencing `attempt_generation` and `lease_generation`. Its down migration restores the schema
+exactly, checked by `pg_dump` against 0142: the only difference is that the three columns
+come back last in their tables. What this does not show: the row counts on appliances not
+measured here, which is why the migration checks them.
+
 **A library upload that reuses a name replaces the file.** A library object's key derives
 from the file name (`libraryObjectID`), so that ingesting `report.pdf` twice replaces
 `report.pdf`. Agent and CLI ingest honour that through `reingestTarget`. `POST
@@ -2093,8 +2112,9 @@ by default), and finishes them like any delete. No code writes `canceled` for an
 it is not swept. A refusal whose object removal fails now logs a warning naming the asset.
 The refused row keeps the key, so its retirement removes the object. An ingestion job's
 `ingestion_events` now leave with the job (migration 0133, both keys on `job_id` `ON DELETE
-CASCADE`). Every writer names the job, no query reads a gone job's timeline, and
-`aura.audit_logs`, not this table, is the one kept forever. Measured 2026-09-28 10:51 UTC on
+CASCADE`). Every writer names the job, and no query reads a gone job's timeline. This
+paragraph also called `aura.audit_logs` the table kept forever; nothing ever wrote it, and
+migration 0143 dropped it (corrected 2026-10-27). Measured 2026-09-28 10:51 UTC on
 the lab VM, read-only: 0 `refused`, 0 `failed`, 0 `canceled` rows, so the rule is from the
 code and not from an observed pile. 384 of 406 `ingestion_events` had `job_id` NULL, all
 written since 2026-09-27 17:48. The cockpit offers a retry on a `failed` chip only.

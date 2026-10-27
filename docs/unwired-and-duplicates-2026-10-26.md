@@ -130,14 +130,19 @@ with the reason it was not.
 
 Each needs a decision this closure should not take alone.
 
-- **Dropping tables or columns** needs a migration, which cannot be undone on a live database:
+- **Dropping tables or columns.** Decided by the operator on 2026-10-27 and done by migration
+  0143, recorded in `prd.md`:
   - `aura.benchmark_settings_overrides` and `aura.benchmark_settings_override_rows`, whose
     queries went in `d32a4d1`;
   - `aura.asset_events`, written only by RLS tests;
   - `aura.audit_logs`, which nothing writes or reads, and whose `ON DELETE RESTRICT` foreign key
-    `cmd/aura/serve_provisioning.go` warns will break de-provisioning once something does;
-  - `pipeline_generation` on `aura.assets`, `aura.ingestion_jobs` and `aura.ingestion_events`,
-    always 0, already listed as retired by `services/ingest/arcade.py`.
+    `cmd/aura/serve_provisioning.go` warned would break de-provisioning once something did;
+  - `pipeline_generation` on `aura.assets`, `aura.ingestion_jobs` and `aura.ingestion_events`.
+    No producer sets it. This list first called it always 0, which was too strong: 0093's
+    backfill could have copied a generation from `aura.documents`, which 0098 dropped, so the
+    column goes whatever it holds.
+
+  The migration refuses to run while any of the four tables holds a row.
 - **Write-only audit tables.** `aura.ingestion_events`, `aura.identity_recovery_audit` and
   `aura.identity_audit` (the admin feed does not union the last one) are written and never read.
   Whether an audit table needs a reader is a product call.
