@@ -245,12 +245,12 @@ test.describe.serial('media generation (paid, real agent)', () => {
         900_000,
       );
       await gotoAuthenticated(page, `/c/${encodeURIComponent(detachedId)}`);
-      await expect(page.locator(`video[src="/api/assets/${detachedAssetID}/stream"]`)).toBeVisible({
-        timeout: 180_000,
-      });
-      // The replayed submit frame stays static and unduplicated once the clip has landed.
-      await expect(staticFrame).toHaveCount(1);
-      await expect(staticFrame.locator('[role="timer"]')).toHaveCount(0);
+      const clip = page.locator(`video[src="/api/assets/${detachedAssetID}/stream"]`);
+      await expect(clip).toBeVisible({ timeout: 180_000 });
+      // Once the wake has collected the job, the thread drops the submit's frame: the clip
+      // below is that generation, shown once (adae9bd3b, GenerationToolDisplay).
+      await expect(staticFrame).toHaveCount(0);
+      await expect(clip).toHaveCount(1);
 
       const settled = await threadSnapshot(page, detachedId);
       expect(countToolCalls(settled, 'video_generate')).toBe(2);
