@@ -64,9 +64,6 @@ func TestKnobRegistry(t *testing.T) {
 	}
 
 	// Representative reliability/gate knobs are catalogued with the right kind.
-	if k, ok := byName["AURA_OBJECTSTORE_REPLICATION_FACTOR"]; !ok || k.Kind != KindInt {
-		t.Errorf("AURA_OBJECTSTORE_REPLICATION_FACTOR present=%v kind=%d, want present KindInt (%d)", ok, k.Kind, KindInt)
-	}
 	if k, ok := byName["AURA_AGUI_RUN_DETACH"]; !ok || k.Kind != KindBool {
 		t.Errorf("AURA_AGUI_RUN_DETACH present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
 	}
@@ -139,7 +136,7 @@ func TestReparsePass(t *testing.T) {
 		wantSev  Severity
 	}{
 		{"int garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Fatal},
-		{"int garbage / hardened ⇒ Fatal", ProfileSingleUserHardened, "AURA_OBJECTSTORE_REPLICATION_FACTOR", "two", set, true, Fatal},
+		{"int garbage / hardened ⇒ Fatal", ProfileSingleUserHardened, "AURA_AGUI_BUFFER_CAP", "two", set, true, Fatal},
 		{"int garbage / dev ⇒ Warn", ProfileDev, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
 		{"int garbage / local_trusted ⇒ Warn", ProfileLocalTrusted, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
 		{"bool garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_CONTEXT_COMPACTION_ENABLED", "yesnt", set, true, Fatal},

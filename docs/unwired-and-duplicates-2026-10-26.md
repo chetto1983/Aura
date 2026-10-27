@@ -150,11 +150,15 @@ Each needs a decision this closure should not take alone.
   - `gateReplication` refuses `server_production` unless `AURA_OBJECTSTORE_REPLICATION_FACTOR >= 2`,
     but nothing compares the knob with Garage, whose config pins `replication_factor = 1`.
     Setting the knob to 2 passes the gate and changes no durability. The honest gate reads the
-    factor from Garage's admin API.
+    factor from Garage's admin API. Decided by the operator on 2026-10-27 and done: the knob is
+    retired, `server_production` requires the `garage` backend, and `aura serve` counts the
+    copies the cluster layout stores at boot. `prd.md` §17 records the measurement.
   - `AURA_EMBED_REVISION` and `AURA_EMBED_FINGERPRINT` are required by compose and derived by the
     installer, yet only checked for presence and hex. `embeddings.AttestLocal` already names the
     served model from the sidecar, and its comment says the fingerprint cannot. Either compare
-    them, or drop the pair and the installer step.
+    them, or drop the pair and the installer step. Decided by the operator on 2026-10-27 and
+    done: the installer fetches the model at the revision and checks its hash, and a strict
+    boot hashes the served file again. `prd.md` records the measurement.
 - **U6 routes with no production caller, kept:**
   - `GET /api/conversations/{id}/branches` and `POST …/branches/{branchSeq}/select`. The cockpit's
     branch navigation is client-side only (`ExternalStoreChat_branches.ts` posts only to `/edit`).

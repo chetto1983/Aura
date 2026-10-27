@@ -3,11 +3,8 @@ package agent
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/filehash"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 	"github.com/chetto1983/aura/internal/secret"
@@ -408,7 +406,7 @@ func validateHookToolResult(res *tools.ToolResult) error {
 }
 
 func (h *CommandHook) verifyTrust() error {
-	got, err := fileSHA256(h.command)
+	got, err := filehash.SHA256(h.command)
 	if err != nil {
 		return fmt.Errorf("command hook %q hash %s: %w", h.name, h.command, err)
 	}
@@ -489,22 +487,6 @@ func resolveHookCommand(command string) (string, error) {
 		return "", fmt.Errorf("command hook executable %q must be an absolute path; bare command names resolved via $PATH are rejected", command)
 	}
 	return command, nil
-}
-
-func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // path is an operator-configured hook executable verified by sha256.
-	if err != nil {
-		return "", err
-	}
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		_ = f.Close()
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func stderrSuffix(stderr string) string {

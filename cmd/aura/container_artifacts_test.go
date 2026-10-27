@@ -464,22 +464,6 @@ func TestIngestSupervisorUsesExistingIdentityGarageBindings(t *testing.T) {
 	}
 }
 
-// The media indexer opens the daemon's ChatGPT credentials store, so aura-ingest mounts
-// aura-home where the daemon does and derives the same store path from AURA_SKILLS_DIR. A
-// volume subpath would need Docker Engine 26, and no install checks the engine.
-func TestIngestOpensTheDaemonsChatGPTStore(t *testing.T) {
-	root := repoRootForTest(t)
-	service := composeServiceBlock(t, readProjectFile(t, root, "compose.yaml"), "aura-ingest")
-	for _, want := range []string{"- aura-home:/var/lib/aura", "AURA_SKILLS_DIR: /var/lib/aura/skills"} {
-		if !strings.Contains(service, want) {
-			t.Fatalf("aura-ingest missing %q:\n%s", want, service)
-		}
-	}
-	if strings.Contains(service, "subpath:") {
-		t.Fatalf("aura-ingest mounts a volume subpath:\n%s", service)
-	}
-}
-
 // REGRESSION GUARD — the banned names below must stay spelled out. The retired graph
 // plane's compose services, volumes and vendored build context are gone; asserting they
 // stay gone is what stops a merge from resurrecting a plane no Go code can reach.

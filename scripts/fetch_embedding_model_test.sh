@@ -31,6 +31,26 @@ if compgen -G "$fixture_root/cache/*.partial.*" >/dev/null; then
   exit 1
 fi
 
+# A third argument pins the artifact: the file must hash to it, or nothing is kept.
+fixture_sha="$(sha256sum "$fixture" | cut -d' ' -f1)"
+pinned="$fixture_root/pinned/embeddinggemma-300M-Q8_0.gguf"
+bash "$repo_root/scripts/fetch_embedding_model.sh" "$pinned" "file://$fixture" "$fixture_sha"
+cmp "$fixture" "$pinned"
+wrong_sha="$(printf '%064d' 0)"
+if bash "$repo_root/scripts/fetch_embedding_model.sh" \
+  "$fixture_root/pinned/wrong.gguf" "file://$fixture" "$wrong_sha" >/dev/null 2>&1; then
+  echo "expected a model that does not hash to its pin to be rejected" >&2
+  exit 1
+fi
+if [ -e "$fixture_root/pinned/wrong.gguf" ] || compgen -G "$fixture_root/pinned/*.partial.*" >/dev/null; then
+  echo "a model rejected for its hash must leave nothing behind" >&2
+  exit 1
+fi
+# A cached file that is a valid GGUF but not the pinned one is replaced, not trusted.
+printf 'GGUF other build dense_2.weight dense_3.weight' > "$pinned"
+bash "$repo_root/scripts/fetch_embedding_model.sh" "$pinned" "file://$fixture" "$fixture_sha"
+cmp "$fixture" "$pinned"
+
 workflow="$repo_root/.github/workflows/ci.yml"
 helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" || true)"
 # Five since 2026-08-09: ingest-sidecar-test joined the four live embedding tiers.

@@ -38,6 +38,9 @@ type EmbedConfig struct {
 	Fingerprint string // AURA_EMBED_FINGERPRINT: SHA-256 of the exact deployed artifact.
 	BaseURL     string // AURA_EMBED_BASE_URL — the LOCAL sidecar, and only ever that
 	Dimensions  int    // AURA_EMBED_DIMENSIONS — contract width; a narrower response is an error
+	// AURA_EMBED_MODEL_DIR — where this process reads the GGUF the local sidecar serves, to
+	// hash it against Fingerprint at a strict boot. Compose mounts the sidecar's volume there.
+	ModelDir string
 	// AURA_EMBED_MODEL — the ONE switch, as AURA_STT_CLOUD_MODEL is for speech. Empty means
 	// the local sidecar; set means the cloud route. The cockpit writes it from a picker over
 	// the models OpenRouter publishes, so it is a choice rather than a typed name.
@@ -57,6 +60,7 @@ func LoadEmbed() EmbedConfig {
 	return EmbedConfig{
 		BaseURL:      envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 		Dimensions:   envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
+		ModelDir:     strings.TrimSpace(os.Getenv("AURA_EMBED_MODEL_DIR")),
 		CloudModel:   strings.TrimSpace(os.Getenv("AURA_EMBED_MODEL")),
 		CloudBaseURL: strings.TrimSpace(os.Getenv("AURA_EMBED_CLOUD_BASE_URL")),
 		Revision:     strings.TrimSpace(os.Getenv("AURA_EMBED_REVISION")),

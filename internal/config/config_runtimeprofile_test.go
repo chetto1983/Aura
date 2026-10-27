@@ -39,36 +39,28 @@ func TestParseProfile(t *testing.T) {
 	}
 }
 
-// TestRuntimeProfileFieldsLoad locks that loadBase populates the three new runtime
-// fields from env (LoadDB returns them as-is), mirroring TestWebAuthConfigLoad:
-// AURA_PROFILE unset -> single_user_hardened, AURA_OBJECTSTORE_REPLICATION_FACTOR default 1
-// (matches docker/garage/garage.toml, D-13/PROF-06), GARAGE_RPC_SECRET round-trips
-// from its upstream env name (D-13/PROF-03).
+// TestRuntimeProfileFieldsLoad locks that loadBase populates the runtime fields from env
+// (LoadDB returns them as-is), mirroring TestWebAuthConfigLoad: AURA_PROFILE unset ->
+// single_user_hardened, and GARAGE_RPC_SECRET round-trips from its upstream env name
+// (D-13/PROF-03).
 func TestRuntimeProfileFieldsLoad(t *testing.T) {
 	clearPostgresEnv(t)
 
-	// Defaults: unset AURA_PROFILE -> single_user_hardened, replication 1, empty rpc secret.
+	// Defaults: unset AURA_PROFILE -> single_user_hardened, empty rpc secret.
 	cfg := LoadDB()
 	if cfg.Profile != ProfileSingleUserHardened {
 		t.Errorf("Profile default = %q, want %q", cfg.Profile, ProfileSingleUserHardened)
-	}
-	if cfg.ObjectStoreReplicationFactor != 1 {
-		t.Errorf("ObjectStoreReplicationFactor default = %d, want 1", cfg.ObjectStoreReplicationFactor)
 	}
 	if cfg.GarageRPCSecret != "" {
 		t.Errorf("GarageRPCSecret default = %q, want empty", cfg.GarageRPCSecret)
 	}
 
 	t.Setenv("AURA_PROFILE", "server_production")
-	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "3")
 	t.Setenv("GARAGE_RPC_SECRET", "abc")
 
 	cfg = LoadDB()
 	if cfg.Profile != ProfileServerProduction {
 		t.Errorf("Profile override = %q, want %q", cfg.Profile, ProfileServerProduction)
-	}
-	if cfg.ObjectStoreReplicationFactor != 3 {
-		t.Errorf("ObjectStoreReplicationFactor override = %d, want 3", cfg.ObjectStoreReplicationFactor)
 	}
 	if cfg.GarageRPCSecret != "abc" {
 		t.Errorf("GarageRPCSecret override = %q, want abc", cfg.GarageRPCSecret)

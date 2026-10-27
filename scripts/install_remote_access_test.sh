@@ -13,7 +13,7 @@ echo "$*" >>"$FIXTURE_CALLS"
 case "$*" in
   'info'|'compose version'|pull\ *|'compose create aura-llama-embed'|'compose pull aura-cloudflared'|compose\ up\ *) ;;
   'compose ps -aq aura-llama-embed') echo fixture-embed ;;
-  run\ --rm\ --volumes-from\ fixture-embed\ *) echo 123 ;;
+  run\ --rm\ --volumes-from\ fixture-embed\ *) echo abc456 ;;
   compose\ exec\ -T\ grafana\ *) echo '{"value":[0,"1"]}' ;;
   *) echo "Unexpected Docker operation: $*" >&2; exit 1 ;;
 esac

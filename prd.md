@@ -1491,6 +1491,32 @@ EmbeddingGemma contract is 768 dimensions with a 2,048-token input ceiling, incl
 prefixes and special tokens. Model artifact, dimension, input format and fingerprint
 agree across installation, ingestion, memory and CI.
 
+**The fingerprint is checked, not only present.** Until 2026-10-27 nothing compared
+`AURA_EMBED_FINGERPRINT` with a file:
+- the strict gate checked that the pair was present and hex;
+- the installer fetched `main` and checked size, the `GGUF` magic and the two dense tensors;
+- llama.cpp's `/v1/models` answers an empty `digest`.
+
+The installer derived the pair once, so an upstream rebuild would have left a host serving a
+file its pair did not describe. Two checks are now real:
+- **Install.** The installer fetches the model at `AURA_EMBED_REVISION` (`resolve/<revision>/`),
+  keeps it only when it hashes to the fingerprint, and replaces a cached file on a hash
+  mismatch, not a size difference.
+- **Boot.** A strict boot hashes the GGUF the sidecar names, read from the sidecar's volume,
+  which compose mounts read-only at `AURA_EMBED_MODEL_DIR`. It refuses to start on a
+  mismatch or on a file it cannot read.
+
+Measured 2026-10-27:
+- `main` and `resolve/0f741b5…/` answered the same `X-Repo-Commit`, `X-Linked-Size`
+  (333,590,944) and `X-Linked-ETag`. The ETag equalled the fingerprint and the SHA-256 of the
+  served file.
+- Hashing that file took 0.69 s.
+- The boot check passed with the real fingerprint and refused a wrong one, naming both hashes.
+
+What this does not show: a cloud embedding route, which has no local artifact and is not
+checked; and any appliance whose cached model drifted from its pair. Such an appliance now
+stops at boot until the installer is re-run.
+
 The Go embedding client fits every input to the selected model's input limit, so no
 single text can fail its request or the batch around it. The limit comes from the route's
 own catalogue, as the LLM context window does: llama.cpp `meta.n_ctx`, or the lower of
@@ -4243,6 +4269,34 @@ configuration omits those keys or still selects a development profile. An explic
 `server_production` profile remains unchanged and retains its separate durability
 prerequisites. Since 2026-10-11 it has no container-runtime prerequisite: gVisor is retired
 and every box runs on runc (§12).
+
+**The durability prerequisite is measured, not declared.** Until 2026-10-27
+`server_production` required `AURA_OBJECTSTORE_REPLICATION_FACTOR >= 2`, a number the
+operator typed and nothing compared with Garage, whose shipped `garage.toml` keeps
+`replication_factor = 1`; setting it to 2 passed the gate and changed no durability. The knob
+is retired:
+- `config validate` now requires the `garage` backend and the Garage admin credential under
+  `server_production`. An `s3` backend is refused, because Aura cannot read another
+  provider's durability.
+- At boot, `aura serve` counts the copies the cluster layout stores: the partitions placed on
+  every node (`GET /v2/GetClusterLayout`, `storedPartitions`) over the partition count
+  (`GET /v2/GetClusterHealth`). Fewer than 2 refuses the boot and names the count.
+
+The Garage v2.4 admin API returns `replication_factor` itself only from the calls that apply
+or preview a layout. Measured 2026-10-27 on `dxflrs/garage:v2.4.1`:
+- one node at factor 1: 256/256;
+- two nodes at factor 2: 512/256;
+- before any layout: 0;
+- a factor-2 layout over one node: refused by Garage itself.
+
+Aura's preflight refused the first cluster and booted on the second. A `server_production`
+deployment whose Garage keeps one copy no longer boots.
+
+What this does not show:
+- a cluster of three or more nodes;
+- a layout in the middle of a rebalance (the count rounds down);
+- any appliance actually running `server_production`. None of the repository's stacks
+  does.
 
 An unset or unrecognised `AURA_PROFILE` is `single_user_hardened` everywhere: in the
 binary and in bare Compose, not only on an installed appliance. `dev` is an explicit
