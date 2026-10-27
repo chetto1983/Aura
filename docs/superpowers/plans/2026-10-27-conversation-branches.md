@@ -1,6 +1,8 @@
 # Conversation branches the model and the cockpit can follow — Implementation Plan
 
-**Status (2026-10-27):** IN PROGRESS.
+**Status (2026-10-27):** implemented and validated live. Open:
+- CI on the PR, which also runs the coverage gate (the operator left the gates to CI);
+- the mutation gaps of Task 7.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -75,65 +77,66 @@ stack with `aura-llm`.
 ## Tasks
 
 ### Task 0 — PRD amendment (records the measurement before any code)
-- [ ] Add a dated paragraph in `prd.md` where branches are described (D-09/CHAT-05). It records:
+- [x] Add a dated paragraph in `prd.md` where branches are described (D-09/CHAT-05). It records:
   - the measurement of spec §1;
   - decisions D1–D12;
   - what the measurement does not show.
-- [ ] Correct the 2026-10-04 caveat: ids `msg-N` are positions, not seqs.
-- [ ] Commit `docs(prd): measure conversation branches before wiring them`.
+- [x] Correct the 2026-10-04 caveat: ids `msg-N` are positions, not seqs.
+- [x] Commit `docs(prd): measure conversation branches before wiring them`.
 
 ### Task 1 — Every append records its path (D4, D10 store half)
-- [ ] Red: a db_integration test in `internal/conversations`:
+- [x] Red: a db_integration test in `internal/conversations`:
   - a chain of appends keeps one branch id;
   - two children of one parent get different ids;
   - an append with `ParentSeq` chains to it;
   - an unknown `ParentSeq` is `ErrTurnNotFound`;
   - `ForkBranch` of a root turn and of a middle turn makes siblings with fresh ids.
-- [ ] Green:
+- [x] Green:
   - the SQL change and sqlc regeneration;
   - `ParentSeq` threaded through `appendTurnWrites` and `insertTurnAndAggregates`;
   - `ForkBranch` rewritten on the append;
   - `SetTurnBranchPointers`, `SetBranchPointers`, `ListBranches` and `ListBranchLeaves` deleted
     once their callers are gone. The test seeds that used `SetBranchPointers` rely on the
     append's own pointers.
-- [ ] Gates: vet, build, `-race` on `internal/conversations` (unit and db_integration).
-- [ ] Commit `feat(conversations): every turn records the path it continues`.
+- [x] Gates: vet, build, `-race` on `internal/conversations` (unit and db_integration).
+- [x] Commit `feat(conversations): every turn records the path it continues`.
 
 ### Task 2 — A run loads its own path and reports its seqs (D3, D7)
-- [ ] Red: `internal/runner` db_integration, the probe with assertions (acceptance 1 and 2).
+- [x] Red: `internal/runner` db_integration, the probe with assertions (acceptance 1 and 2).
   Unit tests with `fakeConvStore`:
   - the head is the user seq, the fork leaf, or `MAX(seq)` on a resume;
   - the last event before the end carries `head_seq` and `leaf_seq`.
-- [ ] Green:
+- [x] Green:
   - `turnInput.parentSeq` and `TurnFrom`;
   - `loadTurnHistory(head)`;
   - the seq report in `runner_seq_report.go`;
   - the linear loader deleted if dead;
   - `runner_branch_test.go` rewritten, with the reason in the commit.
-- [ ] Byte identity: the path loader on a linear conversation equals the old linear output. The
+- [x] Byte identity: the path loader on a linear conversation equals the old linear output. The
   test is written before the linear loader is deleted. The CI "KV-cache prefix invariant" job
   stays green.
-- [ ] Timing: 2,000 turns through the path loader, recorded in the commit body.
-- [ ] Commit `fix(runner): a run's history is its own branch`.
+- [x] Timing: 2,000 turns through the path loader, recorded in the commit body. Measured at
+  1,000 and 5,000 turns instead (`a582061`).
+- [x] Commit `fix(runner): a run's history is its own branch`.
 
 ### Task 3 — HTTP: `parent_seq`, the pending-pause guard, the fork under the lock (D2, D9, D10, D11)
-- [ ] Red, agui unit tests:
+- [x] Red, agui unit tests:
   - `aura.parent_seq` 0, string or negative is 400; an unknown one is 404;
   - with a pending pause, a stale branch is 409;
   - the detached path passes it on;
   - `/edit` forks only after taking the lock;
   - `/branches` and `/select` answer 404/405.
-- [ ] Green: the changes, and `cmd/aura/serve_webui_test.go`'s route list.
-- [ ] Commit `feat(agui): a run continues the branch the client names`.
+- [x] Green: the changes, and `cmd/aura/serve_webui_test.go`'s route list.
+- [x] Commit `feat(agui): a run continues the branch the client names`.
 
 ### Task 4 — The snapshot is the tree (D5, D6, D12)
-- [ ] Red: agui unit tests on the projection (acceptance 4), with a repaired orphan tool result
+- [x] Red: agui unit tests on the projection (acceptance 4), with a repaired orphan tool result
   keeping its seq. A share snapshot of a forked conversation holds one path.
-- [ ] Green: `LoadDisplayTurns`, the projection, and share.
-- [ ] Commit `feat(agui): the history snapshot carries the conversation tree`.
+- [x] Green: `LoadDisplayTurns`, the projection, and share.
+- [x] Commit `feat(agui): the history snapshot carries the conversation tree`.
 
 ### Task 5 — The cockpit imports the tree and continues the branch on screen
-- [ ] Red, Vitest (acceptance 6 and 7):
+- [x] Red, Vitest (acceptance 6 and 7):
   - the snapshot becomes branchable items: a tool row maps to its card, a placeholder and a worker
     report re-parent;
   - the import binds the messages;
@@ -141,39 +144,44 @@ stack with `aura-llm`.
   - a send posts `parent_seq` = `leafSeq`;
   - the `STATE_DELTA` seqs land on the live messages;
   - thread A's messages are gone after a switch to B.
-- [ ] Green: `ExternalStoreChat_tree.ts`, the adapter (`setMessages`, `onImport`),
+- [x] Green: `ExternalStoreChat_tree.ts`, the adapter (`setMessages`, `onImport`),
   `sseAdapter.ts`, `auraRunBody.ts`, and `messageSeq.ts` without the `index + 1` guess.
-- [ ] Gates: `npm run lint`, `npm run typecheck`, `npm test` in `web/`, Stryker on the touched
+- [x] Gates: `npm run lint`, `npm run typecheck`, `npm test` in `web/`, Stryker on the touched
   files if the job covers them.
-- [ ] Commit `feat(web): the cockpit navigates and continues conversation branches`.
+- [x] Commit `feat(web): the cockpit navigates and continues conversation branches`.
 
 ### Task 6 — HTTP E2E (acceptance 8)
-- [ ] `internal/agui/branch_http_e2e_integration_test.go`, db_integration:
+- [x] `internal/agui/branch_http_e2e_integration_test.go`, db_integration:
   - `NewServer(runner.New(...real store, FakeClient...), store, ServerConfig{})`;
   - run, edit, then run with `parent_seq`;
   - assert each `FakeClient` request and the `GET /threads/{id}/messages` tree.
-- [ ] Commit `test(agui): drive branches end to end over HTTP`.
+- [x] Commit `test(agui): drive branches end to end over HTTP`.
 
 ### Task 7 — Gates
-- [ ] `make quality`: lint, deadcode, file-size, race, vuln.
+- [x] `make quality`: lint, deadcode, file-size, race, vuln. Green at `1aa073a`.
 - [ ] `bash scripts/coverage_docker.sh` with the package policy. Re-pin only after checking.
+  Left to CI's coverage gate on the PR.
 - [ ] Mutation ≥ 70% (`go-mutesting`) on:
-  - `store_append.go` (the branch derivation);
-  - `runner_context.go`;
-  - the snapshot projection.
-- [ ] Stryker on `ExternalStoreChat_tree.ts`.
+  - `store_append.go` (the branch derivation): 100%;
+  - `runner_context.go`: 58.3%. All nine survivors are in code this plan did not touch (the
+    compaction summarizer, the memory context and recall, the profile block);
+    `loadTurnHistory` has none;
+  - the snapshot projection: not measured, because the run was stopped.
+- [x] Stryker on `ExternalStoreChat_tree.ts`: 93.5%. `messageSeq.ts` 93.1%,
+  `sseAdapter_snapshot.ts` 76.7%.
 
 ### Task 8 — Live validation (acceptance 9)
-- [ ] Bring up the local stack with `aura-llm` (gemma-4-12B through `scripts/fetch_llm_model.sh`)
-  and `aura serve`.
-- [ ] Run a Playwright script:
-  - send, edit, Previous, send, reload;
+- [x] Bring up the local stack with `aura-llm` (gemma-4-12B through `scripts/fetch_llm_model.sh`)
+  and `aura serve`. Gemma was dropped for the reviewer as the model, by operator choice: see
+  the verification file.
+- [x] Run a Playwright script:
+  - send, edit, Previous, send, reload, with a regenerate before the reload for the third leaf;
   - read the tree from `GET /threads/{id}/messages`.
-- [ ] Write `docs/superpowers/verification/2026-10-27-conversation-branches-local.md`: what it
+- [x] Write `docs/superpowers/verification/2026-10-27-conversation-branches-local.md`: what it
   measured, and what it does not show.
 
 ### Task 9 — Close
-- [ ] Update `docs/unwired-and-duplicates-2026-10-26.md`: the branch routes are deleted, and the
+- [x] Update `docs/unwired-and-duplicates-2026-10-26.md`: the branch routes are deleted, and the
   flow is wired.
-- [ ] Update the PRD paragraph with the measured results.
+- [x] Update the PRD paragraph with the measured results.
 - [ ] Set this plan's status. Open the PR after #192 merges.

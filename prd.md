@@ -1156,6 +1156,45 @@ Turns written before the change keep their canonical `branch_id`. That costs ext
 calls, not a wrong context: a stored summary is used only when its boundary seq lies on the
 walked path.
 
+Measured once branches were wired (2026-10-27):
+- **Over HTTP** (`internal/agui/branch_http_e2e_integration_test.go`). The test uses real
+  Postgres, the real `Runner` and a scripted model, and makes three calls: a run, an edit, then a
+  run whose `aura.parent_seq` names A1.
+  - The model received `U1`, then `U1 edited`, then `U1 | A1 | U3`.
+  - The snapshot is the tree.
+- **Through the cockpit**
+  (`docs/superpowers/verification/2026-10-27-conversation-branches-local.md`). Chromium drove
+  `aura serve`, with the reviewer as the model through a llama.cpp-shaped endpoint. The steps were
+  send, edit, Previous, send, regenerate, reload.
+  - Every request held only the branch on screen.
+  - Previous read nothing.
+  - The reload opened on the branch written last.
+  - The snapshot had three leaves and two roots.
+- **One cockpit defect found by the run.** The read after a run could undo a branch switch made
+  in the second before it landed.
+  - The read is `useWorkerReportRefresh`. It fires on the coordinator status, which the watch
+    stream reports for every run.
+  - A switch now advances `historyRequestRef` the way a send does.
+- **Mutation**:
+  - `store_append.go`: 100%.
+  - The cockpit files (Stryker): `ExternalStoreChat_tree.ts` 93.5%, `messageSeq.ts` 93.1%,
+    `sseAdapter_snapshot.ts` 76.7%.
+  - `runner_context.go`: 58.3%, below the floor. Its nine survivors are all in code this change
+    did not touch: the compaction summarizer, the memory context and recall, and the profile
+    block. `loadTurnHistory` has none.
+  - The Go projection (`server_display_tree.go`, `store_display.go`) was not measured: the
+    operator stopped the local run and left the gates to CI.
+
+Still open:
+- `/compact` condenses the path written last, not the branch on screen, and the marker follows
+  it. A leaf-aware compact changes the compaction API.
+- A refused edit loses its text: assistant-ui's edit composer closes on send.
+
+What this does not show:
+- a real model;
+- the race above in a browser;
+- the forks already on the lab VM.
+
 ## 8. Long-term memory: facts and provenance
 
 The production memory is Aura's Go MCP service over ArcadeDB. Other projects are
