@@ -1185,10 +1185,20 @@ Measured once branches were wired (2026-10-27):
   - The Go projection (`server_display_tree.go`, `store_display.go`) was not measured: the
     operator stopped the local run and left the gates to CI.
 
+Closed the same day (spec §7, D13–D15; evidence in
+`docs/superpowers/verification/2026-10-27-branch-compaction-and-edit-local.md`):
+- **`/compact` and its marker follow the branch on screen.** Both compaction routes take
+  `?leaf_seq`, validated as `aura.parent_seq` is. Without it they act on the turn written last.
+  - Before the change, the marker read the canonical branch's row whatever the branch. After a
+    reload, a fork whose latest branch is not canonical drew another branch's marker, or none.
+  - The marker is read again whenever the leaf moves. A compaction the ladder made during a
+    run now shows without a reload.
+- **No edit is refused in the cockpit.** `@assistant-ui/core` 0.3.31 documents that "an edit
+  composer closes at dispatch, so a rejected edit is not restored". So Edit, and Regenerate,
+  are offered only on a message whose seq is known. A server refusal never lost the text:
+  `foldReRun` puts it back on screen with the error, and Vitest now pins that.
+
 Still open:
-- `/compact` condenses the path written last, not the branch on screen, and the marker follows
-  it. A leaf-aware compact changes the compaction API.
-- A refused edit loses its text: assistant-ui's edit composer closes on send.
 - Turns forked before migration 0095 can still have a NULL `parent_seq` mid-conversation. The
   old `ForkBranch` copied the diverging turn's parent, which was NULL everywhere before 0095.
   - A run that walks through such a turn stops there and loses the turns before the fork.

@@ -1,0 +1,73 @@
+# `/compact` on the branch on screen, and no refused edit — local verification
+
+Date: 2026-10-27. Branch `ccr-648b75d9-4hbqnw`, from `2e41ead`. Spec:
+`docs/superpowers/specs/2026-10-27-conversation-branches-design.md` §7 (D13–D15). Plan:
+`docs/superpowers/plans/2026-10-27-branch-compaction-and-edit.md`.
+
+## What was measured
+
+**Store, on a disposable Postgres 18 (`aura_it`, 118 migrations), db_integration:**
+`TestCompact_CondensesTheBranchItsLeafNames`. The thread has two branches: 1–6, and 1, 2, 7, 8,
+which forks at seq 3.
+- `Compact` with leaf 6 covers through 4. Its summarizer received `domanda-3` and not
+  `domanda-7`.
+- After that compaction, the rows of leaf 8 and of leaf 0 are still empty.
+- `Compact` with leaf 0 covers through 2. It files under the fork's branch, and leaf 6's row is
+  unchanged.
+- `LoadPathCompaction(99)` is `ErrTurnNotFound`.
+- The whole package passes under `-race`: 25.9 s.
+
+**HTTP, agui unit:**
+- `?leaf_seq` = 6, 8 or absent reaches the compactor and the read as 6, 8 or 0.
+- The values 0, -3, `six` and empty are 400, and 9 (above the turn written last) is 404, on
+  both routes. Neither the compactor nor the read is reached.
+- `internal/agui` and `internal/runner` pass under `-race`, both unit and db_integration.
+
+**Cockpit, Vitest, under Node 24.22.1 (CI's `AURA_CI_NODE_VERSION`):**
+- After Previous, the reads are `compaction?leaf_seq=4`, then `compaction?leaf_seq=2`, then
+  `compact?leaf_seq=2`, and nothing else.
+- The marker stays while a run grows the branch, with the reads for the new leaf held open.
+- A switch drops the marker of the branch left, with the read for the new branch held open.
+- A user message with no seq offers no Edit, and an assistant message with no seq offers no
+  Regenerate.
+- A 409 on `/edit` leaves the edited text on screen, with the error. This case passed before
+  the change: it pins the spec's claim.
+- `src/chat`: 1436 of 1436 pass.
+- Hand mutations of the placeholder rule each fail their own case: "never keep" fails "stays
+  while a run grows", and "always keep" fails "drops on a switch".
+
+**Playwright, against `aura serve` on the rebuilt binary and dist** (chrome project, 4 workers):
+`voice.spec.ts`, `composer-skills.spec.ts` and `chat.spec.ts`.
+- `/compact` posts `leaf_seq=2` on the two-turn transcript.
+- Two fixes to the specs:
+  - **The compaction stubs used globs.** A Playwright glob is anchored on the whole URL,
+    query included (`globToRegexPattern`, playwright-core 1.64.1), so the reads with
+    `?leaf_seq` no longer matched. Both stubs are now regexes that allow a query.
+  - **The voice mock had no seqs.** Its run lacked the `head_seq`/`leaf_seq` every real run
+    reports, and the no-voice case reads Regenerate. The frames now carry them.
+- **A race that predates the change.** "voice mode … speaks the reply" read the audio play
+  count once, right after "Answering…", but the overlay builds its `Audio` only after
+  `/api/tts` answers.
+  - Measured before the fix: master failed 1 run in 6, this branch 2 in 10, always on that
+    assertion.
+  - The count is now polled. After that, 8 runs in 8 passed with all 11 tests.
+
+**Mutation (`go-mutesting`, `scripts/go_mutation_cache.py`):** filled in below when the run
+ends.
+
+## What this does not show
+
+- **A live `/compact` with a real summarizer.** The store test uses a scripted summarizer.
+  Nothing here calls a model.
+- **The lab VM, WebKit or iOS.**
+- **Pre-0095 forks.** PRD §7 keeps them open.
+- **The interaction of the two refreshes.** The marker read after a run and the history read
+  after a run are separate requests. Their ordering on a slow link was not measured.
+
+## Notes for the next run
+
+`aura serve` on the disposable database re-provisions identities: the local identity `…0001`
+that the conversations tests use is gone afterwards. Running `cmd/aura` db_integration in
+parallel with `internal/agui` on one database also failed `TestAgentRunCapability`. Both passed
+on a fresh database. Recreate it with the same script before a db_integration run that follows
+either.

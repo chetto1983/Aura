@@ -99,7 +99,18 @@ acceptance 11–14).
 - [x] Commit `fix(web): offer an edit only where it can be saved`.
 
 ### Task 5 — Close
-- [ ] Gates: `go vet`, build and `-race` on the touched packages, plus db_integration on
-  `internal/conversations`. In `web/`: `npm run lint`, `npm run typecheck` and `npm test`.
-- [ ] PRD §7: the two items leave "Still open". The verification file records what this closes.
+- [x] Gates:
+  - `go vet ./...`;
+  - golangci-lint 2.14.0 on the touched packages: 0 issues;
+  - `-race` on `internal/conversations`, `internal/agui` and `internal/runner`, unit and
+    db_integration;
+  - in `web/`: `npm run lint`, `npm run typecheck`, and Vitest on `src/chat` (1436/1436, Node 24).
+- [x] Playwright on `aura serve`: `voice`, `composer-skills` and `chat`.
+  - Two stubs no longer matched the query, and the voice mock had no seqs.
+  - A play-count race in the voice spec predates the change: 1 run in 6 on master. It is now
+    polled, and 8 runs in 8 passed.
+- [ ] Mutation on `store_compaction.go`, `conversations_compaction_api.go` and
+  `server_run_branch.go`.
+- [x] PRD §7: the two items leave "Still open".
+- [x] Write `docs/superpowers/verification/2026-10-27-branch-compaction-and-edit-local.md`.
 - [ ] Set this plan's status.
