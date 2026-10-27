@@ -182,9 +182,6 @@ func (f *steerE2EConvStore) ListTurnReasoning(context.Context, string) ([]conver
 func (f *steerE2EConvStore) UpdateReasoningEffortForIdentity(context.Context, string, string, string) (int64, error) {
 	return 1, nil
 }
-func (f *steerE2EConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
-	return nil, nil
-}
 func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
 	return 0, nil
 }

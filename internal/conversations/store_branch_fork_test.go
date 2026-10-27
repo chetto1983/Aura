@@ -1,8 +1,7 @@
 //go:build db_integration
 
-// Integration tests for the D-09 / CHAT-05 branch FORK + branch LIST seams
-// (store_branch.go ForkBranch / ListBranches) — the edit-a-user-turn / regenerate write
-// path plan 25-07 wires onto the agui re-run. Requires the live Postgres stack with
+// Integration tests for the D-09 / CHAT-05 branch FORK seam (store_branch.go ForkBranch) —
+// the edit-a-user-turn / regenerate write path plan 25-07 wires onto the agui re-run. Requires the live Postgres stack with
 // migrations applied through 0017 (see store_branch_test.go header).
 //
 // Run via:
@@ -156,52 +155,6 @@ func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 	// CAP-04 cache invariant (only body turns differ per branch, Pitfall 3).
 	if newPath[0].Content != origPath[0].Content || newPath[0].Role != origPath[0].Role {
 		t.Errorf("head differs across branches: new=%+v orig=%+v", newPath[0], origPath[0])
-	}
-}
-
-// TestBranchFork_ListsSiblingBranches proves ListBranches reports BOTH the original leaf
-// and the forked sibling (the BranchPicker's navigable set), and a non-branched
-// conversation reports exactly one branch (the picker stays hidden).
-func TestBranchFork_ListsSiblingBranches(t *testing.T) {
-	pool := migratedPool(t)
-	s := newStore(t, pool)
-	ctx := ownerCtx()
-	convID := seedLinear(t, s)
-
-	branches, err := s.ListBranches(ctx, convID)
-	if err != nil {
-		t.Fatalf("ListBranches(pre-fork): %v", err)
-	}
-	if len(branches) != 1 {
-		t.Fatalf("pre-fork branches = %d, want 1 (the canonical leaf — picker hidden)", len(branches))
-	}
-	if branches[0].LeafSeq != 3 {
-		t.Errorf("canonical leaf seq = %d, want 3", branches[0].LeafSeq)
-	}
-
-	newSeq, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited question")
-	if err != nil {
-		t.Fatalf("ForkBranch: %v", err)
-	}
-
-	branches, err = s.ListBranches(ctx, convID)
-	if err != nil {
-		t.Fatalf("ListBranches(post-fork): %v", err)
-	}
-	if len(branches) != 2 {
-		t.Fatalf("post-fork branches = %d, want 2 (original leaf + forked sibling)", len(branches))
-	}
-	var sawOrig, sawNew bool
-	for _, b := range branches {
-		switch b.LeafSeq {
-		case 3:
-			sawOrig = true
-		case newSeq:
-			sawNew = true
-		}
-	}
-	if !sawOrig || !sawNew {
-		t.Fatalf("branch leaves missing one of {3,%d}: %+v", newSeq, branches)
 	}
 }
 

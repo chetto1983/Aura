@@ -67,6 +67,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	if len(sourceScopes) > 0 {
 		ctx = documents.WithSourceScopes(ctx, sourceScopes)
 	}
+
 	userMsg, err := lastUserMessage(in.Messages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -99,7 +100,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// but the turn runs on a context.WithoutCancel producer that survives client
 	// disconnect — see server_run_detach.go. A nil registry keeps today's exact tail.
 	if s.runs != nil {
-		s.handleRunDetached(w, r, ctx, in, userMsg, modelUserMsg)
+		s.handleRunDetached(w, r, ctx, in, req.Aura.ParentSeq, userMsg, modelUserMsg)
 		return
 	}
 
@@ -113,6 +114,11 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		}
 		defer unlock()
 		ctx = runner.WithThreadLockHeld(ctx)
+	}
+	// Under the lock: no run can append or pause between the check and the turn.
+	var branchOK bool
+	if ctx, branchOK = s.continueBranch(ctx, w, in.ThreadID, req.Aura.ParentSeq); !branchOK {
+		return
 	}
 
 	if len(in.Resume) > 0 {
@@ -135,12 +141,7 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// context until the turn has persisted its records and sent its terminal frame.
 	turnCtx, endTurn := s.untilShutdown(ctx)
 	defer endTurn()
-	turn := s.run.Turn(turnCtx, in.ThreadID, modelUserMsg)
-	if userMsg != nil && modelUserMsg != nil && *userMsg != *modelUserMsg {
-		if split, ok := s.run.(modelUserMessageRunner); ok {
-			turn = split.TurnWithModelUserMessage(turnCtx, in.ThreadID, *userMsg, *modelUserMsg)
-		}
-	}
+	turn := s.startTurn(turnCtx, in.ThreadID, userMsg, modelUserMsg)
 	// D-01: the cockpit SSE stream surfaces live REASONING_* delta text (showReasoning
 	// =true). This is a deliberate operator override of the conservative redacted web
 	// default, justified by the whole-origin-private single-operator cockpit (Phase 24

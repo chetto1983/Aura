@@ -63,13 +63,11 @@ type ConversationStore interface {
 	// jsonb (no migration). rows-affected==0 = the caller does not own the id. On the read
 	// side the value rides Conversation.ReasoningEffort (surfaced by conversationFromRow).
 	UpdateReasoningEffortForIdentity(ctx context.Context, conversationID, identityID, effort string) (int64, error)
-	// D-09 / CHAT-05 branch surface (plan 25-07). ListBranches enumerates the navigable
-	// branch leaves; ForkBranch writes a new sibling branch (edit-a-user-turn /
-	// regenerate) chained off the diverging turn's parent and returns the new leaf seq.
-	// LatestTurnSeq is the turn written last, which ends the branch a run writes. All
-	// three are on the concrete *conversations.Store; declared here so agui depends only
-	// on the methods it calls.
-	ListBranches(ctx context.Context, conversationID string) ([]conversations.Branch, error)
+	// D-09 / CHAT-05 branch surface (plan 25-07). ForkBranch writes a new sibling branch
+	// (edit-a-user-turn / regenerate) chained off the diverging turn's parent and returns
+	// the new leaf seq. LatestTurnSeq is the turn written last, which ends the branch a run
+	// writes. Both are on the concrete *conversations.Store; declared here so agui depends
+	// only on the methods it calls.
 	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, error)
 	LatestTurnSeq(ctx context.Context, conversationID string) (int, error)
 }

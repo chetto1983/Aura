@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
-	"github.com/chetto1983/aura/internal/conversations"
 )
 
 // startShutdownServer serves s with BeginShutdown registered the way the daemon registers it.
@@ -144,7 +143,7 @@ func TestShutdownCancelsATurnAndWaitsForIt(t *testing.T) {
 		name, method, path, body string
 	}{
 		{"request-scoped run", http.MethodPost, "/agent/run", runPayload(goodID)},
-		{"branch rerun", http.MethodPost, "/api/conversations/" + goodID + "/branches/5/select", ""},
+		{"branch rerun", http.MethodPost, "/api/conversations/" + goodID + "/edit", `{"diverge_seq":5,"content":"edited"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,7 +152,7 @@ func TestShutdownCancelsATurnAndWaitsForIt(t *testing.T) {
 			release := func() { once.Do(func() { close(observed) }) }
 			defer release()
 			run := &cancelledTurnRunner{proceed: observed, ended: make(chan struct{})}
-			store := &fakeConvStore{known: map[string]bool{goodID: true}, branches: []conversations.Branch{{LeafSeq: 5}}}
+			store := &fakeConvStore{known: map[string]bool{goodID: true}}
 			s := NewServer(run, store, ServerConfig{})
 			s.SetBrowserRelay(&echoRelay{})
 			ts := startShutdownServer(t, s)

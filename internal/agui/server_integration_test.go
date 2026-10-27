@@ -136,12 +136,17 @@ func TestServer_Integration_SSERoundTrip(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 	got, data := sseFrames(t, string(raw))
-	want := []string{"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
+	// The STATE_DELTA is the leaf the run ended on (spec 2026-10-27, D7): the scripted
+	// runner appends nothing, so it is the seeded seq 2.
+	want := []string{"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "STATE_DELTA", "RUN_FINISHED"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("frame sequence = %v, want %v", got, want)
 	}
 	if !strings.Contains(data, "Ciao") {
 		t.Errorf("TEXT_MESSAGE_CONTENT delta missing: %q", data)
+	}
+	if !strings.Contains(data, `"path":"/leaf_seq","value":2`) {
+		t.Errorf("leaf_seq 2 missing from the stream: %q", data)
 	}
 }
 

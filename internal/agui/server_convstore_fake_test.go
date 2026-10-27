@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
@@ -11,13 +12,15 @@ import (
 // projects the seeded turns, and any other id maps to ErrConversationNotFound (the 404
 // chokepoint). loadErr injects a LoadHistory failure for the error-body test.
 type fakeConvStore struct {
-	known    map[string]bool
-	titles   map[string]string
-	history  map[string][]llm.Message
-	loadErr  error
-	branches []conversations.Branch // ListBranches result (WR-01 membership tests)
+	known   map[string]bool
+	titles  map[string]string
+	history map[string][]llm.Message
+	loadErr error
 	// latestSeq is what LatestTurnSeq reports: the turn written last.
 	latestSeq int
+	// forks counts ForkBranch calls; forkLeaf is the seq each one answers.
+	forks    atomic.Int32
+	forkLeaf int
 	// reasonings seeds ListTurnReasoning (amendment #91 display rehydration);
 	// reasoningErr injects a read failure for the fail-soft snapshot test.
 	reasonings   map[string][]conversations.TurnReasoning

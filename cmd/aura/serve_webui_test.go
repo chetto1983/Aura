@@ -179,18 +179,9 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
-	t.Run("branch routes -> AG-UI handler (D-09 mount, no new bare /api/)", func(t *testing.T) {
+	t.Run("branch edit -> AG-UI handler (D-09 mount, no new bare /api/)", func(t *testing.T) {
 		const cid = "/api/conversations/22222222-2222-2222-2222-222222222222"
-		aguiHits = nil
-		resp, err := http.Get(srv.URL + cid + "/branches")
-		if err != nil {
-			t.Fatalf("GET branches: %v", err)
-		}
-		_ = resp.Body.Close()
-		if len(aguiHits) != 1 || aguiHits[0] != cid+"/branches" {
-			t.Fatalf("GET branches did not route to the AG-UI handler: hits=%v", aguiHits)
-		}
-		for _, route := range []string{cid + "/edit", cid + "/branches/3/select"} {
+		for _, route := range []string{cid + "/edit"} {
 			aguiHits = nil
 			presp, err := http.Post(srv.URL+route, "application/json", strings.NewReader(`{"diverge_seq":2}`))
 			if err != nil {

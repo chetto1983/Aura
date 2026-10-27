@@ -106,12 +106,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(conversationsRoutePrefix, aguiHandler)
 	mux.Handle(conversationsListRoute, aguiHandler)
 	mux.Handle(ownerExportDownloadRoute, aguiHandler)
-	// The D-09 mutating branch re-runs (edit / branch-select) are capability-gated like
-	// POST /agent/run. Their method+path-specific patterns win longest-pattern precedence
-	// over the "/api/conversations/" subtree above, so the gate fires on the re-run while
-	// the read GET /branches stays under RequireAuth only.
+	// The D-09 edit (fork + re-run) is capability-gated like POST /agent/run. Its
+	// method+path-specific pattern wins longest-pattern precedence over the
+	// "/api/conversations/" subtree above, so the gate fires on the re-run while the
+	// subtree's reads stay under RequireAuth only.
 	mux.Handle(branchEditRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
-	mux.Handle(branchSelectRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	// The Phase-25 approval center (APRV-01/02/03) mounts beside the conversation
 	// subtree. The mutating resolve is capability-gated exactly like POST /agent/run —
 	// resuming/declining/cancelling another thread's run is privileged (V4/T-25-07) —

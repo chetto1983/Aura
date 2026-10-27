@@ -14,17 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Branch is one navigable branch path of a conversation tree (D-09 / CHAT-05): the
-// LeafSeq tip the BranchPicker selects + the BranchID it belongs to. ParentSeq is the
-// divergence point (NULL → 0 for a root branch). The canonical (all-zero) branch sorts
-// first (ListBranchLeaves ORDER BY branch_id ASC), so a non-branched conversation reports
-// exactly one branch whose leaf is its last turn.
-type Branch struct {
-	LeafSeq   int
-	BranchID  uuid.UUID
-	ParentSeq int
-}
-
 // ErrTurnNotFound is returned when a fork targets a seq that does not exist in the
 // conversation — mapped to a clean 404 at the REST boundary (T-25-26).
 var ErrTurnNotFound = errors.New("conversations: turn not found")
@@ -129,42 +118,6 @@ func (s *Store) LoadBranchHistory(ctx context.Context, conversationID string, le
 		out = append(out, msg)
 	}
 	return repairToolMessagePairs(out), nil
-}
-
-// ListBranches returns the conversation's navigable branch set — one Branch per leaf
-// turn (a turn no other turn chains off of). The BranchPicker navigates among sibling
-// leaves; a re-run continues over the selected leaf's path (LoadManagedHistoryForBranch).
-// A non-branched conversation reports exactly one branch (its canonical leaf), so the
-// picker stays hidden until an edit/regenerate forks a sibling. The order is stable
-// (canonical branch first, then by seq).
-func (s *Store) ListBranches(ctx context.Context, conversationID string) ([]Branch, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("list branches: %w", err)
-	}
-	var rows []sqlc.ListBranchLeavesRow
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		listed, lErr := q.ListBranchLeaves(ctx, id)
-		if lErr != nil {
-			return fmt.Errorf("list branches %s: %w", conversationID, lErr)
-		}
-		rows = listed
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	out := make([]Branch, 0, len(rows))
-	for _, r := range rows {
-		b := Branch{LeafSeq: int(r.Seq)}
-		if r.BranchID.Valid {
-			b.BranchID = r.BranchID.Bytes
-		}
-		if r.ParentSeq.Valid {
-			b.ParentSeq = int(r.ParentSeq.Int32)
-		}
-		out = append(out, b)
-	}
-	return out, nil
 }
 
 // ForkBranch appends a sibling of the turn at divergeSeq: a fresh turn that chains off the

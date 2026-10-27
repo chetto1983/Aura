@@ -396,12 +396,6 @@ type Querier interface {
 	ListBoardCards(ctx context.Context, boardID pgtype.UUID) ([]AuraBoardCards, error)
 	ListBoardColumnCards(ctx context.Context, arg ListBoardColumnCardsParams) ([]AuraBoardCards, error)
 	ListBoardViews(ctx context.Context, identityID pgtype.UUID) ([]AuraBoardViews, error)
-	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
-	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
-	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
-	// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
-	// (all-zero) branch sorts first and the order is stable across calls.
-	ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)

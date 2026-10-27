@@ -111,17 +111,13 @@ const conversationsListRoute = "/api/conversations"
 // it, export-delete deleted the conversation and handed back a link that 404'd (2026-10-26).
 const ownerExportDownloadRoute = "GET /api/owner-exports/{id}"
 
-// branchEditRoute / branchSelectRoute are the D-09 / CHAT-05 MUTATING branch re-run
-// endpoints (plan 25-07). Re-running a (possibly background) thread is privileged
-// (T-25-25 / V4), so both are interposed with RequireCapability exactly like POST
-// /agent/run — the method+path-specific pattern wins Go 1.22 longest-pattern precedence
-// over the bare "/api/conversations/" subtree (which carries the read GET /branches under
-// RequireAuth only). The fork+re-run (edit) and the branch-select re-run both fire AFTER
+// branchEditRoute is the D-09 / CHAT-05 MUTATING branch re-run endpoint (plan 25-07).
+// Re-running a (possibly background) thread is privileged (T-25-25 / V4), so it is
+// interposed with RequireCapability exactly like POST /agent/run — the method+path-specific
+// pattern wins Go 1.22 longest-pattern precedence over the bare "/api/conversations/"
+// subtree (whose reads stay under RequireAuth only). The fork + re-run fires AFTER
 // RequireAuth has bound the principal.
-const (
-	branchEditRoute   = "POST /api/conversations/{id}/edit"
-	branchSelectRoute = "POST /api/conversations/{id}/branches/{branchSeq}/select"
-)
+const branchEditRoute = "POST /api/conversations/{id}/edit"
 
 // approvalsListRoute is the exact (no trailing slash) cross-thread pending read
 // (APRV-01), registered as a SPECIFIC parent-mux path delegating to the AG-UI handler

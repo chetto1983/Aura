@@ -2,10 +2,9 @@
 
 // Integration tests for the D-09 / CHAT-05 branch REST adapter
 // (conversations_branch_api.go) against a REAL Postgres-backed conversations.Store. The
-// branch list/fork go through the real store (so the full-tree topology is exercised);
-// the re-run streams through a scripted Runner whose TurnBranch records the leaf it was
-// driven with — proving the edit/select routes drive LoadManagedHistoryForBranch(selected)
-// (no-Resume re-run-from-a-point).
+// fork goes through the real store (so the full-tree topology is exercised); the re-run
+// streams through a scripted Runner whose TurnBranch records the leaf it was driven with —
+// proving the edit route re-runs over the fork (no-Resume re-run-from-a-point).
 //
 // Run via (the live stack must be up; derive the DSNs from POSTGRES_PASSWORD):
 //
@@ -15,7 +14,6 @@
 package agui
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,30 +57,6 @@ func seedBranchConversation(t *testing.T, store *conversations.Store) string {
 	return id
 }
 
-// TestBranchList_NonBranchedHasOneBranch asserts GET /branches reports exactly one branch
-// (the canonical leaf) for a non-branched conversation — the picker stays hidden.
-func TestBranchList_NonBranchedHasOneBranch(t *testing.T) {
-	pool := migratedPool(t)
-	store := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
-	id := seedBranchConversation(t, store)
-	srv, _ := newBranchAPIServer(t, store)
-
-	code, body := getJSON(t, srv, "/api/conversations/"+id+"/branches")
-	if code != http.StatusOK {
-		t.Fatalf("GET branches status = %d, want 200: %s", code, body)
-	}
-	var items []branchItem
-	if err := json.Unmarshal([]byte(body), &items); err != nil {
-		t.Fatalf("decode branches: %v (%s)", err, body)
-	}
-	if len(items) != 1 {
-		t.Fatalf("branches = %d, want 1 (canonical leaf, picker hidden): %s", len(items), body)
-	}
-	if items[0].BranchSeq != 3 {
-		t.Errorf("canonical leaf seq = %d, want 3", items[0].BranchSeq)
-	}
-}
-
 // TestBranchEdit_ForksAndReRunsOverSelectedBranch asserts POST /edit forks a new sibling
 // branch (the old branch stays queryable, full tree) AND re-runs over the FORKED leaf
 // (TurnBranch driven with the new leaf — the re-run-from-a-point over the selected path).
@@ -107,36 +81,17 @@ func TestBranchEdit_ForksAndReRunsOverSelectedBranch(t *testing.T) {
 		t.Fatalf("TurnBranch leaf = %d, want the forked leaf > 3 (re-run over the selected branch)", run.gotBranchLeaf)
 	}
 
-	// Full tree: BOTH branches are now queryable (original canonical leaf + forked sibling).
-	branches, err := store.ListBranches(ownerCtx(), id)
+	// Full tree: the original turns stay stored beside the edit.
+	all, err := store.LoadHistory(ownerCtx(), id)
 	if err != nil {
-		t.Fatalf("ListBranches: %v", err)
+		t.Fatalf("LoadHistory: %v", err)
 	}
-	if len(branches) != 2 {
-		t.Fatalf("post-edit branches = %d, want 2 (original + forked sibling)", len(branches))
+	var contents []string
+	for _, m := range all {
+		contents = append(contents, m.Content)
 	}
-}
-
-// TestBranchSelect_ReRunsOverSelectedLeaf asserts POST /branches/{seq}/select re-runs over
-// the SELECTED leaf (TurnBranch driven with that leaf) and a non-numeric branch seq → 404.
-func TestBranchSelect_ReRunsOverSelectedLeaf(t *testing.T) {
-	pool := migratedPool(t)
-	store := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
-	id := seedBranchConversation(t, store)
-	srv, run := newBranchAPIServer(t, store)
-
-	code, body := doReq(t, srv, http.MethodPost, "/api/conversations/"+id+"/branches/3/select", "")
-	if code != http.StatusOK {
-		t.Fatalf("POST select status = %d, want 200 (SSE re-run): %s", code, body)
-	}
-	if run.gotBranchLeaf != 3 {
-		t.Errorf("TurnBranch leaf = %d, want 3 (the selected leaf)", run.gotBranchLeaf)
-	}
-
-	// A non-numeric branch seq is a clean 404 (never a 500).
-	code, _ = doReq(t, srv, http.MethodPost, "/api/conversations/"+id+"/branches/not-a-seq/select", "")
-	if code != http.StatusNotFound {
-		t.Errorf("non-numeric branch seq status = %d, want 404", code)
+	if got := strings.Join(contents, "|"); !strings.Contains(got, "first question") || !strings.Contains(got, "edited question") {
+		t.Fatalf("after the edit the conversation holds %q, want the original and the edit", got)
 	}
 }
 

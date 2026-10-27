@@ -233,50 +233,6 @@ func (q *Queries) ListAssistantTurnReasoning(ctx context.Context, conversationID
 	return items, nil
 }
 
-const listBranchLeaves = `-- name: ListBranchLeaves :many
-SELECT leaf.seq, leaf.branch_id, leaf.parent_seq
-FROM aura.conversation_turns leaf
-WHERE leaf.conversation_id = $1
-  AND NOT EXISTS (
-      SELECT 1
-      FROM aura.conversation_turns child
-      WHERE child.conversation_id = leaf.conversation_id
-        AND child.parent_seq = leaf.seq
-  )
-ORDER BY leaf.branch_id ASC, leaf.seq ASC
-`
-
-type ListBranchLeavesRow struct {
-	Seq       int32       `json:"seq"`
-	BranchID  pgtype.UUID `json:"branch_id"`
-	ParentSeq pgtype.Int4 `json:"parent_seq"`
-}
-
-// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
-// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
-// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
-// leaf's path (ListTurnsByBranchPath). Ordered by branch_id then seq so the canonical
-// (all-zero) branch sorts first and the order is stable across calls.
-func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UUID) ([]ListBranchLeavesRow, error) {
-	rows, err := q.db.Query(ctx, listBranchLeaves, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListBranchLeavesRow{}
-	for rows.Next() {
-		var i ListBranchLeavesRow
-		if err := rows.Scan(&i.Seq, &i.BranchID, &i.ParentSeq); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listConversationCompactions = `-- name: ListConversationCompactions :many
 SELECT branch_id, covers_through_seq, summary, model, source_turns, created_at, updated_at
 FROM aura.conversation_compactions

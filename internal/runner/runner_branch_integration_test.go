@@ -14,6 +14,8 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // conversationText is the request's user and assistant contents, without the system head
@@ -94,18 +96,32 @@ func TestBranchRun_EveryRequestHoldsItsOwnPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	branches, err := store.ListBranches(ctx, convID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leaves := map[int]conversations.Branch{}
-	for _, b := range branches {
-		leaves[b.LeafSeq] = b
-	}
+	// The leaves: turns no other turn continues. One per branch the operator can show.
+	leaves := map[int]uuid.UUID{}
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT leaf.seq, leaf.branch_id FROM aura.conversation_turns leaf
+			WHERE leaf.conversation_id = $1 AND NOT EXISTS (
+				SELECT 1 FROM aura.conversation_turns child
+				WHERE child.conversation_id = leaf.conversation_id AND child.parent_seq = leaf.seq)`, convID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var seq int
+			var branch uuid.UUID
+			if err := rows.Scan(&seq, &branch); err != nil {
+				return err
+			}
+			leaves[seq] = branch
+		}
+		return rows.Err()
+	})
 	if len(leaves) != 3 {
-		t.Fatalf("the tree has leaves %v, want 3: A2, A2 again, A3", branches)
+		t.Fatalf("the tree has leaves %v, want 3: A2, A2 again, A3", leaves)
 	}
-	if a3, ok := leaves[u3]; !ok || a3.BranchID != conversations.CanonicalBranchID {
-		t.Errorf("A3 (seq %d) = %+v, want a leaf on the canonical branch it continued", u3, a3)
+	if branch, ok := leaves[u3]; !ok || branch != conversations.CanonicalBranchID {
+		t.Errorf("A3 (seq %d) is on branch %v (leaf %v), want a leaf on the canonical branch it continued", u3, branch, ok)
 	}
 }
