@@ -103,7 +103,7 @@ func (s *Server) reportTurnSeqs(ctx context.Context, threadID string, head *runn
 		leaf, err := s.conv.LatestTurnSeq(scopedCtx(ctx), threadID)
 		if err != nil {
 			slog.Warn("agui: read the run's last turn (the stream ends without leaf_seq)",
-				"thread", redact.Line(threadID), "err", err)
+				"thread", redact.Line(threadID), "err", redact.Line(err.Error()))
 			return
 		}
 		if leaf <= 0 {
