@@ -48,14 +48,18 @@ describe('backendSeqAt', () => {
   it.each([['7'], [Number.NaN], [Number.POSITIVE_INFINITY], [0], [-3], [2.5]])(
     'knows no seq for a backendSeq of %s',
     (backendSeq) => {
-      expect(backendSeqAt([{ ...fresh('a'), metadata: { custom: { backendSeq } } }], 0)).toBeUndefined();
+      expect(
+        backendSeqAt([{ ...fresh('a'), metadata: { custom: { backendSeq } } }], 0),
+      ).toBeUndefined();
     },
   );
 });
 
 describe('leafSeqOf', () => {
   it('is the last turn folded into the message', () => {
-    expect(leafSeqOf({ ...persisted(2), metadata: { custom: { backendSeq: 2, leafSeq: 5 } } })).toBe(5);
+    expect(
+      leafSeqOf({ ...persisted(2), metadata: { custom: { backendSeq: 2, leafSeq: 5 } } }),
+    ).toBe(5);
   });
 
   it('falls back to the message seq when no later turn folded into it', () => {

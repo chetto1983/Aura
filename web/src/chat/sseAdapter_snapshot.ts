@@ -225,7 +225,11 @@ class TreeBuilder {
     return id === null ? undefined : this.byId.get(id);
   }
 
-  draw(message: ThreadMessageLike & { id: string }, parentId: string | null, seq: number | undefined) {
+  draw(
+    message: ThreadMessageLike & { id: string },
+    parentId: string | null,
+    seq: number | undefined,
+  ) {
     const drawn = { message, parentId, leafSeq: seq };
     this.drawn.push(drawn);
     this.byId.set(message.id, drawn);
@@ -237,7 +241,8 @@ class TreeBuilder {
     this.shownAs.set(id, as);
     this.last = as;
     const target = this.get(as);
-    if (target !== undefined && seq !== undefined) target.leafSeq = Math.max(target.leafSeq ?? 0, seq);
+    if (target !== undefined && seq !== undefined)
+      target.leafSeq = Math.max(target.leafSeq ?? 0, seq);
   }
 
   tree(): ThreadTree {
@@ -316,7 +321,8 @@ function drawnFromSnapshot(
 export function snapshotToThreadTree(snapshot: unknown): ThreadTree {
   const builder = new TreeBuilder();
   asSnapshotMessages(snapshot).forEach((raw, position) => {
-    const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : `snapshot-${String(position)}`;
+    const id =
+      typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : `snapshot-${String(position)}`;
     const seq = seqFromSnapshotId(id);
     const parentId = builder.parentOf(raw);
     const role = typeof raw.role === 'string' ? raw.role : '';
@@ -345,7 +351,7 @@ export function snapshotToThreadTree(snapshot: unknown): ThreadTree {
 export function treeHeadPath(tree: ThreadTree): ThreadMessageLike[] {
   const byId = new Map(tree.items.map((item) => [item.message.id, item]));
   const path: ThreadMessageLike[] = [];
-  for (let id = tree.headId; id !== null; ) {
+  for (let id = tree.headId; id !== null;) {
     const item = byId.get(id);
     if (item === undefined) break;
     path.push(item.message);

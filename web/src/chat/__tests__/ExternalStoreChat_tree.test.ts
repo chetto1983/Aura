@@ -70,7 +70,12 @@ describe('mapTreeMessages', () => {
 
   it('keeps a message the fold did not return', () => {
     const mapped = mapTreeMessages(treeOpeningOnAnEarlierBranch, () => []);
-    expect(mapped.items.map(({ message }) => message.id)).toEqual(['msg-1', 'msg-2', 'msg-3', 'msg-4']);
+    expect(mapped.items.map(({ message }) => message.id)).toEqual([
+      'msg-1',
+      'msg-2',
+      'msg-3',
+      'msg-4',
+    ]);
   });
 });
 
