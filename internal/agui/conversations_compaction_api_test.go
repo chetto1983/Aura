@@ -178,10 +178,11 @@ func TestCompactConversation_Unavailable(t *testing.T) {
 }
 
 // Owner scoping (MUSR-01 / D-06): a thread the caller does not own is 404 on BOTH routes,
-// and the compactor is never reached — the gate precedes the work.
+// and neither the compactor nor the read is reached — the gate precedes the work.
 func TestCompactionRoutes_UnknownThreadIs404BeforeAnyWork(t *testing.T) {
 	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
-	srv := newTestServer(t, run, &fakeConvStore{})
+	conv := &compactionAwareConv{fakeConvStore: &fakeConvStore{}}
+	srv := newTestServer(t, run, conv)
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPost, "/api/conversations/" + goodID + "/compact"},
@@ -195,8 +196,21 @@ func TestCompactionRoutes_UnknownThreadIs404BeforeAnyWork(t *testing.T) {
 			t.Errorf("%s %s = %d, want 404: %s", tc.method, tc.path, code, body)
 		}
 	}
-	if run.calls != 0 {
-		t.Fatalf("compactor called %d times for a thread the caller does not own", run.calls)
+	if run.calls != 0 || conv.reads != 0 {
+		t.Fatalf("a thread the caller does not own reached the work: %d compactions, %d reads",
+			run.calls, conv.reads)
+	}
+}
+
+// A store failure behind the compactor is the server's, not a refusal: 500, never a 200
+// carrying a zero result.
+func TestCompactConversation_StoreFailureIsAnError(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}, err: errors.New("boom")}
+	srv := newTestServer(t, run, knownConv())
+
+	code, body := doCompactionReq(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/compact")
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", code, body)
 	}
 }
 
@@ -302,6 +316,7 @@ func TestCompactionRoutes_RefuseALeafThatNamesNoTurn(t *testing.T) {
 		{"?leaf_seq=-3", http.StatusBadRequest},
 		{"?leaf_seq=six", http.StatusBadRequest},
 		{"?leaf_seq=", http.StatusBadRequest},
+		{"?leaf_seq=99999999999999999999", http.StatusBadRequest},
 		{"?leaf_seq=9", http.StatusNotFound},
 	} {
 		for _, route := range []struct{ method, path string }{

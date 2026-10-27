@@ -75,15 +75,14 @@ func (s *Server) leafSeqParam(w http.ResponseWriter, r *http.Request, threadID s
 	if !query.Has("leaf_seq") {
 		return 0, true
 	}
-	// A value that is not an int is refused like a non-positive one.
+	// A value that is not an int is refused like a non-positive one. Atoi returns the clamped
+	// value with ErrRange, so the error, not the value, decides.
 	leaf, err := strconv.Atoi(query.Get("leaf_seq"))
 	if err != nil {
 		leaf = 0
 	}
-	if _, ok := s.requireTurnSeq(r.Context(), w, threadID, "leaf_seq", leaf); !ok {
-		return 0, false
-	}
-	return leaf, true
+	_, ok := s.requireTurnSeq(r.Context(), w, threadID, "leaf_seq", leaf)
+	return leaf, ok
 }
 
 // ownedConversation resolves {id} and proves the caller owns it (MUSR-01 / D-06): a foreign
