@@ -471,10 +471,15 @@ test.describe('cockpit voice lane — speaker + dictation + hands-free + degrade
     // The reply is read aloud by the overlay itself, and shown while it speaks.
     await expect(page.getByTestId('voice-status')).toHaveText('Answering…', { timeout: 20000 });
     await expect(page.getByTestId('voice-reply')).toContainText(REPLY_TEXT);
-    const plays = await page.evaluate(
-      () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
-    );
-    expect(plays).toBeGreaterThan(0);
+    // The overlay shows the reply first and builds its Audio once /api/tts answers
+    // (useVoiceSession), so the play count is polled rather than read once.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
     assertions += 1;
 
     // Closing returns to the thread with the spoken turn in it — nothing lives only here.
