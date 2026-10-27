@@ -164,9 +164,24 @@ Each needs a decision this closure should not take alone.
 
 ### Validation
 
-In progress when this section was committed: `make quality`, the `db_integration` coverage gate
-on a disposable database and the mutation scopes whose packages this closure touched. The
-measured results replace this paragraph in the next commit.
+Measured locally in the cloud session on 2026-10-26 and 27, not on the lab VM and not in CI.
+CI runs only on pushes and pull requests to `master`, so it had not seen this branch yet.
+
+| Gate | Result |
+|---|---|
+| `make quality` (deadcode, vet, file-size, capability declaration, model contracts, lint, race, vuln, build) | Green. The first run stopped at file-size (`service_test.go`, see above). The second passed every step up to `vuln`, whose binary was missing from the container; `vuln` and the final build then passed on their own. `golangci-lint` reported 0 issues. `go test -race` passed on 108 packages. `govulncheck` v1.6.0 found 0 vulnerabilities that the code calls. |
+| `scripts/coverage_docker.sh`, `db_integration`, on the disposable `aura_cov` | 49,616 of 56,733 owned statements, 87.46%, against the 85% floor. The package policy failed closed on four baselines the folds had moved; `b1c8f00` re-pins them, then 103 packages are evaluated and 95 are at target. |
+| Mutation, the five scopes whose packages changed | gateway 78.95%, elicitation_route 80.00%, profile_validation 100%, ssrf 100%, turn_reading 100%, each against the 70% floor. identity_isolation, sandbox, pausable and the two media scopes were not rerun: their packages did not change. |
+| `build-and-lint`'s other gates, run one by one | 34 passed. `tempo_blocks_repair_test.sh` refuses to run as root, as the cloud container is. It tests nothing this branch touches. |
+| `sqlc generate` (v1.31.1) | No drift. |
+| `scripts/payload_manifest_gate.sh` | Failed until `843bfda`: three commits had changed `compose.yaml` without re-hashing it. |
+
+**What this does not prove.**
+- No live E2E. The owner-export download, the asset retry guard and the session fail-closed were
+  each proven by a handler or `db_integration` test, not by an agent on the running stack.
+- The web, Stryker, E2E and integration-tier jobs that need their own services ran only in CI.
+- The crypto fold was proven on vectors written by the old copies. The live stack in this
+  session held no encrypted rows.
 
 ## Method
 
@@ -183,7 +198,7 @@ survive reading is listed under "Looked at, not findings".
 | Near clones | `dupl` at threshold 60 (the CI gate runs at 100 and is green) | non-test Go |
 | Declared metrics never recorded | every `InstrumentID` in `internal/obs/catalog.go` against its recording sites | `internal`, `cmd` |
 | HTTP routes, Go against cockpit | Every `HandleFunc`/`Handle` pattern was listed. A Go 1.22 pattern matcher checked them against the `newServeHandler` mounts, and every `web/src` call site was matched against them. | 265 routes, 227 call sites |
-| sqlc queries, tables, env knobs | **Still running when this file was committed.** Its findings land in a follow-up commit. | |
+| sqlc queries, tables, env knobs | Every query name, table and `os.Getenv`/`envutil` key grepped against its readers and writers (agent pass, then read by hand) | Its findings are under Closure |
 
 ## Unwired: built, documented, not connected
 
@@ -515,5 +530,5 @@ outlived the code that used it. They are listed so the next edit of each file re
 - **U0 was measured on the serve handler, not on the lab VM.** The routing result does not depend
   on the deployment. The data-loss consequence follows from the code (`Deleter: s.run`), not from
   a live run.
-- **The DB and env pass (sqlc queries never called, tables never read, knobs never read)** is not
-  in this commit.
+- **The DB and env pass** is static too. A table that SQL outside this repository reads, such as
+  an operator's own reporting query, would look unread here.
