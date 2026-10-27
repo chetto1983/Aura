@@ -160,11 +160,13 @@ Each needs a decision this closure should not take alone.
     done: the installer fetches the model at the revision and checks its hash, and a strict
     boot hashes the served file again. `prd.md` records the measurement.
 - **U6 routes with no production caller, kept:**
-  - `GET /api/conversations/{id}/branches` and `POST …/branches/{branchSeq}/select`. The cockpit's
-    branch navigation is client-side only (`ExternalStoreChat_branches.ts` posts only to `/edit`).
-    Not verified live: after navigating to an older sibling, the next message may continue the
-    server's newest branch, and siblings may not survive a reload. A cockpit test decides whether
-    this is a bug to wire or routes to delete.
+  - `GET /api/conversations/{id}/branches` and `POST …/branches/{branchSeq}/select`. Measured on
+    2026-10-27 before touching them: the model was sent every branch, the snapshot was one flat
+    list, and `/agent/run` could not continue an older branch. Decided by the operator on
+    2026-10-27 and done (spec `docs/superpowers/specs/2026-10-27-conversation-branches-design.md`):
+    both routes are deleted, since `select` re-ran the model. The snapshot now carries the tree,
+    the cockpit switches branches in its own runtime, and a send names the branch on screen with
+    `aura.parent_seq`. `prd.md` §7 records the measurement.
   - `GET /api/fetch`: its comment says cockpit-only and only `web/e2e` calls it.
   - `GET /api/settings/remote-access/events`, the admin capability grant routes,
     `POST /api/admin/openrouter/reconcile`, `/debug/vars` and `/metrics` on `:9080`, and the
@@ -339,7 +341,7 @@ file, counts as unused.
 | Route | Where | Callers |
 |---|---|---|
 | owner-export trio | `internal/agui/conversations_api.go:74-76` | none. See U0. |
-| `GET /api/conversations/{id}/branches`, `POST …/branches/{branchSeq}/select` | `internal/agui/conversations_branch_api.go:40`, `:42` | None. The cockpit builds branches locally (`web/src/chat/ExternalStoreChat.tsx:445`) and calls only `/edit`. The select route is still mounted with a capability gate (`cmd/aura/serve_webui.go:114`). |
+| `GET /api/conversations/{id}/branches`, `POST …/branches/{branchSeq}/select` | deleted 2026-10-27 | None. Navigation is client-side and a send carries `aura.parent_seq` (see U6). |
 | `GET /api/conversations/{conv}/swarm/{childID}/transcript` | `internal/agui/server_swarm_transcript.go:41` | none; worker status is push-only over SSE (`server_swarm_events.go`) |
 | `GET /api/fetch` (data proxy) | `internal/agui/server.go:413`, `data_proxy.go:35` | Its comment says "cockpit-only". The only caller is `web/e2e/origin-isolation-live.spec.ts`. |
 | `GET /api/settings/remote-access/events` | `internal/agui/remote_access_api.go:74` | `remoteAccessApi.ts` calls every other remote-access path, but not this one |
