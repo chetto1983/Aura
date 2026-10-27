@@ -169,43 +169,6 @@ func TestLoadBranchHistory_FakeQueryError(t *testing.T) {
 	}
 }
 
-// TestSetBranchPointers_FakeSuccess sets a branch turn with a real parent.
-func TestSetBranchPointers_FakeSuccess(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 3, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Errorf("SetBranchPointers: %v", err)
-	}
-}
-
-// TestSetBranchPointers_FakeRootNullParent sets a branch root (parentSeq <= 0 => NULL).
-func TestSetBranchPointers_FakeRootNullParent(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 1, CanonicalBranchID, 0); err != nil {
-		t.Errorf("SetBranchPointers root: %v", err)
-	}
-}
-
-// TestSetBranchPointers_FakeBadID rejects a malformed id.
-func TestSetBranchPointers_FakeBadID(t *testing.T) {
-	t.Parallel()
-	s := fakeStore(t, &fakeDBTX{})
-	if err := s.SetBranchPointers(context.Background(), "bad", 1, CanonicalBranchID, 0); err == nil {
-		t.Fatal("SetBranchPointers with bad id: want error, got nil")
-	}
-}
-
-// TestSetBranchPointers_FakeDBError wraps a failing Exec.
-func TestSetBranchPointers_FakeDBError(t *testing.T) {
-	t.Parallel()
-	boom := errors.New("update failed")
-	s := fakeStore(t, &fakeDBTX{execErr: boom})
-	if err := s.SetBranchPointers(context.Background(), uuid.Must(uuid.NewV7()).String(), 1, CanonicalBranchID, 0); !errors.Is(err, boom) {
-		t.Errorf("SetBranchPointers DB error must propagate: %v", err)
-	}
-}
-
 // TestListBranches_FakeProjection projects the leaf rows onto []Branch (seq + branch +
 // parent), exercising the valid/invalid pgtype branches.
 func TestListBranches_FakeProjection(t *testing.T) {
@@ -257,7 +220,7 @@ func TestListBranches_FakeQueryError(t *testing.T) {
 func TestForkBranch_FakeBadID(t *testing.T) {
 	t.Parallel()
 	s := fakeStore(t, &fakeDBTX{})
-	if _, _, err := s.ForkBranch(context.Background(), "bad", 2, llm.RoleUser, "x"); err == nil {
+	if _, err := s.ForkBranch(context.Background(), "bad", 2, llm.RoleUser, "x"); err == nil {
 		t.Fatal("ForkBranch with bad id: want error, got nil")
 	}
 }

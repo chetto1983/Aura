@@ -6,7 +6,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/google/uuid"
 )
 
 // server_branch_fakes_test.go holds the D-09 / CHAT-05 branch fake methods split out of
@@ -20,8 +19,8 @@ func (f *fakeConvStore) ListBranches(context.Context, string) ([]conversations.B
 	return f.branches, nil
 }
 
-func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, nil
+func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	return 0, nil
 }
 
 func (f *fakeConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, nil }

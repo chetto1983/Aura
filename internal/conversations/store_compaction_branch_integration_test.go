@@ -35,10 +35,11 @@ func TestManagedHistoryFilesTheSummaryUnderTheReplayedBranch(t *testing.T) {
 	// Diverge at the LAST user turn, not an early one: the fork's path is
 	// root -> divergeSeq-1 plus the new turn, so forking at seq 6 would replay six turns
 	// and never reach the compaction trigger at all.
-	forkSeq, branchID, err := store.ForkBranch(ctx, conversationID, 2*rounds, llm.RoleUser, "diverging question")
+	forkSeq, err := store.ForkBranch(ctx, conversationID, 2*rounds, llm.RoleUser, "diverging question")
 	if err != nil {
 		t.Fatalf("ForkBranch: %v", err)
 	}
+	branchID := pointersOf(t, store, conversationID, forkSeq).branch
 
 	cfg := compactingConfig(&fixedSummarizer{text: "branch summary"})
 	if _, err := store.LoadManagedHistoryForBranch(ctx, conversationID, forkSeq, cfg); err != nil {

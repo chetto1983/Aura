@@ -12,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/google/uuid"
 )
 
 // errConvStore is a ConversationStore double whose every method returns a configurable
@@ -79,8 +78,8 @@ func (e *errConvStore) ListBranches(context.Context, string) ([]conversations.Br
 	return nil, e.err
 }
 
-func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, e.err
+func (e *errConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	return 0, e.err
 }
 
 func (e *errConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, e.err }

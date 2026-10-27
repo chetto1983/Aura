@@ -70,7 +70,7 @@ type ConversationStore interface {
 	// All three are on the concrete *conversations.Store; declared here so agui depends
 	// only on the methods it calls.
 	ListBranches(ctx context.Context, conversationID string) ([]conversations.Branch, error)
-	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, uuid.UUID, error)
+	ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, error)
 	CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error)
 }
 

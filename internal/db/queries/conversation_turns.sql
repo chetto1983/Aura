@@ -1,21 +1,34 @@
 -- name: InsertConversationTurn :execrows
--- parent_seq maintains the canonical leaf->root chain the branch walk recurses on
--- (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
--- than bound as a parameter so no call site can forget it — which is exactly what
--- happened: 0017 added the column, backfilled `seq - 1` for the rows present at
--- migration time, and gave it no default, so EVERY turn appended since carried NULL. A
--- NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
--- measured 2026-08-13 against the live schema, one turn, not even the system head — and
--- the model lost the whole prior conversation on any edit/regenerate.
--- NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
+-- parent_seq is the turn this one continues, and the caller always names it
+-- (appendTurnWrites is the one place that builds these params): seq - 1 for a run
+-- appending to itself, an explicit seq for a fork or a send on another branch, NULL for a
+-- root. Before it was named, 0017 had given the column no default and every turn appended
+-- since carried NULL, so a forked branch reconstructed to the forked turn alone (measured
+-- 2026-08-13).
+-- branch_id is read here, under the conversation row lock the append path holds: the
+-- parent's branch, or a fresh one when the parent already has a child, so siblings never
+-- share one and a path keeps one while it grows (spec 2026-10-27, D4). An absent parent
+-- falls back to the canonical branch; an explicit parent is checked before this runs.
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms, context_tokens, parent_seq, delivery_key,
+    reasoning, reasoning_duration_ms, context_tokens, parent_seq, branch_id, delivery_key,
     attachment_ids
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-    NULLIF($2::int - 1, 0), sqlc.narg(delivery_key), sqlc.narg(attachment_ids)
+    sqlc.narg(parent_seq)::int,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM aura.conversation_turns sibling
+            WHERE sibling.conversation_id = $1
+              AND sibling.parent_seq IS NOT DISTINCT FROM sqlc.narg(parent_seq)::int
+        ) THEN gen_random_uuid()
+        ELSE COALESCE(
+            (SELECT parent.branch_id FROM aura.conversation_turns parent
+             WHERE parent.conversation_id = $1 AND parent.seq = sqlc.narg(parent_seq)::int),
+            '00000000-0000-0000-0000-000000000000'::uuid)
+    END,
+    sqlc.narg(delivery_key), sqlc.narg(attachment_ids)
 )
 ON CONFLICT (conversation_id, delivery_key) WHERE delivery_key IS NOT NULL
 DO NOTHING;
@@ -215,13 +228,6 @@ SELECT path.conversation_id, path.seq, path.role, path.content,
        path.parent_seq, path.depth
 FROM path
 ORDER BY path.depth ASC;
-
--- name: SetTurnBranchPointers :exec
--- D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
--- uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
-UPDATE aura.conversation_turns
-SET branch_id = $3, parent_seq = $4
-WHERE conversation_id = $1 AND seq = $2;
 
 -- name: RecordConversationTurnDecision :execrows
 -- Turn recall (migration 0137): one user row's decision provenance, all seven fields in one

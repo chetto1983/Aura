@@ -19,8 +19,8 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// seedLinear appends a canonical linear conversation (system + user + assistant) and
-// chains the canonical parent pointers, returning the conv id. This is the pre-edit
+// seedLinear appends a canonical linear conversation (system + user + assistant), which the
+// append chains itself, returning the conv id. This is the pre-edit
 // state a fork diverges from.
 func seedLinear(t *testing.T, s *Store) string {
 	t.Helper()
@@ -35,7 +35,6 @@ func seedLinear(t *testing.T, s *Store) string {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3)
 	return convID
 }
 
@@ -44,9 +43,10 @@ func seedLinear(t *testing.T, s *Store) string {
 // the full-tree contract (RESEARCH OQ3). The new branch's path replaces the edited user
 // turn; the original path still reconstructs unchanged.
 // TestBranchFork_ProductionAppendChainsParentSeq is the regression for the parent_seq
-// data-loss bug. Every other test in this file seeds through chainCanonical, which sets
-// the pointers BY HAND — so the suite validated a state the production append path did
-// not produce, and stayed green while every appended turn carried parent_seq = NULL.
+// data-loss bug. The suite used to seed through a helper that set the pointers BY HAND, so
+// it validated a state the production append path did not produce, and stayed green while
+// every appended turn carried parent_seq = NULL. The helper is gone: every seed in this
+// package now goes through the append.
 //
 // It seeds with AppendTurn ONLY, and it forks DEEP. Forking at seq 2 cannot tell the
 // two worlds apart: chained, the path is [system, edited]; broken, the walk dies at the
@@ -70,9 +70,8 @@ func TestBranchFork_ProductionAppendChainsParentSeq(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	// Deliberately NO chainCanonical: the point is that the production path chains itself.
 
-	newSeq, _, err := s.ForkBranch(ctx, convID, 4, llm.RoleUser, "edited second question")
+	newSeq, err := s.ForkBranch(ctx, convID, 4, llm.RoleUser, "edited second question")
 	if err != nil {
 		t.Fatalf("ForkBranch(seq 4): %v", err)
 	}
@@ -117,14 +116,14 @@ func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 	}
 
 	// Edit the user turn (seq 2): fork a sibling chained off seq 2's parent (seq 1).
-	newSeq, branchID, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited question")
+	newSeq, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited question")
 	if err != nil {
 		t.Fatalf("ForkBranch(edit user turn): %v", err)
 	}
 	if newSeq <= 3 {
 		t.Fatalf("forked seq = %d, want a fresh seq > 3", newSeq)
 	}
-	if branchID == CanonicalBranchID {
+	if pointersOf(t, s, convID, newSeq).branch == CanonicalBranchID {
 		t.Fatalf("forked branch id is the canonical sentinel; want a fresh uuid")
 	}
 
@@ -180,7 +179,7 @@ func TestBranchFork_ListsSiblingBranches(t *testing.T) {
 		t.Errorf("canonical leaf seq = %d, want 3", branches[0].LeafSeq)
 	}
 
-	newSeq, _, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited question")
+	newSeq, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited question")
 	if err != nil {
 		t.Fatalf("ForkBranch: %v", err)
 	}
@@ -214,7 +213,7 @@ func TestBranchFork_UnknownDivergeSeq(t *testing.T) {
 	ctx := ownerCtx()
 	convID := seedLinear(t, s)
 
-	_, _, err := s.ForkBranch(ctx, convID, 999, llm.RoleUser, "ghost")
+	_, err := s.ForkBranch(ctx, convID, 999, llm.RoleUser, "ghost")
 	if !errors.Is(err, ErrTurnNotFound) {
 		t.Fatalf("ForkBranch(unknown seq) err = %v, want ErrTurnNotFound", err)
 	}

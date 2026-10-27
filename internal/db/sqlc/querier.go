@@ -305,15 +305,16 @@ type Querier interface {
 	// identity's or a chat delivery.
 	InsertCompletedMediaJob(ctx context.Context, arg InsertCompletedMediaJobParams) (AuraMediaJob, error)
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
-	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
-	// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
-	// than bound as a parameter so no call site can forget it — which is exactly what
-	// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
-	// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
-	// NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
-	// measured 2026-08-13 against the live schema, one turn, not even the system head — and
-	// the model lost the whole prior conversation on any edit/regenerate.
-	// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
+	// parent_seq is the turn this one continues, and the caller always names it
+	// (appendTurnWrites is the one place that builds these params): seq - 1 for a run
+	// appending to itself, an explicit seq for a fork or a send on another branch, NULL for a
+	// root. Before it was named, 0017 had given the column no default and every turn appended
+	// since carried NULL, so a forked branch reconstructed to the forked turn alone (measured
+	// 2026-08-13).
+	// branch_id is read here, under the conversation row lock the append path holds: the
+	// parent's branch, or a fresh one when the parent already has a child, so siblings never
+	// share one and a path keeps one while it grows (spec 2026-10-27, D4). An absent parent
+	// falls back to the canonical branch; an explicit parent is checked before this runs.
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) (int64, error)
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
 	// Writes a key only when the identity has none. The reconciler and the provisioning saga can
@@ -747,9 +748,6 @@ type Querier interface {
 	// Move a task into the conversation it answers in from now on, when the one it was
 	// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
 	SetTaskOriginRow(ctx context.Context, arg SetTaskOriginRowParams) (int64, error)
-	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
-	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
-	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	// The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
 	// read and every status write, so a job finishing on it later cannot bring it back;
 	// FinalizeAsset or MarkAssetDeleted then ends it once its object is gone.

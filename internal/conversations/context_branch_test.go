@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/google/uuid"
 )
 
 func branchCtxCfg() ContextConfig {
@@ -46,7 +45,6 @@ func TestBranchManaged_NonBranchedByteIdenticalToLinear(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3, 4, 5)
 
 	cfg := branchCtxCfg()
 	linear, err := s.LoadManagedHistory(ctx, convID, cfg)
@@ -79,19 +77,12 @@ func TestBranchManaged_ProtectedHeadAcrossBranches(t *testing.T) {
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "answer me"},
 		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "answer A"},
-		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B"},
+		{ConversationID: convID, Seq: 4, Role: llm.RoleAssistant, Content: "answer B", ParentSeq: new(2)},
 	}
 	for _, tp := range head {
 		if err := s.AppendTurn(ctx, tp); err != nil {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
 		}
-	}
-	chainCanonical(t, s, convID, 1, 2)
-	if err := s.SetBranchPointers(ctx, convID, 3, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Fatalf("set branch A: %v", err)
-	}
-	if err := s.SetBranchPointers(ctx, convID, 4, uuid.Must(uuid.NewV7()), 2); err != nil {
-		t.Fatalf("set branch B: %v", err)
 	}
 
 	cfg := branchCtxCfg()
@@ -135,7 +126,6 @@ func TestManagedHistoryPageSizeDoesNotBoundRecall(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", turn.Seq, err)
 		}
 	}
-	chainCanonical(t, s, convID, 1, 2, 3, 4, 5, 6, 7)
 
 	cfg := branchCtxCfg()
 	cfg.HistoryHardCapTurns = 4

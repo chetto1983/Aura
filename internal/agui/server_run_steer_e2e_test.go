@@ -189,8 +189,8 @@ func (f *steerE2EConvStore) UpdateReasoningEffortForIdentity(context.Context, st
 func (f *steerE2EConvStore) ListBranches(context.Context, string) ([]conversations.Branch, error) {
 	return nil, nil
 }
-func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, string) (int, uuid.UUID, error) {
-	return 0, uuid.UUID{}, nil
+func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, string) (int, error) {
+	return 0, nil
 }
 func (f *steerE2EConvStore) CanonicalBranchLeaf(context.Context, string) (int, error) { return 0, nil }
 

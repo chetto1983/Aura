@@ -51,10 +51,11 @@ func TestLoadDumpReturnsEveryPersistedTurnUnrepaired(t *testing.T) {
 			t.Fatalf("AppendTurn seq %d: %v", p.Seq, err)
 		}
 	}
-	forkSeq, forkBranch, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited lunch")
+	forkSeq, err := s.ForkBranch(ctx, convID, 2, llm.RoleUser, "edited lunch")
 	if err != nil {
 		t.Fatalf("ForkBranch: %v", err)
 	}
+	forkBranch := pointersOf(t, s, convID, forkSeq).branch
 	if err := s.SaveCompaction(ctx, convID, uuid.Nil.String(), Compaction{
 		Summary: "user booked lunch", Model: "test-model", CoversThroughSeq: 4, SourceTurns: 4,
 	}); err != nil {

@@ -70,6 +70,11 @@ type AppendTurnParams struct {
 	// ReasoningDurationMS is the wall time (ms) from the first to the last reasoning
 	// delta of the turn ("Thought for X s" rehydration). 0 maps to SQL NULL.
 	ReasoningDurationMS int64
+	// ParentSeq names the turn this one continues when that is not the turn before it: a
+	// fork, or a send on a branch other than the one written last. 0 makes the turn a root.
+	// Nil continues seq - 1, which is every turn a run appends to itself. A parent named
+	// here must exist (ErrTurnNotFound).
+	ParentSeq *int
 }
 
 // AppendTurn writes one turn AND folds its token/cost delta into the conversation
@@ -268,6 +273,13 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
+	parent := p.Seq - 1
+	if p.ParentSeq != nil {
+		parent = *p.ParentSeq
+	}
+	if parent < 0 || parent >= p.Seq {
+		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: parent seq %d: %w", p.ConversationID, p.Seq, parent, ErrTurnNotFound)
+	}
 
 	turn := sqlc.InsertConversationTurnParams{
 		ConversationID:     convID,
@@ -285,6 +297,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		// NUL-scrubbed like content (model text can carry \x00, which pg text rejects).
 		Reasoning:           db.OptionalText(db.PostgresTextSafe(p.Reasoning)),
 		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
+		ParentSeq:           pgtype.Int4{Int32: int32(parent), Valid: parent > 0},
 		DeliveryKey:         db.OptionalText(p.DeliveryKey),
 		AttachmentIds:       attachmentUUIDs(p.AttachmentIDs),
 	}
@@ -300,6 +313,9 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 }
 
 func insertTurnAndAggregates(ctx context.Context, q *sqlc.Queries, turn sqlc.InsertConversationTurnParams, agg sqlc.UpdateConversationAggregatesParams) error {
+	if err := requireParent(ctx, q, turn); err != nil {
+		return err
+	}
 	inserted, err := q.InsertConversationTurn(ctx, turn)
 	if err != nil {
 		return fmt.Errorf("insert turn: %w", err)
@@ -309,6 +325,24 @@ func insertTurnAndAggregates(ctx context.Context, q *sqlc.Queries, turn sqlc.Ins
 	}
 	if err := q.UpdateConversationAggregates(ctx, agg); err != nil {
 		return fmt.Errorf("update aggregates: %w", err)
+	}
+	return nil
+}
+
+// requireParent checks a parent the caller named. seq - 1 is the turn the append path
+// itself put before this one; any other parent came from outside, and a turn chained to
+// one that does not exist would cut every path through it.
+func requireParent(ctx context.Context, q *sqlc.Queries, turn sqlc.InsertConversationTurnParams) error {
+	if !turn.ParentSeq.Valid || turn.ParentSeq.Int32 == turn.Seq-1 {
+		return nil
+	}
+	if _, err := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{
+		ConversationID: turn.ConversationID, Seq: turn.ParentSeq.Int32,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("parent seq %d: %w", turn.ParentSeq.Int32, ErrTurnNotFound)
+		}
+		return fmt.Errorf("read parent seq %d: %w", turn.ParentSeq.Int32, err)
 	}
 	return nil
 }

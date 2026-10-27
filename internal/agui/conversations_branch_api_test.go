@@ -37,8 +37,8 @@ func newBranchAPIServer(t *testing.T, store ConversationStore) (*httptest.Server
 	return srv, run
 }
 
-// seedBranchConversation creates a canonical linear conversation (system+user+assistant)
-// with chained parent pointers and returns its id.
+// seedBranchConversation creates a canonical linear conversation (system+user+assistant),
+// which the append chains itself, and returns its id.
 func seedBranchConversation(t *testing.T, store *conversations.Store) string {
 	t.Helper()
 	ctx := ownerCtx()
@@ -54,9 +54,6 @@ func seedBranchConversation(t *testing.T, store *conversations.Store) string {
 	} {
 		if err := store.AppendTurn(ctx, tp); err != nil {
 			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
-		}
-		if err := store.SetBranchPointers(ctx, id, tp.Seq, conversations.CanonicalBranchID, tp.Seq-1); err != nil {
-			t.Fatalf("SetBranchPointers seq %d: %v", tp.Seq, err)
 		}
 	}
 	return id

@@ -131,7 +131,7 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	if role == "" {
 		role = "user"
 	}
-	leaf, _, err := s.conv.ForkBranch(scopedCtx(r.Context()), id, body.DivergeSeq, role, body.Content)
+	leaf, err := s.conv.ForkBranch(scopedCtx(r.Context()), id, body.DivergeSeq, role, body.Content)
 	if err != nil {
 		if errors.Is(err, conversations.ErrTurnNotFound) {
 			http.Error(w, "turn not found", http.StatusNotFound)
