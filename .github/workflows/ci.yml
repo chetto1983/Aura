@@ -1657,10 +1657,13 @@ jobs:
   web-mutation-stryker:
     name: Stryker mutation (frontend + media frontend)
     runs-on: ubuntu-latest
-    # 120 minutes for Stryker alone. A cache miss re-mutates every file: 86m34s on run
-    # 36382875100. Incremental runs took 1m15s (run 36410251639) and 8m01s (run 36412624433).
-    # The Go scopes left this job, so the whole budget now covers that one full run with
-    # 1.39 times its measured length for a slow runner.
+    # 280 minutes for Stryker alone. A cache miss re-mutates every file: 86m34s on run
+    # 36382875100, about 200 minutes by 2026-10-27. Run 40541750279 hit the old 120-minute cap
+    # with 6205 of 6458 mutants tested and Stryker's progress at 60%, a figure that weighs each
+    # mutant by its estimated test time (core 10.0.0, progress-keeper.js). A cap under the full
+    # run is a deadlock, not a slow run: the cancelled run saves no report, so every later run
+    # misses the cache again. Incremental runs took 1m15s (run 36410251639) and 8m01s (run
+    # 36412624433). The budget is 1.39 times the measured full run, for a slow runner.
     #
     # A much faster Stryker is a warning, not a win. The TypeScript 7 / Stryker 10 / Vitest 5
     # upgrade broke the vitest-runner's per-test filter, which made Stryker FASTER and
@@ -1673,7 +1676,7 @@ jobs:
     # 3m29s — no faster — and moved the score to 83.75; concurrency 8 on 8 cores ran 3m14s
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
-    timeout-minutes: 120
+    timeout-minutes: 280
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1718,7 +1721,7 @@ jobs:
       # appends a job summary after EVERY test run: under Stryker, one per mutant run. Run
       # 36382875100 wrote 1123k against GitHub's 1024k cap and the upload was aborted. Unset here,
       # not in vitest.stryker.config.ts, because that file keys the incremental cache above and
-      # editing it forces a full run (86m34s measured on the same run).
+      # editing it forces a full run (see the job's timeout).
       - name: Stryker mutation run with fresh JSON evidence
         run: cd web && npm ci && env -u GITHUB_STEP_SUMMARY npm run mutation
 
