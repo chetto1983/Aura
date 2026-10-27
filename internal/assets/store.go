@@ -17,7 +17,7 @@ import (
 // Store persists multimodal asset lifecycle state in Postgres.
 //
 // pool is the RLS carrier, not a second query handle: migration 0090 put a fail-closed
-// floor on aura.assets and aura.asset_events, so every statement below runs inside a
+// floor on aura.assets, so every statement below runs inside a
 // transaction that first binds app.current_identity. See withIdentity in
 // store_identity.go.
 type Store struct {

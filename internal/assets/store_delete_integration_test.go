@@ -176,8 +176,6 @@ func TestStoreFinalizeRemovesTheRowWithItsJobsAndFreesTheKey(t *testing.T) {
 	request := deleteFixture(localIdentityID, "", key, ScopeLibrary)
 	asset := createAcceptedAsset(t, ctx, store, request)
 
-	execAs(t, pool, localIdentityID,
-		`INSERT INTO aura.asset_events (asset_id, seq, to_status) VALUES ($1, 1, 'accepted')`, asset.ID)
 	jobID := uuid.NewString()
 	execAs(t, pool, localIdentityID, `
 INSERT INTO aura.ingestion_jobs (id, job_type, status, idempotency_key, payload, identity_id, asset_id)
@@ -196,7 +194,6 @@ VALUES ('ingestion_job', $1, $1, 'job_succeeded', $2)`, jobID, localIdentityID)
 
 	for table, query := range map[string]string{
 		"assets":         `SELECT count(*) FROM aura.assets WHERE id = $1`,
-		"asset_events":   `SELECT count(*) FROM aura.asset_events WHERE asset_id = $1`,
 		"ingestion_jobs": `SELECT count(*) FROM aura.ingestion_jobs WHERE asset_id = $1`,
 	} {
 		if n := countAs(t, pool, localIdentityID, query, asset.ID); n != 0 {

@@ -1,11 +1,11 @@
 //go:build db_integration
 
-// The fail-closed invariant migration 0090 put on aura.assets and aura.asset_events, pinned
-// rather than merely observed once.
+// The fail-closed invariant migration 0090 put on aura.assets, pinned rather than merely
+// observed once.
 //
-// Before 0090 these two tables had NO row security at all — not a fail-open policy, the
-// absence of one. Measured on the live deployment on 2026-08-03: relrowsecurity=false and
-// zero policies on both, so every asset of every identity was readable and writable by any
+// Before 0090 the table had NO row security at all — not a fail-open policy, the absence of
+// one. Measured on the live deployment on 2026-08-03: relrowsecurity=false and zero
+// policies, so every asset of every identity was readable and writable by any
 // aura_app connection and the only isolation was the WHERE identity_id clause in each store
 // method. A test that only exercised the store would have passed just as happily then as
 // now, which is why the raw-pool probes below assert on the POLICY and not on the Go API.
@@ -77,15 +77,13 @@ func TestAssetsRLSFailsClosedWithoutIdentity(t *testing.T) {
 	assetA := insertAssetAs(t, pool, idA, "rls/a/one.pdf")
 	insertAssetAs(t, pool, idB, "rls/b/one.pdf")
 
-	// 1. No identity: both tables are invisible, not merely filtered.
-	for _, table := range []string{"aura.assets", "aura.asset_events"} {
-		var visible int
-		if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&visible); err != nil {
-			t.Fatalf("count %s with no identity: %v", table, err)
-		}
-		if visible != 0 {
-			t.Errorf("%s returned %d row(s) to a connection with no app.current_identity, want 0 — RLS is failing OPEN", table, visible)
-		}
+	// 1. No identity: the table is invisible, not merely filtered.
+	var visible int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM aura.assets").Scan(&visible); err != nil {
+		t.Fatalf("count aura.assets with no identity: %v", err)
+	}
+	if visible != 0 {
+		t.Errorf("aura.assets returned %d row(s) to a connection with no app.current_identity, want 0 — RLS is failing OPEN", visible)
 	}
 
 	// 2. No identity: the write is REFUSED, not silently dropped. The restrictive floor has
@@ -145,74 +143,6 @@ VALUES ($1, $2, 'web', '', '', 'thread', 'document', 'presigned', 'z.pdf', 'appl
 	})
 	if err == nil {
 		t.Error("identity A inserted an asset owned by B, want a WITH CHECK refusal")
-	}
-}
-
-// TestAssetEventsRLSScopesThroughParentOwner pins the shape of the child policy, which is the
-// one thing in 0090 that is easy to get wrong. asset_events has no identity column, so it can
-// only be scoped through aura.assets — but it names the parent's OWNER directly instead of
-// checking that the parent row is merely visible. Migration 0032 made the latter mistake with
-// conversation_turns and 0089 had to undo it: two layers that cede together are one layer.
-func TestAssetEventsRLSScopesThroughParentOwner(t *testing.T) {
-	pool := migratedAssetPool(t)
-	ctx := context.Background()
-
-	idA := uuid.Must(uuid.NewV7()).String()
-	idB := uuid.Must(uuid.NewV7()).String()
-	seedAssetRLSIdentity(t, pool, idA, "rlsev-a-"+idA[:8])
-	seedAssetRLSIdentity(t, pool, idB, "rlsev-b-"+idB[:8])
-
-	assetA := insertAssetAs(t, pool, idA, "rls/ev/a.pdf")
-	assetB := insertAssetAs(t, pool, idB, "rls/ev/b.pdf")
-
-	for _, seed := range []struct{ identity, asset string }{{idA, assetA}, {idB, assetB}} {
-		if err := db.WithIdentityTxRaw(ctx, pool, seed.identity, func(tx pgx.Tx) error {
-			_, e := tx.Exec(ctx,
-				"INSERT INTO aura.asset_events (asset_id, seq, from_status, to_status, reason) VALUES ($1, 1, 'presigned', 'uploaded', 'rls-test')",
-				seed.asset)
-			return e
-		}); err != nil {
-			t.Fatalf("seed asset event for %s: %v", seed.identity, err)
-		}
-	}
-
-	// A sees only the event hanging off its own asset.
-	if err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-		var got int
-		if e := tx.QueryRow(ctx, "SELECT count(*) FROM aura.asset_events").Scan(&got); e != nil {
-			return e
-		}
-		if got != 1 {
-			t.Errorf("identity A sees %d asset event(s), want exactly its own 1", got)
-		}
-		var foreign int
-		if e := tx.QueryRow(ctx, "SELECT count(*) FROM aura.asset_events WHERE asset_id = $1", assetB).Scan(&foreign); e != nil {
-			return e
-		}
-		if foreign != 0 {
-			t.Errorf("identity A sees %d event(s) on B's asset, want 0", foreign)
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("identity-scoped event read for A: %v", err)
-	}
-
-	// A may not append an event to B's asset. This is the assertion that would still pass if
-	// the policy merely required the parent to EXIST — the foreign-key check bypasses row
-	// security (PostgreSQL manual, 5.9: "referential integrity checks ... always bypass row
-	// security"), so the parent is always findable. Only naming B's owner catches it.
-	err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx,
-			"INSERT INTO aura.asset_events (asset_id, seq, from_status, to_status, reason) VALUES ($1, 2, 'uploaded', 'accepted', 'cross-tenant')",
-			assetB)
-		return e
-	})
-	if err == nil {
-		t.Fatal("identity A appended an event to B's asset, want a row-level-security refusal")
-	}
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
-		t.Fatalf("cross-tenant event INSERT error = %v, want SQLSTATE 42501", err)
 	}
 }
 

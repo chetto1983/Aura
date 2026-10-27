@@ -23,41 +23,39 @@ const delegationJobType = "swarm_delegation"
 
 // IngestionJob is the durable document/asset processing queue row.
 type IngestionJob struct {
-	ID                 string         `json:"id"`
-	IdentityID         string         `json:"identity_id"`
-	JobType            string         `json:"job_type"`
-	AssetID            string         `json:"asset_id,omitempty"`
-	Status             string         `json:"status"`
-	IdempotencyKey     string         `json:"idempotency_key"`
-	Stage              string         `json:"stage"`
-	AttemptCount       int            `json:"attempt_count"`
-	MaxAttempts        int            `json:"max_attempts"`
-	PipelineGeneration int64          `json:"pipeline_generation"`
-	AttemptGeneration  int64          `json:"attempt_generation"`
-	LeaseGeneration    int64          `json:"lease_generation"`
-	LockedBy           string         `json:"locked_by,omitempty"`
-	LockedUntil        time.Time      `json:"locked_until"`
-	NextAttemptAt      time.Time      `json:"next_attempt_at"`
-	Payload            map[string]any `json:"payload"`
-	ErrorCode          string         `json:"error_code,omitempty"`
-	ErrorMessage       string         `json:"error_message,omitempty"`
-	CreatedAt          time.Time      `json:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
-	CompletedAt        time.Time      `json:"completed_at"`
+	ID                string         `json:"id"`
+	IdentityID        string         `json:"identity_id"`
+	JobType           string         `json:"job_type"`
+	AssetID           string         `json:"asset_id,omitempty"`
+	Status            string         `json:"status"`
+	IdempotencyKey    string         `json:"idempotency_key"`
+	Stage             string         `json:"stage"`
+	AttemptCount      int            `json:"attempt_count"`
+	MaxAttempts       int            `json:"max_attempts"`
+	AttemptGeneration int64          `json:"attempt_generation"`
+	LeaseGeneration   int64          `json:"lease_generation"`
+	LockedBy          string         `json:"locked_by,omitempty"`
+	LockedUntil       time.Time      `json:"locked_until"`
+	NextAttemptAt     time.Time      `json:"next_attempt_at"`
+	Payload           map[string]any `json:"payload"`
+	ErrorCode         string         `json:"error_code,omitempty"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	CompletedAt       time.Time      `json:"completed_at"`
 }
 
 // CreateIngestionJobRequest carries a durable job enqueue request.
 type CreateIngestionJobRequest struct {
-	IdentityID         string
-	JobType            string
-	AssetID            string
-	Status             string
-	IdempotencyKey     string
-	Stage              string
-	MaxAttempts        int
-	NextAttemptAt      time.Time
-	Payload            map[string]any
-	PipelineGeneration int64
+	IdentityID     string
+	JobType        string
+	AssetID        string
+	Status         string
+	IdempotencyKey string
+	Stage          string
+	MaxAttempts    int
+	NextAttemptAt  time.Time
+	Payload        map[string]any
 }
 
 // ClaimIngestionJobsRequest carries owner-scoped worker lease parameters.
@@ -434,7 +432,6 @@ func createIngestionJobParams(req CreateIngestionJobRequest) (sqlc.CreateIngesti
 		IdempotencyKey: req.IdempotencyKey, Stage: req.Stage,
 		MaxAttempts:   int32(req.MaxAttempts), //nolint:gosec // caller controls a small retry count.
 		NextAttemptAt: pgTime(req.NextAttemptAt), Payload: payload,
-		PipelineGeneration: req.PipelineGeneration,
 	}, nil
 }
 
@@ -491,8 +488,8 @@ func ingestionJobFromSQL[R ingestionJobRow](row R) (IngestionJob, error) {
 		AssetID: rec.AssetID.String(), Status: rec.Status,
 		IdempotencyKey: rec.IdempotencyKey, Stage: rec.Stage,
 		AttemptCount: int(rec.AttemptCount), MaxAttempts: int(rec.MaxAttempts),
-		PipelineGeneration: rec.PipelineGeneration, AttemptGeneration: rec.AttemptGeneration,
-		LeaseGeneration: rec.LeaseGeneration, LockedBy: textString(rec.LockedBy),
+		AttemptGeneration: rec.AttemptGeneration,
+		LeaseGeneration:   rec.LeaseGeneration, LockedBy: textString(rec.LockedBy),
 		LockedUntil: timeValue(rec.LockedUntil), NextAttemptAt: timeValue(rec.NextAttemptAt),
 		Payload: payload, ErrorCode: rec.ErrorCode, ErrorMessage: rec.ErrorMessage,
 		CreatedAt: timeValue(rec.CreatedAt), UpdatedAt: timeValue(rec.UpdatedAt),

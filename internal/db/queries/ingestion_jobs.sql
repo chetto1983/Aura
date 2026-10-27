@@ -13,12 +13,11 @@
 -- name: CreateIngestionJob :one
 INSERT INTO aura.ingestion_jobs (
     identity_id, job_type, asset_id, status,
-    idempotency_key, stage, max_attempts, next_attempt_at, payload,
-    pipeline_generation
+    idempotency_key, stage, max_attempts, next_attempt_at, payload
 ) VALUES (
     sqlc.arg(identity_id), sqlc.arg(job_type), sqlc.narg(asset_id), sqlc.arg(status),
     sqlc.arg(idempotency_key), sqlc.arg(stage), sqlc.arg(max_attempts),
-    sqlc.arg(next_attempt_at), sqlc.arg(payload), sqlc.arg(pipeline_generation)
+    sqlc.arg(next_attempt_at), sqlc.arg(payload)
 )
 ON CONFLICT (identity_id, job_type, idempotency_key) DO UPDATE
 SET updated_at = now()
@@ -64,18 +63,18 @@ WITH candidates AS (
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, detail, pipeline_generation, attempt_generation, lease_generation
+        event_type, detail, attempt_generation, lease_generation
     )
     SELECT claimed.identity_id, 'ingestion_job', claimed.id, claimed.id,
            claimed.prior_status, 'running',
            CASE WHEN claimed.prior_status = 'running' THEN 'job_lease_reclaimed'
                 ELSE 'job_claimed' END,
-           '{}'::jsonb, claimed.pipeline_generation, claimed.attempt_generation,
+           '{}'::jsonb, claimed.attempt_generation,
            claimed.lease_generation
     FROM claimed
     RETURNING job_id
 )
-SELECT claimed.id, claimed.job_type, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.pipeline_generation, claimed.attempt_generation, claimed.lease_generation FROM claimed
+SELECT claimed.id, claimed.job_type, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.attempt_generation, claimed.lease_generation FROM claimed
 JOIN events ON events.job_id = claimed.id
 ORDER BY claimed.next_attempt_at, claimed.created_at;
 -- name: HeartbeatIngestionJob :one
@@ -114,16 +113,16 @@ WITH target AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
         event_type, message, detail, trace_id,
-        pipeline_generation, attempt_generation, lease_generation
+        attempt_generation, lease_generation
     )
     SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
            transitioned.prior_status, transitioned.status, sqlc.arg(event_type),
            sqlc.arg(event_message), sqlc.arg(event_detail), sqlc.arg(trace_id),
-           transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation
+           transitioned.attempt_generation, transitioned.lease_generation
     FROM transitioned
     RETURNING job_id
 )
-SELECT transitioned.id, transitioned.job_type, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id;
+SELECT transitioned.id, transitioned.job_type, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id;
 -- name: RetryIngestionJob :one
 WITH target AS (
     SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
@@ -142,16 +141,15 @@ WITH target AS (
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, message, pipeline_generation, attempt_generation, lease_generation
+        event_type, message, attempt_generation, lease_generation
     )
     SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
            retried.prior_status, 'queued', 'job_retry_scheduled',
-           sqlc.arg(event_message), retried.pipeline_generation,
-           retried.attempt_generation, retried.lease_generation
+           sqlc.arg(event_message), retried.attempt_generation, retried.lease_generation
     FROM retried
     RETURNING job_id
 )
-SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
+SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
 -- name: CountIngestionJobsByStatus :one
 SELECT count(*) FROM aura.ingestion_jobs
 WHERE identity_id = sqlc.arg(identity_id) AND status = sqlc.arg(status);
@@ -292,12 +290,11 @@ WITH target AS (
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, message, pipeline_generation, attempt_generation, lease_generation
+        event_type, message, attempt_generation, lease_generation
     )
     SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
            transitioned.prior_status, 'dead_letter', 'swarm_delegation.invalid_resume',
-           sqlc.arg(error_message), transitioned.pipeline_generation,
-           transitioned.attempt_generation, transitioned.lease_generation
+           sqlc.arg(error_message), transitioned.attempt_generation, transitioned.lease_generation
     FROM transitioned
     RETURNING job_id
 )

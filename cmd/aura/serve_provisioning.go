@@ -366,14 +366,9 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // measured the cost: six Authula users outliving identities the cockpit had removed, while
 // every other plane was clean. `aura identity {deactivate|purge}` adds the same two legs for
 // its own short-lived process (identity_deprovision.go, withAuthulaTeardown).
-// The identity FK cascade still drops grants, auth links,
-// object-store ownership, and the whole document catalog (aura.documents.identity_id is
-// ON DELETE CASCADE, migration 0025) — which is why no document leg is wired here.
-//
-// One landmine in that cascade: aura.audit_logs.actor_identity_id is ON DELETE RESTRICT
-// (0025:183). It is dormant only because nothing outside tests writes that table; the first
-// writer added turns every de-provision into a failed identity_row step, AFTER the memory
-// database has already been dropped.
+// The identity FK cascade still drops grants, auth links and object-store ownership.
+// TestIdentityReferencesCascadeOrAreExplicitlyExempt keeps every new reference to
+// aura.identities from blocking that last delete.
 func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 	if chat == nil {
 		return agui.NewDeprovisioner(agui.DeprovisionDeps{})

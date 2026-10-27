@@ -22,7 +22,7 @@ WHERE id = $2
   AND locked_by = $4
   AND lease_generation = $5
   AND locked_until > now()
-RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, pipeline_generation, attempt_generation, lease_generation
+RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, attempt_generation, lease_generation
 `
 
 type StageDelegationDeliveryParams struct {
@@ -62,7 +62,6 @@ func (q *Queries) StageDelegationDelivery(ctx context.Context, arg StageDelegati
 		&i.CompletedAt,
 		&i.IdentityID,
 		&i.AssetID,
-		&i.PipelineGeneration,
 		&i.AttemptGeneration,
 		&i.LeaseGeneration,
 	)

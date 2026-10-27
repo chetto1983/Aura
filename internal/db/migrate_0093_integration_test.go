@@ -92,7 +92,7 @@ func TestMigrate0093OwnerScopedJobReclaimFenceAndManualRetry(t *testing.T) {
 		created, queryErr := q.CreateIngestionJob(ctx, sqlc.CreateIngestionJobParams{
 			IdentityID: identityID, JobType: "convert", Status: "queued",
 			IdempotencyKey: "reclaim", Stage: "convert", MaxAttempts: 5,
-			NextAttemptAt: now, Payload: []byte(`{}`), PipelineGeneration: 7,
+			NextAttemptAt: now, Payload: []byte(`{}`),
 		})
 		if queryErr != nil {
 			return queryErr

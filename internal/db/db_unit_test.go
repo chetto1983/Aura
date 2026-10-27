@@ -386,8 +386,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0140 adds aura.gateway_tool_policies, the per-identity ask/deny narrowing of the grants.
 	// 0141 adds the work board: aura.boards, aura.board_cards and aura.board_views.
 	// 0142 admits backup_objects, the nightly copy of the object store, as a scheduler kind.
-	if head != 142 {
-		t.Fatalf("MigrationHead=%d, want embedded head 142", head)
+	// 0143 drops the benchmark journal, asset_events, audit_logs and pipeline_generation.
+	if head != 143 {
+		t.Fatalf("MigrationHead=%d, want embedded head 143", head)
 	}
 }
 
