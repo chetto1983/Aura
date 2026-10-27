@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/pkoukk/tiktoken-go"
+	"github.com/chetto1983/aura/internal/conversations"
 )
 
 // manifestOverheadTokens is what every request carries besides the conversation: the tool
@@ -23,20 +23,25 @@ func (r *Runner) manifestOverheadTokens() int {
 		if r.registry == nil {
 			return
 		}
-		enc, err := tiktoken.GetEncoding("cl100k_base")
-		if err != nil {
-			return
-		}
 		// The deferred roster plus the always-visible defs is what actually goes on the
 		// wire: a deferred tool contributes its one-line summary, not its schema, which is
-		// the whole point of the deferred-tool pattern.
+		// the whole point of the deferred-tool pattern. The count is the ladder's own
+		// estimate, on its offline vocabulary: a second encoder here fetched the vocabulary
+		// over the network whenever it ran before the ladder's had been set up.
 		defs := r.registry.RenderToolDefs(nil)
 		encoded, err := json.Marshal(defs)
 		if err != nil {
 			return
 		}
-		r.overheadTokens = len(enc.Encode(string(encoded), nil, nil)) +
-			len(enc.Encode(r.registry.DeferredRoster(nil), nil, nil))
+		schemas, err := conversations.CountTokens(string(encoded))
+		if err != nil {
+			return
+		}
+		roster, err := conversations.CountTokens(r.registry.DeferredRoster(nil))
+		if err != nil {
+			return
+		}
+		r.overheadTokens = schemas + roster
 	})
 	return r.overheadTokens
 }

@@ -4,9 +4,12 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"iter"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/pkoukk/tiktoken-go"
 )
@@ -87,9 +90,82 @@ func InitEncoder() error {
 // fast ~5-10% approximation used ONLY for L2/L2.5 budget gating (SPEC Constraints
 // — not billed accuracy). EncodeOrdinary skips special-token handling (none of the
 // history is trusted to carry real special tokens).
+//
+// The ladder counts the whole history on every turn, and all of it but the newest turns was
+// counted on the turn before, so a count is remembered (tokenCounts). The encoder sees the
+// text in boundedPieces: tiktoken-go's byte-pair merge is quadratic in the length of one
+// regex piece. Measured 2026-10-27, 64 KiB of base64 over zeroed bytes, one run of 'A' as
+// an attachment encodes, took 3.2 s where prose takes 19 ms.
 func countTokens(enc *tiktoken.Tiktoken, text string) int {
 	if text == "" {
 		return 0
 	}
-	return len(enc.EncodeOrdinary(text))
+	if n, ok := tokenCounts.get(text); ok {
+		return n
+	}
+	n := 0
+	for piece := range boundedPieces(text, maxUnbrokenRun) {
+		n += len(enc.EncodeOrdinary(piece))
+	}
+	tokenCounts.put(text, n)
+	return n
+}
+
+// CountTokens is countTokens on the process encoder, for the callers outside this package
+// that budget against the same estimate: the runner's fixed request overhead.
+func CountTokens(text string) (int, error) {
+	enc, err := encoder()
+	if err != nil {
+		return 0, err
+	}
+	return countTokens(enc, text), nil
+}
+
+// maxUnbrokenRun is the longest run of one character class the encoder is handed whole. No
+// prose, JSON or base64 of varied bytes comes near it, so their counts are exact; a longer run
+// is counted in pieces, which can only add a token per cut.
+const maxUnbrokenRun = 256
+
+// boundedPieces yields text in consecutive pieces, cutting only inside a run of one
+// character class (letters, digits, whitespace, anything else) that has reached limit bytes.
+// The cl100k pattern splits on class changes, so a cut there splits only a regex piece that
+// was itself longer than the limit. A cut never falls inside a rune.
+func boundedPieces(text string, limit int) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		start, run, class := 0, 0, -1
+		for i, r := range text {
+			c := runeClass(r)
+			if c != class {
+				class, run = c, 0
+			}
+			if run >= limit {
+				if !yield(text[start:i]) {
+					return
+				}
+				start, run = i, 0
+			}
+			run += utf8.RuneLen(r)
+		}
+		yield(text[start:])
+	}
+}
+
+const (
+	classLetter = iota
+	classDigit
+	classSpace
+	classOther
+)
+
+func runeClass(r rune) int {
+	switch {
+	case unicode.IsLetter(r):
+		return classLetter
+	case unicode.IsNumber(r):
+		return classDigit
+	case unicode.IsSpace(r):
+		return classSpace
+	default:
+		return classOther
+	}
 }
