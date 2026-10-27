@@ -1051,7 +1051,8 @@ Verified the same day on the local stack:
 What this does not show: the `msg-N` ids are positions in the repaired history, not the
 stored seq. They matched the stored seq on all seven conversations of the local database, but
 a history the repair rewrote (orphan tool results) would shift them, and the branch edit and
-the compaction marker with them. Not verified on WebKit or iOS.
+the compaction marker with them. Not verified on WebKit or iOS. The 2026-10-27 branch paragraph
+below replaces positions with seqs.
 
 A steer the cockpit cannot deliver keeps its text (2026-10-05). The composer empties on
 submit, and a refused steer only removed its optimistic message, so its text was gone.
@@ -1086,6 +1087,50 @@ neither window. A 410 that arrives while this tab still streams the ended run st
 turn beside that stream's last frames; a component test covers it, the live stack did not. A
 resume or a re-run still cannot be redirected at all. The first suspect, a cached
 `live_run_id` outliving its run, did not appear in 8 rounds.
+
+Conversation branches reached neither the model nor the cockpit (2026-10-27). The 2026-10-26
+scan listed `GET /api/conversations/{id}/branches` and `POST …/branches/{seq}/select` as
+routes nothing calls. Before wiring them, a db_integration probe measured the whole flow with
+real Postgres, the real `Runner` and `agenttest.FakeClient`. It did four steps:
+1. send U1 and get A1;
+2. edit U1 into U1′ through `ForkBranch` and `TurnBranch`, which is what `POST /edit` does;
+3. send U2;
+4. regenerate A2.
+
+What it measured:
+- **The model saw both branches.** The request for U2 carried U1, A1, U1′, A1′, U2.
+  `Runner.Turn` loads the linear history, and `ListManagedTurnsPageBySeq` has no branch filter.
+- **The history was flat.** `GET /threads/{id}/messages` returned all eight turns in seq order,
+  including the empty assistant placeholder a regenerate writes, which the cockpit draws as an
+  empty bubble.
+- **Branch ids stopped at the fork.** Every leaf `ListBranches` reported was canonical. Only the
+  forked turns carry a fresh `branch_id`; `InsertConversationTurn` leaves the column default on
+  every other.
+- **No click could switch branches** (read in `@assistant-ui/core` 0.3.31, not clicked):
+  - the runtime gets no `setMessages`, so `switchToBranch` is disabled;
+  - one runtime serves every thread, so its repository keeps every thread it has shown.
+- **`/agent/run` could not continue an older branch.** It carries only the new text, and the user
+  turn chains to `seq − 1`.
+
+The operator chose client-side navigation (spec
+`docs/superpowers/specs/2026-10-27-conversation-branches-design.md`, decisions D1–D12):
+- **The model.** A run loads the path from its head.
+- **The store.** Every turn inherits its parent's `branch_id`, or starts a new one when the parent
+  already has a child.
+- **The run request.** `/agent/run` takes an optional `aura.parent_seq`, and a run reports
+  `head_seq` and `leaf_seq` before it ends.
+- **The snapshot.** It is the tree: `id: msg-<seq>`, `parentId`, and no placeholder.
+- **The cockpit.** It imports that tree and switches branches inside assistant-ui. The two routes
+  go: `select` re-runs the model, so navigating through it would answer again.
+
+What the measurement does not show:
+- production data: how many lab VM conversations already hold forks;
+- tool rounds: the probe's turns are text only;
+- any browser.
+
+Turns written before the change keep their canonical `branch_id`. That costs extra summarizer
+calls, not a wrong context: a stored summary is used only when its boundary seq lies on the
+walked path.
 
 ## 8. Long-term memory: facts and provenance
 
