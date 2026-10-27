@@ -1,6 +1,9 @@
 package agui
 
-import "github.com/chetto1983/aura/internal/llm"
+import (
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/llm"
+)
 
 // The dependency seams the daemon composition root wires after NewServer. Each is kept off
 // the constructor so existing NewServer callers and tests stay unchanged (D-A2-02); until one
@@ -37,7 +40,7 @@ func (s *Server) SetSteerInbox(inbox steerPusher) { s.steer = inbox }
 // SetOperationRegistry installs the process-wide durable mutation registry.
 // Keeping this as a narrow consumer-side seam lets tests leave it nil while the
 // daemon protects every route inventoried by httpMutationRoutes.
-func (s *Server) SetOperationRegistry(registry operationRegistry) { s.operations = registry }
+func (s *Server) SetOperationRegistry(registry idempotency.Registry) { s.operations = registry }
 
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }

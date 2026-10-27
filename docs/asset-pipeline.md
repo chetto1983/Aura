@@ -76,9 +76,6 @@ Telegram:
 | Variable | Purpose |
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Bot token |
-| `TELEGRAM_API_BASE_URL` | Optional local Bot API base URL |
-| `TELEGRAM_FILE_BASE_URL` | Optional local Bot API file base URL |
-| `AURA_TELEGRAM_LOCAL_BOT_API` | Set `true` when using a local Bot API server |
 
 ## Garage Startup Notes
 
@@ -137,18 +134,20 @@ Telegram media now streams through the same asset service as web uploads.
 Documents, photos, and voice notes create `source_kind="telegram"` asset rows,
 write the original object to the object store, and reuse the same processors.
 
-The standard Telegram Bot API
-[`getFile`](https://core.telegram.org/bots/api#getfile) endpoint currently
-documents a 20 MB download limit. For larger received files, run a
-[local Bot API server](https://tdlib.github.io/telegram-bot-api/) and set
-`TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`, and
-`AURA_TELEGRAM_LOCAL_BOT_API=true`. Telegram's local Bot API server documents
-larger local file handling, including uploads up to 2000 MB.
+Aura talks to the public Bot API, whose
+[`getFile`](https://core.telegram.org/bots/api#getfile) endpoint documents a
+20 MB download limit: a larger file received on Telegram cannot be fetched, and
+the operator should upload it from the cockpit instead. Within that limit Aura
+still refuses a file that exceeds `AURA_ASSET_MAX_DOCUMENT_BYTES`,
+`AURA_ASSET_MAX_IMAGE_BYTES`, or `AURA_ASSET_MAX_AUDIO_BYTES`.
 
-Keep Aura's own asset limits in mind. A local Bot API server can make a large
-file reachable, but Aura will still refuse it if it exceeds
-`AURA_ASSET_MAX_DOCUMENT_BYTES`, `AURA_ASSET_MAX_IMAGE_BYTES`, or
-`AURA_ASSET_MAX_AUDIO_BYTES`.
+A [local Bot API server](https://github.com/tdlib/telegram-bot-api) lifts the
+20 MB limit, but it is not supported. In `--local` mode its `getFile` answers
+with an absolute path on the server's own disk rather than a downloadable URL,
+so using it needs a shared volume and a reader for that path, and none exists.
+Until 2026-10-26 this page documented three variables for it
+(`TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL`,
+`AURA_TELEGRAM_LOCAL_BOT_API`) that the configuration loaded and nothing read.
 
 ## Smoke Test
 

@@ -2,18 +2,13 @@ package objectstore
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hkdf"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/idroot"
+	"github.com/chetto1983/aura/internal/secret"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -47,7 +42,7 @@ type Credentials struct {
 // missing row fails CLOSED — it never falls through to the shared or a foreign bucket.
 type IdentityStore struct {
 	pool          *pgxpool.Pool
-	aead          cipher.AEAD
+	sealer        *secret.Sealer
 	shared        Credentials
 	localIdentity string // the local principal's id (UUID or name) that maps to shared
 }
@@ -57,23 +52,15 @@ type IdentityStore struct {
 // keeps using; localIdentity is that principal's id (empty -> "local"). It fails closed
 // on a malformed secret so a mis-provisioned deployment never runs with a weak KEK.
 func NewIdentityStore(pool *pgxpool.Pool, authulaSecretHex string, shared Credentials, localIdentity string) (*IdentityStore, error) {
-	key, err := deriveObjectStoreKey(authulaSecretHex)
+	sealer, err := secret.NewSealer(authulaSecretHex, keyDerivationInfo)
 	if err != nil {
-		return nil, err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("objectstore identity: cipher: %w", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("objectstore identity: gcm: %w", err)
+		return nil, fmt.Errorf("objectstore identity: %w", err)
 	}
 	localIdentity = strings.TrimSpace(localIdentity)
 	if localIdentity == "" {
 		localIdentity = sharedIdentityName
 	}
-	return &IdentityStore{pool: pool, aead: aead, shared: shared, localIdentity: localIdentity}, nil
+	return &IdentityStore{pool: pool, sealer: sealer, shared: shared, localIdentity: localIdentity}, nil
 }
 
 // Resolve returns the bucket + credentials for the identity carried on ctx. An empty
@@ -104,11 +91,11 @@ func (s *IdentityStore) Resolve(ctx context.Context) (Credentials, error) {
 		// distinguish "not provisioned" can errors.Is(err, pgx.ErrNoRows).
 		return Credentials{}, fmt.Errorf("objectstore identity: resolve %q: %w", id, err)
 	}
-	secret, err := s.decrypt(enc)
+	secretKey, err := s.sealer.Open(enc)
 	if err != nil {
-		return Credentials{}, err
+		return Credentials{}, fmt.Errorf("objectstore identity: %w", err)
 	}
-	return Credentials{Bucket: bucket, AccessKey: accessKey, SecretKey: secret}, nil
+	return Credentials{Bucket: bucket, AccessKey: accessKey, SecretKey: string(secretKey)}, nil
 }
 
 // Put persists a per-identity credential, encrypting the secret at rest. It is
@@ -120,9 +107,9 @@ func (s *IdentityStore) Put(ctx context.Context, identity, bucket, accessKey, se
 	if err != nil {
 		return err
 	}
-	enc, err := s.encrypt(secretPlaintext)
+	enc, err := s.sealer.Seal([]byte(secretPlaintext))
 	if err != nil {
-		return err
+		return fmt.Errorf("objectstore identity: %w", err)
 	}
 	if err := s.asIdentity(ctx, identity, func(tx pgx.Tx) error {
 		_, execErr := tx.Exec(ctx,
@@ -175,29 +162,6 @@ func (s *IdentityStore) isShared(id string) bool {
 	return id == "" || id == sharedIdentityName || id == s.localIdentity
 }
 
-// encrypt seals plaintext with a fresh random nonce prepended to the ciphertext.
-func (s *IdentityStore) encrypt(plaintext string) ([]byte, error) {
-	nonce := make([]byte, s.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("objectstore identity: nonce: %w", err)
-	}
-	return s.aead.Seal(nonce, nonce, []byte(plaintext), nil), nil
-}
-
-// decrypt opens a nonce-prefixed ciphertext produced by encrypt.
-func (s *IdentityStore) decrypt(ciphertext []byte) (string, error) {
-	ns := s.aead.NonceSize()
-	if len(ciphertext) < ns {
-		return "", fmt.Errorf("objectstore identity: ciphertext too short (%d < %d)", len(ciphertext), ns)
-	}
-	nonce, ct := ciphertext[:ns], ciphertext[ns:]
-	plaintext, err := s.aead.Open(nil, nonce, ct, nil)
-	if err != nil {
-		return "", fmt.Errorf("objectstore identity: decrypt: %w", err)
-	}
-	return string(plaintext), nil
-}
-
 // validatedUUID applies the shared profile traversal/charset guard AND enforces that
 // the identity is a real UUID (the identity_object_store PK is uuid) — so a hostile
 // identity string can neither be spliced into the query nor address a foreign row.
@@ -210,22 +174,4 @@ func validatedUUID(identity string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, fmt.Errorf("objectstore identity: invalid identity uuid %q: %w", identity, err)
 	}
 	return pgtype.UUID{Bytes: u, Valid: true}, nil
-}
-
-// deriveObjectStoreKey validates AURA_AUTHULA_SECRET (64 hex chars / 32 bytes) and
-// HKDF-expands it into a domain-separated 32-byte AES-256 key.
-func deriveObjectStoreKey(authulaSecretHex string) ([]byte, error) {
-	secret := strings.TrimSpace(authulaSecretHex)
-	if len(secret) != 64 {
-		return nil, fmt.Errorf("objectstore identity: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
-	}
-	raw, err := hex.DecodeString(secret)
-	if err != nil {
-		return nil, fmt.Errorf("objectstore identity: AURA_AUTHULA_SECRET must be valid hex: %w", err)
-	}
-	key, err := hkdf.Key(sha256.New, raw, nil, keyDerivationInfo, 32)
-	if err != nil {
-		return nil, fmt.Errorf("objectstore identity: derive key: %w", err)
-	}
-	return key, nil
 }

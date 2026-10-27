@@ -73,7 +73,7 @@ func TestMessageDraftTrustedCallsParkBeforeExecute(t *testing.T) {
 				t.Fatal("parked draft lost trusted call identity")
 			}
 			ic := internalPauseIC(t).WithContext(ctx)
-			event := agent.pauseEvent(ic, [8]byte{}, nil, pauses[0].pause)
+			event := agent.pauseEvent(ic, [8]byte{}, pauses[0].pause)
 			event.Actions.AwaitingInput.OriginalArguments = pauses[0].originalArguments
 			encoded, err := json.Marshal(event)
 			if err != nil || string(encoded) == "" || bytes.Contains(encoded, []byte("Secret body")) {

@@ -3,7 +3,6 @@ package tracesink
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,11 +18,11 @@ func TestSink(t *testing.T) {
 		}
 		plaintext := []byte(`{"stage":"planning","detail":"private"}`)
 
-		first, err := sink.encrypt(plaintext)
+		first, err := sink.sealer.Seal(plaintext)
 		if err != nil {
 			t.Fatalf("first encrypt: %v", err)
 		}
-		second, err := sink.encrypt(plaintext)
+		second, err := sink.sealer.Seal(plaintext)
 		if err != nil {
 			t.Fatalf("second encrypt: %v", err)
 		}
@@ -31,7 +30,7 @@ func TestSink(t *testing.T) {
 			t.Fatal("two encryptions were identical: nonce was reused")
 		}
 		for i, ciphertext := range [][]byte{first, second} {
-			got, err := sink.decrypt(ciphertext)
+			got, err := sink.sealer.Open(ciphertext)
 			if err != nil {
 				t.Fatalf("decrypt %d: %v", i, err)
 			}
@@ -46,15 +45,15 @@ func TestSink(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		if _, err := sink.decrypt(make([]byte, sink.aead.NonceSize()-1)); err == nil {
+		if _, err := sink.sealer.Open(make([]byte, 11)); err == nil {
 			t.Fatal("short ciphertext was accepted")
 		}
-		ciphertext, err := sink.encrypt([]byte("record"))
+		ciphertext, err := sink.sealer.Seal([]byte("record"))
 		if err != nil {
 			t.Fatalf("encrypt: %v", err)
 		}
 		ciphertext[len(ciphertext)-1] ^= 0xff
-		if _, err := sink.decrypt(ciphertext); err == nil {
+		if _, err := sink.sealer.Open(ciphertext); err == nil {
 			t.Fatal("tampered ciphertext was accepted")
 		}
 	})
@@ -107,7 +106,7 @@ func TestSink(t *testing.T) {
 			if size > len(raw) {
 				t.Fatalf("truncated frame: declared %d, available %d", size, len(raw))
 			}
-			record, err := sink.decrypt(raw[:size])
+			record, err := sink.sealer.Open(raw[:size])
 			if err != nil {
 				t.Fatalf("decrypt frame: %v", err)
 			}
@@ -155,16 +154,4 @@ func TestSink(t *testing.T) {
 			t.Fatal("a failed write was not returned")
 		}
 	})
-}
-
-func (s *Sink) decrypt(ciphertext []byte) ([]byte, error) {
-	nonceSize := s.aead.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("trace sink: ciphertext too short (%d < %d)", len(ciphertext), nonceSize)
-	}
-	plaintext, err := s.aead.Open(nil, ciphertext[:nonceSize], ciphertext[nonceSize:], nil)
-	if err != nil {
-		return nil, fmt.Errorf("trace sink: decrypt: %w", err)
-	}
-	return plaintext, nil
 }

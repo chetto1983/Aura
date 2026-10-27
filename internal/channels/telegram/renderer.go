@@ -465,3 +465,10 @@ func splitBoundary(s string, n int) int {
 	}
 	return len(prefix)
 }
+
+// PlainTextFallback is what the renderer resends when a parsed (HTML) send is rejected:
+// the original text, unescaped, without ParseMode. It is the identity function, named so
+// the fallback reads as a decision at every call site.
+func PlainTextFallback(original string) string {
+	return original
+}

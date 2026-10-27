@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -46,14 +47,14 @@ func wireBootstrapService(
 	grants firstPartyGrantProvisioner,
 	resources bootstrapResources,
 ) bool {
-	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) || isNilBootstrapDependency(memory) {
+	if isNilDependency(server) || pool == nil || isNilDependency(provider) || isNilDependency(memory) {
 		return false
 	}
 	core := provider.CoreServices()
 	if core == nil {
 		return false
 	}
-	if isNilBootstrapDependency(grants) {
+	if isNilDependency(grants) {
 		grants = nil
 	}
 	server.SetBootstrapService(&firstOperatorBootstrapService{
@@ -68,7 +69,11 @@ func wireBootstrapService(
 	return true
 }
 
-func isNilBootstrapDependency(v any) bool {
+// isNilDependency reports whether v is nil or a typed nil inside an interface: the
+// composition root receives optional collaborators as interfaces, and a nil *T stored in one
+// is not == nil. Four copies of this had grown in this package (bootstrap, password reset,
+// and the two web-auth provider checks).
+func isNilDependency(v any) bool {
 	if v == nil {
 		return true
 	}
@@ -236,14 +241,14 @@ func createAuraFirstOperatorTx(ctx context.Context, tx pgx.Tx, identityName, aut
 	// operator gets the declared set explicitly, not the '*' shortcut.
 	grantedCapabilities := identity.All()
 	newID, err := identity.CreateUserTx(ctx, tx, identityName, grantedCapabilities)
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return "", agui.ErrBootstrapAlreadyConfigured
 	}
 	if err != nil {
 		return "", fmt.Errorf("create bootstrap identity: %w", err)
 	}
 	if _, err := tx.Exec(ctx, linkOperatorSQL, newID.String(), authulaUserID); err != nil {
-		if isUniqueViolation(err) {
+		if db.IsUniqueViolation(err) {
 			return "", agui.ErrBootstrapAlreadyConfigured
 		}
 		return "", fmt.Errorf("link bootstrap operator: %w", err)

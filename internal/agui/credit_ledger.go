@@ -18,7 +18,6 @@ package agui
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +77,7 @@ func (r *PgSpendReader) PeriodSpend(ctx context.Context, identityID, limitReset 
 	if err != nil {
 		return 0, fmt.Errorf("credit_ledger: period spend for %s: %w", identityID, err)
 	}
-	spend, err := anyCostFloat(raw)
+	spend, err := pgnumeric.FloatFromAggregate(raw)
 	if err != nil {
 		return 0, fmt.Errorf("credit_ledger: decode period spend for %s: %w", identityID, err)
 	}
@@ -106,37 +105,6 @@ func windowStart(now time.Time, limitReset string) time.Time {
 		return dayStart.AddDate(0, 0, -offset)
 	default: // "monthly" and any unrecognized value.
 		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	}
-}
-
-// anyCostFloat coerces a sqlc `coalesce(sum(numeric),0)` result to float64, mirroring
-// internal/cachemetrics/store_helpers.go's anyNumericFloat (a different package, same
-// discipline: an unparseable text shape or an unmodeled driver type is an error, never
-// a silently-fabricated 0 -- a "$0.00 spend" that is actually an unrecognized decode
-// shape reads as "this identity is free", which is the exact false-green this ledger
-// exists to prevent, WR-02).
-func anyCostFloat(v any) (float64, error) {
-	switch n := v.(type) {
-	case pgtype.Numeric:
-		return pgnumeric.FloatFromNumeric(n), nil
-	case float64:
-		return n, nil
-	case int64:
-		return float64(n), nil
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		if err != nil {
-			return 0, fmt.Errorf("decode float aggregate from string %q: %w", n, err)
-		}
-		return f, nil
-	case []byte:
-		f, err := strconv.ParseFloat(string(n), 64)
-		if err != nil {
-			return 0, fmt.Errorf("decode float aggregate from bytes %q: %w", n, err)
-		}
-		return f, nil
-	default:
-		return 0, fmt.Errorf("unmodeled float aggregate shape %T", v)
 	}
 }
 

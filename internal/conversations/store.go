@@ -465,7 +465,7 @@ func (s *Store) purgeConversationArtifacts(conversationID string) error {
 		// validateID here too: the cleaner's own guard duplicates it, but rejecting
 		// a traversal-shaped id before handing it across the seam keeps the contract
 		// explicit at the call site (D-26: session_id == conversation_id).
-		if vErr := validateID("conversation_id", conversationID); vErr != nil {
+		if vErr := validateConversationID(conversationID); vErr != nil {
 			return fmt.Errorf("delete conversation %s: %w", conversationID, vErr)
 		}
 		if pErr := s.cleaner.PurgeConversationDir(conversationID); pErr != nil {
@@ -491,7 +491,7 @@ func (s *Store) purgeConversationArtifacts(conversationID string) error {
 // ($AURA_RUN_DIR/conversations/<id>), validated against path traversal (D-26:
 // session_id == conversation_id).
 func (s *Store) sidecarDir(conversationID string) (string, error) {
-	if err := validateID("conversation_id", conversationID); err != nil {
+	if err := validateConversationID(conversationID); err != nil {
 		return "", err
 	}
 	return filepath.Join(s.runDir, "conversations", conversationID), nil

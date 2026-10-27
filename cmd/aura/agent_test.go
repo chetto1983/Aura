@@ -229,7 +229,7 @@ func TestDryRun_MalformedEnv_FailsFast(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := dryRunConfig{requestID: "auto", maxSteps: -1, maxWallclockSec: -1, dedupWindow: -1}
 	if err := dryRun(cfg, &buf); err == nil {
-		t.Fatal("expected NewBudgetFromEnv to fail-fast on a malformed AURA_LOOP_MAX_STEPS")
+		t.Fatal("expected NewBudget to fail-fast on a malformed AURA_LOOP_MAX_STEPS")
 	}
 }
 

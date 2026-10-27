@@ -20,15 +20,9 @@ import "os"
 type ArcadeDBConfig struct {
 	BaseURL  string // ARCADEDB_URL
 	Database string // ARCADEDB_DATABASE — the SHARED database; per-identity memory lives in mem_<uuid>
-	// User/Password is the ordinary credential on the shared database. It carries
-	// the adaptive-learning projection, which is Aura's own plane and is scoped by
-	// an owner_id property rather than by a database.
-	User     string // ARCADEDB_USER
-	Password string // ARCADEDB_PASSWORD
 	// AdminUser/AdminPassword carries server rights: create/drop database,
-	// create/drop user. Kept apart from the pair above for the same reason
-	// AURA_DB_URL is kept apart from AURA_DB_MIGRATE_URL — the credential that
-	// reads must not be able to drop.
+	// create/drop user. The ordinary ARCADEDB_USER/ARCADEDB_PASSWORD pair belongs
+	// to the cmd/arcadedb-mcp sidecar; this process authenticates per tenant.
 	AdminUser     string // ARCADEDB_ADMIN_USER
 	AdminPassword string // ARCADEDB_ADMIN_PASSWORD
 }
@@ -40,8 +34,6 @@ func loadArcadeDB() ArcadeDBConfig {
 	return ArcadeDBConfig{
 		BaseURL:       envDefault("ARCADEDB_URL", "http://127.0.0.1:2480"),
 		Database:      envDefault("ARCADEDB_DATABASE", "aura_memory"),
-		User:          os.Getenv("ARCADEDB_USER"),
-		Password:      os.Getenv("ARCADEDB_PASSWORD"),
 		AdminUser:     os.Getenv("ARCADEDB_ADMIN_USER"),
 		AdminPassword: os.Getenv("ARCADEDB_ADMIN_PASSWORD"),
 	}

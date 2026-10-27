@@ -122,12 +122,8 @@ npx create-aura-appliance                 # local
 npx create-aura-appliance --mode remote   # Linux target over SSH
 ```
 
-Then open `https://<host>`, create the first user (the operator), and let the first-run
-setup pick the model route, the OpenRouter key and the optional Telegram bot:
-
-```text
-https://<host>/setup/?token=<AURA_ACCESS_TOKEN>
-```
+Then open `https://<host>`, create the first user (the operator), and let the cockpit's
+first-run setup pick the model route, the OpenRouter key and the optional Telegram bot.
 
 Windows (Docker Desktop), the curl installer, release channels, the local CA, updates
 and WhatsApp pairing: [docs/INSTALL.md](docs/INSTALL.md).

@@ -265,54 +265,6 @@ func (q *Queries) ListExpiredReplayBodies(ctx context.Context, arg ListExpiredRe
 	return items, nil
 }
 
-const lockOperationReceipt = `-- name: LockOperationReceipt :one
-SELECT
-    identity_id,
-    operation_scope,
-    operation_key,
-    payload_hash,
-    state,
-    version,
-    created_at
-FROM aura.idempotency_operations
-WHERE identity_id = $1
-  AND operation_scope = $2
-  AND operation_key = $3
-FOR UPDATE
-`
-
-type LockOperationReceiptParams struct {
-	IdentityID     pgtype.UUID `json:"identity_id"`
-	OperationScope string      `json:"operation_scope"`
-	OperationKey   string      `json:"operation_key"`
-}
-
-type LockOperationReceiptRow struct {
-	IdentityID     pgtype.UUID        `json:"identity_id"`
-	OperationScope string             `json:"operation_scope"`
-	OperationKey   string             `json:"operation_key"`
-	PayloadHash    []byte             `json:"payload_hash"`
-	State          string             `json:"state"`
-	Version        int64              `json:"version"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
-func (q *Queries) LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error) {
-	row := q.db.QueryRow(ctx, lockOperationReceipt, arg.IdentityID, arg.OperationScope, arg.OperationKey)
-	var i LockOperationReceiptRow
-	err := row.Scan(
-		&i.IdentityID,
-		&i.OperationScope,
-		&i.OperationKey,
-		&i.PayloadHash,
-		&i.State,
-		&i.Version,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const markOperationIndeterminate = `-- name: MarkOperationIndeterminate :execrows
 UPDATE aura.idempotency_operations
 SET state = 'indeterminate',

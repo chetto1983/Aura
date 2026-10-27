@@ -10,6 +10,11 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 )
 
+// reconcileReservedConversationDeletes runs reserved-delete recovery with no projector.
+func (r *Runner) reconcileReservedConversationDeletes(ctx context.Context, limit int32) (int, error) {
+	return r.reconcileReservedConversationDeletesWithProjection(ctx, limit, nil)
+}
+
 type resumableDeleteStore struct {
 	*recordingConvStore
 

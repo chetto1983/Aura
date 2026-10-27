@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -149,15 +150,6 @@ func writeTurnSidecar(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }
 
-// optionalText maps an empty string to a NULL pgtype.Text (tool_call_id is only
-// set on tool-role turns).
-func optionalText(s string) pgtype.Text {
-	if s == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: s, Valid: true}
-}
-
 // optionalInt8 maps a zero int64 to a NULL pgtype.Int8 (mirrors optionalText:
 // reasoning_duration_ms is only set on reasoning-bearing assistant answer turns).
 func optionalInt8(v int64) pgtype.Int8 {
@@ -167,20 +159,20 @@ func optionalInt8(v int64) pgtype.Int8 {
 	return pgtype.Int8{Int64: v, Valid: true}
 }
 
-// validateID rejects any id that could escape the fixed
+// validateConversationID rejects any id that could escape the fixed
 // <run_dir>/conversations/ prefix once joined into a path: `..` traversal or an
 // embedded separator (T-04-13, mirrors tools/result.go validateID). The only
 // model/agent-supplied segment is the conversation_id (D-26).
-func validateID(kind, id string) error {
+func validateConversationID(id string) error {
 	if id == "" {
-		return fmt.Errorf("%s is empty", kind)
+		return errors.New("conversation_id is empty")
 	}
 	if strings.Contains(id, "..") {
-		return fmt.Errorf("%s %q contains %q", kind, id, "..")
+		return fmt.Errorf("conversation_id %q contains %q", id, "..")
 	}
 	for i := 0; i < len(id); i++ {
 		if id[i] == '/' || id[i] == '\\' || os.IsPathSeparator(id[i]) {
-			return fmt.Errorf("%s %q contains a path separator", kind, id)
+			return fmt.Errorf("conversation_id %q contains a path separator", id)
 		}
 	}
 	return nil

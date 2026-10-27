@@ -62,7 +62,7 @@ func TestDispatch_MutatingPanicRecordsEditedPath(t *testing.T) {
 	a, ic := dispatchAgent(t, reg)
 
 	calls := []llm.ToolCall{toolCall("w1", "write_file", `{"path":"/tmp/crashed.txt"}`)}
-	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
+	done, infraErr := a.dispatch(ic, [8]byte{}, ic.RequestID.String(), calls, &turnUsage{},
 		func(*Event, error) bool { return true })
 
 	if infraErr != nil {

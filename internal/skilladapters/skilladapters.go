@@ -53,16 +53,10 @@ type Loader struct {
 	manCap     int
 }
 
-// NewLoader builds the loader adapter over ONE loader — the deployment-global wiring, and
-// every unscoped caller (the CLI, a pool-free manifest path). manCap is the manifest byte cap
-// (cfg.SkillManifestCapBytes).
-func NewLoader(loader *skills.Loader, manCap int) *Loader {
-	return NewIdentityLoader(func(context.Context, string) *skills.Loader { return loader }, loader.Invalidate, manCap)
-}
-
-// NewIdentityLoader builds the adapter that answers per identity. invalidate expires every
-// cached snapshot the resolver can hand out: a write must be visible to the next read in the
-// same turn, and the writer does not know which identities have a warm loader.
+// NewIdentityLoader builds the adapter that answers per identity. manCap is the manifest
+// byte cap (cfg.SkillManifestCapBytes). invalidate expires every cached snapshot the
+// resolver can hand out: a write must be visible to the next read in the same turn, and
+// the writer does not know which identities have a warm loader.
 func NewIdentityLoader(resolve LoaderResolver, invalidate func(), manCap int) *Loader {
 	return &Loader{resolve: resolve, invalidate: invalidate, manCap: manCap}
 }

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"pgregory.net/rapid"
 )
 
 const testLocalID = "00000000-0000-0000-0000-000000000001"
@@ -51,15 +49,30 @@ type fakeErr struct{ s string }
 
 func (e *fakeErr) Error() string { return e.s }
 
+// testSessionCookie is the cookie testDeps' SessionValidator reads. Production's validator
+// is Authula's (cmd/aura/serve_auth.go); RequireAuth only sees the identity it returns.
+const testSessionCookie = "__Host-test_session"
+
+// sessionCookieFor is a cookie testDeps' validator accepts as a session bound to id.
+func sessionCookieFor(id string) *http.Cookie {
+	return &http.Cookie{Name: testSessionCookie, Value: "valid:" + id}
+}
+
 // testDeps builds an AuthDeps with auth ACTIVE (a configured secret) bound to the
-// seeded local identity, with the local id holding "agent.run".
+// seeded local identity, with the local id holding "agent.run". Its validator accepts
+// exactly the cookies sessionCookieFor builds.
 func testDeps(secret string) AuthDeps {
 	return AuthDeps{
-		Secret:           secret,
-		SigningKey:       deriveSigningKey(secret),
-		TTL:              defaultSessionTTL,
-		SecretConfigured: secret != "",
-		LocalIdentityID:  testLocalID,
+		SessionValidator: func(r *http.Request) (string, bool) {
+			c, err := r.Cookie(testSessionCookie)
+			if err != nil {
+				return "", false
+			}
+			return strings.CutPrefix(c.Value, "valid:")
+		},
+		SessionCookieName: testSessionCookie,
+		SecretConfigured:  secret != "",
+		LocalIdentityID:   testLocalID,
 		Identities: &fakeIdentities{
 			known:        map[string]Identity{testLocalID: {ID: testLocalID, Name: "local", Kind: "user"}},
 			capabilities: map[string]bool{testLocalID + "|agent.run": true},
@@ -94,131 +107,6 @@ func TestIsLoopbackRemoteAddr(t *testing.T) {
 	}
 }
 
-func signedSessionFixture(key []byte, identityID string, issued time.Time) string {
-	payload := identityID + "|" + strconv.FormatInt(issued.Unix(), 10)
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
-		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-// TestSignVerifyRoundtrip is the property: for any identity id + an issued time within
-// TTL, a correctly signed fixture verifies to the same id with ok==true.
-func TestSignVerifyRoundtrip(t *testing.T) {
-	t.Parallel()
-	key := deriveSigningKey("operator-secret")
-	rapid.Check(t, func(rt *rapid.T) {
-		id := rapid.StringMatching(`[a-zA-Z0-9._-]{1,64}`).Draw(rt, "id")
-		// issued is within (now-TTL, now] so the cookie is unexpired at verify time.
-		ageSec := rapid.Int64Range(0, int64(defaultSessionTTL.Seconds())-1).Draw(rt, "ageSec")
-		now := time.Unix(1_700_000_000, 0)
-		issued := now.Add(-time.Duration(ageSec) * time.Second)
-
-		value := signedSessionFixture(key, id, issued)
-		gotID, ok := verifySession(key, value, defaultSessionTTL, now)
-		if !ok {
-			rt.Fatalf("verifySession ok=false for fresh cookie id=%q age=%ds", id, ageSec)
-		}
-		if gotID != id {
-			rt.Fatalf("verifySession id = %q, want %q", gotID, id)
-		}
-	})
-}
-
-// TestVerifyTamper is the property: any single-byte mutation of a valid cookie value
-// makes verifySession reject (forgery rejected).
-func TestVerifyTamper(t *testing.T) {
-	t.Parallel()
-	key := deriveSigningKey("operator-secret")
-	now := time.Unix(1_700_000_000, 0)
-	rapid.Check(t, func(rt *rapid.T) {
-		id := rapid.StringMatching(`[a-zA-Z0-9._-]{1,32}`).Draw(rt, "id")
-		value := signedSessionFixture(key, id, now)
-		pos := rapid.IntRange(0, len(value)-1).Draw(rt, "pos")
-		// Flip the byte at pos to a different printable rune.
-		orig := value[pos]
-		repl := byte('A')
-		if orig == repl {
-			repl = 'B'
-		}
-		tampered := value[:pos] + string(repl) + value[pos+1:]
-		if tampered == value {
-			rt.Skip("no-op mutation")
-		}
-		if _, ok := verifySession(key, tampered, defaultSessionTTL, now); ok {
-			rt.Fatalf("verifySession accepted a tampered cookie (pos=%d): %q", pos, tampered)
-		}
-	})
-}
-
-// TestVerifyExpiry covers the absolute-TTL rejection and the malformed-value rejections
-// (no panic on any shape).
-func TestVerifyExpiry(t *testing.T) {
-	t.Parallel()
-	key := deriveSigningKey("operator-secret")
-	now := time.Unix(1_700_000_000, 0)
-
-	t.Run("expired beyond absolute TTL", func(t *testing.T) {
-		issued := now.Add(-defaultSessionTTL - time.Second)
-		value := signedSessionFixture(key, testLocalID, issued)
-		if _, ok := verifySession(key, value, defaultSessionTTL, now); ok {
-			t.Fatal("verifySession accepted an expired cookie")
-		}
-	})
-	t.Run("wrong key rejects", func(t *testing.T) {
-		value := signedSessionFixture(key, testLocalID, now)
-		other := deriveSigningKey("different-secret")
-		if _, ok := verifySession(other, value, defaultSessionTTL, now); ok {
-			t.Fatal("verifySession accepted a cookie signed with a different key")
-		}
-	})
-	malformed := []struct{ name, value string }{
-		{"no separator", "deadbeef"},
-		{"empty", ""},
-		{"too many parts ok-split", "a.b.c"}, // SplitN(.,2) keeps "b.c" as part[1] → base64 fail
-		{"bad base64 payload", "!!!.AAAA"},
-		{"bad base64 sig", "AAAA.!!!"},
-	}
-	for _, m := range malformed {
-		t.Run("malformed/"+m.name, func(t *testing.T) {
-			if _, ok := verifySession(key, m.value, defaultSessionTTL, now); ok {
-				t.Fatalf("verifySession accepted malformed value %q", m.value)
-			}
-		})
-	}
-}
-
-// readSessionCookie returns the __Host-aura_session cookie from a recorded response,
-// or nil if absent.
-func readSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == sessionCookieName {
-			return c
-		}
-	}
-	return nil
-}
-
-func TestLogout(t *testing.T) {
-	t.Parallel()
-	deps := testDeps("operator-secret")
-	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
-	rec := httptest.NewRecorder()
-
-	deps.LogoutHandler()(rec, req)
-
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303", rec.Code)
-	}
-	c := readSessionCookie(rec)
-	if c == nil {
-		t.Fatal("logout did not emit a clearing Set-Cookie")
-	}
-	if c.MaxAge >= 0 {
-		t.Errorf("logout cookie MaxAge = %d, want < 0 (delete)", c.MaxAge)
-	}
-}
-
 // nextRecorder is a sentinel `next` handler that records whether it was reached and
 // answers 200. RequireAuth/requireCapability only call it when the gate passes.
 func nextRecorder() (http.Handler, *bool) {
@@ -237,8 +125,7 @@ func validCookieReq(deps AuthDeps, path string, acceptHTML bool) *http.Request {
 	if acceptHTML {
 		req.Header.Set("Accept", "text/html")
 	}
-	value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	req.AddCookie(sessionCookieFor(deps.LocalIdentityID))
 	return req
 }
 
@@ -292,18 +179,39 @@ func TestRequireAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("tampered cookie -> reject", func(t *testing.T) {
+	t.Run("cookie the validator refuses -> reject", func(t *testing.T) {
 		next, hit := nextRecorder()
-		value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value + "x"})
+		req.AddCookie(&http.Cookie{Name: testSessionCookie, Value: "forged:" + deps.LocalIdentityID})
 		rec := httptest.NewRecorder()
 		RequireAuth(next, deps).ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401 on tampered cookie", rec.Code)
+			t.Fatalf("status = %d, want 401 on a refused cookie", rec.Code)
 		}
 		if *hit {
-			t.Fatal("next reached with a tampered cookie")
+			t.Fatal("next reached with a refused cookie")
+		}
+	})
+
+	// Until 2026-10-26 a nil validator fell back to the passphrase HMAC cookie, verified
+	// under whatever SigningKey the deps carried. Production carried none, so a MAC under an
+	// empty key, which anyone can compute, would have validated. Now nothing does.
+	t.Run("no validator -> every session refused", func(t *testing.T) {
+		bare := deps
+		bare.SessionValidator = nil
+		payload := deps.LocalIdentityID + "|" + strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, nil)
+		_, _ = mac.Write([]byte(payload))
+		forged := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+			base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		next, hit := nextRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(&http.Cookie{Name: "__Host-aura_session", Value: forged})
+		req.AddCookie(sessionCookieFor(deps.LocalIdentityID))
+		rec := httptest.NewRecorder()
+		RequireAuth(next, bare).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized || *hit {
+			t.Fatalf("status = %d, reached = %v: an AuthDeps without a validator must accept no session", rec.Code, *hit)
 		}
 	})
 
@@ -480,15 +388,4 @@ func TestRequireCapability(t *testing.T) {
 			t.Fatal("next reached despite a store error")
 		}
 	})
-}
-
-// deriveSigningKey turns the operator secret into a 32-byte HMAC key.
-// It lives in the tests, not in auth_cookie.go, because PRODUCTION never derives
-// one: buildAuthDeps sets SigningKey nil and Secret "", and validateSession
-// dispatches to the Authula SessionValidator instead of the passphrase branch.
-// The derivation contract this expresses is therefore a test fixture, not the
-// runtime's behaviour — the fallback branch it feeds is only reachable from here.
-func deriveSigningKey(secret string) []byte {
-	sum := sha256.Sum256([]byte(secret))
-	return sum[:]
 }

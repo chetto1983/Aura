@@ -275,7 +275,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		Role:               p.Role,
 		Content:            content,
 		ContentSidecarPath: sidecarPath,
-		ToolCallID:         optionalText(p.ToolCallID),
+		ToolCallID:         db.OptionalText(p.ToolCallID),
 		ToolCalls:          p.ToolCalls,
 		InputTokens:        int32(p.InputTokens),
 		ContextTokens:      int32(p.ContextTokens),
@@ -283,9 +283,9 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		CachedTokens:       int32(p.CachedTokens),
 		// Display-only CoT (amendment #91): rune-bounded upstream so it never spills;
 		// NUL-scrubbed like content (model text can carry \x00, which pg text rejects).
-		Reasoning:           optionalText(db.PostgresTextSafe(p.Reasoning)),
+		Reasoning:           db.OptionalText(db.PostgresTextSafe(p.Reasoning)),
 		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
-		DeliveryKey:         optionalText(p.DeliveryKey),
+		DeliveryKey:         db.OptionalText(p.DeliveryKey),
 		AttachmentIds:       attachmentUUIDs(p.AttachmentIDs),
 	}
 	agg := sqlc.UpdateConversationAggregatesParams{

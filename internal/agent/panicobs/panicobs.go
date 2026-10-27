@@ -8,25 +8,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Recovery-site labels for Record and Count: low-cardinality Prometheus/expvar
+// Recovery-site labels for Record: low-cardinality Prometheus/expvar
 // label values naming where a panic was recovered. siteUnknown is the fallback
 // for any site not in allowedSites, keeping label cardinality bounded.
 const (
-	SiteExecuteBatch     = "execute_batch"
-	SiteLlmAgentRun      = "llm_agent_run"
-	SiteWorkflowParallel = "workflow_parallel"
-	SiteSwarmWave        = "swarm_wave"
-	SiteShellBGReaper    = "shell_bg_reaper"
-	siteUnknown          = "unknown"
+	SiteExecuteBatch  = "execute_batch"
+	SiteLlmAgentRun   = "llm_agent_run"
+	SiteSwarmWave     = "swarm_wave"
+	SiteShellBGReaper = "shell_bg_reaper"
+	siteUnknown       = "unknown"
 )
 
 var allowedSites = map[string]struct{}{
-	SiteExecuteBatch:     {},
-	SiteLlmAgentRun:      {},
-	SiteWorkflowParallel: {},
-	SiteSwarmWave:        {},
-	SiteShellBGReaper:    {},
-	siteUnknown:          {},
+	SiteExecuteBatch:  {},
+	SiteLlmAgentRun:   {},
+	SiteSwarmWave:     {},
+	SiteShellBGReaper: {},
+	siteUnknown:       {},
 }
 
 var (
@@ -43,17 +41,6 @@ func Record(site string) {
 	site = normalizeSite(site)
 	expRecoveredPanics.Add(site, 1)
 	promRecoveredPanics.WithLabelValues(site).Inc()
-}
-
-// Count returns the number of recovered panics recorded for site (expvar-backed),
-// or 0 if none; the site is normalized before lookup.
-func Count(site string) int64 {
-	if v := expRecoveredPanics.Get(normalizeSite(site)); v != nil {
-		if i, ok := v.(*expvar.Int); ok {
-			return i.Value()
-		}
-	}
-	return 0
 }
 
 func normalizeSite(site string) string {

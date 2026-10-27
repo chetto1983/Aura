@@ -367,9 +367,9 @@ func mapManagerErr(err error) error {
 // buildMCPWriteProvider constructs the concrete MCP write provider best-effort: a nil pool
 // (no DB) leaves it nil → the routes answer 503. Never aborts boot (the
 // SetGovernanceProviders precedent).
-func buildMCPWriteProvider(pool *pgxpool.Pool, live *liveMCPMount, prep *mcpenv.Preparer) (agui.MCPWriteProvider, error) {
+func buildMCPWriteProvider(pool *pgxpool.Pool, live *liveMCPMount, prep *mcpenv.Preparer) agui.MCPWriteProvider {
 	if pool == nil {
-		return nil, nil
+		return nil
 	}
-	return mcpWriteAdapter{pool: pool, live: live, prep: prep}, nil
+	return mcpWriteAdapter{pool: pool, live: live, prep: prep}
 }

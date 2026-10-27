@@ -40,7 +40,7 @@ func (t ReasoningTier) Valid() bool {
 // names visible, so the model can still call tool_search when needed.
 //
 // It gates on the GENERALIZED IsReasoningTarget, like ApplyFixedReasoning already did.
-// It used to gate on IsOpenRouterReasoningTarget, on the reasoning that "local backends
+// It used to gate on OpenRouter alone, on the reasoning that "local backends
 // never ran the classifier tiering" — but the classifier runs on the CONVERSATION, not on
 // the backend, and the per-provider translation of a ReasoningConfig has existed on every
 // arm for as long as the restriction did: OpenRouter takes reasoning{effort},
@@ -113,15 +113,6 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 	req.Reasoning = llm.ReasoningConfig{
 		Effort: cfg.ClampReasoningEffort(effort), Exclude: new(!cfg.ShowReasoning),
 	}
-}
-
-// IsOpenRouterReasoningTarget reports whether provider/baseURL is the OpenRouter
-// reasoning projection. It delegates to the neutral llm.ReasoningTarget classifier
-// (landed by 37E-02) so OpenRouter recognition has a single source of truth; the
-// result is byte-identical to the historical inline string check (D-04). The adaptive
-// path itself (ApplyAdaptiveEffort, the turn reading) gates on IsReasoningTarget.
-func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
-	return llm.ReasoningTarget(provider, baseURL) == llm.ReasoningTargetOpenRouter
 }
 
 // IsReasoningTarget reports whether provider/baseURL is ANY recognized reasoning

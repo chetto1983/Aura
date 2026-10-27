@@ -11,9 +11,9 @@ import (
 )
 
 func TestLoopAgent_EmptySubsUnlimitedReturns(t *testing.T) {
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 	lp := workflow.NewLoop("loop", 0)

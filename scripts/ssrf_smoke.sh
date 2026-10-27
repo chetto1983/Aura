@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 7 (Slice 5) SC#3 SSRF-block smoke + non-leak gate.
 #
-# This script ACTUALLY RUNS `aura web tool web_fetch` against the four canonical
+# This script ACTUALLY RUNS `aura web tool web_fetch` against the six canonical
 # SSRF targets and asserts each one is rejected with the stable `blocked_url`
 # error code BEFORE any dial (D-26..D-30) — and that the sanitized output greps
 # CLEAN of any resolved IP / internal host / response header (D-27). It is the
@@ -11,6 +11,9 @@
 #   - [::ffff:169.254.169.254] — the IPv4-mapped IPv6 bypass (must Unmap-then-classify, D-24/Pitfall)
 #   - [fe80::1]                — IPv6 link-local
 #   - metadata.google.internal — the GCP metadata HOSTNAME (hostname blocklist, D-24)
+#   - [64:ff9b::a9fe:a9fe]     — IMDS carried in the NAT64 well-known prefix (netguard)
+#   - [2002:a9fe:a9fe::1]      — IMDS carried in 6to4 (netguard). Before 2026-10-26 both
+#                                passed the gate and died at the dial as http_error.
 #
 # The fetch path is independent of SEARXNG_URL (the SSRF gate fires before any
 # search backend is touched), so this runs without a live SearXNG container.
@@ -29,6 +32,8 @@ TARGETS=(
   'http://[::ffff:169.254.169.254]/'
   'http://[fe80::1]/'
   'http://metadata.google.internal/'
+  'http://[64:ff9b::a9fe:a9fe]/latest/meta-data/'
+  'http://[2002:a9fe:a9fe::1]/latest/meta-data/'
 )
 
 # Concrete leak tokens the sanitized output must NEVER contain (the sanitized
@@ -56,4 +61,4 @@ if [[ "$fail" -ne 0 ]]; then
   echo "==> ssrf_smoke: FAIL" >&2
   exit 1
 fi
-echo "==> ssrf_smoke: PASS (4/4 blocked_url, grep-clean of IP/host/header leaks)"
+echo "==> ssrf_smoke: PASS (${#TARGETS[@]}/${#TARGETS[@]} blocked_url, grep-clean of IP/host/header leaks)"

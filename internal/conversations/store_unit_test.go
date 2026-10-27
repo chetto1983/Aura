@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/secret"
 )
@@ -46,9 +47,9 @@ func TestValidateID(t *testing.T) {
 		{"a\\b", true},
 	}
 	for _, tc := range tests {
-		err := validateID("conversation_id", tc.id)
+		err := validateConversationID(tc.id)
 		if (err != nil) != tc.wantErr {
-			t.Errorf("validateID(%q): err=%v want wantErr=%v", tc.id, err, tc.wantErr)
+			t.Errorf("validateConversationID(%q): err=%v want wantErr=%v", tc.id, err, tc.wantErr)
 		}
 	}
 }
@@ -166,10 +167,10 @@ func testToolCall(id string) llm.ToolCall {
 
 func TestOptionalText(t *testing.T) {
 	t.Parallel()
-	if got := optionalText(""); got.Valid {
+	if got := db.OptionalText(""); got.Valid {
 		t.Error("empty string must be NULL")
 	}
-	if got := optionalText("call_1"); !got.Valid || got.String != "call_1" {
+	if got := db.OptionalText("call_1"); !got.Valid || got.String != "call_1" {
 		t.Errorf("non-empty must be set: %+v", got)
 	}
 }

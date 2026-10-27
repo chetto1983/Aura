@@ -1,3 +1,8 @@
+// Package workflow holds LoopAgent, the deterministic orchestrator that composes the
+// cornerstone agent.Agent interface: its constructor returns the interface (factory
+// pattern, like net.Pipe / context.WithCancel) so trees nest cleanly, while the
+// struct stays exported for the compile-time satisfaction assert the SPEC wants
+// (D-02).
 package workflow
 
 import "github.com/chetto1983/aura/internal/agent"

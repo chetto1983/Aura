@@ -288,7 +288,7 @@ func persistOnAuthorization(mountCtx context.Context, name, resourceURL string, 
 			resolveLogger(logger).Warn("mcp oauth: authorization succeeded but could not be persisted",
 				"server", redact.Line(name), "error", redact.Line(err.Error()))
 		}
-		return newPersistingTokenSource(detached, cfg.TokenSource(detached, tok), name, resourceURL, rc, store, logger, tok.AccessToken, persisted), nil
+		return newPersistingTokenSource(detached, refreshingTokenSource(detached, cfg, tok), name, resourceURL, rc, store, logger, tok.AccessToken, persisted), nil
 	}
 }
 

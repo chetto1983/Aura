@@ -4,11 +4,11 @@
 #
 # Why: a session/bearer token in a URL leaks through Referer headers, browser history,
 # proxy/access logs, and shared links. Aura's long-lived auth session travels ONLY as the
-# __Host-aura_session / __Host-authula_session Secure cookie — never a query param. This
+# __Host-authula_session Secure cookie — never a query param. This
 # gate is the static proof of that invariant (phase-36 D-24 / T-36-11-I).
 #
 # Carve-out (MUSR-06): a query token is allowed ONLY for a <=1h SETUP BOOTSTRAP — the
-# Telegram deep-link `t.me/<bot>?start=<token>` and the first-run setup wizard
+# Telegram deep-link `t.me/<bot>?start=<token>` and the setup server's status API
 # `/setup/?token=<token>` (onboardingTTL = 1h, single-use). Those use the generic
 # `start=` / `token=` keys, which are deliberately NOT in the long-lived key set below,
 # so they pass without an explicit per-line allowlist.

@@ -400,8 +400,6 @@ func TestGovernanceWriteSkillsMountCapabilityGate(t *testing.T) {
 
 	s, _ := skillsWriteServer(newFakeSkillsWrite())
 	deps := AuthDeps{
-		Secret:           "operator-secret",
-		SigningKey:       deriveSigningKey("operator-secret"),
 		SecretConfigured: true,
 		LocalIdentityID:  granteeID,
 		Identities: &fakeIdentities{

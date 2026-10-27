@@ -22,25 +22,21 @@ import (
 // (D-02). It complements, and does not replace, any future PRD MaxDuration boot
 // query: the heartbeat-staleness scan is the liveness-based half. A scan or mark
 // failure is logged WARN and does NOT abort boot (a degraded recovery still lets the
-// daemon serve), so the returned error is ALWAYS nil — Start treats a degraded
-// recovery as non-fatal (it calls this for its side effect, discarding the nil), and
-// the per-tick sweep discards it the same way. Idempotent by construction: a row
-// already marked unknown_recovery no longer matches the status='running' scan, so
-// repeating it every tick re-marks nothing. The
-// error return is kept only to leave room for a future hard-fail policy without a
-// signature change; today there is no failure the caller acts on.
-func (s *Scheduler) recoverOrphans(ctx context.Context) error {
+// daemon serve), so there is no error to return: Start and the per-tick sweep call it
+// for its side effect. Idempotent by construction: a row already marked unknown_recovery
+// no longer matches the status='running' scan, so repeating it every tick re-marks
+// nothing.
+func (s *Scheduler) recoverOrphans(ctx context.Context) {
 	stale, err := s.store.ScanStaleRuns(ctx, staleRecoverySeconds)
 	if err != nil {
 		slog.Warn("scheduler boot orphan scan failed", "err", err)
-		return nil
+		return
 	}
 	for _, r := range stale {
 		if err := s.store.MarkUnknownRecovery(ctx, r.RunID); err != nil {
 			slog.Warn("scheduler mark unknown_recovery failed", "run", r.RunID, "task", r.TaskID, "err", err)
 		}
 	}
-	return nil
 }
 
 // MissedTask is an overdue task collapsed for a single catch-up fire (D-18):

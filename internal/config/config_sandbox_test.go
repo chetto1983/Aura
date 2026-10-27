@@ -6,7 +6,7 @@ import (
 )
 
 // TestLoad_SandboxConfig asserts the Phase 37 AURA_SANDBOX_* operator surface (SBX
-// foundation): config.Load() parses each knob into the typed cfg.Sandbox.* field, an unset
+// foundation): config.LoadServe() parses each knob into the typed cfg.Sandbox.* field, an unset
 // var falls back to the documented default, and — critically — a malformed numeric cap/TTL
 // is FLAGGED Fatal by the per-profile reparse pass under a strict tier (never a silent
 // fallback into an unsafe value). Lives in its own file so config_test.go stays under the
@@ -25,7 +25,7 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		for _, k := range sandboxEnvKeys {
 			t.Setenv(k, "")
 		}
-		cfg, err := Load()
+		cfg, err := LoadServe()
 		if err != nil {
 			t.Fatalf("Load returned error: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "pypi.org, *.githubusercontent.com ,")
 		t.Setenv("AURA_SANDBOX_IMAGE", "registry.example.test/aura-sandbox@sha256:abc")
 		t.Setenv("AURA_SANDBOX_EGRESS_IMAGE", "registry.example.test/aura-egress@sha256:def")
-		cfg, err := Load()
+		cfg, err := LoadServe()
 		if err != nil {
 			t.Fatalf("Load returned error: %v", err)
 		}
@@ -112,7 +112,7 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		}
 		// The load leaf silently absorbs the bad value to the default — the reparse pass, not
 		// the leaf, is the gate. Load must not boot-fail on a malformed non-required knob.
-		cfg, err := Load()
+		cfg, err := LoadServe()
 		if err != nil {
 			t.Fatalf("Load must not boot-fail on a malformed AURA_SANDBOX_IDLE_TTL_SEC (leaf falls back): %v", err)
 		}

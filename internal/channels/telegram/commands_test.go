@@ -13,6 +13,12 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
+// dispatch is dispatchRich's reply text alone, which is all most command tests assert.
+func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (handled bool, reply string) {
+	handled, out := c.dispatchRich(ctx, chatID, text)
+	return handled, out.text
+}
+
 // fakeSearch is the searchBackend double. It records the last query+limit and
 // returns a fixed result set so the cross-slice invariant test can assert the
 // Telegram render equals the CLI render over the SAME backend output.
@@ -145,10 +151,10 @@ func TestSearchEqualsCLI(t *testing.T) {
 		t.Errorf("/search query = %q, want %q", be.lastQ, "meteo")
 	}
 
-	// The Telegram render must contain, for each hit, the SAME excerpt window the
-	// CLI excerpt() produces over the same content+query (cross-slice invariant).
+	// The Telegram render must contain, for each hit, the excerpt window the CLI also
+	// renders (conversations.Excerpt), so both surfaces show the same hit the same way.
 	for _, h := range hits {
-		ex := searchExcerpt(h.Content, "meteo")
+		ex := conversations.Excerpt(h.Content, "meteo")
 		if !strings.Contains(reply, ex) {
 			t.Errorf("/search reply missing CLI-identical excerpt %q\nreply:\n%s", ex, reply)
 		}
@@ -226,18 +232,6 @@ func TestParseSearchCallback(t *testing.T) {
 					tt.data, gotPage, gotClose, gotOK, tt.wantPage, tt.wantClose, tt.wantOK)
 			}
 		})
-	}
-}
-
-func TestClampExcerptRuneSafeEllipses(t *testing.T) {
-	t.Parallel()
-	s := "ab\u00e8cd\u20acfg"
-	got := clampExcerpt(s, 3, 7)
-	if got != "\u2026cd\u2026" {
-		t.Fatalf("clampExcerpt should move byte indexes to rune starts with ellipses, got %q", got)
-	}
-	if got := clampExcerpt(s, -10, len(s)+10); got != s {
-		t.Fatalf("full-range clampExcerpt = %q, want %q", got, s)
 	}
 }
 

@@ -380,38 +380,6 @@ func (q *Queries) FinalizeRetentionOperation(ctx context.Context, arg FinalizeRe
 	return i, err
 }
 
-const getRetentionItem = `-- name: GetRetentionItem :one
-SELECT id, operation_id, item_key, identity_id, conversation_id, artifact_id, class, action, expected_version, expected_bytes, status, artifact_result, removed_bytes, failure_class, claim_owner, lease_expires_at, attempt_count, created_at, updated_at, completed_at FROM aura.retention_operation_items WHERE id = $1
-`
-
-func (q *Queries) GetRetentionItem(ctx context.Context, id pgtype.UUID) (AuraRetentionOperationItems, error) {
-	row := q.db.QueryRow(ctx, getRetentionItem, id)
-	var i AuraRetentionOperationItems
-	err := row.Scan(
-		&i.ID,
-		&i.OperationID,
-		&i.ItemKey,
-		&i.IdentityID,
-		&i.ConversationID,
-		&i.ArtifactID,
-		&i.Class,
-		&i.Action,
-		&i.ExpectedVersion,
-		&i.ExpectedBytes,
-		&i.Status,
-		&i.ArtifactResult,
-		&i.RemovedBytes,
-		&i.FailureClass,
-		&i.ClaimOwner,
-		&i.LeaseExpiresAt,
-		&i.AttemptCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
 const getRetentionOperationByToken = `-- name: GetRetentionOperationByToken :one
 SELECT id, token, policy_version, status, candidate_count, planned_bytes, completed_count, completed_bytes, failure_count, created_at, updated_at, completed_at FROM aura.retention_operations WHERE token = $1
 `

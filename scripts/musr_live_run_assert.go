@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agenteval"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // requiredTools are the three capabilities D-17 requires both identities to exercise on
@@ -195,7 +196,7 @@ func checkIdentity(label, path string, evidence agenteval.Evidence, otherAnswer 
 	ownToken := ownPattern.FindString(evidence.Answer)
 	if ownToken == "" {
 		out = append(out, fmt.Sprintf("expected-token[%s] %s: answer does not carry identity %s's own seeded token (pattern MUSR-%s-<hex>) — answer: %s",
-			label, path, label, label, truncate(evidence.Answer, 300)))
+			label, path, label, label, utf8cut.Ellipsize(evidence.Answer, 300)))
 		return out // nothing to cross-read-check without a token to look for
 	}
 
@@ -221,13 +222,6 @@ func otherLabel(label string) string {
 	return "A"
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
-
 // readFrames parses a transcript jsonl file into an ordered slice of frame. A missing file
 // is a read error (surfaced as a completion failure); a present-but-empty file returns a
 // nil slice with no error, which completionFailure treats as an empty transcript.
@@ -248,7 +242,7 @@ func readFrames(path string) ([]frame, error) {
 		}
 		var fr frame
 		if err := json.Unmarshal([]byte(line), &fr); err != nil {
-			return nil, fmt.Errorf("%s: invalid frame line %q: %w", path, truncate(line, 200), err)
+			return nil, fmt.Errorf("%s: invalid frame line %q: %w", path, utf8cut.Ellipsize(line, 200), err)
 		}
 		frames = append(frames, fr)
 	}
@@ -302,7 +296,7 @@ func readTimings(path string) ([]timingEntry, error) {
 		}
 		var e timingEntry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			return nil, fmt.Errorf("%s: invalid timing line %q: %w", path, truncate(line, 200), err)
+			return nil, fmt.Errorf("%s: invalid timing line %q: %w", path, utf8cut.Ellipsize(line, 200), err)
 		}
 		entries = append(entries, e)
 	}

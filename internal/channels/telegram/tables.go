@@ -25,12 +25,11 @@ var errEmptyTable = errors.New("telegram: cannot render an empty table grid")
 // Table-render constants (spike 018b winner). 28px = 14pt @2x survives
 // Telegram's JPEG re-encode legibly; 16px cell padding; 1px black grid.
 const (
-	tableFontSize  = 28
-	tableFontDPI   = 72
-	cellPadX       = 16
-	cellPadY       = 10
-	gridLineWidth  = 1
-	preBlockColGap = "  "
+	tableFontSize = 28
+	tableFontDPI  = 72
+	cellPadX      = 16
+	cellPadY      = 10
+	gridLineWidth = 1
 )
 
 // ParseMarkdownTable detects a markdown table — a '|'-delimited header row, a
@@ -265,50 +264,4 @@ func measure(f font.Face, s string) int {
 
 func fillRect(img *image.RGBA, x, y, w, h int, src image.Image) {
 	draw.Draw(img, image.Rect(x, y, x+w, y+h), src, image.Point{}, draw.Src)
-}
-
-// PreBlockTable is the zero-dependency fallback: it pads each cell to its
-// per-column rune width inside a ``` monospace fence. Readable up to ~56
-// char/row on the operator's device (the on-device ceiling, spike 018a); wide
-// tables degrade here rather than failing. Used when PNG rendering is
-// unavailable or the channel prefers text.
-func PreBlockTable(grid [][]string) string {
-	if len(grid) == 0 {
-		return "```\n```"
-	}
-	cols := len(grid[0])
-	colWidth := make([]int, cols)
-	for _, row := range grid {
-		for c := 0; c < cols && c < len(row); c++ {
-			if w := len([]rune(row[c])); w > colWidth[c] {
-				colWidth[c] = w
-			}
-		}
-	}
-
-	var b strings.Builder
-	b.WriteString("```\n")
-	for _, row := range grid {
-		for c := range cols {
-			cell := ""
-			if c < len(row) {
-				cell = row[c]
-			}
-			b.WriteString(padRunes(cell, colWidth[c]))
-			if c < cols-1 {
-				b.WriteString(preBlockColGap)
-			}
-		}
-		b.WriteByte('\n')
-	}
-	b.WriteString("```")
-	return b.String()
-}
-
-func padRunes(s string, width int) string {
-	n := width - len([]rune(s))
-	if n <= 0 {
-		return s
-	}
-	return s + strings.Repeat(" ", n)
 }

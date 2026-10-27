@@ -10,7 +10,6 @@ import (
 	authulamodels "github.com/Authula/authula/models"
 	authulaservices "github.com/Authula/authula/services"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -139,7 +138,7 @@ func (a auraLegAdapter) CreateIdentityWithGrants(ctx context.Context, p agui.Aur
 	switch {
 	// A duplicate name (NOT NULL UNIQUE) is a clean 409 (idempotent double-submit → one
 	// identity), classified by SQLSTATE 23505 (never a message match).
-	case isUniqueViolation(err):
+	case db.IsUniqueViolation(err):
 		return "", agui.ErrOnboardingDuplicate
 	// Backstop of the no-escalation re-validation at the store edge.
 	case errors.Is(err, identity.ErrInvalidCapability), errors.Is(err, identity.ErrWildcardManaged):
@@ -312,11 +311,4 @@ func resolveBotUsername(ctx context.Context, token string) string {
 		return ""
 	}
 	return username
-}
-
-// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As + pgErr.Code
-// (never a message match — mirrors internal/identity.isUniqueViolation).
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

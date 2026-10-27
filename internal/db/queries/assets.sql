@@ -13,10 +13,6 @@ ON CONFLICT (identity_id, source_kind, source_ref)
 DO UPDATE SET updated_at = aura.assets.updated_at
 RETURNING *;
 
--- name: GetAsset :one
-SELECT * FROM aura.assets
-WHERE id = $1;
-
 -- name: GetAssetByObjectKey :one
 SELECT * FROM aura.assets
 WHERE identity_id = $1
@@ -243,18 +239,6 @@ WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND status = 'deleting'
 RETURNING *;
-
--- name: NextAssetEventSeq :one
-SELECT COALESCE(MAX(seq), 0) + 1::integer
-FROM aura.asset_events
-WHERE asset_id = $1;
-
--- name: InsertAssetEvent :exec
-INSERT INTO aura.asset_events (
-    asset_id, seq, from_status, to_status, reason, detail
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-);
 
 -- name: AssetNamesByObjectKey :many
 -- The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment

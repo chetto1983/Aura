@@ -354,7 +354,10 @@ func assembleChatEnv(
 		RunDir:       cfg.RunDir,
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
 	})
-	pauseStore := askuser.New(pool)
+	// The resume path reads pauses through GetByToken, so a pause past the TTL reads as
+	// absent here before the serve-only expiry sweeper claims it, and in `aura chat`, where
+	// no sweeper runs at all.
+	pauseStore := askuser.NewWithPauseTTL(pool, cfg.AskUser.PauseTTLSec)
 	idStore := identity.New(pool)
 	cacheStore := cachemetrics.New(pool)
 	toolInvocationStore := toolinvocations.New(pool)

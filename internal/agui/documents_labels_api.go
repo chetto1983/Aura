@@ -15,7 +15,6 @@ func (s *Server) registerDocumentListRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+documentsBase+"/labels", s.documentsRoute(s.handleLabelSave))
 	mux.HandleFunc("PUT "+documentsBase+"/labels/{id}", s.documentsRoute(s.handleLabelSave))
 	mux.HandleFunc("DELETE "+documentsBase+"/labels/{id}", s.documentsRoute(s.handleLabelDelete))
-	mux.HandleFunc("POST "+documentsBase+"/labels/{id}/run", s.documentsRoute(s.handleLabelRun))
 	mux.HandleFunc("GET "+documentsBase+"/custom-fields", s.documentsRoute(s.handleCustomFields))
 	mux.HandleFunc("POST "+documentsBase+"/custom-fields", s.documentsRoute(s.handleCustomFieldSave))
 	mux.HandleFunc("PUT "+documentsBase+"/custom-fields/{id}", s.documentsRoute(s.handleCustomFieldSave))
@@ -59,15 +58,6 @@ func (s *Server) handleLabelSave(w http.ResponseWriter, r *http.Request, store d
 
 func (s *Server) handleLabelDelete(w http.ResponseWriter, r *http.Request, store documentsStore, identityID string) {
 	writeDocumentsDone(w, store.DeleteLabel(r.Context(), identityID, r.PathValue("id")))
-}
-
-func (s *Server) handleLabelRun(w http.ResponseWriter, r *http.Request, store documentsStore, identityID string) {
-	result, err := store.RunRule(r.Context(), identityID, r.PathValue("id"))
-	if err != nil {
-		writeDocumentsError(w, err)
-		return
-	}
-	writeJSON(w, result)
 }
 
 func (s *Server) handleCustomFields(w http.ResponseWriter, r *http.Request, store documentsStore, identityID string) {

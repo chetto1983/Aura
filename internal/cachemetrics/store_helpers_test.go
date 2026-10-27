@@ -65,45 +65,6 @@ func TestAnyInt64_UnparseableErrors(t *testing.T) {
 	}
 }
 
-func TestAnyNumericFloat_DecodeShapes(t *testing.T) {
-	t.Parallel()
-	mustFloat := func(v any) float64 {
-		t.Helper()
-		f, err := anyNumericFloat(v)
-		if err != nil {
-			t.Fatalf("anyNumericFloat(%#v): %v", v, err)
-		}
-		return f
-	}
-	if got := mustFloat(mustNumeric(t, 1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
-		t.Errorf("anyNumericFloat(numeric 1.25): got %v", got)
-	}
-	if got := mustFloat(float64(2.5)); got != 2.5 {
-		t.Errorf("anyNumericFloat(float 2.5): got %v", got)
-	}
-	if got := mustFloat(int64(3)); got != 3 {
-		t.Errorf("anyNumericFloat(int64 3): got %v", got)
-	}
-	if got := mustFloat("4.5"); got != 4.5 {
-		t.Errorf("anyNumericFloat(string 4.5): got %v", got)
-	}
-	if got := mustFloat([]byte("6.75")); got != 6.75 {
-		t.Errorf("anyNumericFloat([]byte 6.75): got %v", got)
-	}
-}
-
-// TestAnyNumericFloat_UnparseableErrors proves WR-02: an unmodeled shape or an
-// unparseable text cost aggregate errors rather than reporting a fabricated $0.00.
-func TestAnyNumericFloat_UnparseableErrors(t *testing.T) {
-	t.Parallel()
-	bad := []any{nil, struct{}{}, "not-a-number", []byte("xx")}
-	for _, in := range bad {
-		if _, err := anyNumericFloat(in); err == nil {
-			t.Errorf("anyNumericFloat(%#v): want error, got nil", in)
-		}
-	}
-}
-
 func TestNewInsertParams(t *testing.T) {
 	t.Parallel()
 	convID := uuid.Must(uuid.NewV7()).String()

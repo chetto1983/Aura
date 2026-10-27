@@ -168,7 +168,7 @@ func ooxmlTitle(reader *zip.Reader) string {
 // firstWords keeps the opening words of a body of text. Prose is kept, not
 // summarised: the first paragraphs of a document are what a person would read
 // to decide whether it is the file they meant.
-func firstWords(segments []string, limit int) []string {
+func firstWords(segments []string) []string {
 	var out []string
 	used := 0
 	for _, segment := range segments {
@@ -176,8 +176,8 @@ func firstWords(segments []string, limit int) []string {
 		if len(words) == 0 {
 			continue
 		}
-		if used+len(words) > limit {
-			words = words[:limit-used]
+		if used+len(words) > maxProseWords {
+			words = words[:maxProseWords-used]
 			if len(words) > 0 {
 				out = append(out, strings.Join(words, " "))
 			}
@@ -185,7 +185,7 @@ func firstWords(segments []string, limit int) []string {
 		}
 		out = append(out, strings.Join(words, " "))
 		used += len(words)
-		if used >= limit {
+		if used >= maxProseWords {
 			return out
 		}
 	}

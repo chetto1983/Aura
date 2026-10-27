@@ -240,46 +240,6 @@ func isDark(c color.Color) bool {
 	return r>>8 < 128 && g>>8 < 128 && b>>8 < 128
 }
 
-func TestPreBlockTable_FallbackPadsCells(t *testing.T) {
-	grid, ok := ParseMarkdownTable(fourColTable)
-	if !ok {
-		t.Fatal("parse failed")
-	}
-	out := PreBlockTable(grid)
-
-	// Fenced monospace block.
-	if !strings.HasPrefix(out, "```") || !strings.HasSuffix(strings.TrimRight(out, "\n"), "```") {
-		t.Errorf("pre-block must be ```-fenced; got:\n%s", out)
-	}
-
-	// Every content row pads to the same visual width (per-column rune widths).
-	lines := strings.Split(strings.Trim(out, "`\n"), "\n")
-	var contentLines []string
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			contentLines = append(contentLines, l)
-		}
-	}
-	if len(contentLines) < 2 {
-		t.Fatalf("expected padded content lines, got %d", len(contentLines))
-	}
-	width := len([]rune(contentLines[0]))
-	for i, l := range contentLines {
-		if w := len([]rune(l)); w != width {
-			t.Errorf("row %d width = %d, want %d (cells not padded to per-column width)\n%s", i, w, width, out)
-		}
-	}
-}
-
-func TestPreBlockTable_ColumnWidthMatchesWidestCell(t *testing.T) {
-	// "Apple" (5) is the widest cell in column 0; the column must pad to >=5.
-	grid, _ := ParseMarkdownTable(fourColTable)
-	out := PreBlockTable(grid)
-	if !strings.Contains(out, "Apple") || !strings.Contains(out, "Name ") {
-		t.Errorf("expected 'Name' padded to align under 'Apple'; got:\n%s", out)
-	}
-}
-
 // The weather table Aura sent to Telegram on 2026-08-26 rendered "**Lun 24**"
 // with the asterisks drawn into the PNG: nothing stripped inline markup, and the
 // renderer expresses bold through the font instead.

@@ -1,5 +1,5 @@
-// session_validate.go is the Option-A2 seam (spec §3.2/§4.4/OQ-3): it replaces ONLY
-// the cookie-validation core of agui.RequireAuth when AURA_WEB_AUTH_PROVIDER=authula.
+// session_validate.go is the Option-A2 seam (spec §3.2/§4.4/OQ-3): it is the
+// cookie-validation core of agui.RequireAuth (agui.AuthDeps.SessionValidator).
 // The validate path is read verbatim from Authula's own session hook
 // (plugins/session/plugin.go:125-144):
 //

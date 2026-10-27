@@ -68,7 +68,7 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 	markerB := requiredDocumentLiveEnv(t, "AURA_DOCUMENT_E2E_MARKER_B")
 	requiredDocumentLiveEnv(t, "OPENROUTER_API_KEY")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestDocumentProductionAgentE2E(t *testing.T) {
 func TestMediaDocumentProductionAgentE2E(t *testing.T) {
 	identityID := requiredDocumentLiveEnv(t, "AURA_DOCUMENT_E2E_MEDIA_IDENTITY")
 	requiredDocumentLiveEnv(t, "OPENROUTER_API_KEY")
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 	identityID := requiredDocumentLiveEnv(t, "AURA_DOCUMENT_E2E_IDENTITY_A")
 	requiredDocumentLiveEnv(t, "OPENROUTER_API_KEY")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,25 +43,6 @@ func TestKnobRegistry(t *testing.T) {
 				t.Errorf("non-enum knob %q (kind %d) carries a stray Enum %v", k.Name, k.Kind, k.Enum)
 			}
 		}
-	}
-
-	// Exactly the seven secret knobs are flagged Secret (drives rendered redaction).
-	wantSecret := map[string]bool{
-		"AURA_OBJECTSTORE_ACCESS_KEY": true,
-		"AURA_OBJECTSTORE_SECRET_KEY": true,
-		"GARAGE_RPC_SECRET":           true,
-		"AURA_GARAGE_ADMIN_TOKEN":     true,
-		"AURA_AUTHULA_SECRET":         true,
-		"AURA_TRACE_ENCRYPT_KEY":      true,
-	}
-	gotSecret := map[string]bool{}
-	for _, k := range reg {
-		if k.Secret {
-			gotSecret[k.Name] = true
-		}
-	}
-	if !reflect.DeepEqual(gotSecret, wantSecret) {
-		t.Errorf("secret knob set = %v, want exactly the seven secret knobs %v", gotSecret, wantSecret)
 	}
 
 	// AURA_PROFILE is the KindEnum row spelling the four runtime profiles.

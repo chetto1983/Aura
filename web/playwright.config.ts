@@ -10,7 +10,6 @@ import { defineConfig, devices } from '@playwright/test';
 const SERVE_ENV_KEYS = [
   'AURA_DB_URL',
   'AURA_DB_MIGRATE_URL',
-  'AURA_WEB_AUTH_PROVIDER',
   'AURA_AUTHULA_DATABASE_URL',
   'AURA_AUTHULA_SECRET',
   'AURA_AUTHULA_OPERATOR_IDENTITY',

@@ -171,10 +171,10 @@ func TestUUIDProjectionDropsNulls(t *testing.T) {
 	parsed := uuid.MustParse(testGrantee)
 	valid := pgtype.UUID{Bytes: parsed, Valid: true}
 
-	if got := uuidString(pgtype.UUID{}); got != "" {
-		t.Errorf("uuidString(NULL) = %q, want empty", got)
+	if got := (pgtype.UUID{}).String(); got != "" {
+		t.Errorf("NULL.String() = %q, want empty", got)
 	}
-	if got := uuidString(valid); got != testGrantee {
+	if got := valid.String(); got != testGrantee {
 		t.Errorf("uuidString = %q, want %s", got, testGrantee)
 	}
 	got := uuidStrings([]pgtype.UUID{valid, {}, valid})

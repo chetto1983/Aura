@@ -452,7 +452,6 @@ jobs:
       # Embedded Authula provider (no separate container — it runs in-process against the
       # 0019 Postgres schema). The E2E's authula_integration leg provisions A + B and
       # exercises login; the secret + seeded operator satisfy its envOrSkip.
-      AURA_WEB_AUTH_PROVIDER: authula
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
@@ -1746,8 +1745,9 @@ jobs:
     # Groups balanced on cold durations in seconds (runs 36405162541 / 36412624433, and
     # 37607768849 for turn_reading): turn_reading 1012.9 alone sets the floor, since one
     # scope cannot be split; elicitation_route 533.8 / 534.6 rides with gateway 97.1,
-    # pausable 72.8, sandbox 22.1, identity_isolation 5.4 and profile_validation 3.2
-    # (735.2 together); media_clamp 359.6 / 366.8 and media_watcher 79.8 / 81.9 share
+    # pausable 72.8, sandbox 22.1, identity_isolation 5.4, profile_validation 3.2 and
+    # ssrf 17.1 (752.3 together; ssrf measured cold in a cloud container on 2026-10-26,
+    # not on a runner); media_clamp 359.6 / 366.8 and media_watcher 79.8 / 81.9 share
     # internal/mediagen's compiled test dependencies. With three runners nothing can go
     # under turn_reading's 1013 s. Each timeout is at least 2.7 times its group's cold
     # total, for runner variance and setup. turn_reading was measured before the background
@@ -1768,7 +1768,7 @@ jobs:
             scopes: turn_reading
             timeout: 46
           - group: elicitation-boundaries
-            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf
             timeout: 34
           - group: media
             scopes: media_clamp media_watcher
@@ -1822,8 +1822,8 @@ jobs:
     # the measurement that is missing and fails closed.
     if: ${{ !cancelled() }}
     timeout-minutes: 10
-    # REL-02: this is deliberately unconditional. The eleven independently-scored
-    # boundaries — nine Go files, the frontend aggregate and the media frontend on its own
+    # REL-02: this is deliberately unconditional. The twelve independently-scored
+    # boundaries — ten Go files, the frontend aggregate and the media frontend on its own
     # denominator — publish one candidate-bound report on every run; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
     # A Go scope is re-measured only when its input closure changed (2026-09-28): the result
@@ -1922,7 +1922,6 @@ jobs:
       CI: "true"
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_WEB_AUTH_PROVIDER: authula
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test

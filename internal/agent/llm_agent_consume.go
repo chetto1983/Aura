@@ -18,7 +18,7 @@ import (
 // accumulated text the caller persists, amendment #57), gathers finalized tool
 // calls, the finish_reason, and the trailing usage. Tool-call Events are emitted as
 // they finalize so the Event order is chunk -> tool_call (Req#9).
-func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte,
 	requestID string, yield func(*Event, error) bool,
 ) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool, streamErr error) {
 	var b strings.Builder
@@ -50,7 +50,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"thread_id":  a.sessionID,
 				"tool_call":  *c.ToolCall,
 			})
-			if !yield(a.toolCallEvent(ic, spanID, parentSpanID, *c.ToolCall), nil) {
+			if !yield(a.toolCallEvent(ic, spanID, *c.ToolCall), nil) {
 				// Consumer stopped: drain the rest to let the client close cleanly,
 				// then report stopped so Run never yields again (iter.Seq2 contract).
 				for range ch { //nolint:revive // drain-to-close keeps the stream goroutine from leaking
@@ -65,7 +65,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"chars":      reasoningtrace.RuneLen(c.Text),
 				"delta":      c.Text,
 			})
-			if !yield(a.chunkEvent(ic, spanID, parentSpanID, c.Text), nil) {
+			if !yield(a.chunkEvent(ic, spanID, c.Text), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
 				return b.String(), calls, finish, usage, true, nil
@@ -79,7 +79,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"chars":      reasoningtrace.RuneLen(c.Reasoning),
 				"redacted":   true,
 			})
-			if !yield(a.reasoningChunkEvent(ic, spanID, parentSpanID, c.Reasoning), nil) {
+			if !yield(a.reasoningChunkEvent(ic, spanID, c.Reasoning), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
 				return b.String(), calls, finish, usage, true, nil

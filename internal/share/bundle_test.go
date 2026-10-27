@@ -137,15 +137,8 @@ func TestBundleArtifactsCopiesUnderPrefix(t *testing.T) {
 		SourceKind: assets.SourceAgent, Status: assets.StatusComplete,
 	}
 
-	got, err := bundleArtifacts(ctx, store, bucket, shareID, snapshotID, "owner-1", opener, []assets.Asset{candidate})
-	if err != nil {
+	if err := bundleArtifacts(ctx, store, bucket, shareID, snapshotID, "owner-1", opener, []assets.Asset{candidate}); err != nil {
 		t.Fatalf("bundleArtifacts: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("bundleArtifacts returned %d artifacts, want 1", len(got))
-	}
-	if got[0].AssetID != assetID.String() || got[0].FileName != "report.pdf" {
-		t.Fatalf("bundleArtifacts descriptor = %+v, want asset_id=%s filename=report.pdf", got[0], assetID)
 	}
 
 	wantKey := objectstore.ShareArtifactKey(shareID, snapshotID, assetID)
@@ -178,7 +171,7 @@ func TestBundleArtifactsOpenFailure(t *testing.T) {
 		ID: uuid.Must(uuid.NewV7()).String(), SourceKind: assets.SourceAgent, Status: assets.StatusComplete,
 	}
 
-	if _, err := bundleArtifacts(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()),
+	if err := bundleArtifacts(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()),
 		"owner-1", opener, []assets.Asset{candidate}); err == nil {
 		t.Fatal("bundleArtifacts with a failing opener succeeded, want an error")
 	}
@@ -192,7 +185,7 @@ func TestBundleArtifactsInvalidAssetID(t *testing.T) {
 	opener := &fakeArtifactOpener{bodies: map[string][]byte{}}
 	candidate := assets.Asset{ID: "not-a-uuid", SourceKind: assets.SourceAgent, Status: assets.StatusComplete}
 
-	if _, err := bundleArtifacts(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()),
+	if err := bundleArtifacts(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()),
 		"owner-1", opener, []assets.Asset{candidate}); err == nil {
 		t.Fatal("bundleArtifacts with a non-UUID asset id succeeded, want an error")
 	}
@@ -217,7 +210,7 @@ func TestBundleArtifactsSurfacesCopyFailures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := bundleArtifacts(context.Background(), tc.store, "share-test-bucket",
+			err := bundleArtifacts(context.Background(), tc.store, "share-test-bucket",
 				uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), "owner-1", tc.opener, []assets.Asset{candidate})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("bundleArtifacts error = %v, want it to name %q", err, tc.want)

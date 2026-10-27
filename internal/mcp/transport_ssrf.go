@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"syscall"
 	"time"
+
+	"github.com/chetto1983/aura/internal/netguard"
 )
 
 // transport_ssrf.go is the strict-policy Layer-2 SSRF defense (T-31-SSRF-02).
@@ -124,8 +126,8 @@ func (h *hardenedDialer) controlAddress(_ string, address string, _ syscall.RawC
 	if perr != nil {
 		return fmt.Errorf("ssrf: unparseable dial ip %q", host)
 	}
-	reason, blocked := classify(ip)
-	if metadataAddress(ip) {
+	reason, blocked := netguard.Classify(ip)
+	if netguard.IsMetadata(ip) {
 		return fmt.Errorf("ssrf: blocked rebind to %s (%s)", host, reason)
 	}
 	if blocked && (!allowPrivate || !recipePrivateReason(reason)) {

@@ -93,33 +93,3 @@ func anyInt64(v any) (int64, error) {
 		return 0, fmt.Errorf("unmodeled int64 aggregate shape %T", v)
 	}
 }
-
-// anyNumericFloat coerces a sqlc `coalesce(sum(numeric),0)` result to float64. The cost
-// sum decodes as pgtype.Numeric (or text on some drivers); both are handled. As with
-// anyInt64, an unparseable text shape or an unmodeled driver type is an error rather than
-// a silent 0 — a `$0.00` cost that is actually an unrecognized decode shape would read as
-// "cache is working great, free" (WR-02).
-func anyNumericFloat(v any) (float64, error) {
-	switch n := v.(type) {
-	case pgtype.Numeric:
-		return pgnumeric.FloatFromNumeric(n), nil
-	case float64:
-		return n, nil
-	case int64:
-		return float64(n), nil
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		if err != nil {
-			return 0, fmt.Errorf("decode float aggregate from string %q: %w", n, err)
-		}
-		return f, nil
-	case []byte:
-		f, err := strconv.ParseFloat(string(n), 64)
-		if err != nil {
-			return 0, fmt.Errorf("decode float aggregate from bytes %q: %w", n, err)
-		}
-		return f, nil
-	default:
-		return 0, fmt.Errorf("unmodeled float aggregate shape %T", v)
-	}
-}

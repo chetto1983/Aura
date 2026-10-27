@@ -1,9 +1,7 @@
 package remotetunnel
 
 import (
-	"context"
 	"errors"
-	"github.com/chetto1983/aura/internal/identity"
 	"reflect"
 	"testing"
 	"time"
@@ -39,50 +37,6 @@ func TestMembersRetryConvergesFromDegraded(t *testing.T) {
 	}
 	if h.store.state.Phase != PhaseConnecting || h.store.state.LastError != "" {
 		t.Fatal("successful sync remained degraded")
-	}
-}
-
-type identityFixture struct {
-	rows        []identity.Identity
-	caps        map[string][]string
-	err, capErr error
-}
-
-func (f identityFixture) ListIdentities(context.Context) ([]identity.Identity, error) {
-	return f.rows, f.err
-}
-func (f identityFixture) ListCapabilities(_ context.Context, id string) ([]string, error) {
-	return f.caps[id], f.capErr
-}
-
-func TestIdentityMembersOnlyActiveHumansAndExplicitAdministrators(t *testing.T) {
-	source := identityFixture{rows: []identity.Identity{
-		{ID: "admin", Name: "admin@example.com", Kind: "user"},
-		{ID: "user", Name: "user@example.com", Kind: "user"},
-		{ID: "off", Name: "off@example.com", Kind: "user", Deactivated: true},
-		{ID: "service", Name: "service@example.com", Kind: "service"},
-		{ID: "system", Name: "local", Kind: "system"},
-		{ID: "channel", Name: "channel@example.com", Kind: "channel"},
-	}, caps: map[string][]string{"admin": {identity.CapIdentityCreate}, "user": {"*", identity.CapGovernanceWrite}, "off": {identity.CapIdentityCreate}, "service": {identity.CapIdentityCreate}}}
-	m := IdentityMembers{Source: source}
-	emails, err := m.ActiveEmails(t.Context())
-	if err != nil || !reflect.DeepEqual(emails, []string{"admin@example.com", "user@example.com"}) {
-		t.Fatalf("emails=%v err=%v", emails, err)
-	}
-	admins, err := m.ActiveAdminEmails(t.Context())
-	if err != nil || !reflect.DeepEqual(admins, []string{"admin@example.com"}) {
-		t.Fatalf("admins=%v err=%v", admins, err)
-	}
-	source.err = errors.New("source failed")
-	m.Source = source
-	if _, err = m.ActiveEmails(t.Context()); err == nil {
-		t.Fatal("source failure lost")
-	}
-	source.err = nil
-	source.capErr = errors.New("capability lookup failed")
-	m.Source = source
-	if _, err = m.ActiveAdminEmails(t.Context()); err == nil {
-		t.Fatal("capability failure lost")
 	}
 }
 

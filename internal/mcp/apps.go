@@ -91,18 +91,6 @@ func (p ViewPolicy) Sealed() bool {
 		len(p.BaseURIDomains) == 0
 }
 
-// AppsClientSettings is the settings object Aura sends when declaring the
-// extension, naming the MIME types it can render. A server keys on this exact
-// shape to decide whether a UI-bound tool should also produce rich text.
-//
-// Declaring it is a PROMISE: a server that sees it may trim the text it would
-// otherwise return, on the understanding that the human sees the view instead.
-// It must therefore be declared only once a surface actually renders views —
-// announcing it earlier makes the server's text output worse for nothing.
-func AppsClientSettings() map[string]any {
-	return map[string]any{"mimeTypes": []any{AppMIMEType}}
-}
-
 // IsAppURI reports whether uri names a view resource.
 func IsAppURI(uri string) bool {
 	return strings.HasPrefix(uri, AppURIScheme) && len(uri) > len(AppURIScheme)

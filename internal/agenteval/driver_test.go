@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // recordExec captures what the driver would have run, so the argument assembly is
@@ -97,10 +99,10 @@ func TestPostgresEvidenceScopesTheReadToTheOwner(t *testing.T) {
 	// pieces rather than verbatim.
 	if !strings.Contains(sql, "SET app.current_identity") ||
 		!strings.Contains(sql, "dc98a3ee-e38e-4288-8d64-27ce4c9cde65") {
-		t.Errorf("the read is not scoped to the owner: %s", truncate(sql, 400))
+		t.Errorf("the read is not scoped to the owner: %s", utf8cut.Ellipsize(sql, 400))
 	}
 	if !strings.Contains(sql, "019fc8a2-e472-7d1c-99c6-7e56dc7799fb") {
-		t.Errorf("the conversation id never reached the query: %s", truncate(sql, 400))
+		t.Errorf("the conversation id never reached the query: %s", utf8cut.Ellipsize(sql, 400))
 	}
 	if rec.args[0] != "exec" || rec.args[1] != "aura-postgres" {
 		t.Errorf("default postgres container not used: %v", rec.args[:2])

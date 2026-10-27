@@ -19,6 +19,12 @@ func ParseUUID(field, value string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: parsed, Valid: true}, nil
 }
 
+// OptionalText maps the empty string to SQL NULL, for an optional text column where "" and
+// NULL mean the same absence. Five stores each carried their own copy of it.
+func OptionalText(value string) pgtype.Text {
+	return pgtype.Text{String: value, Valid: value != ""}
+}
+
 // PostgresTextSafe replaces NUL, which PostgreSQL text cannot store.
 func PostgresTextSafe(value string) string {
 	if !strings.ContainsRune(value, '\x00') {

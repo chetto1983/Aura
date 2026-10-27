@@ -32,3 +32,13 @@ func TestPostgresTextSafe(t *testing.T) {
 		t.Fatalf("PostgresTextSafe(NUL) = %q", got)
 	}
 }
+
+func TestOptionalTextMapsEmptyToNull(t *testing.T) {
+	t.Parallel()
+	if got := OptionalText(""); got.Valid {
+		t.Fatalf("OptionalText(\"\") = %#v, want NULL", got)
+	}
+	if got := OptionalText("x"); !got.Valid || got.String != "x" {
+		t.Fatalf("OptionalText(\"x\") = %#v, want a valid \"x\"", got)
+	}
+}

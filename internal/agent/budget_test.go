@@ -219,7 +219,7 @@ func TestNewBudget_NilClock_DefaultsToTimeNow(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_Defaults(t *testing.T) {
+func TestNewBudgetEnv_Defaults(t *testing.T) {
 	// Clear all AURA_LOOP_* so defaults apply.
 	for _, k := range []string{
 		envMaxSteps, envMaxWallclockSec, envDedupWindow,
@@ -227,9 +227,9 @@ func TestNewBudgetFromEnv_Defaults(t *testing.T) {
 	} {
 		t.Setenv(k, "")
 	}
-	b, err := NewBudgetFromEnv()
+	b, err := NewBudget(BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv defaults: unexpected error %v", err)
+		t.Fatalf("NewBudget defaults: unexpected error %v", err)
 	}
 	if rem := b.Remaining(); rem != defaultBudgetMaxSteps {
 		t.Fatalf("default max steps: want %d, got %d", defaultBudgetMaxSteps, rem)
@@ -273,9 +273,9 @@ func TestNewBudget_Options_NilFallsThroughToDefault(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedMaxSteps(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedMaxSteps(t *testing.T) {
 	t.Setenv(envMaxSteps, "abc")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_MAX_STEPS must fail-fast, got nil error")
 	}
@@ -285,7 +285,7 @@ func TestNewBudgetFromEnv_FailFast_MalformedMaxSteps(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
 	if strconv.IntSize <= 32 {
 		t.Skip("int cannot exceed int32 on this platform")
 	}
@@ -298,7 +298,7 @@ func TestNewBudgetFromEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
 			t.Setenv(envNodeTimeoutSec, "")
 			t.Setenv(envDedupResultCap, "")
 
-			_, err := NewBudgetFromEnv()
+			_, err := NewBudget(BudgetOptions{})
 			if err == nil {
 				t.Fatalf("%s=%s must fail-fast as out of int32 range", envMaxSteps, v)
 			}
@@ -309,7 +309,7 @@ func TestNewBudgetFromEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MaxStepsMustBePositive(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MaxStepsMustBePositive(t *testing.T) {
 	for _, v := range []string{"0", "-1"} {
 		t.Run(v, func(t *testing.T) {
 			t.Setenv(envMaxSteps, v)
@@ -319,7 +319,7 @@ func TestNewBudgetFromEnv_FailFast_MaxStepsMustBePositive(t *testing.T) {
 			t.Setenv(envNodeTimeoutSec, "")
 			t.Setenv(envDedupResultCap, "")
 
-			_, err := NewBudgetFromEnv()
+			_, err := NewBudget(BudgetOptions{})
 			if err == nil {
 				t.Fatalf("%s=%s must fail-fast as non-positive", envMaxSteps, v)
 			}
@@ -371,9 +371,9 @@ func TestNewBudget_Options_MaxStepsMustBePositive(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedWallclock(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedWallclock(t *testing.T) {
 	t.Setenv(envMaxWallclockSec, "not-a-number")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_MAX_WALLCLOCK_SEC must fail-fast")
 	}
@@ -382,7 +382,7 @@ func TestNewBudgetFromEnv_FailFast_MalformedWallclock(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_WallclockMustBePositive(t *testing.T) {
+func TestNewBudgetEnv_FailFast_WallclockMustBePositive(t *testing.T) {
 	for _, v := range []string{"0", "-1"} {
 		t.Run(v, func(t *testing.T) {
 			t.Setenv(envMaxWallclockSec, v)
@@ -392,7 +392,7 @@ func TestNewBudgetFromEnv_FailFast_WallclockMustBePositive(t *testing.T) {
 			t.Setenv(envNodeTimeoutSec, "")
 			t.Setenv(envDedupResultCap, "")
 
-			_, err := NewBudgetFromEnv()
+			_, err := NewBudget(BudgetOptions{})
 			if err == nil {
 				t.Fatalf("%s=%s must fail-fast as non-positive", envMaxWallclockSec, v)
 			}
@@ -423,9 +423,9 @@ func TestNewBudget_Options_WallclockMustBePositive(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedDedupWindow(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedDedupWindow(t *testing.T) {
 	t.Setenv(envDedupWindow, "nope")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_DEDUP_WINDOW must fail-fast")
 	}
@@ -435,9 +435,9 @@ func TestNewBudgetFromEnv_FailFast_MalformedDedupWindow(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedSoftFraction(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedSoftFraction(t *testing.T) {
 	t.Setenv(envBranchSoftFraction, "huge")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_BRANCH_SOFT_FRACTION must fail-fast")
 	}
@@ -447,11 +447,11 @@ func TestNewBudgetFromEnv_FailFast_MalformedSoftFraction(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_SoftFractionOutOfRange(t *testing.T) {
+func TestNewBudgetEnv_FailFast_SoftFractionOutOfRange(t *testing.T) {
 	for _, v := range []string{"0", "1.01"} {
 		t.Run(v, func(t *testing.T) {
 			t.Setenv(envBranchSoftFraction, v)
-			_, err := NewBudgetFromEnv()
+			_, err := NewBudget(BudgetOptions{})
 			if err == nil {
 				t.Fatalf("%s=%s must fail-fast as out of range", envBranchSoftFraction, v)
 			}
@@ -462,9 +462,9 @@ func TestNewBudgetFromEnv_FailFast_SoftFractionOutOfRange(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedResultCap(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedResultCap(t *testing.T) {
 	t.Setenv(envDedupResultCap, "wide")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_DEDUP_RESULT_CAP must fail-fast")
 	}
@@ -474,9 +474,9 @@ func TestNewBudgetFromEnv_FailFast_MalformedResultCap(t *testing.T) {
 	}
 }
 
-func TestNewBudgetFromEnv_FailFast_MalformedNodeTimeout(t *testing.T) {
+func TestNewBudgetEnv_FailFast_MalformedNodeTimeout(t *testing.T) {
 	t.Setenv(envNodeTimeoutSec, "slow")
-	_, err := NewBudgetFromEnv()
+	_, err := NewBudget(BudgetOptions{})
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_NODE_TIMEOUT_SEC must fail-fast")
 	}
@@ -528,9 +528,9 @@ func TestBudget_WithDeadline_PropagatesCancellation(t *testing.T) {
 
 func TestBudget_NodeTimeout(t *testing.T) {
 	t.Setenv(envNodeTimeoutSec, "7")
-	b, err := NewBudgetFromEnv()
+	b, err := NewBudget(BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	if got := b.NodeTimeout(); got != 7*time.Second {
 		t.Fatalf("NodeTimeout: want 7s, got %v", got)

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -224,7 +223,7 @@ func (s *Store) List(ctx context.Context) ([]Summary, error) {
 	out := make([]Summary, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, Summary{
-			IdentityID: uuidString(r.IdentityID),
+			IdentityID: r.IdentityID.String(),
 			Hash:       r.KeyHash,
 			Label:      r.KeyLabel,
 			LimitUSD:   pgnumeric.NullableFloat(r.LimitUsd),
@@ -266,8 +265,4 @@ func parseUUID(identity string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, fmt.Errorf("identitykey: identity %q is not a uuid: %w", identity, err)
 	}
 	return out, nil
-}
-
-func uuidString(u pgtype.UUID) string {
-	return uuid.UUID(u.Bytes).String()
 }

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/netguard"
 )
 
 // This is deliberately narrower than agent-browser's common options. In particular,
@@ -89,7 +90,8 @@ func publicBrowserURL(raw string) bool {
 	}
 	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if ip, err := netip.ParseAddr(host); err == nil {
-		return ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
+		_, blocked := netguard.Classify(ip)
+		return !blocked
 	}
 	// WHATWG/Chrome accepts shortened, hexadecimal and integer IPv4 spellings that
 	// netip correctly rejects. Admit DNS names only, never that alternate IP grammar.

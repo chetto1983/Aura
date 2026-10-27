@@ -341,22 +341,3 @@ func TestFrameMCPSummary_BudgetTruncatesSummaryKeepsHint(t *testing.T) {
 		t.Fatalf("the required-args hint must survive summary truncation, got %.120q", spec.Summary)
 	}
 }
-
-// TestTruncateUTF8Bytes covers truncateUTF8Bytes' edge branches: maxBytes<=0 →
-// "", len(s)<=maxBytes → s unchanged, and a multibyte cut backs off to a valid
-// boundary.
-func TestTruncateUTF8Bytes(t *testing.T) {
-	if got := truncateUTF8Bytes("hello", 0); got != "" {
-		t.Fatalf("maxBytes=0 should yield empty, got %q", got)
-	}
-	if got := truncateUTF8Bytes("hello", -1); got != "" {
-		t.Fatalf("negative maxBytes should yield empty, got %q", got)
-	}
-	if got := truncateUTF8Bytes("hi", 10); got != "hi" {
-		t.Fatalf("len(s)<=maxBytes should return s unchanged, got %q", got)
-	}
-	// "é" is 2 bytes; cutting at 1 byte must back off to "".
-	if got := truncateUTF8Bytes("é", 1); got != "" {
-		t.Fatalf("a mid-rune cut should back off to a valid boundary, got %q", got)
-	}
-}

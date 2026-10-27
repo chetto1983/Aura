@@ -79,11 +79,10 @@ func BundleFilter(artifacts []assets.Asset) []assets.Asset {
 // bundleArtifacts copies every already-filtered artifact's bytes into
 // objectstore.ShareArtifactKey(shareID, snapshotID, assetID) — the token-scoped namespace a
 // recipient's share token can address, lexically disjoint from the owner's
-// identity-scoped `identity/...` lane. Every returned SnapshotArtifact is built via
-// projectArtifact (redact.go) from exactly the four allowlisted ArtifactMeta fields of the
-// SAME candidate the caller already fetched — never from a value re-derived after the copy —
-// so this list is byte-for-byte what BuildSnapshot's own artifact projection would produce
-// from the identical input. ownerIdentityID scopes each src.OpenForIdentity read to the
+// identity-scoped `identity/...` lane. The snapshot's artifact descriptors come from
+// BuildSnapshot's projection, not from here: until 2026-10-26 this also returned its own
+// projection of each copy, and both callers discarded it. ownerIdentityID scopes each
+// src.OpenForIdentity read to the
 // share's owner (the only identity the artifacts ever belonged to); ctx cancellation aborts
 // the copy loop between artifacts, never mid-Put.
 func bundleArtifacts(
@@ -94,33 +93,26 @@ func bundleArtifacts(
 	ownerIdentityID string,
 	src ArtifactOpener,
 	artifacts []assets.Asset,
-) ([]SnapshotArtifact, error) {
-	out := make([]SnapshotArtifact, 0, len(artifacts))
+) error {
 	for _, a := range artifacts {
 		ref, err := objectstore.ShareArtifactRef(bucket, shareID, snapshotID, a.ID)
 		if err != nil {
-			return nil, fmt.Errorf("bundle artifact %s: %w", a.ID, err)
+			return fmt.Errorf("bundle artifact %s: %w", a.ID, err)
 		}
 		rc, _, err := src.OpenForIdentity(ctx, a.ID, ownerIdentityID)
 		if err != nil {
-			return nil, fmt.Errorf("bundle artifact %s: open: %w", a.ID, err)
+			return fmt.Errorf("bundle artifact %s: open: %w", a.ID, err)
 		}
 		_, putErr := store.Put(ctx, ref, rc, objectstore.PutOptions{MIMEType: a.MIMEType, Size: a.SizeBytes})
 		closeErr := rc.Close()
 		if putErr != nil {
-			return nil, fmt.Errorf("bundle artifact %s: put: %w", a.ID, putErr)
+			return fmt.Errorf("bundle artifact %s: put: %w", a.ID, putErr)
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("bundle artifact %s: close: %w", a.ID, closeErr)
+			return fmt.Errorf("bundle artifact %s: close: %w", a.ID, closeErr)
 		}
-		out = append(out, projectArtifact(ArtifactMeta{
-			AssetID:   a.ID,
-			FileName:  a.FileName,
-			MIMEType:  a.MIMEType,
-			SizeBytes: a.SizeBytes,
-		}))
 	}
-	return out, nil
+	return nil
 }
 
 // dropBlobs reclaims every byte under one share's ENTIRE revoke prefix

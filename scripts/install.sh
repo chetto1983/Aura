@@ -575,15 +575,14 @@ scripts/observability_sidecar_check.sh
 step "Enabling autostart"
 install_systemd_unit
 
-token="$(env_value AURA_ACCESS_TOKEN)"
 host="$(host_for_summary)"
 
 cat <<EOF
 
 Aura is starting.
 
-Wizard:
-  https://${host}/setup/?token=${token}
+Cockpit (create the first user, then follow its first-run setup):
+  https://${host}
 
 Next steps:
   docker compose -f ${INSTALL_DIR}/compose.yaml ps

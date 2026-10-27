@@ -1,7 +1,6 @@
 package workflow_test
 
 import (
-	"context"
 	"iter"
 	"testing"
 
@@ -12,11 +11,11 @@ import (
 )
 
 // TestWorkflowAgents_InterfaceContract exercises the Agent accessor surface
-// (Name/Description/SubAgents) and the FindAgent recursion both orchestrators
-// share via findInTree — self-match, child-match, nested-match, and absent.
+// (Name/Description/SubAgents) and the FindAgent recursion through findInTree —
+// self-match, child-match, nested-match, and absent.
 func TestWorkflowAgents_InterfaceContract(t *testing.T) {
 	leaf := &agenttest.RecordingAgent{AgentName: "leaf"}
-	inner := workflow.NewSequential("inner", leaf)
+	inner := workflow.NewLoop("inner", 1, leaf)
 	root := workflow.NewLoop("root", 1, inner)
 
 	for _, a := range []agent.Agent{inner, root} {
@@ -42,26 +41,6 @@ func TestWorkflowAgents_InterfaceContract(t *testing.T) {
 	}
 	if got := root.FindAgent("absent"); got != nil {
 		t.Errorf("FindAgent(absent): want nil, got %v", got)
-	}
-}
-
-// TestSequentialAgent_RootBranchHasNoParentDot covers joinBranch's empty-parent
-// path: a sub of a root-branch-less Sequential sees just its own name.
-func TestSequentialAgent_RootBranchHasNoParentDot(t *testing.T) {
-	rec := &agenttest.RecordingAgent{AgentName: "only", Events: []*agent.Event{{}}}
-	seq := workflow.NewSequential("root", rec)
-	ic := agent.InvocationContext{Ctx: context.Background(), Branch: ""}
-	b, err := agent.NewBudgetFromEnv()
-	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
-	}
-	ic.Budget = b
-
-	if _, err := drain(seq.Run(ic)); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(rec.SeenBranches) != 1 || rec.SeenBranches[0] != "only" {
-		t.Errorf("root branch label: want %q, got %v", "only", rec.SeenBranches)
 	}
 }
 

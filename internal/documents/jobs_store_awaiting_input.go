@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -49,7 +50,7 @@ func (s *PostgresIngestionJobStore) ParkIngestionJobAwaitingInputTx(ctx context.
 	}
 	return q.ParkIngestionJobAwaitingInput(ctx, sqlc.ParkIngestionJobAwaitingInputParams{
 		Payload: payload, ID: jobID, IdentityID: identityID,
-		LockedBy: pgText(req.WorkerID), LeaseGeneration: req.LeaseGeneration,
+		LockedBy: db.OptionalText(req.WorkerID), LeaseGeneration: req.LeaseGeneration,
 	})
 }
 
@@ -197,7 +198,7 @@ func (s *PostgresIngestionJobStore) RejectAnsweredDelegation(ctx context.Context
 // from an older, already-resolved one across repeated pause/resume cycles on the same
 // job. limit<=0 falls back to 100.
 func (s *PostgresIngestionJobStore) ListAnsweredAwaitingInput(ctx context.Context, identityID string, limit int) ([]AnsweredAwaitingInputJob, error) {
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -219,8 +220,8 @@ func (s *PostgresIngestionJobStore) ListAnsweredAwaitingInput(ctx context.Contex
 			return nil, pErr
 		}
 		out = append(out, AnsweredAwaitingInputJob{
-			JobID: uuidString(r.ID), IdentityID: uuidString(r.IdentityID), Payload: payload,
-			PauseToken: uuidString(r.PauseToken), PendingActionID: textString(r.PendingActionID),
+			JobID: r.ID.String(), IdentityID: r.IdentityID.String(), Payload: payload,
+			PauseToken: r.PauseToken.String(), PendingActionID: textString(r.PendingActionID),
 			ResumedAnswer: r.ResumedAnswer,
 		})
 	}
@@ -247,7 +248,7 @@ type ExpiredAwaitingInputJob struct {
 // token this park cycle minted (the same join as ListAnsweredAwaitingInput). limit<=0
 // falls back to 100.
 func (s *PostgresIngestionJobStore) ListExpiredAwaitingInput(ctx context.Context, identityID string, cutoff time.Time, limit int) ([]ExpiredAwaitingInputJob, error) {
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +268,9 @@ func (s *PostgresIngestionJobStore) ListExpiredAwaitingInput(ctx context.Context
 	out := make([]ExpiredAwaitingInputJob, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, ExpiredAwaitingInputJob{
-			JobID: uuidString(r.ID), IdentityID: uuidString(r.IdentityID),
-			PauseToken: uuidString(r.PauseToken), PendingActionID: textString(r.PendingActionID),
-			ToolCallID: r.ToolCallID, Kind: r.Kind, Question: r.Question, ConversationID: uuidString(r.ConversationID),
+			JobID: r.ID.String(), IdentityID: r.IdentityID.String(),
+			PauseToken: r.PauseToken.String(), PendingActionID: textString(r.PendingActionID),
+			ToolCallID: r.ToolCallID, Kind: r.Kind, Question: r.Question, ConversationID: r.ConversationID.String(),
 		})
 	}
 	return out, nil

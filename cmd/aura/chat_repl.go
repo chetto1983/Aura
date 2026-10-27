@@ -17,7 +17,6 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -306,48 +305,9 @@ func printSearchResults(query string, hits []conversations.SearchResult) {
 	_, _ = fmt.Fprintln(w, "CONVERSATION\tSEQ\tSIMILARITY\tEXCERPT")
 	for _, h := range hits {
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%.3f\t%s\n",
-			h.ConversationID, h.Seq, h.Similarity, excerpt(h.Content, query))
+			h.ConversationID, h.Seq, h.Similarity, conversations.Excerpt(h.Content, query))
 	}
 	_ = w.Flush()
-}
-
-// excerpt windows the content around the first case-insensitive occurrence of query
-// (±excerptWindow chars), falling back to the first excerptWindow chars on a fuzzy
-// match where the literal substring is absent (D-A5-03 — pg_trgm has no ts_headline).
-func excerpt(content, query string) string {
-	const window = 60
-	flat := strings.Join(strings.Fields(content), " ")
-	idx := strings.Index(strings.ToLower(flat), strings.ToLower(query))
-	if idx < 0 {
-		return clampExcerpt(flat, 0, window*2)
-	}
-	start := max(idx-window, 0)
-	end := idx + len(query) + window
-	return clampExcerpt(flat, start, end)
-}
-
-// clampExcerpt slices [start,end) of s with rune-safe bounds + ellipses.
-func clampExcerpt(s string, start, end int) string {
-	if end > len(s) {
-		end = len(s)
-	}
-	if start < 0 {
-		start = 0
-	}
-	for start < len(s) && !utf8.RuneStart(s[start]) {
-		start++
-	}
-	for end > start && end < len(s) && !utf8.RuneStart(s[end]) {
-		end--
-	}
-	out := s[start:end]
-	if start > 0 {
-		out = "…" + out
-	}
-	if end < len(s) {
-		out += "…"
-	}
-	return out
 }
 
 // replTurnOperation mints the per-turn parent operation the tool dispatcher derives its

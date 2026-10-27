@@ -166,18 +166,6 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	return result, nil
 }
 
-// StagedDocumentDirectory derives the single sandbox directory for a logical
-// catalog id. It is exported so delete removes exactly the parent that open uses.
-// The layout rule itself lives in internal/documents, shared with `aura docs open`,
-// so the box copy and the host copy cannot land in differently shaped places.
-func StagedDocumentDirectory(documentID string) (string, error) {
-	rel, err := documents.StagedRelativeDirectory(documentID)
-	if err != nil {
-		return "", err
-	}
-	return pathpkg.Join(boxWorkspaceRoot, rel), nil
-}
-
 // StagedDocumentPath validates a bare alias and places it below the logical
 // document directory.
 func StagedDocumentPath(documentID, fileName string) (string, error) {

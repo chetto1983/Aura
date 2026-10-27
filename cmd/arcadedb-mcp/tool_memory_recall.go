@@ -1,48 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"slices"
 	"sort"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/chetto1983/aura/internal/activesources"
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
-
-const (
-	// Defined independently from bridge_recall_context.go because this binary and
-	// the agent bridge share a loopback wire contract, not a Go package boundary.
-	// The literal and codec bounds must stay byte-identical on both sides.
-	memoryRecallActiveSourcesHeader = "X-Aura-Active-Sources"
-	memoryRecallContextVersion      = 1
-	memoryRecallMaxActiveSources    = 8
-	memoryRecallMaxActiveIDRunes    = 256
-	memoryRecallMaxDecodedHeader    = 1536
-	memoryRecallMaxEncodedHeader    = 2048
-)
-
-type memoryRecallActiveSource struct {
-	ConversationID string `json:"conversation_id"`
-	TurnID         string `json:"turn_id"`
-}
-
-type memoryRecallActiveEnvelope struct {
-	Version int                        `json:"version"`
-	Sources []memoryRecallActiveSource `json:"sources"`
-}
 
 // memoryRecallActiveOwnershipStatement reads the conversations a caller wants excluded,
 // WITHOUT filtering on the identity — the comparison happens in Go so a row belonging to
@@ -359,14 +332,14 @@ func memoryRecallActiveConversationIDs(
 	if req == nil || req.Extra == nil {
 		return nil, nil
 	}
-	values := req.Extra.Header.Values(memoryRecallActiveSourcesHeader)
+	values := req.Extra.Header.Values(activesources.Header)
 	if len(values) == 0 {
 		return nil, nil
 	}
 	if len(values) != 1 {
 		return nil, fmt.Errorf("memory_recall: active-source header must appear exactly once")
 	}
-	sources, err := decodeMemoryRecallActiveSources(values[0])
+	sources, err := activesources.Decode(values[0])
 	if err != nil {
 		return nil, fmt.Errorf("memory_recall: %w", err)
 	}
@@ -405,105 +378,6 @@ func memoryRecallActiveConversationIDs(
 	}
 	sort.Strings(owned)
 	return slices.Compact(owned), nil
-}
-
-func decodeMemoryRecallActiveSources(encoded string) ([]memoryRecallActiveSource, error) {
-	if encoded == "" || encoded != strings.TrimSpace(encoded) {
-		return nil, fmt.Errorf("active-source header is empty or non-canonical")
-	}
-	if len(encoded) > memoryRecallMaxEncodedHeader {
-		return nil, fmt.Errorf("active-source header exceeds %d bytes", memoryRecallMaxEncodedHeader)
-	}
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("invalid active-source encoding: %w", err)
-	}
-	if len(raw) > memoryRecallMaxDecodedHeader {
-		return nil, fmt.Errorf("active-source payload exceeds %d bytes", memoryRecallMaxDecodedHeader)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	var envelope memoryRecallActiveEnvelope
-	if err := decoder.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("invalid active-source payload: %w", err)
-	}
-	if err := ensureMemoryRecallActiveEOF(decoder); err != nil {
-		return nil, err
-	}
-	if envelope.Version != memoryRecallContextVersion {
-		return nil, fmt.Errorf("active-source version %d is unsupported", envelope.Version)
-	}
-	canonical, err := encodeMemoryRecallActiveSources(envelope.Sources)
-	if err != nil {
-		return nil, err
-	}
-	if canonical != encoded {
-		return nil, fmt.Errorf("active-source header is not canonical")
-	}
-	return envelope.Sources, nil
-}
-
-func encodeMemoryRecallActiveSources(sources []memoryRecallActiveSource) (string, error) {
-	if len(sources) == 0 || len(sources) > memoryRecallMaxActiveSources {
-		return "", fmt.Errorf("active-source payload must contain between 1 and %d entries", memoryRecallMaxActiveSources)
-	}
-	canonical := append([]memoryRecallActiveSource(nil), sources...)
-	for _, source := range canonical {
-		if err := validateMemoryRecallActiveSource(source); err != nil {
-			return "", err
-		}
-	}
-	sort.Slice(canonical, func(i, j int) bool {
-		if canonical[i].ConversationID != canonical[j].ConversationID {
-			return canonical[i].ConversationID < canonical[j].ConversationID
-		}
-		return canonical[i].TurnID < canonical[j].TurnID
-	})
-	for index := 1; index < len(canonical); index++ {
-		if canonical[index] == canonical[index-1] {
-			return "", fmt.Errorf("active-source payload contains a duplicate")
-		}
-	}
-	raw, err := json.Marshal(memoryRecallActiveEnvelope{Version: memoryRecallContextVersion, Sources: canonical})
-	if err != nil {
-		return "", fmt.Errorf("encode active-source payload: %w", err)
-	}
-	if len(raw) > memoryRecallMaxDecodedHeader {
-		return "", fmt.Errorf("active-source payload exceeds %d bytes", memoryRecallMaxDecodedHeader)
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(raw)
-	if len(encoded) > memoryRecallMaxEncodedHeader {
-		return "", fmt.Errorf("active-source header exceeds %d bytes", memoryRecallMaxEncodedHeader)
-	}
-	return encoded, nil
-}
-
-func validateMemoryRecallActiveSource(source memoryRecallActiveSource) error {
-	for name, value := range map[string]string{
-		"conversation_id": source.ConversationID,
-		"turn_id":         source.TurnID,
-	} {
-		if value == "" || value != strings.TrimSpace(value) || utf8.RuneCountInString(value) > memoryRecallMaxActiveIDRunes {
-			return fmt.Errorf("active-source %s is empty, non-canonical, or over %d runes", name, memoryRecallMaxActiveIDRunes)
-		}
-		for _, r := range value {
-			if unicode.IsControl(r) {
-				return fmt.Errorf("active-source %s contains a control character", name)
-			}
-		}
-	}
-	return nil
-}
-
-func ensureMemoryRecallActiveEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("active-source payload has trailing JSON")
-		}
-		return fmt.Errorf("invalid active-source payload: %w", err)
-	}
-	return nil
 }
 
 func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {

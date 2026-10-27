@@ -228,7 +228,7 @@ func auditFromRow(r sqlc.AuraSkillAudit) AuditRow {
 }
 
 // classifyAuditErr maps a pgx error to a sentinel via SQLSTATE (errors.As +
-// pgErr.Code, never message-matching, mirrors identity.isUniqueViolation):
+// pgErr.Code, never message-matching, mirrors db.IsUniqueViolation):
 // 42501 insufficient_privilege (role-denied OR the append-only trigger) →
 // ErrAuditImmutable; 23514 check_violation (the D-29 CHECK) → ErrAuditIncoherent.
 func classifyAuditErr(err error) error {

@@ -53,7 +53,7 @@ func BenchmarkConsumeStep(b *testing.B) {
 }
 
 // BenchmarkConsumeStepParallel stresses the shared-atomic gate under contention —
-// the real shape when a ParallelAgent fan-out hammers the single shared counter
+// the real shape when a swarm fan-out hammers the single shared counter
 // (D-10). It exercises both the success decrement and the overshoot-restore path.
 func BenchmarkConsumeStepParallel(b *testing.B) {
 	bud := benchBudget(1<<30, 3)

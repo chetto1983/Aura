@@ -19,7 +19,6 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -213,7 +212,7 @@ func (s *Store) GrantCapability(ctx context.Context, identityID, capability stri
 	if err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
 		return q.GrantCapability(ctx, sqlc.GrantCapabilityParams{IdentityID: id, Capability: capability})
 	}); err != nil {
-		if isUniqueViolation(err) {
+		if db.IsUniqueViolation(err) {
 			return nil // already granted — idempotent no-op
 		}
 		return fmt.Errorf("grant capability %q to %s: %w", capability, identityID, err)
@@ -261,11 +260,4 @@ func (s *Store) validateGrantInput(identityID, capability string) (pgtype.UUID, 
 		return pgtype.UUID{}, err
 	}
 	return db.ParseUUID("identity id", identityID)
-}
-
-// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
-// pgErr.Code — never string-matching the message (RESEARCH Pitfall 2).
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

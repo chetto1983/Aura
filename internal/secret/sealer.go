@@ -20,8 +20,8 @@ import (
 // internal/mcpoauth (OAuth grants), internal/objectstore (identity object store) and, for
 // the derivation half, internal/agui/recovery_hash — and a fourth copy was about to be
 // written for the MCP server registry. Three copies of a cryptographic routine is three
-// places a fix has to land, and the wire format is already shared by construction: the two
-// stores prepend the nonce so their columns are byte-compatible.
+// places a fix has to land. The copies stayed behind until 2026-10-26; every store now
+// derives through DeriveKey, and every nonce-prepended column seals through a Sealer.
 //
 // The `info` parameter is not decoration. Two stores that derive from the same master
 // secret with the same info share a key, so one leaked key opens both; that is the whole
@@ -37,10 +37,17 @@ func NewSealer(secretHex, info string) (*Sealer, error) {
 	if strings.TrimSpace(info) == "" {
 		return nil, errors.New("secret: a sealer needs a non-empty HKDF info label to keep its key domain-separated")
 	}
-	key, err := deriveKey(secretHex, info)
+	key, err := DeriveKey(secretHex, info)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("AURA_AUTHULA_SECRET: %w", err)
 	}
+	return NewSealerFromKey(key)
+}
+
+// NewSealerFromKey builds a Sealer over a key DeriveKey already produced, for a store whose
+// master secret is not AURA_AUTHULA_SECRET (the trace sink's AURA_TRACE_ENCRYPT_KEY) and
+// should name its own variable when it is malformed.
+func NewSealerFromKey(key []byte) (*Sealer, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("secret: aes cipher: %w", err)
@@ -102,17 +109,24 @@ func IdentityKey(secretHex, domain, identityID string) ([]byte, error) {
 	if strings.TrimSpace(domain) == "" || strings.TrimSpace(identityID) == "" {
 		return nil, errors.New("secret: an identity key needs both a domain label and an identity id")
 	}
-	return deriveKey(secretHex, domain+"\x00"+identityID)
+	key, err := DeriveKey(secretHex, domain+"\x00"+identityID)
+	if err != nil {
+		return nil, fmt.Errorf("AURA_AUTHULA_SECRET: %w", err)
+	}
+	return key, nil
 }
 
-func deriveKey(secretHex, info string) ([]byte, error) {
+// DeriveKey HKDF-SHA256-expands a 64-hex-character master secret into the 32-byte key of one
+// domain. info is that domain's label and MUST differ from every other store's. The error
+// names no variable: the caller knows which one it read.
+func DeriveKey(secretHex, info string) ([]byte, error) {
 	trimmed := strings.TrimSpace(secretHex)
 	if len(trimmed) != 64 {
-		return nil, errors.New("secret: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
+		return nil, errors.New("secret: the master secret must be 64 hex characters (32 bytes)")
 	}
 	raw, err := hex.DecodeString(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("secret: AURA_AUTHULA_SECRET must be valid hex: %w", err)
+		return nil, fmt.Errorf("secret: the master secret must be valid hex: %w", err)
 	}
 	key, err := hkdf.Key(sha256.New, raw, nil, info, 32)
 	if err != nil {

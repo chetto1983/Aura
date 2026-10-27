@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -45,14 +46,14 @@ func TestSealDoesNotLeaveThePlaintextRecoverableByEye(t *testing.T) {
 	s := storeForCrypto(t)
 	token := "xoxp-super-secret-slack-token"
 
-	sealed, err := s.seal([]byte(token))
+	sealed, err := s.sealer.Seal([]byte(token))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
 	if strings.Contains(string(sealed), token) {
 		t.Fatal("the ciphertext contains the plaintext token")
 	}
-	got, err := s.open(sealed)
+	got, err := s.sealer.Open(sealed)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -66,11 +67,11 @@ func TestSealDoesNotLeaveThePlaintextRecoverableByEye(t *testing.T) {
 func TestSealUsesAFreshNoncePerCall(t *testing.T) {
 	t.Parallel()
 	s := storeForCrypto(t)
-	first, err := s.seal([]byte("same"))
+	first, err := s.sealer.Seal([]byte("same"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	second, err := s.seal([]byte("same"))
+	second, err := s.sealer.Seal([]byte("same"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
@@ -88,11 +89,11 @@ func TestOpenRefusesCiphertextFromAnotherKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	sealed, err := theirs.seal([]byte("token"))
+	sealed, err := theirs.sealer.Seal([]byte("token"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	if _, err := mine.open(sealed); err == nil {
+	if _, err := mine.sealer.Open(sealed); err == nil {
 		t.Fatal("a ciphertext from another wrapping key decrypted successfully")
 	}
 }
@@ -100,7 +101,7 @@ func TestOpenRefusesCiphertextFromAnotherKey(t *testing.T) {
 func TestOpenRefusesATruncatedCiphertext(t *testing.T) {
 	t.Parallel()
 	s := storeForCrypto(t)
-	if _, err := s.open([]byte{1, 2, 3}); err == nil {
+	if _, err := s.sealer.Open([]byte{1, 2, 3}); err == nil {
 		t.Fatal("a ciphertext shorter than the nonce decrypted successfully")
 	}
 }
@@ -111,14 +112,14 @@ func TestOpenRefusesATruncatedCiphertext(t *testing.T) {
 func TestSealOptionalKeepsAbsenceAbsent(t *testing.T) {
 	t.Parallel()
 	s := storeForCrypto(t)
-	sealed, err := s.sealOptional(nil)
+	sealed, err := s.sealer.SealOptional(nil)
 	if err != nil {
 		t.Fatalf("sealOptional: %v", err)
 	}
 	if sealed != nil {
 		t.Fatalf("sealOptional(nil) = %v, want nil", sealed)
 	}
-	opened, err := s.openOptional(nil)
+	opened, err := s.sealer.OpenOptional(nil)
 	if err != nil {
 		t.Fatalf("openOptional: %v", err)
 	}
@@ -132,15 +133,15 @@ func TestSealOptionalKeepsAbsenceAbsent(t *testing.T) {
 // one leaked key open both stores.
 func TestKeyIsDomainSeparatedFromTheObjectStore(t *testing.T) {
 	t.Parallel()
-	mine, err := deriveKey(testSecret)
+	mine, err := secret.DeriveKey(testSecret, keyDerivationInfo)
 	if err != nil {
-		t.Fatalf("deriveKey: %v", err)
+		t.Fatalf("DeriveKey: %v", err)
 	}
 	// The object store's own constant, spelled out rather than imported, so this test
 	// fails if either side changes its info string.
-	other, err := deriveKeyWithInfo(testSecret, "aura-objectstore-identity-key-v1")
+	other, err := secret.DeriveKey(testSecret, "aura-objectstore-identity-key-v1")
 	if err != nil {
-		t.Fatalf("deriveKeyWithInfo: %v", err)
+		t.Fatalf("DeriveKey: %v", err)
 	}
 	if string(mine) == string(other) {
 		t.Fatal("the MCP OAuth key equals the object-store key — the HKDF info is not separating them")

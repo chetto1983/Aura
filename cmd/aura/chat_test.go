@@ -233,7 +233,8 @@ func TestChat_EOFQuitsClean(t *testing.T) {
 	}
 }
 
-// TestChat_MissingKey asserts the config precondition runChat checks before booting.
+// TestChat_MissingKey asserts that the strict loader the CLI resolves its LLM tiers
+// with fails with an operator-clear error isMissingAPIKey recognises.
 func TestChat_MissingKey(t *testing.T) {
 	withTempHome(t)
 	// The hosted provider is what this assertion is about, and it stopped being implicit
@@ -242,9 +243,9 @@ func TestChat_MissingKey(t *testing.T) {
 	// fails on something else entirely. Empty means the default, which is the hosted one.
 	t.Setenv("AURA_LLM_PROVIDER", "")
 	t.Setenv("OPENROUTER_API_KEY", "")
-	_, err := config.Load()
+	_, err := llm.Load()
 	if err == nil {
-		t.Fatal("config.Load should fail with no API key")
+		t.Fatal("llm.Load should fail with no API key")
 	}
 	if !isMissingAPIKey(err) {
 		t.Fatalf("want missing-API-key error, got %v", err)

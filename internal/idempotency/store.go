@@ -163,7 +163,7 @@ func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision Begin
 	if request.Audit != nil {
 		params.AuditConversationID, _ = operationUUID(request.Audit.ConversationID)
 		params.AuditRequestID, _ = operationUUID(request.Audit.RequestID)
-		params.AuditToolCallID = optionalText(request.Audit.ToolCallID)
+		params.AuditToolCallID = db.OptionalText(request.Audit.ToolCallID)
 	}
 	// The acquire and the losing racer's read of the durable decision share ONE
 	// transaction: ON CONFLICT DO NOTHING yields zero rows without aborting it, so the
@@ -272,8 +272,8 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err erro
 		return err
 	}
 	params := sqlc.CompleteOperationParams{
-		ReplayBody: append([]byte(nil), request.Result.Body...), ReplayPreview: optionalText(request.Result.Preview),
-		ReplaySidecarRef: optionalText(request.Result.SidecarRef),
+		ReplayBody: append([]byte(nil), request.Result.Body...), ReplayPreview: db.OptionalText(request.Result.Preview),
+		ReplaySidecarRef: db.OptionalText(request.Result.SidecarRef),
 		ReplayStatusCode: optionalInt2(request.Result.StatusCode), ReplayHeaders: headers,
 		ReplayBytes:     int64(len(request.Result.Body) + len(request.Result.Preview) + len(request.Result.SidecarRef) + len(headers)),
 		ReplayExpiresAt: timestamp(request.Result.ExpiresAt.UTC()), Now: timestamp(now), IdentityID: identityID,
@@ -321,7 +321,7 @@ func (s *Store) MarkRejected(ctx context.Context, request RejectRequest) (err er
 	identityID, _ := operationUUID(request.Operation.IdentityID)
 	params := sqlc.MarkOperationRejectedParams{
 		ReplayBody:      append([]byte(nil), request.Result.Body...),
-		ReplayPreview:   optionalText(request.Result.Preview),
+		ReplayPreview:   db.OptionalText(request.Result.Preview),
 		ReplayBytes:     int64(len(request.Result.Body) + len(request.Result.Preview)),
 		ReplayExpiresAt: timestamp(request.Result.ExpiresAt.UTC()),
 		Now:             timestamp(now), IdentityID: identityID,
@@ -456,10 +456,6 @@ func operationUUID(raw string) (pgtype.UUID, error) {
 
 func timestamp(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
-}
-
-func optionalText(value string) pgtype.Text {
-	return pgtype.Text{String: value, Valid: value != ""}
 }
 
 func optionalInt2(value int) pgtype.Int2 {

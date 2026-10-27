@@ -63,7 +63,7 @@ type SkillMeta struct {
 // live internal/skills.Loader satisfies it through a thin adapter wired at
 // registration (cmd/aura), keeping internal/agent/tools free of an internal/skills
 // import. ManifestDescription renders the turn-stable alphabetical manifest (D-06);
-// BM25Corpus + corpus-index→name mapping back the overflow `list` ranker (D-09).
+// List also feeds the overflow `list` ranker (rankSkills, D-09).
 //
 // Every method takes the call's context because a skill has an OWNER since amendment #214:
 // the adapter reads identityctx off it and answers from that identity's roots — their own

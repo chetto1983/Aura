@@ -53,9 +53,8 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 	// to leave no skill and no audit row behind
 	// (TestGovernanceWriteSkillsValidateDryRun).
 	readOnlyPOST := map[string]bool{
-		// Candidate verification only reads Cloudflare; rotation only returns manual guidance.
+		// Candidate verification only reads Cloudflare.
 		"POST /api/settings/remote-access/token/verify": true,
-		"POST /api/settings/remote-access/rotate-token": true,
 		"POST /api/graph/query":                         true,
 		"POST /api/settings/telegram/check":             true,
 		// The route preview embeds a fixed synthetic batch and counts rows; it writes nothing.

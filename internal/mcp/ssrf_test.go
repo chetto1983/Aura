@@ -37,50 +37,6 @@ func mustAddrs(t *testing.T, ss ...string) []netip.Addr {
 	return out
 }
 
-func TestClassify(t *testing.T) {
-	cases := []struct {
-		name    string
-		addr    string // empty → zero (invalid) Addr
-		reason  string
-		blocked bool
-	}{
-		{"public_v4", "93.184.216.34", "", false},
-		{"public_v6", "2606:2800:220:1:248:1893:25c8:1946", "", false},
-		{"invalid_zero", "", "invalid_target", true},
-		{"loopback_v4", "127.0.0.1", "loopback", true},
-		{"loopback_v6", "::1", "loopback", true},
-		{"link_local_imds", "169.254.169.254", "link_local", true},
-		{"link_local_unicast_v6", "fe80::1", "link_local", true},
-		{"mapped_imds_unmap_first", "::ffff:169.254.169.254", "link_local", true},
-		{"private_10", "10.0.0.5", "private", true},
-		{"private_172", "172.16.3.4", "private", true},
-		{"private_192", "192.168.1.10", "private", true},
-		// fd00:ec2::/32 is the AWS IPv6 metadata range but is shadowed by the
-		// RFC-4193 IsPrivate() (fc00::/7) predicate that runs earlier — mirrored
-		// faithfully from internal/web; it is still blocked, just as "private".
-		{"ipv6_metadata_range_as_private", "fd00:ec2::254", "private", true},
-		// 224.0.0.0/24 is link-local multicast (hits the earlier branch); use an
-		// administratively-scoped multicast address to reach the plain multicast class.
-		{"link_local_multicast", "224.0.0.1", "link_local", true},
-		{"multicast", "239.0.0.1", "multicast", true},
-		{"unspecified", "0.0.0.0", "unspecified", true},
-		{"cgnat", "100.64.0.1", "cgnat", true},
-		{"this_network", "0.1.2.3", "this_network", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var ip netip.Addr
-			if tc.addr != "" {
-				ip = mustAddrs(t, tc.addr)[0]
-			}
-			reason, blocked := classify(ip)
-			if blocked != tc.blocked || reason != tc.reason {
-				t.Fatalf("classify(%s) = (%q,%v), want (%q,%v)", tc.addr, reason, blocked, tc.reason, tc.blocked)
-			}
-		})
-	}
-}
-
 func TestGuardEndpoint(t *testing.T) {
 	imds := "169.254.169.254"
 	cases := []struct {
@@ -112,6 +68,30 @@ func TestGuardEndpoint(t *testing.T) {
 		{
 			name: "mapped_imds_dev_unmap", raw: "http://mapped.test/x", enforce: false,
 			resolve: map[string][]netip.Addr{"mapped.test": mustAddrs(t, "::ffff:169.254.169.254")}, wantErr: true,
+		},
+		// An IPv4 address carried in IPv6 is judged as itself (netguard): the NAT64 and
+		// 6to4 forms of the IMDS address stay out even under dev, and a DNS64 answer for a
+		// public host stays reachable under enforce.
+		{
+			name: "metadata_host_root_dot_dev", raw: "http://metadata.google.internal./x", enforce: false,
+			wantErr: true,
+		},
+		{
+			name: "nat64_imds_dev_blocked", raw: "http://nat64.test/x", enforce: false,
+			resolve: map[string][]netip.Addr{"nat64.test": mustAddrs(t, "64:ff9b::a9fe:a9fe")}, wantErr: true,
+		},
+		{
+			name: "sixtofour_imds_dev_blocked", raw: "http://sixtofour.test/x", enforce: false,
+			resolve: map[string][]netip.Addr{"sixtofour.test": mustAddrs(t, "2002:a9fe:a9fe::1")}, wantErr: true,
+		},
+		{
+			name: "dns64_public_enforce", raw: "https://dns64.test/mcp", enforce: true,
+			resolve:  map[string][]netip.Addr{"dns64.test": mustAddrs(t, "64:ff9b::5db8:d822")},
+			wantHost: "dns64.test",
+		},
+		{
+			name: "reserved_enforce_blocked", raw: "http://testnet.test/x", enforce: true,
+			resolve: map[string][]netip.Addr{"testnet.test": mustAddrs(t, "198.51.100.7")}, wantErr: true,
 		},
 		// Allowed public host — passes under BOTH policies.
 		{
@@ -267,7 +247,7 @@ func TestStrictManagedEgressRejectsMixedDNSAndMetadataEvenForRecipe(t *testing.T
 //
 //  1. parse + non-empty host;
 //  2. scheme ∈ allowedSchemes;
-//  3. host ∉ metadataHostBlocklist;
+//  3. host is not a netguard metadata hostname;
 //  4. resolve and classify EVERY record; strict mode rejects private targets except
 //     the exact authority of a trusted built-in recipe, and rejects mixed DNS even
 //     for that recipe; dev rejects metadata/link-local while allowing local sidecars;

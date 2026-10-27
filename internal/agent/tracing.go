@@ -48,12 +48,6 @@ func mintSpanID() [8]byte {
 	return id
 }
 
-// rootSpanIDs mints the SpanID for the root InvocationContext and leaves the
-// parent nil (root has no parent — D-04).
-func rootSpanIDs() (span [8]byte, parent *[8]byte) {
-	return mintSpanID(), nil
-}
-
 // startLLMSpan starts the per-call "llm.request" span from ic.Ctx (Req#13). The
 // returned context carries the span; the caller MUST call span.End() (deferred or
 // explicit) exactly once per LLM call. When ctx already carries an "agent.turn"

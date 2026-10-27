@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // emptyObjectSchema is the Parameters fallback for a tool whose server advertised
@@ -122,7 +122,7 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 // indexes the deferred tool's name, description, and argument-field names, so
 // deferred MCP tools stay discoverable.
 //
-// The mount lists the tools before it gets here, on the RAW session (drainTools),
+// The mount lists the tools before it gets here, on the RAW session (mcp.DrainTools),
 // bounded by its handshakeCtx alone (AURA_MCP_MOUNT_TIMEOUT at boot). Bridged tools
 // still reference srv, the supervisor that owns every CALL after the mount and
 // redials on a transport error. A Craft server's desktop-only tools are left out here,
@@ -247,7 +247,7 @@ func capDescriptions(v any, depth int) {
 		for k, val := range n {
 			if k == "description" {
 				if s, ok := val.(string); ok && len(s) > maxMCPArgDescBytes {
-					n[k] = truncateUTF8Bytes(s, maxMCPArgDescBytes) + mcpArgDescTruncated
+					n[k] = utf8cut.ValidPrefix(s, maxMCPArgDescBytes) + mcpArgDescTruncated
 				}
 				continue
 			}
@@ -293,7 +293,7 @@ func capMCPErrorContent(err error) string {
 		return text
 	}
 	limit := max(maxMCPErrorPreviewBytes-len(mcpErrorTruncated), 0)
-	return truncateUTF8Bytes(text, limit) + mcpErrorTruncated
+	return utf8cut.ValidPrefix(text, limit) + mcpErrorTruncated
 }
 
 type boundedBridgeError struct {
@@ -329,13 +329,13 @@ func frameMCPSummary(raw string, params json.RawMessage) string {
 	}
 	budget := maxMCPSummaryBytes - len(marker) - len(hint)
 	if budget >= 0 {
-		return truncateUTF8Bytes(summary, budget) + marker + hint
+		return utf8cut.ValidPrefix(summary, budget) + marker + hint
 	}
 	hintBudget := maxMCPSummaryBytes - len(marker)
 	if hintBudget <= 0 {
-		return truncateUTF8Bytes(marker, maxMCPSummaryBytes)
+		return utf8cut.ValidPrefix(marker, maxMCPSummaryBytes)
 	}
-	return marker + truncateUTF8Bytes(hint, hintBudget)
+	return marker + utf8cut.ValidPrefix(hint, hintBudget)
 }
 
 // frameMCPDescription returns the server's description bounded to the byte cap
@@ -350,21 +350,7 @@ func frameMCPDescription(raw string) string {
 		return desc
 	}
 	limit := max(maxMCPDescriptionBytes-len(marker), 0)
-	return truncateUTF8Bytes(desc, limit) + marker
-}
-
-func truncateUTF8Bytes(s string, maxBytes int) string {
-	if maxBytes <= 0 {
-		return ""
-	}
-	if len(s) <= maxBytes {
-		return s
-	}
-	out := s[:maxBytes]
-	for len(out) > 0 && !utf8.ValidString(out) {
-		out = out[:len(out)-1]
-	}
-	return out
+	return utf8cut.ValidPrefix(desc, limit) + marker
 }
 
 // mountWithAdvertisedPolicy bridges all of srv's advertised tools under namespace and

@@ -25,6 +25,7 @@ GO_SCOPES = {
     "pausable": "internal/pausable/context.go",
     "elicitation_route": "internal/agent/mcptools/elicitation_route.go",
     "turn_reading": "internal/agent/llm_agent_turn_reading.go",
+    "ssrf": "internal/netguard/netguard.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -56,6 +57,7 @@ REQUIRED_SCOPE_IDS = frozenset(
         "pausable",
         "elicitation_route",
         "turn_reading",
+        "ssrf",
         "frontend",
         "media_frontend",
     }

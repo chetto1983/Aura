@@ -185,7 +185,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	ctx, end := schedulerLifecycleBoundary.Start(ctx)
 	var observeErr error
 	defer end.PanicSafe(&observeErr)
-	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
+	s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
 	missed, err := s.catchUpMissed(ctx)
 	if err != nil {
 		slog.Warn("scheduler boot catch-up failed", "err", err)
@@ -235,7 +235,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 // query over the running rows, so the added per-tick cost is a scan of what is already
 // in flight.
 func (s *Scheduler) tickOnce(ctx context.Context) {
-	_ = s.recoverOrphans(ctx)
+	s.recoverOrphans(ctx)
 	if err := s.runScheduledScan(ctx); err != nil {
 		slog.Warn("scheduler tick failed", "err", err)
 	}

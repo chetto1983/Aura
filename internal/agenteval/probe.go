@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // Driver asks the live deployment a question and returns the conversation it
@@ -90,11 +92,11 @@ func (d CLIDriver) Ask(ctx context.Context, question string) (string, error) {
 	out, err := run(ctx, question+"\n", "docker", "exec", "-i",
 		"-e", "AURA_LLM_TEMPERATURE=0", container, "aura", "shell")
 	if err != nil {
-		return "", fmt.Errorf("docker exec aura shell: %w (output: %s)", err, truncate(string(out), 600))
+		return "", fmt.Errorf("docker exec aura shell: %w (output: %s)", err, utf8cut.Ellipsize(string(out), 600))
 	}
 	match := threadID.FindSubmatch(out)
 	if match == nil {
-		return "", fmt.Errorf("no thread_id in the turn output — did the turn start? output: %s", truncate(string(out), 600))
+		return "", fmt.Errorf("no thread_id in the turn output — did the turn start? output: %s", utf8cut.Ellipsize(string(out), 600))
 	}
 	return string(match[1]), nil
 }
@@ -153,7 +155,7 @@ func (p PostgresEvidence) Read(ctx context.Context, conversationID string) (Evid
 	out, err := run(ctx, "", "docker", "exec", container, "sh", "-c",
 		`PGPASSWORD=$POSTGRES_PASSWORD psql -U aura -d aura -tAc `+shellQuote(query))
 	if err != nil {
-		return Evidence{}, fmt.Errorf("psql: %w (output: %s)", err, truncate(string(out), 300))
+		return Evidence{}, fmt.Errorf("psql: %w (output: %s)", err, utf8cut.Ellipsize(string(out), 300))
 	}
 	return parseEvidence(string(out))
 }
@@ -165,12 +167,12 @@ func (p PostgresEvidence) Read(ctx context.Context, conversationID string) (Evid
 func parseEvidence(raw string) (Evidence, error) {
 	start := strings.Index(raw, "[")
 	if start < 0 {
-		return Evidence{}, fmt.Errorf("no turn array in the psql output: %s", truncate(strings.TrimSpace(raw), 300))
+		return Evidence{}, fmt.Errorf("no turn array in the psql output: %s", utf8cut.Ellipsize(strings.TrimSpace(raw), 300))
 	}
 	payload := strings.TrimSpace(raw[start:])
 	var rows []turnRow
 	if err := json.Unmarshal([]byte(payload), &rows); err != nil {
-		return Evidence{}, fmt.Errorf("decode turn rows: %w (payload: %s)", err, truncate(payload, 300))
+		return Evidence{}, fmt.Errorf("decode turn rows: %w (payload: %s)", err, utf8cut.Ellipsize(payload, 300))
 	}
 	if len(rows) == 0 {
 		return Evidence{}, fmt.Errorf("no turns recorded — the conversation is empty or scoped to another identity")

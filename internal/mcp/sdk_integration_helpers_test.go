@@ -15,20 +15,15 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// drainSDKToolsForTest drains session's paginated tool list. Mirrors probe.go's
-// countTools and cmd/aura's drainSDKTools — pagination is a capability the
-// hand-rolled client never had, and it is checked here against a REAL sidecar,
-// not just a fixture.
+// drainSDKToolsForTest lists a REAL sidecar's tools through DrainTools, the production
+// path, so pagination is checked against the sidecar and not just a fixture.
 func drainSDKToolsForTest(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession) []*sdkmcp.Tool {
 	t.Helper()
-	var out []*sdkmcp.Tool
-	for tool, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			t.Fatalf("tools/list: %v", err)
-		}
-		out = append(out, tool)
+	tools, err := DrainTools(ctx, session)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
 	}
-	return out
+	return tools
 }
 
 // callAndDecodeForTest calls tool on session and decodes its result through the

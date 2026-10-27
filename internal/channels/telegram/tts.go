@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/asciifold"
 	"github.com/chetto1983/aura/internal/multimodal"
 	tele "gopkg.in/telebot.v4"
 )
@@ -83,7 +84,7 @@ func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient,
 
 	voice := &tele.Voice{
 		File:    tele.FromReader(bytes.NewReader(opus)),
-		Caption: asciiCaption(t.caption),
+		Caption: asciifold.Caption(t.caption),
 		MIME:    "audio/" + t.tts.AudioFormat(),
 	}
 	msg, err := bot.Send(to, voice)

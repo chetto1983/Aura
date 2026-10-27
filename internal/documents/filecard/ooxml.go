@@ -44,7 +44,7 @@ func buildDOCX(req Request, card Card) (Card, error) {
 		card.Title = truncateRunes(segments[0], 160)
 	}
 	card.Facts = append(card.Facts, plural(len(segments), "paragraph", "paragraphs"))
-	card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(segments, maxProseWords), " / "))
+	card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(segments), " / "))
 	card.Caveats = append(card.Caveats, "Only the opening of the document is described here.")
 	return card, nil
 }
@@ -145,7 +145,7 @@ func buildEPUB(req Request, card Card) (Card, error) {
 		if card.Title == "" {
 			card.Title = truncateRunes(segments[0], 160)
 		}
-		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(segments, maxProseWords), " / "))
+		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(segments), " / "))
 	}
 	card.Caveats = append(card.Caveats, "Only the book's metadata and opening pages are described here.")
 	return card, nil

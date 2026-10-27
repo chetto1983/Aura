@@ -13,6 +13,11 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// probeServer probes under the dev egress policy with no credentials.
+func probeServer(ctx context.Context, name string, server ManagedServer) ProbeResult {
+	return ProbeServerWithOptions(ctx, name, server, RuntimeEgressPolicy(false, server), SessionOptions{})
+}
+
 // deadStdioServer names a command that can never spawn, so the dial fails
 // immediately without a real handshake attempt — the "dead server" shape
 // ProbeServer's dial-failure branch needs. The pre-SDK "crash" helper mode this
@@ -34,9 +39,9 @@ func TestMCPProbe_HealthyServerCountsTools(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	got := ProbeServer(ctx, "helper", sdkHelperServer(1))
+	got := probeServer(ctx, "helper", sdkHelperServer(1))
 	if !got.OK {
-		t.Fatalf("ProbeServer(healthy): want OK, got %+v", got)
+		t.Fatalf("probeServer(healthy): want OK, got %+v", got)
 	}
 	if got.ToolCount != 1 {
 		t.Errorf("ToolCount: want 1 (echo), got %d", got.ToolCount)
@@ -60,18 +65,18 @@ func TestMCPProbe_CanceledContextIsolated(t *testing.T) {
 	cancel() // expired before the probe runs
 
 	start := time.Now()
-	got := ProbeServer(ctx, "slow", sdkHelperServer(1))
+	got := probeServer(ctx, "slow", sdkHelperServer(1))
 	elapsed := time.Since(start)
 
 	if got.OK {
-		t.Errorf("ProbeServer(canceled ctx): want OK=false, got %+v", got)
+		t.Errorf("probeServer(canceled ctx): want OK=false, got %+v", got)
 	}
 	if got.Err == "" {
-		t.Error("ProbeServer(canceled ctx): want a non-empty Err on failure")
+		t.Error("probeServer(canceled ctx): want a non-empty Err on failure")
 	}
 	// The bounded probe must return promptly, never block on the dead/slow server.
 	if elapsed > 30*time.Second {
-		t.Errorf("ProbeServer(canceled ctx) took %v, expected a prompt return", elapsed)
+		t.Errorf("probeServer(canceled ctx) took %v, expected a prompt return", elapsed)
 	}
 }
 
@@ -81,24 +86,24 @@ func TestMCPProbe_DeadServerIsolated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a real subprocess")
 	}
-	got := ProbeServer(context.Background(), "dead", deadStdioServer())
+	got := probeServer(context.Background(), "dead", deadStdioServer())
 	if got.OK {
-		t.Errorf("ProbeServer(crash): want OK=false, got %+v", got)
+		t.Errorf("probeServer(crash): want OK=false, got %+v", got)
 	}
 	if got.Err == "" {
-		t.Error("ProbeServer(crash): want a non-empty Err on failure")
+		t.Error("probeServer(crash): want a non-empty Err on failure")
 	}
 }
 
 // TestMCPProbe_EmptyCommand proves a server with neither a command nor an HTTP endpoint
 // is reported unreachable (OK=false) without a dial attempt.
 func TestMCPProbe_EmptyCommand(t *testing.T) {
-	got := ProbeServer(context.Background(), "blank", ManagedServer{})
+	got := probeServer(context.Background(), "blank", ManagedServer{})
 	if got.OK {
-		t.Errorf("ProbeServer(empty command): want OK=false, got %+v", got)
+		t.Errorf("probeServer(empty command): want OK=false, got %+v", got)
 	}
 	if got.Err == "" {
-		t.Error("ProbeServer(empty command): want a non-empty Err")
+		t.Error("probeServer(empty command): want a non-empty Err")
 	}
 }
 
@@ -108,24 +113,24 @@ func TestMCPProbe_EmptyCommand(t *testing.T) {
 func TestMCPProbe_HTTPEndpointDialsAndCountsTools(t *testing.T) {
 	ts, _ := startSDKHTTPServer(t, 2, 0)
 
-	got := ProbeServer(context.Background(), "memory", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
+	got := probeServer(context.Background(), "memory", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
 	if !got.OK {
-		t.Fatalf("ProbeServer(http): want OK, got %+v", got)
+		t.Fatalf("probeServer(http): want OK, got %+v", got)
 	}
 	if got.ToolCount != 2 {
-		t.Errorf("ProbeServer(http): want ToolCount 2, got %d (detail=%q)", got.ToolCount, got.Detail)
+		t.Errorf("probeServer(http): want ToolCount 2, got %d (detail=%q)", got.ToolCount, got.Detail)
 	}
 }
 
 // TestMCPProbe_HTTPEndpointDialFailure proves an unreachable HTTP endpoint fails its own
 // row (OK=false) with a redacted error instead of a misleading reachable-by-config OK.
 func TestMCPProbe_HTTPEndpointDialFailure(t *testing.T) {
-	got := ProbeServer(context.Background(), "dead", ManagedServer{Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp"})
+	got := probeServer(context.Background(), "dead", ManagedServer{Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:0/mcp"})
 	if got.OK {
-		t.Errorf("ProbeServer(dead http): want OK=false, got %+v", got)
+		t.Errorf("probeServer(dead http): want OK=false, got %+v", got)
 	}
 	if got.Err == "" {
-		t.Errorf("ProbeServer(dead http): want a redacted Err, got empty")
+		t.Errorf("probeServer(dead http): want a redacted Err, got empty")
 	}
 }
 
@@ -170,9 +175,9 @@ func TestMCPProbe_CountsToolsAcrossPages(t *testing.T) {
 	// PageSize 1 makes tools/list genuinely span three pages without 1001 tools.
 	ts, _ := startSDKHTTPServer(t, tools, 1)
 
-	got := ProbeServer(context.Background(), "paged", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
+	got := probeServer(context.Background(), "paged", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
 	if !got.OK {
-		t.Fatalf("ProbeServer(paged): want OK, got %+v", got)
+		t.Fatalf("probeServer(paged): want OK, got %+v", got)
 	}
 	if got.ToolCount != tools {
 		t.Errorf("ToolCount: want %d across all pages, got %d (detail=%q)", tools, got.ToolCount, got.Detail)
@@ -188,9 +193,9 @@ func TestMCPProbe_CountsToolsAcrossPages(t *testing.T) {
 func TestMCPProbe_ToolsListFailure(t *testing.T) {
 	ts := startFailingListHTTPServer(t)
 
-	got := ProbeServer(context.Background(), "nolist", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
+	got := probeServer(context.Background(), "nolist", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
 	if got.OK {
-		t.Fatalf("ProbeServer(failing list): want OK=false, got %+v", got)
+		t.Fatalf("probeServer(failing list): want OK=false, got %+v", got)
 	}
 	if got.Detail != "tools/list failed" {
 		t.Errorf("Detail: want %q, got %q (err=%q)", "tools/list failed", got.Detail, got.Err)
@@ -206,7 +211,7 @@ func TestMCPProbe_RedactsSecretsInError(t *testing.T) {
 	// Set a secret-shaped env on the (failing) server; the dial error from a missing
 	// binary won't echo it, but this guards that ProbeServer routes Err through
 	// RedactSecrets (regression guard for the redaction wiring).
-	got := ProbeServer(context.Background(), "secret-srv", ManagedServer{
+	got := probeServer(context.Background(), "secret-srv", ManagedServer{
 		Command: "this-binary-does-not-exist-28-01",
 		Env:     []string{"API_TOKEN=supersecretvalue"},
 	})

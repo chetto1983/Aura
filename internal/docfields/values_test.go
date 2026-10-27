@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+// keys returns the value keys a field holds, in order.
+func (f *Fields) keys(field string) []string {
+	var out []string
+	for _, v := range f.Values {
+		if v.Field == field {
+			out = append(out, v.ValueKey)
+		}
+	}
+	return out
+}
+
 var at = time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 
 func suggestion(field, key, setBy string) Value {

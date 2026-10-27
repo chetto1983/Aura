@@ -15,7 +15,7 @@ import (
 func TestToolResultEventPreservesCancellationOutcome(t *testing.T) {
 	a := &LlmAgent{}
 	meta := tools.ToolResultMeta{"cancelled": true}
-	ev := a.toolResultEvent(InvocationContext{}, [8]byte{}, nil, toolRunResult{
+	ev := a.toolResultEvent(InvocationContext{}, [8]byte{}, toolRunResult{
 		ToolCallID: "call", ToolName: "shell_exec", Result: tools.ToolResult{Meta: &meta},
 	})
 	if ev.Actions.ToolInvocation.Status != "canceled" || ev.Actions.ToolInvocation.Meta["cancelled"] != true {
@@ -29,7 +29,7 @@ func TestToolResultEventPreservesCancellationOutcome(t *testing.T) {
 func TestToolResultEventRecordsAnInlineToolErrorAsError(t *testing.T) {
 	a := &LlmAgent{}
 	meta := tools.ToolResultMeta{tools.MetaToolError: "http_error status 403"}
-	ev := a.toolResultEvent(InvocationContext{}, [8]byte{}, nil, toolRunResult{
+	ev := a.toolResultEvent(InvocationContext{}, [8]byte{}, toolRunResult{
 		ToolCallID: "call", ToolName: "web_fetch", Result: tools.ToolResult{Meta: &meta},
 	})
 	ti := ev.Actions.ToolInvocation
@@ -49,7 +49,7 @@ func outcomeOf(t *testing.T, gw *gateway.Gateway, tool tools.Tool, args string) 
 	reg.Register(tool)
 	a := &LlmAgent{registry: reg, gateway: gw, ledgerConvID: "conv-outcome"}
 	run := a.runTool(context.Background(), testBudget(t), toolCall("c1", tool.Spec().Name, args), time.Now())
-	return a.toolResultEvent(InvocationContext{}, [8]byte{}, nil, run).Actions.ToolInvocation
+	return a.toolResultEvent(InvocationContext{}, [8]byte{}, run).Actions.ToolInvocation
 }
 
 // A refused call is still a failed call to the ledger, and it is also a refusal: the cockpit

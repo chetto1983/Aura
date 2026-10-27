@@ -6,15 +6,13 @@ This repository adapts a small number of open-source implementation patterns. Ke
 
 - Source: `https://github.com/google/adk-go`
 - License: Apache License 2.0
-- Use in Aura: Phase 2 adapts workflow-agent control-flow patterns for `SequentialAgent`, `LoopAgent`, and `ParallelAgent` while not importing `google.golang.org/adk`.
-- Planned adapted files:
-  - `internal/agent/workflow/sequential.go`
+- Use in Aura: Phase 2 adapts the workflow-agent control-flow pattern for `LoopAgent` while not importing `google.golang.org/adk`. The adapted `SequentialAgent` and `ParallelAgent` were removed on 2026-10-26, unused by any binary.
+- Adapted files:
   - `internal/agent/workflow/loop.go`
-  - `internal/agent/workflow/parallel.go`
 - Required hygiene:
   - Preserve an in-source attribution comment in adapted workflow files.
   - Do not copy upstream NOTICE text selectively; if a relevant upstream NOTICE entry appears, carry the applicable notice here.
-  - Keep Aura-specific divergences documented in code comments where they affect behavior: budget exhaustion, shared parent budget, two-phase dedup, captured cancel for escalation, and clean sibling drain.
+  - Keep Aura-specific divergences documented in code comments where they affect behavior: budget exhaustion, shared parent budget, two-phase dedup and captured cancel for escalation.
 
 ## smixs/visual-skills
 

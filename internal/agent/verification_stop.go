@@ -333,8 +333,6 @@ func BuildVerifyOnStopNudge(request VerifyOnStopRequest) (string, bool) {
 		return "", false
 	}
 
-	// The prefix is a constant because the loop injects this as a USER-role message
-	// and isAgentNudge has to recognise it (llm_agent_verification.go).
 	return verifyOnStopNudgePrefix + ", but the workspace does not have " +
 		"fresh passing verification evidence yet.\n\n" +
 		"Verification status: " + statusDetail(status) + "\n\n" +

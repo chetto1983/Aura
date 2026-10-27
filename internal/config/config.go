@@ -206,20 +206,13 @@ type Config struct {
 	AssetPresignTTLSec           int           // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
 	AssetProcessingConcurrent    int           // AURA_ASSET_PROCESSING_CONCURRENCY — asset worker width
 	AssetProcessingLeaseDuration time.Duration // AURA_ASSET_PROCESSING_LEASE_SEC — durable asset job lease
-	TelegramAPIBaseURL           string        // TELEGRAM_API_BASE_URL — optional local Bot API base
-	TelegramFileBaseURL          string        // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
-	TelegramLocalBotAPI          bool          // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
 	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
-	// may start. Authula is the active provider; WebAuthSecret is retained only so
-	// old env files/tests can be loaded without making it a product path.
-	WebAuthSecret string // AURA_WEB_AUTH_SECRET - deprecated legacy passphrase secret; not mounted by aura serve
-	WebTrustProxy bool   // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
+	// may start.
+	WebTrustProxy bool // AURA_WEB_TRUST_PROXY — operator vouches a reverse proxy terminates auth (D-05)
 
 	// Authula web-auth provider knobs (docs/cockpit-overhaul/05-authula-auth-SPEC.md).
-	// WebAuthProvider defaults to authula. Legacy values are accepted for backward
-	// compatibility, but aura serve still builds the Authula-only auth boundary.
-	WebAuthProvider         string // AURA_WEB_AUTH_PROVIDER (default authula)
+	// Authula is the only provider: aura serve builds an Authula-only auth boundary.
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
 	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
 	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — optional legacy Aura identity fallback for Authula operator linking
@@ -333,28 +326,15 @@ type Config struct {
 	MUSRIsolation bool // AURA_MUSR_ISOLATION — allow provisioning a 2nd identity, default false
 }
 
-// Load reads .env (best-effort) then populates a Config from environment
-// variables. A missing .env file is not an error — production deployments
-// rely on real environment variables, not on the .env shim.
+// LoadServe reads .env (best-effort), then the full daemon config from environment
+// variables, permitting an empty LLM API key so the setup wizard and channels can boot.
+// LLM turns still fail closed at call time. A missing .env file is not an error —
+// production deployments rely on real environment variables, not on the .env shim.
 //
 // Postgres DSN composition: AURA_DB_URL / AURA_DB_MIGRATE_URL overrides take
 // precedence (production managed Postgres). Otherwise URLs are composed from
 // POSTGRES_* primitives + AURA_DB_*_ROLE role names. Single POSTGRES_PASSWORD
 // fans out to both runtime + DDL roles for local-dev ergonomics.
-func Load() (*Config, error) {
-	cfg := loadBase()
-	// LLM config owns its own 4-tier load order + fail-fast empty-key (D-22);
-	// its error (e.g. ErrMissingAPIKey) propagates through this composite.
-	llmCfg, err := llm.Load()
-	if err != nil {
-		return nil, fmt.Errorf("config: load llm: %w", err)
-	}
-	cfg.LLM = *llmCfg
-	return cfg, nil
-}
-
-// LoadServe reads the full daemon config but permits an empty LLM API key so the
-// setup wizard and channels can boot. LLM turns still fail closed at call time.
 func LoadServe() (*Config, error) {
 	cfg := loadBase()
 	llmCfg, err := llm.LoadAllowEmptyKey()
@@ -509,17 +489,9 @@ func loadBase() *Config {
 		AssetProcessingLeaseDuration: time.Duration(envutil.IntDefault(
 			"AURA_ASSET_PROCESSING_LEASE_SEC", DefaultAssetProcessingLeaseSec,
 		)) * time.Second,
-		TelegramAPIBaseURL:  os.Getenv("TELEGRAM_API_BASE_URL"),
-		TelegramFileBaseURL: os.Getenv("TELEGRAM_FILE_BASE_URL"),
-		TelegramLocalBotAPI: envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
-		// Web-auth knobs. The legacy secret is read raw for compatibility only; the
-		// active cockpit login path is Authula.
-		WebAuthSecret: os.Getenv("AURA_WEB_AUTH_SECRET"),
 		WebTrustProxy: envutil.BoolDefault("AURA_WEB_TRUST_PROXY", false),
 
-		// Authula provider (default authula).
-		WebAuthProvider:         envDefault("AURA_WEB_AUTH_PROVIDER", "authula"),
 		AuthulaDatabaseURL:      os.Getenv("AURA_AUTHULA_DATABASE_URL"),
 		AuthulaSecret:           os.Getenv("AURA_AUTHULA_SECRET"),
 		AuthulaOperatorIdentity: os.Getenv("AURA_AUTHULA_OPERATOR_IDENTITY"),

@@ -17,11 +17,11 @@ import (
 	"maps"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/redact"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // finalizeNudge is the D-03 synthesis instruction appended (as a trailing user
@@ -142,13 +142,13 @@ const (
 // one MORE billed call, so it is folded in rather than reported alone: finalize is the
 // budget-trip path, i.e. precisely the turns that made the most calls before arriving
 // here, and reporting only the synthesis would understate them the most.
-func (a *LlmAgent) finalize(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) finalize(ic InvocationContext, spanID [8]byte,
 	requestID, reason string, acc *turnUsage, yield func(*Event, error) bool,
 ) {
 	answer, usage := a.synthesizeWithFallback(ic)
 	acc.add(usage)
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-	yield(a.finalizeEvent(ic, spanID, parentSpanID, requestID, answer, reason, acc.total()), nil)
+	yield(a.finalizeEvent(ic, spanID, requestID, answer, reason, acc.total()), nil)
 }
 
 // synthesizeWithFallback runs the tool-free synthesis call, retrying it EXACTLY ONCE
@@ -194,9 +194,9 @@ func (a *LlmAgent) stubDigest() string {
 		b.WriteString("\n- ")
 		b.WriteString(name)
 		b.WriteString(": ")
-		b.WriteString(truncateBytes(m.Content, stubBulletCap))
+		b.WriteString(utf8cut.Prefix(m.Content, stubBulletCap))
 	}
-	return truncateBytes(b.String(), stubDigestCap)
+	return utf8cut.Prefix(b.String(), stubDigestCap)
 }
 
 // toolNamesByCallID maps each tool_call_id to its tool name by scanning the
@@ -210,19 +210,6 @@ func toolNamesByCallID(history []llm.Message) map[string]string {
 		}
 	}
 	return names
-}
-
-// truncateBytes clamps s to at most n bytes on a valid UTF-8 boundary (the previews
-// are UTF-8 prose), avoiding a split rune in the user-facing digest.
-func truncateBytes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	cut := n
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
 }
 
 // synthesize runs the tool-free synthesis call and returns the content-parsed
@@ -289,10 +276,10 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 // D-04 termination StateDelta shape) rather than re-spelling them here, so the two
 // paths stay byte-consistent: terminalBudgetEvent is no longer the terminal Event
 // at the trip sites, but its StateDelta keys are preserved on the finalEvent.
-func (a *LlmAgent) finalizeEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) finalizeEvent(ic InvocationContext, spanID [8]byte,
 	requestID, answer, reason string, usage llm.Usage,
 ) *Event {
-	ev := a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage)
-	maps.Copy(ev.Actions.StateDelta, a.terminalBudgetEvent(ic, spanID, parentSpanID, reason).Actions.StateDelta)
+	ev := a.finalEvent(ic, spanID, requestID, answer, "stop", usage)
+	maps.Copy(ev.Actions.StateDelta, a.terminalBudgetEvent(ic, spanID, reason).Actions.StateDelta)
 	return ev
 }

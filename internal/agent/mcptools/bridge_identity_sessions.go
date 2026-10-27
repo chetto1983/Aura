@@ -155,7 +155,7 @@ func (p *identitySessionPool) open(ctx context.Context, owner string) (*MountedS
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	advertised, err := drainTools(handshakeCtx, session)
+	advertised, err := mcp.DrainTools(handshakeCtx, session)
 	if err != nil {
 		mcp.ReleaseSession(session)
 		return nil, nil, nil, err

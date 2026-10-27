@@ -452,8 +452,6 @@ func TestGovernanceWriteMountCapabilityGate(t *testing.T) {
 
 	s, _ := govWriteServer(newFakeMCPWrite())
 	deps := AuthDeps{
-		Secret:           "operator-secret",
-		SigningKey:       deriveSigningKey("operator-secret"),
 		SecretConfigured: true,
 		LocalIdentityID:  granteeID,
 		Identities: &fakeIdentities{

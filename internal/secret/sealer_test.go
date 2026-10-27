@@ -2,6 +2,11 @@ package secret
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
@@ -144,5 +149,67 @@ func TestIdentityKeyIsStableAndSeparated(t *testing.T) {
 	}
 	if _, err := IdentityKey("short", "aura-browser-state-v1", "id-a"); err == nil {
 		t.Error("an unusable master secret must be refused")
+	}
+}
+
+// The stores that used to carry their own copy of this construction (mcpoauth, objectstore,
+// tracesink) wrote rows as nonce||AES-GCM(HKDF-SHA256(secret, info)). Folding them onto Sealer
+// must leave every existing row readable, so this seals the old way by hand, per label, and
+// opens through the Sealer.
+func TestSealerOpensWhatTheRetiredCopiesWrote(t *testing.T) {
+	for _, info := range []string{
+		"aura-mcp-oauth-identity-key-v1",
+		"aura-objectstore-identity-key-v1",
+		"aura-reasoning-trace-sink-v1",
+	} {
+		t.Run(info, func(t *testing.T) {
+			raw, err := hex.DecodeString(testSecretHex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, err := hkdf.Key(sha256.New, raw, nil, info, 32)
+			if err != nil {
+				t.Fatal(err)
+			}
+			block, err := aes.NewCipher(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			aead, err := cipher.NewGCM(block)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nonce := bytes.Repeat([]byte{7}, aead.NonceSize())
+			row := aead.Seal(nonce, nonce, []byte("stored before the fold"), nil)
+
+			derived, err := DeriveKey(testSecretHex, info)
+			if err != nil {
+				t.Fatalf("DeriveKey: %v", err)
+			}
+			for name, build := range map[string]func() (*Sealer, error){
+				"NewSealer":        func() (*Sealer, error) { return NewSealer(testSecretHex, info) },
+				"NewSealerFromKey": func() (*Sealer, error) { return NewSealerFromKey(derived) },
+			} {
+				s, err := build()
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				got, err := s.Open(row)
+				if err != nil || string(got) != "stored before the fold" {
+					t.Fatalf("%s opened %q, %v; want the row the old code wrote", name, got, err)
+				}
+			}
+		})
+	}
+}
+
+func TestDeriveKeyNamesNoVariable(t *testing.T) {
+	_, err := DeriveKey("abcd", "aura-test-key-v1")
+	if err == nil || strings.Contains(err.Error(), "AURA_") {
+		t.Fatalf("DeriveKey err = %v, want one that names no env variable (the caller wraps it)", err)
+	}
+	_, err = NewSealer("abcd", "aura-test-key-v1")
+	if err == nil || !strings.Contains(err.Error(), "AURA_AUTHULA_SECRET") {
+		t.Fatalf("NewSealer err = %v, want it to name AURA_AUTHULA_SECRET", err)
 	}
 }

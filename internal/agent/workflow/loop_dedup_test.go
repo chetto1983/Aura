@@ -12,9 +12,9 @@ func TestLoopAgent_DedupVeto_When_ResultChanges(t *testing.T) {
 	// Same name+args but a CHANGING result content each time -> progress veto (D-18):
 	// dedup never fires, so termination is by the hard step budget, NOT dedup.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "10")
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 

@@ -50,7 +50,7 @@ func TestWorkerReportArrivesInTheUntrustedToolEnvelope(t *testing.T) {
 
 	agent := workerSteerAgent(steer.SourceWorker, "w2: the migration applied cleanly")
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-	if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 3}); ev == nil {
+	if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 3}); ev == nil {
 		t.Fatal("drainSteer returned nil Event")
 	}
 
@@ -79,7 +79,7 @@ func TestWorkerReportIsEscapedAndOperatorSteerIsNot(t *testing.T) {
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
 
 	worker := workerSteerAgent(steer.SourceWorker, payload)
-	if ev := worker.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev == nil {
+	if ev := worker.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev == nil {
 		t.Fatal("worker drainSteer returned nil Event")
 	}
 	workerTail := worker.history[len(worker.history)-1].Content
@@ -91,7 +91,7 @@ func TestWorkerReportIsEscapedAndOperatorSteerIsNot(t *testing.T) {
 	}
 
 	operator := workerSteerAgent("cockpit", payload)
-	if ev := operator.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev == nil {
+	if ev := operator.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev == nil {
 		t.Fatal("operator drainSteer returned nil Event")
 	}
 	operatorTail := operator.history[len(operator.history)-1].Content
@@ -111,7 +111,7 @@ func TestUnknownSourceKeepsTheOperatorEnvelope(t *testing.T) {
 	for _, source := range []string{"cockpit", "telegram", "", "some-new-channel"} {
 		agent := workerSteerAgent(source, "switch to Y")
 		ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-		if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev == nil {
+		if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev == nil {
 			t.Fatalf("source %q: drainSteer returned nil Event", source)
 		}
 		if tail := agent.history[len(agent.history)-1].Content; !strings.Contains(tail, steerMarkerOpen) {
@@ -129,7 +129,7 @@ func TestSteerEchoCarriesTheEnvelopeItUsed(t *testing.T) {
 
 	agent := workerSteerAgent(steer.SourceWorker, "w2 done")
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-	ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1})
+	ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1})
 	if ev == nil {
 		t.Fatal("drainSteer returned nil Event")
 	}

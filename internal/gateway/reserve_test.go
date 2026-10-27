@@ -21,10 +21,7 @@ func TestReserveAcquire(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "", "")
-	if err != nil {
-		t.Fatalf("reserve returned err=%v, want nil", err)
-	}
+	v := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "", "")
 	if v.Decision != Allow || v.Replay != nil {
 		t.Fatalf("verdict = %+v, want allow with no replay", v)
 	}
@@ -43,10 +40,7 @@ func TestReserveFoldsOperatorID(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Destructive, "op-9", "", "")
-	if err != nil {
-		t.Fatalf("reserve err: %v", err)
-	}
+	v := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Destructive, "op-9", "", "")
 	if v.OperatorID != "op-9" {
 		t.Fatalf("verdict operator id = %q, want op-9", v.OperatorID)
 	}
@@ -72,10 +66,7 @@ func TestReserveReplayOnConflict(t *testing.T) {
 	}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "", "")
-	if err != nil {
-		t.Fatalf("reserve err: %v", err)
-	}
+	v := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "", "", "")
 	if v.Decision != Allow || v.Replay == nil {
 		t.Fatalf("verdict = %+v, want allow with a replay", v)
 	}
@@ -92,10 +83,7 @@ func TestReserveFailClosed(t *testing.T) {
 	store := &fakeStore{reserveErr: errors.New("insert boom")}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "op-1", "", "")
-	if err != nil {
-		t.Fatalf("reserve must map the store error to a Deny verdict, not return err: %v", err)
-	}
+	v := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Risky, "op-1", "", "")
 	if v.Decision != Deny || v.Reason != "reservation failed" {
 		t.Fatalf("verdict = %+v, want deny/reservation failed", v)
 	}
@@ -152,10 +140,7 @@ func TestReplayResultAppendsReplayedMarkerOnDuplicate(t *testing.T) {
 // the model can see and act on beats an invented success it cannot.
 func TestReserveDeniesAnUnaccountedPriorDispatch(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, &fakeStore{notAcquired: true}) // replayEnd nil
-	v, err := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Normal, "", "", "")
-	if err != nil {
-		t.Fatalf("reserve returned err=%v, want a verdict", err)
-	}
+	v := g.reserve(context.Background(), gatedSpec(), nil, testKey(), scoring.Normal, "", "", "")
 	if v.Decision != Deny {
 		t.Fatalf("decision = %q, want deny for a prior dispatch with no recorded end", v.Decision)
 	}

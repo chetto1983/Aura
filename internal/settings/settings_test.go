@@ -130,7 +130,7 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config.Load after OverlayEnv: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestSecretRedactionPredicateUnaffected(t *testing.T) {
 		"AURA_MEMORY_EMBED_BASE_URL",
 		"OPENROUTER_API_KEY",
 		"ARCADEDB_PASSWORD",
-		"AURA_WEB_AUTH_SECRET",
+		"AURA_AUTHULA_SECRET",
 	} {
 		if !secret.IsSecretEnvKey(key) {
 			t.Errorf("secret.IsSecretEnvKey(%q) = false, want true (redaction must stay intact)", key)
@@ -365,7 +365,7 @@ func TestOverlayEnvBeatsAConflictingDeploymentValue(t *testing.T) {
 	if err := OverlayEnv(t.Context(), l); err != nil {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config.Load after OverlayEnv: %v", err)
 	}

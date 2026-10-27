@@ -25,7 +25,7 @@ import (
 // assistant turn (from tr.pauses) is likewise flushed once at round end (CR-02): a round
 // with >=2 ask_user calls collapses to ONE assistant message, so a per-Event assistant
 // turn would be wire-invalid.
-func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.AwaitingInput) error {
+func (r *Runner) persistPause(tr *turnTracker, ai *agent.AwaitingInput) error {
 	tr.paused = true
 	tr.pauses = append(tr.pauses, ai)
 

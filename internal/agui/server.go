@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/browsercontrol"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
@@ -135,7 +136,7 @@ type Server struct {
 	run             Runner
 	conv            ConversationStore
 	toolInvocations ToolInvocationReader
-	operations      operationRegistry
+	operations      idempotency.Registry
 	approvals       ApprovalStore
 	// approvalGrants serves the durable "always approve" grants (amendment #127). nil ⇒ the
 	// grant routes answer 503, exactly like the pending read without an ApprovalStore.
@@ -537,12 +538,9 @@ func (s *Server) Mux() http.Handler {
 	// — an operator enters their own Google OAuth client and links an account) lives in
 	// cmd/aura/serve_webui.go.
 	s.registerConnectPIMRoutes(mux)
-	// SWARM-10 (Phase 51 plan 07): GET .../swarm/{childID}/transcript, the
-	// operator-facing read over a backgrounded worker's live transcript.
-	// Colocated with its handler (server_swarm_transcript.go); inherits
-	// RequireAuth from the parent-mux mount (no separate auth check here — the
-	// handler itself owner-scopes via s.conv.GetForIdentity before touching disk).
-	s.registerSwarmTranscriptRoutes(mux)
+	// The worker streams read a backgrounded worker's live transcript over SSE. They inherit
+	// RequireAuth from the parent-mux mount and owner-scope via s.conv.GetForIdentity before
+	// touching disk.
 	s.registerSwarmWorkerEventRoutes(mux)
 	s.registerWorkerControlRoutes(mux)
 	if s.operations == nil {

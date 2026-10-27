@@ -18,7 +18,7 @@ func TestToolResultEventStampsMCPPreviewDigest(t *testing.T) {
 	run.Result.Meta = &tools.ToolResultMeta{
 		"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "list_accounts"},
 	}
-	ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, nil, run)
+	ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, run)
 	sum := sha256.Sum256([]byte(run.Preview))
 	want := hex.EncodeToString(sum[:])
 	if got := ev.Actions.ToolInvocation.Meta["aura_display_preview_sha256"]; got != want {
@@ -38,7 +38,7 @@ func TestToolResultEventKeepsMCPReadAndView(t *testing.T) {
 		"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "list_accounts"},
 		"mcp_view":            map[string]any{"server": "pim", "resource_uri": "ui://calendar/view.html", "text_content": run.Result.Preview},
 	}
-	ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, nil, run)
+	ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, run)
 	if ev.Actions.Display == nil || ev.Actions.Display.Table == nil || ev.Actions.ViewDelta == nil {
 		t.Fatalf("live call lost read card or view: %+v", ev.Actions)
 	}

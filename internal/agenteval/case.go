@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // Case is one question with a machine-checkable expectation. Every field is
@@ -125,14 +126,14 @@ func (c Case) Check(e Evidence) []string {
 	var failures []string
 	for _, want := range c.AnswerContains {
 		if !strings.Contains(e.Answer, want) {
-			failures = append(failures, fmt.Sprintf("answer is missing %q; got: %s", want, truncate(e.Answer, 300)))
+			failures = append(failures, fmt.Sprintf("answer is missing %q; got: %s", want, utf8cut.Ellipsize(e.Answer, 300)))
 		}
 	}
 	for _, banned := range c.AnswerMustNotContain {
 		if strings.Contains(e.Answer, banned) {
 			failures = append(failures, fmt.Sprintf(
 				"the answer still carries %q, which should no longer be reachable; tools: %v — answer: %s",
-				banned, e.Tools, truncate(e.Answer, 300)))
+				banned, e.Tools, utf8cut.Ellipsize(e.Answer, 300)))
 		}
 	}
 	if len(c.RequiredTools) > 0 && !anyCalled(e.Tools, c.RequiredTools) {
@@ -160,14 +161,6 @@ func (c Case) Check(e Evidence) []string {
 		}
 	}
 	return failures
-}
-
-// truncate keeps a failure message readable when the answer is a wall of text.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 func anyCalled(called, wanted []string) bool {

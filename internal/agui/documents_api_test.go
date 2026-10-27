@@ -128,7 +128,6 @@ func TestDocumentsRoutesAnswer503Unwired(t *testing.T) {
 		{http.MethodPost, "/api/documents/labels", `{}`},
 		{http.MethodPut, "/api/documents/labels/l1", `{}`},
 		{http.MethodDelete, "/api/documents/labels/l1", ""},
-		{http.MethodPost, "/api/documents/labels/l1/run", ""},
 		{http.MethodGet, "/api/documents/custom-fields", ""},
 		{http.MethodPost, "/api/documents/custom-fields", `{}`},
 		{http.MethodPut, "/api/documents/custom-fields/cf1", `{}`},
@@ -251,9 +250,6 @@ func TestDocumentsLabelsAndCustomFields(t *testing.T) {
 	}
 	if code, _ := documentsRequest(t, s, http.MethodDelete, "/api/documents/labels/l7", ""); code != http.StatusOK {
 		t.Fatalf("delete label = %d", code)
-	}
-	if code, body := documentsRequest(t, s, http.MethodPost, "/api/documents/labels/l7/run", ""); code != http.StatusOK || body["documents"] != float64(40) {
-		t.Fatalf("run rule = %d %v", code, body)
 	}
 	if code, _ := documentsRequest(t, s, http.MethodPost, "/api/documents/custom-fields", `{"name":"Stato","data_type":"select","options":["pagata"]}`); code != http.StatusOK ||
 		store.field.Name != "Stato" || store.field.Options[0] != "pagata" {

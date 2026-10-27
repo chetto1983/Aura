@@ -58,7 +58,7 @@ func (s *PostgresStore) PushWorker(ctx context.Context, conv, childID, runID, te
 		return err
 	}
 	op, ok := idempotency.OperationFromContext(ctx)
-	if !ok || op.Key.IdentityID != uuidString(scope.owner) {
+	if !ok || op.Key.IdentityID != scope.owner.String() {
 		return idempotency.ErrOperationContext
 	}
 	key := "worker-steer:" + string(op.Key.Scope) + ":" + op.Key.Key
@@ -144,7 +144,7 @@ func (s *PostgresStore) WorkerHistory(ctx context.Context, conv, childID string)
 	}
 	result := make([]WorkerReceipt, 0, len(rows))
 	for _, row := range slices.Backward(rows) {
-		receipt := WorkerReceipt{ID: uuidString(row.ID), RunID: row.TargetRunID.String, Text: row.Body, Status: "accepted", CreatedAt: row.CreatedAt.Time}
+		receipt := WorkerReceipt{ID: row.ID.String(), RunID: row.TargetRunID.String, Text: row.Body, Status: "accepted", CreatedAt: row.CreatedAt.Time}
 		switch {
 		case row.DrainedAt.Valid:
 			receipt.Status = "applied"

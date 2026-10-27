@@ -407,7 +407,7 @@ func TestToolInvocation_ForensicShapeIsRawRedactionRoutedToStore(t *testing.T) {
 		EndedAt:    now.Add(time.Millisecond),
 	}
 	run.Result = tools.ToolResult{Preview: "ran", Bytes: 3}
-	ev := a.toolResultEvent(internalPauseIC(t), span, nil, run)
+	ev := a.toolResultEvent(internalPauseIC(t), span, run)
 
 	// (a) The agent forwards the RAW arguments on the forensic ToolInvocation — it
 	// must NOT pre-redact in internal/agent (the forensic record is raw-as-observed).

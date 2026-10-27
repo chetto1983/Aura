@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestRequireAuth_SessionValidatorSeam pins the Option-A2 seam: when a SessionValidator
-// is wired (AURA_WEB_AUTH_PROVIDER=authula), RequireAuth uses it instead of the HMAC
-// cookie path, then applies the SAME existence re-check + withPrincipal contract.
+// TestRequireAuth_SessionValidatorSeam pins the Option-A2 seam: RequireAuth resolves the
+// session through the wired SessionValidator, then applies the existence re-check +
+// withPrincipal contract.
 func TestRequireAuth_SessionValidatorSeam(t *testing.T) {
 	const validatedID = testLocalID
 	deps := AuthDeps{

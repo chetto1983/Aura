@@ -62,7 +62,6 @@ services:
       # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when Authula
       # is configured or a reverse proxy is trusted.
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
-      AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}
       AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}
       AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
       AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}
@@ -89,7 +88,6 @@ services:
       # ability to remove a user.
       ARCADEDB_ADMIN_USER: ${ARCADEDB_ADMIN_USER:-root}
       ARCADEDB_ADMIN_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
-      AURA_CONFIG_DIR: /var/lib/aura
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
@@ -258,9 +256,6 @@ services:
       AURA_EMBED_REVISION: ${AURA_EMBED_REVISION:?AURA_EMBED_REVISION required in .env}
       AURA_EMBED_FINGERPRINT: ${AURA_EMBED_FINGERPRINT:?AURA_EMBED_FINGERPRINT required in .env}
       AURA_DOCUMENT_RETRIEVAL_CANDIDATES: ${AURA_DOCUMENT_RETRIEVAL_CANDIDATES:-200}
-      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-}
-      TELEGRAM_FILE_BASE_URL: ${TELEGRAM_FILE_BASE_URL:-}
-      AURA_TELEGRAM_LOCAL_BOT_API: ${AURA_TELEGRAM_LOCAL_BOT_API:-false}
       AURA_SERVE_SHUTDOWN_GRACE_SEC: ${AURA_SERVE_SHUTDOWN_GRACE_SEC:-25}
       AURA_TELEGRAM_STATUS_THROTTLE_MS: ${AURA_TELEGRAM_STATUS_THROTTLE_MS:-1500}
       AURA_TELEGRAM_CONTENT_THROTTLE_MS: ${AURA_TELEGRAM_CONTENT_THROTTLE_MS:-500}
@@ -391,7 +386,6 @@ services:
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
-      AURA_CONFIG_DIR: /var/lib/aura
     volumes:
       - aura-home:/var/lib/aura
 

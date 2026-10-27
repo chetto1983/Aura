@@ -126,15 +126,11 @@ func (h *hitl) send(bot botSender, to tele.Recipient, text string, markup *tele.
 	return out
 }
 
-// handleCallback resolves a button press: it parses token|action|value, submits
+// handleCallbackResult resolves a button press: it parses token|action|value, submits
 // the answer through the Runner, and drives a resume Turn ONLY when nothing is
 // unresolved AND the action was not a cancel (a cancel terminates the turn — the
-// Runner already injected the terminating answers + auto-resolved). It returns
-// whether a resume was driven.
-func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
-	return h.handleCallbackResult(ctx, data, convID, nil).resumed
-}
-
+// Runner already injected the terminating answers + auto-resolved). afterSubmit, when
+// set, sees the outcome of a successful submit before any resume.
 func (h *hitl) handleCallbackResult(
 	ctx context.Context,
 	data, convID string,

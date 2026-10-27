@@ -252,9 +252,9 @@ func TestUnaccountedPriorDispatchStaysDeniedNeverFabricated(t *testing.T) {
 
 	// Simulate a prior dispatch that acquired the reservation and then crashed before
 	// any end fact was recorded — the exact case reserve.go:233-246 documents.
-	firstVerdict, ferr := g.reserve(ownerCtx(), spec, skillRestoreArgs, key, scoring.Normal, "", "", "")
-	if ferr != nil || firstVerdict.Decision != Allow || firstVerdict.Replay != nil {
-		t.Fatalf("prior dispatch reservation = (%+v, %v), want allow with no replay", firstVerdict, ferr)
+	firstVerdict := g.reserve(ownerCtx(), spec, skillRestoreArgs, key, scoring.Normal, "", "", "")
+	if firstVerdict.Decision != Allow || firstVerdict.Replay != nil {
+		t.Fatalf("prior dispatch reservation = %+v, want allow with no replay", firstVerdict)
 	}
 	// Deliberately no insertEnd: the effect's outcome was never recorded.
 

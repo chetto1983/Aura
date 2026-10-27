@@ -224,7 +224,7 @@ func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tool
 
 // mountStdioWithPolicyHost is the shared stdio mount body for MountServer and
 // MountManagedServerWithOptions's stdio branch. It lists tools on the RAW session
-// (drainTools), so the mount-time discovery call is bounded purely by handshakeCtx.
+// (mcp.DrainTools), so the mount-time discovery call is bounded purely by handshakeCtx.
 // The supervisor is still constructed and returned as the mounted tools' owner, so
 // every CALL after a successful mount gets the normal redial-on-transport-error
 // behavior.
@@ -270,7 +270,7 @@ func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Con
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	advertised, err := drainTools(handshakeCtx, session)
+	advertised, err := mcp.DrainTools(handshakeCtx, session)
 	if err != nil {
 		// Released, not Closed: the server that just failed its bounded discovery is
 		// the one whose Close would block on it (see mcp.ReleaseSession). Waiting here

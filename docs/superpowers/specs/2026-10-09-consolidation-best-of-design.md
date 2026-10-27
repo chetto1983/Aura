@@ -204,6 +204,61 @@ Not taken, with the reason:
     v4 of the same policy. They are two keys, and both are searched. No failure of that kind has
     been measured on Aura's corpora; the 2025 and 2026 budgets are both valid documents.
 
+## Read 2026-10-26: Karakeep
+
+Asked by the operator on 2026-10-26: a deep audit of `github.com/karakeep-app/karakeep`, read at
+`ba2acc3`.
+- **What it is.** A self-hosted read-it-later app, formerly Hoarder. It saves links, notes,
+  images and PDFs, then crawls, tags and finds them again.
+- **Licence.** AGPL-3.0, so behaviours only, never code.
+- **Where the details are.** The code read, with file:line references and the measurements, is
+  in `docs/karakeep-behaviours-2026-10-26.md`.
+
+Aura already has Karakeep's crawl, at a stricter bar, and its find, through retrieval with
+citations. What Aura lacks is the save. Karakeep's auto-tagging and summaries have no evaluation
+anywhere in its repository. So nothing learned is taken from it on its own claim.
+
+| # | Behaviour | From | Aura today | Lands in | Gate | State |
+|---|---|---|---|---|---|---|
+| K1 | The SSRF classifier blocks IPv6 transition addresses that embed an IPv4 one (NAT64 `64:ff9b::/96`, 6to4 `2002::/16`), plus Teredo and the IPv4 reserved, benchmarking and broadcast ranges | Karakeep's denylist (`network.ts:16-33`). It blocks 6to4, Teredo and the reserved ranges, but not NAT64 | both copies, `internal/web/ssrf.go` and `internal/mcp/ssrf.go`, let these through | `internal/netguard`, the shared guard QUAL-03 had deferred | table rows in the classifier's test, the mutation gate on the file, then a lab-VM probe on a host with IPv6 | **landed** 2026-10-26 as `internal/netguard`, one classifier for web_fetch, MCP and the browser check. Mutation scope `ssrf` killed 30/30, and `ssrf_smoke.sh` blocked 6/6 with the real binary. The lab-VM probe has not run. Low realistic risk: a conforming NAT64 refuses the well-known prefix for non-global IPv4 (RFC 6052 §3.1) |
+| K2 | A link the operator asks to save becomes a document in the identity's library. It has one canonical URL, a `skip`/`overwrite` re-save policy and the page's own metadata (author, date published, site) | the bookmark create and dedup path, the SingleFile `ifexists` modes, metascraper | `web_fetch` forgets every page. `go-readability/v2` already exposes byline, excerpt, site and dates, and Aura keeps the title only (D-18) | one `.md` object in the identity's bucket, indexed by the existing CocoIndex ingest | demand first: URLs sent per week, and `web_fetch` calls on the same URL across conversations. Then save three pages and recall each a week later with its citation | not measured |
+| K3 | A page that is a bot challenge, a hub or a search result is refused or flagged before it is saved | the 200-status challenge detector, the reader-view score with named reasons | `Cf-Mitigated` only on non-2xx, plus `low_content` and `javascript_required` | the K2 save path only | about 40 labelled URLs through `web_fetch`: junk returned as content with no warning | not measured |
+| K4 | A majority vote of a document's k nearest *reviewed* neighbours in card-vector space, as the dumb baseline that the `docfields` classifier must beat | Karakeep's "similar bookmarks were tagged with…" hint | Phases 2 and 3 gated behind rules alone. The card vectors and filtered `vector.neighbors` already exist | `docfields` suggestions | BASELINE OR DROP: precision, recall and abstention per field, out of sample, on the operator's reviewed documents | not measured |
+| K6 | A priority inside one identity's asset queue, so a Telegram file does not wait behind a bulk upload | priority plus least-served group, adaptive downgrade, retry-after that consumes no attempt | one worker per identity, so fairness between identities is structural. Inside an identity the claim is FIFO (`ingestion_jobs.sql:49`) | `aura.ingestion_jobs` | Telegram file time-to-searchable, idle and with 200 files queued | not measured |
+
+Already in Aura, no action:
+- DNS pinning, per-hop redirect checks, and failing closed on any blocked record. Karakeep skips
+  its DNS check under a proxy.
+- A browser behind a network egress floor, with takeover by the operator.
+- Per-value provenance (`rule:<id>`, `classifier`, `llm`). Karakeep has only `ai` and `human`,
+  and records a rule's tag as `human`.
+- Paperless-style rules and saved views.
+- Vision OCR and speech-to-text.
+- Leases with generation fencing, and backups and exports.
+
+Smaller items, in the code read:
+- **K5, normalised label names.** Fold hyphens and spaces in `NameKey` only if near-duplicates
+  are counted.
+- **K7, feed watching.** A seen set keyed by guid, then id, then link, only when the operator
+  asks.
+- **K8, Karakeep as a mounted MCP server rather than absorbed.** Its annotations cannot be
+  trusted, so the tool policy sets `ask` or `deny` per tool.
+- **K9, a cycle guard for document workflows.** Karakeep's list actions re-fire rules with no
+  depth limit.
+
+Not taken, with the reason:
+- **Browser extensions, mobile apps and a share target.** The Telegram bot is in every phone's
+  share sheet.
+- **Highlights, reading progress, collaborative or public lists, RSS out.** Product surfaces
+  outside prd.md §1.
+- **Full-page archive, PDF snapshots, full screenshots.** Storage per page, and no measured link
+  rot. Karakeep defaults them off.
+- **yt-dlp.** Unguarded against SSRF by Karakeep's own comment, plus the sites' terms of service.
+- **Importers, webhooks, per-user storage quota, a query language.** No demand, no consumer, no
+  measured fill. The fields spec rules out a query language.
+- **The crawler's Node machinery and the Meilisearch, liteque and SQLite stack.** Stack, not
+  behaviour.
+
 ## Process, taken now
 
 Three rules from the siblings are worth a line in `CLAUDE.md`, because Aura already lives by

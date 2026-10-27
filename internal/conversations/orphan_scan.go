@@ -171,7 +171,7 @@ func scanConversationOrphans(ctx context.Context, entries []os.DirEntry, owners 
 			continue // stray file, not a conversation dir — leave it
 		}
 		// A dir name that is not a clean id cannot match a row; reconcile it away.
-		if vErr := validateID("conversation_id", name); vErr != nil {
+		if vErr := validateConversationID(name); vErr != nil {
 			removeOrphan(full)
 			continue
 		}

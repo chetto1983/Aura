@@ -124,7 +124,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		tr.reasoningGraph.DiscardReasoning()
 	}
 	if ev.Actions.AwaitingInput != nil {
-		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
+		return r.persistPause(tr, ev.Actions.AwaitingInput)
 	}
 	if ev.Actions.SteerDelta != nil {
 		return r.persistSteerTurn(ctx, tr, ev)
@@ -137,7 +137,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		// tool_call without its answer (measured on the lab VM, 2026-10-13). The same reason
 		// flushPause and recordInterruptedRound write with WithoutCancel.
 		durable := context.WithoutCancel(ctx)
-		if err := r.persistToolTurnEvent(durable, tr, ev.Actions.ToolInvocation, ev); err != nil {
+		if err := r.persistToolTurnEvent(durable, tr, ev.Actions.ToolInvocation); err != nil {
 			return err
 		}
 		if err := r.acceptMemoryCapture(durable, tr, ev); err != nil {
@@ -171,7 +171,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	return nil
 }
 
-func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation, ev *agent.Event) error {
+func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
 	if ti == nil || ti.ToolCallID == "" {
 		return nil
 	}

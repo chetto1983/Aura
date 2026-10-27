@@ -35,9 +35,9 @@ func TestNewIdentityStoreValidatesSecret(t *testing.T) {
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	s := testStore(t, "local")
 	for _, plaintext := range []string{"", "s3cr3t!", strings.Repeat("x", 200)} {
-		enc, err := s.encrypt(plaintext)
+		enc, err := s.sealer.Seal([]byte(plaintext))
 		if err != nil {
-			t.Fatalf("encrypt(%q): %v", plaintext, err)
+			t.Fatalf("Seal(%q): %v", plaintext, err)
 		}
 		if string(enc) == plaintext && plaintext != "" {
 			t.Errorf("ciphertext equals plaintext for %q (not encrypted)", plaintext)
@@ -45,11 +45,11 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		if len(enc) <= len(plaintext) {
 			t.Errorf("ciphertext len %d <= plaintext len %d (missing nonce/tag)", len(enc), len(plaintext))
 		}
-		got, err := s.decrypt(enc)
+		got, err := s.sealer.Open(enc)
 		if err != nil {
-			t.Fatalf("decrypt: %v", err)
+			t.Fatalf("Open: %v", err)
 		}
-		if got != plaintext {
+		if string(got) != plaintext {
 			t.Errorf("round-trip = %q, want %q", got, plaintext)
 		}
 	}
@@ -57,8 +57,8 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestEncryptUsesDistinctNonces(t *testing.T) {
 	s := testStore(t, "local")
-	a, _ := s.encrypt("same")
-	b, _ := s.encrypt("same")
+	a, _ := s.sealer.Seal([]byte("same"))
+	b, _ := s.sealer.Seal([]byte("same"))
 	if string(a) == string(b) {
 		t.Error("two encryptions of the same plaintext produced identical ciphertext (nonce reuse)")
 	}
@@ -66,15 +66,15 @@ func TestEncryptUsesDistinctNonces(t *testing.T) {
 
 func TestDecryptTamperFails(t *testing.T) {
 	s := testStore(t, "local")
-	enc, err := s.encrypt("s3cr3t!")
+	enc, err := s.sealer.Seal([]byte("s3cr3t!"))
 	if err != nil {
-		t.Fatalf("encrypt: %v", err)
+		t.Fatalf("Seal: %v", err)
 	}
 	enc[len(enc)-1] ^= 0xff
-	if _, err := s.decrypt(enc); err == nil {
+	if _, err := s.sealer.Open(enc); err == nil {
 		t.Error("decrypt of tampered ciphertext = nil error, want failure")
 	}
-	if _, err := s.decrypt([]byte{0x00}); err == nil {
+	if _, err := s.sealer.Open([]byte{0x00}); err == nil {
 		t.Error("decrypt of too-short input = nil error, want failure")
 	}
 }

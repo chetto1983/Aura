@@ -130,9 +130,6 @@ WHERE id = sqlc.arg(id)
   AND status = 'deleting'
   AND claim_owner = sqlc.arg(claim_owner);
 
--- name: GetRetentionItem :one
-SELECT * FROM aura.retention_operation_items WHERE id = sqlc.arg(id);
-
 -- name: FinalizeRetentionOperation :one
 UPDATE aura.retention_operations AS operation
 SET status = CASE

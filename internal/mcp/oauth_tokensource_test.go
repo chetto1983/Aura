@@ -454,3 +454,75 @@ func (s *identityRecordingStore) Save(ctx context.Context, _ mcpoauth.Grant) err
 func (s *identityRecordingStore) Load(context.Context, string) (mcpoauth.Grant, error) {
 	return mcpoauth.Grant{}, nil
 }
+
+// A token inside oauthTokenLeeway of its expiry is refreshed before it is handed out, on
+// every path that builds a refreshing source. Measured 2026-10-26: all three built theirs
+// with oauth2.Config.TokenSource, whose early-expiry window is x/oauth2's defaultExpiryDelta
+// (10 s), so the 60 s the constant promised was applied by nothing.
+func TestTokensInsideTheLeewayAreRefreshedFirst(t *testing.T) {
+	t.Parallel()
+	newTokenServer := func(t *testing.T, refreshes *atomic.Int32) *httptest.Server {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			refreshes.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "refreshed", "refresh_token": "r2", "token_type": "Bearer", "expires_in": 3600,
+			})
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	insideLeeway := time.Now().Add(oauthTokenLeeway / 2)
+
+	t.Run("restored grant", func(t *testing.T) {
+		t.Parallel()
+		var refreshes atomic.Int32
+		srv := newTokenServer(t, &refreshes)
+		client, err := resolvedClient{ClientID: "aura", TokenEndpoint: srv.URL, AuthStyle: int(oauth2.AuthStyleInParams)}.encode()
+		if err != nil {
+			t.Fatalf("encode client: %v", err)
+		}
+		// Its own server name and identity: oauthTokenRefreshes is a process-wide
+		// singleflight keyed on both, and a parallel test sharing them shares its refresh.
+		store := &rotatingGrantStore{grant: mcpoauth.Grant{
+			ServerName: "leeway", AccessToken: "about-to-die", RefreshToken: "r1",
+			TokenType: "Bearer", ClientInfo: client, ExpiresAt: insideLeeway,
+		}}
+		ctx := identityctx.WithIdentityID(t.Context(), "0c6a9a51-5f4e-4c1d-8f62-3f3c2d1b0a77")
+		source, err := restoreTokenSource(ctx, "leeway", store, http.DefaultClient, nil)
+		if err != nil {
+			t.Fatalf("restore: %v", err)
+		}
+		assertRefreshedOnce(t, source, &refreshes)
+	})
+
+	t.Run("fresh authorization", func(t *testing.T) {
+		t.Parallel()
+		var refreshes atomic.Int32
+		srv := newTokenServer(t, &refreshes)
+		hook := persistOnAuthorization(context.Background(), "notion", "https://mcp.example/mcp", &fakeStore{}, nil)
+		cfg := &oauth2.Config{ClientID: "aura", Endpoint: oauth2.Endpoint{TokenURL: srv.URL, AuthStyle: oauth2.AuthStyleInParams}}
+		source, err := hook(context.Background(), cfg, &oauth2.Token{
+			AccessToken: "about-to-die", RefreshToken: "r1", TokenType: "Bearer", Expiry: insideLeeway,
+		})
+		if err != nil {
+			t.Fatalf("persistOnAuthorization: %v", err)
+		}
+		assertRefreshedOnce(t, source, &refreshes)
+	})
+}
+
+func assertRefreshedOnce(t *testing.T, source oauth2.TokenSource, refreshes *atomic.Int32) {
+	t.Helper()
+	tok, err := source.Token()
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	if tok.AccessToken != "refreshed" || refreshes.Load() != 1 {
+		t.Fatalf("token = %q after %d refreshes, want one refresh before a token %s from expiry is used",
+			tok.AccessToken, refreshes.Load(), oauthTokenLeeway/2)
+	}
+	if _, err := source.Token(); err != nil || refreshes.Load() != 1 {
+		t.Fatalf("second Token() refreshed again (%d, %v): the refreshed token must be reused", refreshes.Load(), err)
+	}
+}

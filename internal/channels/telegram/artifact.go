@@ -15,12 +15,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"unicode"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/asciifold"
 )
 
 // Bot API upload ceilings for a NATIVE photo / video, deliberately the conservative
@@ -136,7 +136,7 @@ func artifactPayload(desc map[string]any) (any, bool) {
 	size := info.Size()
 	mimeType := strings.ToLower(stringField(desc, "mime_type"))
 	filename := stringField(desc, "filename")
-	caption := capRunes(asciiCaption(stringField(desc, "caption")), telegramCaptionCap)
+	caption := capRunes(asciifold.Caption(stringField(desc, "caption")), telegramCaptionCap)
 	switch {
 	case strings.HasPrefix(mimeType, "image/") && size <= telegramPhotoUploadCap:
 		return &tele.Photo{File: tele.FromDisk(path), Caption: caption}, true
@@ -194,66 +194,4 @@ func stringField(desc map[string]any, key string) string {
 		return v
 	}
 	return ""
-}
-
-// asciiCaption renders a caption ASCII-safe (Pitfall 4): an accented Latin rune is
-// folded to its base ASCII letter where trivially possible, any other non-ASCII
-// rune is dropped. The substrate already sanitizes in send_file, but the channel
-// re-applies it defensively so a caption reaching the Bot API never carries a byte
-// > 0x7F (the document-caption 400 trigger).
-func asciiCaption(caption string) string {
-	var b strings.Builder
-	b.Grow(len(caption))
-	for _, r := range caption {
-		switch {
-		case r <= unicode.MaxASCII:
-			b.WriteRune(r)
-		default:
-			if base := foldLatinToASCII(r); base != 0 {
-				b.WriteByte(base)
-			}
-		}
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// foldLatinToASCII maps a common accented Latin rune to its base ASCII letter, or
-// 0 when there is no trivial single-byte equivalent (the rune is then dropped). It
-// covers the Latin-1/Latin-Extended-A letters an Italian/European caption is most
-// likely to carry — deliberately small, not a full transliteration table.
-func foldLatinToASCII(r rune) byte {
-	switch r {
-	case 'à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą':
-		return 'a'
-	case 'è', 'é', 'ê', 'ë', 'ē', 'ĕ', 'ė', 'ę', 'ě':
-		return 'e'
-	case 'ì', 'í', 'î', 'ï', 'ī', 'ĭ', 'į':
-		return 'i'
-	case 'ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ŏ', 'ő':
-		return 'o'
-	case 'ù', 'ú', 'û', 'ü', 'ū', 'ŭ', 'ů', 'ű':
-		return 'u'
-	case 'ç', 'ć', 'č', 'ĉ', 'ċ':
-		return 'c'
-	case 'ñ', 'ń', 'ň':
-		return 'n'
-	case 'ÿ', 'ý':
-		return 'y'
-	case 'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Ā', 'Ă', 'Ą':
-		return 'A'
-	case 'È', 'É', 'Ê', 'Ë', 'Ē', 'Ĕ', 'Ė', 'Ę', 'Ě':
-		return 'E'
-	case 'Ì', 'Í', 'Î', 'Ï', 'Ī', 'Ĭ', 'Į':
-		return 'I'
-	case 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 'Ø', 'Ō', 'Ŏ', 'Ő':
-		return 'O'
-	case 'Ù', 'Ú', 'Û', 'Ü', 'Ū', 'Ŭ', 'Ů', 'Ű':
-		return 'U'
-	case 'Ç', 'Ć', 'Č', 'Ĉ', 'Ċ':
-		return 'C'
-	case 'Ñ', 'Ń', 'Ň':
-		return 'N'
-	default:
-		return 0
-	}
 }

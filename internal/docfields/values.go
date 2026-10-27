@@ -114,17 +114,6 @@ func (f *Fields) value(field string) Value {
 	return Value{}
 }
 
-// keys returns the value keys a field holds, in order.
-func (f *Fields) keys(field string) []string {
-	var out []string
-	for _, v := range f.Values {
-		if v.Field == field {
-			out = append(out, v.ValueKey)
-		}
-	}
-	return out
-}
-
 func (f *Fields) index(ref ValueRef) int {
 	return slices.IndexFunc(f.Values, func(v Value) bool { return v.ref() == ref })
 }

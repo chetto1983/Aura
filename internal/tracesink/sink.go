@@ -3,13 +3,7 @@
 package tracesink
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hkdf"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -17,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 const (
@@ -27,42 +23,38 @@ const (
 // Sink appends independently framed AES-256-GCM records to path. Each record
 // uses a fresh nonce and can be authenticated independently.
 type Sink struct {
-	path string
-	aead cipher.AEAD
-	mu   sync.Mutex
+	path   string
+	sealer *secret.Sealer
+	mu     sync.Mutex
 }
 
 // New constructs an encrypted sink. keyHex must contain exactly 32 bytes as
 // 64 hexadecimal characters; malformed or absent key material fails closed.
 func New(path, keyHex string) (*Sink, error) {
-	key, err := deriveKey(keyHex)
+	key, err := secret.DeriveKey(keyHex, keyDerivationInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("trace sink: AURA_TRACE_ENCRYPT_KEY: %w", err)
 	}
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("trace sink: path is empty")
 	}
-	block, err := aes.NewCipher(key)
+	sealer, err := secret.NewSealerFromKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("trace sink: AES-256: %w", err)
+		return nil, fmt.Errorf("trace sink: %w", err)
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("trace sink: GCM: %w", err)
-	}
-	return &Sink{path: path, aead: aead}, nil
+	return &Sink{path: path, sealer: sealer}, nil
 }
 
 // Write encrypts record with a fresh random nonce, then appends a big-endian
 // length prefix followed by the nonce-prefixed ciphertext. There is no
 // plaintext fallback.
 func (s *Sink) Write(record []byte) error {
-	if s == nil || s.aead == nil {
+	if s == nil || s.sealer == nil {
 		return errors.New("trace sink: uninitialized")
 	}
-	sealed, err := s.encrypt(record)
+	sealed, err := s.sealer.Seal(record)
 	if err != nil {
-		return err
+		return fmt.Errorf("trace sink: %w", err)
 	}
 	if len(sealed) > math.MaxUint32 {
 		return fmt.Errorf("trace sink: encrypted record too large: %d bytes", len(sealed))
@@ -86,30 +78,6 @@ func (s *Sink) Write(record []byte) error {
 		return fmt.Errorf("trace sink: append: %w", err)
 	}
 	return nil
-}
-
-func (s *Sink) encrypt(plaintext []byte) ([]byte, error) {
-	nonce := make([]byte, s.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("trace sink: nonce: %w", err)
-	}
-	return s.aead.Seal(nonce, nonce, plaintext, nil), nil
-}
-
-func deriveKey(keyHex string) ([]byte, error) {
-	encoded := strings.TrimSpace(keyHex)
-	if len(encoded) != 64 {
-		return nil, errors.New("trace sink: AURA_TRACE_ENCRYPT_KEY must be 64 hex characters (32 bytes)")
-	}
-	raw, err := hex.DecodeString(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("trace sink: AURA_TRACE_ENCRYPT_KEY must be valid hex: %w", err)
-	}
-	key, err := hkdf.Key(sha256.New, raw, nil, keyDerivationInfo, 32)
-	if err != nil {
-		return nil, fmt.Errorf("trace sink: derive key: %w", err)
-	}
-	return key, nil
 }
 
 func writeAll(f *os.File, data []byte) error {

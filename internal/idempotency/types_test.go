@@ -68,7 +68,7 @@ func TestOperationScopesAreFinite(t *testing.T) {
 	}
 }
 
-func TestOperationStateParsingAndTransitions(t *testing.T) {
+func TestOperationStateParsing(t *testing.T) {
 	t.Parallel()
 
 	for _, want := range []State{StateInProgress, StateCompleted, StateIndeterminate} {
@@ -84,29 +84,6 @@ func TestOperationStateParsingAndTransitions(t *testing.T) {
 		if _, err := ParseState(raw); err == nil {
 			t.Errorf("ParseState(%q) error = nil, want rejection", raw)
 		}
-	}
-
-	tests := []struct {
-		name string
-		from State
-		to   State
-		want bool
-	}{
-		{name: "complete acquired work", from: StateInProgress, to: StateCompleted, want: true},
-		{name: "mark ambiguous work", from: StateInProgress, to: StateIndeterminate, want: true},
-		{name: "completed is terminal", from: StateCompleted, to: StateIndeterminate},
-		{name: "indeterminate is terminal", from: StateIndeterminate, to: StateCompleted},
-		{name: "cannot reacquire indeterminate", from: StateIndeterminate, to: StateInProgress},
-		{name: "no self transition", from: StateInProgress, to: StateInProgress},
-		{name: "unknown source", from: State("unknown"), to: StateCompleted},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := tt.from.CanTransitionTo(tt.to); got != tt.want {
-				t.Fatalf("CanTransitionTo(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
-			}
-		})
 	}
 }
 

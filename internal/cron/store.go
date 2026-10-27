@@ -10,7 +10,6 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -331,7 +330,7 @@ func (s *Store) CompleteRun(ctx context.Context, p CompleteRunParams) error {
 		CompletedWithHash: text(p.CompletedHash),
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		if db.IsUniqueViolation(err) {
 			return fmt.Errorf("complete run %q: %w", p.RunID, ErrAlreadyRunning)
 		}
 		return fmt.Errorf("complete run %q: %w", p.RunID, err)
@@ -355,7 +354,7 @@ func taskFromRow(r sqlc.AuraSchedulerTasks) Task {
 		NextRunAt:            r.NextRunAt.Time,
 		NotifyRoute:          r.NotifyRoute,
 		IdentityID:           r.IdentityID,
-		OriginConversationID: uuidString(r.OriginConversationID),
+		OriginConversationID: r.OriginConversationID.String(),
 		CreatedAt:            r.CreatedAt.Time,
 		UpdatedAt:            r.UpdatedAt.Time,
 		PausedReason:         r.PausedReason.String,
@@ -376,7 +375,7 @@ func runFromRow(r sqlc.AuraAgentJobRuns) Run {
 		Summary:           r.Summary.String,
 		LastError:         r.LastError.String,
 		MissedSince:       r.MissedSince.Time,
-		PausedStateToken:  uuidString(r.PausedStateToken),
+		PausedStateToken:  r.PausedStateToken.String(),
 		CompletedAt:       r.CompletedAt.Time,
 	}
 }
@@ -396,13 +395,6 @@ func uuidOrNull(s string) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 	return pgtype.UUID{Bytes: u, Valid: true}
-}
-
-func uuidString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
 }
 
 func text(s string) pgtype.Text {
@@ -431,11 +423,4 @@ func payloadOrEmpty(b []byte) []byte {
 		return []byte("{}")
 	}
 	return b
-}
-
-// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
-// pgErr.Code — never string-matching the message (RESEARCH Pitfall 2).
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

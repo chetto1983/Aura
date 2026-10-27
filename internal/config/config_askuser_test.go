@@ -1,7 +1,6 @@
 package config
 
 import (
-	"strconv"
 	"testing"
 )
 
@@ -26,7 +25,7 @@ func TestAskUserConfig(t *testing.T) {
 	})
 	for _, knob := range knobRegistry() {
 		if knob.Name == "AURA_ASKUSER_PAUSE_TTL_SEC" {
-			if knob.Kind != KindInt || knob.Default != strconv.Itoa(defaultAskUserPauseTTLSec) {
+			if knob.Kind != KindInt {
 				t.Fatalf("TTL registry row = %#v", knob)
 			}
 			return

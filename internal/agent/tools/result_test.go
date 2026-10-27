@@ -7,10 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/secret"
-	"pgregory.net/rapid"
 )
 
 const testCap = 2048
@@ -189,38 +187,6 @@ func TestNewResult_ExactlyCapNoSidecar(t *testing.T) {
 	convDir := filepath.Join(runDir, "conversations")
 	if _, err := os.Stat(convDir); !os.IsNotExist(err) {
 		t.Fatalf("conversations dir created at the cap boundary: %v", err)
-	}
-}
-
-// Test 3 (Req#6 property, rapid): for any string + any cap, truncatePreview
-// output is valid UTF-8, ≤ cap bytes, and a prefix of the input.
-func TestTruncatePreview_Property(t *testing.T) {
-	rapid.Check(t, func(rt *rapid.T) {
-		content := rapid.String().Draw(rt, "content")
-		capBytes := rapid.IntRange(0, len(content)+16).Draw(rt, "cap")
-		got := truncatePreview(content, capBytes)
-		if !utf8.ValidString(got) {
-			rt.Fatalf("truncated preview is not valid UTF-8: %q", got)
-		}
-		if len(got) > capBytes {
-			rt.Fatalf("len(got)=%d > cap=%d", len(got), capBytes)
-		}
-		if !strings.HasPrefix(content, got) {
-			rt.Fatalf("got %q is not a prefix of %q", got, content)
-		}
-	})
-}
-
-// Test 3b: a multi-byte rune straddling the cap boundary is never split.
-func TestTruncatePreview_RuneBoundary(t *testing.T) {
-	// "é" is 2 bytes (0xC3 0xA9). Repeat so the cap lands mid-rune.
-	content := strings.Repeat("é", 100) // 200 bytes
-	got := truncatePreview(content, 51) // odd cap → must back off to an even boundary
-	if !utf8.ValidString(got) {
-		t.Fatalf("split a multi-byte rune: %q", got)
-	}
-	if len(got) > 51 {
-		t.Fatalf("len=%d > 51", len(got))
 	}
 }
 

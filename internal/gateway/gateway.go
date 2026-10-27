@@ -31,19 +31,6 @@ type reservationStore interface {
 	GetEnd(ctx context.Context, conversationID, requestID, toolCallID string) (*toolinvocations.Event, error)
 }
 
-// operationRegistry is the shared public-operation state machine. Only an
-// acquired decision authorizes policy reservation or a mutating effect.
-type operationRegistry interface {
-	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
-	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(
-		context.Context,
-		idempotency.OperationKey,
-		[32]byte,
-		idempotency.ClaimToken,
-	) error
-}
-
 type rejectionRegistry interface {
 	MarkRejected(context.Context, idempotency.RejectRequest) error
 }
@@ -154,7 +141,7 @@ func (e *ErrDenied) Error() string {
 type Gateway struct {
 	profile    config.RuntimeProfile
 	store      reservationStore
-	operations operationRegistry
+	operations idempotency.Registry
 	approvals  *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
 	grants     grantStore        // durable ScopeAlways grants (amendment #127); nil = the two in-memory scopes only
 	policies   policyStore       // durable ask/deny narrowing (prd.md §5, 2026-10-09); nil = no policy
@@ -183,7 +170,7 @@ func (g *Gateway) OwnsToolStartRows() bool {
 
 // SetOperationRegistry wires the one process-wide registry constructed by the
 // composition root. Nil preserves legacy standalone/dev behavior.
-func (g *Gateway) SetOperationRegistry(registry operationRegistry) {
+func (g *Gateway) SetOperationRegistry(registry idempotency.Registry) {
 	if g != nil {
 		g.operations = registry
 	}

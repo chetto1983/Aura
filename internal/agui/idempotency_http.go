@@ -2,7 +2,6 @@ package agui
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,19 +18,6 @@ import (
 )
 
 var errInvalidIdempotencyKey = errors.New("invalid Idempotency-Key")
-
-const httpOperationReplayRetention = 30 * 24 * time.Hour
-
-type operationRegistry interface {
-	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
-	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(
-		context.Context,
-		idempotency.OperationKey,
-		[32]byte,
-		idempotency.ClaimToken,
-	) error
-}
 
 // mutationKeyPolicy documents where an adapter obtains its caller-stable key.
 type mutationKeyPolicy string
@@ -352,7 +338,7 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		}
 		result := idempotency.ReplayResult{
 			Body: append(json.RawMessage(nil), captured.body.Bytes()...), StatusCode: captured.status,
-			Headers: replayableHeaders(captured.header), ExpiresAt: time.Now().UTC().Add(httpOperationReplayRetention),
+			Headers: replayableHeaders(captured.header), ExpiresAt: time.Now().UTC().Add(idempotency.ReplayRetention),
 		}
 		if err := s.operations.Complete(r.Context(), idempotency.CompleteRequest{
 			Operation: operation.Key, Fingerprint: operation.Fingerprint,

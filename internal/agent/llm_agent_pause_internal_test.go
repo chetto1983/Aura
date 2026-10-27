@@ -117,7 +117,7 @@ func TestEmitPauses_StopsOnYieldFalse(t *testing.T) {
 
 	var yielded []string
 	var span [8]byte
-	a.emitPauses(internalPauseIC(t), span, nil, pauses, func(ev *Event, _ error) bool {
+	a.emitPauses(internalPauseIC(t), span, pauses, func(ev *Event, _ error) bool {
 		yielded = append(yielded, ev.Actions.AwaitingInput.ToolCallID)
 		return false // stop after the first
 	})
@@ -143,7 +143,7 @@ func TestEmitPauses_YieldsAllWhenConsumerContinues(t *testing.T) {
 
 	var yielded []string
 	var span [8]byte
-	a.emitPauses(internalPauseIC(t), span, nil, pauses, func(ev *Event, _ error) bool {
+	a.emitPauses(internalPauseIC(t), span, pauses, func(ev *Event, _ error) bool {
 		yielded = append(yielded, ev.Actions.AwaitingInput.ToolCallID)
 		return true
 	})
@@ -168,7 +168,7 @@ func TestPauseEvent_CarriesProxiedIDs(t *testing.T) {
 		ProxiedFromChildID: "11111111-1111-1111-1111-111111111111",
 		ProxiedToolCallID:  "child-tc",
 	}
-	ev := a.pauseEvent(internalPauseIC(t), span, nil, proxied)
+	ev := a.pauseEvent(internalPauseIC(t), span, proxied)
 	ai := ev.Actions.AwaitingInput
 	if ai == nil {
 		t.Fatal("pauseEvent must set Actions.AwaitingInput")
@@ -179,7 +179,7 @@ func TestPauseEvent_CarriesProxiedIDs(t *testing.T) {
 	}
 
 	direct := &tools.ErrAwaitingUserInput{Question: "q", Kind: tools.KindApproval, ToolCallID: "d1"}
-	devent := a.pauseEvent(internalPauseIC(t), span, nil, direct)
+	devent := a.pauseEvent(internalPauseIC(t), span, direct)
 	if dai := devent.Actions.AwaitingInput; dai.ProxiedFromChildID != "" || dai.ProxiedToolCallID != "" {
 		t.Errorf("a direct pause must leave proxied Event fields empty, got from=%q tc=%q",
 			dai.ProxiedFromChildID, dai.ProxiedToolCallID)
@@ -194,7 +194,7 @@ func TestPauseEvent_CarriesResumeContext(t *testing.T) {
 	var span [8]byte
 
 	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
-	ev := a.pauseEvent(internalPauseIC(t), span, nil, &tools.ErrAwaitingUserInput{
+	ev := a.pauseEvent(internalPauseIC(t), span, &tools.ErrAwaitingUserInput{
 		Question:      "approve skill?",
 		Kind:          tools.KindApproval,
 		ToolCallID:    "p1",

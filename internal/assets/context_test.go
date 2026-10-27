@@ -95,10 +95,10 @@ func TestBuildAttachmentBlockGuidesDocumentSearchAndSanitizesLines(t *testing.T)
 	}
 }
 
-func TestWithAttachmentBlockReturnsOriginalTextWhenNoAssets(t *testing.T) {
+func TestNoAttachmentsLeaveTheUserTextUnchanged(t *testing.T) {
 	const userText = "please summarize this"
-	if got := WithAttachmentBlock(userText, nil); got != userText {
-		t.Fatalf("WithAttachmentBlock(no assets) = %q, want original text", got)
+	if got := WithContextBlocks(userText, BuildAttachmentBlock(nil)); got != userText {
+		t.Fatalf("WithContextBlocks(no attachments) = %q, want original text", got)
 	}
 }
 

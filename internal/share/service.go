@@ -249,7 +249,7 @@ func (svc *Service) Create(ctx context.Context, req CreateRequest) (CreateResult
 	}, bytes.NewReader(snapJSON), objectstore.PutOptions{MIMEType: "application/json", Size: int64(len(snapJSON))}); err != nil {
 		return CreateResult{}, fmt.Errorf("create share: put snapshot: %w", err)
 	}
-	if _, err := bundleArtifacts(ctx, svc.objects, svc.bucket, shareID, snapshotID, req.OwnerIdentityID, svc.opener, filtered); err != nil {
+	if err := bundleArtifacts(ctx, svc.objects, svc.bucket, shareID, snapshotID, req.OwnerIdentityID, svc.opener, filtered); err != nil {
 		return CreateResult{}, fmt.Errorf("create share: bundle artifacts: %w", err)
 	}
 
@@ -352,7 +352,7 @@ func (svc *Service) Update(ctx context.Context, shareID, identityID string) (Lin
 	}, bytes.NewReader(snapJSON), objectstore.PutOptions{MIMEType: "application/json", Size: int64(len(snapJSON))}); err != nil {
 		return Link{}, fmt.Errorf("update share %s: put snapshot: %w", shareID, err)
 	}
-	if _, err := bundleArtifacts(ctx, svc.objects, svc.bucket, link.ID, newSnapshotID, identityID, svc.opener, filtered); err != nil {
+	if err := bundleArtifacts(ctx, svc.objects, svc.bucket, link.ID, newSnapshotID, identityID, svc.opener, filtered); err != nil {
 		return Link{}, fmt.Errorf("update share %s: bundle artifacts: %w", shareID, err)
 	}
 

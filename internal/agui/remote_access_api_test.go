@@ -158,7 +158,6 @@ func TestRemoteAccessEndpointContracts(t *testing.T) {
 		{"POST", "/token/refresh", `{}`, "admin-1", 202, 1},
 		{"POST", "/reconcile", `{}`, "admin-1", 202, 1},
 		{"POST", "/disable", `{}`, "admin-1", 202, 1},
-		{"POST", "/rotate-token", `{}`, "admin-1", 409, 0},
 		{"DELETE", "", `{"hostname":"aura.example.com"}`, "admin-1", 202, 1},
 		{"PUT", "", `{"zone_name":"example.com"}`, "admin-1", 202, 1},
 		{"POST", "/disable", `{"unknown":true}`, "admin-1", 400, 0},

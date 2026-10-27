@@ -105,14 +105,10 @@ func TestSpan_AttrValues(t *testing.T) {
 	}
 }
 
-// TestMintSpanID asserts rootSpanIDs returns a non-zero 8-byte id with no parent.
+// TestMintSpanID asserts mintSpanID returns a non-zero 8-byte id.
 func TestMintSpanID(t *testing.T) {
-	root, parent := rootSpanIDs()
-	if root == ([8]byte{}) {
+	if root := mintSpanID(); root == ([8]byte{}) {
 		t.Fatal("root SpanID is all-zero — not minted from crypto/rand")
-	}
-	if parent != nil {
-		t.Error("root ParentSpanID must be nil")
 	}
 }
 

@@ -267,49 +267,6 @@ func (q *Queries) FinalizeAsset(ctx context.Context, arg FinalizeAssetParams) (i
 	return result.RowsAffected(), nil
 }
 
-const getAsset = `-- name: GetAsset :one
-SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
-WHERE id = $1
-`
-
-func (q *Queries) GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error) {
-	row := q.db.QueryRow(ctx, getAsset, id)
-	var i AuraAssets
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.SourceKind,
-		&i.SourceRef,
-		&i.ThreadID,
-		&i.Scope,
-		&i.Modality,
-		&i.Status,
-		&i.FileName,
-		&i.MimeType,
-		&i.DeclaredSizeBytes,
-		&i.SizeBytes,
-		&i.ContentHash,
-		&i.ObjectBucket,
-		&i.ObjectKey,
-		&i.ObjectEtag,
-		&i.DocumentID,
-		&i.Summary,
-		&i.Metadata,
-		&i.ErrorCode,
-		&i.ErrorMessage,
-		&i.CreatedAt,
-		&i.UploadedAt,
-		&i.AcceptedAt,
-		&i.ProcessedAt,
-		&i.CompletedAt,
-		&i.DeletedAt,
-		&i.UpdatedAt,
-		&i.PipelineGeneration,
-		&i.ToolCallID,
-	)
-	return i, err
-}
-
 const getAssetByObjectKey = `-- name: GetAssetByObjectKey :one
 SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE identity_id = $1
@@ -408,35 +365,6 @@ func (q *Queries) GetAssetForIdentity(ctx context.Context, arg GetAssetForIdenti
 		&i.ToolCallID,
 	)
 	return i, err
-}
-
-const insertAssetEvent = `-- name: InsertAssetEvent :exec
-INSERT INTO aura.asset_events (
-    asset_id, seq, from_status, to_status, reason, detail
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-)
-`
-
-type InsertAssetEventParams struct {
-	AssetID    pgtype.UUID `json:"asset_id"`
-	Seq        int32       `json:"seq"`
-	FromStatus string      `json:"from_status"`
-	ToStatus   string      `json:"to_status"`
-	Reason     string      `json:"reason"`
-	Detail     []byte      `json:"detail"`
-}
-
-func (q *Queries) InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error {
-	_, err := q.db.Exec(ctx, insertAssetEvent,
-		arg.AssetID,
-		arg.Seq,
-		arg.FromStatus,
-		arg.ToStatus,
-		arg.Reason,
-		arg.Detail,
-	)
-	return err
 }
 
 const listAssetsForLibrary = `-- name: ListAssetsForLibrary :many
@@ -765,19 +693,6 @@ func (q *Queries) MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedPara
 		&i.ToolCallID,
 	)
 	return i, err
-}
-
-const nextAssetEventSeq = `-- name: NextAssetEventSeq :one
-SELECT COALESCE(MAX(seq), 0) + 1::integer
-FROM aura.asset_events
-WHERE asset_id = $1
-`
-
-func (q *Queries) NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, nextAssetEventSeq, assetID)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const promoteAssetToLibrary = `-- name: PromoteAssetToLibrary :one

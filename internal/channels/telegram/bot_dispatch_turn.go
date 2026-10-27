@@ -44,12 +44,11 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	attachmentIDs := assetIDs(attachments)
 	daemonCtx = assets.WithTurnAttachments(t.withTurnMediaProjection(daemonCtx, chatID, attachments), attachmentIDs)
 	sender := t.sender(c)
-	to := c.Recipient()
 	messageID := 0
 	if inbound := c.Message(); inbound != nil {
 		messageID = inbound.ID
 	}
-	t.startTurn(daemonCtx, sender, to, chatID, messageID, msg, inboundWasVoice,
+	t.startTurn(daemonCtx, sender, chatID, messageID, msg, inboundWasVoice,
 		t.onBusyRedirect(c, chatID, *msg, attachmentIDs, inboundWasVoice))
 }
 
@@ -120,7 +119,6 @@ func (t *Telegram) composeTurnContext(ctx context.Context, c tele.Context, chatI
 func (t *Telegram) startTurn(
 	daemonCtx context.Context,
 	sender botSender,
-	to tele.Recipient,
 	chatID int64,
 	messageID int,
 	msg *TurnMessage,

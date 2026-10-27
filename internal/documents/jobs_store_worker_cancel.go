@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -55,7 +56,7 @@ func (s *PostgresIngestionJobStore) RequestWorkerCancellation(ctx context.Contex
 	}
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		_, err := q.RequestWorkerCancellation(ctx, sqlc.RequestWorkerCancellationParams{
-			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID), LeaseGeneration: req.LeaseGeneration, ChildID: req.ChildID,
+			ID: jobID, IdentityID: identityID, LockedBy: db.OptionalText(req.WorkerID), LeaseGeneration: req.LeaseGeneration, ChildID: req.ChildID,
 		})
 		return err
 	})

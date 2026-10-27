@@ -88,11 +88,10 @@ func TestDocumentOpen_WritesOriginalIntoTheBox(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Keyed by the document id the caller passed, not by the fixture default.
-	dir, err := StagedDocumentDirectory("doc_9f2c")
+	want, err := StagedDocumentPath("doc_9f2c", "Clienti.xlsx")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := dir + "/Clienti.xlsx"
 	got, ok := be.written[want]
 	if !ok {
 		t.Fatalf("nothing was written into the box at %s: %+v", want, be.written)

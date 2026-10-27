@@ -2,11 +2,10 @@ package mcptools
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/activesources"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 )
@@ -94,30 +93,15 @@ func TestActorHeaderFuncCarriesRoleAndRunID(t *testing.T) {
 	}
 }
 
-// decodeRecallSources reads a header value back as its consumer does: unpadded
-// base64url around a versioned JSON envelope. The production decoder is
-// cmd/arcadedb-mcp's, written independently on purpose (tool_memory_recall.go), so
-// this package only needs enough of one to check what recallContextHeaderFunc
-// emits. The canonical re-encode is what pins the wire form: it fails on unknown
-// fields, unsorted or duplicated sources and over-cap payloads.
-func decodeRecallSources(t *testing.T, header string) []recallSourceKey {
+// decodeRecallSources reads a header value back through the decoder cmd/arcadedb-mcp uses,
+// which accepts only the canonical encoding of its own sources.
+func decodeRecallSources(t *testing.T, header string) []activesources.Source {
 	t.Helper()
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(header)
+	sources, err := activesources.Decode(header)
 	if err != nil {
-		t.Fatalf("active-source header %q is not unpadded base64url: %v", header, err)
+		t.Fatalf("active-source header %q does not decode: %v", header, err)
 	}
-	var envelope recallContextEnvelope
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		t.Fatalf("active-source header %q is not a JSON envelope: %v", header, err)
-	}
-	if envelope.Version != recallContextVersion {
-		t.Fatalf("active-source header version = %d, want %d", envelope.Version, recallContextVersion)
-	}
-	canonical, err := encodeRecallContextHeader(envelope.Sources)
-	if err != nil || canonical != header {
-		t.Fatalf("active-source header %q is not the canonical encoding of its own sources (%q, %v)", header, canonical, err)
-	}
-	return envelope.Sources
+	return sources
 }
 
 func TestRecallContextHeaders(t *testing.T) {
@@ -128,24 +112,24 @@ func TestRecallContextHeaders(t *testing.T) {
 	if headersA[actorRunIDHeader] != "turn-a" || headersA[actorRoleHeader] != actorRoleWorker {
 		t.Fatalf("actor headers were not preserved: %v", headersA)
 	}
-	valueA := headersA[recallContextHeader]
+	valueA := headersA[activesources.Header]
 	if valueA == "" {
 		t.Fatal("active-source header is absent")
 	}
 	sourcesA := decodeRecallSources(t, valueA)
-	if len(sourcesA) != 1 || sourcesA[0] != (recallSourceKey{ConversationID: "conversation-a", TurnID: "turn-a"}) {
+	if len(sourcesA) != 1 || sourcesA[0] != (activesources.Source{ConversationID: "conversation-a", TurnID: "turn-a"}) {
 		t.Fatalf("first active sources = %+v", sourcesA)
 	}
 
 	ctx = tools.WithRequestID(context.Background(), "turn-b")
 	ctx = tools.WithToolCallContext(ctx, "conversation-b", "call-b", t.TempDir(), 2048)
 	headersB := memoryHeaderFunc(ctx)
-	valueB := headersB[recallContextHeader]
+	valueB := headersB[activesources.Header]
 	if valueB == "" || valueB == valueA {
 		t.Fatalf("reused-session headers are stale: first=%q second=%q", valueA, valueB)
 	}
 	sourcesB := decodeRecallSources(t, valueB)
-	if len(sourcesB) != 1 || sourcesB[0] != (recallSourceKey{ConversationID: "conversation-b", TurnID: "turn-b"}) {
+	if len(sourcesB) != 1 || sourcesB[0] != (activesources.Source{ConversationID: "conversation-b", TurnID: "turn-b"}) {
 		t.Fatalf("second active sources = %+v", sourcesB)
 	}
 
@@ -153,11 +137,10 @@ func TestRecallContextHeaders(t *testing.T) {
 		t.Fatalf("bare context headers = %v, want nil", got)
 	}
 
-	_, err := encodeRecallContextHeader([]recallSourceKey{{
-		ConversationID: strings.Repeat("c", 4096), TurnID: "turn-over-cap",
-	}})
-	if err == nil {
-		t.Fatal("over-cap active source encoded successfully")
+	over := tools.WithRequestID(context.Background(), "turn-over-cap")
+	over = tools.WithToolCallContext(over, strings.Repeat("c", 4096), "call-over", t.TempDir(), 2048)
+	if got := memoryHeaderFunc(over)[activesources.Header]; got != "" {
+		t.Fatalf("an over-cap conversation id produced an active-source header %q, want none", got)
 	}
 }
 
@@ -173,7 +156,7 @@ func TestRecallContextHeadersProductionMount(t *testing.T) {
 	if headers[actorRunIDHeader] != "turn-mount" || headers[actorRoleHeader] != actorRoleParent {
 		t.Fatalf("production actor headers = %v", headers)
 	}
-	if headers[recallContextHeader] == "" {
+	if headers[activesources.Header] == "" {
 		t.Fatalf("production active-source header is absent: %v", headers)
 	}
 

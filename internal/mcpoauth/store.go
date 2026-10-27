@@ -16,12 +16,6 @@ package mcpoauth
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hkdf"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -34,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // keyDerivationInfo domain-separates this store's wrapping key from every other key
@@ -84,8 +79,8 @@ func (g Grant) Expired(now time.Time, leeway time.Duration) bool {
 
 // Store reads and writes grants for the identity carried on the request context.
 type Store struct {
-	pool *pgxpool.Pool
-	aead cipher.AEAD
+	pool   *pgxpool.Pool
+	sealer *secret.Sealer
 }
 
 // NewStore builds the store. authulaSecretHex is the 64-hex-char AURA_AUTHULA_SECRET, the
@@ -95,19 +90,11 @@ func NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error) {
 	if pool == nil {
 		return nil, errors.New("mcpoauth: nil pool")
 	}
-	key, err := deriveKey(authulaSecretHex)
+	sealer, err := secret.NewSealer(authulaSecretHex, keyDerivationInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mcpoauth: %w", err)
 	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("mcpoauth: cipher: %w", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("mcpoauth: gcm: %w", err)
-	}
-	return &Store{pool: pool, aead: aead}, nil
+	return &Store{pool: pool, sealer: sealer}, nil
 }
 
 // Load returns the grant this identity holds for serverName, or ErrNoGrant.
@@ -163,15 +150,15 @@ func (s *Store) Save(ctx context.Context, g Grant) error {
 		// an auth failure from the server rather than as the missing grant it is.
 		return errors.New("mcpoauth: save needs an access token")
 	}
-	access, err := s.seal([]byte(g.AccessToken))
+	access, err := s.sealer.Seal([]byte(g.AccessToken))
 	if err != nil {
 		return err
 	}
-	refresh, err := s.sealOptional([]byte(g.RefreshToken))
+	refresh, err := s.sealer.SealOptional([]byte(g.RefreshToken))
 	if err != nil {
 		return err
 	}
-	clientInfo, err := s.sealOptional(g.ClientInfo)
+	clientInfo, err := s.sealer.SealOptional(g.ClientInfo)
 	if err != nil {
 		return err
 	}
@@ -272,15 +259,15 @@ func (s *Store) List(ctx context.Context) ([]Authorization, error) {
 }
 
 func (s *Store) decodeRow(row sqlc.AuraIdentityMcpOauth) (Grant, error) {
-	access, err := s.open(row.AccessTokenEnc)
+	access, err := s.sealer.Open(row.AccessTokenEnc)
 	if err != nil {
 		return Grant{}, err
 	}
-	refresh, err := s.openOptional(row.RefreshTokenEnc)
+	refresh, err := s.sealer.OpenOptional(row.RefreshTokenEnc)
 	if err != nil {
 		return Grant{}, err
 	}
-	clientInfo, err := s.openOptional(row.ClientInfoEnc)
+	clientInfo, err := s.sealer.OpenOptional(row.ClientInfoEnc)
 	if err != nil {
 		return Grant{}, err
 	}
@@ -294,47 +281,6 @@ func (s *Store) decodeRow(row sqlc.AuraIdentityMcpOauth) (Grant, error) {
 		Scopes:       row.Scopes,
 		ExpiresAt:    row.ExpiresAt.Time,
 	}, nil
-}
-
-// seal prepends a fresh random nonce to the ciphertext, matching
-// internal/objectstore.IdentityStore so both stores read the same on disk.
-func (s *Store) seal(plaintext []byte) ([]byte, error) {
-	nonce := make([]byte, s.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("mcpoauth: nonce: %w", err)
-	}
-	return s.aead.Seal(nonce, nonce, plaintext, nil), nil
-}
-
-// sealOptional returns nil for an absent value rather than the ciphertext of an empty
-// string, so a NULL column keeps meaning "the server issued none".
-func (s *Store) sealOptional(plaintext []byte) ([]byte, error) {
-	if len(plaintext) == 0 {
-		return nil, nil
-	}
-	return s.seal(plaintext)
-}
-
-func (s *Store) open(ciphertext []byte) ([]byte, error) {
-	ns := s.aead.NonceSize()
-	if len(ciphertext) < ns {
-		return nil, fmt.Errorf("mcpoauth: ciphertext too short (%d < %d)", len(ciphertext), ns)
-	}
-	plaintext, err := s.aead.Open(nil, ciphertext[:ns], ciphertext[ns:], nil)
-	if err != nil {
-		// Deliberately does not echo the ciphertext: a decrypt failure means the wrapping
-		// key changed or the row was tampered with, and neither is diagnosed by dumping
-		// bytes into a log.
-		return nil, fmt.Errorf("mcpoauth: decrypt: %w", err)
-	}
-	return plaintext, nil
-}
-
-func (s *Store) openOptional(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) == 0 {
-		return nil, nil
-	}
-	return s.open(ciphertext)
 }
 
 // requireIdentity fails closed on a context with no principal. There is no `local`
@@ -362,29 +308,6 @@ func timestamptz(t time.Time) pgtype.Timestamptz {
 		return pgtype.Timestamptz{}
 	}
 	return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
-}
-
-func deriveKey(authulaSecretHex string) ([]byte, error) {
-	return deriveKeyWithInfo(authulaSecretHex, keyDerivationInfo)
-}
-
-// deriveKeyWithInfo takes the info string as a parameter so a test can derive a key under
-// ANOTHER store's info and assert the two differ. Domain separation asserted in a comment
-// is domain separation nobody checks.
-func deriveKeyWithInfo(authulaSecretHex, info string) ([]byte, error) {
-	secret := strings.TrimSpace(authulaSecretHex)
-	if len(secret) != 64 {
-		return nil, errors.New("mcpoauth: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
-	}
-	raw, err := hex.DecodeString(secret)
-	if err != nil {
-		return nil, fmt.Errorf("mcpoauth: AURA_AUTHULA_SECRET must be valid hex: %w", err)
-	}
-	key, err := hkdf.Key(sha256.New, raw, nil, info, 32)
-	if err != nil {
-		return nil, fmt.Errorf("mcpoauth: derive key: %w", err)
-	}
-	return key, nil
 }
 
 // OwnerOf reports which of candidates holds a grant for serverName.
