@@ -133,7 +133,7 @@ func TestLadder_KeepsAStoredCompactionInForceUnderTheBudget(t *testing.T) {
 // Compaction disabled means disabled: no summarizer, no request, no row.
 func TestCompact_WithoutASummarizerIsUnavailable(t *testing.T) {
 	var store *Store
-	_, err := store.Compact(context.Background(), "conv", ContextConfig{})
+	_, err := store.Compact(context.Background(), "conv", 0, ContextConfig{})
 	if !errors.Is(err, ErrCompactionUnavailable) {
 		t.Fatalf("err = %v, want ErrCompactionUnavailable", err)
 	}

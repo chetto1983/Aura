@@ -142,7 +142,7 @@ func (f *steerE2EConvStore) LoadManagedHistory(_ context.Context, id string, _ i
 	return f.messagesLocked(id), nil
 }
 
-func (f *steerE2EConvStore) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
+func (f *steerE2EConvStore) Compact(context.Context, string, int, conversations.ContextConfig) (conversations.CompactionResult, error) {
 	return conversations.CompactionResult{}, nil
 }
 

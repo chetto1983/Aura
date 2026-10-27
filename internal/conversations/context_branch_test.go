@@ -1,9 +1,9 @@
 //go:build db_integration
 
 // Integration tests for the D-09 / CHAT-05 path-aware managed history
-// (LoadManagedHistoryForBranch, context.go). Asserts the path walk feeds the SAME
+// (LoadManagedHistory with a leaf, context.go). Asserts the path walk feeds the SAME
 // L1/L2/L2.5 ladder and that a non-branched conversation stays byte-identical to the
-// linear LoadManagedHistory (the protected head / messages[0] invariant — Pitfall 3).
+// linear history (the protected head / messages[0] invariant — Pitfall 3).
 //
 // Run via:
 //

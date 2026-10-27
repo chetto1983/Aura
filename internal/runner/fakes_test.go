@@ -65,10 +65,15 @@ type fakeConvStore struct {
 	// lastBranchLeaf records the leaf passed to LoadManagedHistory, the head a run
 	// loaded its path from.
 	lastBranchLeaf int
-	// compacted records the ids CompactConversation routed here, so the `/compact`
+	// compacted records each compaction CompactConversation routed here, so the `/compact`
 	// wiring is assertable without a summarizer.
-	compacted  []string
-	compactErr error // injectable Compact error
+	compacted []compactCall
+}
+
+// compactCall is one Compact the fake received: the thread and the leaf of its branch.
+type compactCall struct {
+	id   string
+	leaf int
 }
 
 func newFakeConvStore() *fakeConvStore {
@@ -266,14 +271,11 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, leafSeq
 
 // Compact records the requested compaction and reports the fixed result the tests
 // assert against; the real summarizer path is the conversations package's job.
-func (f *fakeConvStore) Compact(_ context.Context, id string, cfg conversations.ContextConfig) (conversations.CompactionResult, error) {
+func (f *fakeConvStore) Compact(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) (conversations.CompactionResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lastCfg = cfg
-	f.compacted = append(f.compacted, id)
-	if f.compactErr != nil {
-		return conversations.CompactionResult{}, f.compactErr
-	}
+	f.compacted = append(f.compacted, compactCall{id: id, leaf: leafSeq})
 	return conversations.CompactionResult{
 		Summary: "compacted", CoversThroughSeq: 4, SourceTurns: 4, TokensBefore: 400, TokensAfter: 40,
 	}, nil

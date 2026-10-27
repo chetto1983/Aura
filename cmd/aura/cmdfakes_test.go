@@ -162,7 +162,7 @@ func (f *cmdConvFake) LoadManagedHistory(_ context.Context, id string, _ int, _ 
 
 // Compact satisfies the operator-requested compaction seam; this fake drives command
 // wiring, not the summarizer.
-func (f *cmdConvFake) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
+func (f *cmdConvFake) Compact(context.Context, string, int, conversations.ContextConfig) (conversations.CompactionResult, error) {
 	return conversations.CompactionResult{}, conversations.ErrNothingToCompact
 }
 

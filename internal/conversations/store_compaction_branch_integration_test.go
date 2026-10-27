@@ -43,7 +43,7 @@ func TestManagedHistoryFilesTheSummaryUnderTheReplayedBranch(t *testing.T) {
 
 	cfg := compactingConfig(&fixedSummarizer{text: "branch summary"})
 	if _, err := store.LoadManagedHistory(ctx, conversationID, forkSeq, cfg); err != nil {
-		t.Fatalf("LoadManagedHistoryForBranch: %v", err)
+		t.Fatalf("LoadManagedHistory(leaf %d): %v", forkSeq, err)
 	}
 
 	stored, ok, err := store.LoadCompaction(ctx, conversationID, branchID.String())

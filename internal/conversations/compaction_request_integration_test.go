@@ -63,7 +63,7 @@ func TestCompact_StoresTheSummaryTheLadderThenReplays(t *testing.T) {
 	seedTurns(t, store, convID, seeded...)
 
 	sum := &fakeSummarizer{summary: "L'operatore ha fatto tre domande verbose; Aura ha risposto."}
-	result, err := store.Compact(ownerCtx(), convID, compactConfig(sum))
+	result, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum))
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestCompact_RefusesASummaryLongerThanTheConversation(t *testing.T) {
 	)
 
 	sum := &fakeSummarizer{summary: strings.Repeat("un riassunto molto piu' lungo dei turni. ", 200)}
-	_, err := store.Compact(ownerCtx(), convID, compactConfig(sum))
+	_, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum))
 	if !errors.Is(err, ErrCompactionNotWorthwhile) {
 		t.Fatalf("Compact = %v, want ErrCompactionNotWorthwhile", err)
 	}
@@ -155,7 +155,7 @@ func TestCompact_WithoutAPrincipalSeesNothing(t *testing.T) {
 	seedTurns(t, store, convID, seeded...)
 
 	sum := &fakeSummarizer{summary: "non deve mai essere chiesto"}
-	if _, err := store.Compact(context.Background(), convID, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
+	if _, err := store.Compact(context.Background(), convID, 0, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("Compact with no principal = %v, want ErrNothingToCompact", err)
 	}
 	if sum.calls != 0 {
@@ -174,11 +174,75 @@ func TestCompact_NothingToCompactOnAFreshConversation(t *testing.T) {
 		AppendTurnParams{ConversationID: convID, Seq: 1, Role: llm.RoleUser, Content: "prima domanda"})
 
 	sum := &fakeSummarizer{summary: "irrilevante"}
-	if _, err := store.Compact(ownerCtx(), convID, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
+	if _, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("Compact on a single-turn conversation = %v, want ErrNothingToCompact", err)
 	}
 	if sum.calls != 0 {
 		t.Fatalf("summarizer called %d times, want 0: there was nothing to summarize", sum.calls)
+	}
+}
+
+// The operator compacts the branch on screen, which is not always the one written last
+// (spec 2026-10-27, D13). Each branch keeps its own row, and a leaf of 0 is the turn written
+// last.
+func TestCompact_CondensesTheBranchItsLeafNames(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+	var seeded []AppendTurnParams
+	for seq := 1; seq <= 5; seq += 2 {
+		seeded = append(seeded, verboseRound(convID, seq)...)
+	}
+	seedTurns(t, store, convID, seeded...)
+	// Question 3 rewritten answers on a branch of its own: 1, 2, 7, 8.
+	rewrite := verboseRound(convID, 7)
+	forkSeq, err := store.ForkBranch(ownerCtx(), convID, 3, llm.RoleUser, rewrite[0].Content)
+	if err != nil || forkSeq != 7 {
+		t.Fatalf("ForkBranch = (%d, %v), want seq 7", forkSeq, err)
+	}
+	seedTurns(t, store, convID, rewrite[1])
+
+	older := &fakeSummarizer{summary: "il ramo originale: tre domande verbose"}
+	result, err := store.Compact(ownerCtx(), convID, 6, compactConfig(older))
+	if err != nil {
+		t.Fatalf("Compact(leaf 6): %v", err)
+	}
+	if result.CoversThroughSeq != 4 {
+		t.Fatalf("Compact(leaf 6) covers through %d, want 4: the round before 5-6 on its own path",
+			result.CoversThroughSeq)
+	}
+	condensed := renderAll(older.gotRounds)
+	if !strings.Contains(condensed, "domanda-3:") || strings.Contains(condensed, "domanda-7:") {
+		t.Fatalf("the summarizer was not handed the older branch: %q", truncate(condensed))
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 6); err != nil || !ok || got.Summary != older.summary {
+		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v), want the older branch's summary", got, ok, err)
+	}
+	for _, leaf := range []int{8, 0} {
+		if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, leaf); err != nil || ok {
+			t.Fatalf("LoadPathCompaction(%d) = (%+v, %v, %v): the branch written last was compacted by a /compact of the other",
+				leaf, got, ok, err)
+		}
+	}
+
+	latest := &fakeSummarizer{summary: "il ramo riscritto"}
+	result, err = store.Compact(ownerCtx(), convID, 0, compactConfig(latest))
+	if err != nil {
+		t.Fatalf("Compact(leaf 0): %v", err)
+	}
+	if result.CoversThroughSeq != 2 {
+		t.Fatalf("Compact(leaf 0) covers through %d, want 2: the path written last is 1, 2, 7, 8",
+			result.CoversThroughSeq)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 8); err != nil || !ok || got.Summary != latest.summary {
+		t.Fatalf("LoadPathCompaction(8) = (%+v, %v, %v), want the rewritten branch's summary", got, ok, err)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 6); err != nil || !ok ||
+		got.Summary != older.summary || got.CoversThroughSeq != 4 {
+		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v): compacting one branch moved the other's row", got, ok, err)
+	}
+	if _, _, err := store.LoadPathCompaction(ownerCtx(), convID, 99); !errors.Is(err, ErrTurnNotFound) {
+		t.Fatalf("LoadPathCompaction(99) = %v, want ErrTurnNotFound", err)
 	}
 }
 
