@@ -120,6 +120,9 @@ services:
       AURA_HISTORY_HARD_CAP_TURNS: ${AURA_HISTORY_HARD_CAP_TURNS:-50}
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
+      # The strict boot hashes the GGUF the sidecar serves against AURA_EMBED_FINGERPRINT,
+      # reading it from the sidecar's own volume, mounted read-only below.
+      AURA_EMBED_MODEL_DIR: /var/lib/aura-embed-model
       # The width EmbeddingGemma-300M returns: a property of the pinned model, not a host
       # choice, so it is not read from .env (a copy there froze the value per machine).
       AURA_EMBED_DIMENSIONS: "768"
@@ -324,6 +327,7 @@ services:
     volumes:
       - aura-home:/var/lib/aura
       - aura-cloudflared-state:/var/lib/aura/cloudflared
+      - aura-llama-embed:/var/lib/aura-embed-model:ro
       - ${AURA_BACKUP_DIR:-./backups}:/backups
       # The appliance updater's channel (deploy/aura-update-consent.sh): it writes status here,
       # Aura writes an admin's decision and whether anyone is using it (AURA_UPDATE_STATE_DIR).

@@ -101,3 +101,17 @@ func TestRouteSpaceAttestsOnlyTheLocalRoute(t *testing.T) {
 		t.Fatalf("empty local base: err = %v, want ErrNoRoute", err)
 	}
 }
+
+func TestServedModelFileIsTheGGUFNameAlone(t *testing.T) {
+	server := modelsServer(t, measuredModels, http.StatusOK)
+	got, err := ServedModelFile(context.Background(), server.Client(), server.URL)
+	if err != nil {
+		t.Fatalf("ServedModelFile: %v", err)
+	}
+	if got != "embeddinggemma-300M-Q8_0.gguf" {
+		t.Fatalf("ServedModelFile = %q, want the file name without its directory", got)
+	}
+	if _, err := ServedModelFile(context.Background(), server.Client(), "http://127.0.0.1:1"); err == nil {
+		t.Fatal("ServedModelFile against no sidecar succeeded, want the error")
+	}
+}
