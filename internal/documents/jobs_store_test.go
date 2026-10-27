@@ -26,25 +26,24 @@ func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
 
 func TestIngestionJobFromSQLDecodesPayloadAndLeaseFields(t *testing.T) {
 	row := sqlc.AuraIngestionJobs{
-		ID:                 mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),
-		IdentityID:         mustCatalogTestUUID(t, testIngestionIdentityID),
-		JobType:            "asset_process",
-		Status:             "running",
-		IdempotencyKey:     "asset_process:asset-1",
-		Stage:              "accepted",
-		AttemptCount:       2,
-		MaxAttempts:        5,
-		PipelineGeneration: 3,
-		AttemptGeneration:  4,
-		LeaseGeneration:    5,
-		LockedBy:           pgtype.Text{String: "worker-1", Valid: true},
-		LockedUntil:        pgtype.Timestamptz{Time: time.Unix(20, 0), Valid: true},
-		NextAttemptAt:      pgtype.Timestamptz{Time: time.Unix(10, 0), Valid: true},
-		Payload:            []byte(`{"asset_id":"asset-1"}`),
-		ErrorCode:          "retryable",
-		ErrorMessage:       "extractor down",
-		CreatedAt:          pgtype.Timestamptz{Time: time.Unix(1, 0), Valid: true},
-		UpdatedAt:          pgtype.Timestamptz{Time: time.Unix(2, 0), Valid: true},
+		ID:                mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),
+		IdentityID:        mustCatalogTestUUID(t, testIngestionIdentityID),
+		JobType:           "asset_process",
+		Status:            "running",
+		IdempotencyKey:    "asset_process:asset-1",
+		Stage:             "accepted",
+		AttemptCount:      2,
+		MaxAttempts:       5,
+		AttemptGeneration: 4,
+		LeaseGeneration:   5,
+		LockedBy:          pgtype.Text{String: "worker-1", Valid: true},
+		LockedUntil:       pgtype.Timestamptz{Time: time.Unix(20, 0), Valid: true},
+		NextAttemptAt:     pgtype.Timestamptz{Time: time.Unix(10, 0), Valid: true},
+		Payload:           []byte(`{"asset_id":"asset-1"}`),
+		ErrorCode:         "retryable",
+		ErrorMessage:      "extractor down",
+		CreatedAt:         pgtype.Timestamptz{Time: time.Unix(1, 0), Valid: true},
+		UpdatedAt:         pgtype.Timestamptz{Time: time.Unix(2, 0), Valid: true},
 	}
 	job, err := ingestionJobFromSQL(row)
 	if err != nil {
@@ -53,8 +52,7 @@ func TestIngestionJobFromSQLDecodesPayloadAndLeaseFields(t *testing.T) {
 	if job.ID != "10000000-0000-0000-0000-000000000001" || job.JobType != "asset_process" {
 		t.Fatalf("job identity = %#v", job)
 	}
-	if job.IdentityID != testIngestionIdentityID || job.PipelineGeneration != 3 ||
-		job.AttemptGeneration != 4 || job.LeaseGeneration != 5 {
+	if job.IdentityID != testIngestionIdentityID || job.AttemptGeneration != 4 || job.LeaseGeneration != 5 {
 		t.Fatalf("job owner/generations = %#v", job)
 	}
 	if job.LockedBy != "worker-1" || job.LockedUntil.IsZero() || job.NextAttemptAt.IsZero() {

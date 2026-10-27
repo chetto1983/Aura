@@ -19,7 +19,7 @@ import (
 )
 
 // withIdentity runs fn with app.current_identity bound to identityID, so the fail-closed
-// floor migration 0090 put on aura.assets and aura.asset_events admits exactly that
+// floor migration 0090 put on aura.assets admits exactly that
 // principal's rows. Without it every Create fails 42501: the floor is AS RESTRICTIVE, so an
 // unset session variable refuses the INSERT outright and hides every read.
 //

@@ -24,83 +24,36 @@ type AuraAgentJobRuns struct {
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
 }
 
-type AuraAssetEvents struct {
-	AssetID    pgtype.UUID        `json:"asset_id"`
-	Seq        int32              `json:"seq"`
-	FromStatus string             `json:"from_status"`
-	ToStatus   string             `json:"to_status"`
-	Reason     string             `json:"reason"`
-	Detail     []byte             `json:"detail"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
 type AuraAssets struct {
-	ID                 pgtype.UUID        `json:"id"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	SourceKind         string             `json:"source_kind"`
-	SourceRef          string             `json:"source_ref"`
-	ThreadID           string             `json:"thread_id"`
-	Scope              string             `json:"scope"`
-	Modality           string             `json:"modality"`
-	Status             string             `json:"status"`
-	FileName           string             `json:"file_name"`
-	MimeType           string             `json:"mime_type"`
-	DeclaredSizeBytes  int64              `json:"declared_size_bytes"`
-	SizeBytes          int64              `json:"size_bytes"`
-	ContentHash        string             `json:"content_hash"`
-	ObjectBucket       string             `json:"object_bucket"`
-	ObjectKey          string             `json:"object_key"`
-	ObjectEtag         string             `json:"object_etag"`
-	DocumentID         string             `json:"document_id"`
-	Summary            string             `json:"summary"`
-	Metadata           []byte             `json:"metadata"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UploadedAt         pgtype.Timestamptz `json:"uploaded_at"`
-	AcceptedAt         pgtype.Timestamptz `json:"accepted_at"`
-	ProcessedAt        pgtype.Timestamptz `json:"processed_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	ToolCallID         string             `json:"tool_call_id"`
-}
-
-type AuraAuditLogs struct {
-	ID              int64              `json:"id"`
-	ActorIdentityID pgtype.UUID        `json:"actor_identity_id"`
-	Action          string             `json:"action"`
-	EntityType      string             `json:"entity_type"`
-	EntityID        pgtype.UUID        `json:"entity_id"`
-	Before          []byte             `json:"before"`
-	After           []byte             `json:"after"`
-	Reason          string             `json:"reason"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-// Exact pre-override settings rows; the key check prevents any secret or unrelated setting capture.
-type AuraBenchmarkSettingsOverrideRows struct {
-	RunID     pgtype.UUID        `json:"run_id"`
-	Key       string             `json:"key"`
-	Existed   bool               `json:"existed"`
-	Value     pgtype.Text        `json:"value"`
-	IsSecret  pgtype.Bool        `json:"is_secret"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	UpdatedBy pgtype.Text        `json:"updated_by"`
-}
-
-// Bounded audit and recovery journal for the three temporary Qwen portability settings.
-type AuraBenchmarkSettingsOverrides struct {
-	RunID          pgtype.UUID        `json:"run_id"`
-	OwnerID        pgtype.UUID        `json:"owner_id"`
-	State          string             `json:"state"`
-	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
-	HeartbeatAt    pgtype.Timestamptz `json:"heartbeat_at"`
-	StartedAt      pgtype.Timestamptz `json:"started_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
-	RecoveryCount  int32              `json:"recovery_count"`
+	ID                pgtype.UUID        `json:"id"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	SourceKind        string             `json:"source_kind"`
+	SourceRef         string             `json:"source_ref"`
+	ThreadID          string             `json:"thread_id"`
+	Scope             string             `json:"scope"`
+	Modality          string             `json:"modality"`
+	Status            string             `json:"status"`
+	FileName          string             `json:"file_name"`
+	MimeType          string             `json:"mime_type"`
+	DeclaredSizeBytes int64              `json:"declared_size_bytes"`
+	SizeBytes         int64              `json:"size_bytes"`
+	ContentHash       string             `json:"content_hash"`
+	ObjectBucket      string             `json:"object_bucket"`
+	ObjectKey         string             `json:"object_key"`
+	ObjectEtag        string             `json:"object_etag"`
+	DocumentID        string             `json:"document_id"`
+	Summary           string             `json:"summary"`
+	Metadata          []byte             `json:"metadata"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UploadedAt        pgtype.Timestamptz `json:"uploaded_at"`
+	AcceptedAt        pgtype.Timestamptz `json:"accepted_at"`
+	ProcessedAt       pgtype.Timestamptz `json:"processed_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ToolCallID        string             `json:"tool_call_id"`
 }
 
 type AuraBoardCards struct {
@@ -448,46 +401,44 @@ type AuraIdentityRecoveryAudit struct {
 
 // Operator-visible progress and lifecycle events for documents, versions, jobs, and assets.
 type AuraIngestionEvents struct {
-	ID                 int64              `json:"id"`
-	EntityType         string             `json:"entity_type"`
-	EntityID           pgtype.UUID        `json:"entity_id"`
-	JobID              pgtype.UUID        `json:"job_id"`
-	FromStatus         pgtype.Text        `json:"from_status"`
-	ToStatus           pgtype.Text        `json:"to_status"`
-	EventType          string             `json:"event_type"`
-	Message            string             `json:"message"`
-	Detail             []byte             `json:"detail"`
-	TraceID            string             `json:"trace_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
+	ID                int64              `json:"id"`
+	EntityType        string             `json:"entity_type"`
+	EntityID          pgtype.UUID        `json:"entity_id"`
+	JobID             pgtype.UUID        `json:"job_id"`
+	FromStatus        pgtype.Text        `json:"from_status"`
+	ToStatus          pgtype.Text        `json:"to_status"`
+	EventType         string             `json:"event_type"`
+	Message           string             `json:"message"`
+	Detail            []byte             `json:"detail"`
+	TraceID           string             `json:"trace_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AttemptGeneration int64              `json:"attempt_generation"`
+	LeaseGeneration   int64              `json:"lease_generation"`
 }
 
 // Durable document ingestion and cleanup queue with idempotency keys and worker leases.
 type AuraIngestionJobs struct {
-	ID                 pgtype.UUID        `json:"id"`
-	JobType            string             `json:"job_type"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	AttemptCount       int32              `json:"attempt_count"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	LockedBy           pgtype.Text        `json:"locked_by"`
-	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
+	ID                pgtype.UUID        `json:"id"`
+	JobType           string             `json:"job_type"`
+	Status            string             `json:"status"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	Stage             string             `json:"stage"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	LockedBy          pgtype.Text        `json:"locked_by"`
+	LockedUntil       pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload           []byte             `json:"payload"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AssetID           pgtype.UUID        `json:"asset_id"`
+	AttemptGeneration int64              `json:"attempt_generation"`
+	LeaseGeneration   int64              `json:"lease_generation"`
 }
 
 // Last base URL + model saved for each primary-LLM provider, so the cockpit restores a real route when the operator switches provider instead of a hard-coded placeholder. Not read at boot: aura.settings owns the active route.

@@ -41,22 +41,22 @@ WITH candidates AS (
         updated_at = now()
     FROM candidates candidate
     WHERE job.id = candidate.id
-    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, candidate.prior_status
+    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.attempt_generation, job.lease_generation, candidate.prior_status
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, detail, pipeline_generation, attempt_generation, lease_generation
+        event_type, detail, attempt_generation, lease_generation
     )
     SELECT claimed.identity_id, 'ingestion_job', claimed.id, claimed.id,
            claimed.prior_status, 'running',
            CASE WHEN claimed.prior_status = 'running' THEN 'job_lease_reclaimed'
                 ELSE 'job_claimed' END,
-           '{}'::jsonb, claimed.pipeline_generation, claimed.attempt_generation,
+           '{}'::jsonb, claimed.attempt_generation,
            claimed.lease_generation
     FROM claimed
     RETURNING job_id
 )
-SELECT claimed.id, claimed.job_type, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.pipeline_generation, claimed.attempt_generation, claimed.lease_generation FROM claimed
+SELECT claimed.id, claimed.job_type, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.attempt_generation, claimed.lease_generation FROM claimed
 JOIN events ON events.job_id = claimed.id
 ORDER BY claimed.next_attempt_at, claimed.created_at
 `
@@ -70,27 +70,26 @@ type ClaimIngestionJobsParams struct {
 }
 
 type ClaimIngestionJobsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	JobType            string             `json:"job_type"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	AttemptCount       int32              `json:"attempt_count"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	LockedBy           pgtype.Text        `json:"locked_by"`
-	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
+	ID                pgtype.UUID        `json:"id"`
+	JobType           string             `json:"job_type"`
+	Status            string             `json:"status"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	Stage             string             `json:"stage"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	LockedBy          pgtype.Text        `json:"locked_by"`
+	LockedUntil       pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload           []byte             `json:"payload"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AssetID           pgtype.UUID        `json:"asset_id"`
+	AttemptGeneration int64              `json:"attempt_generation"`
+	LeaseGeneration   int64              `json:"lease_generation"`
 }
 
 // job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
@@ -134,7 +133,6 @@ func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobs
 			&i.CompletedAt,
 			&i.IdentityID,
 			&i.AssetID,
-			&i.PipelineGeneration,
 			&i.AttemptGeneration,
 			&i.LeaseGeneration,
 		); err != nil {
@@ -201,29 +199,27 @@ const createIngestionJob = `-- name: CreateIngestionJob :one
 
 INSERT INTO aura.ingestion_jobs (
     identity_id, job_type, asset_id, status,
-    idempotency_key, stage, max_attempts, next_attempt_at, payload,
-    pipeline_generation
+    idempotency_key, stage, max_attempts, next_attempt_at, payload
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $9, $10
+    $8, $9
 )
 ON CONFLICT (identity_id, job_type, idempotency_key) DO UPDATE
 SET updated_at = now()
-RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, pipeline_generation, attempt_generation, lease_generation
+RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, attempt_generation, lease_generation
 `
 
 type CreateIngestionJobParams struct {
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	JobType            string             `json:"job_type"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	JobType        string             `json:"job_type"`
+	AssetID        pgtype.UUID        `json:"asset_id"`
+	Status         string             `json:"status"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Stage          string             `json:"stage"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload        []byte             `json:"payload"`
 }
 
 // The GENERIC asset queue. Document, image and audio uploads all ride these statements.
@@ -248,7 +244,6 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 		arg.MaxAttempts,
 		arg.NextAttemptAt,
 		arg.Payload,
-		arg.PipelineGeneration,
 	)
 	var i AuraIngestionJobs
 	err := row.Scan(
@@ -270,7 +265,6 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 		&i.CompletedAt,
 		&i.IdentityID,
 		&i.AssetID,
-		&i.PipelineGeneration,
 		&i.AttemptGeneration,
 		&i.LeaseGeneration,
 	)
@@ -287,7 +281,7 @@ WHERE id = $2
   AND locked_by = $4
   AND lease_generation = $5
   AND locked_until > now()
-RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, pipeline_generation, attempt_generation, lease_generation
+RETURNING id, job_type, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, attempt_generation, lease_generation
 `
 
 type HeartbeatIngestionJobParams struct {
@@ -326,7 +320,6 @@ func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngest
 		&i.CompletedAt,
 		&i.IdentityID,
 		&i.AssetID,
-		&i.PipelineGeneration,
 		&i.AttemptGeneration,
 		&i.LeaseGeneration,
 	)
@@ -606,16 +599,15 @@ WITH target AS (
         updated_at = now()
     FROM target
     WHERE job.id = target.id
-    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.attempt_generation, job.lease_generation, target.prior_status
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, message, pipeline_generation, attempt_generation, lease_generation
+        event_type, message, attempt_generation, lease_generation
     )
     SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
            transitioned.prior_status, 'dead_letter', 'swarm_delegation.invalid_resume',
-           $5, transitioned.pipeline_generation,
-           transitioned.attempt_generation, transitioned.lease_generation
+           $5, transitioned.attempt_generation, transitioned.lease_generation
     FROM transitioned
     RETURNING job_id
 )
@@ -690,20 +682,19 @@ WITH target AS (
         locked_by = NULL, locked_until = NULL,
         next_attempt_at = $8, updated_at = now()
     FROM target WHERE job.id = target.id
-    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.attempt_generation, job.lease_generation, target.prior_status
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, message, pipeline_generation, attempt_generation, lease_generation
+        event_type, message, attempt_generation, lease_generation
     )
     SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
            retried.prior_status, 'queued', 'job_retry_scheduled',
-           $9, retried.pipeline_generation,
-           retried.attempt_generation, retried.lease_generation
+           $9, retried.attempt_generation, retried.lease_generation
     FROM retried
     RETURNING job_id
 )
-SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
+SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
 `
 
 type RetryIngestionJobParams struct {
@@ -719,27 +710,26 @@ type RetryIngestionJobParams struct {
 }
 
 type RetryIngestionJobRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	JobType            string             `json:"job_type"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	AttemptCount       int32              `json:"attempt_count"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	LockedBy           pgtype.Text        `json:"locked_by"`
-	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
+	ID                pgtype.UUID        `json:"id"`
+	JobType           string             `json:"job_type"`
+	Status            string             `json:"status"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	Stage             string             `json:"stage"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	LockedBy          pgtype.Text        `json:"locked_by"`
+	LockedUntil       pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload           []byte             `json:"payload"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AssetID           pgtype.UUID        `json:"asset_id"`
+	AttemptGeneration int64              `json:"attempt_generation"`
+	LeaseGeneration   int64              `json:"lease_generation"`
 }
 
 func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error) {
@@ -774,7 +764,6 @@ func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobPa
 		&i.CompletedAt,
 		&i.IdentityID,
 		&i.AssetID,
-		&i.PipelineGeneration,
 		&i.AttemptGeneration,
 		&i.LeaseGeneration,
 	)
@@ -834,21 +823,21 @@ WITH target AS (
         ) THEN now() ELSE NULL END,
         updated_at = now()
     FROM target WHERE job.id = target.id
-    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+    RETURNING job.id, job.job_type, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.attempt_generation, job.lease_generation, target.prior_status
 ), events AS (
     INSERT INTO aura.ingestion_events (
         identity_id, entity_type, entity_id, job_id, from_status, to_status,
         event_type, message, detail, trace_id,
-        pipeline_generation, attempt_generation, lease_generation
+        attempt_generation, lease_generation
     )
     SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
            transitioned.prior_status, transitioned.status, $9,
            $10, $11, $12,
-           transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation
+           transitioned.attempt_generation, transitioned.lease_generation
     FROM transitioned
     RETURNING job_id
 )
-SELECT transitioned.id, transitioned.job_type, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id
+SELECT transitioned.id, transitioned.job_type, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id
 `
 
 type UpdateIngestionJobStatusParams struct {
@@ -867,27 +856,26 @@ type UpdateIngestionJobStatusParams struct {
 }
 
 type UpdateIngestionJobStatusRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	JobType            string             `json:"job_type"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	AttemptCount       int32              `json:"attempt_count"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	LockedBy           pgtype.Text        `json:"locked_by"`
-	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
+	ID                pgtype.UUID        `json:"id"`
+	JobType           string             `json:"job_type"`
+	Status            string             `json:"status"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	Stage             string             `json:"stage"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	LockedBy          pgtype.Text        `json:"locked_by"`
+	LockedUntil       pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt     pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload           []byte             `json:"payload"`
+	ErrorCode         string             `json:"error_code"`
+	ErrorMessage      string             `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AssetID           pgtype.UUID        `json:"asset_id"`
+	AttemptGeneration int64              `json:"attempt_generation"`
+	LeaseGeneration   int64              `json:"lease_generation"`
 }
 
 func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error) {
@@ -925,7 +913,6 @@ func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngest
 		&i.CompletedAt,
 		&i.IdentityID,
 		&i.AssetID,
-		&i.PipelineGeneration,
 		&i.AttemptGeneration,
 		&i.LeaseGeneration,
 	)

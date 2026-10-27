@@ -19,11 +19,6 @@ var identityDeleteExceptions = map[string]struct {
 	rule   byte
 	reason string
 }{
-	// An audit trail is supposed to outlive its subject: cascading it would destroy the
-	// record of what someone did as a side effect of deleting them. Still a landmine —
-	// arming it means dropping the FK or anonymizing the actor on purge, a retention
-	// decision — but a DORMANT one: zero rows and no writer outside tests (2026-08-31).
-	"audit_logs.actor_identity_id": {'r', "an audit trail must outlive its subject"},
 	// A registered MCP server belongs to the deployment, not to whoever added it, so the
 	// server survives and forgets its author.
 	"mcp_server.created_by": {'n', "the server outlives its author"},

@@ -22,7 +22,7 @@ private Docker hostname in a browser presign is a failure, not a reason to disab
   delete.
 - `internal/objectstore` hides the storage backend. The default production-like
   backend is Garage/S3. `filesystem-dev` is available for local backend tests.
-- Postgres stores `aura.assets` and `aura.asset_events`.
+- Postgres stores `aura.assets`.
 - Garage stores the original object bytes.
 - Documents are indexed by the ingest sidecar (CocoIndex with Apache Tika), which
   reconciles the identity's bucket into ArcadeDB. The asset's own document step only
