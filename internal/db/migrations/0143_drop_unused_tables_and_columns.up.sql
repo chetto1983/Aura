@@ -22,6 +22,11 @@
 -- implicit transaction, so the schema stays at 0142; golang-migrate marks the tracker dirty,
 -- and the message says how to clear it.
 
+-- The count and the drops run under one lock, so a row a writer commits between them cannot
+-- be dropped unseen. The file is one implicit transaction, which holds it to the end.
+LOCK TABLE aura.benchmark_settings_overrides, aura.benchmark_settings_override_rows,
+    aura.asset_events, aura.audit_logs IN ACCESS EXCLUSIVE MODE;
+
 DO $$
 DECLARE
     held text;
