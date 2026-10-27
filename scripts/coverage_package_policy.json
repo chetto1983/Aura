@@ -67,7 +67,7 @@
     "github.com/chetto1983/aura/internal/netguard": {"mode": "target"},
     "github.com/chetto1983/aura/internal/objectbackup": {"mode": "target"},
     "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 444, "total_statements": 568},
-    "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 107, "total_statements": 138},
+    "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 129, "total_statements": 159},
     "github.com/chetto1983/aura/internal/obs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/onboarding": {"mode": "target"},
     "github.com/chetto1983/aura/internal/openrouterprovision": {"mode": "target"},
