@@ -389,7 +389,7 @@ type Querier interface {
 	// answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
 	// SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
 	// reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
-	// filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+	// filter); the snapshot merge pairs each row with the message of the same seq.
 	// The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 	// decode to zero calls ('[]'/'null') count as answer-shaped there too.
 	ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error)
@@ -476,7 +476,8 @@ type Querier interface {
 	// monotonicity/cycles, and stops only at the exact durable watermark or NULL root.
 	ListManagedBranchPathPage(ctx context.Context, arg ListManagedBranchPathPageParams) ([]ListManagedBranchPathPageRow, error)
 	// The protected system root is fetched once, independently of body pagination. :many
-	// deliberately represents an empty conversation without pgx.ErrNoRows.
+	// deliberately represents an empty conversation without pgx.ErrNoRows. The column list
+	// mirrors ListTurnsBySeq so turnFromRow projects it unchanged.
 	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
@@ -529,6 +530,8 @@ type Querier interface {
 	// ListTurnsBySeq exactly so turnFromRow rehydrates it unchanged. A leaf seq of 0 (or one
 	// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
+	// parent_seq places each turn in the conversation tree: the history snapshot draws every
+	// branch from it (spec 2026-10-27, D5). The llm.Message rebuild never reads it.
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	// Plan 51-10's absent-operator leg: delegation_result rows the operator never drained
 	// (drained_at IS NULL), not expired, not already nudged, past the nudge grace window.
@@ -539,12 +542,8 @@ type Querier interface {
 	ListUnnudgedDelegationResults(ctx context.Context, arg ListUnnudgedDelegationResultsParams) ([]AuraSteerQueue, error)
 	// Display-only read, deliberately separate from ListTurnsBySeq for the same reason
 	// ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
-	//
-	// `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
-	// snapshot consumer can actually match on: the messages it merges into carry no seq, and
-	// user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
-	// tool/assistant pairing). Computing it here rather than returning every user turn keeps
-	// the result sparse -- a long conversation with one attachment costs one row.
+	// Sparse: a long conversation with one attachment costs one row, which the snapshot puts on
+	// the message of the same seq.
 	ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error)
 	ListWorkerSteers(ctx context.Context, arg ListWorkerSteersParams) ([]AuraSteerQueue, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)

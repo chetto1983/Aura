@@ -40,6 +40,10 @@ func (e *errConvStore) LoadHistory(context.Context, string) ([]llm.Message, erro
 	return nil, e.err
 }
 
+func (e *errConvStore) LoadDisplayTurns(context.Context, string) ([]conversations.DisplayTurn, error) {
+	return nil, e.err
+}
+
 func (e *errConvStore) ListTurnAttachments(context.Context, string) ([]conversations.TurnAttachments, error) {
 	return nil, e.err
 }

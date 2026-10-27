@@ -51,8 +51,8 @@ func (a convReaderAdapter) GetForIdentity(ctx context.Context, conversationID, i
 	return ConvMeta{Title: conv.Title, Model: conv.Model, CreatedAt: createdAt}, nil
 }
 
-func (a convReaderAdapter) LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error) {
-	return a.store.LoadHistory(ctx, conversationID)
+func (a convReaderAdapter) LoadLatestBranch(ctx context.Context, conversationID string) ([]llm.Message, error) {
+	return a.store.LoadBranchHistory(ctx, conversationID, 0)
 }
 
 // fakeShareArtifactLister is a test-only ArtifactLister keyed by conversation (thread) id.
@@ -152,6 +152,43 @@ func TestShareSnapshotFrozen(t *testing.T) {
 		if turn.Text == "turn added AFTER mint — must never leak" {
 			t.Fatalf("frozen snapshot leaked a post-mint turn: %+v", snap.Turns)
 		}
+	}
+}
+
+// TestShareSnapshotIsTheBranchWrittenLast (spec 2026-10-27, D12): a reader of the share sees
+// the conversation its owner kept, not the answer the owner edited away.
+func TestShareSnapshotIsTheBranchWrittenLast(t *testing.T) {
+	pool := migratedPool(t)
+	deps := newShareTestService(t, pool, true)
+	owner := seedIdentity(t, pool)
+	conv := seedConversation(t, pool, owner)
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "first question")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleAssistant, "answer edited away")
+	ownerCtx := identityctx.WithIdentityID(context.Background(), owner)
+	forked, err := deps.convStore.ForkBranch(ownerCtx, conv, 1, llm.RoleUser, "question rewritten")
+	if err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	if _, err := deps.convStore.AppendTurnSeq(ownerCtx, conversations.AppendTurnParams{
+		ConversationID: conv, Role: llm.RoleAssistant, Content: "answer kept", ParentSeq: &forked,
+	}); err != nil {
+		t.Fatalf("append answer: %v", err)
+	}
+
+	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	snap, _, err := deps.svc.ResolveInternal(context.Background(), res.Link.ID.String(), owner)
+	if err != nil {
+		t.Fatalf("resolve internal: %v", err)
+	}
+	var texts []string
+	for _, turn := range snap.Turns {
+		texts = append(texts, turn.Text)
+	}
+	if len(texts) != 2 || texts[0] != "question rewritten" || texts[1] != "answer kept" {
+		t.Fatalf("shared turns = %q, want the rewritten question and the answer kept", texts)
 	}
 }
 

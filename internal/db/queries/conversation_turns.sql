@@ -45,17 +45,22 @@ FROM aura.conversation_turns
 WHERE conversation_id = $1;
 
 -- name: ListTurnsBySeq :many
+-- parent_seq places each turn in the conversation tree: the history snapshot draws every
+-- branch from it (spec 2026-10-27, D5). The llm.Message rebuild never reads it.
 SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
+       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens,
+       parent_seq
 FROM aura.conversation_turns
 WHERE conversation_id = $1
 ORDER BY seq ASC;
 
 -- name: ListManagedHistoryHead :many
 -- The protected system root is fetched once, independently of body pagination. :many
--- deliberately represents an empty conversation without pgx.ErrNoRows.
+-- deliberately represents an empty conversation without pgx.ErrNoRows. The column list
+-- mirrors ListTurnsBySeq so turnFromRow projects it unchanged.
 SELECT conversation_id, seq, role, content, content_sidecar_path,
-       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens
+       tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens,
+       parent_seq
 FROM aura.conversation_turns
 WHERE conversation_id = $1 AND role = 'system'
 ORDER BY seq ASC
@@ -71,7 +76,7 @@ WHERE conversation_id = $1;
 -- answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
 -- SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
 -- reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
--- filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+-- filter); the snapshot merge pairs each row with the message of the same seq.
 -- The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 -- decode to zero calls ('[]'/'null') count as answer-shaped there too.
 SELECT seq, reasoning, reasoning_duration_ms, delivery_key
@@ -84,22 +89,13 @@ ORDER BY seq ASC;
 -- name: ListUserTurnAttachments :many
 -- Display-only read, deliberately separate from ListTurnsBySeq for the same reason
 -- ListAssistantTurnReasoning is: the llm.Message history rebuild must never select it.
---
--- `ordinal` is the turn's index AMONG USER TURNS, not its seq, because that is what the
--- snapshot consumer can actually match on: the messages it merges into carry no seq, and
--- user turns rebuild one-for-one and in order (repairToolMessagePairs touches only
--- tool/assistant pairing). Computing it here rather than returning every user turn keeps
--- the result sparse -- a long conversation with one attachment costs one row.
-SELECT seq, attachment_ids, ordinal
-FROM (
-    SELECT seq,
-           attachment_ids,
-           (row_number() OVER (ORDER BY seq ASC) - 1)::int AS ordinal
-    FROM aura.conversation_turns
-    WHERE conversation_id = $1
-      AND role = 'user'
-) AS user_turns
-WHERE attachment_ids IS NOT NULL
+-- Sparse: a long conversation with one attachment costs one row, which the snapshot puts on
+-- the message of the same seq.
+SELECT seq, attachment_ids
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND role = 'user'
+  AND attachment_ids IS NOT NULL
   AND cardinality(attachment_ids) > 0
 ORDER BY seq ASC;
 
@@ -183,7 +179,7 @@ WITH RECURSIVE path AS (
 )
 SELECT path.conversation_id, path.seq, path.role, path.content, path.content_sidecar_path,
        path.tool_call_id, path.tool_calls, path.created_at, path.input_tokens,
-       path.output_tokens, path.cached_tokens
+       path.output_tokens, path.cached_tokens, path.parent_seq
 FROM path
 ORDER BY path.seq ASC;
 

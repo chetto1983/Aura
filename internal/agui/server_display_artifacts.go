@@ -10,8 +10,8 @@ import (
 // Live, send_file's card rides the aura.artifact frame onto its call by tool_call_id, and that
 // frame is never persisted. The asset records the call instead (migration 0126), so the replay
 // says what the stream said: the same local_artifact display, on the same call. A file whose
-// call is not in this history -- a branch not selected, or a file no call produced -- is placed
-// nowhere; the Artifacts panel lists it.
+// call is not in this history -- a file no call produced -- is placed nowhere; the Artifacts
+// panel lists it.
 //
 // files arrive oldest first, and calls are walked in history order, so a call id that repeats
 // (a provider that sends none gets a deterministic one, llm_agent_call_dedup.go) pairs each

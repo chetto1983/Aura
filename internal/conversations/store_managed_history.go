@@ -238,5 +238,6 @@ func managedBranchPageTurn(row sqlc.ListManagedBranchPathPageRow) Turn {
 		InputTokens:        row.InputTokens,
 		OutputTokens:       row.OutputTokens,
 		CachedTokens:       row.CachedTokens,
+		ParentSeq:          row.ParentSeq,
 	})
 }

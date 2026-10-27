@@ -8,12 +8,12 @@ import (
 )
 
 func TestAttachWorkerReportWithoutReasoning(t *testing.T) {
-	snap := projectDisplaySnapshotWithFacts([]llm.Message{
+	snap := projectDisplaySnapshotWithFacts(linearTurns([]llm.Message{
 		{Role: llm.RoleUser, Content: "run the task"},
 		{Role: llm.RoleAssistant, Content: "launch confirmed"},
 		{Role: llm.RoleAssistant, Content: "internal report"},
 		{Role: llm.RoleAssistant, Content: "consolidated answer"},
-	}, "", nil, nil)
+	}), "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{
 		{Seq: 2}, {Seq: 3, WorkerReport: true}, {Seq: 4},
 	})

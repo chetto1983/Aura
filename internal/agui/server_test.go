@@ -497,7 +497,7 @@ func projectMessages(hist []llm.Message) []events.Message {
 	msgs := make([]events.Message, 0, len(hist))
 	for i, m := range hist {
 		msgs = append(msgs, events.Message{
-			ID:         msgID(i),
+			ID:         seqID(i + 1),
 			Role:       types.Role(m.Role),
 			Content:    snapshotContent(m),
 			ToolCallID: m.ToolCallID,

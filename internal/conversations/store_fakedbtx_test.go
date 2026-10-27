@@ -356,8 +356,9 @@ func TestCountTurns_Fake(t *testing.T) {
 	}
 }
 
-// turnRowValues returns the 11 positional Scan values ListTurnsBySeq expects,
-// matching the ListTurnsBySeqRow field order.
+// turnRowValues returns the 12 positional Scan values ListTurnsBySeq expects,
+// matching the ListTurnsBySeqRow field order. The turns chain linearly: each one
+// continues the seq before it.
 func turnRowValues(conv pgtype.UUID, seq int32, role, content, sidecar, toolCallID string, toolCalls []byte) []any {
 	created := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	return []any{
@@ -372,6 +373,7 @@ func turnRowValues(conv pgtype.UUID, seq int32, role, content, sidecar, toolCall
 		int32(3),  // InputTokens
 		int32(4),  // OutputTokens
 		int32(1),  // CachedTokens
+		pgtype.Int4{Int32: seq - 1, Valid: seq > 1}, // ParentSeq
 	}
 }
 

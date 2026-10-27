@@ -130,6 +130,12 @@ func (f *steerE2EConvStore) LoadHistory(_ context.Context, id string) ([]llm.Mes
 	return f.messagesLocked(id), nil
 }
 
+func (f *steerE2EConvStore) LoadDisplayTurns(_ context.Context, id string) ([]conversations.DisplayTurn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return linearTurns(f.messagesLocked(id)), nil
+}
+
 func (f *steerE2EConvStore) LoadManagedHistory(_ context.Context, id string, _ int, _ conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

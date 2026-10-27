@@ -97,27 +97,24 @@ func branchPathRowAsSeqRow(r sqlc.ListTurnsByBranchPathRow) sqlc.ListTurnsBySeqR
 	return sqlc.ListTurnsBySeqRow(r)
 }
 
-// LoadBranchHistory reconstructs the loop history for the SELECTED branch path, the
-// path-aware analog of LoadHistory (store.go:255). It walks leaf->root from the given
-// leaf seq, projects each turn to an llm.Message, and repairs tool-message pairs along
-// the path exactly like LoadHistory. For the canonical branch leaf of a non-branched
-// conversation the result is byte-identical to LoadHistory (the migration backfilled a
-// complete parent_seq = seq-1 chain — RESEARCH A3). The returned slice is raw; the
-// L1/L2/L2.5 ladder (context.go) is applied by the caller around it.
+// LoadBranchHistory reconstructs the history of one path: the turns from leafSeq up to its
+// root, repaired exactly like LoadHistory. A leafSeq <= 0 is the branch written last, the one
+// a run continues when nothing names another, which is what a share shows (spec 2026-10-27,
+// D12). For a non-branched conversation the result is byte-identical to LoadHistory. The
+// returned slice is raw; the L1/L2/L2.5 ladder (context.go) is applied by the caller.
 func (s *Store) LoadBranchHistory(ctx context.Context, conversationID string, leafSeq int) ([]llm.Message, error) {
+	if leafSeq <= 0 {
+		latest, err := s.LatestTurnSeq(ctx, conversationID)
+		if err != nil {
+			return nil, err
+		}
+		leafSeq = latest
+	}
 	turns, err := s.loadBranchTurns(ctx, conversationID, leafSeq)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]llm.Message, 0, len(turns))
-	for _, t := range turns {
-		msg, err := turnToMessage(t)
-		if err != nil {
-			return nil, fmt.Errorf("load branch history %s seq %d: %w", conversationID, t.Seq, err)
-		}
-		out = append(out, msg)
-	}
-	return repairToolMessagePairs(out), nil
+	return rebuildMessages(conversationID, turns)
 }
 
 // ForkBranch appends a sibling of the turn at divergeSeq: a fresh turn that chains off the

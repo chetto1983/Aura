@@ -28,7 +28,11 @@ import (
 // depends only on the methods it calls, never the whole Store.
 type ConversationStore interface {
 	Get(ctx context.Context, conversationID string) (conversations.Conversation, error)
+	// LoadHistory is the owner export's read: every turn as the model context repairs it.
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
+	// LoadDisplayTurns is the history snapshot's read: the same turns, each with its place
+	// in the conversation tree (spec 2026-10-27, D5).
+	LoadDisplayTurns(ctx context.Context, conversationID string) ([]conversations.DisplayTurn, error)
 	// ListTurnReasoning is the amendment #91 (fix-plan 1.12) DISPLAY-ONLY read:
 	// the persisted per-turn CoT + duration for the snapshot projection, kept
 	// separate from LoadHistory so llm.Message stays structurally reasoning-free.

@@ -70,10 +70,12 @@ type ConversationReader interface {
 	// cases must be indistinguishable to the caller regardless (D-06 404-not-403), so there is
 	// nothing to gain by telling them apart here.
 	GetForIdentity(ctx context.Context, conversationID, identityID string) (ConvMeta, error)
-	// LoadHistory reconstructs the RAW, UNSCOPED turn history. The caller MUST have already
-	// run the owner gate via GetForIdentity — LoadHistory itself performs no ownership check,
-	// mirroring conversations.Store.LoadHistory's own documented "Unscoped" contract.
-	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
+	// LoadLatestBranch reconstructs the RAW, UNSCOPED history of the branch written last:
+	// a reader of the share sees one conversation, not every attempt its owner made (spec
+	// 2026-10-27, D12). The caller MUST have already run the owner gate via GetForIdentity —
+	// the read itself performs no ownership check, mirroring conversations.Store's own
+	// documented "Unscoped" contract.
+	LoadLatestBranch(ctx context.Context, conversationID string) ([]llm.Message, error)
 }
 
 // CreateRequest carries one Create call's inputs. An absent or unrecognized Tier resolves to
@@ -215,11 +217,11 @@ func (svc *Service) Create(ctx context.Context, req CreateRequest) (CreateResult
 	}
 
 	// 4. Load history + candidate artifacts; filter to the agent-only allowlist.
-	// LoadHistory carries the owner on the CONTEXT because that is its only channel — every
+	// LoadLatestBranch carries the owner on the CONTEXT because that is its only channel — every
 	// other call here takes the owner as an argument. Since migration 0089 an unscoped read
 	// returns an EMPTY history rather than an error, which would silently mint a share of a
 	// conversation with no turns; the owner is already established above, so name it.
-	history, err := svc.conv.LoadHistory(identityctx.WithIdentityID(ctx, req.OwnerIdentityID), req.ConversationID)
+	history, err := svc.conv.LoadLatestBranch(identityctx.WithIdentityID(ctx, req.OwnerIdentityID), req.ConversationID)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("create share: load history: %w", err)
 	}
@@ -325,7 +327,7 @@ func (svc *Service) Update(ctx context.Context, shareID, identityID string) (Lin
 	if err != nil {
 		return Link{}, fmt.Errorf("update share %s: %w", shareID, ErrShareNotFound)
 	}
-	history, err := svc.conv.LoadHistory(identityctx.WithIdentityID(ctx, identityID), convID)
+	history, err := svc.conv.LoadLatestBranch(identityctx.WithIdentityID(ctx, identityID), convID)
 	if err != nil {
 		return Link{}, fmt.Errorf("update share %s: load history: %w", shareID, err)
 	}

@@ -35,7 +35,9 @@ type displaySnapshotEvent struct {
 // SDK convention already used by toolCallId/toolCalls; the cockpit
 // snapshotToThreadMessages maps them onto the {type:'reasoning'} part (RS-07).
 type displaySnapshotMessage struct {
-	ID                  string                    `json:"id"`
+	ID string `json:"id"`
+	// ParentID is the message this one continues, null at a root (server_display_tree.go).
+	ParentID            *string                   `json:"parentId"`
 	Role                types.Role                `json:"role"`
 	Content             string                    `json:"content,omitempty"`
 	ToolCallID          string                    `json:"toolCallId,omitempty"`
@@ -49,7 +51,10 @@ type displaySnapshotMessage struct {
 	// on every other role, and on user turns that predate the column — which is what
 	// lets the cockpit keep its old positional fold as the fallback for those alone.
 	AttachmentIDs []string `json:"attachmentIds,omitempty"`
-	// recoveryPlaceholder marks the result LoadHistory invented for a call with none
+	// seq is the turn behind the message, 0 for a result the repair synthesized. The
+	// display-only reads address it to merge their rows; it reaches the wire as the id.
+	seq int
+	// recoveryPlaceholder marks the result the repair invented for a call with none
 	// (conversations.RecoveryToolResultContent). It never reaches the wire.
 	recoveryPlaceholder bool
 }
@@ -76,8 +81,10 @@ type displaySnapshotToolCall struct {
 //
 // The thread's rows add the rest: the ledger's end rows (facts: MCP displays and each
 // call's outcome) and the calls the operator refused by declining their gateway
-// approval.
-func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event, declined []string) displaySnapshotEvent {
+// approval. The turns keep their place in the conversation tree, which becomes each
+// message's id and parentId.
+func projectDisplaySnapshotWithFacts(turns []conversations.DisplayTurn, conversationID string, facts []toolinvocations.Event, declined []string) displaySnapshotEvent {
+	hist := conversations.DisplayMessages(turns)
 	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
 	views := replayMCPViews(hist, conversationID, facts)
 	outcomes := callOutcomes(hist, conversationID, facts, declined)
@@ -88,13 +95,16 @@ func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, 
 		}
 	}
 	msgs := make([]displaySnapshotMessage, 0, len(hist))
-	for i, m := range hist {
+	for _, turn := range turns {
+		m := turn.Message
 		recovery, knownCall := recoveryResults[m.ToolCallID]
 		isTool := m.Role == llm.RoleTool
 		placeholder := isTool && knownCall && m.Content == recovery
 		outcome := outcomes[m.ToolCallID]
 		msgs = append(msgs, displaySnapshotMessage{
-			ID:                  msgID(i),
+			ID:                  snapshotID(turn),
+			ParentID:            snapshotParentID(turn),
+			seq:                 turn.Seq,
 			Role:                types.Role(m.Role),
 			Content:             snapshotContent(m),
 			ToolCallID:          m.ToolCallID,
@@ -350,31 +360,21 @@ func replayMCPViews(hist []llm.Message, conversationID string, facts []toolinvoc
 }
 
 // attachTurnReasoning merges the persisted display-only reasoning rows (amendment
-// #91 / fix-plan 1.12) onto the snapshot's assistant answer messages. Pairing is
-// positional: rows carries ONE entry per answer-shaped assistant turn (role
-// assistant, no tool_calls — conversations.ListTurnReasoning) in seq order, and the
-// repaired LoadHistory projection preserves exactly those messages in the same
-// order (repairToolMessagePairs never drops, synthesizes, or reorders an assistant
-// message without tool calls), so the k-th row belongs to the k-th assistant
-// no-tool-call message. Rows with empty Reasoning (NULL column: pre-migration,
-// redacted, disabled) attach nothing — the drawer stays absent, the correct
-// degrade. Fail-soft on any count mismatch: surplus rows are ignored, surplus
-// messages stay bare.
+// #91 / fix-plan 1.12) onto the snapshot's assistant answer messages: each row lands on
+// the message of the same seq. Rows with empty Reasoning (NULL column: pre-migration,
+// redacted, disabled) attach nothing — the drawer stays absent, the correct degrade. A
+// row whose turn the snapshot does not draw is ignored.
 func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnReasoning) {
-	if len(rows) == 0 {
-		return
+	bySeq := make(map[int]conversations.TurnReasoning, len(rows))
+	for _, row := range rows {
+		bySeq[row.Seq] = row
 	}
-	next := 0
 	for i := range snap.Messages {
 		m := &snap.Messages[i]
-		if m.Role != types.Role(llm.RoleAssistant) || len(m.ToolCalls) > 0 {
+		row, ok := bySeq[m.seq]
+		if !ok {
 			continue
 		}
-		if next >= len(rows) {
-			return
-		}
-		row := rows[next]
-		next++
 		m.WorkerReport = row.WorkerReport
 		if row.Reasoning == "" {
 			continue
@@ -386,27 +386,26 @@ func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnRe
 
 // markAwaitingInput shows a tool call whose turn is paused on the person's answer as still
 // waiting rather than failed. While the pause is pending the call has no result, so
-// LoadHistory pairs it with the crash-recovery placeholder and the projection flags that
-// as an error. For a pending call the placeholder is dropped and the call carries
+// LoadDisplayTurns pairs it with the crash-recovery placeholder and the projection flags
+// that as an error. For a pending call the placeholder is dropped and the call carries
 // AwaitingInput instead, which the cockpit renders as still running. Only the placeholder
 // goes: a real result the ledger marks failed stays.
 func markAwaitingInput(snap *displaySnapshotEvent, pending map[string]struct{}) {
 	if len(pending) == 0 {
 		return
 	}
-	kept := snap.Messages[:0]
-	for _, m := range snap.Messages {
-		if _, ok := pending[m.ToolCallID]; ok && m.recoveryPlaceholder {
-			continue
-		}
-		for i := range m.ToolCalls {
-			if _, ok := pending[m.ToolCalls[i].ID]; ok {
-				m.ToolCalls[i].AwaitingInput = true
+	for i := range snap.Messages {
+		calls := snap.Messages[i].ToolCalls
+		for j := range calls {
+			if _, ok := pending[calls[j].ID]; ok {
+				calls[j].AwaitingInput = true
 			}
 		}
-		kept = append(kept, m)
 	}
-	snap.Messages = kept
+	hideMessages(snap, func(m *displaySnapshotMessage) bool {
+		_, ok := pending[m.ToolCallID]
+		return ok && m.recoveryPlaceholder
+	})
 }
 
 // projectDisplayToolCalls maps the persisted tool calls onto the display-aware shape,
@@ -433,32 +432,21 @@ func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.
 	return out
 }
 
-// attachTurnAttachments merges each user turn's attachment ids onto the user messages of
-// the snapshot.
-//
-// Rows are sparse — only turns that carry attachments — so they are addressed by
-// UserOrdinal rather than by their position in the slice. That ordinal is an index among
-// USER turns, and user turns rebuild one-for-one and in order (repairToolMessagePairs
-// touches only tool/assistant pairing), so the k-th user message is the k-th user turn.
+// attachTurnAttachments merges each user turn's attachment ids onto the message of the same
+// seq.
 //
 // This is the whole point of the column: before it, the cockpit could only zip a thread's
 // assets onto user turns by position, putting an image sent with the third message against
-// the first. Fail-soft in both directions — an ordinal past the end of the messages is
+// the first. Fail-soft in both directions — a row whose turn the snapshot does not draw is
 // ignored, a message no row names keeps nothing.
 func attachTurnAttachments(snap *displaySnapshotEvent, rows []conversations.TurnAttachments) {
-	if len(rows) == 0 {
-		return
-	}
-	userMessages := make([]*displaySnapshotMessage, 0, len(snap.Messages))
-	for i := range snap.Messages {
-		if snap.Messages[i].Role == types.Role(llm.RoleUser) {
-			userMessages = append(userMessages, &snap.Messages[i])
-		}
-	}
+	bySeq := make(map[int][]string, len(rows))
 	for _, row := range rows {
-		if row.UserOrdinal < 0 || row.UserOrdinal >= len(userMessages) {
-			continue
+		bySeq[row.Seq] = row.IDs
+	}
+	for i := range snap.Messages {
+		if ids, ok := bySeq[snap.Messages[i].seq]; ok {
+			snap.Messages[i].AttachmentIDs = ids
 		}
-		userMessages[row.UserOrdinal].AttachmentIDs = row.IDs
 	}
 }

@@ -50,8 +50,8 @@ func (a shareConvAdapter) GetForIdentity(ctx context.Context, convID, identityID
 	createdAt, _ := time.Parse(time.RFC3339, conv.CreatedAt)
 	return share.ConvMeta{Title: conv.Title, Model: conv.Model, CreatedAt: createdAt}, nil
 }
-func (a shareConvAdapter) LoadHistory(ctx context.Context, convID string) ([]llm.Message, error) {
-	return a.store.LoadHistory(ctx, convID)
+func (a shareConvAdapter) LoadLatestBranch(ctx context.Context, convID string) ([]llm.Message, error) {
+	return a.store.LoadBranchHistory(ctx, convID, 0)
 }
 
 // shareTestAdapter satisfies agui.ShareService over a real Service+Store+objectstore.Store.

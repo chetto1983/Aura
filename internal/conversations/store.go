@@ -180,7 +180,9 @@ type Conversation struct {
 // Turn is the domain projection of one aura.conversation_turns row, ready to be
 // re-hydrated into an llm.Message by LoadHistory. ToolCalls is the raw jsonb.
 type Turn struct {
-	Seq                int
+	Seq int
+	// ParentSeq is the turn this one continues, 0 at a root.
+	ParentSeq          int
 	Role               string
 	Content            string
 	ContentSidecarPath string
@@ -383,19 +385,11 @@ func (s *Store) LoadHistory(ctx context.Context, conversationID string) ([]llm.M
 	if err != nil {
 		return nil, err
 	}
-	out := make([]llm.Message, 0, len(turns))
-	for _, t := range turns {
-		msg, err := turnToMessage(t)
-		if err != nil {
-			return nil, fmt.Errorf("load history %s seq %d: %w", conversationID, t.Seq, err)
-		}
-		out = append(out, msg)
-	}
-	return repairToolMessagePairs(out), nil
+	return rebuildMessages(conversationID, turns)
 }
 
 // loadTurns fetches the ordered Turn projections, rehydrating sidecar-spilled
-// content from disk. Shared by LoadHistory and the context ladder.
+// content from disk. Shared by LoadHistory and LoadDisplayTurns.
 func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {

@@ -147,9 +147,9 @@ func TestServer_ResumeRejectsDisallowedDecision(t *testing.T) {
 	}
 }
 
-// TestServer_MessagesLoadHistoryError: a LoadHistory failure after the thread resolves
-// returns a sanitized 500 (no DSN leak in the body).
-func TestServer_MessagesLoadHistoryError(t *testing.T) {
+// TestServer_MessagesLoadError: a history read failure after the thread resolves returns a
+// sanitized 500 (no DSN leak in the body).
+func TestServer_MessagesLoadError(t *testing.T) {
 	const tid = "77777777-7777-7777-7777-777777777777"
 	conv := &fakeConvStore{known: map[string]bool{tid: true}, loadErr: errors.New("postgresql://u:secret@h/db read failed")}
 	srv := newTestServer(t, &scriptedRunner{}, conv)
@@ -164,7 +164,7 @@ func TestServer_MessagesLoadHistoryError(t *testing.T) {
 	}
 	raw, _ := io.ReadAll(resp.Body)
 	if strings.Contains(string(raw), "secret") {
-		t.Errorf("LoadHistory error leaked the DSN secret in the 500 body: %q", string(raw))
+		t.Errorf("history read error leaked the DSN secret in the 500 body: %q", string(raw))
 	}
 }
 

@@ -72,13 +72,14 @@ func (c Conversation) DisplayTitle() string {
 
 // turnFromRow projects a generated turn row onto the domain Turn. content +
 // content_sidecar_path are pgtype.Text (nullable); the empty string stands in for
-// NULL (loadTurns rehydrates a non-empty sidecar path from disk). It takes the
-// ListTurnsBySeq row (a query-specific struct since 0017 added branch_id/parent_seq
-// to the table model that this SELECT omits); turnFromBranchPathRow (store_branch.go)
-// adapts the field-identical branch-path row onto the same projection.
+// NULL (loadTurns rehydrates a non-empty sidecar path from disk), and so does 0 for a
+// NULL parent_seq. It takes the ListTurnsBySeq row (a query-specific struct since 0017
+// added branch_id to the table model that this SELECT omits); branchPathRowAsSeqRow
+// (store_branch.go) adapts the field-identical branch-path row onto the same projection.
 func turnFromRow(r sqlc.ListTurnsBySeqRow) Turn {
 	return Turn{
 		Seq:                int(r.Seq),
+		ParentSeq:          int(r.ParentSeq.Int32),
 		Role:               r.Role,
 		Content:            r.Content.String,
 		ContentSidecarPath: r.ContentSidecarPath.String,
@@ -196,7 +197,7 @@ func decodeToolCalls(raw []byte) ([]llm.ToolCall, error) {
 // so a crash after a mutating tool executed cannot make the model blindly re-issue
 // the same call on resume.
 func repairToolMessagePairs(in []llm.Message) []llm.Message {
-	return repairToolMessagePairsWith(in, false)
+	return repairToolPairs(in, messagePairs)
 }
 
 // repairManagedToolMessagePairs is the LoadManagedHistory variant. L1 rewrites old
@@ -204,73 +205,96 @@ func repairToolMessagePairs(in []llm.Message) []llm.Message {
 // plain assistant memory keeps the context contract without emitting orphan tool
 // messages to providers.
 func repairManagedToolMessagePairs(in []llm.Message) []llm.Message {
-	return repairToolMessagePairsWith(in, true)
+	return repairToolPairs(in, managedMessagePairs)
 }
 
-func repairToolMessagePairsWith(in []llm.Message, preserveCompactedToolPointers bool) []llm.Message {
+// toolPairs says how repairToolPairs reads and builds what it repairs: a bare message for
+// the model context, or a message with its place in the conversation tree for the history
+// snapshot. One repair serves both, so the snapshot draws exactly the pairs the model sees.
+type toolPairs[T any] struct {
+	message func(T) llm.Message
+	// recovered stands in for the result a call of assistant never got.
+	recovered func(assistant T, call llm.ToolCall) T
+	// pointer keeps a compacted tool turn as plain memory. Nil drops it with the orphans.
+	pointer func(T) T
+}
+
+var (
+	messagePairs        = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult}
+	managedMessagePairs = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult, pointer: managedToolPointerMessage}
+)
+
+func bareMessage(m llm.Message) llm.Message { return m }
+
+func recoveredToolResult(_ llm.Message, call llm.ToolCall) llm.Message {
+	return llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: RecoveryToolResultContent(call)}
+}
+
+func repairToolPairs[T any](in []T, p toolPairs[T]) []T {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]llm.Message, 0, len(in))
+	msgs := make([]llm.Message, len(in))
+	for i, item := range in {
+		msgs[i] = p.message(item)
+	}
+	out := make([]T, 0, len(in))
 	for i := 0; i < len(in); {
-		m := in[i]
+		m := msgs[i]
 		if m.Role == llm.RoleTool {
-			if preserveCompactedToolPointers && compactedToolPointer(m) {
-				out = append(out, managedToolPointerMessage(m))
-			}
+			out = p.keepPointer(out, in[i], m)
 			i++
 			continue
 		}
 		if m.Role != llm.RoleAssistant || len(m.ToolCalls) == 0 {
-			out = append(out, m)
+			out = append(out, in[i])
 			i++
 			continue
 		}
 
-		if ok := validToolResultGroup(in, i); ok {
-			out = append(out, in[i:i+1+len(m.ToolCalls)]...)
-			i += 1 + len(m.ToolCalls)
+		if validToolResultGroup(msgs, i) {
+			end := i + 1 + len(m.ToolCalls)
+			out = append(out, in[i:end]...)
+			i = end
 			continue
 		}
 
 		if !validToolCallIDs(m.ToolCalls) {
-			i++
-			for i < len(in) && in[i].Role == llm.RoleTool {
-				if preserveCompactedToolPointers && compactedToolPointer(in[i]) {
-					out = append(out, managedToolPointerMessage(in[i]))
-				}
-				i++
+			for i++; i < len(in) && msgs[i].Role == llm.RoleTool; i++ {
+				out = p.keepPointer(out, in[i], msgs[i])
 			}
 			continue
 		}
 
-		out, i = appendRecoveredToolResultGroup(out, in, i)
+		out, i = appendRecoveredToolResultGroup(out, in, msgs, i, p)
 	}
 	return out
 }
 
-func appendRecoveredToolResultGroup(out []llm.Message, in []llm.Message, assistantIdx int) ([]llm.Message, int) {
-	assistant := in[assistantIdx]
-	out = append(out, assistant)
-	seen := make(map[string]llm.Message, len(assistant.ToolCalls))
-	i := assistantIdx + 1
-	for i < len(in) && in[i].Role == llm.RoleTool {
-		msg := in[i]
-		if _, ok := seen[msg.ToolCallID]; !ok && toolCallHasID(assistant.ToolCalls, msg.ToolCallID) {
-			seen[msg.ToolCallID] = msg
-		}
-		i++
+func (p toolPairs[T]) keepPointer(out []T, item T, m llm.Message) []T {
+	if p.pointer == nil || !compactedToolPointer(m) {
+		return out
 	}
-	for _, call := range assistant.ToolCalls {
-		if msg, ok := seen[call.ID]; ok {
-			out = append(out, msg)
+	return append(out, p.pointer(item))
+}
+
+func appendRecoveredToolResultGroup[T any](out, in []T, msgs []llm.Message, assistantIdx int, p toolPairs[T]) ([]T, int) {
+	calls := msgs[assistantIdx].ToolCalls
+	out = append(out, in[assistantIdx])
+	seen := make(map[string]int, len(calls))
+	i := assistantIdx + 1
+	for ; i < len(in) && msgs[i].Role == llm.RoleTool; i++ {
+		id := msgs[i].ToolCallID
+		if _, ok := seen[id]; !ok && toolCallHasID(calls, id) {
+			seen[id] = i
+		}
+	}
+	for _, call := range calls {
+		if result, ok := seen[call.ID]; ok {
+			out = append(out, in[result])
 			continue
 		}
-		out = append(out, llm.Message{
-			Role:       llm.RoleTool,
-			ToolCallID: call.ID,
-			Content:    RecoveryToolResultContent(call),
-		})
+		out = append(out, p.recovered(in[assistantIdx], call))
 	}
 	return out, i
 }

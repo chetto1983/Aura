@@ -13,13 +13,12 @@ import (
 
 var errFakeReasoning = errors.New("reasoning read failed")
 
-// TestAttachTurnReasoning_PositionalPairing pins the amendment #91 merge invariant:
+// TestAttachTurnReasoning_PairsBySeq pins the amendment #91 merge invariant:
 // ListTurnReasoning returns one row per answer-shaped assistant turn (no tool
-// calls) in seq order, and the snapshot preserves exactly those messages in the
-// same order, so the k-th row decorates the k-th assistant no-tool-call message.
-// Tool-call assistant messages and non-assistant roles are never decorated; a row
-// with empty Reasoning (NULL column) decorates nothing.
-func TestAttachTurnReasoning_PositionalPairing(t *testing.T) {
+// calls), and each row decorates the snapshot message of the same seq. Tool-call
+// assistant messages and non-assistant roles are never decorated; a row with empty
+// Reasoning (NULL column) decorates nothing.
+func TestAttachTurnReasoning_PairsBySeq(t *testing.T) {
 	var call llm.ToolCall
 	call.ID = "c1"
 	call.Type = "function"
@@ -31,11 +30,11 @@ func TestAttachTurnReasoning_PositionalPairing(t *testing.T) {
 		{Role: llm.RoleUser, Content: "list files then explain"},
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}}, // tool-call turn: never decorated
 		{Role: llm.RoleTool, ToolCallID: "c1", Content: "file1\nfile2"},
-		{Role: llm.RoleAssistant, Content: "two files here"}, // answer #1 → rows[0]
+		{Role: llm.RoleAssistant, Content: "two files here"}, // answer at seq 5 → its row
 		{Role: llm.RoleUser, Content: "thanks"},
-		{Role: llm.RoleAssistant, Content: "welcome"}, // answer #2 → rows[1] (NULL reasoning)
+		{Role: llm.RoleAssistant, Content: "welcome"}, // answer at seq 7 → its row (NULL reasoning)
 	}
-	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
+	snap := projectDisplaySnapshotWithFacts(linearTurns(hist), "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{
 		{Seq: 5, Reasoning: "user wants a summary of ls output", DurationMS: 1200},
 		{Seq: 7, Reasoning: "", DurationMS: 0},
@@ -54,15 +53,14 @@ func TestAttachTurnReasoning_PositionalPairing(t *testing.T) {
 	}
 }
 
-// TestAttachTurnReasoning_CountMismatchFailSoft: surplus rows are ignored and
-// surplus messages stay bare — a defensive posture for histories the repair pass
-// reshaped in ways the positional invariant does not cover.
+// TestAttachTurnReasoning_CountMismatchFailSoft: a row whose turn the snapshot does
+// not draw is ignored, and a message no row names stays bare.
 func TestAttachTurnReasoning_CountMismatchFailSoft(t *testing.T) {
 	hist := []llm.Message{
 		{Role: llm.RoleUser, Content: "q"},
 		{Role: llm.RoleAssistant, Content: "a"},
 	}
-	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
+	snap := projectDisplaySnapshotWithFacts(linearTurns(hist), "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{
 		{Seq: 2, Reasoning: "cot", DurationMS: 10},
 		{Seq: 9, Reasoning: "surplus row", DurationMS: 20},
@@ -73,7 +71,7 @@ func TestAttachTurnReasoning_CountMismatchFailSoft(t *testing.T) {
 
 	// More answer messages than rows: the extra answer stays bare.
 	hist = append(hist, llm.Message{Role: llm.RoleUser, Content: "q2"}, llm.Message{Role: llm.RoleAssistant, Content: "a2"})
-	snap = projectDisplaySnapshotWithFacts(hist, "", nil, nil)
+	snap = projectDisplaySnapshotWithFacts(linearTurns(hist), "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{{Seq: 2, Reasoning: "cot", DurationMS: 10}})
 	if got := snap.Messages[3]; got.Reasoning != "" {
 		t.Errorf("row-less answer decorated with %q, want bare", got.Reasoning)

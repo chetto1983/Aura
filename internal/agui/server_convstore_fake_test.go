@@ -10,11 +10,14 @@ import (
 
 // fakeConvStore is an in-memory ConversationStore: known thread ids resolve, history
 // projects the seeded turns, and any other id maps to ErrConversationNotFound (the 404
-// chokepoint). loadErr injects a LoadHistory failure for the error-body test.
+// chokepoint). loadErr injects a history read failure for the error-body test.
 type fakeConvStore struct {
 	known   map[string]bool
 	titles  map[string]string
 	history map[string][]llm.Message
+	// turns seeds LoadDisplayTurns with a tree; a thread without it draws its history as
+	// one linear branch.
+	turns   map[string][]conversations.DisplayTurn
 	loadErr error
 	// latestSeq is what LatestTurnSeq reports: the turn written last.
 	latestSeq int
@@ -44,6 +47,16 @@ func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message
 		return nil, f.loadErr
 	}
 	return f.history[id], nil
+}
+
+func (f *fakeConvStore) LoadDisplayTurns(_ context.Context, id string) ([]conversations.DisplayTurn, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	if turns, ok := f.turns[id]; ok {
+		return turns, nil
+	}
+	return linearTurns(f.history[id]), nil
 }
 
 func (f *fakeConvStore) ListTurnAttachments(_ context.Context, id string) ([]conversations.TurnAttachments, error) {

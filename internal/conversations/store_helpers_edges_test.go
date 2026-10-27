@@ -56,7 +56,7 @@ func TestOptionalInt8MapsZeroToNull(t *testing.T) {
 
 func TestRepairToolMessagePairsWithEmptyInput(t *testing.T) {
 	t.Parallel()
-	if got := repairToolMessagePairsWith(nil, false); got != nil {
+	if got := repairToolMessagePairs(nil); got != nil {
 		t.Fatalf("repair(nil) = %+v, want nil", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestRepairDropsAnAssistantWhoseToolCallIDsAreUnusable(t *testing.T) {
 				{Role: llm.RoleTool, ToolCallID: "dup", Content: "result"},
 				{Role: llm.RoleUser, Content: "next"},
 			}
-			got := repairToolMessagePairsWith(in, false)
+			got := repairToolMessagePairs(in)
 			if len(got) != 2 || got[0].Content != "ask" || got[1].Content != "next" {
 				t.Fatalf("repair kept the unusable group: %+v", got)
 			}
@@ -93,7 +93,7 @@ func TestRepairKeepsCompactedPointersAsAssistantMemory(t *testing.T) {
 		{Role: llm.RoleTool, ToolCallID: "t1", Content: pointer},
 		{Role: llm.RoleTool, ToolCallID: "t2", Content: "ordinary result"},
 	}
-	got := repairToolMessagePairsWith(in, true)
+	got := repairManagedToolMessagePairs(in)
 	if len(got) != 1 {
 		t.Fatalf("repair returned %d messages, want only the preserved pointer: %+v", len(got), got)
 	}
@@ -110,7 +110,7 @@ func TestRepairRecoversAMissingToolResult(t *testing.T) {
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "a"}, {ID: "b"}}},
 		{Role: llm.RoleTool, ToolCallID: "a", Content: "real result"},
 	}
-	got := repairToolMessagePairsWith(in, false)
+	got := repairToolMessagePairs(in)
 	if len(got) != 3 {
 		t.Fatalf("repair returned %d messages, want assistant + 2 results: %+v", len(got), got)
 	}
