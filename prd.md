@@ -1563,6 +1563,16 @@ Firefox, Safari or phones, memory use, or more than one small file per app. Evid
 `docs/superpowers/verification/2026-10-19-craft-web-apps.md`,
 `2026-10-24-craft-apps-upgrade.md`.
 
+A chat artifact also opens in its app, and its save becomes an attachment of the composer's next
+message instead of overwriting anything (the operator's choice, 2026-10-27). An image, a clip or a
+recording sits centred in the preview. On the lab VM (`5f1b8c72d`, 2026-10-27):
+- a generated image opened centred, and Edit opened PhotoCraft;
+- Salva attached it as an upload;
+- Aura edited that upload on request with `image_generate`.
+
+This does not show a FilmCraft or WordCraft save from the chat, or the centring of a clip or a
+recording on the VM. Evidence: `docs/superpowers/verification/2026-10-27-image-video-generation-lab-vm.md`.
+
 Documents workspace amendment, recorded 2026-10-22 before Task 3 implementation:
 the live Paperless comparison and frontend inventory measured a folders-first entry,
 no document route, and a 17 px filename column at 390 px. The running content-search

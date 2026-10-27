@@ -3,7 +3,6 @@ import { getJSON } from '../api/json';
 import { buildAuraRunBody } from './auraRunBody';
 import {
   artifactDescriptorValue,
-  fetchThreadMessages,
   newAssistantTurn,
   readSSEFrames,
   reduceFrame,
@@ -22,6 +21,7 @@ import {
   type WorkerControlTarget,
   type QueuedWorkerTarget,
 } from './runControlTarget';
+import { fetchThreadHistory } from './threadHistory';
 
 // sseResume — the fix-plan 1.3 Tier B (RS-07) resilience wrapper around the
 // /agent/run SSE stream. A sibling of sseAdapter (which owns the PURE reducer
@@ -206,7 +206,7 @@ async function surfaceHTTPError(eng: ResumeEngine, res: Response): Promise<TurnU
 async function replaceFromSnapshot(eng: ResumeEngine): Promise<void> {
   if (eng.onSnapshotReplace === undefined) return;
   try {
-    eng.onSnapshotReplace(await fetchThreadMessages(eng.threadId, eng.signal));
+    eng.onSnapshotReplace(await fetchThreadHistory(eng.threadId, eng.signal));
   } catch {
     // Best-effort recovery: nothing here is worse than today's total loss.
   }
