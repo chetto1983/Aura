@@ -1,6 +1,6 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { fetchThreadMessages } from '../sseAdapter';
+import { fetchThreadHistory } from '../threadHistory';
 import { useWatchWorker } from './workerWatchControls';
 
 // Live turns have client IDs; snapshots have database IDs. Replacing the IDs of
@@ -79,7 +79,7 @@ export function useWorkerReportRefresh({
     if (applied.current === key) return;
     const generation = historyRequestRef.current;
     const controller = new AbortController();
-    void fetchThreadMessages(threadId, controller.signal)
+    void fetchThreadHistory(threadId, controller.signal)
       .then((messages) => {
         // A send or conversation switch owns the history once it advances this
         // existing generation. A late report refresh must never replace that work.

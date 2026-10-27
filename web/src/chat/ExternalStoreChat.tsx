@@ -22,7 +22,6 @@ import { useThreadElicitations } from '../questions/useThreadElicitations';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
-import { listThreadAssets } from './attachments/api';
 import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { resolveGarageMentions } from './composer/garageMentions';
@@ -32,7 +31,6 @@ import { CompactionStatus } from './compaction/CompactionStatus';
 import { useThreadCompaction } from './compaction/useThreadCompaction';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
 import { useReasoningEffort } from './composer/useReasoningEffort';
-import type { Asset } from './attachments/types';
 import { SourceExplorerProvider } from './displays/SourceExplorerContext';
 import { CollectedJobsContext } from './generation/collectedJobsContext';
 import { collectedJobIds } from './generation/generationState';
@@ -40,7 +38,6 @@ import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
 import {
   appendMessageText,
   assistantErrorMessage,
-  attachAssetsToUserMessages,
   isAbortError,
   isAbortSignalAborted,
   placeAssistant,
@@ -54,8 +51,8 @@ import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
 import { useSteerSend } from './ExternalStoreChat_steer';
 import { ThreadViewport } from './ExternalStoreChat_viewport';
 import { SteerNotice } from './SteerNotice';
-import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
+import { fetchThreadHistory } from './threadHistory';
 import { useRunUsageLifecycle } from './runUsage';
 import { useRunUsageBaseline } from './useRunUsageBaseline';
 import type { ExternalStoreChatProps } from './ExternalStoreChat_props';
@@ -342,21 +339,11 @@ export function ExternalStoreChat({
     historyAbortRef.current = controller;
     clearLoadedMessages();
 
-    void fetchThreadMessages(threadId, controller.signal)
-      .then(async (loaded) => {
+    void fetchThreadHistory(threadId, controller.signal)
+      .then((loaded) => {
         if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
           return;
-        let assets: Asset[] = [];
-        try {
-          assets = await listThreadAssets(threadId, controller.signal);
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-        }
-        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
-          return;
-        // A user turn names what it was sent with (migration 0116). An agent file is
-        // already on its send_file call, inside the snapshot itself (migration 0126).
-        setMessages(attachAssetsToUserMessages(loaded, assets));
+        setMessages(loaded);
         setHistoryReadiness({ threadId, status: 'ready' });
       })
       .catch((err: unknown) => {

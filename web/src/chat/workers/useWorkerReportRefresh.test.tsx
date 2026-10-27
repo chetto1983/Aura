@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { SetStateAction } from 'react';
-import { fetchThreadMessages } from '../sseAdapter';
+import { fetchThreadHistory } from '../threadHistory';
 import { preserveMessageIDs, useWorkerReportRefresh } from './useWorkerReportRefresh';
 
 let reported = true;
@@ -13,7 +13,7 @@ vi.mock('./workerWatchControls', () => ({
     coordinator,
   }),
 }));
-vi.mock('../sseAdapter', () => ({ fetchThreadMessages: vi.fn() }));
+vi.mock('../threadHistory', () => ({ fetchThreadHistory: vi.fn() }));
 const messages: ThreadMessageLike[] = [
   { role: 'assistant', content: [{ type: 'text', text: 'Worker result: 99' }] },
 ];
@@ -22,7 +22,7 @@ describe('worker report refresh', () => {
   beforeEach(() => {
     reported = true;
     coordinator = undefined;
-    vi.mocked(fetchThreadMessages).mockReset().mockResolvedValue(messages);
+    vi.mocked(fetchThreadHistory).mockReset().mockResolvedValue(messages);
   });
   it('discovers a coordinator continuation and refreshes its completed synthesis once', async () => {
     const onCoordinatorRun = vi.fn<(threadId: string) => void>();
@@ -68,7 +68,7 @@ describe('worker report refresh', () => {
     const view = renderHook(() => {
       useWorkerReportRefresh(options);
     });
-    expect(fetchThreadMessages).not.toHaveBeenCalled();
+    expect(fetchThreadHistory).not.toHaveBeenCalled();
     reported = true;
     view.rerender();
     await waitFor(() => {
@@ -78,7 +78,7 @@ describe('worker report refresh', () => {
     if (typeof update !== 'function') throw new Error('expected a guarded snapshot update');
     expect(update([])).toEqual(messages);
     view.rerender();
-    expect(fetchThreadMessages).toHaveBeenCalledTimes(1);
+    expect(fetchThreadHistory).toHaveBeenCalledTimes(1);
   });
   it('waits until the parent stream settles', async () => {
     const options = {
@@ -93,7 +93,7 @@ describe('worker report refresh', () => {
       },
       { initialProps: options },
     );
-    expect(fetchThreadMessages).not.toHaveBeenCalled();
+    expect(fetchThreadHistory).not.toHaveBeenCalled();
     view.rerender({ ...options, isRunning: false });
     await waitFor(() => {
       expect(options.setMessages).toHaveBeenCalledTimes(1);
@@ -104,7 +104,7 @@ describe('worker report refresh', () => {
   });
   it('does not replace a newer send with a late snapshot', async () => {
     let resolve: ((value: ThreadMessageLike[]) => void) | undefined;
-    vi.mocked(fetchThreadMessages).mockReturnValue(
+    vi.mocked(fetchThreadHistory).mockReturnValue(
       new Promise((done) => {
         resolve = done;
       }),
