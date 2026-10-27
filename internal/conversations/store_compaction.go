@@ -95,9 +95,12 @@ func (s *Store) SaveCompaction(ctx context.Context, conversationID, branchID str
 
 // LoadPathCompaction returns the stored summary of the branch leafSeq ends, the read behind
 // the cockpit's marker. A leafSeq <= 0 is the turn written last, which on a conversation with
-// no turn is no compaction. A seq that names no turn is ErrTurnNotFound: unlike the ladder,
-// this read does not fall back to the canonical row, because the marker would then describe
-// another branch.
+// no turn is no compaction. A seq that names no turn is ErrTurnNotFound.
+//
+// The marker shows only a summary the loader would apply to this path. A row whose watermark
+// is past the leaf is no compaction: another tab grew the branch and compacted it. A branch's
+// own turns form one chain, because an append to a parent that already has a child opens a
+// new branch (spec 2026-10-27, D4), so a watermark at or before the leaf is on its path.
 func (s *Store) LoadPathCompaction(ctx context.Context, conversationID string, leafSeq int) (Compaction, bool, error) {
 	if leafSeq <= 0 {
 		latest, err := s.LatestTurnSeq(ctx, conversationID)
@@ -110,7 +113,11 @@ func (s *Store) LoadPathCompaction(ctx context.Context, conversationID string, l
 	if err != nil {
 		return Compaction{}, false, err
 	}
-	return s.LoadCompaction(ctx, conversationID, branchID)
+	c, ok, err := s.LoadCompaction(ctx, conversationID, branchID)
+	if err != nil || !ok || c.CoversThroughSeq > leafSeq {
+		return Compaction{}, false, err
+	}
+	return c, true, nil
 }
 
 // branchOfTurn names the branch a path belongs to: its leaf's own branch id, "" for the

@@ -218,6 +218,15 @@ func TestCompact_CondensesTheBranchItsLeafNames(t *testing.T) {
 	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 6); err != nil || !ok || got.Summary != older.summary {
 		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v), want the older branch's summary", got, ok, err)
 	}
+	// Leaf 3 is on the canonical branch too, but the summary speaks through turn 4, which its
+	// path never reaches: the loader would not apply it, so the marker must not draw it. Leaf
+	// 4 is the watermark itself.
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 4); err != nil || !ok || got.CoversThroughSeq != 4 {
+		t.Fatalf("LoadPathCompaction(4) = (%+v, %v, %v), want the summary that ends on it", got, ok, err)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 3); err != nil || ok {
+		t.Fatalf("LoadPathCompaction(3) = (%+v, %v, %v), want none: the summary covers through 4", got, ok, err)
+	}
 	for _, leaf := range []int{8, 0} {
 		if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, leaf); err != nil || ok {
 			t.Fatalf("LoadPathCompaction(%d) = (%+v, %v, %v): the branch written last was compacted by a /compact of the other",
@@ -241,9 +250,10 @@ func TestCompact_CondensesTheBranchItsLeafNames(t *testing.T) {
 		got.Summary != older.summary || got.CoversThroughSeq != 4 {
 		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v): compacting one branch moved the other's row", got, ok, err)
 	}
-	// Turn 1 is on both paths, and its branch is the canonical one, where leaf 6 filed.
-	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 1); err != nil || !ok || got.Summary != older.summary {
-		t.Fatalf("LoadPathCompaction(1) = (%+v, %v, %v), want the canonical branch's summary", got, ok, err)
+	// Leaf 1 is on the canonical branch and before its watermark, so it gets none. It is that
+	// turn, not the turn written last, whose branch now has a row of its own.
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 1); err != nil || ok {
+		t.Fatalf("LoadPathCompaction(1) = (%+v, %v, %v), want none: the canonical watermark is 4", got, ok, err)
 	}
 	if _, _, err := store.LoadPathCompaction(ownerCtx(), convID, 99); !errors.Is(err, ErrTurnNotFound) {
 		t.Fatalf("LoadPathCompaction(99) = %v, want ErrTurnNotFound", err)
