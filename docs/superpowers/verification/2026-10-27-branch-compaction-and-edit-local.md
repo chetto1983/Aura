@@ -59,6 +59,20 @@ returns the error. `TestCompact_AnUnreadableBranchFailsBeforeAnySummary` drives 
 read through the fake DBTX: the error comes back, and neither the summarizer nor a write is
 reached. Before the fix the test panicked inside the path walk the fallback let it reach.
 
+**A summary past the leaf is not drawn** (CodeRabbit on #195, `b3a456d`).
+- `LoadPathCompaction` returned a branch's row for any leaf on that branch. Picture a tab
+  whose branch another tab grew and compacted. It read the marker again for its older leaf,
+  and `compactionAnchorId` anchored the marker under its last message. The loader walking
+  from that leaf never meets the watermark turn, so it did not apply that summary.
+- A row whose watermark is past the leaf now reads as none.
+  `TestCompact_CondensesTheBranchItsLeafNames` checks the state after leaf 6 compacts through
+  4: leaf 4 gets the row, and leaf 3 gets none.
+  - After the fork's own compaction, leaf 1 gets none as well. At that point the branch
+    written last has a row, so the check also tells leaf 1 apart from "the turn written
+    last".
+- Before the fix, leaf 3 got the summary, and so did leaf 1. The test's earlier leaf-1
+  assertion expected that, so it pinned the defect. It now expects none.
+
 **Mutation (`go-mutesting`)** ran in a separate worktree. The exec timeout was 180 s for
 `internal/agui` and 300 s for `internal/conversations` with db_integration.
 - **A first run was discarded.** go-mutesting's default `--exec-timeout` is 10 s, and the agui
@@ -99,6 +113,18 @@ reached. Before the fix the test panicked inside the path walk the fallback let 
     - two survive in `startTurn`: they would dereference a nil message, but no caller passes
       one.
   - `conversations_compaction_api.go` is unchanged since round 2: 91.4%.
+- **Round 4, on the watermark guard's first commit:** `store_compaction.go` scored 48/52
+  (92.3%). Three survivors are equivalent:
+  - the two from round 3;
+  - the guard's `err != nil` arm. `LoadCompaction` returns `ok=false` with every error, so
+    `!ok` returns the same.
+
+  The fourth survivor was real. It turned `leafSeq <= 0` into `<= 1`, which reads leaf 1 as
+  the turn written last. The test then checked leaf 1 only where the branch written last
+  had no row, so both reads answered none. The leaf-1 check moved after the fork's
+  compaction, and that mutant fails it.
+- **Round 5, on `b3a456d`:** `store_compaction.go` scores 49/52, **94.2%**. The three
+  survivors are the equivalent ones of round 4.
 
 ## What this does not show
 
@@ -109,6 +135,8 @@ reached. Before the fix the test panicked inside the path walk the fallback let 
   only, where no head is recorded. The db_integration mutation run would take about 90 s per
   mutant.
 - **Pre-0095 forks.** PRD §7 keeps them open.
+- **Two tabs on one branch.** The store test writes the state a second tab leaves, a row past
+  the leaf, directly. No browser drove two tabs.
 - **The interaction of the two refreshes.** The marker read after a run and the history read
   after a run are separate requests. Their ordering on a slow link was not measured.
 

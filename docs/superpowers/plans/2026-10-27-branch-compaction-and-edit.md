@@ -38,9 +38,14 @@ acceptance 11–14).
 
 ## Decisions taken while writing this plan
 
-- **A strict branch read for the HTTP path.** `branchIDForLeaf` falls back to the canonical
-  branch on any error, which the ladder needs. `LoadPathCompaction` must not draw the canonical
-  marker on a read failure, so it uses a strict `branchOfTurn` that `branchIDForLeaf` wraps.
+- **A strict branch read.** `LoadPathCompaction` must not draw the canonical marker on a read
+  failure, so it uses a strict `branchOfTurn`.
+  - The ladder first wrapped it in `branchIDForLeaf`, which fell back to the canonical row.
+    CodeRabbit showed that the fallback could file a fork's summary there. `275b920` removes
+    it, so the ladder fails on that error too.
+- **The marker draws only what the loader applies.** A row whose watermark is past the leaf
+  reads as none (`b3a456d`, CodeRabbit). The guard is the seq comparison alone, because a
+  branch's turns form one chain (spec D4).
 - **The on-screen leaf is the one a send would continue:** `leafSeqOf` of the last message.
   When that message has no seq yet, the request names no leaf and the server takes the turn
   written last. Such a message was written by this tab's run, so that turn is on the branch
@@ -112,9 +117,9 @@ acceptance 11–14).
     polled, and 8 runs in 8 passed.
 - [x] Mutation on the three files. The scores and their survivors are in the verification
   file.
-  After the tests in `271e27e`:
+  After the tests in `271e27e`, and the watermark guard in `b3a456d`:
   - `conversations_compaction_api.go`: 91.4%;
-  - `store_compaction.go`: 95.7%;
+  - `store_compaction.go`: 94.2%;
   - `server_run_branch.go`: 75.0% on the unit tier.
 - [x] PRD §7: the two items leave "Still open".
 - [x] Write `docs/superpowers/verification/2026-10-27-branch-compaction-and-edit-local.md`.

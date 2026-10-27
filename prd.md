@@ -1193,6 +1193,9 @@ Closed the same day (spec §7, D13–D15; evidence in
     reload, a fork whose latest branch is not canonical drew another branch's marker, or none.
   - The marker is read again whenever the leaf moves. A compaction the ladder made during a
     run now shows without a reload.
+  - The read draws only a summary the loader applies to that path: a row whose watermark is
+    past the leaf is none. Without that, a tab whose branch another tab grew and compacted
+    drew the marker under its last message.
 - **No edit is refused in the cockpit.** `@assistant-ui/core` 0.3.31 documents that "an edit
   composer closes at dispatch, so a rejected edit is not restored". So Edit, and Regenerate,
   are offered only on a message whose seq is known. A server refusal never lost the text:
