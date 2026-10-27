@@ -1,6 +1,6 @@
 # Image and Video Generation Implementation Plan
 
-**Status (2026-10-27):** PARTIAL. The code for Tasks 1-13 landed (c03cf9bde..9d6f287fd). The paid suite ran on the lab VM on 2026-10-27 for $1.08 (`docs/superpowers/verification/2026-10-27-image-video-generation-lab-vm.md`). Criteria 2, 4, 5 and 7 passed, after two stale assertions in the suite were fixed (`8c8b70be3`, `07bc96796`). Still open: criterion 1 in part (admin save/reset, member denied), 3 (edit an uploaded photo), 6 (restart mid-job), 8 (Telegram, which needs the operator's go), 9 (zero credit, with no test identity on the VM) and 10 (five fresh conversations).
+**Status (2026-10-27):** PARTIAL. The code for Tasks 1-13 landed (c03cf9bde..9d6f287fd). The paid suite ran on the lab VM on 2026-10-27 for $1.08 (`docs/superpowers/verification/2026-10-27-image-video-generation-lab-vm.md`). Criteria 2, 4, 5 and 7 passed, after two stale assertions in the suite were fixed (`8c8b70be3`, `07bc96796`). Criterion 3 passed the same afternoon from the cockpit, for $0.02 more. Still open: criterion 1 in part (admin save/reset, member denied), 6 (restart mid-job), 8 (Telegram, which needs the operator's go), 9 (zero credit, with no test identity on the VM) and 10 (five fresh conversations).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

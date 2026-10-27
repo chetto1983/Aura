@@ -14,7 +14,8 @@ The operator approved the paid batch ("procedi pure").
 - The agent generated and delivered every medium the suite asks for.
 - Two failures were the suite's, not the product's: a selector removed on 2026-09-28, and a count
   the product changed on 2026-09-17. Both are fixed.
-- Five of the eleven acceptance criteria are not run (3, 6, 8, 9, 10 below) and one is run only in
+- Criterion 3 passed later the same afternoon, from the cockpit (below).
+- Four of the eleven acceptance criteria are not run (6, 8, 9, 10 below) and one is run only in
   part (1): they stay open.
 
 ## The runs
@@ -46,13 +47,32 @@ Read from the conversations' tool results:
 The two clips at $0.396 are 5 s at the 768p rate: the agent asked for 720p in one, and the other
 named no resolution. The plan estimated $1.72 for six images and six clips.
 
+## Criterion 3, from the cockpit
+
+At 14:42 UTC the VM ran `5f1b8c72d`, which lets a chat artifact be edited and sent with the next
+message. The operator asked for the edit to be Aura's, so the run went like this:
+- **Attach.** In the 14:04 conversation, `fdc18973…` opened centred in the preview. Edit opened
+  PhotoCraft, in Italian. File → Salva put the image in the composer as an upload, `377bc909…`
+  (`source_kind` `web`), and the frame said "Allegato al messaggio."
+- **Ask.** The message: "Modifica l'immagine allegata: trasforma la scena in un tramonto, con il
+  cielo arancione e rosa riflesso nel lago. Lascia la barca rossa com'è."
+- **Result.** Aura called `image_generate` with `reference_asset_ids` = [`377bc909…`]:
+  - it returned `bd38798a…` (image/png, $0.0225365);
+  - the scene was a sunset, and the red boat was unchanged.
+
+Found in the same pass and fixed in `fix(chat): keep a user turn's files when the thread is
+reloaded`: the card of the photo left the operator's message whenever the worker report refresh
+replaced the thread with the server's snapshot, and came back only on a page reload.
+
+The paid total for the day is $1.1012.
+
 ## The acceptance matrix
 
 | # | Criterion | Status |
 |---|---|---|
 | 1 | Catalogs, admin save/reset, member denied | Partly: both catalogs answered (61 image models, 30 video), with the chosen models and Hailuo's $/s. Save/reset and the member refusal were not run. |
 | 2 | A fresh prompt makes an image | **Passed.** `tool_search` promoted `image_generate`, the card rendered a decoded PNG (naturalWidth > 0), and the operator saw it in the cockpit. |
-| 3 | Edit an uploaded photo | Not run. |
+| 3 | Edit an uploaded photo | **Passed**, from the cockpit (above). The upload came from the preview's Edit, not from the file picker; both go through the same attachment adapter. |
 | 4 | A same-turn clip | **Passed**, with playback. HTTP Range streaming passed as its own case. |
 | 5 | A detached clip arrives on the wake | **Passed**, with the frame-drop count fixed. The rest was read from the thread, as above. |
 | 6 | Restart mid-job | Not run. |
@@ -64,7 +84,8 @@ named no resolution. The plan estimated $1.72 for six images and six clips.
 
 ## What this does not show
 
-- Criteria 1 (in part), 3, 6, 8, 9 and 10, which stay open.
+- Criteria 1 (in part), 6, 8, 9 and 10, which stay open.
+- The attachment-card fix on the VM: it was found there, but the run predates it.
 - The suite after its two fixes as one green run: the fixed detached count was checked against the
   persisted thread, not re-run.
 - Image quality beyond the operator's look and the decoded size. The clips were inspected as
