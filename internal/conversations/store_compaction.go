@@ -131,7 +131,8 @@ func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leaf
 	if err != nil {
 		if !errors.Is(err, ErrTurnNotFound) {
 			slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
-				"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq, "err", err)
+				"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq,
+				"err", redact.Line(err.Error()))
 		}
 		return ""
 	}
