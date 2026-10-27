@@ -378,10 +378,3 @@ export async function fetchThreadTree(threadId: string, signal?: AbortSignal): P
   }
   return snapshotToThreadTree(await res.json());
 }
-
-export async function fetchThreadMessages(
-  threadId: string,
-  signal?: AbortSignal,
-): Promise<ThreadMessageLike[]> {
-  return treeHeadPath(await fetchThreadTree(threadId, signal));
-}

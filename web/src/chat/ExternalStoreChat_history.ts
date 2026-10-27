@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { listThreadAssets } from './attachments/api';
-import type { Asset } from './attachments/types';
-import {
-  assistantErrorMessage,
-  attachAssetsToUserMessages,
-  isAbortSignalAborted,
-} from './ExternalStoreChat_folds';
-import { importThreadTree, mapTreeMessages, type TreeImporter } from './ExternalStoreChat_tree';
-import { fetchThreadTree } from './sseAdapter';
+import { assistantErrorMessage, isAbortSignalAborted } from './ExternalStoreChat_folds';
+import { importThreadTree, type TreeImporter } from './ExternalStoreChat_tree';
+import { fetchThreadHistoryTree } from './threadHistory';
 
 // ExternalStoreChat_history — the thread's history load, split out of ExternalStoreChat.tsx
 // on touch (600-LOC cap, the _streams/_branches precedent) when the load came to import the
@@ -108,21 +102,10 @@ export function useThreadHistory({
     historyAbortRef.current = controller;
     clearLoadedMessages();
 
-    void fetchThreadTree(threadId, controller.signal)
-      .then(async (loaded) => {
+    void fetchThreadHistoryTree(threadId, controller.signal)
+      .then((tree) => {
         if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
           return;
-        let assets: Asset[] = [];
-        try {
-          assets = await listThreadAssets(threadId, controller.signal);
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-        }
-        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
-          return;
-        // A user turn names what it was sent with (migration 0116). An agent file is
-        // already on its send_file call, inside the snapshot itself (migration 0126).
-        const tree = mapTreeMessages(loaded, (all) => attachAssetsToUserMessages(all, assets));
         const runtime = runtimeRef.current;
         if (runtime !== null) importThreadTree(runtime.thread, tree);
         setHistoryReadiness({ threadId, status: 'ready' });

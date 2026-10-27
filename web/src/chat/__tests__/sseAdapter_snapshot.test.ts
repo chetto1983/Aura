@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { fetchThreadMessages, snapshotToThreadMessages } from '../sseAdapter_snapshot';
+import { fetchThreadTree, snapshotToThreadMessages } from '../sseAdapter_snapshot';
 
 // sseAdapter_snapshot tests — persisted-history rehydration (GET /threads/{id}/messages).
 // Pure projection of a MESSAGES_SNAPSHOT body onto the assistant-ui chat model: role
 // handling (system dropped, tool results merged), tool-call shaping, metadata seq, and
-// the defensive content coercion. fetchThreadMessages wraps it with the HTTP read.
+// the defensive content coercion. fetchThreadTree wraps it with the HTTP read.
 
 function snap(messages: unknown[]): unknown {
   return { type: 'MESSAGES_SNAPSHOT', messages };
@@ -302,7 +302,7 @@ describe('snapshotToThreadMessages — content coercion', () => {
   });
 });
 
-describe('fetchThreadMessages', () => {
+describe('fetchThreadTree', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -316,8 +316,8 @@ describe('fetchThreadMessages', () => {
         ),
       ),
     );
-    const out = await fetchThreadMessages('c-1');
-    expect(out[0]?.role).toBe('user');
+    const tree = await fetchThreadTree('c-1');
+    expect(tree.items[0]?.message.role).toBe('user');
   });
 
   it('throws on a non-ok response', async () => {
@@ -325,6 +325,6 @@ describe('fetchThreadMessages', () => {
       'fetch',
       vi.fn(() => Promise.resolve(new Response('nope', { status: 500 }))),
     );
-    await expect(fetchThreadMessages('c-1')).rejects.toThrow();
+    await expect(fetchThreadTree('c-1')).rejects.toThrow();
   });
 });
