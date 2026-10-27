@@ -3868,6 +3868,18 @@ This does not establish:
 - survival across a restart: an in-flight call dies with the process, as LibreChat's does;
 - a box-runtime stdio server outliving the suspension of its box.
 
+Telegram identity routing selected an obsolete linked account on 2026-10-27
+(appliance `ee04268a05f156723e230904f8298b7864d48775`). Three account rows shared one
+identity, and the unchecked single-row lookup sent scheduled notifications to an
+account that had blocked the bot. An approved backup and removal of the two unwanted
+links restored delivery: the operator received both a direct Bot API message and a
+native scheduler reminder. Nine earlier failed notifications were left untouched.
+This measures an operational repair, not acceptance of a code fix. Identity-routed
+Telegram pushes must fail explicitly when more than one account matches, instead of
+choosing one by row order or activity. Existing links are not automatically deleted.
+The bounded lookup contract and verification scope are in
+`docs/superpowers/specs/2026-10-27-telegram-recipient-design.md`.
+
 A reminder on an external route reached nobody (2026-10-05). An operator could not get
 reminders on WhatsApp. Reproduced on the lab VM through a real cockpit turn: the agent
 scheduled a reminder with `notify=whatsapp`, the run completed at fire time, and the MCP
