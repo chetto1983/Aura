@@ -14,10 +14,12 @@ import (
 func TestChildStalenessResetKeepsAlive(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	var cancelled atomic.Bool
-	cs := newChildStaleness(func() { cancelled.Store(true) }, 25*time.Millisecond)
-	deadline := time.Now().Add(150 * time.Millisecond)
+	// The idle window is twenty Progress() gaps wide. It was three (25 ms against 8 ms), and
+	// one scheduler stall past 25 ms fired it: 1 run in 60 failed on an idle host, 2026-10-27.
+	cs := newChildStaleness(func() { cancelled.Store(true) }, 200*time.Millisecond)
+	deadline := time.Now().Add(400 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		time.Sleep(8 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		cs.Progress()
 	}
 	cs.Stop()
