@@ -91,6 +91,7 @@ const mutationTests = [
   // The conversation tree (spec 2026-10-27): the snapshot's projection, and the runtime that
   // imports it and continues the branch on screen.
   'src/chat/__tests__/sseAdapter_snapshotTree.test.ts',
+  'src/chat/__tests__/ExternalStoreChat_tree.test.ts',
   'src/chat/__tests__/ExternalStoreChat.branches.test.tsx',
   'src/chat/__tests__/ExternalStoreChat_viewport.test.tsx',
   // A refused steer never drops the operator's text (prd.md §7).

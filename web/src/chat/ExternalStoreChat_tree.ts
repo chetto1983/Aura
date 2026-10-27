@@ -63,8 +63,8 @@ function reportedSeq(value: unknown): number | undefined {
 }
 
 /**
- * Place the assistant message of a send, an edit or a regenerate, and give the turns its run
- * reported their seqs. The run starts from head_seq and the first turn it writes is the one
+ * Place the assistant message of a send, an edit or a regenerate at index, the slot after the
+ * user message it answers, and give the turns its run reported their seqs. The run starts from head_seq and the first turn it writes is the one
  * after it, the assistant's own. When the run was given a user message (sentUser), head_seq is
  * that message. A stream that reported no head is placed as it is. A resume or an attach does
  * not come through here: what it writes first is the paused call's result, not its answer, so
@@ -80,10 +80,9 @@ export function placeTurn(
   const head = reportedSeq(custom?.headSeq);
   if (head === undefined) return placeAssistant(messages, index, assistant);
   const next = placeAssistant(messages, index, withSeqs(assistant, { backendSeq: head + 1 }));
-  const placedAt = index >= 0 && index < messages.length ? index : next.length - 1;
-  const user = next[placedAt - 1];
+  const user = next[index - 1];
   if (sentUser && user?.role === 'user') {
-    next[placedAt - 1] = withSeqs(user, { backendSeq: head, leafSeq: head });
+    next[index - 1] = withSeqs(user, { backendSeq: head, leafSeq: head });
   }
   return next;
 }
