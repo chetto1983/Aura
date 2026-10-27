@@ -52,14 +52,43 @@ which forks at seq 3.
     assertion.
   - The count is now polled. After that, 8 runs in 8 passed with all 11 tests.
 
-**Mutation (`go-mutesting`, `scripts/go_mutation_cache.py`):** filled in below when the run
-ends.
+**Mutation (`go-mutesting`)** ran in a separate worktree. The exec timeout was 180 s for
+`internal/agui` and 300 s for `internal/conversations` with db_integration.
+- **A first run was discarded.** go-mutesting's default `--exec-timeout` is 10 s, and the agui
+  unit suite takes about 30 s. Every mutant timed out and counted as killed.
+- **Round 1, on `eb24cde`:**
+  - `conversations_compaction_api.go`: 29/38 (76.3%);
+  - `server_run_branch.go`: 28/58 (48.3%);
+  - `store_compaction.go`: 18/48 (37.5%).
+
+  The survivors in code this PR adds or moves got tests in `1350da1` and `bdadd05`.
+- **Round 2, on `bdadd05`:**
+  - `conversations_compaction_api.go`: 32/35, **91.4%**.
+  - `store_compaction.go`: 29/49, **59.2%**. 17 of the 20 survivors are equivalent:
+    - the save guard repeats migration 0096's CHECKs (`covers_through_seq > 0`,
+      `btrim(summary) <> ''`), and the database refuses the same rows;
+    - the `seq <= 0` guards return what the query's "no row" returns;
+    - `""` and the canonical uuid string are one key in `compactionKey`;
+    - two survivors change only the warn line.
+
+    The other three need an injected database error. Without the equivalent mutants the
+    score is 29/32, 90.6%.
+  - `server_run_branch.go`: 32/58, **55.2%**, on the unit tier.
+    - The six survivors in `requireTurnSeq` are values returned beside a refusal, which
+      callers ignore.
+    - The other twenty are in `reportTurnSeqs`, `startTurn` and `threadHasPendingPause`,
+      which come from #193. The db_integration HTTP E2E (`branch_http_e2e_integration_test.go`)
+      asserts `head_seq` there, and this run did not include that tier.
 
 ## What this does not show
 
 - **A live `/compact` with a real summarizer.** The store test uses a scripted summarizer.
   Nothing here calls a model.
 - **The lab VM, WebKit or iOS.**
+- **A raw mutation score of 70% on two files.** `store_compaction.go` and `server_run_branch.go`
+  are below it. The previous section explains each survivor. Two measurements were not made:
+  a database fault injection for the three store error paths, and a db_integration mutation
+  run of `server_run_branch.go`, at about 90 s per mutant.
 - **Pre-0095 forks.** PRD §7 keeps them open.
 - **The interaction of the two refreshes.** The marker read after a run and the history read
   after a run are separate requests. Their ordering on a slow link was not measured.
