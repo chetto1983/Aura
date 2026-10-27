@@ -157,10 +157,10 @@ func (s *Server) handleCompactConversation(w http.ResponseWriter, r *http.Reques
 }
 
 // handleGetCompaction returns the stored summary of the branch on screen, or the zero DTO
-// when that branch has never been compacted. A store that cannot answer the question at all (no compaction read
-// seam wired) reports the same zero DTO: the marker is an annotation on the transcript, and
-// failing the whole thread read because an annotation is unavailable would be a worse answer
-// than drawing no marker.
+// when that branch has never been compacted. A store that cannot answer the question at all
+// (no compaction read seam wired) reports the same zero DTO: the marker is an annotation on
+// the transcript, and failing the whole thread read because an annotation is unavailable
+// would be a worse answer than drawing no marker.
 func (s *Server) handleGetCompaction(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.ownedConversation(w, r)
 	if !ok {
