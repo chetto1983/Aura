@@ -60,12 +60,21 @@ function isExpectedBrowserConsoleNoise(text: string): boolean {
 // artifacts.spec sanctioned approach): a short assistant text answer. The REAL sseAdapter
 // reducer folds it onto one assistant ThreadMessageLike, whose ActionBar then carries the
 // caps-gated speaker control.
+// Every run reports the turn it starts from and the turn it ends on
+// (internal/agui/server_run_branch.go). The cockpit offers Regenerate only on a turn whose
+// seq it knows (spec 2026-10-27, D15), and the no-voice case below reads that button.
 function assistantTurnFrames(): Record<string, unknown>[] {
+  const seq = (path: string, value: number) => ({
+    type: 'STATE_DELTA',
+    delta: [{ op: 'replace', path, value }],
+  });
   return [
     { type: 'RUN_STARTED', threadId: CONV_ID, runId: 'run-voice' },
+    seq('/head_seq', 1),
     { type: 'TEXT_MESSAGE_START', messageId: 'msg-voice' },
     { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-voice', delta: REPLY_TEXT },
     { type: 'TEXT_MESSAGE_END', messageId: 'msg-voice' },
+    seq('/leaf_seq', 2),
     { type: 'RUN_FINISHED', threadId: CONV_ID, runId: 'run-voice', outcome: { type: 'success' } },
   ];
 }

@@ -88,12 +88,15 @@ acceptance 11–14).
 - [x] Commit `feat(web): /compact condenses the branch on screen`.
 
 ### Task 4 — No refused edit (D15, acceptance 14)
-- [ ] Red, Vitest:
+- [x] Red, Vitest:
   - a user message with no seq has no Edit;
   - an assistant message with no seq has no Regenerate;
-  - a server refusal leaves the edited text on screen.
-- [ ] Green: `ExternalStoreChat_messages.tsx`.
-- [ ] Commit `fix(web): offer an edit only where it can be saved`.
+  - a server refusal leaves the edited text on screen. This one passed before the change: it
+    pins the spec's claim rather than a fix.
+- [x] Green: `ExternalStoreChat_messages.tsx`.
+- [x] `e2e/voice.spec.ts` mocked a run without the seqs every real run reports, and its
+  no-voice case reads Regenerate. The mock now carries them.
+- [x] Commit `fix(web): offer an edit only where it can be saved`.
 
 ### Task 5 — Close
 - [ ] Gates: `go vet`, build and `-race` on the touched packages, plus db_integration on
