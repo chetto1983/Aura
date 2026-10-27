@@ -262,4 +262,18 @@ describe('ExternalStoreChat conversation branches', () => {
     const kept = captured.runtime?.thread.export().messages.map(({ message }) => message.content);
     expect(kept).toEqual([[{ type: 'text', text: 'thread B' }]]);
   });
+
+  // "New chat" keeps the component mounted with an empty thread id: the first message sent
+  // there must not find thread A's roots as its siblings.
+  it("keeps none of thread A's branches in the runtime after a switch to a new chat", async () => {
+    stubServer({ 'conv-a': twoBranches });
+    const rerender = renderChat(<ExternalStoreChat threadId="conv-a" />);
+    await screen.findByText('answer to the rewrite');
+
+    rerender(<ExternalStoreChat threadId="" />);
+
+    await waitFor(() => {
+      expect(captured.runtime?.thread.export().messages).toEqual([]);
+    });
+  });
 });
