@@ -1,6 +1,6 @@
 # Telegram account links: owner isolation, and a list the owner can prune — Implementation Plan
 
-**Status (2026-10-27):** not started. The spec awaits the operator's review.
+**Status (2026-10-28):** in progress. The operator approved the spec, D3 and D9 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -67,6 +67,8 @@
 | `internal/db/queries/telegram_accounts.sql`, `internal/db/sqlc/*` | `+ListTelegramAccountsByIdentity`, `+DeleteTelegramAccountForIdentity`, `−ListTelegramAccounts`. |
 | `internal/channels/telegram/store.go` (249) | Consume binds the identity; `TouchLastSeen(identity)`; `LinkedAccounts`, `Unlink`; `−ListAccounts`. |
 | `internal/channels/telegram/bot_dispatch_auth.go` (129) | The gate keeps the account and passes its identity to the touch. |
+| `internal/channels/telegram/deliver.go` (210) | D9: a conversation-bound push picks its account by chat. |
+| `internal/channels/telegram/deliver_conversation_test.go`, `deliver_conversation_integration_test.go` (new) | D9's unit and db_integration cases. |
 | `internal/channels/telegram/store_integration_test.go` (299) | Cleanup under the row's identity; new cases, or a new `store_links_integration_test.go` if past 600. |
 | `cmd/aura/serve_auth.go` (359) | The retirement calls the function. |
 | `cmd/aura/serve_auth_retirement_integration_test.go` (72) | `local` owns four kinds of rows; all four move. |
@@ -148,6 +150,14 @@
   - remove `ListAccounts`, `ListTelegramAccounts` and their test.
 - [ ] Gates as in Task 1, plus `deadcode`.
 - [ ] Commit `feat(telegram): list and unlink an identity's Telegram accounts`.
+- [ ] D9, red: `TestConversationPushReachesItsOwnChat` (db_integration, measured red on `8b57628`
+  for the second chat), and a unit test in `deliver_conversation_test.go`:
+  - the matching account is found whatever the order the resolver returns;
+  - a conversation no linked account owns is "not mine" and sends nothing;
+  - a failing list is an error, not "not mine".
+- [ ] D9, green: `accountResolver` gains `LinkedAccounts`, and `deliver` picks the account by
+  conversation when one is required. The stub resolver in `deliver_test.go` follows.
+- [ ] Commit `fix(telegram): a conversation's push reaches that conversation's chat`.
 
 ### Task 4 — HTTP (D4, acceptance 6, 7, 9)
 - [ ] Red, agui unit, in `settings_api_telegram_accounts_test.go`:

@@ -1,7 +1,7 @@
 # Telegram account links: owner isolation, and a list the owner can prune — design
 
 Date: 2026-10-27
-Status: draft for the operator's review. Plan:
+Status: approved by the operator on 2026-10-28, with D3 and D9 confirmed explicitly. Plan:
 `docs/superpowers/plans/2026-10-27-telegram-account-links.md`.
 
 ## 1. Why
@@ -14,7 +14,8 @@ to do that: no query, route or control deletes a row of `aura.telegram_accounts`
 accounts and deletes them (2026-10-27).
 
 The operator then noted that the table has no row-level security. Measured on 2026-10-27, on a
-disposable PostgreSQL 18 with the 143 migrations of `2e41ead`, inside a transaction rolled back:
+disposable PostgreSQL 18 with the 118 migrations of `2e41ead` (up to 0143), inside a transaction
+rolled back:
 - `relrowsecurity` is false and the table has no policy. `aura_app`, the runtime role, is neither
   superuser nor `BYPASSRLS`.
 - As `aura_app`, with `app.current_identity` set to identity A, a `SELECT` returned identity B's
@@ -62,6 +63,26 @@ real rows as a red test.
 `Store.ListAccounts`, over `ListTelegramAccounts`, has no production caller. Its own test is the
 only reader.
 
+**A push bound to a conversation misses the second chat.** The operator asked what happens when
+one person links two Telegram accounts, for example two phones with two numbers. One account on
+two phones is a single row, and Telegram delivers to every device. Two accounts are two rows.
+Each account's chat is its own conversation (`convID`, a hash of the chat id), and inbound
+messages work on both. Scheduled work does not:
+- `notify=telegram` and the approval prompts resolve the recipient with
+  `GetTelegramAccountByIdentity`. That is a `:one` query with no `ORDER BY`, so one row of the
+  database's choosing receives every push. This is #196.
+- Results bound to the conversation that created the task, which are what `notify=stdout` does
+  from a Telegram chat, go through `DeliverConversation`. It resolves the account the same way,
+  then checks that the origin conversation is that account's chat. If it is not, it reports
+  "not mine". The dispatcher then falls through to stdout, so the result is written into the
+  conversation's history and the process log, and the phone gets nothing.
+
+Measured on 2026-10-28 on `8b57628`, in the db_integration test
+`TestConversationPushReachesItsOwnChat`, with two accounts linked through the real onboarding: the
+push bound to the first chat reached it. The push bound to the second chat returned
+`(false, nil)` and sent nothing. Which chat loses depends on the row the database returns. #197
+would refuse this case as ambiguous, but it is not ambiguous: the conversation names the chat.
+
 ## 2. Goals, non-goals
 
 **Goals**
@@ -73,6 +94,8 @@ only reader.
    unlinks one.
 4. Retiring the legacy `local` identity moves its conversations, assets, Telegram links and auth
    links to the operator and loses none of them.
+5. A push bound to a Telegram conversation reaches that conversation's chat, whatever else the
+   identity links.
 
 **Non-goals**
 - Choosing a primary account, or replacing an old link at enrollment.
@@ -95,6 +118,7 @@ only reader.
 | D6 | Unlinking revokes inbound access. The next message from that Telegram account gets the activation-required reply (`bot_dispatch_auth.go`). | That is what an unlink means. The gate already fails closed on a missing row. |
 | D7 | `Store.ListAccounts` and `ListTelegramAccounts` are removed. The list reads a new `ListTelegramAccountsByIdentity`. | No production caller (§1). |
 | D8 | The migration takes the next free number when it lands (0144 when this was written). | CLAUDE.md: `ls internal/db/migrations/ \| tail -1` at landing. |
+| D9 | A push bound to a conversation picks, among the identity's linked accounts (`LinkedAccounts`), the one whose chat is that conversation. No match is "not mine", as today. Identity-wide pushes (`notify=telegram`, approvals) keep `GetAccountByIdentity`. | Goal 5, measured in §1. The conversation names the chat, so there is nothing to choose. `convID` is a one-way hash, so the accounts are compared one by one; an identity links a handful. Approved by the operator on 2026-10-28. |
 
 ## 4. Design
 
@@ -141,6 +165,9 @@ that referential-integrity checks bypass row security, so acceptance 4 measures 
   identity_id = $2`.
 - The no-identity reads (`GetAccountByTelegramID`, `GetAccountByIdentity`, `CountAccounts`) do
   not change.
+- D9, in `deliver.go`: the account resolver also offers `LinkedAccounts`. `DeliverConversation`
+  takes the linked account whose `convID` is the origin conversation. `Deliver` and
+  `DeliverApproval` keep `GetAccountByIdentity`.
 
 ### 4.3 Retirement (`cmd/aura/serve_auth.go`)
 
@@ -184,6 +211,10 @@ routes behind `governanceWriteCapability`.
    - With no identity bound, `GetAccountByTelegramID` and `GetAccountByIdentity` still resolve.
    - `LinkedAccounts(A)` returns only A's links.
    - `Unlink(A, <B's account>)` is false, and B's link remains. `Unlink(A, <A's account>)` is true.
+   - D9: with two accounts linked to one identity, a push bound to either chat's conversation
+     reaches that chat (`TestConversationPushReachesItsOwnChat`, red on `8b57628`). A unit test
+     covers the order the database returns the accounts in, and a conversation no linked account
+     owns.
 3. **db_integration, retirement** (`cmd/aura`). `local` owns a conversation, an asset, a Telegram
    link and an auth link. After the retirement, all four belong to the target, and `local` is
    gone. The test is red before D3.
@@ -233,7 +264,9 @@ routes behind `governanceWriteCapability`.
   from the chat id (`convID`), so the conversation stays owned by the first identity. This was not
   measured, and it exists today without this change.
 - **#197 touches the same store and query file.** Whichever lands second merges and regenerates
-  sqlc.
+  sqlc. #197's test expects the conversation route to refuse two links as ambiguous. Under D9
+  that route no longer asks `GetAccountByIdentity`, so the expectation becomes "delivered to that
+  chat".
 
 ## 7. What the measurements do not show
 
