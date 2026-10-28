@@ -35,7 +35,8 @@
 
 ## Review Focus
 
-- **No push is resent to a recipient that already got it**, on the live path or the sweep.
+- **No retry resends to a recipient that already got the push**, on the live path or the sweep.
+  Delivery stays at least once: a crash between a send and its record can repeat it, as today.
 - **An unlinked recipient is skipped, never replaced.**
 - **The permanent errors are exactly the four sentinels**; anything else is retried.
 
@@ -43,6 +44,8 @@
 
 - **Recipients are a snapshot of ids**, not a mode: "all" stores the accounts linked at schedule
   time (spec R1).
+- **A Telegram pending row names at most one account.** A deferred push is queued per recipient,
+  so the sweep never fans out (review of #198, 2026-10-28).
 - **The identity-wide default changes in the query** (`GetTelegramAccountByIdentity ORDER BY`), so
   every existing task benefits without a data migration.
 
@@ -86,7 +89,9 @@
 
 ### Task 4 — cron uses it, and retries per recipient (R4, R5; acceptance 4, 6)
 - [ ] Red, unit: acceptance 4. Red, db_integration: acceptance 6.
-- [ ] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines.
+- [ ] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines. A
+  deferred push queues one row per recipient; the approval sweep keeps pushing once, at mint,
+  logs a failed recipient and stamps the reminder (spec §4).
 - [ ] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
 
 ### Task 5 — The tool asks (R2; acceptance 5)
