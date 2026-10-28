@@ -6,7 +6,7 @@ import { CONV_ID, installCalmPrismFixture, openCalmPrism } from './support/calmP
 // plugin-install approval showed its question and its answer field, and nothing below them —
 // no Answer, no Decline, no composer. Playwright's click() scrolls every ancestor, an
 // overflow-hidden one included, so a spec that clicks would pass where a finger cannot. This
-// one scrolls only the way a finger can (the wheel over the card) and acts at the pixel.
+// one scrolls only what a finger can scroll and acts at the pixel.
 
 const PLUGIN_TOKEN = 'plugin-install-reach-token';
 const PHONE = { width: 360, height: 800 };
@@ -51,17 +51,22 @@ async function reachable(target: Locator): Promise<boolean> {
   });
 }
 
-async function scrollUntilReachable(page: Page, over: Locator, target: Locator) {
-  const box = await over.boundingBox();
-  if (box === null) throw new Error('the card is not rendered');
-  await page.mouse.move(box.x + box.width / 2, Math.max(box.y, 0) + 24);
-  for (let wheel = 0; wheel < 12 && !(await reachable(target)); wheel += 1) {
-    await page.mouse.wheel(0, 160);
-    await page.waitForTimeout(50);
-  }
-  expect(await reachable(target), 'scrolling over the card never brought it within reach').toBe(
-    true,
-  );
+// scrollUntilReachable scrolls the boxes a finger can scroll, nearest first: the page, and any
+// ancestor whose overflow is auto or scroll. An overflow-hidden one is skipped, as a touch skips
+// it. Not page.mouse.wheel: mobile WebKit refuses it, and the iPhone is the phone that matters.
+async function scrollUntilReachable(target: Locator) {
+  await target.evaluate((element) => {
+    for (let box = element.parentElement; box !== null; box = box.parentElement) {
+      const { overflowY } = getComputedStyle(box);
+      const scrollable =
+        box === document.scrollingElement || overflowY === 'auto' || overflowY === 'scroll';
+      if (!scrollable) continue;
+      const bottom = Math.min(box.getBoundingClientRect().bottom, innerHeight);
+      const below = element.getBoundingClientRect().bottom - bottom;
+      if (below > 0) box.scrollTop += below;
+    }
+  });
+  expect(await reachable(target), 'no box a finger can scroll brings it within reach').toBe(true);
 }
 
 async function tap(page: Page, target: Locator) {
@@ -106,7 +111,7 @@ test('a long approval keeps its answer within a finger on a phone', async ({
   });
 
   const answer = card.getByRole('button', { name: 'Answer' });
-  await scrollUntilReachable(page, card.getByText('Approval required', { exact: true }), answer);
+  await scrollUntilReachable(answer);
   for (const name of ['Decline', 'Cancel run']) {
     expect(await reachable(card.getByRole('button', { name })), name).toBe(true);
   }

@@ -12,6 +12,12 @@ export interface ExpectedRequestFailure {
   readonly errorText: string;
 }
 
+// WebKit does not implement the viewport meta's interactive-widget key (web/index.html) and says
+// so as a console error on every load: the browser's notice about itself, not the page's error.
+export function isWebKitViewportNotice(text: string): boolean {
+  return text === 'Viewport argument key "interactive-widget" not recognized and ignored.';
+}
+
 export function collectBrowserHealth(
   page: Page,
   origin: string,
@@ -23,7 +29,7 @@ export function collectBrowserHealth(
   const allowedObserved = new Set<string>();
   const expectedRequestFailures: ExpectedRequestFailure[] = [];
   page.on('console', (message) => {
-    if (message.type() === 'error') {
+    if (message.type() === 'error' && !isWebKitViewportNotice(message.text())) {
       consoleProblems.push({ text: message.text(), url: message.location().url });
     }
   });
