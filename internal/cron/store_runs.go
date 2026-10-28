@@ -146,6 +146,9 @@ type PendingNotification struct {
 	// IdentityID is the stable owning-identity snapshot (Phase 20 R6/Fork 1): the
 	// channel-independent route-back key for the deferred/failed sweep.
 	IdentityID string
+	// TelegramUserID is the one Telegram account a Telegram row is for; 0 means the account
+	// seen most recently (migration 0145).
+	TelegramUserID int64
 	// SteerQueueID is the migration-0105 sibling of RunID: set instead of RunID
 	// when the row's owner is an aura.steer_queue row being retried (plan 51-10's
 	// delegation nudge sweep), which has no aura.agent_job_runs row. "" for every
@@ -176,6 +179,8 @@ type InsertPendingNotificationParams struct {
 	Status       string
 	// IdentityID snapshots the owning identity so the sweep can route explicitly.
 	IdentityID string
+	// TelegramUserID names the one Telegram account the row is for; 0 for none.
+	TelegramUserID int64
 }
 
 // ScanStaleRuns returns running rows whose last_heartbeat_at is older than
@@ -236,16 +241,17 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 		notifyAfter = time.Now().UTC()
 	}
 	row, err := s.q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
-		ID:           newUUID(),
-		RunID:        runID,
-		SteerQueueID: steerQueueID,
-		NotifyRoute:  p.NotifyRoute,
-		Body:         p.Body,
-		NotifyAfter:  tsOrNull(notifyAfter),
-		Attempts:     int32(p.Attempts),
-		LastError:    text(p.LastError),
-		Status:       status,
-		IdentityID:   p.IdentityID,
+		ID:             newUUID(),
+		RunID:          runID,
+		SteerQueueID:   steerQueueID,
+		NotifyRoute:    p.NotifyRoute,
+		Body:           p.Body,
+		NotifyAfter:    tsOrNull(notifyAfter),
+		Attempts:       int32(p.Attempts),
+		LastError:      text(p.LastError),
+		Status:         status,
+		IdentityID:     p.IdentityID,
+		TelegramUserID: pgtype.Int8{Int64: p.TelegramUserID, Valid: p.TelegramUserID != 0},
 	})
 	if err != nil {
 		return PendingNotification{}, fmt.Errorf("insert pending notification for run %q: %w", p.RunID, err)
@@ -338,18 +344,19 @@ func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
 
 func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotification {
 	return PendingNotification{
-		ID:           r.ID.String(),
-		RunID:        r.RunID.String(),
-		NotifyRoute:  r.NotifyRoute,
-		Body:         r.Body,
-		NotifyAfter:  r.NotifyAfter.Time,
-		Attempts:     int(r.Attempts),
-		LastError:    r.LastError.String,
-		Status:       r.Status,
-		CreatedAt:    r.CreatedAt.Time,
-		UpdatedAt:    r.UpdatedAt.Time,
-		IdentityID:   r.IdentityID,
-		SteerQueueID: r.SteerQueueID.String(),
+		ID:             r.ID.String(),
+		RunID:          r.RunID.String(),
+		NotifyRoute:    r.NotifyRoute,
+		Body:           r.Body,
+		NotifyAfter:    r.NotifyAfter.Time,
+		Attempts:       int(r.Attempts),
+		LastError:      r.LastError.String,
+		Status:         r.Status,
+		CreatedAt:      r.CreatedAt.Time,
+		UpdatedAt:      r.UpdatedAt.Time,
+		IdentityID:     r.IdentityID,
+		SteerQueueID:   r.SteerQueueID.String(),
+		TelegramUserID: r.TelegramUserID.Int64,
 	}
 }
 
@@ -368,5 +375,6 @@ func pendingNotificationFromSweepRow(r sqlc.SweepDueNotificationsRow) PendingNot
 		IdentityID:           r.IdentityID,
 		SteerQueueID:         r.SteerQueueID.String(),
 		OriginConversationID: r.OriginConversationID,
+		TelegramUserID:       r.TelegramUserID.Int64,
 	}
 }

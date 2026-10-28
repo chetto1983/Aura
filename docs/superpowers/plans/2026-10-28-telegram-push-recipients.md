@@ -77,10 +77,10 @@
 - [x] Commit `fix(telegram): an identity push goes to the account seen last`.
 
 ### Task 2 — The columns (R1, R4, R7; acceptance 1)
-- [ ] Red: the migration test (up/down, the CHECK refuses `'{}'`).
-- [ ] Green: the migration; the cron store reads and writes `TelegramRecipients` and
+- [x] Red: the migration test (up/down, the CHECK refuses `'{}'`).
+- [x] Green: the migration (0145); the cron store reads and writes `TelegramRecipients` and
   `TelegramUserID`; their round trips in the cron db_integration tests.
-- [ ] Commit `feat(db): a scheduled task names its Telegram recipients`.
+- [x] Commit `feat(db): a scheduled task names its Telegram recipients`.
 
 ### Task 3 — The telegram fan-out (R3, R5; acceptance 3)
 - [ ] Red, unit: `DeliverToRecipients` cases of acceptance 3.

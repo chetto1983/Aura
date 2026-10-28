@@ -14,24 +14,25 @@ import (
 const insertPendingNotification = `-- name: InsertPendingNotification :one
 INSERT INTO aura.pending_notifications (
     id, run_id, notify_route, body, notify_after, attempts, last_error, status,
-    identity_id, steer_queue_id
+    identity_id, steer_queue_id, telegram_user_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, run_id, notify_route, body, notify_after, attempts, last_error,
-    status, created_at, updated_at, identity_id, steer_queue_id
+    status, created_at, updated_at, identity_id, steer_queue_id, telegram_user_id
 `
 
 type InsertPendingNotificationParams struct {
-	ID           pgtype.UUID        `json:"id"`
-	RunID        pgtype.UUID        `json:"run_id"`
-	NotifyRoute  string             `json:"notify_route"`
-	Body         string             `json:"body"`
-	NotifyAfter  pgtype.Timestamptz `json:"notify_after"`
-	Attempts     int32              `json:"attempts"`
-	LastError    pgtype.Text        `json:"last_error"`
-	Status       string             `json:"status"`
-	IdentityID   string             `json:"identity_id"`
-	SteerQueueID pgtype.UUID        `json:"steer_queue_id"`
+	ID             pgtype.UUID        `json:"id"`
+	RunID          pgtype.UUID        `json:"run_id"`
+	NotifyRoute    string             `json:"notify_route"`
+	Body           string             `json:"body"`
+	NotifyAfter    pgtype.Timestamptz `json:"notify_after"`
+	Attempts       int32              `json:"attempts"`
+	LastError      pgtype.Text        `json:"last_error"`
+	Status         string             `json:"status"`
+	IdentityID     string             `json:"identity_id"`
+	SteerQueueID   pgtype.UUID        `json:"steer_queue_id"`
+	TelegramUserID pgtype.Int8        `json:"telegram_user_id"`
 }
 
 // Exactly one of run_id / steer_queue_id owns the row (migration 0109). Route and
@@ -49,6 +50,7 @@ func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendi
 		arg.Status,
 		arg.IdentityID,
 		arg.SteerQueueID,
+		arg.TelegramUserID,
 	)
 	var i AuraPendingNotifications
 	err := row.Scan(
@@ -64,6 +66,7 @@ func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendi
 		&i.UpdatedAt,
 		&i.IdentityID,
 		&i.SteerQueueID,
+		&i.TelegramUserID,
 	)
 	return i, err
 }
@@ -104,7 +107,7 @@ func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificati
 
 const sweepDueNotifications = `-- name: SweepDueNotifications :many
 SELECT n.id, n.run_id, n.notify_route, n.body, n.notify_after, n.attempts, n.last_error,
-    n.status, n.created_at, n.updated_at, n.identity_id, n.steer_queue_id,
+    n.status, n.created_at, n.updated_at, n.identity_id, n.steer_queue_id, n.telegram_user_id,
     COALESCE(t.origin_conversation_id::text, s.conversation_id, '') AS origin_conversation_id
 FROM aura.pending_notifications AS n
 LEFT JOIN aura.agent_job_runs AS r ON r.id = n.run_id
@@ -135,6 +138,7 @@ type SweepDueNotificationsRow struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IdentityID           string             `json:"identity_id"`
 	SteerQueueID         pgtype.UUID        `json:"steer_queue_id"`
+	TelegramUserID       pgtype.Int8        `json:"telegram_user_id"`
 	OriginConversationID string             `json:"origin_conversation_id"`
 }
 
@@ -160,6 +164,7 @@ func (q *Queries) SweepDueNotifications(ctx context.Context, arg SweepDueNotific
 			&i.UpdatedAt,
 			&i.IdentityID,
 			&i.SteerQueueID,
+			&i.TelegramUserID,
 			&i.OriginConversationID,
 		); err != nil {
 			return nil, err

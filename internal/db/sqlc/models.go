@@ -593,6 +593,8 @@ type AuraPendingNotifications struct {
 	IdentityID string `json:"identity_id"`
 	// Plan 51-10: the owns-but-failed leg of the delegation nudge sweep (SWARM-03/09) inserts a retry row keyed on the aura.steer_queue row it is retrying delivery for -- NOT the (by then already-succeeded) aura.ingestion_jobs delegation row, since the nudge fires only after that job is long finished. NULL for every scheduler- originated row (unchanged). ON DELETE CASCADE mirrors run_id's own cleanup contract so a retry row can never outlive its owner.
 	SteerQueueID pgtype.UUID `json:"steer_queue_id"`
+	// Migration 0145: the one Telegram account a pending push is for; a task with recipients queues one row per account. NULL: the account seen most recently.
+	TelegramUserID pgtype.Int8 `json:"telegram_user_id"`
 }
 
 type AuraPimProviderApp struct {
@@ -688,6 +690,8 @@ type AuraSchedulerTasks struct {
 	ConsecutiveFailures  int32              `json:"consecutive_failures"`
 	PausedReason         pgtype.Text        `json:"paused_reason"`
 	TransientRetries     int32              `json:"transient_retries"`
+	// Migration 0145: the Telegram user ids this task's pushes (its result and its approval prompt) reach. NULL: the account seen most recently.
+	TelegramRecipients []int64 `json:"telegram_recipients"`
 }
 
 // Cockpit-editable runtime override layer for model-backend knobs (Settings page). MUTABLE (aura_app full DML). Overlaid onto the environment at boot by internal/settings (DB wins); applied on restart. is_secret rows are redacted in API GET responses.
