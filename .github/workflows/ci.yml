@@ -1657,13 +1657,13 @@ jobs:
   web-mutation-stryker:
     name: Stryker mutation (frontend + media frontend)
     runs-on: ubuntu-latest
-    # 280 minutes for Stryker alone. A cache miss re-mutates every file: 86m34s on run
-    # 36382875100, about 200 minutes by 2026-10-27. Run 40541750279 hit the old 120-minute cap
-    # with 6205 of 6458 mutants tested and Stryker's progress at 60%, a figure that weighs each
-    # mutant by its estimated test time (core 10.0.0, progress-keeper.js). A cap under the full
-    # run is a deadlock, not a slow run: the cancelled run saves no report, so every later run
-    # misses the cache again. Incremental runs took 1m15s (run 36410251639) and 8m01s (run
-    # 36412624433). The budget is 1.39 times the measured full run, for a slow runner.
+    # 185 minutes for Stryker alone. A cache miss re-mutates every file: 86m34s on run
+    # 36382875100, 131m03s on run 40602499698 (6458 mutants, 2026-10-28). The old 120-minute
+    # cap had fallen under that full run, and a cap under the full run is a deadlock, not a
+    # slow run. Run 40541750279 was cancelled at 6205 of 6458 mutants, a cancelled run saves no
+    # report, and every later run missed the cache the same way. Incremental runs took 1m15s
+    # (run 36410251639) and 8m01s (run 36412624433). The budget is 1.39 times the measured full
+    # run, for a slow runner.
     #
     # A much faster Stryker is a warning, not a win. The TypeScript 7 / Stryker 10 / Vitest 5
     # upgrade broke the vitest-runner's per-test filter, which made Stryker FASTER and
@@ -1676,7 +1676,7 @@ jobs:
     # 3m29s — no faster — and moved the score to 83.75; concurrency 8 on 8 cores ran 3m14s
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
-    timeout-minutes: 280
+    timeout-minutes: 185
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
