@@ -129,6 +129,12 @@ turn makes, not on a full runner turn.
   A links its own chat again. The `/start` reply for the refusal is pinned by
   `TestOnboardChatOwnedElsewhereSaysWhy`. `internal/channels/...` under `-race`, unit and
   db_integration.
+- Mutation on `store.go` at `de8ff5e`, on a database of its own (`aura_mut`, 119 migrations) so no
+  other test could kill a mutant: 89.2% (33 of 37). The new survivor is the error branch of the
+  `ConversationOwner` read, which fails only on a database fault, like the identity bind before it.
+- The review of #198 found that a QR link completed in the panel left the list beside it stale
+  until it remounted; the panel now tells the workspace, which refetches the list
+  (`TestTelegramSettingsPanel` "tells the page once a QR link completes").
 
 **What this does not show:**
 - Anything on the lab VM. Acceptance 10 (two real Telegram accounts, an unlink, the activation
