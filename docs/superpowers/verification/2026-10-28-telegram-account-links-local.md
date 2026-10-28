@@ -55,6 +55,18 @@ together.
   the widening `FOR ALL` instead of `FOR SELECT`; no `REVOKE … FROM PUBLIC`; no `kind = 'user'`
   check; no `SECURITY DEFINER`; the links not moved; conversations moved with no source filter.
 
+## Task 3 — the owner's list and unlink, and D9
+
+- `TestLinkedAccountsAndUnlinkStayWithTheirOwner` (db_integration): A's two links come back in
+  the order they were linked, not by id; `local` lists none; `Unlink(A, B's)` is false and B's
+  link resolves; `Unlink(A, A's)` is true and the link is gone.
+- D9, red on `b43b8c0`: `TestDeliverConversation` failed "each chat's conversation reaches that
+  chat" with `(false, <nil>)` for 4242 listed first, and "a failing list" with `(false, <nil>)`
+  instead of the list's error.
+- D9, green: the unit cases (both orders, a cockpit conversation, no link, a failing list, no
+  conversation) and `TestConversationPushReachesItsOwnChat`, which runs now and reaches both
+  chats. `internal/channels/...` under `-race`, unit and db_integration.
+
 **What this does not show:**
 - Anything on the live stack or the lab VM.
 - What a real appliance's `local` owns. The retirement still lets 22 tables go with `local`

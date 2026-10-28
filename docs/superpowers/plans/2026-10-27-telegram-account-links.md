@@ -153,14 +153,14 @@
   - remove `ListAccounts`, `ListTelegramAccounts` and their test.
 - [x] Gates as in Task 1, plus `deadcode`.
 - [x] Commit `feat(telegram): list and unlink an identity's Telegram accounts`.
-- [ ] D9, red: `TestConversationPushReachesItsOwnChat` (db_integration, measured red on `8b57628`
+- [x] D9, red: `TestConversationPushReachesItsOwnChat` (db_integration, measured red on `8b57628`
   for the second chat), and a unit test in `deliver_conversation_test.go`:
   - the matching account is found whatever the order the resolver returns;
   - a conversation no linked account owns is "not mine" and sends nothing;
   - a failing list is an error, not "not mine".
-- [ ] D9, green: `accountResolver` gains `LinkedAccounts`, and `deliver` picks the account by
+- [x] D9, green: `accountResolver` gains `LinkedAccounts`, and `deliver` picks the account by
   conversation when one is required. The stub resolver in `deliver_test.go` follows.
-- [ ] Commit `fix(telegram): a conversation's push reaches that conversation's chat`.
+- [x] Commit `fix(telegram): a conversation's push reaches that conversation's chat`.
 
 ### Task 4 — HTTP (D4, acceptance 6, 7, 9)
 - [ ] Red, agui unit, in `settings_api_telegram_accounts_test.go`:
