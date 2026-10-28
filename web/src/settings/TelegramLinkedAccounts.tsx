@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Unlink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { fetchTelegramAccounts, unlinkTelegramAccount, type TelegramAccount } from './settingsApi';
+import {
+  TELEGRAM_ACCOUNTS_KEY,
+  fetchTelegramAccounts,
+  unlinkTelegramAccount,
+  type TelegramAccount,
+} from './settingsApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -10,8 +15,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // The Telegram accounts linked to the signed-in identity, oldest first, each with an Unlink
 // behind a confirmation (spec 2026-10-27-telegram-account-links, D5). The server scopes both
 // calls to the session's identity, so this list never shows another identity's accounts.
-
-const ACCOUNTS_KEY = ['settings', 'telegram', 'accounts'];
 
 function accountName(account: TelegramAccount): string {
   if (account.firstName !== '') return account.firstName;
@@ -23,13 +26,13 @@ export function TelegramLinkedAccounts() {
   const { t, i18n } = useTranslation();
   const client = useQueryClient();
   const query = useQuery({
-    queryKey: ACCOUNTS_KEY,
+    queryKey: TELEGRAM_ACCOUNTS_KEY,
     queryFn: ({ signal }) => fetchTelegramAccounts(signal),
   });
   const [pending, setPending] = useState<TelegramAccount | undefined>(undefined);
   const unlink = useMutation({
     mutationFn: (telegramUserId: number) => unlinkTelegramAccount(telegramUserId),
-    onSettled: () => void client.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+    onSettled: () => void client.invalidateQueries({ queryKey: TELEGRAM_ACCOUNTS_KEY }),
   });
   const accounts = query.data ?? [];
   const formatDate = (iso: string) =>

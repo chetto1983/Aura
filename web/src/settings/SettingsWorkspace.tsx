@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ShieldAlert } from 'lucide-react';
 import { useCapabilities } from '../admin/useAdmin';
@@ -9,6 +10,7 @@ import { SettingsRail } from './SettingsRail';
 import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramLinkedAccounts } from './TelegramLinkedAccounts';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
+import { TELEGRAM_ACCOUNTS_KEY } from './settingsApi';
 import { RemoteAccessPanel } from './remoteAccess/RemoteAccessPanel';
 import { visibleSections, type SettingsSectionId } from './settingsSections';
 import { useSettingsSection } from './useSettingsSection';
@@ -88,6 +90,7 @@ function SettingsPane({
   readonly section: SettingsSectionId;
   readonly onCreateIdentity: () => void;
 }) {
+  const client = useQueryClient();
   switch (section) {
     case 'profile':
       return <ProfilePanel />;
@@ -102,7 +105,9 @@ function SettingsPane({
     case 'channels':
       return (
         <div className="flex flex-col gap-8">
-          <TelegramSettingsPanel />
+          <TelegramSettingsPanel
+            onLinked={() => void client.invalidateQueries({ queryKey: TELEGRAM_ACCOUNTS_KEY })}
+          />
           <TelegramLinkedAccounts />
         </div>
       );

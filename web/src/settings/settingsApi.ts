@@ -230,6 +230,9 @@ export async function fetchTelegramLinkStatus(sessionToken: string): Promise<Tel
   return readJSON<TelegramLinkStatus>(res);
 }
 
+/** The query key of the linked accounts list; whatever links or unlinks an account invalidates it. */
+export const TELEGRAM_ACCOUNTS_KEY = ['settings', 'telegram', 'accounts'] as const;
+
 export async function fetchTelegramAccounts(
   signal?: AbortSignal,
 ): Promise<readonly TelegramAccount[]> {
