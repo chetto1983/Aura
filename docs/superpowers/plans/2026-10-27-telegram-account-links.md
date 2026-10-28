@@ -83,39 +83,42 @@
 
 ### Task 0 — Record the measurement (PRD-first)
 - [x] The spec and this plan, committed for the operator's review.
-- [ ] `prd.md`, in the Telegram section: the 2026-10-27 measurements of spec §1, with what they do
+- [x] `prd.md`, in the Telegram section: the 2026-10-27 measurements of spec §1, with what they do
   not show (spec §7).
   - RLS is off and A reads and deletes B's link.
   - The retirement leaves conversations behind, and the cascade deletes them.
-- [ ] Commit `docs(prd): measure the Telegram links' isolation and the legacy retirement`.
+- [x] Commit `docs(prd): measure the Telegram links' isolation and the legacy retirement`.
 
 ### Task 1 — Writes run under the owning identity (D2, acceptance 2)
-- [ ] Red, db_integration, `internal/channels/telegram`:
+- [x] Red, db_integration, `internal/channels/telegram`:
   - `TouchLastSeen` moves `last_seen_at`, read back;
   - `ConsumeOnboarding` files the link under the token's identity.
 
   Both pass before RLS. They are the read-backs that will bite once Task 2 turns RLS on.
-- [ ] Green:
+- [x] Green:
   - the consume transaction (the decision above);
   - `TouchLastSeen(ctx, identityID, telegramUserID)` under `db.WithIdentityTx`;
   - `telegramSeenMarker` and the auth gate pass `account.IdentityID`;
   - the unit fakes follow the signature.
-- [ ] The test helpers write under the row's identity: `cleanupAccount` takes the identity, and the
+- [x] The test helpers write under the row's identity: `cleanupAccount` takes the identity, and the
   breakglass seed uses `db.WithIdentityTxRaw`.
-- [ ] Gates:
+- [x] Gates:
   - `go vet ./...`;
   - golangci-lint 2.14.0 with both tags on the touched packages;
   - `-race` on `internal/channels/telegram`, unit and db_integration;
   - `internal/breakglass` db_integration.
-- [ ] Commit `fix(telegram): write a link under the identity that owns it`.
+- [x] Commit `fix(telegram): write a link under the identity that owns it`.
 
 ### Task 2 — RLS on the links, and a retirement that keeps `local`'s rows (D1, D3, D8; acceptance 1, 3, 4, 5)
-- [ ] Red, `cmd/aura` db_integration. `local` owns a conversation, an asset, a Telegram link and an
+- [x] Red, `cmd/aura` db_integration. `local` owns a conversation, an asset, a Telegram link and an
   auth link, all seeded under `local`'s identity. After `retireLegacyLocalIdentity`, all four
   belong to the target.
   - Expected red today: the conversation and the asset are gone.
   - Record the output in the verification file.
-- [ ] Red, `internal/db/migrate_NNNN_integration_test.go`, on the `migrate_0141` pattern
+  - Measured on `28e0c95`: red as expected, and the asset's ingestion job and event went too.
+    Their composite foreign keys refuse a lone asset move, so the function moves the three in
+    one statement (spec D3, PRD §15).
+- [x] Red, `internal/db/migrate_NNNN_integration_test.go`, on the `migrate_0141` pattern
   (`fresh0093Database`, `migrateToVersion`, `MigrateSteps`):
   - before up: RLS is off and the function is absent;
   - after up: RLS is on, the three policies exist, one restrictive, and the function is
@@ -126,18 +129,18 @@
   - the function refuses a target that is not of kind `user`, and moves nothing when `local` is
     absent;
   - after down: no policy, RLS off, no function.
-- [ ] Green:
+- [x] Green:
   - the migration;
   - `retireLegacyLocalIdentity` calls `SELECT aura.retire_legacy_local_rows($1)` in place of the
     conversations, assets and telegram statements.
-- [ ] Acceptance 5. Find the db_integration tests of `lookupPasswordResetTelegramUserID` and of
+- [x] Acceptance 5. Find the db_integration tests of `lookupPasswordResetTelegramUserID` and of
   `LookupRecoveryByEmail`, and add one where none exists. Both must pass with RLS on.
-- [ ] Gates:
+- [x] Gates:
   - db_integration `-race` on `internal/db`, `internal/channels/telegram`, `internal/breakglass`
     and `cmd/aura`;
   - `scripts/check-file-size.sh`;
   - sqlc in sync.
-- [ ] Commit `fix(db): isolate Telegram links per identity, and keep local's rows on retirement`.
+- [x] Commit `fix(db): isolate Telegram links per identity, and keep local's rows on retirement`.
 
 ### Task 3 — The store lists and unlinks an identity's links (D7, acceptance 2)
 - [ ] Red, db_integration:

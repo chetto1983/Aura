@@ -112,7 +112,7 @@ would refuse this case as ambiguous, but it is not ambiguous: the conversation n
 |---|---|---|
 | D1 | `aura.telegram_accounts` gets the shape 0089 gave `aura.shared_links`, with three policies: owner isolation for every command; a `SELECT`-only widening for a session with no `app.current_identity`; a restrictive floor `TO aura_app`, where a read reaches a row that is mine or a session with no identity, and a write reaches only a row that is mine. | Goals 1 and 2. 0087's reason covers reads with no identity, and the widening keeps exactly those. `shared_links` already accepts the same trade-off. The floor holds whatever permissive policy a later migration adds. |
 | D2 | A write runs under the identity that owns the row. `ConsumeOnboarding` binds the identity of the pending token inside its transaction, right after the consume returns it. That is the `identity.CreateUserTx` precedent: `db.SetTxIdentity` mid-transaction. `TouchLastSeen` takes the account's identity and runs under `db.WithIdentityTx`. | With no identity bound, the `INSERT` fails its `WITH CHECK`, and the `UPDATE` matches no row and reports no error. The PostgreSQL manual (CREATE POLICY) says such rows are "silently suppressed; no error is reported". |
-| D3 | The retirement re-keys its RLS tables through one function: `aura.retire_legacy_local_rows(target uuid)`, `SECURITY DEFINER`, owned by `aura_migrate`, with `search_path` pinned. The function finds the source itself: the identity named `local` of kind `system`. It refuses a target that is not of kind `user`. It moves `conversations`, `assets` (owner and the deleted-key scrub) and `telegram_accounts`. The rest of the retirement stays in Go. | Goal 4. Under owner isolation a row cannot change owner in one statement: `USING` needs the old owner, `WITH CHECK` the new one. 0089 is the precedent for a definer function with a pinned search path. Fixing the source in the function keeps it from becoming a primitive that moves any tenant's rows. |
+| D3 | The retirement re-keys its RLS tables through one function: `aura.retire_legacy_local_rows(target uuid)`, `SECURITY DEFINER`, owned by `aura_migrate`, with `search_path` pinned. The function finds the source itself: the identity named `local` of kind `system`. It refuses a target that is not of kind `user`. It moves `conversations`, `assets` (owner and the deleted-key scrub) and `telegram_accounts`. The assets' ingestion jobs and the jobs' events move with the assets, in one statement: their composite foreign keys refuse a lone asset move (measured 2026-10-28, PRD §15). The rest of the retirement stays in Go. | Goal 4. Under owner isolation a row cannot change owner in one statement: `USING` needs the old owner, `WITH CHECK` the new one. 0089 is the precedent for a definer function with a pinned search path. Fixing the source in the function keeps it from becoming a primitive that moves any tenant's rows. |
 | D4 | `GET /api/settings/telegram/accounts` answers 200 with `[{telegramUserId, username, firstName, addedAt, lastSeenAt}]` for the caller's identity, oldest link first. `DELETE /api/settings/telegram/accounts/{telegramUserId}` answers: 204 when it unlinked; 404 when the caller has no such link, another identity's link included; 400 when the id is not an integer. Both run under `db.WithIdentityTx(requester)` and also filter on `identity_id`. Both are mounted behind `governance.write`, like the three sibling Telegram routes. | Goal 3. The `WHERE` is the application filter, and RLS is the backstop for a forgotten one (`db/tx.go`). A 404 for another identity's link does not tell the caller the link exists. Telegram says a user id "has at most 52 significant bits", so a JSON number holds it (Bot API, `User.id`). |
 | D5 | Settings → Telegram lists the linked accounts, with an Unlink action behind a confirmation. It lives in a new `TelegramLinkedAccounts.tsx` (the panel is 351 lines). | A route no client calls is dark code (the 2026-10-26 scan). |
 | D6 | Unlinking revokes inbound access. The next message from that Telegram account gets the activation-required reply (`bot_dispatch_auth.go`). | That is what an unlink means. The gate already fails closed on a missing row. |
@@ -215,9 +215,10 @@ routes behind `governanceWriteCapability`.
      reaches that chat (`TestConversationPushReachesItsOwnChat`, red on `8b57628`). A unit test
      covers the order the database returns the accounts in, and a conversation no linked account
      owns.
-3. **db_integration, retirement** (`cmd/aura`). `local` owns a conversation, an asset, a Telegram
-   link and an auth link. After the retirement, all four belong to the target, and `local` is
-   gone. The test is red before D3.
+3. **db_integration, retirement** (`cmd/aura`). `local` owns a conversation, a live asset with an
+   ingestion job and its event, a deleted asset whose key names `local`, a Telegram link and an
+   auth link. After the retirement, all of them belong to the target, the deleted asset's key
+   names the target, and `local` is gone. The test is red before D3.
 4. **db_integration, identity delete.** With RLS on, deleting an identity as `aura_app` removes
    its links. `identity_cascade_integration_test.go`, which checks the catalog only, stays green.
 5. **db_integration, no-identity readers.** The password reset lookup and `LookupRecoveryByEmail`
@@ -270,6 +271,7 @@ routes behind `governanceWriteCapability`.
 
 ## 7. What the measurements do not show
 
-- The retirement end to end with real rows. Task 2 of the plan measures it with a red test.
-- `assets` under the retirement: its RLS state was measured, not its `UPDATE` with a row.
-- How many appliances still hold a legacy `local` identity with conversations.
+- How many appliances still hold a legacy `local` identity, or what it owns.
+- The 22 other tables with a foreign key to `aura.identities` that the retirement does not move
+  (PRD §15, measured from the catalog on 2026-10-28). Deleting `local` cascades them. Which of
+  them should move is a separate decision; this slice does not take it.

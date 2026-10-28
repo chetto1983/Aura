@@ -4279,11 +4279,35 @@ The design is `docs/superpowers/specs/2026-10-27-telegram-account-links-design.m
 - a conversation's push picks the linked account whose chat it is;
 - the owner lists and unlinks their links in Settings → Telegram.
 
+The retirement end to end, measured on 2026-10-28 on `28e0c95` with
+`TestLocalIdentityRetirementKeepsLocalsRows` (`cmd/aura`, db_integration):
+- `local` owned a conversation, a live asset, a deleted asset, an ingestion job on the live asset
+  with one event, a Telegram link and an auth link;
+- after the retirement the conversation, both assets, the job and the event were gone. The
+  Telegram link and the auth link had moved, since neither table had RLS.
+- `ingestion_jobs` references `assets (id, identity_id)` and `ingestion_events` references
+  `ingestion_jobs (id, identity_id)`, with no `ON UPDATE` action. A lone `UPDATE` of an asset's
+  owner fails on `ingestion_jobs_asset_identity_fkey`; one statement whose `WITH` clauses move
+  all three passes. So the definer function moves the three together.
+
+The catalog lists 30 foreign keys to `aura.identities`, all but one `ON DELETE CASCADE`. After
+this change the retirement moves the rows of 6 of those tables. `telegram_setup_pending` is
+deleted on purpose, and `mcp_server` keeps its row with a null author. The other 22 tables go
+with `local` when it is deleted:
+- content: `boards`, `board_cards`, `board_views`, `skill_catalog`, `message_drafts`,
+  `shared_links`, `identity_profiles`, `media_job`;
+- settings and credentials: `identity_object_store`, `identity_llm_key`, `identity_mcp_oauth`,
+  `gateway_tool_policies`, `gateway_approval_grants`;
+- grants: `capability_grants`, `resource_acl`;
+- state: `idempotency_operations`, `verification_events`, `verification_state`, `steer_queue`;
+- recovery: `identity_recovery`, `password_reset_challenges`, `password_reset_tokens`.
+
+They are outside this slice.
+
 This does not establish:
-- the retirement end to end with real rows, or how many appliances still hold a `local` identity
-  with conversations;
-- the `assets` `UPDATE` with a row: only its RLS state was read;
-- anything on the live stack: these are database probes and one db_integration test.
+- how many appliances still hold a `local` identity, or what it owns;
+- which of those 22 tables should move to the operator and which should go with `local`;
+- anything on the live stack: these are database probes and db_integration tests.
 
 ## 16. Observability and operator experience
 
