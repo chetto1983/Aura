@@ -4255,6 +4255,104 @@ This does not establish:
 - whether the WhatsApp server's own description, which does not say it sends immediately, also
   needs changing.
 
+Telegram links had no owner isolation, and a push bound to a conversation could miss its chat
+(2026-10-27 and 2026-10-28). Measured on a disposable PostgreSQL 18 with the 118 migrations of
+`2e41ead`, in rolled-back transactions:
+- `aura.telegram_accounts` has no row-level security and no policy. 0087 left it out because
+  the inbound lookup produces the identity. As `aura_app` bound to identity A, a `SELECT`
+  returned B's link and a `DELETE` removed it. No route reads the table per identity yet, and
+  the list and unlink the operator asked for would be the first.
+- The legacy `local` retirement re-keys `local`'s rows with plain `UPDATE`s on the runtime pool,
+  then deletes `local`. With no identity bound, its `UPDATE` of `conversations` (RLS since 0089)
+  moved 0 rows. An identity delete as `aura_app` cascaded into a conversation the session could
+  not see. So the retirement deletes the conversations it was meant to move, and the assets
+  under the same RLS. RLS on the links alone would add the Telegram links to that loss.
+- With two Telegram accounts linked to one identity (`TestConversationPushReachesItsOwnChat`, on
+  `8b57628`), a push bound to the second chat's conversation returned "not mine" and sent
+  nothing. `DeliverConversation` resolved the account by identity, a `:one` query with no
+  `ORDER BY`, before checking the conversation.
+
+The design is `docs/superpowers/specs/2026-10-27-telegram-account-links-design.md`:
+- the links get the `shared_links` shape of 0089;
+- writes bind the owning identity;
+- the retirement re-keys through one definer function that moves only `local`'s rows;
+- a conversation's push picks the linked account whose chat it is;
+- the owner lists and unlinks their links in Settings → Telegram.
+
+The retirement end to end, measured on 2026-10-28 on `28e0c95` with
+`TestLocalIdentityRetirementKeepsLocalsRows` (`cmd/aura`, db_integration):
+- `local` owned a conversation, a live asset, a deleted asset, an ingestion job on the live asset
+  with one event, a Telegram link and an auth link;
+- after the retirement the conversation, both assets, the job and the event were gone. The
+  Telegram link and the auth link had moved, since neither table had RLS.
+- `ingestion_jobs` references `assets (id, identity_id)` and `ingestion_events` references
+  `ingestion_jobs (id, identity_id)`, with no `ON UPDATE` action. A lone `UPDATE` of an asset's
+  owner fails on `ingestion_jobs_asset_identity_fkey`; one statement whose `WITH` clauses move
+  all three passes. So the definer function moves the three together.
+
+The catalog lists 30 foreign keys to `aura.identities`, all but one `ON DELETE CASCADE`. After
+this change the retirement moves the rows of 6 of those tables. `telegram_setup_pending` is
+deleted on purpose, and `mcp_server` keeps its row with a null author. The other 22 tables go
+with `local` when it is deleted:
+- content: `boards`, `board_cards`, `board_views`, `skill_catalog`, `message_drafts`,
+  `shared_links`, `identity_profiles`, `media_job`;
+- settings and credentials: `identity_object_store`, `identity_llm_key`, `identity_mcp_oauth`,
+  `gateway_tool_policies`, `gateway_approval_grants`;
+- grants: `capability_grants`, `resource_acl`;
+- state: `idempotency_operations`, `verification_events`, `verification_state`, `steer_queue`;
+- recovery: `identity_recovery`, `password_reset_challenges`, `password_reset_tokens`.
+
+They are outside this slice.
+
+This does not establish:
+- how many appliances still hold a `local` identity, or what it owns;
+- which of those 22 tables should move to the operator and which should go with `local`;
+- anything on the live stack: these are database probes and db_integration tests.
+
+The operator states (2026-10-28) that every deployment runs `single_user_hardened` and has
+retired `local`. That makes the 22 tables a fresh-install concern only, where `local` owns
+nothing yet; it is a statement, not a measurement.
+
+Landed on 2026-10-28 (`docs/superpowers/verification/2026-10-28-telegram-account-links-local.md`):
+- 0144 isolates the links: bound to A, a session sees and changes only A's; with no identity it
+  reads every link and changes none.
+- The retirement keeps `local`'s conversation, assets, ingestion job and event, Telegram link and
+  auth link (red on `28e0c95`, green after).
+- `GET` and `DELETE /api/settings/telegram/accounts` behind `governance.write`. Across two
+  identities A cannot see or unlink B's link (404).
+- Settings → Channels lists the links and unlinks one after a confirmation, checked in a browser
+  against `aura serve`.
+- A push bound to a conversation reaches that conversation's chat with two accounts linked.
+
+Two risks were left:
+- Identity-wide pushes (`notify=telegram`, approvals) still pick one linked account of the
+  database's choosing (#196). The operator chose a per-task recipient — one account, another, or
+  all — as the next slice (D10).
+- Relinking an unlinked chat to another identity broke that identity's Telegram turns. The
+  chat's conversation stays the first identity's, and the new identity's first append failed
+  with "conversation not found", measured on the store calls. The unlink made this reachable
+  from the cockpit. Closed by D11 (approved 2026-10-28): the consume refuses such a link, and
+  the first identity can still link the chat again.
+
+Which linked Telegram account an identity push reaches (2026-10-28). Measured on PostgreSQL 18
+with a scratch db_integration test on `be99204`, two accounts linked through the real onboarding,
+for both `Deliver` (a task with `notify=telegram`) and `DeliverApproval`:
+- after linking the first and then the second, the push reached the first;
+- after the first chat sent an update (`TouchLastSeen`), it reached the second;
+- after the second chat sent one, it reached the first again.
+
+`GetTelegramAccountByIdentity` is a `:one` query with no `ORDER BY`, so PostgreSQL promises no
+order (docs, "Sorting Rows"). On this database and plan it returned the row first in physical
+order, and each update wrote a new row version that came back last. The push went to the account
+used least recently, which is the #196 symptom. The operator chose a per-task recipient
+list (one account, another, or all), and the most recently seen account when a task names none:
+`docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md`.
+
+This does not establish:
+- the order on another database, or with more rows: the order is not documented, which is the
+  point;
+- anything on the live stack.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not

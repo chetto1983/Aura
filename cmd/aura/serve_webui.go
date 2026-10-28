@@ -250,6 +250,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(settingsTelegramCheckRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(settingsTelegramLinkRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(settingsTelegramStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(settingsTelegramAccountsRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(settingsTelegramAccountUnlinkRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The cockpit "Connect" WhatsApp device-linking routes delegate to the AG-UI handler
 	// (routes on Server.Mux) behind RequireCapability(governance.write) — operator
 	// write-class actions (logout drops the session, a QR scan links a device), so they

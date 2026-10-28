@@ -246,24 +246,16 @@ func retireLegacyLocalIdentity(ctx context.Context, pool *pgxpool.Pool, targetID
 	if err := purge(ctx, localID); err != nil {
 		return fmt.Errorf("retire legacy local identity: purge browser credentials: %w", err)
 	}
-	for _, stmt := range []string{
-		`UPDATE aura.conversations SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
-		`UPDATE aura.assets SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
-		`UPDATE aura.telegram_accounts SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
-		`UPDATE aura.identity_auth_links SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
-	} {
-		if _, err := tx.Exec(ctx, stmt, targetID, localID); err != nil {
-			return fmt.Errorf("retire legacy local identity: migrate refs: %w", err)
-		}
+	// The tables under row security move through the definer function of migration 0144: with
+	// no identity bound, their UPDATEs here matched no row, and deleting local cascaded them.
+	if _, err := tx.Exec(ctx, `SELECT aura.retire_legacy_local_rows($1::uuid)`, targetID); err != nil {
+		return fmt.Errorf("retire legacy local identity: move rows under row security: %w", err)
 	}
 	if _, err := tx.Exec(ctx,
-		`UPDATE aura.assets
-		 SET object_key = replace(object_key, $2, $1)
-		 WHERE object_key LIKE '%' || $2 || '%'
-		   AND status IN ('deleted', 'canceled', 'failed', 'refused')`,
+		`UPDATE aura.identity_auth_links SET identity_id=$1::uuid WHERE identity_id=$2::uuid`,
 		targetID, localID,
 	); err != nil {
-		return fmt.Errorf("retire legacy local identity: scrub deleted asset keys: %w", err)
+		return fmt.Errorf("retire legacy local identity: migrate auth links: %w", err)
 	}
 	for _, stmt := range []string{
 		`UPDATE aura.scheduler_tasks SET identity_id=$1 WHERE identity_id=$2`,

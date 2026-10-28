@@ -23,12 +23,14 @@ var _ channels.ConversationDeliverer = (*Telegram)(nil)
 // on-channel HITL approval prompt (Amendment #92 revised).
 var _ channels.ApprovalDeliverer = (*Telegram)(nil)
 
-// accountResolver is the narrow identity→account seam Deliver reads. *Store
-// satisfies it (GetAccountByIdentity); declaring it consumer-side keeps Deliver
-// unit-testable with a stub and free of a DB. A non-UUID/missing identity surfaces
-// as a wrapped pgx.ErrNoRows so Deliver can treat both as "not my user".
+// accountResolver is the narrow identity→account seam the pushes read. *Store
+// satisfies it; declaring it consumer-side keeps delivery unit-testable with a stub
+// and free of a DB. A non-UUID/missing identity surfaces as a wrapped pgx.ErrNoRows
+// from GetAccountByIdentity, and as no account from LinkedAccounts, so both mean
+// "not my user".
 type accountResolver interface {
 	GetAccountByIdentity(ctx context.Context, identityID string) (Account, error)
+	LinkedAccounts(ctx context.Context, identityID string) ([]Account, error)
 }
 
 // Deliver pushes text to the 1:1 Telegram chat owned by identityID, satisfying
@@ -45,9 +47,10 @@ func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, 
 	return t.deliver(ctx, identityID, "", text)
 }
 
-// DeliverConversation pushes only when conversationID is the deterministic
-// Telegram thread for the resolved account. A linked Telegram account does not
-// make arbitrary cockpit or CLI conversations Telegram-owned.
+// DeliverConversation pushes only when conversationID is the deterministic Telegram
+// thread of one of the identity's linked accounts, and pushes to that account. A
+// linked Telegram account does not make arbitrary cockpit or CLI conversations
+// Telegram-owned.
 func (t *Telegram) DeliverConversation(ctx context.Context, identityID, conversationID, text string) (bool, error) {
 	if conversationID == "" {
 		return false, nil
@@ -67,15 +70,12 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 	if resolver == nil {
 		return false, nil
 	}
-	acct, err := resolver.GetAccountByIdentity(ctx, identityID)
+	acct, found, err := recipient(ctx, resolver, identityID, requiredConversationID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil // not my user → try next channel
-		}
 		return false, fmt.Errorf("telegram deliver: resolve identity %s: %w", identityID, err)
 	}
-	if requiredConversationID != "" && convID(acct.TelegramUserID) != requiredConversationID {
-		return false, nil
+	if !found {
+		return false, nil // not my user → try next channel
 	}
 	// The Bot API rejects a message over 4096 runes outright, so an unsplit push of a
 	// long agent_job summary was lost in full — the interactive path has always split
@@ -103,6 +103,34 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 		}
 	}
 	return true, nil
+}
+
+// recipient picks the account a push goes to. A push bound to a conversation goes to the
+// linked account whose Telegram thread that conversation is: the conversation names the
+// chat, so the identity's other links are not candidates. convID is a one-way hash, so
+// each link is hashed and compared; an identity links a handful. Any other push goes to
+// the identity's account. found=false with no error is "not my user".
+func recipient(ctx context.Context, resolver accountResolver, identityID, conversationID string) (Account, bool, error) {
+	if conversationID != "" {
+		linked, err := resolver.LinkedAccounts(ctx, identityID)
+		if err != nil {
+			return Account{}, false, err
+		}
+		for _, acct := range linked {
+			if convID(acct.TelegramUserID) == conversationID {
+				return acct, true, nil
+			}
+		}
+		return Account{}, false, nil
+	}
+	acct, err := resolver.GetAccountByIdentity(ctx, identityID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, false, nil
+	}
+	if err != nil {
+		return Account{}, false, err
+	}
+	return acct, true, nil
 }
 
 // paceDeliver waits between chunks so a long split message does not trip Telegram's
@@ -147,12 +175,12 @@ func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskI
 	if resolver == nil {
 		return false, nil
 	}
-	acct, err := resolver.GetAccountByIdentity(ctx, identityID)
+	acct, found, err := recipient(ctx, resolver, identityID, "")
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil // not my user → try next channel (WebUI pulls the pause)
-		}
 		return false, fmt.Errorf("telegram deliver approval: resolve identity %s: %w", identityID, err)
+	}
+	if !found {
+		return false, nil // not my user → try next channel (WebUI pulls the pause)
 	}
 	text := approvalPromptText(taskID, kind)
 	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalPushMarkup(token)}); err != nil {

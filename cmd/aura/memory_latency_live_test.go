@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -84,7 +84,7 @@ func TestAgentMemoryCLILiveSearchP95(t *testing.T) {
 		durations = append(durations, time.Since(started))
 	}
 
-	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+	slices.Sort(durations)
 	evidence := memoryLatencyEvidence{
 		Samples:      len(durations),
 		P50MS:        durationMS(nearestRank(durations, 0.50)),

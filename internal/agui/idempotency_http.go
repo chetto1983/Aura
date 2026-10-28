@@ -157,6 +157,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/shares":                                httpMutationMeta("share_create"),
 	"PATCH /api/shares/{id}/snapshot":                 httpMutationMeta("share_snapshot"),
 	"DELETE /api/shares/{id}":                         httpMutationMeta("share_revoke"),
+
+	// The owner's unlink of one linked Telegram account; a replay of its 204 is a 204.
+	"DELETE /api/settings/telegram/accounts/{telegramUserId}": httpMutationMeta("settings_telegram_unlink"),
 }
 
 func httpMutationMeta(normalizer string) mutationRouteMeta {

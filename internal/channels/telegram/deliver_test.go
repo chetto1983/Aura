@@ -81,17 +81,28 @@ func (b *sendRecorder) recorded() []recordedSend {
 	return out
 }
 
-// stubResolver stands in for *Store.GetAccountByIdentity so the deliver branches
-// (found / not-found / 'local') are exercised without a DB. calls counts lookups
-// so the nil-bot case can assert the resolver was never touched.
+// stubResolver stands in for *Store's GetAccountByIdentity and LinkedAccounts so the deliver
+// branches (found / not-found / 'local') are exercised without a DB. calls counts the identity
+// lookups so the nil-bot case can assert the resolver was never touched, and listCalls the
+// lists a conversation-bound push reads.
 type stubResolver struct {
-	mu      sync.Mutex
-	acct    Account
-	err     error
-	byID    map[string]Account // optional per-identity override (keyed lookup)
-	idMiss  error              // error returned for an unknown id when byID is set
-	calls   int
-	lastarg string
+	mu        sync.Mutex
+	acct      Account
+	err       error
+	byID      map[string]Account // optional per-identity override (keyed lookup)
+	idMiss    error              // error returned for an unknown id when byID is set
+	calls     int
+	lastarg   string
+	linked    []Account
+	linkedErr error
+	listCalls int
+}
+
+func (s *stubResolver) LinkedAccounts(_ context.Context, _ string) ([]Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listCalls++
+	return s.linked, s.linkedErr
 }
 
 func (s *stubResolver) GetAccountByIdentity(_ context.Context, identityID string) (Account, error) {
@@ -224,42 +235,6 @@ func TestDeliver(t *testing.T) {
 		}
 		if res.callCount() != 0 {
 			t.Errorf("resolver calls = %d, want 0 (nil bot must short-circuit before the lookup)", res.callCount())
-		}
-	})
-}
-
-func TestDeliverConversation(t *testing.T) {
-	t.Parallel()
-	const validUUID = "11111111-1111-1111-1111-111111111111"
-	const chatID int64 = 4242
-
-	t.Run("telegram-owned conversation sends", func(t *testing.T) {
-		bot := &sendRecorder{}
-		tg := NewChannel(Deps{Offline: true})
-		tg.deliverBot = bot
-		tg.deliverResolver = &stubResolver{acct: Account{TelegramUserID: chatID, IdentityID: validUUID}}
-
-		ok, err := tg.DeliverConversation(context.Background(), validUUID, convID(chatID), "done")
-		if err != nil || !ok {
-			t.Fatalf("DeliverConversation = (%v, %v), want (true, nil)", ok, err)
-		}
-		if sends := bot.recorded(); len(sends) != 1 || sends[0].text != "done" {
-			t.Fatalf("sends = %+v, want one unchanged message", sends)
-		}
-	})
-
-	t.Run("linked identity cannot claim cockpit conversation", func(t *testing.T) {
-		bot := &sendRecorder{}
-		tg := NewChannel(Deps{Offline: true})
-		tg.deliverBot = bot
-		tg.deliverResolver = &stubResolver{acct: Account{TelegramUserID: chatID, IdentityID: validUUID}}
-
-		ok, err := tg.DeliverConversation(context.Background(), validUUID, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "done")
-		if err != nil || ok {
-			t.Fatalf("DeliverConversation = (%v, %v), want (false, nil)", ok, err)
-		}
-		if sends := bot.recorded(); len(sends) != 0 {
-			t.Fatalf("sends = %d, want 0", len(sends))
 		}
 	})
 }

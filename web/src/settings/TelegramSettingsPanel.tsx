@@ -46,7 +46,8 @@ function svgDataUri(svg: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-export function TelegramSettingsPanel() {
+// onLinked runs once a QR link is seen to complete, so the page can refresh what reads the links.
+export function TelegramSettingsPanel({ onLinked }: { readonly onLinked?: () => void } = {}) {
   const { t } = useTranslation();
   const [setting, setSetting] = useState<SettingItem>(emptyTelegramSetting);
   const [token, setToken] = useState('');
@@ -160,7 +161,9 @@ export function TelegramSettingsPanel() {
   async function checkLinkStatus() {
     if (link?.sessionToken === undefined) return;
     await runAction('status', async () => {
-      setLinkStatus(await fetchTelegramLinkStatus(link.sessionToken));
+      const status = await fetchTelegramLinkStatus(link.sessionToken);
+      setLinkStatus(status);
+      if (status.linked) onLinked?.();
     });
   }
 

@@ -307,9 +307,11 @@ const (
 )
 
 const (
-	settingsTelegramCheckRoute  = "POST /api/settings/telegram/check"
-	settingsTelegramLinkRoute   = "POST /api/settings/telegram/link"
-	settingsTelegramStatusRoute = "GET /api/settings/telegram/{sessionToken}/status"
+	settingsTelegramCheckRoute         = "POST /api/settings/telegram/check"
+	settingsTelegramLinkRoute          = "POST /api/settings/telegram/link"
+	settingsTelegramStatusRoute        = "GET /api/settings/telegram/{sessionToken}/status"
+	settingsTelegramAccountsRoute      = "GET /api/settings/telegram/accounts"
+	settingsTelegramAccountUnlinkRoute = "DELETE /api/settings/telegram/accounts/{telegramUserId}"
 )
 
 // identityCreateCapability is the capability_grants name the onboarding CREATE mutations
