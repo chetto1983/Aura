@@ -71,8 +71,9 @@ Non-goals:
 | R6 | With no recipients named, `GetTelegramAccountByIdentity` orders by `COALESCE(last_seen_at, added_at) DESC, added_at DESC, telegram_user_id DESC`, the order the password reset and the recovery already use. After R2, that is a task scheduled before this slice; a task switched to Telegram in the cockpit's scheduler board, which takes no recipients (non-goal); and the approval prompt of a task whose route is not Telegram. | Goal 4. It also fixes #196 for every task scheduled before this slice. |
 | R7 | The migration takes the next free number at landing (0145 today). | CLAUDE.md. |
 
-R6 answers "existing tasks with two accounts" (approved 2026-10-28). #197 refuses such a push
-as ambiguous instead; with R6 it is no longer ambiguous. Whichever lands second reconciles.
+R6 answers "existing tasks with two accounts" (approved 2026-10-28). #197 refused such a push
+as ambiguous instead. Reconciled on 2026-10-28, when #197's commits were merged after this slice:
+R6 kept, the refusal dropped, its incident record and regression cases kept under R6.
 
 ## 4. Design
 
@@ -154,8 +155,8 @@ directive, and the validation against the identity's linked accounts through a n
 
 - **The relink guard** (previous slice, §6) was approved and landed as D11 in #198: the consume
   refuses to link a chat whose conversation is another identity's.
-- **Two writers of the recipient rule.** #197 refuses ambiguity; R6 orders. Whichever lands second
-  reconciles the test that expects the other behaviour.
+- **Two writers of the recipient rule** (#197 refused ambiguity, R6 orders): reconciled on
+  2026-10-28 in favour of R6.
 - **A task the cockpit sets to Telegram names no recipients** and goes to the account
   seen most recently (R6), not to a list the operator chose.
 - **A recipient list snapshot goes stale.** An account linked after the task was scheduled is not
