@@ -39,10 +39,6 @@ type accountResolver interface {
 //	(false, nil) = not my user (no account / 'local' / no bot) → caller tries next
 //	(true,  nil) = delivered
 //	(false, err) = owns-but-failed (resolve or send error) → caller stops, no siblings
-//
-// The live bot is read under t.mu (it may be nil after Stop — Pitfall 4: never
-// deref a racing nil bot); a nil bot or nil Store means the channel cannot push,
-// so it returns (false, nil) and lets the route fall-back handle delivery.
 func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, error) {
 	return t.deliver(ctx, identityID, "", text)
 }
@@ -59,15 +55,8 @@ func (t *Telegram) DeliverConversation(ctx context.Context, identityID, conversa
 }
 
 func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversationID, text string) (bool, error) {
-	t.mu.Lock()
-	sender := t.deliverSender()
-	t.mu.Unlock()
-	if sender == nil {
-		return false, nil
-	}
-
-	resolver := t.accountResolver()
-	if resolver == nil {
+	sender, resolver := t.pushSeams()
+	if sender == nil || resolver == nil {
 		return false, nil
 	}
 	acct, found, err := recipient(ctx, resolver, identityID, requiredConversationID)
@@ -77,11 +66,31 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 	if !found {
 		return false, nil // not my user → try next channel
 	}
-	// The Bot API rejects a message over 4096 runes outright, so an unsplit push of a
-	// long agent_job summary was lost in full — the interactive path has always split
-	// (renderer.go), the push path never did. Same splitter, same package: a second one
-	// would drift. splitTelegramText returns nil only for the empty string, where the
-	// single-send behaviour (and its API error) is preserved deliberately.
+	if err := t.sendText(ctx, sender, acct.TelegramUserID, text); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// pushSeams reads the sender under t.mu (it may be nil after Stop — Pitfall 4: never deref a
+// racing nil bot) and the account resolver. Either nil means the channel cannot push, so the
+// caller returns (false, nil) and lets the route fall-back handle delivery.
+func (t *Telegram) pushSeams() (botSender, accountResolver) {
+	t.mu.Lock()
+	sender := t.deliverSender()
+	t.mu.Unlock()
+	if sender == nil {
+		return nil, nil
+	}
+	return sender, t.accountResolver()
+}
+
+// sendText pushes text to one chat. The Bot API rejects a message over 4096 runes outright, so
+// an unsplit push of a long agent_job summary was lost in full — the interactive path has always
+// split (renderer.go), the push path never did. Same splitter, same package: a second one would
+// drift. splitTelegramText returns nil only for the empty string, where the single-send
+// behaviour (and its API error) is preserved deliberately.
+func (t *Telegram) sendText(ctx context.Context, sender botSender, telegramUserID int64, text string) error {
 	chunks := splitTelegramText(text, telegramTextCap)
 	if len(chunks) == 0 {
 		chunks = []string{text}
@@ -89,20 +98,20 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 	for i, chunk := range chunks {
 		if i > 0 {
 			if err := t.paceDeliver(ctx, t.chatRateLimit()); err != nil {
-				return false, fmt.Errorf("telegram deliver: pacing chunk %d/%d to %d: %w", i+1, len(chunks), acct.TelegramUserID, err)
+				return fmt.Errorf("telegram deliver: pacing chunk %d/%d to %d: %w", i+1, len(chunks), telegramUserID, err)
 			}
 		}
-		if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), chunk); err != nil {
+		if _, err := sender.Send(tele.ChatID(telegramUserID), chunk); err != nil {
 			// Stop at the first failure rather than pushing the remainder: the chat has
 			// already received chunks 1..i, and continuing past a rate-limit rejection
 			// only deepens the hole. The caller's retry re-sends the WHOLE text, so a
 			// mid-sequence failure costs a duplicated prefix — accepted, because the
 			// alternative (per-chunk delivery state) is a durable cursor this push path
 			// has no room for.
-			return false, fmt.Errorf("telegram deliver: send chunk %d/%d to %d: %w", i+1, len(chunks), acct.TelegramUserID, err)
+			return classified(fmt.Errorf("telegram deliver: send chunk %d/%d to %d: %w", i+1, len(chunks), telegramUserID, err))
 		}
 	}
-	return true, nil
+	return nil
 }
 
 // recipient picks the account a push goes to. A push bound to a conversation goes to the
@@ -112,16 +121,9 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 // the identity's account. found=false with no error is "not my user".
 func recipient(ctx context.Context, resolver accountResolver, identityID, conversationID string) (Account, bool, error) {
 	if conversationID != "" {
-		linked, err := resolver.LinkedAccounts(ctx, identityID)
-		if err != nil {
-			return Account{}, false, err
-		}
-		for _, acct := range linked {
-			if convID(acct.TelegramUserID) == conversationID {
-				return acct, true, nil
-			}
-		}
-		return Account{}, false, nil
+		return linkedAccount(ctx, resolver, identityID, func(acct Account) bool {
+			return convID(acct.TelegramUserID) == conversationID
+		})
 	}
 	acct, err := resolver.GetAccountByIdentity(ctx, identityID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -131,6 +133,21 @@ func recipient(ctx context.Context, resolver accountResolver, identityID, conver
 		return Account{}, false, err
 	}
 	return acct, true, nil
+}
+
+// linkedAccount returns the identity's linked account that match accepts; found=false when
+// none does.
+func linkedAccount(ctx context.Context, resolver accountResolver, identityID string, match func(Account) bool) (Account, bool, error) {
+	linked, err := resolver.LinkedAccounts(ctx, identityID)
+	if err != nil {
+		return Account{}, false, err
+	}
+	for _, acct := range linked {
+		if match(acct) {
+			return acct, true, nil
+		}
+	}
+	return Account{}, false, nil
 }
 
 // paceDeliver waits between chunks so a long split message does not trip Telegram's
@@ -165,14 +182,8 @@ func (t *Telegram) paceDeliver(ctx context.Context, d time.Duration) error {
 // honors the SAME tri-state contract as Deliver: (false,nil) not my user; (true,nil) delivered;
 // (false,err) owns-but-failed.
 func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
-	t.mu.Lock()
-	sender := t.deliverSender()
-	t.mu.Unlock()
-	if sender == nil {
-		return false, nil
-	}
-	resolver := t.accountResolver()
-	if resolver == nil {
+	sender, resolver := t.pushSeams()
+	if sender == nil || resolver == nil {
 		return false, nil
 	}
 	acct, found, err := recipient(ctx, resolver, identityID, "")
@@ -182,11 +193,18 @@ func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskI
 	if !found {
 		return false, nil // not my user → try next channel (WebUI pulls the pause)
 	}
-	text := approvalPromptText(taskID, kind)
-	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalPushMarkup(token)}); err != nil {
-		return false, fmt.Errorf("telegram deliver approval: send to %d: %w", acct.TelegramUserID, err)
+	if err := sendApproval(sender, acct.TelegramUserID, token, taskID, kind); err != nil {
+		return false, err
 	}
 	return true, nil
+}
+
+func sendApproval(sender botSender, telegramUserID int64, token, taskID, kind string) error {
+	text := approvalPromptText(taskID, kind)
+	if _, err := sender.Send(tele.ChatID(telegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalPushMarkup(token)}); err != nil {
+		return classified(fmt.Errorf("telegram deliver approval: send to %d: %w", telegramUserID, err))
+	}
+	return nil
 }
 
 // approvalPromptText is the bounded sweep-push copy — task kind + short id only, never the

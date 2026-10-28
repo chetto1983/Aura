@@ -84,21 +84,32 @@ Neither table has row security (0087, cross-identity daemon tables).
 
 **cron.** `Task.TelegramRecipients []int64` and `PendingNotification.TelegramUserID int64`; a NULL
 column reads as 0, which means none (`pgtype.Int8` at the boundary). `ChannelDeliverer` gains
-`DeliverToTelegramRecipients(ctx, identityID string, recipients []int64, text string) ([]RecipientResult, error)`;
-`deliverToOrigin` and `deliverSweptRow` call it when the route is `telegram` and the task, or the
-row, names recipients. `RecipientResult` carries the account, whether it was delivered, the error,
-and whether the error is permanent. The approval sweep passes the task's recipients the same way,
-and keeps today's rule: it pushes the prompt once, when it mints the pause. A recipient that fails
-is logged and not retried, and the prompt stays in the cockpit's approvals; `approval_reminded_at`
-is stamped as today.
+`DeliverToTelegramAccount(ctx, identityID string, telegramUserID int64, text string) (bool, error)`
+with the tri-state of every channel push. `deliverToOrigin` calls it once per recipient, each id
+once, when the route is `telegram` and the task names recipients; `deliverSweptRow` calls it for
+the one account a row names. An error is permanent when it answers `Permanent() bool` true through
+`errors.As`, so cron imports neither `channels` nor `telegram`. A permanent error queues no retry
+row, on these paths and on the identity-wide one (R5). The approval sweep calls
+`DeliverApprovalToTelegramAccount` per recipient the same way, and keeps today's rule: it pushes
+the prompt once, when it mints the pause. A recipient that fails is logged and not retried, and the
+prompt stays in the cockpit's approvals; `approval_reminded_at` is stamped as today.
 
-**channels.** `Registry.DeliverToTelegramRecipients` finds the started channel that implements it;
-no channel is `(nil, nil)`, which is "not mine".
+**channels.** The capability `TelegramAccountDeliverer` (both methods). The `Registry` methods of
+the same names use the started channel that implements it; none started is `(false, nil)`, which
+is "not mine", and the caller falls back to its route as today.
 
-**telegram.** `DeliverToRecipients` reads `LinkedAccounts(identity)` once, sends to each named
-account still linked (with the existing chunking and pacing), and returns one result per named
-account. `isPermanent(err)` is `errors.Is` against the four sentinels. `DeliverApproval` with
-recipients sends the prompt to each.
+**telegram.** `DeliverToTelegramAccount` reads `LinkedAccounts(identity)`, sends to the account
+when the identity still links it (with the existing chunking and pacing), and returns a permanent
+error naming the account when it does not (R3), never another account. A send error is permanent
+when `errors.Is` matches one of the four sentinels (R5). `DeliverApprovalToTelegramAccount` does
+the same with the approval prompt.
+
+**Amended 2026-10-28, Task 3.** The approved text had one call per push that took the recipient
+list and returned a `RecipientResult` per account. One account per call replaces it: cron does not
+import `channels`, so a result struct would have needed an adapter in `cmd/aura`, while primitives
+let `*channels.Registry` satisfy the cron seam directly as it does today; the sweep sends a row's
+one account anyway, so the live path and the sweep use the same call. The cost is one
+`LinkedAccounts` read per recipient instead of one per push; an identity links a handful.
 
 **Tool.** A new file, `internal/agent/tools/task_telegram_recipients.go`: the field, the
 directive, and the validation against the identity's linked accounts through a narrow seam over
@@ -109,12 +120,13 @@ directive, and the validation against the identity's linked accounts through a n
 1. **db_integration, migration.** Up and down; the CHECK refuses an empty array.
 2. **db_integration, telegram store.** With two accounts and no recipients, the identity push goes
    to the account that sent the last update (red today: the probe of §1, committed as a test).
-3. **telegram unit.** `DeliverToRecipients` sends to each named linked account once, in any order
-   of `LinkedAccounts` and with a repeated id; skips an unlinked one and reports it as skipped;
-   reports a mid-list failure for that account only; classifies the four sentinels as permanent and
-   a network error as not.
-4. **cron unit.** A two-recipient push with one failure inserts one failed row for that account
-   and none for the other; the sweep sends that row to that account only; a permanent failure and
+3. **telegram unit.** `DeliverToTelegramAccount` and `DeliverApprovalToTelegramAccount` send to the
+   named account, in any order of `LinkedAccounts`, and never ask the identity-wide lookup; an
+   unlinked account (or 0) is a permanent error naming it, with no send; the four sentinels are
+   permanent, a network error and a rate limit are not; a channel with no bot or no store is
+   `(false, nil)`.
+4. **cron unit.** A two-recipient push sends to each once, a repeated id once; with one failure it
+   inserts one failed row for that account and none for the other; the sweep sends that row to that account only; a permanent failure and
    a skipped account insert no row and the record names them; a deferred push inserts one row per
    recipient; a failed approval recipient inserts no row and the reminder is stamped.
 5. **tool unit.** `notify=telegram` with two links and no recipients refuses with both accounts
