@@ -109,9 +109,11 @@ policy passed.
 |---|---|---|---|
 | `internal/channels/telegram/deliver_account.go` | 10/14, 71.4% (`43c3dbd8`) | 10/10, 100% (`a4be1e12`) | none |
 | `internal/cron/deliver_recipients.go` | 20/25, 80.0% | 23/25, 92.0% (`28c01092`) | `.0`, identical to the source; `.7`, drops a `slog.Warn` |
-| `internal/agent/tools/task_telegram_recipients.go` | 41/48, 85.4% | 46/48, 95.8% (`28c01092`) | `.0`, a slice capacity; `.13`, the fallback of a `json.Marshal` that cannot fail |
+| `internal/agent/tools/task_telegram_recipients.go` | 41/48, 85.4% | 46/48, 95.8% (`28c01092`); 49/51, 96.1% after `PickTelegramRecipients` was extracted (`02e4e51e`) | `.0`, a slice capacity; the fallback of a `json.Marshal` that cannot fail |
+| `cmd/aura/task_telegram_recipients.go` | 15/17, 88.2% (`02e4e51e`, `-run=TestCLITelegramRecipients`) | `.9` killed by an empty-field case, checked by hand | `.12`, `ParseInt` at 63 bits, the same for every Telegram id |
 
-What the first runs found:
+What the first runs found (the CLI's: an empty field in `--telegram-recipients` could end the
+list instead of being skipped; no test had one):
 - `deliver_account.go`: the test meant to drive a bot with no store drove the no-bot case twice;
   the edit that should have given it a bot never applied. Two survivors dropped the resolver check.
   Two more were equivalent: `pushSeams` returned both seams nil when the bot was missing, so

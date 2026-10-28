@@ -35,6 +35,7 @@ func TestCLITelegramRecipients(t *testing.T) {
 		want     []int64
 	}{
 		"named, a repeat stored once in the order given": {two(), "4343, 4242,4343", []int64{4343, 4242}},
+		"an empty field is skipped, not the end":         {two(), "4343,,4242", []int64{4343, 4242}},
 		"all names every linked account":                 {two(), "all", []int64{4242, 4343}},
 		"one link and none named stores that one":        {&fakeLinkedAccounts{linked: []tools.TelegramAccount{phone}}, "", []int64{4242}},
 	} {
