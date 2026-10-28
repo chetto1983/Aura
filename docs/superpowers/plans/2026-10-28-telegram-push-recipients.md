@@ -63,6 +63,7 @@ The operator approved the spec, R6 included.
 | `internal/channels/telegram/deliver_account.go` (new) | `DeliverToTelegramAccount`, `DeliverApprovalToTelegramAccount`, `classified`. |
 | `internal/agent/tools/task_telegram_recipients.go` (new), `task.go` | The field, the directive, the validation, `list`. |
 | `cmd/aura/serve_adapters.go` | The linked-accounts seam for the tool; the column in create and list. |
+| `cmd/aura/task.go`, `cmd/aura/task_telegram_recipients.go` (new) | `--telegram-recipients` and its validation. |
 
 ## Tasks
 
@@ -106,6 +107,13 @@ The operator approved the spec, R6 included.
   names the recipients. db_integration: the live tool against Postgres links asks, persists the
   chosen accounts in order and lists them; a NULL column lists none.
 - [x] Commit `feat(tools): ask which Telegram accounts a task reaches`.
+
+### Task 5b — The CLI names its recipients (R2; review of #198, operator 2026-10-28)
+- [x] Red, unit: `TestCLITelegramRecipients` (`cmd/aura`); db_integration: the CLI INSERT reads
+  its recipients back (`TestCLIScheduledTaskCarriesAnOwner`).
+- [x] Green: R2's rule becomes `tools.PickTelegramRecipients`, shared by the tool and
+  `cliTelegramRecipients`; `aura task schedule --telegram-recipients=<ids|all>`.
+- [x] Commit `feat(cli): aura task schedule names its Telegram recipients`.
 
 ### Task 6 — Close
 - [x] Mutation ≥ 70% on `deliver_account.go` (100%), `deliver_recipients.go` (92.0%) and

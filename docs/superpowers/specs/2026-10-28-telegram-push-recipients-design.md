@@ -56,7 +56,6 @@ Goals:
 
 Non-goals:
 - Showing or editing the recipients in the cockpit's scheduler board.
-- Recipients on the CLI: `aura task schedule --notify=telegram` names none, so its task takes R6.
 - Other channels: WhatsApp and email have one destination per identity.
 - The relink guard of the previous slice (§6).
 
@@ -65,11 +64,11 @@ Non-goals:
 | # | Decision | Why |
 |---|---|---|
 | R1 | `scheduler_tasks.telegram_recipients bigint[]`, NULL when the task names none; when set it is not empty and holds each id once. "All" stores every account linked at schedule time. | One column covers one, another and all. A snapshot is explicit: an account linked later is not added behind the operator's back. |
-| R2 | The `task` tool takes an optional `telegram_recipients` (array of Telegram user ids), and only with `notify=telegram`. With two or more linked accounts and none named, it refuses with a choice directive that lists each account (name, `@username`, id) and "all". With one linked account it stores that one. With none linked it refuses, as a route that cannot deliver is refused today. An id not linked to the identity is refused; a repeated id is stored once. | The same guard as a missing `notify`, at the same moment. So a task the agent schedules after this slice with `notify=telegram` names its recipients; the CLI and the cockpit's scheduler board take none (R6). |
+| R2 | The `task` tool takes an optional `telegram_recipients` (array of Telegram user ids), and only with `notify=telegram`. With two or more linked accounts and none named, it refuses with a choice directive that lists each account (name, `@username`, id) and "all". With one linked account it stores that one. With none linked it refuses, as a route that cannot deliver is refused today. An id not linked to the identity is refused; a repeated id is stored once. `aura task schedule` applies the same rule through `--telegram-recipients` (ids separated by commas, or `all`); it cannot ask, so with two or more links and none named it refuses and lists them (operator, 2026-10-28, from the review of #198). | The same guard as a missing `notify`, at the same moment. So a task the agent or the CLI schedules after this slice with `notify=telegram` names its recipients; the cockpit's scheduler board takes none (R6). |
 | R3 | A task's Telegram pushes, the result and the approval prompt, go to its recipients. A recipient no longer linked is skipped: a terminal result, named in the record, with no retry row; it is never replaced by another account. | Unlink means stop (previous slice, D6). |
 | R4 | Each recipient is sent to on its own. A failed recipient gets its own `pending_notifications` row, with the new column `telegram_user_id`, and the sweep retries that recipient only; a push deferred to the end of quiet hours is queued as one row per recipient too, so a Telegram row always names at most one account. The push counts as handled when every recipient is delivered, queued, skipped (R3) or recorded as permanent (R5). Delivery stays at least once: a crash between a send and its record can send it again, as today. | Retrying the whole push would resend to the phones that already got it, at every attempt. |
 | R5 | `ErrBlockedByUser`, `ErrChatNotFound`, `ErrNotStartedByUser` and `ErrUserIsDeactivated` are permanent: no retry row; the origin conversation records "not delivered to <account>: <reason>". | No retry can succeed. The fix is the operator's: unlink, or unblock the bot. |
-| R6 | With no recipients named, `GetTelegramAccountByIdentity` orders by `COALESCE(last_seen_at, added_at) DESC, added_at DESC, telegram_user_id DESC`, the order the password reset and the recovery already use. After R2, that is a task scheduled before this slice; a task scheduled with `aura task schedule --notify=telegram`, or switched to Telegram in the cockpit's scheduler board, neither of which takes recipients (non-goals); and the approval prompt of a task whose route is not Telegram. | Goal 4. It also fixes #196 for every task scheduled before this slice. |
+| R6 | With no recipients named, `GetTelegramAccountByIdentity` orders by `COALESCE(last_seen_at, added_at) DESC, added_at DESC, telegram_user_id DESC`, the order the password reset and the recovery already use. After R2, that is a task scheduled before this slice; a task switched to Telegram in the cockpit's scheduler board, which takes no recipients (non-goal); and the approval prompt of a task whose route is not Telegram. | Goal 4. It also fixes #196 for every task scheduled before this slice. |
 | R7 | The migration takes the next free number at landing (0145 today). | CLAUDE.md. |
 
 R6 answers "existing tasks with two accounts" (approved 2026-10-28). #197 refuses such a push
@@ -138,7 +137,10 @@ directive, and the validation against the identity's linked accounts through a n
    approval recipient inserts no row and the reminder is stamped.
 5. **tool unit.** `notify=telegram` with two links and no recipients refuses with both accounts
    and "all" in the directive and persists nothing; with recipients it persists them, a repeated
-   id once; an unlinked id is refused; one link stores that account; no link is refused.
+   id once; an unlinked id is refused; one link stores that account; no link is refused. The
+   CLI, unit: the same cases through `--telegram-recipients`, plus `all`, an id that is no number,
+   and two links with none named refused with the accounts and the flag; db_integration: its
+   INSERT stores the recipients.
 6. **db_integration E2E** (`internal/channels/telegram` and `internal/cron`): a task with both
    accounts as recipients reaches both chats through the links in Postgres, the channel, the
    registry and the cron dispatcher, and so does its approval prompt from the registry on; after
@@ -154,7 +156,7 @@ directive, and the validation against the identity's linked accounts through a n
   refuses to link a chat whose conversation is another identity's.
 - **Two writers of the recipient rule.** #197 refuses ambiguity; R6 orders. Whichever lands second
   reconciles the test that expects the other behaviour.
-- **A task the CLI or the cockpit sets to Telegram names no recipients** and goes to the account
+- **A task the cockpit sets to Telegram names no recipients** and goes to the account
   seen most recently (R6), not to a list the operator chose.
 - **A recipient list snapshot goes stale.** An account linked after the task was scheduled is not
   in it. The tool's `list` names the recipients, so the operator can see it.

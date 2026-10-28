@@ -292,7 +292,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		Status:               status,
 		NextRunAt:            next,
 		OriginConversationID: originConvID,
-		TelegramRecipients:   accountIDs(recipients),
+		TelegramRecipients:   TelegramRecipientIDs(recipients),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)

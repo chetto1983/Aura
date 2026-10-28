@@ -80,6 +80,17 @@ db_integration, `TestTaskToolPersistsTheChosenTelegramRecipients` (`cmd/aura`): 
 built by `newTaskTool`, reads two links made through the real onboarding, asks, then persists the
 chosen order and lists it; a NULL column lists `nil`.
 
+## Task 5b — the CLI names its recipients (R2, operator 2026-10-28)
+
+Unit, `TestCLITelegramRecipients` (`cmd/aura`), red before `cliTelegramRecipients` existed:
+`4343, 4242,4343` stores `4343, 4242`; `all` stores every linked account in link order; one link
+and none named stores it; two links and none named are refused with `@davide (4242)`,
+`Lavoro (4343)`, the flag and `all`; no link, an unlinked id, an id that is no number and a failing
+lookup are refused; `--notify=stdout` never asks for the accounts and refuses the flag.
+db_integration, `TestCLIScheduledTaskCarriesAnOwner`: the INSERT reads its two recipients back.
+R2's rule is one function, `tools.PickTelegramRecipients`, so the tool and the CLI cannot drift;
+the tool's own tests passed unchanged after the extraction.
+
 ## Gates
 
 On `28c01092`: `go build ./...`, `go vet ./...` and with `db_integration`, golangci-lint 2.14.0 on

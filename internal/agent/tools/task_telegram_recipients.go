@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -36,8 +37,44 @@ func (a TelegramAccount) name() string {
 	}
 }
 
-// telegramRecipients resolves the accounts a notify=telegram task reaches
-// (docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md, R2). It returns the
+// ErrNoTelegramLink is returned when the identity links no Telegram account, so notify=telegram
+// cannot deliver.
+var ErrNoTelegramLink = errors.New("notify=telegram cannot deliver: no Telegram account is linked to this identity")
+
+// ErrTelegramRecipientsRequired is returned when the identity links two or more accounts and
+// none was named.
+var ErrTelegramRecipientsRequired = errors.New("two or more Telegram accounts are linked and none was named")
+
+// PickTelegramRecipients applies R2 of
+// docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md to the accounts an identity
+// links and the ids an operator named: each named id once, in the order given, and only if linked;
+// none named is the one linked account, or ErrTelegramRecipientsRequired when there are more.
+// The task tool and `aura task schedule` share it.
+func PickTelegramRecipients(linked []TelegramAccount, named []int64) ([]TelegramAccount, error) {
+	if len(linked) == 0 {
+		return nil, ErrNoTelegramLink
+	}
+	if len(named) == 0 {
+		if len(linked) == 1 {
+			return linked, nil
+		}
+		return nil, fmt.Errorf("%w (linked: %s)", ErrTelegramRecipientsRequired, accountNames(linked))
+	}
+	var picked []TelegramAccount
+	for _, id := range named {
+		if slices.ContainsFunc(picked, func(p TelegramAccount) bool { return p.TelegramUserID == id }) {
+			continue
+		}
+		i := slices.IndexFunc(linked, func(l TelegramAccount) bool { return l.TelegramUserID == id })
+		if i < 0 {
+			return nil, fmt.Errorf("the Telegram account %d is not linked to this identity (linked: %s)", id, accountNames(linked))
+		}
+		picked = append(picked, linked[i])
+	}
+	return picked, nil
+}
+
+// telegramRecipients resolves the accounts a notify=telegram task reaches (R2). It returns the
 // accounts to persist, or a directive when the operator must choose among two or more, or an
 // error the model can act on. A nil seam (the pool-free manifest path) checks nothing.
 func (t *TaskTool) telegramRecipients(ctx context.Context, a taskArgs) ([]TelegramAccount, *ToolResult, error) {
@@ -54,28 +91,17 @@ func (t *TaskTool) telegramRecipients(ctx context.Context, a taskArgs) ([]Telegr
 	if err != nil {
 		return nil, nil, fmt.Errorf("task schedule: read the linked Telegram accounts: %w", err)
 	}
-	if len(linked) == 0 {
-		return nil, nil, fmt.Errorf("task schedule: notify=telegram cannot deliver: no Telegram account is linked to this identity. No task was created: tell the operator to link one in Settings, or ask which other notify route to use")
-	}
-	if len(a.TelegramRecipients) == 0 {
-		if len(linked) == 1 {
-			return linked, nil, nil
-		}
+	picked, err := PickTelegramRecipients(linked, a.TelegramRecipients)
+	switch {
+	case errors.Is(err, ErrTelegramRecipientsRequired):
 		directive := telegramRecipientsChoiceResult(linked)
 		return nil, &directive, nil
+	case errors.Is(err, ErrNoTelegramLink):
+		return nil, nil, fmt.Errorf("task schedule: %w. No task was created: tell the operator to link one in Settings, or ask which other notify route to use", err)
+	case err != nil:
+		return nil, nil, fmt.Errorf("task schedule: %w. No task was created", err)
 	}
-	var named []TelegramAccount
-	for _, id := range a.TelegramRecipients {
-		if slices.ContainsFunc(named, func(n TelegramAccount) bool { return n.TelegramUserID == id }) {
-			continue
-		}
-		i := slices.IndexFunc(linked, func(l TelegramAccount) bool { return l.TelegramUserID == id })
-		if i < 0 {
-			return nil, nil, fmt.Errorf("task schedule: Telegram account %d is not linked to this identity (linked: %s). No task was created", id, accountNames(linked))
-		}
-		named = append(named, linked[i])
-	}
-	return named, nil, nil
+	return picked, nil, nil
 }
 
 func telegramRecipientsChoiceResult(linked []TelegramAccount) ToolResult {
@@ -112,7 +138,9 @@ func accountNames(accounts []TelegramAccount) string {
 	return strings.Join(names, ", ")
 }
 
-func accountIDs(accounts []TelegramAccount) []int64 {
+// TelegramRecipientIDs are the ids a task stores for the accounts it reaches; nil for none, never
+// an empty list, which migration 0145's CHECK refuses.
+func TelegramRecipientIDs(accounts []TelegramAccount) []int64 {
 	if len(accounts) == 0 {
 		return nil
 	}

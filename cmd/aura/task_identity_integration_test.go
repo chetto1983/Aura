@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -60,6 +61,7 @@ func TestCLIScheduledTaskCarriesAnOwner(t *testing.T) {
 		NextRunAt:    time.Now().Add(24 * time.Hour),
 		NotifyRoute:  "telegram",
 		IdentityID:   owner,
+		Recipients:   []int64{9_000_145_401, 9_000_145_402},
 	}
 	if err := insertScheduledTask(ctx, pool, row); err != nil {
 		t.Fatalf("insert scheduled task: %v", err)
@@ -71,9 +73,10 @@ func TestCLIScheduledTaskCarriesAnOwner(t *testing.T) {
 	})
 
 	var stored, route string
+	var recipients []int64
 	if err := pool.QueryRow(ctx,
-		`SELECT identity_id, notify_route FROM aura.scheduler_tasks WHERE id = $1`, id,
-	).Scan(&stored, &route); err != nil {
+		`SELECT identity_id, notify_route, telegram_recipients FROM aura.scheduler_tasks WHERE id = $1`, id,
+	).Scan(&stored, &route, &recipients); err != nil {
 		t.Fatalf("read back scheduled task: %v", err)
 	}
 	if stored != owner {
@@ -84,6 +87,9 @@ func TestCLIScheduledTaskCarriesAnOwner(t *testing.T) {
 	}
 	if route != "telegram" {
 		t.Errorf("stored notify_route = %q, want telegram", route)
+	}
+	if !slices.Equal(recipients, row.Recipients) {
+		t.Errorf("stored telegram_recipients = %v, want %v", recipients, row.Recipients)
 	}
 }
 

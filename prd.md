@@ -4361,6 +4361,8 @@ Landed (D10, 2026-10-28; `docs/superpowers/verification/2026-10-28-telegram-push
   whose push turns permanent ends there, instead of spending the attempt bound.
 - The task tool asks which accounts a `notify=telegram` task reaches when two or more are linked,
   stores the choice in the order given, each id once, and refuses a route with no linked account.
+  `aura task schedule` applies the same rule through `--telegram-recipients` (ids or `all`); a
+  task set to Telegram in the cockpit's scheduler board still names none and takes the default.
 - Each recipient is pushed on its own: the result, and the approval prompt the sweep mints. A
   failure that can be retried queues a row for that account only. An unlinked account, a blocked
   bot or a gone chat queues nothing and is named in the origin conversation; that holds on every
