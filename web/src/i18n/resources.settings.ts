@@ -95,6 +95,20 @@ export const settingsEn = {
         createQr: 'Create Telegram QR',
         checkLink: 'Check link status',
       },
+      accounts: {
+        heading: 'Linked accounts',
+        empty: 'No Telegram account is linked to this identity.',
+        error: "Couldn't load the linked accounts.",
+        meta: 'Linked {{added}} · {{seen}}',
+        lastSeen: 'last seen {{date}}',
+        neverSeen: 'not seen yet',
+        unlink: 'Unlink',
+        cancel: 'Cancel',
+        confirmTitle: 'Unlink {{name}}?',
+        confirmBody:
+          'It stops reaching Aura, and its messages get the activation reply, until it is linked again.',
+        unlinkError: "Couldn't unlink the account: {{reason}}",
+      },
     },
     modelRouting: {
       heading: 'Model routing',
@@ -329,6 +343,20 @@ export const settingsIt = {
         save: 'Salva token Telegram',
         createQr: 'Crea QR Telegram',
         checkLink: 'Controlla stato link',
+      },
+      accounts: {
+        heading: 'Account collegati',
+        empty: 'Nessun account Telegram è collegato a questa identità.',
+        error: 'Impossibile caricare gli account collegati.',
+        meta: 'Collegato {{added}} · {{seen}}',
+        lastSeen: 'visto {{date}}',
+        neverSeen: 'mai visto',
+        unlink: 'Scollega',
+        cancel: 'Annulla',
+        confirmTitle: 'Scollegare {{name}}?',
+        confirmBody:
+          'Smette di raggiungere Aura, e ai suoi messaggi risponde l’avviso di attivazione, finché non viene ricollegato.',
+        unlinkError: 'Impossibile scollegare l’account: {{reason}}',
       },
     },
     modelRouting: {
