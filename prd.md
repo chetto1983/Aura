@@ -4334,6 +4334,24 @@ Two risks were left:
   from the cockpit. Closed by D11 (approved 2026-10-28): the consume refuses such a link, and
   the first identity can still link the chat again.
 
+Which linked Telegram account an identity push reaches (2026-10-28). Measured on PostgreSQL 18
+with a scratch db_integration test on `be99204`, two accounts linked through the real onboarding,
+for both `Deliver` (a task with `notify=telegram`) and `DeliverApproval`:
+- after linking the first and then the second, the push reached the first;
+- after the first chat sent an update (`TouchLastSeen`), it reached the second;
+- after the second chat sent one, it reached the first again.
+
+`GetTelegramAccountByIdentity` is a `:one` query with no `ORDER BY`, so it returns the row that
+comes first in the heap, and each update moves the writer's row to the end. The push goes to the
+account used least recently, which is the #196 symptom. The operator chose a per-task recipient
+list (one account, another, or all), and the most recently seen account when a task names none:
+`docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md`.
+
+This does not establish:
+- the order on another database, or with more rows: the order is not documented, which is the
+  point;
+- anything on the live stack.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not

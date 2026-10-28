@@ -1,7 +1,7 @@
 # Telegram pushes reach the chats the task names — design
 
 Date: 2026-10-28
-Status: draft, for the operator's review. D10 of
+Status: approved by the operator on 2026-10-28, R6 included. D10 of
 `docs/superpowers/specs/2026-10-27-telegram-account-links-design.md`, split into its own slice.
 Plan: `docs/superpowers/plans/2026-10-28-telegram-push-recipients.md`.
 
@@ -70,9 +70,8 @@ Non-goals:
 | R6 | With no recipients named, `GetTelegramAccountByIdentity` orders by `COALESCE(last_seen_at, added_at) DESC, added_at DESC, telegram_user_id DESC`, the order the password reset and the recovery already use. | Goal 4. It also fixes #196 for every task scheduled before this slice. |
 | R7 | The migration takes the next free number at landing (0145 today). | CLAUDE.md. |
 
-**Open for the operator:** R6 is my answer to "existing tasks with two accounts". #197 refuses
-such a push as ambiguous instead; with R6 it would no longer be ambiguous. Whichever lands second
-reconciles.
+R6 answers "existing tasks with two accounts" (approved 2026-10-28). #197 refuses such a push
+as ambiguous instead; with R6 it is no longer ambiguous. Whichever lands second reconciles.
 
 ## 4. Design
 

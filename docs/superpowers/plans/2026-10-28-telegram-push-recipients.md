@@ -1,6 +1,6 @@
 # Telegram pushes reach the chats the task names — Implementation Plan
 
-**Status (2026-10-28):** draft, waiting for the operator's review of the spec.
+**Status (2026-10-28):** in progress. The operator approved the spec, R6 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -63,9 +63,9 @@
 ## Tasks
 
 ### Task 0 — Record the measurement (PRD-first)
-- [ ] `prd.md`, Telegram section: the heap-order measurement of spec §1, with what it does not
+- [x] `prd.md`, Telegram section: the heap-order measurement of spec §1, with what it does not
   show (spec §7).
-- [ ] Commit `docs(prd): measure which linked Telegram account an identity push reaches`.
+- [x] Commit `docs(prd): measure which linked Telegram account an identity push reaches`.
 
 ### Task 1 — The default goes to the account seen last (R6, acceptance 2)
 - [ ] Red, db_integration: the probe of spec §1 as a test; after the first chat's update, the
