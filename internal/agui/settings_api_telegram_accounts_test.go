@@ -51,7 +51,9 @@ func TestListTelegramAccounts(t *testing.T) {
 		{TelegramUserID: 777, AddedAt: seen},
 	}}
 	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/settings/telegram/accounts", nil), "op-a")
-	rec := serveTelegramAccounts(&Server{telegramLinks: links}, req)
+	server := &Server{}
+	server.SetTelegramAccountLinks(links)
+	rec := serveTelegramAccounts(server, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -90,6 +92,10 @@ func TestUnlinkTelegramAccount(t *testing.T) {
 	}
 	if want := (unlinkCall{identityID: "op-a", telegramUserID: 4242}); len(mine.unlinkedAs) != 1 || mine.unlinkedAs[0] != want {
 		t.Fatalf("unlinked %+v, want %+v: the identity is the principal's", mine.unlinkedAs, want)
+	}
+	smallest := &fakeTelegramLinks{unlinked: true}
+	if code := unlink(smallest, "/api/settings/telegram/accounts/1"); code != http.StatusNoContent || len(smallest.unlinkedAs) != 1 {
+		t.Fatalf("id 1 = %d with %d unlinks, want 204 and one: the smallest positive id is an id", code, len(smallest.unlinkedAs))
 	}
 	if code := unlink(&fakeTelegramLinks{}, "/api/settings/telegram/accounts/4242"); code != http.StatusNotFound {
 		t.Fatalf("a link the caller does not have = %d, want 404", code)
