@@ -14,6 +14,12 @@ type permanentErr struct{ msg string }
 func (e permanentErr) Error() string { return e.msg }
 func (permanentErr) Permanent() bool { return true }
 
+// notPermanentErr answers the question and says no.
+type notPermanentErr struct{}
+
+func (notPermanentErr) Error() string   { return "rate limited" }
+func (notPermanentErr) Permanent() bool { return false }
+
 // errUnowned scripts an account push no channel can make: (false, nil).
 var errUnowned = errors.New("no channel")
 
@@ -178,6 +184,15 @@ func TestTaskPushReachesEachTelegramRecipient(t *testing.T) {
 		}
 	})
 
+	t.Run("a task with no recipients queues its retry for the identity, naming no account", func(t *testing.T) {
+		t.Parallel()
+		channel := &accountChannel{results: map[int64]error{0: errors.New("telegram: network down")}}
+		run := dispatchToRecipients(t, channel, &captureNotifier{}, KindReminder, DispatchDeps{})
+		if want := []string{"failed 0"}; !slices.Equal(run.queued(), want) {
+			t.Fatalf("queued = %v, want %v", run.queued(), want)
+		}
+	})
+
 	t.Run("a task with no recipients keeps the identity push, and a permanent failure queues nothing", func(t *testing.T) {
 		t.Parallel()
 		channel := &accountChannel{results: map[int64]error{0: permanentErr{"bot was blocked by the user"}}}
@@ -271,7 +286,7 @@ func TestTelegramRecipientsAreTheTelegramRoutesOnlyEachOnce(t *testing.T) {
 			t.Fatalf("telegramRecipients(%s, %v) = %v, want %v", c.route, c.named, got, c.want)
 		}
 	}
-	if permanent(nil) || permanent(errors.New("down")) || !permanent(fmt.Errorf("wrapped: %w", permanentErr{"gone"})) {
+	if permanent(nil) || permanent(errors.New("down")) || permanent(notPermanentErr{}) || !permanent(fmt.Errorf("wrapped: %w", permanentErr{"gone"})) {
 		t.Fatal("permanent must answer only an error that says so, through any wrapping")
 	}
 }
