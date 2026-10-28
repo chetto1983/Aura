@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/chetto1983/aura/internal/conversations"
 )
 
 // conversations_compaction_api.go carries the two routes behind the composer's `/compact`
-// command: the POST that condenses the thread's earlier turns into its durable summary, and
+// command: the POST that condenses a branch's earlier turns into its durable summary, and
 // the GET the chat lane reads to draw the marker showing where that summary now reaches.
+// Both name the branch by ?leaf_seq, the last turn the cockpit has on screen.
 //
 // Both are thin in the conversations_api.go sense: owner-gate, ONE call, project. The
 // decision about WHAT gets condensed lives in conversations.Store.Compact, and the summary
@@ -24,14 +26,13 @@ import (
 
 // conversationCompactor is the operator-requested compaction seam; *runner.Runner satisfies it.
 type conversationCompactor interface {
-	CompactConversation(ctx context.Context, conversationID string) (conversations.CompactionResult, error)
+	CompactConversation(ctx context.Context, conversationID string, leafSeq int) (conversations.CompactionResult, error)
 }
 
-// compactionReader is the durable-summary read seam; *conversations.Store satisfies it. The
-// empty branch id is the canonical branch — the one Compact and LoadManagedHistory both file
-// under.
+// compactionReader is the durable-summary read seam; *conversations.Store satisfies it. It
+// reads the row of the branch leafSeq ends, the one Compact files under for the same leaf.
 type compactionReader interface {
-	LoadCompaction(ctx context.Context, conversationID, branchID string) (conversations.Compaction, bool, error)
+	LoadPathCompaction(ctx context.Context, conversationID string, leafSeq int) (conversations.Compaction, bool, error)
 }
 
 // compactionDTO is what the cockpit draws the in-chat marker from. covers_through_seq is the
@@ -66,6 +67,24 @@ func (s *Server) registerCompactionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/conversations/{id}/compaction", s.handleGetCompaction)
 }
 
+// leafSeqParam reads ?leaf_seq, the last turn of the branch on the operator's screen: the
+// number a send carries as aura.parent_seq (spec 2026-10-27, D13). Absent, it is 0, the turn
+// written last. Present, it is validated as aura.parent_seq is, and the refusal is written.
+func (s *Server) leafSeqParam(w http.ResponseWriter, r *http.Request, threadID string) (int, bool) {
+	query := r.URL.Query()
+	if !query.Has("leaf_seq") {
+		return 0, true
+	}
+	// A value that is not an int is refused like a non-positive one. Atoi returns the clamped
+	// value with ErrRange, so the error, not the value, decides.
+	leaf, err := strconv.Atoi(query.Get("leaf_seq"))
+	if err != nil {
+		leaf = 0
+	}
+	_, ok := s.requireTurnSeq(r.Context(), w, threadID, "leaf_seq", leaf)
+	return leaf, ok
+}
+
 // ownedConversation resolves {id} and proves the caller owns it (MUSR-01 / D-06): a foreign
 // or absent id is 404 either way, so neither route discloses another identity's thread.
 func (s *Server) ownedConversation(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -80,8 +99,8 @@ func (s *Server) ownedConversation(w http.ResponseWriter, r *http.Request) (stri
 	return id, true
 }
 
-// handleCompactConversation condenses the thread's earlier turns into its durable summary
-// and returns what that changed.
+// handleCompactConversation condenses the earlier turns of the branch on screen into its
+// durable summary and returns what that changed.
 //
 // A refusal is a status, not an error body on a 200: the operator asked for a state change
 // that did not happen, and a 200 carrying a zero result reads, in the composer, exactly like
@@ -103,7 +122,11 @@ func (s *Server) handleCompactConversation(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := compactor.CompactConversation(scopedCtx(r.Context()), id)
+	leaf, ok := s.leafSeqParam(w, r, id)
+	if !ok {
+		return
+	}
+	result, err := compactor.CompactConversation(scopedCtx(r.Context()), id, leaf)
 	switch {
 	case errors.Is(err, conversations.ErrCompactionUnavailable):
 		http.Error(w, "compaction unavailable", http.StatusServiceUnavailable)
@@ -132,13 +155,17 @@ func (s *Server) handleCompactConversation(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleGetCompaction returns the thread's stored summary, or the zero DTO when it has
-// never been compacted. A store that cannot answer the question at all (no compaction read
-// seam wired) reports the same zero DTO: the marker is an annotation on the transcript, and
-// failing the whole thread read because an annotation is unavailable would be a worse answer
-// than drawing no marker.
+// handleGetCompaction returns the stored summary of the branch on screen, or the zero DTO
+// when that branch has never been compacted. A store that cannot answer the question at all
+// (no compaction read seam wired) reports the same zero DTO: the marker is an annotation on
+// the transcript, and failing the whole thread read because an annotation is unavailable
+// would be a worse answer than drawing no marker.
 func (s *Server) handleGetCompaction(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.ownedConversation(w, r)
+	if !ok {
+		return
+	}
+	leaf, ok := s.leafSeqParam(w, r, id)
 	if !ok {
 		return
 	}
@@ -147,7 +174,7 @@ func (s *Server) handleGetCompaction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, compactionDTO{})
 		return
 	}
-	stored, found, err := reader.LoadCompaction(scopedCtx(r.Context()), id, "")
+	stored, found, err := reader.LoadPathCompaction(scopedCtx(r.Context()), id, leaf)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

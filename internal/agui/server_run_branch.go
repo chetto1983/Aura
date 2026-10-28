@@ -25,17 +25,8 @@ func (s *Server) continueBranch(ctx context.Context, w http.ResponseWriter, thre
 	if parentSeq == nil {
 		return ctx, true
 	}
-	if *parentSeq <= 0 {
-		http.Error(w, "aura.parent_seq must be a positive turn seq", http.StatusBadRequest)
-		return ctx, false
-	}
-	latest, err := s.conv.LatestTurnSeq(scopedCtx(ctx), threadID)
-	if err != nil {
-		writeStoreErr(w, err)
-		return ctx, false
-	}
-	if *parentSeq > latest {
-		http.Error(w, "turn not found", http.StatusNotFound)
+	latest, ok := s.requireTurnSeq(ctx, w, threadID, "aura.parent_seq", *parentSeq)
+	if !ok {
 		return ctx, false
 	}
 	if *parentSeq != latest {
@@ -50,6 +41,27 @@ func (s *Server) continueBranch(ctx context.Context, w http.ResponseWriter, thre
 		}
 	}
 	return runner.WithBranchLeaf(ctx, *parentSeq), true
+}
+
+// requireTurnSeq checks that seq, the request field named name, is a turn of the thread. It
+// writes the refusal and reports false when seq is not positive (400) or lies above the turn
+// written last (404). Seqs are dense, so every seq up to that one names a turn. It returns
+// the turn written last; a refusal returns the zero values, which callers do not read.
+func (s *Server) requireTurnSeq(ctx context.Context, w http.ResponseWriter, threadID, name string, seq int) (latest int, ok bool) {
+	if seq <= 0 {
+		http.Error(w, name+" must be a positive turn seq", http.StatusBadRequest)
+		return
+	}
+	last, err := s.conv.LatestTurnSeq(scopedCtx(ctx), threadID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if seq > last {
+		http.Error(w, "turn not found", http.StatusNotFound)
+		return
+	}
+	return last, true
 }
 
 func (s *Server) threadHasPendingPause(ctx context.Context, threadID string) (bool, error) {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/google/uuid"
 )
 
 func TestApplyStoredCompaction_ReplacesOnlyTheCoveredPrefix(t *testing.T) {
@@ -133,8 +134,28 @@ func TestLadder_KeepsAStoredCompactionInForceUnderTheBudget(t *testing.T) {
 // Compaction disabled means disabled: no summarizer, no request, no row.
 func TestCompact_WithoutASummarizerIsUnavailable(t *testing.T) {
 	var store *Store
-	_, err := store.Compact(context.Background(), "conv", ContextConfig{})
+	_, err := store.Compact(context.Background(), "conv", 0, ContextConfig{})
 	if !errors.Is(err, ErrCompactionUnavailable) {
 		t.Fatalf("err = %v, want ErrCompactionUnavailable", err)
+	}
+}
+
+// A leaf whose branch cannot be read fails the compaction (CodeRabbit on #195). Falling back
+// to the canonical branch would let this branch reuse the canonical summary, or file its own
+// under the canonical row.
+func TestCompact_AnUnreadableBranchFailsBeforeAnySummary(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("branch read failed")
+	fake := &fakeDBTX{queryRowVal: &fakeRow{scanErr: boom}}
+	sum := &fakeSummarizer{summary: "never asked"}
+
+	_, err := fakeStore(t, fake).Compact(context.Background(), uuid.Must(uuid.NewV7()).String(), 5,
+		ContextConfig{Summarizer: sum})
+
+	if !errors.Is(err, boom) {
+		t.Fatalf("Compact = %v, want the branch read error", err)
+	}
+	if sum.calls != 0 || fake.execCalls != 0 {
+		t.Fatalf("an unreadable branch reached the summarizer (%d) or a write (%d)", sum.calls, fake.execCalls)
 	}
 }

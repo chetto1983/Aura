@@ -136,7 +136,8 @@ async function installComposerRoutes(page: Page) {
   );
   // The thread starts uncompacted; the POST is what moves the watermark (and the marker).
   await stubNoCompaction(page);
-  await page.route('**/api/conversations/*/compact', (route) =>
+  // The POST names the branch on screen with ?leaf_seq, which a glob would not match.
+  await page.route(/\/api\/conversations\/[^/]+\/compact(\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -302,10 +303,12 @@ test.describe('cockpit composer / menu — open→filter→select→send carries
 
     // Picking it POSTs the compaction and clears the composer — a command is a verb the
     // composer performs, not a message, so the text it was invoked with does not survive.
-    await Promise.all([
+    // It compacts the branch on screen, which ends at the second turn (spec 2026-10-27, D13).
+    const [posted] = await Promise.all([
       page.waitForRequest((req) => req.url().includes('/compact') && req.method() === 'POST'),
       compact.click(),
     ]);
+    expect(new URL(posted.url()).searchParams.get('leaf_seq')).toBe('2');
     await expect.poll(() => tracker.compactCount, { timeout: 10000 }).toBe(1);
     await expect(composer).toHaveValue('');
     domAssertions += 1;

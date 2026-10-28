@@ -9,9 +9,11 @@ import type { Page } from '@playwright/test';
 // The fixture answer is "this thread has never been compacted", which is what every thread
 // fixture means: no marker, no watermark.
 
-/** Stubs GET /api/conversations/:id/compaction as an uncompacted thread. */
+/** Stubs GET /api/conversations/:id/compaction as an uncompacted thread. The read names the
+ * branch on screen with ?leaf_seq (spec 2026-10-27, D13), and a Playwright glob matches the
+ * whole URL, query included, so the pattern is a regex that allows one. */
 export async function stubNoCompaction(page: Page): Promise<void> {
-  await page.route('**/api/conversations/*/compaction', (route) =>
+  await page.route(/\/api\/conversations\/[^/]+\/compaction(\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',

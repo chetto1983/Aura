@@ -63,7 +63,7 @@ func TestCompact_StoresTheSummaryTheLadderThenReplays(t *testing.T) {
 	seedTurns(t, store, convID, seeded...)
 
 	sum := &fakeSummarizer{summary: "L'operatore ha fatto tre domande verbose; Aura ha risposto."}
-	result, err := store.Compact(ownerCtx(), convID, compactConfig(sum))
+	result, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum))
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestCompact_RefusesASummaryLongerThanTheConversation(t *testing.T) {
 	)
 
 	sum := &fakeSummarizer{summary: strings.Repeat("un riassunto molto piu' lungo dei turni. ", 200)}
-	_, err := store.Compact(ownerCtx(), convID, compactConfig(sum))
+	_, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum))
 	if !errors.Is(err, ErrCompactionNotWorthwhile) {
 		t.Fatalf("Compact = %v, want ErrCompactionNotWorthwhile", err)
 	}
@@ -155,7 +155,7 @@ func TestCompact_WithoutAPrincipalSeesNothing(t *testing.T) {
 	seedTurns(t, store, convID, seeded...)
 
 	sum := &fakeSummarizer{summary: "non deve mai essere chiesto"}
-	if _, err := store.Compact(context.Background(), convID, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
+	if _, err := store.Compact(context.Background(), convID, 0, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("Compact with no principal = %v, want ErrNothingToCompact", err)
 	}
 	if sum.calls != 0 {
@@ -174,11 +174,139 @@ func TestCompact_NothingToCompactOnAFreshConversation(t *testing.T) {
 		AppendTurnParams{ConversationID: convID, Seq: 1, Role: llm.RoleUser, Content: "prima domanda"})
 
 	sum := &fakeSummarizer{summary: "irrilevante"}
-	if _, err := store.Compact(ownerCtx(), convID, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
+	if _, err := store.Compact(ownerCtx(), convID, 0, compactConfig(sum)); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("Compact on a single-turn conversation = %v, want ErrNothingToCompact", err)
 	}
 	if sum.calls != 0 {
 		t.Fatalf("summarizer called %d times, want 0: there was nothing to summarize", sum.calls)
+	}
+}
+
+// The operator compacts the branch on screen, which is not always the one written last
+// (spec 2026-10-27, D13). Each branch keeps its own row, and a leaf of 0 is the turn written
+// last.
+func TestCompact_CondensesTheBranchItsLeafNames(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+	var seeded []AppendTurnParams
+	for seq := 1; seq <= 5; seq += 2 {
+		seeded = append(seeded, verboseRound(convID, seq)...)
+	}
+	seedTurns(t, store, convID, seeded...)
+	// Question 3 rewritten answers on a branch of its own: 1, 2, 7, 8.
+	rewrite := verboseRound(convID, 7)
+	forkSeq, err := store.ForkBranch(ownerCtx(), convID, 3, llm.RoleUser, rewrite[0].Content)
+	if err != nil || forkSeq != 7 {
+		t.Fatalf("ForkBranch = (%d, %v), want seq 7", forkSeq, err)
+	}
+	seedTurns(t, store, convID, rewrite[1])
+
+	older := &fakeSummarizer{summary: "il ramo originale: tre domande verbose"}
+	result, err := store.Compact(ownerCtx(), convID, 6, compactConfig(older))
+	if err != nil {
+		t.Fatalf("Compact(leaf 6): %v", err)
+	}
+	if result.CoversThroughSeq != 4 {
+		t.Fatalf("Compact(leaf 6) covers through %d, want 4: the round before 5-6 on its own path",
+			result.CoversThroughSeq)
+	}
+	condensed := renderAll(older.gotRounds)
+	if !strings.Contains(condensed, "domanda-3:") || strings.Contains(condensed, "domanda-7:") {
+		t.Fatalf("the summarizer was not handed the older branch: %q", truncate(condensed))
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 6); err != nil || !ok || got.Summary != older.summary {
+		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v), want the older branch's summary", got, ok, err)
+	}
+	// Leaf 3 is on the canonical branch too, but the summary speaks through turn 4, which its
+	// path never reaches: the loader would not apply it, so the marker must not draw it. Leaf
+	// 4 is the watermark itself.
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 4); err != nil || !ok || got.CoversThroughSeq != 4 {
+		t.Fatalf("LoadPathCompaction(4) = (%+v, %v, %v), want the summary that ends on it", got, ok, err)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 3); err != nil || ok {
+		t.Fatalf("LoadPathCompaction(3) = (%+v, %v, %v), want none: the summary covers through 4", got, ok, err)
+	}
+	for _, leaf := range []int{8, 0} {
+		if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, leaf); err != nil || ok {
+			t.Fatalf("LoadPathCompaction(%d) = (%+v, %v, %v): the branch written last was compacted by a /compact of the other",
+				leaf, got, ok, err)
+		}
+	}
+
+	latest := &fakeSummarizer{summary: "il ramo riscritto"}
+	result, err = store.Compact(ownerCtx(), convID, 0, compactConfig(latest))
+	if err != nil {
+		t.Fatalf("Compact(leaf 0): %v", err)
+	}
+	if result.CoversThroughSeq != 2 {
+		t.Fatalf("Compact(leaf 0) covers through %d, want 2: the path written last is 1, 2, 7, 8",
+			result.CoversThroughSeq)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 8); err != nil || !ok || got.Summary != latest.summary {
+		t.Fatalf("LoadPathCompaction(8) = (%+v, %v, %v), want the rewritten branch's summary", got, ok, err)
+	}
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 6); err != nil || !ok ||
+		got.Summary != older.summary || got.CoversThroughSeq != 4 {
+		t.Fatalf("LoadPathCompaction(6) = (%+v, %v, %v): compacting one branch moved the other's row", got, ok, err)
+	}
+	// Leaf 1 is on the canonical branch and before its watermark, so it gets none. It is that
+	// turn, not the turn written last, whose branch now has a row of its own.
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 1); err != nil || ok {
+		t.Fatalf("LoadPathCompaction(1) = (%+v, %v, %v), want none: the canonical watermark is 4", got, ok, err)
+	}
+	if _, _, err := store.LoadPathCompaction(ownerCtx(), convID, 99); !errors.Is(err, ErrTurnNotFound) {
+		t.Fatalf("LoadPathCompaction(99) = %v, want ErrTurnNotFound", err)
+	}
+}
+
+// A thread with no turn has nothing compacted, which is an answer and not an error; an id
+// that is not a uuid is an error, and not a missing turn.
+func TestLoadPathCompaction_NoTurnAndAMalformedID(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+
+	if got, ok, err := store.LoadPathCompaction(ownerCtx(), convID, 0); err != nil || ok {
+		t.Fatalf("LoadPathCompaction on a thread with no turn = (%+v, %v, %v), want none and no error", got, ok, err)
+	}
+	if _, _, err := store.LoadPathCompaction(ownerCtx(), "not-a-uuid", 3); err == nil || errors.Is(err, ErrTurnNotFound) {
+		t.Fatalf("LoadPathCompaction on a malformed id = %v, want a parse error", err)
+	}
+}
+
+// The row's own guards: a malformed key is an error, and a summary must say something about
+// at least one turn. One turn is enough.
+func TestCompactionRow_RefusesWhatItCannotFile(t *testing.T) {
+	pool := migratedPool(t)
+	store := newStore(t, pool)
+	convID := newConversation(t, store)
+
+	if _, _, err := store.LoadCompaction(ownerCtx(), "not-a-uuid", ""); err == nil {
+		t.Fatal("LoadCompaction on a malformed conversation id succeeded")
+	}
+	if _, _, err := store.LoadCompaction(ownerCtx(), convID, "not-a-uuid"); err == nil {
+		t.Fatal("LoadCompaction on a malformed branch id succeeded")
+	}
+	if err := store.SaveCompaction(ownerCtx(), "not-a-uuid", "", Compaction{Summary: "s", CoversThroughSeq: 1}); err == nil {
+		t.Fatal("SaveCompaction on a malformed conversation id succeeded")
+	}
+	for name, c := range map[string]Compaction{
+		"no turn":    {Summary: "s", CoversThroughSeq: 0},
+		"no summary": {Summary: "", CoversThroughSeq: 3},
+	} {
+		if err := store.SaveCompaction(ownerCtx(), convID, "", c); err == nil {
+			t.Fatalf("SaveCompaction with %s succeeded", name)
+		}
+	}
+	if _, ok, err := store.LoadCompaction(ownerCtx(), convID, ""); err != nil || ok {
+		t.Fatalf("a refused save left a row: (%v, %v)", ok, err)
+	}
+	if err := store.SaveCompaction(ownerCtx(), convID, "", Compaction{Summary: "one turn", CoversThroughSeq: 1}); err != nil {
+		t.Fatalf("SaveCompaction covering one turn: %v", err)
+	}
+	if got, ok, err := store.LoadCompaction(ownerCtx(), convID, ""); err != nil || !ok || got.CoversThroughSeq != 1 {
+		t.Fatalf("LoadCompaction after a one-turn save = (%+v, %v, %v)", got, ok, err)
 	}
 }
 

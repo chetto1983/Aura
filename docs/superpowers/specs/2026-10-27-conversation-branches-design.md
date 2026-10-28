@@ -203,3 +203,57 @@ What the measurement does not show:
   experimental. Only `bindExternalStoreMessage` is used, and Vitest pins it.
 - **Old clients.** A client without `parent_seq` continues the turn written last, which is the
   branch it shows unless it navigated.
+
+## 7. Follow-up: `/compact` on the branch on screen, and no refused edit
+
+Approved by the operator 2026-10-27, after the live run recorded both as open
+(`docs/superpowers/verification/2026-10-27-conversation-branches-local.md`). Plan:
+`docs/superpowers/plans/2026-10-27-branch-compaction-and-edit.md`.
+
+**What was measured, by reading the code on `2e41ead`:**
+- `POST /api/conversations/{id}/compact` reaches `Store.Compact`, which loads the path ending at
+  the turn written last (`loadManagedPath(…, 0, …)`). After Previous, `/compact` condenses the
+  branch the operator is not looking at.
+- `GET …/compaction` reads the canonical branch's row (`LoadCompaction(id, "")`). On a forked
+  thread whose latest branch is not canonical, a reload draws the canonical branch's marker, or
+  none, whichever branch was compacted.
+- The marker query is keyed by thread only, so it is never re-read after a run, and a
+  compaction the ladder made during the run does not show until a reload.
+- `@assistant-ui/core` 0.3.31 documents the edit-composer behaviour on `MessageNotSentError`:
+  "An edit composer closes at dispatch, so a rejected edit is not restored."
+  `DefaultEditComposerRuntimeCore.handleSend` resets and closes the composer straight after
+  `runtime.append`. No public API reopens it with the text after that.
+  - The cockpit refuses an edit itself in one case only: the message's seq is unknown
+    (`useBranchEdits`). The text is then gone.
+  - A server refusal is not lost: `foldReRun` puts the edited text back on screen, followed by
+    the error message.
+
+| # | Decision | Why |
+|---|---|---|
+| D13 | `POST …/compact` and `GET …/compaction` take an optional `?leaf_seq`: the last turn of the branch on screen, the number `aura.parent_seq` carries. Without it, the turn written last. The summary is filed under, and read from, that leaf's branch. A row whose watermark is past the leaf reads as none. Validation is shared with `aura.parent_seq`: ≤ 0 or not an int is 400, above the turn written last is 404. | Only the client knows which branch is on screen (D2). A query parameter, not a body field: the GET needs it, and the idempotency fingerprint covers the query. The loader applies a summary only when its watermark turn is on the path. A branch's turns form one chain (D4), so that holds exactly when the watermark is at or before the leaf. A tab whose branch another tab grew and compacted would otherwise draw a marker the loader ignores. |
+| D14 | The cockpit keys the marker read by the leaf on screen. The marker of the previous leaf stays while that leaf is still on screen, which is the case while a run grows the branch. A switch drops it. | A key change re-reads the marker after every run, which shows a compaction the ladder made in the run. Keeping the previous marker avoids a layout shift on each run, and it is only kept where it still describes turns on screen. |
+| D15 | Edit is offered only on a message whose seq is known. Regenerate follows the same rule. | The library cannot keep the text through a refusal, so the cockpit makes none: an edit that cannot be saved is a dead control. Regenerate has the same refusal, and its no-op is silent. |
+
+**Acceptance:**
+
+11. **db_integration, conversations.** On a forked thread:
+    - `Compact` with the older branch's leaf condenses that path;
+    - the summary is filed under that branch, and the other branch's row is untouched;
+    - `LoadPathCompaction` returns each leaf's own row; leaf 0 is the turn written last;
+    - a leaf before its row's watermark gets none, and the watermark's own leaf gets the row.
+12. **agui unit.** For `?leaf_seq` on both routes:
+    - 0 or a string is 400, and a seq above the turn written last is 404;
+    - the compactor receives the leaf;
+    - the read uses the leaf.
+13. **Vitest.** After Previous:
+    - `/compact` posts the on-screen leaf;
+    - the marker read names it;
+    - the marker stays on screen while a run grows the branch.
+14. **Vitest.**
+    - A user message with no seq offers no Edit.
+    - An assistant message with no seq offers no Regenerate.
+    - An edit the server refuses leaves the edited text on screen.
+
+**What this does not show:**
+- The live stack. These are unit, Vitest and db_integration cases.
+- The pre-0095 forks of PRD §7. They remain open.

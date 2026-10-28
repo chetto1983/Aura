@@ -53,28 +53,36 @@ const REFUSALS: Record<number, CompactionFailure> = {
   503: 'unavailable',
 };
 
-function compactionPath(threadId: string, suffix: string): string {
-  return `/api/conversations/${encodeURIComponent(threadId)}/${suffix}`;
+/** Both routes name the branch by its leaf, the number a send carries as aura.parent_seq
+ * (spec 2026-10-27, D13). Without one, the server takes the turn written last. */
+function compactionPath(threadId: string, suffix: string, leafSeq: number | undefined): string {
+  const path = `/api/conversations/${encodeURIComponent(threadId)}/${suffix}`;
+  return leafSeq === undefined ? path : `${path}?leaf_seq=${String(leafSeq)}`;
 }
 
-/** GET the stored summary. A failure reads as "no compaction": the marker annotates the
- * transcript, and hiding the whole thread because an annotation is unreachable would be a
- * worse answer than drawing no marker. */
+/** GET the stored summary of the branch leafSeq ends. A failure reads as "no compaction": the
+ * marker annotates the transcript, and hiding the whole thread because an annotation is
+ * unreachable would be a worse answer than drawing no marker. */
 export async function fetchCompaction(
   threadId: string,
+  leafSeq: number | undefined,
   signal?: AbortSignal,
 ): Promise<CompactionState> {
   try {
-    return await getJSON<CompactionState>(compactionPath(threadId, 'compaction'), signal);
+    return await getJSON<CompactionState>(compactionPath(threadId, 'compaction', leafSeq), signal);
   } catch {
     return NO_COMPACTION;
   }
 }
 
-/** POST the compaction. Throws CompactionError with the reason the operator needs. */
-export async function compactConversation(threadId: string): Promise<CompactionState> {
+/** POST the compaction of the branch leafSeq ends. Throws CompactionError with the reason the
+ * operator needs. */
+export async function compactConversation(
+  threadId: string,
+  leafSeq: number | undefined,
+): Promise<CompactionState> {
   try {
-    return await postJSON<CompactionState>(compactionPath(threadId, 'compact'), {});
+    return await postJSON<CompactionState>(compactionPath(threadId, 'compact', leafSeq), {});
   } catch (error) {
     if (error instanceof HttpError) {
       const reason = REFUSALS[error.status];

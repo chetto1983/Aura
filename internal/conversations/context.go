@@ -94,6 +94,11 @@ func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, l
 // identity and stays the same while the path grows, because every turn appended to it
 // inherits it, so the watermark keeps advancing on one row instead of colliding with a
 // sibling's.
+//
+// A leaf that names no turn keeps the canonical key, and the walk below refuses it. Any
+// other failure to read the branch fails the load. Until #195 it fell back to the canonical
+// row, so a transient read error let a fork reuse the canonical summary, or file its own
+// summary there.
 func (s *Store) loadManagedPath(ctx context.Context, conversationID string, leafSeq int, cfg *ContextConfig) (managedHistoryLoad, error) {
 	if leafSeq <= 0 {
 		latest, err := s.LatestTurnSeq(ctx, conversationID)
@@ -102,7 +107,11 @@ func (s *Store) loadManagedPath(ctx context.Context, conversationID string, leaf
 		}
 		leafSeq = latest
 	}
-	cfg.branchID = s.branchIDForLeaf(ctx, conversationID, leafSeq)
+	branchID, err := s.branchOfTurn(ctx, conversationID, leafSeq)
+	if err != nil && !errors.Is(err, ErrTurnNotFound) {
+		return managedHistoryLoad{}, err
+	}
+	cfg.branchID = branchID
 	return s.loadManagedBranchTurns(ctx, conversationID, cfg.branchID, leafSeq,
 		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
 }

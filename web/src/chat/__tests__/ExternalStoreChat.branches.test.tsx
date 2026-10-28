@@ -72,7 +72,8 @@ interface Posted {
 function stubServer(history: Record<string, readonly Record<string, unknown>[]>) {
   const posted: Posted[] = [];
   const historyReads: string[] = [];
-  const replies: (readonly Record<string, unknown>[])[] = [];
+  /** The frames of each run in order, or a refusal the server answers instead. */
+  const replies: (readonly Record<string, unknown>[] | Response)[] = [];
   /** Each history read waits for the next gate, when one is queued. */
   const gates: Promise<void>[] = [];
   vi.stubGlobal(
@@ -87,7 +88,8 @@ function stubServer(history: Record<string, readonly Record<string, unknown>[]>)
       if (init?.method === 'POST' && (url === '/agent/run' || url.includes('/edit'))) {
         const raw = typeof init.body === 'string' ? init.body : '{}';
         posted.push({ url, body: JSON.parse(raw) as Record<string, unknown> });
-        return Promise.resolve(sseResponse(replies.shift() ?? answer('fallback', 9, 10)));
+        const reply = replies.shift() ?? answer('fallback', 9, 10);
+        return Promise.resolve(reply instanceof Response ? reply : sseResponse(reply));
       }
       return Promise.resolve(jsonResponse([]));
     }),
@@ -275,5 +277,46 @@ describe('ExternalStoreChat conversation branches', () => {
     await waitFor(() => {
       expect(captured.runtime?.thread.export().messages).toEqual([]);
     });
+  });
+
+  // Spec 2026-10-27, D15: assistant-ui closes the edit composer as soon as it sends, so an
+  // edit the cockpit refuses loses its text. A message whose seq is unknown, here because its
+  // run reported none, therefore offers neither Edit nor Regenerate.
+  it('offers no edit or regenerate on a message whose seq is unknown', async () => {
+    const server = stubServer({ 'conv-1': twoBranches });
+    server.replies.push([
+      { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-unreported' },
+      { type: 'TEXT_MESSAGE_START', messageId: 'm-unreported' },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm-unreported', delta: 'unreported reply' },
+      { type: 'TEXT_MESSAGE_END', messageId: 'm-unreported' },
+      { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-unreported' },
+    ]);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    await screen.findByText('answer to the rewrite');
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Regenerate' })).toHaveLength(1);
+
+    sendPrompt('a question with no seq');
+    await screen.findByText('unreported reply');
+
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Regenerate' })).toHaveLength(1);
+  });
+
+  it('keeps an edit the server refuses on screen, with the error', async () => {
+    const server = stubServer({ 'conv-1': twoBranches });
+    server.replies.push(new Response('conversation busy', { status: 409 }));
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    await screen.findByText('answer to the rewrite');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.input(await screen.findByRole('textbox', { name: 'Edit message' }), {
+      target: { value: 'question rewritten twice' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and re-run' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByText('question rewritten twice')).toBeTruthy();
+    expect(server.posted[0]?.body).toMatchObject({ diverge_seq: 3, role: 'user' });
   });
 });

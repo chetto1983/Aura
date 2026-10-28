@@ -19,11 +19,15 @@ function positiveSeq(value: unknown): number | undefined {
 
 /** The backend turn a visible message diverges from: its first turn. Undefined when it is not
  * known, which refuses an edit or a regenerate rather than forking at the wrong turn. */
+export function backendSeqOf(message: ThreadMessageLike | undefined): number | undefined {
+  return positiveSeq(message?.metadata?.custom?.backendSeq);
+}
+
 export function backendSeqAt(
   messages: readonly ThreadMessageLike[],
   index: number,
 ): number | undefined {
-  return positiveSeq(messages[index]?.metadata?.custom?.backendSeq);
+  return backendSeqOf(messages[index]);
 }
 
 /** The last turn folded into a message: what a send that follows it continues
@@ -31,6 +35,11 @@ export function backendSeqAt(
 export function leafSeqOf(message: ThreadMessageLike | undefined): number | undefined {
   const custom = message?.metadata?.custom;
   return positiveSeq(custom?.leafSeq) ?? positiveSeq(custom?.backendSeq);
+}
+
+/** Whether a visible message starts or ends at the backend turn seq. */
+export function showsSeq(messages: readonly ThreadMessageLike[], seq: number): boolean {
+  return messages.some((message) => backendSeqOf(message) === seq || leafSeqOf(message) === seq);
 }
 
 /** The seqs a run reports on its STATE_DELTA (spec 2026-10-27, D7): head_seq, the turn it

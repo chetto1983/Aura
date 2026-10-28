@@ -51,9 +51,10 @@ type ConversationStore interface {
 	// and no other.
 	LoadManagedHistory(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error)
 	// Compact is the operator-requested L2.4 (`/compact`): it condenses everything before
-	// the active round into the branch's durable summary, which the ladder then keeps in
-	// force on every later turn. *conversations.Store satisfies it.
-	Compact(ctx context.Context, conversationID string, cfg conversations.ContextConfig) (conversations.CompactionResult, error)
+	// the active round of the path ending at leafSeq (<= 0: the turn written last) into that
+	// branch's durable summary, which the ladder then keeps in force on every later turn.
+	// *conversations.Store satisfies it.
+	Compact(ctx context.Context, conversationID string, leafSeq int, cfg conversations.ContextConfig) (conversations.CompactionResult, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	Delete(ctx context.Context, conversationID string) error
 	// GetForIdentity + DeleteForIdentity are the Phase-36 owner-scoped surface (MUSR-01 /

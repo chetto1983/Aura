@@ -195,7 +195,7 @@ func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, _ int, c
 
 // Compact satisfies the operator-requested compaction seam. The cmd-level fakes drive
 // CLI wiring, not the summarizer, so it reports that there is nothing to condense.
-func (m *memConvStore) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
+func (m *memConvStore) Compact(context.Context, string, int, conversations.ContextConfig) (conversations.CompactionResult, error) {
 	return conversations.CompactionResult{}, conversations.ErrNothingToCompact
 }
 

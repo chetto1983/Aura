@@ -34,6 +34,7 @@ import { ReasoningPill } from './ReasoningPill';
 import { ToolActivityCard } from './ToolActivityCard';
 import { ToolGroup, type ToolGroupMember } from './ToolGroup';
 import { INLINE_DISPLAY_TYPES, toolRun } from './toolGrouping';
+import { backendSeqOf } from './messageSeq';
 
 // ExternalStoreChat_messages — the presentational message-render components split
 // out of ExternalStoreChat.tsx (refactor-on-touch, CLAUDE.md 600-LOC cap). These
@@ -111,13 +112,18 @@ export function UserMessage({ onAssetRetry, onAssetPromote }: UserMessageProps) 
           </div>
         ) : null}
         <ActionBarPrimitive.Root data-message-actions className={MESSAGE_ACTION_ROW_CLASS}>
-          <ActionBarPrimitive.Edit
-            aria-label={t('chat.action.edit')}
-            data-required-touch-target
-            className={MESSAGE_ACTION_CLASS}
-          >
-            {t('chat.action.edit')}
-          </ActionBarPrimitive.Edit>
+          {/* An edit forks at the message's seq. Without one it is refused, and assistant-ui's
+              edit composer has already closed and dropped the text by then (spec 2026-10-27,
+              D15), so it is not offered. */}
+          {backendSeqOf(message) !== undefined ? (
+            <ActionBarPrimitive.Edit
+              aria-label={t('chat.action.edit')}
+              data-required-touch-target
+              className={MESSAGE_ACTION_CLASS}
+            >
+              {t('chat.action.edit')}
+            </ActionBarPrimitive.Edit>
+          ) : null}
           <ActionBarPrimitive.Copy
             aria-label={t('chat.action.copy')}
             data-required-touch-target
@@ -218,13 +224,16 @@ export function AssistantMessage() {
           >
             {t('chat.action.copy')}
           </ActionBarPrimitive.Copy>
-          <ActionBarPrimitive.Reload
-            aria-label={t('chat.action.reload')}
-            data-required-touch-target
-            className={MESSAGE_ACTION_CLASS}
-          >
-            {t('chat.action.reload')}
-          </ActionBarPrimitive.Reload>
+          {/* A regenerate forks at this turn's seq too, and without one it does nothing (D15). */}
+          {backendSeqOf(message) !== undefined ? (
+            <ActionBarPrimitive.Reload
+              aria-label={t('chat.action.reload')}
+              data-required-touch-target
+              className={MESSAGE_ACTION_CLASS}
+            >
+              {t('chat.action.reload')}
+            </ActionBarPrimitive.Reload>
+          ) : null}
           <AssistantSpeakerControl />
           <BranchPicker />
         </ActionBarPrimitive.Root>
