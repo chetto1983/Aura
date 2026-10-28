@@ -1,6 +1,7 @@
 # Telegram pushes reach the chats the task names — Implementation Plan
 
-**Status (2026-10-28):** in progress. The operator approved the spec, R6 included.
+**Status (2026-10-28):** Tasks 0–6 done locally, the lab VM run (acceptance 7) is the operator's.
+The operator approved the spec, R6 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -107,10 +108,10 @@
 - [x] Commit `feat(tools): ask which Telegram accounts a task reaches`.
 
 ### Task 6 — Close
-- [ ] Mutation ≥ 70% on `deliver_account.go`, `deliver_recipients.go` and
-  `task_telegram_recipients.go`, survivors named.
-- [ ] `bash scripts/coverage_docker.sh`.
-- [ ] `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`, with what it
+- [x] Mutation ≥ 70% on `deliver_account.go` (100%), `deliver_recipients.go` (92.0%) and
+  `task_telegram_recipients.go` (95.8%), survivors named in the verification file.
+- [x] `bash scripts/coverage_docker.sh`: 50036/57102 = 87.6%, package policy passed.
+- [x] `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`, with what it
   does not show.
 - [ ] Lab VM (acceptance 7), in its own verification file.
-- [ ] PRD and this plan's status.
+- [x] PRD and this plan's status.
