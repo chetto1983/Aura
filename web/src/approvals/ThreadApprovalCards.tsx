@@ -50,12 +50,15 @@ export function ThreadApprovalCards({
     void onResolved?.(resolution);
   }
 
+  // The cards sit between the thread and the composer, outside the thread's scroller, and the
+  // chat root clips. A card taller than the room left (a plugin install on a phone, operator
+  // report 2026-10-28) lost its buttons below the clip, so the region scrolls on its own.
   return (
     <div
       data-testid="thread-approvals"
       className={
         approvals.length + elicitations.length + (messageDrafts?.drafts.length ?? 0) > 0
-          ? 'flex flex-col gap-2 px-3 pb-2 sm:px-4'
+          ? 'flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain px-3 pb-2 sm:px-4'
           : undefined
       }
     >

@@ -174,9 +174,12 @@ describe('ExternalStoreChat slash-skill', () => {
 
     const listbox = await screen.findByRole('listbox', { name: 'Garage files and folders' });
     expect((await within(listbox).findByRole('option')).textContent).toContain('Documenti');
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
-
+    // The options render before assistant-ui binds Enter to them: @assistant-ui/tap commits the
+    // keyboard resource in a passive effect (useTapRoot), so an Enter in between reads an empty
+    // list and is swallowed. CI under load hit that window (#201); a hand cannot. A swallowed
+    // Enter changes nothing, so it is pressed again, and only while the folder is not taken.
     await waitFor(() => {
+      if (input.value === '@') fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
       expect(input.value).toBe('@Documenti/');
     });
     await waitFor(() => {

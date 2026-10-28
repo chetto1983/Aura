@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { isWebKitViewportNotice } from './support/browserHealth';
 import { stubNoCompaction } from './support/compactionRoute';
 import { stubEmptyWorkerStatuses } from './support/workerStatusRoute';
 
@@ -51,8 +52,7 @@ const TRANSCRIPT = 'voice acceptance gate transcript';
 // that are not voice regressions and must not trip the degrade test's no-error assertion.
 function isExpectedBrowserConsoleNoise(text: string): boolean {
   return (
-    text === 'Viewport argument key "interactive-widget" not recognized and ignored.' ||
-    text.includes('/api/auth/config due to access control checks.')
+    isWebKitViewportNotice(text) || text.includes('/api/auth/config due to access control checks.')
   );
 }
 
