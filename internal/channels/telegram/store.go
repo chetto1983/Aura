@@ -171,28 +171,22 @@ func (s *Store) PendingConsumed(ctx context.Context, onboardingToken string) (bo
 	return row.ConsumedAt.Valid, nil
 }
 
-// GetAccountByTelegramID fetches one account by telegram_user_id, mapping a missing
-// row to ErrTokenNotFound's sibling — here a not-found account is surfaced via
-// pgx.ErrNoRows wrapped so callers can errors.Is it.
+// GetAccountByTelegramID fetches one account by telegram_user_id. A missing row stays
+// pgx.ErrNoRows through the wrap, so callers errors.Is it.
 func (s *Store) GetAccountByTelegramID(ctx context.Context, telegramUserID int64) (Account, error) {
 	row, err := s.q.GetTelegramAccountByTelegramID(ctx, telegramUserID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Account{}, fmt.Errorf("get telegram account %d: %w", telegramUserID, pgx.ErrNoRows)
-		}
 		return Account{}, fmt.Errorf("get telegram account %d: %w", telegramUserID, err)
 	}
 	return accountFromRow(row), nil
 }
 
 // GetAccountByIdentity fetches one account by its owning identity_id, the key the
-// scheduler's identity-routed delivery uses (Phase 20 R3). It mirrors
-// GetAccountByTelegramID's error classification but adds the parseUUID boundary the
-// generated query needs (identity_id is uuid). A non-UUID identity (e.g. the CLI's
-// 'local') can never match a real account, so a parse failure maps to a wrapped
-// pgx.ErrNoRows — the same not-found signal as a missing row. That lets Deliver
-// use a single errors.Is(err, pgx.ErrNoRows) branch to mean "not my user" for both
-// the no-account case AND the 'local' case (Pitfall 6), never surfacing an error.
+// scheduler's identity-routed delivery uses (Phase 20 R3). A non-UUID identity (e.g. the
+// CLI's 'local') can never match a real account, so a parse failure maps to a wrapped
+// pgx.ErrNoRows — the same not-found signal as a missing row. That lets delivery's
+// recipient use a single errors.Is(err, pgx.ErrNoRows) branch to mean "not my user" for
+// both the no-account case AND the 'local' case (Pitfall 6), never surfacing an error.
 func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Account, error) {
 	idID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
@@ -200,9 +194,6 @@ func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Ac
 	}
 	row, err := s.q.GetTelegramAccountByIdentity(ctx, idID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
-		}
 		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, err)
 	}
 	return accountFromRow(row), nil
