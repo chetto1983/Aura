@@ -65,7 +65,7 @@ func TestTaskScheduleNamesItsTelegramRecipients(t *testing.T) {
 	})
 
 	t.Run("named recipients are persisted once each, in the order given, and named back", func(t *testing.T) {
-		store, res, err := scheduleTelegram(t, two(), `,"telegram_recipients":[4343,4242,4343]`)
+		store, res, err := scheduleTelegram(t, two(), `,"telegram_recipients":[4343,4343,4242,4343]`)
 		if err != nil {
 			t.Fatalf("schedule: %v", err)
 		}
@@ -125,14 +125,25 @@ func TestTaskScheduleNamesItsTelegramRecipients(t *testing.T) {
 		}
 	})
 
-	t.Run("another route never asks for the accounts", func(t *testing.T) {
+	t.Run("another route never asks for the accounts and names none", func(t *testing.T) {
 		accounts := two()
-		tool := &TaskTool{Store: &fakeTaskStore{}, Destinations: &fakeDestinations{}, TelegramAccounts: accounts}
+		store := &fakeTaskStore{}
+		tool := &TaskTool{Store: store, Destinations: &fakeDestinations{}, TelegramAccounts: accounts}
 		args := `{"action":"schedule","schedule_kind":"at","at":"2030-01-01T09:30:00Z","kind":"reminder","payload":{"text":"x"},"notify":"stdout"}`
 		if _, err := tool.Execute(context.Background(), json.RawMessage(args)); err != nil || accounts.asked != 0 {
 			t.Fatalf("stdout schedule = %v after %d lookups, want success and none", err, accounts.asked)
 		}
+		// nil, never an empty list: migration 0145's CHECK refuses an empty one.
+		if store.created.TelegramRecipients != nil {
+			t.Fatalf("persisted recipients %#v, want nil", store.created.TelegramRecipients)
+		}
 	})
+}
+
+func TestTelegramAccountNameFallsBackToTheID(t *testing.T) {
+	if got := (TelegramAccount{TelegramUserID: 9_000_145_301}).name(); got != "9000145301" {
+		t.Fatalf("an account with no name is called %q, want its id", got)
+	}
 }
 
 func TestTaskListNamesTelegramRecipients(t *testing.T) {
