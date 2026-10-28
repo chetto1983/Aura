@@ -55,6 +55,9 @@
   database client, and the two-identity harness already signs in two real identities. A new
   file, `cmd/aura/two_identity_telegram_e2e_test.go`, reuses `two_identity_e2e_harness_test.go`
   under its tags.
+- **The list mounts in the Settings workspace, beside the panel.** `SettingsWorkspace` hosts the
+  `channels` section, and already hosts the query-backed `SharedLinksSection`; the panel's own
+  tests render it with no QueryClient. Recorded 2026-10-28.
 - **The retirement keeps three statements in Go.** `identity_auth_links`, `scheduler_tasks` and
   `pending_notifications` have no RLS. Only the RLS tables go through the function.
 
@@ -163,22 +166,26 @@
 - [x] Commit `fix(telegram): a conversation's push reaches that conversation's chat`.
 
 ### Task 4 — HTTP (D4, acceptance 6, 7, 9)
-- [ ] Red, agui unit, in `settings_api_telegram_accounts_test.go`:
+- [x] Red, agui unit, in `settings_api_telegram_accounts_test.go`:
   - GET 200 with the seam's rows;
   - DELETE 204, 404 and 400;
   - 401 with no principal, and 503 with the seam unset;
   - the identity the seam receives is the principal's.
-- [ ] Green:
+- [x] Green:
   - the agui file and its registration;
   - the `cmd/aura` adapter over `*telegram.Store`, the route constants, and the mounts behind
     `governanceWriteCapability`.
-- [ ] `cmd/aura`: both routes refuse an unauthenticated request, on the `serve_webui_auth_test.go`
+- [x] `cmd/aura`: both routes refuse an unauthenticated request, on the `serve_webui_auth_test.go`
   pattern.
-- [ ] The cross-deny E2E (acceptance 9) in `cmd/aura/two_identity_telegram_e2e_test.go`.
+- [x] The cross-deny E2E (acceptance 9) in `cmd/aura/two_identity_telegram_e2e_test.go`.
   - Run it with `make musr-e2e`.
   - It is gated in CI by the job "MUSR two-identity cross-deny E2E".
-- [ ] Gates: `-race` on `internal/agui` and `cmd/aura`, unit and db_integration; lint.
-- [ ] Commit `feat(agui): list and unlink the caller's Telegram accounts`.
+- [x] Gates: `-race` on `internal/agui` and `cmd/aura`, unit and db_integration; lint.
+- [x] Commit `feat(agui): list and unlink the caller's Telegram accounts`.
+- Found while landing it:
+  - every unsafe AG-UI route must carry idempotency metadata (`TestEveryRegisteredUnsafeHTTPRouteIsClassified`), so the unlink is `settings_telegram_unlink` in `httpMutationRoutes`; the browser's fetch wrapper already sends the key;
+  - the E2E serves the routes through `RequireAuth` with the header identity of `http_read_cross_deny`, as the existing cross-deny does; the `governance.write` mount is pinned by `TestServeWebuiTelegramAccountRoutesAreGated`;
+  - the retirement test's cleanup restored local with the retired `*` grant, which `HasCapability` no longer matches (0121), so a later `TestAgentRunCapability` on the same database failed; the cleanup now restores the grants local had.
 
 ### Task 5 — Cockpit (D5, acceptance 8, 9)
 - [ ] Red, Vitest, in `TelegramLinkedAccounts.test.tsx`:

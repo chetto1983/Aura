@@ -208,6 +208,7 @@ type Server struct {
 	chatGPTPlan      ChatGPTPlanService
 	chatGPTBrowser   ChatGPTBrowserLogin
 	telegram         *telegramChannelPorts // nil until SetTelegramActivator
+	telegramLinks    TelegramAccountLinks  // nil until SetTelegramAccountLinks
 	restartTrigger   func()                // nil until SetRestartTrigger (restart_api.go)
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource

@@ -67,6 +67,28 @@ together.
   conversation) and `TestConversationPushReachesItsOwnChat`, which runs now and reaches both
   chats. `internal/channels/...` under `-race`, unit and db_integration.
 
+## Task 4 — HTTP
+
+- agui unit: GET answers the seam's rows in order, a 52-bit id exact, `lastSeenAt` null when never
+  seen, `[]` with no link, 502 on a failing store; DELETE answers 204 with the principal's identity
+  handed to the seam, 404 for a link the caller does not have, 400 for `abc`, `0`, `-5` and
+  `9223372036854775808` without reaching the store, 502 on a failing store; both answer 401 with
+  no principal and 503 with the seam unset.
+- `cmd/aura`: both routes answer 401 with no session and 403 without `governance.write`, and
+  reach AG-UI with a capable session; `TestServeWebuiMountsEveryAGUIRoute` finds both mounted.
+- `TestTwoIdentityTelegramLinksCrossDeny` (the five MUSR tags; locally on Postgres only, since
+  it needs nothing else): A lists only its link; A's DELETE of B's link is 404 and B's link
+  remains; B's own DELETE is 204; B then lists none and A still lists its own.
+- `internal/agui` and `cmd/aura` under `-race -p 1`, unit (46.4 s, 71.1 s) and db_integration
+  (102.4 s, 116.8 s).
+
+**The relink, measured with a scratch test that was not committed:** after A unlinks a chat and B
+links it, B's `Get` of the chat's conversation is "conversation not found", its `Create` is 23505
+(which `runner.EnsureConversation` takes for a lost race and reports as success), and its
+`AppendTurn` is "conversation not found". A's turn is still there and B never sees it. So every
+Telegram turn of B on that chat fails at its first append. This was measured on the store calls a
+turn makes, not on a full runner turn.
+
 **What this does not show:**
 - Anything on the live stack or the lab VM.
 - What a real appliance's `local` owns. The retirement still lets 22 tables go with `local`

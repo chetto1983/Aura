@@ -251,7 +251,7 @@ fi
 echo "==> two-identity cross-deny E2E (5 tags, ./cmd/aura/)"
 go test -race -count=1 -p 1 \
   -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' \
-  -run 'TestTwoIdentityCrossDeny|TestProvisionLoginIsolatedRun|TestIdentityCreateProvisionsEveryPlane' \
+  -run 'TestTwoIdentityCrossDeny|TestTwoIdentityTelegramLinksCrossDeny|TestProvisionLoginIsolatedRun|TestIdentityCreateProvisionsEveryPlane' \
   ./cmd/aura/
 
 echo "==> memory cross-deny at the MCP boundary (arcadedb_integration, ./cmd/arcadedb-mcp/)"
