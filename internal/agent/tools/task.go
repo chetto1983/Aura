@@ -38,6 +38,9 @@ type TaskTool struct {
 	// route would reach for the caller (the live scheduler Notifier). Nil skips the check,
 	// as on the pool-free manifest path.
 	Destinations taskDestinations
+	// TelegramAccounts lists the Telegram accounts the caller links, so a notify=telegram task
+	// names the ones it reaches (task_telegram_recipients.go). Nil checks nothing.
+	TelegramAccounts taskTelegramAccounts
 
 	routerOnce sync.Once
 	router     *ActionRouter
@@ -65,6 +68,7 @@ type ScheduledTask struct {
 	// PausedReason is "operator" or "failures" while Status is "paused".
 	PausedReason        string
 	ConsecutiveFailures int
+	TelegramRecipients  []int64
 }
 
 // CreateTaskInput carries a resolved, validated task the tool asks the store to
@@ -87,6 +91,9 @@ type CreateTaskInput struct {
 	// The tool only forwards the raw id; the conv→identity snapshot happens in the
 	// cmd/aura adapter (so tools never imports internal/conversations).
 	OriginConversationID string
+	// TelegramRecipients are the Telegram accounts a notify=telegram task reaches; nil for
+	// every other route.
+	TelegramRecipients []int64
 }
 
 // taskStore is the consumer-declared seam the task tool dispatches against
@@ -117,6 +124,8 @@ type taskArgs struct {
 	StepBudget   int             `json:"step_budget"`
 	Notify       string          `json:"notify"`
 	TaskID       string          `json:"task_id"`
+	// TelegramRecipients is the operator's choice among the linked Telegram accounts.
+	TelegramRecipients []int64 `json:"telegram_recipients"`
 }
 
 // taskParamsSchema is the OpenAI-wire-safe JSON schema (D-10). The root object's
@@ -136,7 +145,8 @@ const taskParamsSchema = `{
     "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres (database dump)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
-    "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Required when action=schedule. Where the task output is delivered. If the operator did not choose, call ask_user(kind=choice) before scheduling. An omitted value persists nothing and returns the same choice directive. none keeps the outcome only in the run ledger; telegram is an intentional push to the bound Telegram chat; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
+    "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Required when action=schedule. Where the task output is delivered. If the operator did not choose, call ask_user(kind=choice) before scheduling. An omitted value persists nothing and returns the same choice directive. none keeps the outcome only in the run ledger; telegram is an intentional push to the linked Telegram accounts named in telegram_recipients; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
+    "telegram_recipients": {"type": "array", "items": {"type": "integer"}, "description": "Optional, only with notify=telegram. The Telegram user ids of the linked accounts the task reaches. With two or more linked and none named, nothing is persisted and a telegram_recipients_required choice directive comes back: relay it with ask_user(kind=choice)."},
     "task_id": {"type": "string", "description": "Required when action=cancel, run_now, pause or resume. The id of the target task."}
   },
   "required": ["action"]
@@ -235,6 +245,16 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, fmt.Errorf("task schedule: notify=%s cannot deliver: %w. No task was created: tell the operator why, or ask which other notify route to use", a.Notify, err)
 	}
 	delivery := deliveryNote(a.Notify, recipient)
+	recipients, choice, err := t.telegramRecipients(ctx, a)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	if choice != nil {
+		return *choice, nil
+	}
+	if len(recipients) > 0 {
+		delivery = deliveryNote(a.Notify, accountNames(recipients))
+	}
 
 	status := "active"
 	if scoring.GateRecommended(tier) {
@@ -272,6 +292,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		Status:               status,
 		NextRunAt:            next,
 		OriginConversationID: originConvID,
+		TelegramRecipients:   accountIDs(recipients),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)
@@ -477,6 +498,9 @@ func renderTaskList(rows []ScheduledTask) string {
 		}
 		if r.NotifyRoute != "" {
 			fmt.Fprintf(&b, "  notify=%s", r.NotifyRoute)
+		}
+		if len(r.TelegramRecipients) > 0 {
+			fmt.Fprintf(&b, "  telegram_recipients=%s", telegramRecipientsListing(r.TelegramRecipients))
 		}
 		b.WriteByte('\n')
 	}

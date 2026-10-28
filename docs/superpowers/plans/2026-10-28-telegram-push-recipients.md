@@ -61,7 +61,7 @@
 | `internal/channels/deliver.go`, `registry.go` | `TelegramAccountDeliverer`; the `Registry` methods. |
 | `internal/channels/telegram/deliver_account.go` (new) | `DeliverToTelegramAccount`, `DeliverApprovalToTelegramAccount`, `classified`. |
 | `internal/agent/tools/task_telegram_recipients.go` (new), `task.go` | The field, the directive, the validation, `list`. |
-| `cmd/aura/serve_dispatch.go`, the tool wiring | The linked-accounts seam for the tool. |
+| `cmd/aura/serve_adapters.go` | The linked-accounts seam for the tool; the column in create and list. |
 
 ## Tasks
 
@@ -100,9 +100,11 @@
 - [x] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
 
 ### Task 5 — The tool asks (R2; acceptance 5)
-- [ ] Red, unit: acceptance 5.
-- [ ] Green: `task_telegram_recipients.go`, the seam and its wiring; `list` names the recipients.
-- [ ] Commit `feat(tools): ask which Telegram accounts a task reaches`.
+- [x] Red, unit: acceptance 5 (`task_telegram_recipients_test.go`).
+- [x] Green: `task_telegram_recipients.go`, the seam and its wiring in `serve_adapters.go`; `list`
+  names the recipients. db_integration: the live tool against Postgres links asks, persists the
+  chosen accounts in order and lists them; a NULL column lists none.
+- [x] Commit `feat(tools): ask which Telegram accounts a task reaches`.
 
 ### Task 6 — Close
 - [ ] Mutation ≥ 70% on `deliver_account.go`, `deliver_recipients.go` and

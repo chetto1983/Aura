@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/board"
+	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
@@ -45,8 +46,29 @@ func newTaskTool(ts *cronTaskStore, notifier cron.Notifier) *tools.TaskTool {
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier
+		t.TelegramAccounts = taskTelegramAccounts{store: telegram.New(ts.pool)}
 	}
 	return t
+}
+
+// taskTelegramAccounts lists the Telegram accounts the caller links, for the task tool's choice
+// of recipients (docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md, R2).
+type taskTelegramAccounts struct{ store *telegram.Store }
+
+func (a taskTelegramAccounts) LinkedTelegramAccounts(ctx context.Context) ([]tools.TelegramAccount, error) {
+	identityID, err := taskIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	linked, err := a.store.LinkedAccounts(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tools.TelegramAccount, len(linked))
+	for i, acct := range linked {
+		out[i] = tools.TelegramAccount{TelegramUserID: acct.TelegramUserID, Username: acct.Username, FirstName: acct.FirstName}
+	}
+	return out, nil
 }
 
 // newBoardTool builds the deferred `board` tool. A nil pool keeps Store a genuine nil
@@ -131,6 +153,7 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 		Status:               status,
 		IdentityID:           identityID,
 		OriginConversationID: in.OriginConversationID,
+		TelegramRecipients:   in.TelegramRecipients,
 	})
 	if err != nil {
 		return tools.ScheduledTask{}, err
@@ -153,7 +176,7 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind, schedule_kind, status, next_run_at, payload, notify_route,
-		       COALESCE(paused_reason, ''), consecutive_failures
+		       COALESCE(paused_reason, ''), consecutive_failures, telegram_recipients
 		FROM aura.scheduler_tasks
 		WHERE identity_id = $1
 		  AND status IN ('active', 'pending_approval', 'paused')
@@ -169,7 +192,7 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		var next *time.Time
 		var payload []byte
 		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next, &payload, &t.NotifyRoute,
-			&t.PausedReason, &t.ConsecutiveFailures); err != nil {
+			&t.PausedReason, &t.ConsecutiveFailures, &t.TelegramRecipients); err != nil {
 			return nil, fmt.Errorf("scan scheduled task: %w", err)
 		}
 		// Enrolment hands the system sweeps to the operator's identity, so this owner-scoped
