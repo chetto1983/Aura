@@ -143,16 +143,16 @@
 - [x] Commit `fix(db): isolate Telegram links per identity, and keep local's rows on retirement`.
 
 ### Task 3 — The store lists and unlinks an identity's links (D7, acceptance 2)
-- [ ] Red, db_integration:
+- [x] Red, db_integration:
   - `LinkedAccounts(A)` returns only A's links, oldest first;
   - `Unlink(A, <B's>)` is false, and B's row remains;
   - `Unlink(A, <A's>)` is true, and the row is gone.
-- [ ] Green:
+- [x] Green:
   - the two sqlc queries, and `sqlc generate`;
   - `LinkedAccounts` and `Unlink` under `db.WithIdentityTx`;
   - remove `ListAccounts`, `ListTelegramAccounts` and their test.
-- [ ] Gates as in Task 1, plus `deadcode`.
-- [ ] Commit `feat(telegram): list and unlink an identity's Telegram accounts`.
+- [x] Gates as in Task 1, plus `deadcode`.
+- [x] Commit `feat(telegram): list and unlink an identity's Telegram accounts`.
 - [ ] D9, red: `TestConversationPushReachesItsOwnChat` (db_integration, measured red on `8b57628`
   for the second chat), and a unit test in `deliver_conversation_test.go`:
   - the matching account is found whatever the order the resolver returns;

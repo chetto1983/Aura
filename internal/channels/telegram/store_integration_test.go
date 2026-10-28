@@ -288,8 +288,8 @@ func TestCleanupExpired(t *testing.T) {
 	}
 }
 
-// TestCountAndList round-trips the account list/count surfaces.
-func TestCountAndList(t *testing.T) {
+// TestCountAccounts counts every link: the setup footer reads it with no identity bound.
+func TestCountAccounts(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	ctx := ownerCtx()
@@ -313,18 +313,70 @@ func TestCountAndList(t *testing.T) {
 	if after != before+1 {
 		t.Errorf("CountAccounts: want %d, got %d", before+1, after)
 	}
+}
 
-	accounts, err := s.ListAccounts(ctx)
+// The owner's list and unlink run under the owner's identity and also filter on it: the WHERE
+// clause is the application filter, and row security the backstop for a forgotten one.
+func TestLinkedAccountsAndUnlinkStayWithTheirOwner(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	ctx := ownerCtx()
+	idA, idB := userIdentity(t, pool, "links-a"), userIdentity(t, pool, "links-b")
+	const linkA1, linkA2, linkB int64 = 9_000_070_001, 9_000_070_002, 9_000_070_003
+	linkThroughOnboarding(t, s, idA, linkA2)
+	linkThroughOnboarding(t, s, idA, linkA1)
+	linkThroughOnboarding(t, s, idB, linkB)
+
+	got, err := s.LinkedAccounts(ctx, idA)
 	if err != nil {
-		t.Fatalf("ListAccounts: %v", err)
+		t.Fatalf("LinkedAccounts(A): %v", err)
 	}
-	found := false
-	for _, a := range accounts {
-		if a.TelegramUserID == tgUserID {
-			found = true
+	if len(got) != 2 || got[0].TelegramUserID != linkA2 || got[1].TelegramUserID != linkA1 || got[0].IdentityID != idA {
+		t.Fatalf("LinkedAccounts(A) = %+v, want %d then %d, both A's, oldest first", got, linkA2, linkA1)
+	}
+	if none, err := s.LinkedAccounts(ctx, "local"); err != nil || len(none) != 0 {
+		t.Fatalf("LinkedAccounts(local) = %+v, %v; want none: a non-UUID identity owns no link", none, err)
+	}
+
+	if ok, err := s.Unlink(ctx, idA, linkB); err != nil || ok {
+		t.Fatalf("Unlink(A, B's link) = %v, %v; want false", ok, err)
+	}
+	if acct, err := s.GetAccountByIdentity(ctx, idB); err != nil || acct.TelegramUserID != linkB {
+		t.Fatalf("B's link after A's unlink = %+v, %v; want it still there", acct, err)
+	}
+	if ok, err := s.Unlink(ctx, idA, linkA1); err != nil || !ok {
+		t.Fatalf("Unlink(A, its own link) = %v, %v; want true", ok, err)
+	}
+	if _, err := s.GetAccountByTelegramID(ctx, linkA1); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("A's unlinked account still resolves: %v", err)
+	}
+}
+
+// userIdentity seeds a user identity; deleting it in cleanup takes its links with it.
+func userIdentity(t *testing.T, pool *pgxpool.Pool, name string) string {
+	t.Helper()
+	id := uuid.NewString()
+	if _, err := pool.Exec(ownerCtx(), "INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user')", id, name+"-"+id); err != nil {
+		t.Fatalf("seed identity %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ownerCtx(), "DELETE FROM aura.identities WHERE id = $1", id); err != nil {
+			t.Errorf("delete identity %s: %v", name, err)
 		}
+	})
+	return id
+}
+
+// linkThroughOnboarding links a chat to identityID the way /start does: a minted token, consumed.
+func linkThroughOnboarding(t *testing.T, s *Store, identityID string, chat int64) {
+	t.Helper()
+	token := uuid.NewString()
+	if err := s.InsertPending(ownerCtx(), InsertPendingParams{
+		OnboardingToken: token, IdentityID: identityID, ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("mint a token for %d: %v", chat, err)
 	}
-	if !found {
-		t.Errorf("ListAccounts must include the new account %d", tgUserID)
+	if _, err := s.ConsumeOnboarding(ownerCtx(), ConsumeParams{OnboardingToken: token, TelegramUserID: chat}); err != nil {
+		t.Fatalf("link %d: %v", chat, err)
 	}
 }

@@ -21,7 +21,12 @@ WHERE telegram_user_id = $1;
 -- name: CountTelegramAccounts :one
 SELECT count(*) FROM aura.telegram_accounts;
 
--- name: ListTelegramAccounts :many
+-- name: ListTelegramAccountsByIdentity :many
 SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
 FROM aura.telegram_accounts
+WHERE identity_id = $1
 ORDER BY added_at ASC, telegram_user_id ASC;
+
+-- name: DeleteTelegramAccountForIdentity :execrows
+DELETE FROM aura.telegram_accounts
+WHERE telegram_user_id = $1 AND identity_id = $2;

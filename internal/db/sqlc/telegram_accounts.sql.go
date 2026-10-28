@@ -22,6 +22,24 @@ func (q *Queries) CountTelegramAccounts(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const deleteTelegramAccountForIdentity = `-- name: DeleteTelegramAccountForIdentity :execrows
+DELETE FROM aura.telegram_accounts
+WHERE telegram_user_id = $1 AND identity_id = $2
+`
+
+type DeleteTelegramAccountForIdentityParams struct {
+	TelegramUserID int64       `json:"telegram_user_id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) DeleteTelegramAccountForIdentity(ctx context.Context, arg DeleteTelegramAccountForIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTelegramAccountForIdentity, arg.TelegramUserID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getTelegramAccountByIdentity = `-- name: GetTelegramAccountByIdentity :one
 SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
 FROM aura.telegram_accounts
@@ -94,14 +112,15 @@ func (q *Queries) InsertTelegramAccount(ctx context.Context, arg InsertTelegramA
 	return i, err
 }
 
-const listTelegramAccounts = `-- name: ListTelegramAccounts :many
+const listTelegramAccountsByIdentity = `-- name: ListTelegramAccountsByIdentity :many
 SELECT telegram_user_id, identity_id, username, first_name, added_at, last_seen_at
 FROM aura.telegram_accounts
+WHERE identity_id = $1
 ORDER BY added_at ASC, telegram_user_id ASC
 `
 
-func (q *Queries) ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error) {
-	rows, err := q.db.Query(ctx, listTelegramAccounts)
+func (q *Queries) ListTelegramAccountsByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error) {
+	rows, err := q.db.Query(ctx, listTelegramAccountsByIdentity, identityID)
 	if err != nil {
 		return nil, err
 	}

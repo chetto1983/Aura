@@ -38,9 +38,9 @@ var (
 	ErrAccountExists = errors.New("telegram account already exists")
 )
 
-// Store wraps a pgx pool and the generated Queries — the canonical shape. Non-tx
-// reads and the setup-pending writes use s.q; a write to telegram_accounts runs in a
-// transaction bound to the identity that owns the row.
+// Store wraps a pgx pool and the generated Queries — the canonical shape. The lookups
+// that resolve an identity and the setup-pending writes use s.q; a write to
+// telegram_accounts, and an owner's list, run in a transaction bound to that identity.
 type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
@@ -229,17 +229,51 @@ func (s *Store) CountAccounts(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// ListAccounts returns all onboarded accounts, oldest first.
-func (s *Store) ListAccounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.q.ListTelegramAccounts(ctx)
+// LinkedAccounts lists the accounts linked to identityID, oldest first, under that identity.
+// A non-UUID identity (the CLI's 'local') owns no link, so it lists none, as
+// GetAccountByIdentity finds none.
+func (s *Store) LinkedAccounts(ctx context.Context, identityID string) ([]Account, error) {
+	idID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
-		return nil, fmt.Errorf("list telegram accounts: %w", err)
+		return nil, nil
+	}
+	var rows []sqlc.AuraTelegramAccounts
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		var err error
+		rows, err = q.ListTelegramAccountsByIdentity(ctx, idID)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list telegram accounts of %s: %w", identityID, err)
 	}
 	out := make([]Account, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, accountFromRow(r))
 	}
 	return out, nil
+}
+
+// Unlink deletes identityID's link to telegramUserID and reports whether there was one. The
+// statement filters on the identity and runs under it, so another identity's link is not
+// found: false, never an error.
+func (s *Store) Unlink(ctx context.Context, identityID string, telegramUserID int64) (bool, error) {
+	idID, err := db.ParseUUID("identity_id", identityID)
+	if err != nil {
+		return false, fmt.Errorf("unlink telegram account %d: %w", telegramUserID, err)
+	}
+	var deleted int64
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		var err error
+		deleted, err = q.DeleteTelegramAccountForIdentity(ctx, sqlc.DeleteTelegramAccountForIdentityParams{
+			TelegramUserID: telegramUserID,
+			IdentityID:     idID,
+		})
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("unlink telegram account %d of %s: %w", telegramUserID, identityID, err)
+	}
+	return deleted == 1, nil
 }
 
 // accountFromRow projects a generated row onto the domain Account type, converting

@@ -169,6 +169,7 @@ type Querier interface {
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
 	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
+	DeleteTelegramAccountForIdentity(ctx context.Context, arg DeleteTelegramAccountForIdentityParams) (int64, error)
 	// The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
 	// MarkPausedStateResumed, not a second concurrency story): FOR UPDATE serializes two
 	// concurrent Drain calls for the SAME conversation_id rather than racing them, so the
@@ -516,7 +517,7 @@ type Querier interface {
 	// One history page, newest first, optionally of one kind. before_id is the last row of the
 	// previous page; an id the owner does not hold compares as NULL and yields an empty page.
 	ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error)
-	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
+	ListTelegramAccountsByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	// The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
 	// in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
