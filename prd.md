@@ -4341,9 +4341,10 @@ for both `Deliver` (a task with `notify=telegram`) and `DeliverApproval`:
 - after the first chat sent an update (`TouchLastSeen`), it reached the second;
 - after the second chat sent one, it reached the first again.
 
-`GetTelegramAccountByIdentity` is a `:one` query with no `ORDER BY`, so it returns the row that
-comes first in the heap, and each update moves the writer's row to the end. The push goes to the
-account used least recently, which is the #196 symptom. The operator chose a per-task recipient
+`GetTelegramAccountByIdentity` is a `:one` query with no `ORDER BY`, so PostgreSQL promises no
+order (docs, "Sorting Rows"). On this database and plan it returned the row first in physical
+order, and each update wrote a new row version that came back last. The push went to the account
+used least recently, which is the #196 symptom. The operator chose a per-task recipient
 list (one account, another, or all), and the most recently seen account when a task names none:
 `docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md`.
 
