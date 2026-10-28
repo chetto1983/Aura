@@ -194,7 +194,9 @@ routes behind `governanceWriteCapability`.
   - empty, loading and error states;
   - each account's name, `@username`, id, link date and last seen;
   - Unlink behind a confirmation, which refetches the list.
-- It mounts in `TelegramSettingsPanel`. The i18n keys go in it and en.
+- It mounts beside `TelegramSettingsPanel` in the Settings workspace's channels section, which
+  already hosts the query-backed shared links section; the panel's own tests render it with no
+  QueryClient (changed while landing, 2026-10-28). The i18n keys go in it and en.
 
 ## 5. Acceptance (machine-checkable)
 
@@ -262,8 +264,13 @@ routes behind `governanceWriteCapability`.
   the inbound lookup and strict RLS everywhere else, would also change the scheduler, the setup
   count, the reset and the recovery. It is not proposed here.
 - **Relinking an unlinked Telegram account to another identity.** Its conversation id is derived
-  from the chat id (`convID`), so the conversation stays owned by the first identity. This was not
-  measured, and it exists today without this change.
+  from the chat id (`convID`), so the conversation stays owned by the first identity. Measured
+  2026-10-28 on the store calls a turn makes: after A unlinks a chat and B links it, B's create of
+  that conversation is 23505, which `runner.EnsureConversation` reports as success, and B's first
+  append is "conversation not found". Every Telegram turn of B on that chat fails; A's history
+  stays A's and B never sees it. The unlink makes this reachable from the cockpit; before, it took
+  SQL. A guard is proposed to the operator, not built here: refuse the link while the chat's
+  conversation belongs to another identity (`aura.conversation_owner`, 0103, answers that).
 - **#197 touches the same store and query file.** Whichever lands second merges and regenerates
   sqlc. #197's test expects the conversation route to refuse two links as ambiguous. Under D9
   that route no longer asks `GetAccountByIdentity`, so the expectation becomes "delivered to that
@@ -271,7 +278,9 @@ routes behind `governanceWriteCapability`.
 
 ## 7. What the measurements do not show
 
-- How many appliances still hold a legacy `local` identity, or what it owns.
+- How many appliances still hold a legacy `local` identity, or what it owns. The operator states
+  (2026-10-28) that every deployment now runs `single_user_hardened` and that `local` is retired
+  on all of them; that is a statement, not a measurement.
 - The 22 other tables with a foreign key to `aura.identities` that the retirement does not move
   (PRD §15, measured from the catalog on 2026-10-28). Deleting `local` cascades them. Which of
   them should move is a separate decision; this slice does not take it.

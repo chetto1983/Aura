@@ -82,6 +82,38 @@ together.
 - `internal/agui` and `cmd/aura` under `-race -p 1`, unit (46.4 s, 71.1 s) and db_integration
   (102.4 s, 116.8 s).
 
+## Task 5 — cockpit
+
+- Vitest on Node 24.22.1 (CI's `AURA_CI_NODE_VERSION`), `TelegramLinkedAccounts.test.tsx`: both
+  rows in order with name, @username, the 52-bit id and "not seen yet"; the empty state; Unlink
+  after the confirmation sends `DELETE …/4503599627370495` and the list is read twice and keeps
+  one row; Cancel sends nothing; a 502 says "Couldn't unlink the account: telegram accounts
+  unavailable" and keeps the row. `src/settings`: 331 of 331 in 42 files.
+- `npm run lint`, `lint:contract`, `mutation:contract`, `format:check`, `typecheck`: clean.
+- Playwright (`chrome`) against `aura serve` built from `7105e80`, with the dist rebuilt on Node 24,
+  on a disposable database `aura_pw` migrated to 0144: `telegram-linked-accounts.spec.ts` passes in
+  3.0 s. The spec stubs the two account routes only; the DELETE carried an `Idempotency-Key`.
+- On the same serve, with no session, both real routes answer 401.
+- That serve's boot retired `local` on `aura_pw` through `aura.retire_legacy_local_rows` with no
+  error logged; `local` owned no content rows there, so this shows the call works on the live boot
+  path, not that rows move (Task 2 shows that).
+
+## Task 6 — mutation and coverage
+
+- `go-mutesting` in a detached worktree of `9bc7033`:
+  - `internal/channels/telegram/store.go` with `GOFLAGS=-tags=db_integration` on `aura_it`:
+    51.4% (18 of 35) first, then 90.9% (30 of 33) once
+    `TestStoreReportsWhatItCannotDo` drove the error paths and two redundant not-found branches
+    were removed. The 3 survivors are equivalent: an invalid identity on `InsertPending` still
+    fails at the NOT NULL column; `SetTxIdentity` fails only on a database fault;
+    `LinkedAccounts`' non-UUID early return matches what the planner folds the query to.
+  - `internal/agui/settings_api_telegram_accounts.go` with `GOFLAGS=-run=TelegramAccount` (its
+    own three tests; the whole agui suite cost minutes per mutant): 83.9% (26 of 31), then 90.3%
+    (28 of 31) with the id-1 case and the setter in the test. Survivors: `ParseInt` with 63 bits,
+    equivalent for Telegram ids of at most 52 bits, and the two `slog.WarnContext` calls.
+- `bash scripts/coverage_docker.sh` on a disposable Postgres (`aura-postgres-cov`, `aura_cov`,
+  119 migrations): owned internal 49851/56922 = 87.6%; the package-local policy passes.
+
 **The relink, measured with a scratch test that was not committed:** after A unlinks a chat and B
 links it, B's `Get` of the chat's conversation is "conversation not found", its `Create` is 23505
 (which `runner.EnsureConversation` takes for a lost race and reports as success), and its
@@ -90,6 +122,8 @@ Telegram turn of B on that chat fails at its first append. This was measured on 
 turn makes, not on a full runner turn.
 
 **What this does not show:**
-- Anything on the live stack or the lab VM.
+- Anything on the lab VM. Acceptance 10 (two real Telegram accounts, an unlink, the activation
+  reply, a reminder reaching the remaining account) is the operator's run and has its own file.
+- Real Telegram traffic: every send here is a recorded fake.
 - What a real appliance's `local` owns. The retirement still lets 22 tables go with `local`
   (PRD §15); this slice does not decide which of them should move.

@@ -1,6 +1,7 @@
 # Telegram account links: owner isolation, and a list the owner can prune — Implementation Plan
 
-**Status (2026-10-28):** in progress. The operator approved the spec, D3 and D9 included.
+**Status (2026-10-28):** implemented and verified locally (Tasks 0–6); the lab VM run of acceptance
+10 is the operator's and stays open. The operator approved the spec, D3 and D9 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -188,28 +189,28 @@
   - the retirement test's cleanup restored local with the retired `*` grant, which `HasCapability` no longer matches (0121), so a later `TestAgentRunCapability` on the same database failed; the cleanup now restores the grants local had.
 
 ### Task 5 — Cockpit (D5, acceptance 8, 9)
-- [ ] Red, Vitest, in `TelegramLinkedAccounts.test.tsx`:
+- [x] Red, Vitest, in `TelegramLinkedAccounts.test.tsx`:
   - the list and the empty state;
   - Unlink after the confirmation sends the DELETE with that id and refetches;
   - a failed unlink shows the error and keeps the row.
-- [ ] Green:
+- [x] Green:
   - `fetchTelegramAccounts` and `unlinkTelegramAccount`;
   - the component, mounted in the panel;
   - the i18n keys in it and en.
-- [ ] `web/e2e/telegram-linked-accounts.spec.ts` with regex-stubbed routes, against `aura serve`.
-- [ ] Gates: `npm run lint`, `npm run typecheck`, and Vitest on `src/settings` on Node 24.
-- [ ] Commits:
+- [x] `web/e2e/telegram-linked-accounts.spec.ts` with regex-stubbed routes, against `aura serve`.
+- [x] Gates: `npm run lint`, `npm run typecheck`, and Vitest on `src/settings` on Node 24.
+- [x] Commits:
   - `feat(web): list and unlink linked Telegram accounts in Settings`;
   - then `build(web): rebuild the embedded cockpit`.
 
 ### Task 6 — Close
-- [ ] Mutation (`go-mutesting`, in a separate worktree, with raised `--exec-timeout`) on
+- [x] Mutation (`go-mutesting`, in a separate worktree, with raised `--exec-timeout`) on
   `internal/channels/telegram/store.go` and `internal/agui/settings_api_telegram_accounts.go`.
   Each must reach ≥ 70%, and the survivors are named.
-- [ ] `bash scripts/coverage_docker.sh`: the aggregate floor and the package policy.
-- [ ] Write `docs/superpowers/verification/2026-10-27-telegram-account-links-local.md`, with what
+- [x] `bash scripts/coverage_docker.sh`: the aggregate floor and the package policy.
+- [x] Write `docs/superpowers/verification/2026-10-28-telegram-account-links-local.md`, with what
   it does not show.
 - [ ] Lab VM (acceptance 10), recorded in its own verification file. The operator links two
   Telegram accounts and unlinks one; the unlinked account gets the activation-required reply, and
   a scheduled reminder reaches the remaining account.
-- [ ] PRD: what the slice measured once wired. Then set this plan's status.
+- [x] PRD: what the slice measured once wired. Then set this plan's status.

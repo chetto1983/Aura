@@ -4309,6 +4309,30 @@ This does not establish:
 - which of those 22 tables should move to the operator and which should go with `local`;
 - anything on the live stack: these are database probes and db_integration tests.
 
+The operator states (2026-10-28) that every deployment runs `single_user_hardened` and has
+retired `local`. That makes the 22 tables a fresh-install concern only, where `local` owns
+nothing yet; it is a statement, not a measurement.
+
+Landed on 2026-10-28 (`docs/superpowers/verification/2026-10-28-telegram-account-links-local.md`):
+- 0144 isolates the links: bound to A, a session sees and changes only A's; with no identity it
+  reads every link and changes none.
+- The retirement keeps `local`'s conversation, assets, ingestion job and event, Telegram link and
+  auth link (red on `28e0c95`, green after).
+- `GET` and `DELETE /api/settings/telegram/accounts` behind `governance.write`. Across two
+  identities A cannot see or unlink B's link (404).
+- Settings → Channels lists the links and unlinks one after a confirmation, checked in a browser
+  against `aura serve`.
+- A push bound to a conversation reaches that conversation's chat with two accounts linked.
+
+Two risks stay open:
+- Identity-wide pushes (`notify=telegram`, approvals) still pick one linked account of the
+  database's choosing (#196). The operator chose a per-task recipient — one account, another, or
+  all — as the next slice (D10).
+- Relinking an unlinked chat to another identity breaks that identity's Telegram turns. The
+  chat's conversation stays the first identity's, and the new identity's first append fails
+  with "conversation not found", measured on the store calls. The unlink makes this reachable
+  from the cockpit. The guard proposed is to refuse such a link; it is not built.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
