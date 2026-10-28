@@ -101,12 +101,43 @@ func freshToken(t *testing.T, s *Store, ttl time.Duration) string {
 	return tok
 }
 
+// cleanupAccount deletes the link under the identity that owns it: under the links' owner
+// isolation, a DELETE with no identity bound matches no row and reports no error.
 func cleanupAccount(t *testing.T, s *Store, tgUserID int64) {
 	t.Helper()
 	t.Cleanup(func() {
-		_, _ = s.pool.Exec(ownerCtx(),
-			"DELETE FROM aura.telegram_accounts WHERE telegram_user_id = $1", tgUserID)
+		acct, err := s.GetAccountByTelegramID(ownerCtx(), tgUserID)
+		if err != nil {
+			return
+		}
+		_ = db.WithIdentityTxRaw(ownerCtx(), s.pool, acct.IdentityID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ownerCtx(), "DELETE FROM aura.telegram_accounts WHERE telegram_user_id = $1", tgUserID)
+			return err
+		})
 	})
+}
+
+// The activity mark is a write, so it runs under the account's identity, and the mark
+// must move: an UPDATE that RLS hides matches nothing and still reports success.
+func TestTouchLastSeenMovesTheMark(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	ctx := ownerCtx()
+	const tgUserID int64 = 9_000_030_001
+	cleanupAccount(t, s, tgUserID)
+	if _, err := s.ConsumeOnboarding(ctx, ConsumeParams{OnboardingToken: freshToken(t, s, time.Hour), TelegramUserID: tgUserID}); err != nil {
+		t.Fatalf("ConsumeOnboarding: %v", err)
+	}
+	if acct, err := s.GetAccountByTelegramID(ctx, tgUserID); err != nil || !acct.LastSeenAt.IsZero() {
+		t.Fatalf("fresh link = (%+v, %v), want one never seen", acct, err)
+	}
+
+	if err := s.TouchLastSeen(ctx, localID, tgUserID); err != nil {
+		t.Fatalf("TouchLastSeen: %v", err)
+	}
+	if acct, err := s.GetAccountByTelegramID(ctx, tgUserID); err != nil || acct.LastSeenAt.IsZero() {
+		t.Fatalf("after TouchLastSeen = (%+v, %v), want last_seen_at set", acct, err)
+	}
 }
 
 // TestOnboardingRoundTrip is the UX-03 contract: InsertPending → ConsumeOnboarding

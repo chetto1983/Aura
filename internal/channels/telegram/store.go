@@ -3,13 +3,13 @@
 // that copies the canonical Store pattern proved in internal/identity and reused by
 // internal/askuser (D-A4-01): Store{pool,q} over the generated sqlc surface,
 // SQLSTATE-based error classification via errors.As + pgErr.Code (never message
-// matching), sentinel errors, pgtype conversion at the boundary, and db.WithTx for
+// matching), sentinel errors, pgtype conversion at the boundary, and one transaction for
 // the atomic consume-pending-then-INSERT-account write.
 //
 // Both onboarding (UX-03, the setup wizard mints pending tokens) and the channel
 // itself (UX-02, /start consumes a token and persists the account) sit on this
 // Store. ConsumeOnboarding is the single-use credential chokepoint
-// (T-13-01-TokenReplay): one db.WithTx marks consumed_at and INSERTs the account;
+// (T-13-01-TokenReplay): one transaction marks consumed_at and INSERTs the account;
 // a re-consume of a spent/expired token returns ErrTokenConsumed and writes no
 // duplicate account.
 package telegram
@@ -39,7 +39,8 @@ var (
 )
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape. Non-tx
-// reads/writes use s.q; the atomic consume-and-INSERT wraps db.WithTx.
+// reads and the setup-pending writes use s.q; a write to telegram_accounts runs in a
+// transaction bound to the identity that owns the row.
 type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
@@ -98,16 +99,21 @@ func (s *Store) InsertPending(ctx context.Context, p InsertPendingParams) error 
 }
 
 // ConsumeOnboarding is the single-use credential chokepoint (T-13-01-TokenReplay):
-// in ONE db.WithTx it (1) atomically marks the token consumed (the SQL guards
+// in ONE transaction it (1) atomically marks the token consumed (the SQL guards
 // consumed_at IS NULL AND expires_at > now() make the UPDATE match no row for a
 // spent/expired token → ErrTokenConsumed) and (2) INSERTs the telegram_accounts
 // row FK'd to the identity the token was minted for. A duplicate account (the same
 // telegram_user_id already onboarded) classifies via SQLSTATE 23505 →
 // ErrAccountExists, never a message match. Any error rolls the whole tx back, so a
 // failed account INSERT leaves the token unconsumed (no half-onboarded state).
+//
+// The transaction starts with no identity and binds the token's identity once the
+// consume returns it, the identity.CreateUserTx precedent: the links' owner isolation
+// refuses an INSERT for any other identity.
 func (s *Store) ConsumeOnboarding(ctx context.Context, p ConsumeParams) (Account, error) {
 	var acct Account
-	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+	err := db.WithIdentityTxRaw(ctx, s.pool, "", func(tx pgx.Tx) error {
+		q := sqlc.New(tx)
 		pending, err := q.ConsumeTelegramSetupPending(ctx, p.OnboardingToken)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -117,6 +123,9 @@ func (s *Store) ConsumeOnboarding(ctx context.Context, p ConsumeParams) (Account
 				return fmt.Errorf("consume onboarding %s: %w", p.OnboardingToken, ErrTokenConsumed)
 			}
 			return fmt.Errorf("consume onboarding %s: %w", p.OnboardingToken, err)
+		}
+		if err := db.SetTxIdentity(ctx, tx, pending.IdentityID.String()); err != nil {
+			return fmt.Errorf("consume onboarding %s: bind identity: %w", p.OnboardingToken, err)
 		}
 		row, err := q.InsertTelegramAccount(ctx, sqlc.InsertTelegramAccountParams{
 			TelegramUserID: p.TelegramUserID,
@@ -199,9 +208,13 @@ func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Ac
 	return accountFromRow(row), nil
 }
 
-// TouchLastSeen bumps last_seen_at for an account (best-effort activity marker).
-func (s *Store) TouchLastSeen(ctx context.Context, telegramUserID int64) error {
-	if err := s.q.TouchTelegramLastSeen(ctx, telegramUserID); err != nil {
+// TouchLastSeen bumps last_seen_at for an account (best-effort activity marker), under
+// the identity that owns it: a write with no identity bound matches no row.
+func (s *Store) TouchLastSeen(ctx context.Context, identityID string, telegramUserID int64) error {
+	err := db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		return q.TouchTelegramLastSeen(ctx, telegramUserID)
+	})
+	if err != nil {
 		return fmt.Errorf("touch telegram last seen %d: %w", telegramUserID, err)
 	}
 	return nil

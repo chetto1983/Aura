@@ -19,7 +19,7 @@ const (
 )
 
 type telegramSeenMarker interface {
-	TouchLastSeen(ctx context.Context, telegramUserID int64) error
+	TouchLastSeen(ctx context.Context, identityID string, telegramUserID int64) error
 }
 
 func (t *Telegram) profileForDispatch() *profileOnboarding {
@@ -116,12 +116,13 @@ func (t *Telegram) telegramUserIsLinked(ctx context.Context, telegramUserID int6
 		slog.Warn("telegram auth: inbound update missing sender", "telegram_user_id", telegramUserID)
 		return false
 	}
-	if _, err := accounts.GetAccountByTelegramID(ctx, telegramUserID); err != nil {
+	account, err := accounts.GetAccountByTelegramID(ctx, telegramUserID)
+	if err != nil {
 		slog.Info("telegram auth: rejected unlinked sender", "telegram_user_id", telegramUserID, "err", err)
 		return false
 	}
 	if marker, ok := accounts.(telegramSeenMarker); ok {
-		if err := marker.TouchLastSeen(ctx, telegramUserID); err != nil {
+		if err := marker.TouchLastSeen(ctx, account.IdentityID, telegramUserID); err != nil {
 			slog.Warn("telegram auth: touch last_seen failed", "telegram_user_id", telegramUserID, "err", err)
 		}
 	}

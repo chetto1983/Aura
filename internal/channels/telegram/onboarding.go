@@ -1,7 +1,7 @@
 // Package telegram — this file is the onboarding writer (the channel side of
 // UX-03). A Telegram deep-link "/start <token>" carries a single-use onboarding
 // token the setup wizard minted (plan 13-07); this file consumes it through the
-// Store's atomic ConsumeOnboarding (one db.WithTx consume-pending-then-INSERT-
+// Store's atomic ConsumeOnboarding (one transaction: consume-pending-then-INSERT-
 // account, plan 13-01) and greets the now-onboarded user. A consumed / expired /
 // unknown token writes NO account and replies with a clear "link expired or
 // invalid" message (T-13-06-TokenReplay — the single-use chokepoint lives in the
