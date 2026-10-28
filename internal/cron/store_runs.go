@@ -328,6 +328,19 @@ func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) 
 	return nil
 }
 
+// MarkNotificationUndeliverable ends a push no retry can deliver (migration 0145): the account
+// was unlinked, the bot blocked, the chat is gone. The sweep never selects it again.
+func (s *Store) MarkNotificationUndeliverable(ctx context.Context, id, lastErr string) error {
+	u, err := db.ParseUUID("uuid", id)
+	if err != nil {
+		return fmt.Errorf("mark notification undeliverable: %w", err)
+	}
+	if err := s.q.MarkNotificationUndeliverable(ctx, sqlc.MarkNotificationUndeliverableParams{ID: u, LastError: text(lastErr)}); err != nil {
+		return fmt.Errorf("mark notification undeliverable %q: %w", id, err)
+	}
+	return nil
+}
+
 // MarkUnknownRecovery transitions a stale run to unknown_recovery (D-02 audit row):
 // the daemon has no DELETE grant on agent_job_runs, so it stays as the repudiation trail
 // for a run whose worker died mid-flight until its task is deleted (a settled one-shot).

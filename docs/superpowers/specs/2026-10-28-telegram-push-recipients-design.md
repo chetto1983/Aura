@@ -79,8 +79,13 @@ as ambiguous instead; with R6 it is no longer ambiguous. Whichever lands second 
 
 **Migration.** `ALTER TABLE aura.scheduler_tasks ADD COLUMN telegram_recipients bigint[]` with
 `CHECK (telegram_recipients IS NULL OR cardinality(telegram_recipients) > 0)`;
-`ALTER TABLE aura.pending_notifications ADD COLUMN telegram_user_id bigint`. Down drops both.
-Neither table has row security (0087, cross-identity daemon tables).
+`ALTER TABLE aura.pending_notifications ADD COLUMN telegram_user_id bigint`, and its status CHECK
+gains `undeliverable`: a swept row whose push turns permanent (the account was unlinked during
+quiet hours, the bot was blocked between attempts) ends there instead of spending the attempt
+bound; the sweep and the one-shot purge count only `pending` and `failed` under the bound as live,
+so neither reads it. Down deletes the undeliverable rows, which nothing will send, and drops the
+rest. Neither table has row security (0087, cross-identity daemon tables). The status was added
+while writing Task 4 (2026-10-28), before 0145 left the branch.
 
 **cron.** `Task.TelegramRecipients []int64` and `PendingNotification.TelegramUserID int64`; a NULL
 column reads as 0, which means none (`pgtype.Int8` at the boundary). `ChannelDeliverer` gains
@@ -126,14 +131,19 @@ directive, and the validation against the identity's linked accounts through a n
    permanent, a network error and a rate limit are not; a channel with no bot or no store is
    `(false, nil)`.
 4. **cron unit.** A two-recipient push sends to each once, a repeated id once; with one failure it
-   inserts one failed row for that account and none for the other; the sweep sends that row to that account only; a permanent failure and
-   a skipped account insert no row and the record names them; a deferred push inserts one row per
-   recipient; a failed approval recipient inserts no row and the reminder is stamped.
+   inserts one failed row for that account and none for the other; the sweep sends that row to
+   that account only, and ends a row whose push is permanent as undeliverable; a permanent failure
+   and a skipped account insert no row and the record names them; a deferred push inserts one row
+   per recipient; with no channel running the route chain queues one row per recipient; a failed
+   approval recipient inserts no row and the reminder is stamped.
 5. **tool unit.** `notify=telegram` with two links and no recipients refuses with both accounts
    and "all" in the directive and persists nothing; with recipients it persists them, a repeated
    id once; an unlinked id is refused; one link stores that account; no link is refused.
 6. **db_integration E2E** (`internal/channels/telegram` and `internal/cron`): a task with both
-   accounts as recipients reaches both chats, and so does its approval prompt.
+   accounts as recipients reaches both chats through the links in Postgres, the channel, the
+   registry and the cron dispatcher, and so does its approval prompt from the registry on; after
+   one is unlinked the push reaches the other and the record names the skipped one. The rows round
+   trip, and an undeliverable row leaves the sweep.
 7. **Lab VM**, recorded in `docs/superpowers/verification/`: with two phones, a reminder for both
    rings both; after unlinking one it rings the other and the conversation names the skipped one.
 8. **Gates.** Coverage gate and package policy; mutation ≥ 70% on the new telegram and tool files.

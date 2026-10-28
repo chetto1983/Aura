@@ -157,6 +157,23 @@ func TestStoreFakeMarkNotificationFailedDBErrorWraps(t *testing.T) {
 	}
 }
 
+func TestStoreFakeMarkNotificationUndeliverable(t *testing.T) {
+	t.Parallel()
+	f := &cronFakeDBTX{}
+	if err := storeWithFake(f).MarkNotificationUndeliverable(context.Background(), fakeNotifID, "unlinked"); err != nil {
+		t.Fatalf("MarkNotificationUndeliverable: %v", err)
+	}
+	if le := f.gotArgs[1].(pgtype.Text); !le.Valid || le.String != "unlinked" {
+		t.Fatalf("last_error must bind as text, got %#v", le)
+	}
+	if err := storeWithFake(&cronFakeDBTX{}).MarkNotificationUndeliverable(context.Background(), "bogus", "x"); err == nil {
+		t.Fatal("MarkNotificationUndeliverable must reject an invalid UUID")
+	}
+	if err := storeWithFake(&cronFakeDBTX{execErr: errDB}).MarkNotificationUndeliverable(context.Background(), fakeNotifID, "x"); !errors.Is(err, errDB) {
+		t.Fatalf("MarkNotificationUndeliverable must wrap a valid-UUID DB error, got %v", err)
+	}
+}
+
 // --- MarkUnknownRecovery ---
 
 func TestStoreFakeMarkUnknownRecovery(t *testing.T) {

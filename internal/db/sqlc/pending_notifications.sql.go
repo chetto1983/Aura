@@ -105,6 +105,26 @@ func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificati
 	return err
 }
 
+const markNotificationUndeliverable = `-- name: MarkNotificationUndeliverable :exec
+UPDATE aura.pending_notifications
+SET status = 'undeliverable',
+    attempts = attempts + 1,
+    last_error = $2,
+    updated_at = now()
+WHERE id = $1
+`
+
+type MarkNotificationUndeliverableParams struct {
+	ID        pgtype.UUID `json:"id"`
+	LastError pgtype.Text `json:"last_error"`
+}
+
+// A push no retry can deliver (migration 0145): it leaves the sweep for good.
+func (q *Queries) MarkNotificationUndeliverable(ctx context.Context, arg MarkNotificationUndeliverableParams) error {
+	_, err := q.db.Exec(ctx, markNotificationUndeliverable, arg.ID, arg.LastError)
+	return err
+}
+
 const sweepDueNotifications = `-- name: SweepDueNotifications :many
 SELECT n.id, n.run_id, n.notify_route, n.body, n.notify_after, n.attempts, n.last_error,
     n.status, n.created_at, n.updated_at, n.identity_id, n.steer_queue_id, n.telegram_user_id,

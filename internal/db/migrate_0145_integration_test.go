@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,5 +58,14 @@ func assert0145Columns(t *testing.T, ctx context.Context, admin *pgxpool.Pool, w
 		{"pending_notifications", "telegram_user_id"},
 	} {
 		assertColumnExists(t, ctx, admin, c.table, c.column, want)
+	}
+	var status string
+	if err := admin.QueryRow(ctx, `
+SELECT pg_get_constraintdef(oid) FROM pg_constraint
+WHERE conrelid = 'aura.pending_notifications'::regclass AND conname = 'pending_notifications_status_check'`).Scan(&status); err != nil {
+		t.Fatalf("read the status CHECK: %v", err)
+	}
+	if got := strings.Contains(status, "'undeliverable'"); got != want {
+		t.Fatalf("status CHECK %s allows undeliverable = %v, want %v", status, got, want)
 	}
 }

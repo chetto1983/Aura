@@ -5,13 +5,19 @@
 -- NULL recipients means the task named none: its pushes go to the account seen most recently
 -- (R6). A list is never empty; "all" stores every account linked when the task was scheduled.
 -- A pending row with a telegram_user_id is retried for that account only, so a push that
--- reached one phone is never sent to it again while the other is retried.
+-- reached one phone is never sent to it again while the other is retried. A row no retry can
+-- deliver (the account was unlinked, the bot blocked, the chat is gone: R3, R5) ends
+-- 'undeliverable', which neither the sweep nor the one-shot purge counts as live.
 ALTER TABLE aura.scheduler_tasks
     ADD COLUMN telegram_recipients bigint[],
     ADD CONSTRAINT scheduler_tasks_telegram_recipients_not_empty
         CHECK (telegram_recipients IS NULL OR cardinality(telegram_recipients) > 0);
 
-ALTER TABLE aura.pending_notifications ADD COLUMN telegram_user_id bigint;
+ALTER TABLE aura.pending_notifications
+    ADD COLUMN telegram_user_id bigint,
+    DROP CONSTRAINT pending_notifications_status_check,
+    ADD CONSTRAINT pending_notifications_status_check
+        CHECK (status IN ('pending', 'failed', 'delivered', 'undeliverable'));
 
 COMMENT ON COLUMN aura.scheduler_tasks.telegram_recipients IS
     'Migration 0145: the Telegram user ids this task''s pushes (its result and its approval prompt) reach. NULL: the account seen most recently.';

@@ -90,11 +90,14 @@
 - [x] Commit `feat(telegram): push to one named account and say when no retry can help`.
 
 ### Task 4 — cron uses it, and retries per recipient (R4, R5; acceptance 4, 6)
-- [ ] Red, unit: acceptance 4. Red, db_integration: acceptance 6.
-- [ ] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines. A
+- [x] Red, unit: acceptance 4 (`deliver_recipients_test.go`). Red, db_integration: acceptance 6
+  (`internal/channels/telegram/deliver_recipients_integration_test.go`, red without the recipient
+  branch: the push reached one chat).
+- [x] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines. A
   deferred push queues one row per recipient; the approval sweep keeps pushing once, at mint,
-  logs a failed recipient and stamps the reminder (spec §4).
-- [ ] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
+  logs a failed recipient and stamps the reminder (spec §4). A permanent error queues no row on
+  every path, and a swept row that turns permanent ends `undeliverable` (0145 amended).
+- [x] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
 
 ### Task 5 — The tool asks (R2; acceptance 5)
 - [ ] Red, unit: acceptance 5.

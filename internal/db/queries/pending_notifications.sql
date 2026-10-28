@@ -29,6 +29,15 @@ UPDATE aura.pending_notifications
 SET status = 'delivered', updated_at = now()
 WHERE id = $1;
 
+-- name: MarkNotificationUndeliverable :exec
+-- A push no retry can deliver (migration 0145): it leaves the sweep for good.
+UPDATE aura.pending_notifications
+SET status = 'undeliverable',
+    attempts = attempts + 1,
+    last_error = $2,
+    updated_at = now()
+WHERE id = $1;
+
 -- name: MarkNotificationFailed :exec
 -- The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
 -- the increment), so the attempt bound spans an outage instead of being spent in one minute

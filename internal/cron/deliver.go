@@ -14,13 +14,16 @@ import (
 	"time"
 )
 
-// ChannelDeliverer exposes two deliberately separate rails. Conversation delivery
-// proves the exact origin thread; identity delivery is reserved for an explicit
-// cross-channel route such as notify=telegram. Both keep the tri-state contract:
-// (true,nil)=delivered, (false,nil)=not owned, (false,err)=owns-but-failed.
+// ChannelDeliverer exposes deliberately separate rails. Conversation delivery proves the
+// exact origin thread; identity delivery is reserved for an explicit cross-channel route
+// such as notify=telegram; account delivery reaches one Telegram account a task named. All
+// keep the tri-state contract: (true,nil)=delivered, (false,nil)=not owned,
+// (false,err)=owns-but-failed, and an err that answers Permanent() true cannot succeed on
+// a retry (see permanent).
 type ChannelDeliverer interface {
 	DeliverToIdentity(ctx context.Context, identityID, text string) (delivered bool, err error)
 	DeliverToConversation(ctx context.Context, identityID, conversationID, text string) (delivered bool, err error)
+	DeliverToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, text string) (delivered bool, err error)
 }
 
 // originGate decides whether a notification keyed on
@@ -65,15 +68,20 @@ func originPreferring(route string) bool {
 // deliverToOrigin prefers the origin channel over the per-task Notifier route for a
 // LIVE task. It returns handled=true when delivery is the channel's concern
 // (delivered OR owns-but-failed-and-queued); the caller then skips Notifier.Notify.
-// It returns false to fall through to today's route chain.
+// It returns false to fall through to today's route chain. A Telegram task that names
+// its recipients pushes to each of them instead (deliverToRecipients).
 //
 // On owns-but-failed it queues a NEW failed pending row (same-channel retry key,
 // keyed on task.IdentityID) and returns handled=true WITHOUT calling Notifier
 // (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route),
 // together with the channel's error so the conversation can say it was not delivered.
+// A permanent failure queues nothing: no retry can deliver it (spec R5).
 func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool, undelivered error) {
 	if !d.originGate(task.IdentityID, task.OriginConversationID, task.NotifyRoute) {
 		return false, nil
+	}
+	if recipients := telegramRecipients(task); len(recipients) > 0 {
+		return d.deliverToRecipients(ctx, task, recipients, runID, text)
 	}
 	var delivered bool
 	var err error
@@ -86,8 +94,10 @@ func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text s
 		// owns-but-failed → queue a failed pending row (the Step-2 sweep re-attempts
 		// the SAME channel, keyed on the persisted identity by 20-04) and stop. Do NOT
 		// fall back to Notifier — that would double-deliver if the channel push half-landed.
-		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", 0, err.Error()); perr != nil {
-			slog.Warn("persist failed origin-channel notification", "task", task.ID, "run", runID, "err", perr)
+		if !permanent(err) {
+			if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", err.Error()); perr != nil {
+				slog.Warn("persist failed origin-channel notification", "task", task.ID, "run", runID, "err", perr)
+			}
 		}
 		return true, err
 	}
@@ -106,30 +116,41 @@ const (
 	// failed (same-channel retry on the next sweep) and does NOT fall back to Notifier
 	// (Pitfall 3 — no cross-channel double-delivery during a sweep).
 	sweepKeep
+	// sweepUndeliverable: no retry can deliver the row (spec R3, R5) → caller ends it.
+	sweepUndeliverable
 )
 
 // deliverSweptRow routes one swept pending_notifications row through the SAME origin
 // gate as the live-task path, keyed on the ROW's identity snapshot (there is no live
 // task at sweep time — the row carries the 0014 identity_id). Unlike the live path it
 // never inserts a new pending row: the row already exists, so owns-but-failed returns
-// sweepKeep and the caller marks the existing row failed for the next sweep.
-func (d *Dispatch) deliverSweptRow(ctx context.Context, n PendingNotification) sweepOutcome {
+// sweepKeep and the caller marks the existing row failed for the next sweep. A Telegram
+// row that names an account goes to that account only. The error is the channel's, for
+// the row's last_error.
+func (d *Dispatch) deliverSweptRow(ctx context.Context, n PendingNotification) (sweepOutcome, error) {
 	if !d.originGate(n.IdentityID, n.OriginConversationID, n.NotifyRoute) {
-		return sweepFallback
+		return sweepFallback, nil
 	}
 	var delivered bool
 	var err error
-	if n.NotifyRoute == string(RouteTelegram) {
+	switch {
+	case n.NotifyRoute == string(RouteTelegram) && n.TelegramUserID != 0:
+		delivered, err = d.deps.ChannelDeliverer.DeliverToTelegramAccount(ctx, n.IdentityID, n.TelegramUserID, n.Body)
+	case n.NotifyRoute == string(RouteTelegram):
 		delivered, err = d.deps.ChannelDeliverer.DeliverToIdentity(ctx, n.IdentityID, n.Body)
-	} else {
+	default:
 		delivered, err = d.deps.ChannelDeliverer.DeliverToConversation(ctx, n.IdentityID, n.OriginConversationID, n.Body)
+	}
+	if permanent(err) {
+		slog.Warn("origin-channel sweep delivery cannot succeed (ended)", "notification", n.ID, "err", err)
+		return sweepUndeliverable, err
 	}
 	if err != nil {
 		slog.Warn("origin-channel sweep delivery failed (kept for next sweep)", "notification", n.ID, "err", err)
-		return sweepKeep
+		return sweepKeep, err
 	}
 	if delivered {
-		return sweepDelivered
+		return sweepDelivered, nil
 	}
-	return sweepFallback
+	return sweepFallback, nil
 }
