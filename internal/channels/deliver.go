@@ -47,3 +47,15 @@ type ConversationDeliverer interface {
 type ApprovalDeliverer interface {
 	DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (delivered bool, err error)
 }
+
+// TelegramAccountDeliverer is the Telegram channel's capability to push to one account an identity
+// links, by its Telegram user id, for a scheduled task that names its recipients
+// (docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md). The tri-state contract
+// is Deliverer's, with one difference: an account the identity no longer links is an error, never
+// "not mine", because the push skips it and must not reach another account. An error whose
+// Permanent() reports true (errors.As) cannot succeed on a retry: the account is unlinked, the bot
+// was blocked, the chat is gone.
+type TelegramAccountDeliverer interface {
+	DeliverToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, text string) (delivered bool, err error)
+	DeliverApprovalToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, token, taskID, kind string) (delivered bool, err error)
+}

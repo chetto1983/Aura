@@ -4353,6 +4353,27 @@ This does not establish:
   point;
 - anything on the live stack.
 
+Landed (D10, 2026-10-28; `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`):
+- An identity push goes to the account seen most recently: the `ORDER BY`, red at each step of the
+  test above before it.
+- Migration 0145: `scheduler_tasks.telegram_recipients` (never empty) and
+  `pending_notifications.telegram_user_id`, plus a terminal status `undeliverable`. A swept row
+  whose push turns permanent ends there, instead of spending the attempt bound.
+- The task tool asks which accounts a `notify=telegram` task reaches when two or more are linked,
+  stores the choice in the order given, each id once, and refuses a route with no linked account.
+  `aura task schedule` applies the same rule through `--telegram-recipients` (ids or `all`); a
+  task set to Telegram in the cockpit's scheduler board still names none and takes the default.
+- Each recipient is pushed on its own: the result, and the approval prompt the sweep mints. A
+  failure that can be retried queues a row for that account only. An unlinked account, a blocked
+  bot or a gone chat queues nothing and is named in the origin conversation; that holds on every
+  path, the identity-wide one included. With two accounts linked through the real onboarding, a
+  reminder naming both reached both chats through the real registry and dispatcher; after one was
+  unlinked it reached the other, and the conversation named the skipped one.
+
+This does not establish a real Telegram send (the sends are recorded by a test double), the
+approval sweep end to end on a database, or the two-phone run on the lab VM, which is the
+operator's.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not

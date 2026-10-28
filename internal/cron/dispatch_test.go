@@ -83,51 +83,6 @@ func (c *fakeCompleter) CompleteRun(_ context.Context, p CompleteRunParams) erro
 	return c.err
 }
 
-type fakeNotificationStore struct {
-	calls []CompleteRunParams
-
-	inserted []InsertPendingNotificationParams
-
-	sweepRows         []PendingNotification
-	sweepAttemptBound int
-	sweepLimit        int
-
-	delivered []string
-	failed    []struct {
-		id  string
-		err string
-	}
-}
-
-func (s *fakeNotificationStore) CompleteRun(_ context.Context, p CompleteRunParams) error {
-	s.calls = append(s.calls, p)
-	return nil
-}
-
-func (s *fakeNotificationStore) InsertPendingNotification(_ context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
-	s.inserted = append(s.inserted, p)
-	return PendingNotification{ID: "pending-id", RunID: p.RunID, NotifyRoute: p.NotifyRoute, Body: p.Body, NotifyAfter: p.NotifyAfter, Attempts: p.Attempts, LastError: p.LastError, Status: p.Status}, nil
-}
-
-func (s *fakeNotificationStore) SweepDueNotifications(_ context.Context, attemptBound, limit int) ([]PendingNotification, error) {
-	s.sweepAttemptBound = attemptBound
-	s.sweepLimit = limit
-	return s.sweepRows, nil
-}
-
-func (s *fakeNotificationStore) MarkNotificationDelivered(_ context.Context, id string) error {
-	s.delivered = append(s.delivered, id)
-	return nil
-}
-
-func (s *fakeNotificationStore) MarkNotificationFailed(_ context.Context, id, lastErr string) error {
-	s.failed = append(s.failed, struct {
-		id  string
-		err string
-	}{id: id, err: lastErr})
-	return nil
-}
-
 // captureNotifier records every delivery and the identity it ran as.
 type captureNotifier struct {
 	routes     []NotifyRoute
@@ -531,6 +486,7 @@ func TestDispatchSweepNotificationsPrefersOriginChannel(t *testing.T) {
 // scriptedDeliverer returns a per-identity tri-state and records every call, so the
 // sweep route-back test can drive multiple rows with different outcomes in one sweep.
 type scriptedDeliverer struct {
+	noTelegramAccounts
 	byIdentity map[string]struct {
 		delivered bool
 		err       error

@@ -1,24 +1,28 @@
 -- name: CreateTask :one
 INSERT INTO aura.scheduler_tasks (
     id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
-    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    telegram_recipients
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries;
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients;
 
 -- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE id = $1;
 
 -- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -30,7 +34,8 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- is what makes each due task a singleton across concurrent workers.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -77,7 +82,8 @@ WHERE t.schedule_kind = 'at'
 -- time).
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -96,7 +102,8 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- lock; a rare cross-instance double-nudge under HA is benign.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL

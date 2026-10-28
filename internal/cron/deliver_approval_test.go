@@ -79,6 +79,7 @@ func (f *fakeEnsurer) calledFor(taskID string) bool {
 
 // fakeApprovalChannel records DeliverApproval pushes with a scriptable tri-state per identity.
 type fakeApprovalChannel struct {
+	noTelegramAccounts
 	byIdentity map[string]struct {
 		delivered bool
 		err       error

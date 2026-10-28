@@ -146,7 +146,7 @@ const (
 	fakeNotifID = "44444444-4444-4444-4444-444444444444"
 )
 
-// schedulerTaskRow returns the 20-column AuraSchedulerTasks value-set in the
+// schedulerTaskRow returns the 21-column AuraSchedulerTasks value-set in the
 // CreateTask/GetTask/ListActiveTasks/DueTasks column order.
 func schedulerTaskRow(t *testing.T) []any {
 	t.Helper()
@@ -172,6 +172,7 @@ func schedulerTaskRow(t *testing.T) []any {
 		int32(0),                                   // consecutive_failures
 		pgtype.Text{},                              // paused_reason (NULL)
 		int32(0),                                   // transient_retries
+		[]int64(nil),                               // telegram_recipients (NULL, migration 0145)
 	}
 }
 
@@ -200,8 +201,11 @@ func TestStoreFakeCreateTaskSuccessAndDefaults(t *testing.T) {
 	}
 	// Defaults are bound into the INSERT args: empty IdentityID→"local", empty Status→"active".
 	args := f.gotArgs
-	if len(args) != 14 {
-		t.Fatalf("CreateTask must bind 14 params, got %d", len(args))
+	if len(args) != 15 {
+		t.Fatalf("CreateTask must bind 15 params, got %d", len(args))
+	}
+	if recipients, ok := args[14].([]int64); !ok || recipients != nil {
+		t.Fatalf("a task naming no Telegram recipient must bind NULL, got %#v", args[14])
 	}
 	if id, ok := args[12].(string); !ok || id != "local" {
 		t.Fatalf("empty IdentityID must default to \"local\" in the INSERT, got %v", args[12])

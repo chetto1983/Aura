@@ -75,6 +75,7 @@ type PendingNotificationStore interface {
 	SweepDueNotifications(ctx context.Context, attemptBound, limit int) ([]PendingNotification, error)
 	MarkNotificationDelivered(ctx context.Context, id string) error
 	MarkNotificationFailed(ctx context.Context, id, lastErr string) error
+	MarkNotificationUndeliverable(ctx context.Context, id, lastErr string) error
 }
 
 var _ PendingNotificationStore = (*Store)(nil)
@@ -408,7 +409,7 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 		if end, ok := d.deferredUntil(task); ok {
 			notifyAfter = end
 		}
-		if err := d.insertPendingNotification(ctx, task, runID, text, notifyAfter, "pending", 0, ""); err != nil {
+		if err := d.insertPendingNotification(ctx, task, runID, text, notifyAfter, "pending", ""); err != nil {
 			slog.Warn("persist deferred scheduler notification", "task", task.ID, "run", runID, "err", err)
 		}
 		slog.Info("notification deferred to quiet-hours window end", "task", task.ID)
@@ -424,7 +425,7 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	err := d.deps.Notifier.Notify(ctx, NotifyRoute(task.NotifyRoute), text)
 	if err != nil {
 		slog.Warn("dispatch notify undelivered (bound-retry on a later tick)", "task", task.ID, "err", err)
-		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", 0, err.Error()); perr != nil {
+		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", err.Error()); perr != nil {
 			slog.Warn("persist failed scheduler notification", "task", task.ID, "run", runID, "err", perr)
 		}
 	}
@@ -478,31 +479,6 @@ func (d *Dispatch) deferredUntil(task Task) (time.Time, bool) {
 	return d.deps.QuietHoursEnd(task.TZ)
 }
 
-func (d *Dispatch) insertPendingNotification(
-	ctx context.Context,
-	task Task,
-	runID, body string,
-	notifyAfter time.Time,
-	status string,
-	attempts int,
-	lastErr string,
-) error {
-	if d.deps.NotificationStore == nil {
-		return nil
-	}
-	_, err := d.deps.NotificationStore.InsertPendingNotification(ctx, InsertPendingNotificationParams{
-		RunID:       runID,
-		NotifyRoute: task.NotifyRoute,
-		Body:        body,
-		NotifyAfter: notifyAfter,
-		Attempts:    attempts,
-		LastError:   lastErr,
-		Status:      status,
-		IdentityID:  task.IdentityID,
-	})
-	return err
-}
-
 // taskTier recomputes the risk tier at dispatch from the task's kind + payload (the
 // schedule-time gate already routed Destructive to pending_approval; this recompute
 // drives the immediate-alert decision, D-27). scoring takes the threshold as an
@@ -544,14 +520,18 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 		// a quiet-hours-deferred / failed notification routes back to the channel it
 		// came from after the sweep, not the default route. The gate is the SAME one
 		// the live-task path uses (deliver.go originGate).
-		switch d.deliverSweptRow(rowCtx, n) {
+		outcome, derr := d.deliverSweptRow(rowCtx, n)
+		switch outcome {
 		case sweepDelivered:
 			d.markSweptDelivered(ctx, n.ID)
 			continue
 		case sweepKeep:
 			// owns-but-failed: keep the row (same-channel retry next sweep), do NOT
 			// fall back to Notifier (no cross-channel double-delivery, Pitfall 3).
-			d.markSweptFailed(ctx, n.ID, "origin-channel delivery failed")
+			d.markSweptFailed(ctx, n.ID, derr.Error())
+			continue
+		case sweepUndeliverable:
+			d.markSweptUndeliverable(ctx, n.ID, derr.Error())
 			continue
 		case sweepFallback:
 			// The explicit route is not a conversation projection; use its notifier.
@@ -568,6 +548,12 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 func (d *Dispatch) markSweptDelivered(ctx context.Context, id string) {
 	if err := d.deps.NotificationStore.MarkNotificationDelivered(ctx, id); err != nil {
 		slog.Warn("mark scheduler notification delivered", "notification", id, "err", err)
+	}
+}
+
+func (d *Dispatch) markSweptUndeliverable(ctx context.Context, id, lastErr string) {
+	if err := d.deps.NotificationStore.MarkNotificationUndeliverable(ctx, id, lastErr); err != nil {
+		slog.Warn("mark scheduler notification undeliverable", "notification", id, "err", err)
 	}
 }
 

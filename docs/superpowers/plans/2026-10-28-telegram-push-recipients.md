@@ -1,6 +1,7 @@
 # Telegram pushes reach the chats the task names — Implementation Plan
 
-**Status (2026-10-28):** in progress. The operator approved the spec, R6 included.
+**Status (2026-10-28):** Tasks 0–6 done locally, the lab VM run (acceptance 7) is the operator's.
+The operator approved the spec, R6 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -13,10 +14,10 @@
 **Architecture:**
 - **Migration.** `scheduler_tasks.telegram_recipients bigint[]` and
   `pending_notifications.telegram_user_id bigint`.
-- **cron.** The task and the retry row carry the recipients; `ChannelDeliverer` gains a
-  recipients-aware Telegram push with one result per account.
-- **telegram.** `DeliverToRecipients` over `LinkedAccounts`; permanent errors classified by the
-  telebot sentinels.
+- **cron.** The task and the retry row carry the recipients; `ChannelDeliverer` gains a push to
+  one Telegram account, called once per recipient (spec §4, amended at Task 3).
+- **telegram.** `DeliverToTelegramAccount` over `LinkedAccounts`; permanent errors classified by
+  the telebot sentinels and answered through `Permanent() bool`.
 - **Tool.** The `task` tool asks for the recipients when two or more accounts are linked.
 
 **Tech Stack:** PostgreSQL 18, golang-migrate, sqlc 1.31.1, Go (`internal/cron`,
@@ -57,11 +58,12 @@
 | `internal/db/migrate_NNNN_integration_test.go` | New: up/down and the CHECK. |
 | `internal/db/queries/{scheduler_tasks,pending_notifications,telegram_accounts}.sql`, `internal/db/sqlc/*` | The columns in insert/select; the `ORDER BY`. |
 | `internal/cron/store*.go`, `deliver.go`, `deliver_approval.go` | The fields, the recipients-aware origin push, the per-recipient retry rows. |
-| `internal/cron/deliver_recipients.go` (new) | The fan-out and its result handling, if `deliver.go` passes 600. |
-| `internal/channels/registry.go` | `DeliverToTelegramRecipients`. |
-| `internal/channels/telegram/deliver_recipients.go` (new) | `DeliverToRecipients`, `isPermanent`. |
+| `internal/cron/deliver_recipients.go` (new) | The fan-out over the recipients and its result handling. |
+| `internal/channels/deliver.go`, `registry.go` | `TelegramAccountDeliverer`; the `Registry` methods. |
+| `internal/channels/telegram/deliver_account.go` (new) | `DeliverToTelegramAccount`, `DeliverApprovalToTelegramAccount`, `classified`. |
 | `internal/agent/tools/task_telegram_recipients.go` (new), `task.go` | The field, the directive, the validation, `list`. |
-| `cmd/aura/serve_dispatch.go`, the tool wiring | The linked-accounts seam for the tool. |
+| `cmd/aura/serve_adapters.go` | The linked-accounts seam for the tool; the column in create and list. |
+| `cmd/aura/task.go`, `cmd/aura/task_telegram_recipients.go` (new) | `--telegram-recipients` and its validation. |
 
 ## Tasks
 
@@ -71,38 +73,53 @@
 - [x] Commit `docs(prd): measure which linked Telegram account an identity push reaches`.
 
 ### Task 1 — The default goes to the account seen last (R6, acceptance 2)
-- [ ] Red, db_integration: the probe of spec §1 as a test; after the first chat's update, the
+- [x] Red, db_integration: the probe of spec §1 as a test; after the first chat's update, the
   identity push goes to the first chat.
-- [ ] Green: the `ORDER BY` in `GetTelegramAccountByIdentity`; `sqlc generate`.
-- [ ] Commit `fix(telegram): an identity push goes to the account seen last`.
+- [x] Green: the `ORDER BY` in `GetTelegramAccountByIdentity`; `sqlc generate`.
+- [x] Commit `fix(telegram): an identity push goes to the account seen last`.
 
 ### Task 2 — The columns (R1, R4, R7; acceptance 1)
-- [ ] Red: the migration test (up/down, the CHECK refuses `'{}'`).
-- [ ] Green: the migration; the cron store reads and writes `TelegramRecipients` and
+- [x] Red: the migration test (up/down, the CHECK refuses `'{}'`).
+- [x] Green: the migration (0145); the cron store reads and writes `TelegramRecipients` and
   `TelegramUserID`; their round trips in the cron db_integration tests.
-- [ ] Commit `feat(db): a scheduled task names its Telegram recipients`.
+- [x] Commit `feat(db): a scheduled task names its Telegram recipients`.
 
-### Task 3 — The telegram fan-out (R3, R5; acceptance 3)
-- [ ] Red, unit: `DeliverToRecipients` cases of acceptance 3.
-- [ ] Green: `deliver_recipients.go`; `DeliverApproval` with recipients; `Registry` method.
-- [ ] Commit `feat(telegram): deliver to each named account and say which failed`.
+### Task 3 — The telegram push to one named account (R3, R5; acceptance 3)
+- [x] Red, unit: acceptance 3 (`deliver_account_test.go`), and the `Registry` methods.
+- [x] Green: `deliver_account.go`; the send and approval paths of `deliver.go` shared with it; the
+  `TelegramAccountDeliverer` capability and its `Registry` methods. Spec §4 amended: one account
+  per call instead of a list with a result per account.
+- [x] Commit `feat(telegram): push to one named account and say when no retry can help`.
 
 ### Task 4 — cron uses it, and retries per recipient (R4, R5; acceptance 4, 6)
-- [ ] Red, unit: acceptance 4. Red, db_integration: acceptance 6.
-- [ ] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines. A
+- [x] Red, unit: acceptance 4 (`deliver_recipients_test.go`). Red, db_integration: acceptance 6
+  (`internal/channels/telegram/deliver_recipients_integration_test.go`, red without the recipient
+  branch: the push reached one chat).
+- [x] Green: `deliverToOrigin`, `deliverSweptRow` and the approval sweep; the record lines. A
   deferred push queues one row per recipient; the approval sweep keeps pushing once, at mint,
-  logs a failed recipient and stamps the reminder (spec §4).
-- [ ] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
+  logs a failed recipient and stamps the reminder (spec §4). A permanent error queues no row on
+  every path, and a swept row that turns permanent ends `undeliverable` (0145 amended).
+- [x] Commit `feat(cron): a task's Telegram pushes reach its recipients, one retry each`.
 
 ### Task 5 — The tool asks (R2; acceptance 5)
-- [ ] Red, unit: acceptance 5.
-- [ ] Green: `task_telegram_recipients.go`, the seam and its wiring; `list` names the recipients.
-- [ ] Commit `feat(tools): ask which Telegram accounts a task reaches`.
+- [x] Red, unit: acceptance 5 (`task_telegram_recipients_test.go`).
+- [x] Green: `task_telegram_recipients.go`, the seam and its wiring in `serve_adapters.go`; `list`
+  names the recipients. db_integration: the live tool against Postgres links asks, persists the
+  chosen accounts in order and lists them; a NULL column lists none.
+- [x] Commit `feat(tools): ask which Telegram accounts a task reaches`.
+
+### Task 5b — The CLI names its recipients (R2; review of #198, operator 2026-10-28)
+- [x] Red, unit: `TestCLITelegramRecipients` (`cmd/aura`); db_integration: the CLI INSERT reads
+  its recipients back (`TestCLIScheduledTaskCarriesAnOwner`).
+- [x] Green: R2's rule becomes `tools.PickTelegramRecipients`, shared by the tool and
+  `cliTelegramRecipients`; `aura task schedule --telegram-recipients=<ids|all>`.
+- [x] Commit `feat(cli): aura task schedule names its Telegram recipients`.
 
 ### Task 6 — Close
-- [ ] Mutation ≥ 70% on `deliver_recipients.go` and `task_telegram_recipients.go`, survivors named.
-- [ ] `bash scripts/coverage_docker.sh`.
-- [ ] `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`, with what it
+- [x] Mutation ≥ 70% on `deliver_account.go` (100%), `deliver_recipients.go` (92.0%) and
+  `task_telegram_recipients.go` (95.8%), survivors named in the verification file.
+- [x] `bash scripts/coverage_docker.sh`: 50036/57102 = 87.6%, package policy passed.
+- [x] `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`, with what it
   does not show.
 - [ ] Lab VM (acceptance 7), in its own verification file.
-- [ ] PRD and this plan's status.
+- [x] PRD and this plan's status.

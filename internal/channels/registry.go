@@ -276,6 +276,35 @@ func (r *Registry) DeliverApproval(ctx context.Context, identityID, token, taskI
 	return false, nil // not-my-user across all → caller falls back (WebUI pulls the pause)
 }
 
+// DeliverToTelegramAccount pushes to one Telegram account through the started channel that can;
+// with none started it returns (false, nil), so the caller falls back to its route.
+func (r *Registry) DeliverToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, text string) (bool, error) {
+	d, ok := r.telegramAccountDeliverer()
+	if !ok {
+		return false, nil
+	}
+	return d.DeliverToTelegramAccount(ctx, identityID, telegramUserID, text)
+}
+
+// DeliverApprovalToTelegramAccount is DeliverToTelegramAccount for an approval prompt.
+func (r *Registry) DeliverApprovalToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, token, taskID, kind string) (bool, error) {
+	d, ok := r.telegramAccountDeliverer()
+	if !ok {
+		return false, nil
+	}
+	return d.DeliverApprovalToTelegramAccount(ctx, identityID, telegramUserID, token, taskID, kind)
+}
+
+func (r *Registry) telegramAccountDeliverer() (TelegramAccountDeliverer, bool) {
+	names, snap := r.startedSnapshot()
+	for _, n := range names {
+		if d, ok := snap[n].(TelegramAccountDeliverer); ok {
+			return d, true
+		}
+	}
+	return nil, false
+}
+
 // enabled resolves a channel's enablement: the override wins when it returns
 // ok=true, else the AURA_CHANNEL_<upper(Name)>_ENABLED env gate (default true).
 func (r *Registry) enabled(name string) bool {
