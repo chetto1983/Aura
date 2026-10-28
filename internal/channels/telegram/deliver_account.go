@@ -16,8 +16,8 @@ var _ channels.TelegramAccountDeliverer = (*Telegram)(nil)
 // (docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md). (false, nil) is a
 // channel that cannot push now; an account the identity no longer links is a permanent error.
 func (t *Telegram) DeliverToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, text string) (bool, error) {
-	sender, resolver := t.pushSeams()
-	if sender == nil || resolver == nil {
+	sender, resolver, ok := t.pushSeams()
+	if !ok {
 		return false, nil
 	}
 	if err := requireLinked(ctx, resolver, identityID, telegramUserID); err != nil {
@@ -31,8 +31,8 @@ func (t *Telegram) DeliverToTelegramAccount(ctx context.Context, identityID stri
 
 // DeliverApprovalToTelegramAccount is DeliverApproval for one account a task named.
 func (t *Telegram) DeliverApprovalToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, token, taskID, kind string) (bool, error) {
-	sender, resolver := t.pushSeams()
-	if sender == nil || resolver == nil {
+	sender, resolver, ok := t.pushSeams()
+	if !ok {
 		return false, nil
 	}
 	if err := requireLinked(ctx, resolver, identityID, telegramUserID); err != nil {

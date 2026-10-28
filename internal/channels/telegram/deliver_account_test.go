@@ -105,9 +105,12 @@ func TestDeliverToTelegramAccount(t *testing.T) {
 			if ok || err != nil || res.listCalls != 0 {
 				t.Fatalf("no bot = (%v, %v) after %d lists, want (false, nil) and no lookup", ok, err, res.listCalls)
 			}
-			ok, err = deliver(NewChannel(Deps{Offline: true, Store: nil}), first.TelegramUserID)
-			if ok || err != nil {
-				t.Fatalf("no store = (%v, %v), want (false, nil)", ok, err)
+			bot := &sendRecorder{}
+			noStore := NewChannel(Deps{Offline: true})
+			noStore.deliverBot = bot
+			ok, err = deliver(noStore, first.TelegramUserID)
+			if ok || err != nil || len(bot.recorded()) != 0 {
+				t.Fatalf("no store = (%v, %v) with %d sends, want (false, nil) and none", ok, err, len(bot.recorded()))
 			}
 		})
 	}

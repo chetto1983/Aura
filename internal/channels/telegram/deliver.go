@@ -55,8 +55,8 @@ func (t *Telegram) DeliverConversation(ctx context.Context, identityID, conversa
 }
 
 func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversationID, text string) (bool, error) {
-	sender, resolver := t.pushSeams()
-	if sender == nil || resolver == nil {
+	sender, resolver, ok := t.pushSeams()
+	if !ok {
 		return false, nil
 	}
 	acct, found, err := recipient(ctx, resolver, identityID, requiredConversationID)
@@ -73,16 +73,17 @@ func (t *Telegram) deliver(ctx context.Context, identityID, requiredConversation
 }
 
 // pushSeams reads the sender under t.mu (it may be nil after Stop — Pitfall 4: never deref a
-// racing nil bot) and the account resolver. Either nil means the channel cannot push, so the
-// caller returns (false, nil) and lets the route fall-back handle delivery.
-func (t *Telegram) pushSeams() (botSender, accountResolver) {
+// racing nil bot) and the account resolver. ok=false, either missing, means the channel cannot
+// push, so the caller returns (false, nil) and lets the route fall-back handle delivery.
+func (t *Telegram) pushSeams() (botSender, accountResolver, bool) {
 	t.mu.Lock()
 	sender := t.deliverSender()
 	t.mu.Unlock()
 	if sender == nil {
-		return nil, nil
+		return nil, nil, false
 	}
-	return sender, t.accountResolver()
+	resolver := t.accountResolver()
+	return sender, resolver, resolver != nil
 }
 
 // sendText pushes text to one chat. The Bot API rejects a message over 4096 runes outright, so
@@ -182,8 +183,8 @@ func (t *Telegram) paceDeliver(ctx context.Context, d time.Duration) error {
 // honors the SAME tri-state contract as Deliver: (false,nil) not my user; (true,nil) delivered;
 // (false,err) owns-but-failed.
 func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
-	sender, resolver := t.pushSeams()
-	if sender == nil || resolver == nil {
+	sender, resolver, ok := t.pushSeams()
+	if !ok {
 		return false, nil
 	}
 	acct, found, err := recipient(ctx, resolver, identityID, "")
