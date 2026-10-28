@@ -127,12 +127,26 @@ func TestLocalIdentityRetirementKeepsLocalsRows(t *testing.T) {
 }
 
 // legacyLocalIdentity makes sure local exists as migration 0004 seeds it. A retirement deletes
-// it, and later tests of this package seed rows under it, so the cleanup puts it back.
+// it, and later tests on the same database seed rows under it or check its grants, so the
+// cleanup puts it back with the grants it had. Since 0121 those are exact capability names:
+// restoring the retired `*` left local with no capability that HasCapability matches.
 func legacyLocalIdentity(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
+	ctx := t.Context()
 	var localID string
-	if err := pool.QueryRow(t.Context(), `INSERT INTO aura.identities (id,name,kind) VALUES ('00000000-0000-0000-0000-000000000001','local','system') ON CONFLICT (name) DO UPDATE SET kind='system' RETURNING id::text`).Scan(&localID); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO aura.identities (id,name,kind) VALUES ('00000000-0000-0000-0000-000000000001','local','system') ON CONFLICT (name) DO UPDATE SET kind='system' RETURNING id::text`).Scan(&localID); err != nil {
 		t.Fatal(err)
+	}
+	var grants []string
+	if err := db.WithIdentityTxRaw(ctx, pool, localID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT capability FROM aura.capability_grants WHERE identity_id = $1::uuid`, localID)
+		if err != nil {
+			return err
+		}
+		grants, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	}); err != nil {
+		t.Fatalf("read the local identity's grants: %v", err)
 	}
 	t.Cleanup(func() {
 		ctx := context.Background()
@@ -141,10 +155,10 @@ func legacyLocalIdentity(t *testing.T, pool *pgxpool.Pool) string {
 			return
 		}
 		if err := db.WithIdentityTxRaw(ctx, pool, localID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO aura.capability_grants (identity_id,capability) VALUES ($1::uuid,'*') ON CONFLICT DO NOTHING`, localID)
+			_, err := tx.Exec(ctx, `INSERT INTO aura.capability_grants (identity_id,capability) SELECT $1::uuid, unnest($2::text[]) ON CONFLICT DO NOTHING`, localID, grants)
 			return err
 		}); err != nil {
-			t.Errorf("restore the local identity's grant: %v", err)
+			t.Errorf("restore the local identity's grants: %v", err)
 		}
 	})
 	return localID
