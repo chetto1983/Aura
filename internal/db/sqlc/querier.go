@@ -257,6 +257,9 @@ type Querier interface {
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
+	// The account seen most recently, in the order the password reset and the recovery use. With no
+	// ORDER BY the first row in the heap came back, and every update moves the writer's row to the
+	// end, so the push reached the account used least recently (measured 2026-10-28).
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
 	GetTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)

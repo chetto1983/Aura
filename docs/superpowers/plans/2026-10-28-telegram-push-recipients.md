@@ -71,10 +71,10 @@
 - [x] Commit `docs(prd): measure which linked Telegram account an identity push reaches`.
 
 ### Task 1 — The default goes to the account seen last (R6, acceptance 2)
-- [ ] Red, db_integration: the probe of spec §1 as a test; after the first chat's update, the
+- [x] Red, db_integration: the probe of spec §1 as a test; after the first chat's update, the
   identity push goes to the first chat.
-- [ ] Green: the `ORDER BY` in `GetTelegramAccountByIdentity`; `sqlc generate`.
-- [ ] Commit `fix(telegram): an identity push goes to the account seen last`.
+- [x] Green: the `ORDER BY` in `GetTelegramAccountByIdentity`; `sqlc generate`.
+- [x] Commit `fix(telegram): an identity push goes to the account seen last`.
 
 ### Task 2 — The columns (R1, R4, R7; acceptance 1)
 - [ ] Red: the migration test (up/down, the CHECK refuses `'{}'`).
