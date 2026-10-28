@@ -1,7 +1,7 @@
 # Telegram account links: owner isolation, and a list the owner can prune — Implementation Plan
 
-**Status (2026-10-28):** implemented and verified locally (Tasks 0–6); the lab VM run of acceptance
-10 is the operator's and stays open. The operator approved the spec, D3 and D9 included.
+**Status (2026-10-28):** Tasks 0–6 implemented and verified locally; Task 7 (D11, approved
+2026-10-28) in progress; the lab VM run of acceptance 10 is the operator's and stays open. The operator approved the spec, D3 and D9 included.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -202,6 +202,14 @@
 - [x] Commits:
   - `feat(web): list and unlink linked Telegram accounts in Settings`;
   - then `build(web): rebuild the embedded cockpit`.
+
+### Task 7 — Refuse a relink onto another identity's chat (D11, acceptance 12)
+- [x] Red, db_integration: acceptance 12. Red, unit: the `/start` reply for
+  `ErrChatOwnedElsewhere`.
+- [x] Green: the consume reads `ConversationOwner(convID(chat))` after binding the token's
+  identity and refuses another owner; the sentinel; the reply.
+- [ ] Gates as in Task 1; mutation on `store.go` again.
+- [x] Commit `fix(telegram): refuse to link a chat whose conversation is another identity's`.
 
 ### Task 6 — Close
 - [x] Mutation (`go-mutesting`, in a separate worktree, with raised `--exec-timeout`) on

@@ -118,6 +118,7 @@ would refuse this case as ambiguous, but it is not ambiguous: the conversation n
 | D6 | Unlinking revokes inbound access. The next message from that Telegram account gets the activation-required reply (`bot_dispatch_auth.go`). | That is what an unlink means. The gate already fails closed on a missing row. |
 | D7 | `Store.ListAccounts` and `ListTelegramAccounts` are removed. The list reads a new `ListTelegramAccountsByIdentity`. | No production caller (§1). |
 | D8 | The migration takes the next free number when it lands (0144 when this was written). | CLAUDE.md: `ls internal/db/migrations/ \| tail -1` at landing. |
+| D11 | The consume refuses to link a chat whose Telegram conversation belongs to another identity, with `ErrChatOwnedElsewhere` and a reply that says so; the token stays unused. The owner is read with `ConversationOwner` over `aura.conversation_owner` (0103), since the linking identity cannot see another identity's row. | Measured 2026-10-28: after an unlink and a relink to B, every Telegram turn of B on that chat failed at its first append, because the chat's conversation stayed A's. Approved by the operator on 2026-10-28. |
 | D9 | A push bound to a conversation picks, among the identity's linked accounts (`LinkedAccounts`), the one whose chat is that conversation. No match is "not mine", as today. Identity-wide pushes (`notify=telegram`, approvals) keep `GetAccountByIdentity`. | Goal 5, measured in §1. The conversation names the chat, so there is nothing to choose. `convID` is a one-way hash, so the accounts are compared one by one; an identity links a handful. Approved by the operator on 2026-10-28. |
 
 ## 4. Design
@@ -250,6 +251,9 @@ routes behind `governanceWriteCapability`.
     - A scheduled reminder reaches the remaining account.
 11. **Gates.** The coverage gate and the package policy are green. Mutation is at least 70% on
     `internal/channels/telegram/store.go` and on the new agui file.
+12. **db_integration, relink (D11).** A chat whose conversation is A's, unlinked by A, cannot be
+    linked by B: the consume returns `ErrChatOwnedElsewhere`, writes no link and leaves the token
+    unused. A can link it again. The bot's reply to `/start` names the refusal.
 
 ## 6. Risks
 
@@ -269,8 +273,7 @@ routes behind `governanceWriteCapability`.
   that conversation is 23505, which `runner.EnsureConversation` reports as success, and B's first
   append is "conversation not found". Every Telegram turn of B on that chat fails; A's history
   stays A's and B never sees it. The unlink makes this reachable from the cockpit; before, it took
-  SQL. A guard is proposed to the operator, not built here: refuse the link while the chat's
-  conversation belongs to another identity (`aura.conversation_owner`, 0103, answers that).
+  SQL. D11 refuses such a link (approved 2026-10-28).
 - **#197 touches the same store and query file.** Whichever lands second merges and regenerates
   sqlc. #197's test expects the conversation route to refuse two links as ambiguous. Under D9
   that route no longer asks `GetAccountByIdentity`, so the expectation becomes "delivered to that

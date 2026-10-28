@@ -31,11 +31,13 @@ import (
 // Sentinel errors so callers classify failures without string matching.
 // ErrTokenConsumed is an already-consumed OR expired onboarding token (a spent
 // single-use credential); ErrTokenNotFound is an unknown token; ErrAccountExists
-// is a duplicate telegram_user_id (SQLSTATE 23505 on the account INSERT).
+// is a duplicate telegram_user_id (SQLSTATE 23505 on the account INSERT);
+// ErrChatOwnedElsewhere is a chat whose conversation belongs to another identity.
 var (
-	ErrTokenConsumed = errors.New("onboarding token already consumed or expired")
-	ErrTokenNotFound = errors.New("onboarding token not found")
-	ErrAccountExists = errors.New("telegram account already exists")
+	ErrTokenConsumed      = errors.New("onboarding token already consumed or expired")
+	ErrTokenNotFound      = errors.New("onboarding token not found")
+	ErrAccountExists      = errors.New("telegram account already exists")
+	ErrChatOwnedElsewhere = errors.New("telegram chat belongs to another identity")
 )
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape. The lookups
@@ -110,6 +112,11 @@ func (s *Store) InsertPending(ctx context.Context, p InsertPendingParams) error 
 // The transaction starts with no identity and binds the token's identity once the
 // consume returns it, the identity.CreateUserTx precedent: the links' owner isolation
 // refuses an INSERT for any other identity.
+//
+// A chat whose conversation (convID) already belongs to another identity is refused with
+// ErrChatOwnedElsewhere: linked anyway, every turn of the new identity there would fail at its
+// first append, since the conversation stays the first identity's. The owner is read through
+// aura.conversation_owner (0103), because the bound identity cannot see another's row.
 func (s *Store) ConsumeOnboarding(ctx context.Context, p ConsumeParams) (Account, error) {
 	var acct Account
 	err := db.WithIdentityTxRaw(ctx, s.pool, "", func(tx pgx.Tx) error {
@@ -126,6 +133,13 @@ func (s *Store) ConsumeOnboarding(ctx context.Context, p ConsumeParams) (Account
 		}
 		if err := db.SetTxIdentity(ctx, tx, pending.IdentityID.String()); err != nil {
 			return fmt.Errorf("consume onboarding %s: bind identity: %w", p.OnboardingToken, err)
+		}
+		owner, err := q.ConversationOwner(ctx, convID(p.TelegramUserID))
+		if err != nil {
+			return fmt.Errorf("consume onboarding %s: chat conversation owner: %w", p.OnboardingToken, err)
+		}
+		if owner.Valid && owner != pending.IdentityID {
+			return fmt.Errorf("consume onboarding %s: %w", p.OnboardingToken, ErrChatOwnedElsewhere)
 		}
 		row, err := q.InsertTelegramAccount(ctx, sqlc.InsertTelegramAccountParams{
 			TelegramUserID: p.TelegramUserID,

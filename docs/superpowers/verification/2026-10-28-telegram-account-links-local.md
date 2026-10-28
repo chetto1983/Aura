@@ -121,6 +121,15 @@ links it, B's `Get` of the chat's conversation is "conversation not found", its 
 Telegram turn of B on that chat fails at its first append. This was measured on the store calls a
 turn makes, not on a full runner turn.
 
+## Task 7 — the relink guard (D11)
+
+- Red on `e96c8f9` with the sentinel only: `TestRelinkingAnotherIdentitysChatIsRefused` failed
+  "B links A's chat: err = <nil>, want ErrChatOwnedElsewhere".
+- Green: B's consume returns `ErrChatOwnedElsewhere`, writes no link and leaves B's token unused;
+  A links its own chat again. The `/start` reply for the refusal is pinned by
+  `TestOnboardChatOwnedElsewhereSaysWhy`. `internal/channels/...` under `-race`, unit and
+  db_integration.
+
 **What this does not show:**
 - Anything on the lab VM. Acceptance 10 (two real Telegram accounts, an unlink, the activation
   reply, a reminder reaching the remaining account) is the operator's run and has its own file.

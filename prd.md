@@ -4324,14 +4324,15 @@ Landed on 2026-10-28 (`docs/superpowers/verification/2026-10-28-telegram-account
   against `aura serve`.
 - A push bound to a conversation reaches that conversation's chat with two accounts linked.
 
-Two risks stay open:
+Two risks were left:
 - Identity-wide pushes (`notify=telegram`, approvals) still pick one linked account of the
   database's choosing (#196). The operator chose a per-task recipient — one account, another, or
   all — as the next slice (D10).
-- Relinking an unlinked chat to another identity breaks that identity's Telegram turns. The
-  chat's conversation stays the first identity's, and the new identity's first append fails
-  with "conversation not found", measured on the store calls. The unlink makes this reachable
-  from the cockpit. The guard proposed is to refuse such a link; it is not built.
+- Relinking an unlinked chat to another identity broke that identity's Telegram turns. The
+  chat's conversation stays the first identity's, and the new identity's first append failed
+  with "conversation not found", measured on the store calls. The unlink made this reachable
+  from the cockpit. Closed by D11 (approved 2026-10-28): the consume refuses such a link, and
+  the first identity can still link the chat again.
 
 ## 16. Observability and operator experience
 

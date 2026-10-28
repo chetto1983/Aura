@@ -15,6 +15,10 @@ import (
 	"strings"
 )
 
+// chatOwnedElsewhereMsg answers a /start for a chat whose conversation is another identity's
+// (spec D11). It says what to do without naming the other identity.
+const chatOwnedElsewhereMsg = "Questa chat Telegram è già legata a un'altra identità di Aura, quindi non posso collegarla a questa. Usa un altro account Telegram, oppure chiedi all'operatore di eliminare la conversazione esistente."
+
 // onboardingStore is the consumer-side seam over the Store's single-use consume
 // (telegram.Store.ConsumeOnboarding). Declaring it here keeps the handler
 // unit-testable with a double and makes the single-write contract explicit: the
@@ -67,6 +71,9 @@ func (o *onboarding) handleStart(ctx context.Context, m startMsg) (reply string,
 		}
 		if errors.Is(err, ErrAccountExists) {
 			return "Sei già collegato a questa istanza di Aura. Scrivimi pure quello che ti serve.", false
+		}
+		if errors.Is(err, ErrChatOwnedElsewhere) {
+			return chatOwnedElsewhereMsg, false
 		}
 		slog.Warn("telegram onboarding: consume failed", "err", err)
 		return "Non sono riuscita a completare l'attivazione. Riprova più tardi.", false
