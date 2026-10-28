@@ -87,6 +87,13 @@ rows and the index in either order.
 **Raw statements, same result.** `MERGE` three rows and then `CREATE VECTOR INDEX`: the statement
 succeeds, the three rows stay `LIST`, and the two written after are `ARRAY_OF_FLOATS`.
 
+## The server log
+
+Over the whole session, the restart and the `REBUILD INDEX` included, the server logged 1 `SEVER`
+line: the `SchemaException` "Index with name 'vec_Passage__embedding' was not found". It is the
+lookup by name that section 1 provoked on purpose. Nothing else was logged at `SEVER`. The `WARNING`
+lines are the JVM's own, about `jdk.incubator.vector` and `sun.misc.Unsafe` from undertow.
+
 ## What this does not show
 
 - **Only the operations listed above.** The `vector.fuse` + `groupBy` pipeline of
