@@ -4255,6 +4255,36 @@ This does not establish:
 - whether the WhatsApp server's own description, which does not say it sends immediately, also
   needs changing.
 
+Telegram links had no owner isolation, and a push bound to a conversation could miss its chat
+(2026-10-27 and 2026-10-28). Measured on a disposable PostgreSQL 18 with the 118 migrations of
+`2e41ead`, in rolled-back transactions:
+- `aura.telegram_accounts` has no row-level security and no policy. 0087 left it out because
+  the inbound lookup produces the identity. As `aura_app` bound to identity A, a `SELECT`
+  returned B's link and a `DELETE` removed it. No route reads the table per identity yet, and
+  the list and unlink the operator asked for would be the first.
+- The legacy `local` retirement re-keys `local`'s rows with plain `UPDATE`s on the runtime pool,
+  then deletes `local`. With no identity bound, its `UPDATE` of `conversations` (RLS since 0089)
+  moved 0 rows. An identity delete as `aura_app` cascaded into a conversation the session could
+  not see. So the retirement deletes the conversations it was meant to move, and the assets
+  under the same RLS. RLS on the links alone would add the Telegram links to that loss.
+- With two Telegram accounts linked to one identity (`TestConversationPushReachesItsOwnChat`, on
+  `8b57628`), a push bound to the second chat's conversation returned "not mine" and sent
+  nothing. `DeliverConversation` resolved the account by identity, a `:one` query with no
+  `ORDER BY`, before checking the conversation.
+
+The design is `docs/superpowers/specs/2026-10-27-telegram-account-links-design.md`:
+- the links get the `shared_links` shape of 0089;
+- writes bind the owning identity;
+- the retirement re-keys through one definer function that moves only `local`'s rows;
+- a conversation's push picks the linked account whose chat it is;
+- the owner lists and unlinks their links in Settings → Telegram.
+
+This does not establish:
+- the retirement end to end with real rows, or how many appliances still hold a `local` identity
+  with conversations;
+- the `assets` `UPDATE` with a row: only its RLS state was read;
+- anything on the live stack: these are database probes and one db_integration test.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
