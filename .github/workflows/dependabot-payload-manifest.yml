@@ -1,0 +1,48 @@
+name: Dependabot payload manifest
+
+# Dependabot bumps pins in compose.yaml and under docker/, which are payload files, but it cannot
+# run `make payload-manifest`. The CI payload gate then fails, and so does every aura image
+# build, because the build checks the payload against the manifest. #202 was merged red that
+# way on 2026-10-29. This job regenerates the manifest on Dependabot's own pull requests and
+# commits it there. The change still shows in the diff a reviewer reads, which is why
+# lefthook.yml keeps the manifest hand-made everywhere else.
+#
+# The commit is pushed with GITHUB_TOKEN, so GitHub opens the CI runs on it as
+# "approval-required": approve them from the pull request's merge box. "[dependabot skip]" in
+# the message lets Dependabot keep rebasing over the commit, and the next run makes it again.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-payload-manifest-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest:
+    name: Regenerate the payload manifest
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Regenerate and commit the manifest
+        run: |
+          bash scripts/payload_manifest_gate.sh --write
+          if git diff --quiet -- scripts/payload_manifest.txt; then
+            echo "The manifest already matches the payload."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(payload): refresh the manifest [dependabot skip]" -- scripts/payload_manifest.txt
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
