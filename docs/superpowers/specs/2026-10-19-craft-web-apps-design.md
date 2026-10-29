@@ -24,6 +24,10 @@ aura's own static-app handler).
    (FINDINGS 2), and PdfCraft and PhotoCraft draw their web interface in English whatever the browser's
    language (FINDINGS 13): aura builds each from its release tag with `docker/craft-web/<app>.patch`.
    Only GridCraft ships as released.
+   - **Amended 2026-10-29: three patched builds.** WordCraft 0.12.0 ships the bridge upstream (#3822),
+     and PdfCraft's patch had only the face filter of decision 8 left, which the browser now makes
+     unnecessary (decision 8, amended). Both ship as released, like GridCraft
+     (`docs/superpowers/verification/2026-10-29-craft-apps-upgrade.md`).
 4. **`AURA_GRIDCRAFT_DIR` becomes `AURA_APPS_DIR`**, a folder with one folder per app
    (`/usr/share/aura/apps` in the image).
 
@@ -45,6 +49,10 @@ aura's own static-app handler).
        patch rebased unchanged: the image came back inverted, and `photocraft:dirty` stayed true,
        so the cockpit would have held the close of a file it had stored. The parent does take the
        bytes, so `Bridge::connect` sets `write_unconfirmed = false`.
+   - **Amended 2026-10-29: WordCraft's bridge is upstream's.** 0.12.0 speaks this protocol with a
+     `saveAs` flag on `save`, which the cockpit does not read (it compares the name), and answers no
+     parent on another origin. Its official build carries its craft-i18n catalogs, which a source
+     build without that checkout would lose.
    - FilmCraft: `fs::set_on_write`; a clip sent is imported and a sequence made from it; the project
      (`.fcproj`) and every export come back. Host mode starts with no demo and nothing an earlier visit
      left in OPFS.
@@ -104,6 +112,11 @@ aura's own static-app handler).
      the first of `navigator.languages`, then `navigator.language`, that it has a catalog for. It
      does not ask whether it can draw that language. The patch keeps only that check: tags with no
      face in the web build are dropped before upstream's choice.
+   - **Amended 2026-10-29: no language is skipped any more.** The egui fork all six apps pin
+     (storytold/egui@6d518fc) draws a glyph no embedded face has through the browser's Canvas 2D.
+     Measured without craft-fonts: PdfCraft drew Korean, Hindi, Thai, Lao, Persian and Japanese, and
+     PhotoCraft Japanese and Hindi. PdfCraft's patch and PhotoCraft's filter go; PhotoCraft's patch
+     still reads `navigator.languages`, which upstream does not.
 
 ## What this does not do
 
@@ -130,7 +143,8 @@ aura's own static-app handler).
   Italian is asked of upstream instead (storytold/deckcraft#1293, which upstream's bot marked a
   duplicate of #215), and an `it.tsv` follows once a catalog lands.
 - **WordCraft is left as released on languages it cannot draw**: with a Japanese browser it draws boxes,
-  as its official web build does (FINDINGS 15).
+  as its official web build does (FINDINGS 15). *Amended 2026-10-29:* its 0.12.0 official build carries
+  the faces and draws Japanese.
 
 ## Acceptance
 
