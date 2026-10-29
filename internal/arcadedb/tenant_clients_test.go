@@ -23,6 +23,7 @@ type tenantHTTPRecorder struct {
 	provisioned     map[string]bool
 	databaseCalls   int
 	userCalls       int
+	schemaRequests  int // command and query requests, counted on arrival
 	tenantUsers     map[string]string
 	tenantPasswords map[string]string
 	blockSchema     <-chan struct{}
@@ -48,6 +49,9 @@ func (r *tenantHTTPRecorder) serveHTTP(w http.ResponseWriter, request *http.Requ
 		strings.HasPrefix(request.URL.Path, "/api/v1/query/") {
 		database := strings.TrimPrefix(request.URL.Path, "/api/v1/command/")
 		database = strings.TrimPrefix(database, "/api/v1/query/")
+		r.mu.Lock()
+		r.schemaRequests++
+		r.mu.Unlock()
 		if r.blockSchema != nil {
 			select {
 			case r.schemaStarted <- struct{}{}:
@@ -128,6 +132,12 @@ func (r *tenantHTTPRecorder) counts() (int, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.databaseCalls, r.userCalls
+}
+
+func (r *tenantHTTPRecorder) schemaRequestCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.schemaRequests
 }
 
 func (r *tenantHTTPRecorder) versionReads() int {
@@ -285,6 +295,50 @@ func TestTenantClientsWaitingCallerHonorsContext(t *testing.T) {
 	close(release)
 	if err := <-firstDone; err == nil {
 		t.Fatal("unprovisioned first call unexpectedly succeeded")
+	}
+}
+
+// A caller that gives up must not abort the open it started. The readiness probe's 2 s budget
+// cancelled the schema DDL of a cold ArcadeDB half-way, nothing was cached, and every probe
+// after it started again from the first statement: 6.5 minutes unready after a lab VM reboot,
+// long enough for compose to leave caddy Created (measured 2026-10-28 and 2026-10-29).
+func TestTenantClientsOpenOutlivesACallerThatGivesUp(t *testing.T) {
+	database, _ := DatabaseFor(resolverIdentity)
+	uninterrupted := newTenantHTTPRecorder(t)
+	uninterrupted.provisioned[database] = true
+	if _, err := NewTenantClients(
+		uninterrupted.config("template", "shared", "shared-password"), nil, nil, resolverCredentials(),
+	).For(t.Context(), resolverIdentity); err != nil {
+		t.Fatalf("uninterrupted For: %v", err)
+	}
+
+	recorder := newTenantHTTPRecorder(t)
+	recorder.provisioned[database] = true
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	recorder.blockSchema = release
+	recorder.schemaStarted = started
+	resolver := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), nil, nil, resolverCredentials(),
+	)
+	ctx, giveUp := context.WithCancel(t.Context())
+	gaveUp := make(chan error, 1)
+	go func() {
+		_, err := resolver.For(ctx, resolverIdentity)
+		gaveUp <- err
+	}()
+	<-started
+	giveUp()
+	if err := <-gaveUp; err == nil {
+		t.Fatal("For succeeded although its caller gave up mid-schema")
+	}
+	close(release)
+
+	if _, err := resolver.For(t.Context(), resolverIdentity); err != nil {
+		t.Fatalf("For after the open finished: %v", err)
+	}
+	if got, want := recorder.schemaRequestCount(), uninterrupted.schemaRequestCount(); got != want {
+		t.Fatalf("schema requests = %d, want the %d of one uninterrupted open", got, want)
 	}
 }
 

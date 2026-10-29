@@ -5,7 +5,15 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 )
+
+// tenantOpenTimeout bounds an open that no caller is waiting for any more, so a hung server
+// cannot hold a database's opens forever. The lab VM's cold open measured 2.55 s and its warm
+// one 0.93 s (2026-10-29); the bound leaves room for a slower appliance, not for a hang.
+const tenantOpenTimeout = 2 * time.Minute
 
 // TenantClients resolves one identity to one server-enforced ArcadeDB boundary.
 // The admin client provisions cold tenants, answers Existing's existence check and reads
@@ -17,9 +25,9 @@ type TenantClients struct {
 	admin       *Client
 	credentials *TenantCredentials
 
+	opening  singleflight.Group // one open per database, shared by the callers that arrive during it
 	mu       sync.Mutex
 	clients  map[string]*Client
-	inflight map[string]chan struct{}
 	verified bool // the server cleared minSecureVersion; a refusal is re-checked on the next call
 }
 
@@ -53,7 +61,6 @@ func NewTenantClients(
 		admin:       admin,
 		credentials: credentials,
 		clients:     make(map[string]*Client),
-		inflight:    make(map[string]chan struct{}),
 	}
 }
 
@@ -72,45 +79,47 @@ func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, er
 		return nil, fmt.Errorf("memory for %s: tenant credentials are not configured", identityID)
 	}
 
-	t.mu.Lock()
-	if client, ok := t.clients[database]; ok {
-		t.mu.Unlock()
+	if client, ok := t.cached(database); ok {
 		return client, nil
 	}
-	gate, waiting := t.inflight[database]
-	if !waiting {
-		gate = make(chan struct{})
-		t.inflight[database] = gate
-	}
-	t.mu.Unlock()
-
-	if waiting {
-		select {
-		case <-gate:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-		t.mu.Lock()
-		client, ok := t.clients[database]
-		t.mu.Unlock()
-		if ok {
+	// The open is detached from the caller that starts it: a caller that gives up stops
+	// waiting, not the open. Cancelled half-way, the schema DDL restarted from its first
+	// statement on every call, and a cold ArcadeDB never finished it inside the readiness
+	// probe's 2 s budget (TestTenantClientsOpenOutlivesACallerThatGivesUp).
+	opened := t.opening.DoChan(database, func() (any, error) {
+		if client, ok := t.cached(database); ok {
 			return client, nil
 		}
-		return nil, fmt.Errorf("memory for %s: provisioning failed on another call", identityID)
-	}
-	defer func() {
-		t.mu.Lock()
-		delete(t.inflight, database)
-		t.mu.Unlock()
-		close(gate)
-	}()
-	open := tenantOpenSlot(t.base.BaseURL, database)
+		openCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tenantOpenTimeout)
+		defer cancel()
+		return t.open(openCtx, identityID, database)
+	})
 	select {
-	case open <- struct{}{}:
+	case result := <-opened:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(*Client), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	defer func() { <-open }()
+}
+
+func (t *TenantClients) cached(database string) (*Client, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	client, ok := t.clients[database]
+	return client, ok
+}
+
+func (t *TenantClients) open(ctx context.Context, identityID, database string) (*Client, error) {
+	slot := tenantOpenSlot(t.base.BaseURL, database)
+	select {
+	case slot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-slot }()
 
 	client, err := t.client(database)
 	if err != nil {
