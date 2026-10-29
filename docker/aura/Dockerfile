@@ -175,7 +175,7 @@ COPY --from=craft-official /apps /usr/share/aura/apps
 # The three Craft apps compiled from Rust come prebuilt: docker/aura-craft-web, published by
 # publish-craft-web.yml under the hash of its inputs. TestCraftWebImagePinMatchesItsInputs fails
 # when docker/craft-web/ changes and this pin does not follow.
-COPY --from=ghcr.io/chetto1983/aura-craft-web:d29d54c8e01cd91c@sha256:40f3f558c6cb11950c3b03033056cdc57f6af51a90733ecf54495aadfbba7a6b /apps /usr/share/aura/apps
+COPY --from=ghcr.io/chetto1983/aura-craft-web:e4b0fdbdef68821b@sha256:0374d04f6f05f9a90c3ac37080a01f0e69f7ac903eda129088f71d6a9e6a95d1 /apps /usr/share/aura/apps
 COPY --from=build /out/aura /usr/local/bin/aura
 COPY --from=garagebin /garage /usr/local/bin/garage
 COPY docker/aura/aura-garage-bootstrap.sh /usr/local/bin/aura-garage-bootstrap.sh

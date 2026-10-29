@@ -61,6 +61,11 @@ new tag declares `rust-version` 1.95, and every lock pins wasm-bindgen 0.2.129.
 - **Warnings:** none comes from the patched files.
 - **`craft-official` stage:** built with BuildKit from `docker/aura/Dockerfile`. It unpacks the
   three zips, removes `_headers` and `.htaccess`, and gzips the wasm and the glue.
+- **Published image:** `publish-craft-web.yml` run 40931924616, dispatched by the operator on this
+  branch, took 36 min on a cold cache. It pushed
+  `aura-craft-web:e4b0fdbdef68821b@sha256:0374d04f…95d1`, which `docker/aura/Dockerfile` now pins.
+  Its JS glue is byte-identical to the local builds; its three wasm files are not. The published
+  bytes were therefore driven on their own (below).
 
 ## The bridge, app by app
 
@@ -75,6 +80,11 @@ Chromium 1243 with SwiftShader.
 | DeckCraft 0.12.0 | `sample.pptx` | title edited | `sample.pptx`, 2 slides, title "Corpus di prova Aura modificato", 13,148 bytes as before |
 | PhotoCraft 0.17.0 | `photo.png` (256×256) | Image › Invert | `photo.png`, all 65,536 pixels the exact inverse; `dirty` false 2 ms after the save |
 | FilmCraft 0.14.0 | `clip.mp4`, imported, sequence made | — | `Untitled.fcproj` (FilmCraft 0.14.0 project) on Ctrl+S; `edited.mp4` on export, H.264 + AAC, 4.02 s |
+
+The published image's three apps, pulled by digest and served by the same harness with the same
+steps, did the same: PhotoCraft 65,536 of 65,536 pixels inverted; DeckCraft 2 slides, the edited
+title, 13,148 bytes; FilmCraft `Untitled.fcproj` (FilmCraft 0.14.0) and `edited.mp4`, H.264 + AAC,
+4.017 s.
 
 Every app announced its new version in `<app>:ready`. Each sent `<app>:dirty` true on the edit
 and false after the save. The one 404 in every run is the harness page's favicon. PhotoCraft
@@ -200,10 +210,10 @@ What the run through Aura found:
 
 ## What this does not establish
 
-- **The Craft image.** `publish-craft-web.yml` could not be dispatched from this session (the
-  integration's token answers 403). Until it runs on this branch and `docker/aura/Dockerfile` pins
-  the digest it prints, `TestCraftWebImagePinMatchesItsInputs` stays red. The image's bytes were
-  not driven here; the local builds of the same inputs were.
+- **The Craft image in the cockpit.** The published image went through the bridge harness only;
+  the live cockpit and the agent runs used the local builds. Its wasm files differ from the local
+  builds of the same inputs, so the build is not bit-for-bit reproducible between those two
+  environments (the runner's Docker build and this container's build outside Docker).
 - **The aura image.** It was not built: `aura serve` ran as a binary of this branch, with the six
   apps from `AURA_APPS_DIR`. The sandbox image was built only with the proxy CA added, so CI's
   sandbox job is still the build of record.
