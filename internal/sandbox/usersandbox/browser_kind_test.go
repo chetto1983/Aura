@@ -48,7 +48,7 @@ func TestBrowserMountsCannotReachShellVolumes(t *testing.T) {
 		s := SandboxSpec{IdentityID: "a", Kind: kind}
 		hc := toHostConfig(s)
 		assertPinsSafe(t, hc)
-		want, count := "aura-box-a", 5
+		want, count := "aura-box-a", 6
 		if kind == Browser {
 			want, count = "aura-browser-a", 2
 		}
