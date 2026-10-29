@@ -25,7 +25,7 @@ Never fake a redaction by drawing a box: the audit finds it.
 **PDF to Word.** `tool_call doc_export_office {doc, path: "...docx"}` (also .pptx, .html, .rtf). Measured on a
 42-page legal note: headings, tables and text kept in 0.13 s, where LibreOffice produced an empty file.
 
-## Limits (measured 2026-10-18, PdfCraft 0.9.0, CLI package)
+## Limits (measured 2026-10-18, PdfCraft 0.9.0, CLI package; the redaction re-run 2026-10-29 on 0.15.0)
 
 - No OCR: the CLI package has no recognition models, and they read English only. You can read a scanned
   page yourself: render it with `render_preview` and look at the image.

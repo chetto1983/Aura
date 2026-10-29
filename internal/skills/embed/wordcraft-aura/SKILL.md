@@ -20,11 +20,13 @@ Your tools are `wordcraft__<tool>`. Files: `/workspace` only.
    elsewhere are kept (measured on a 821-paragraph bando: 0 italic characters lost, where python-docx lost
    108 in the one paragraph it touched).
 4. Anything else is a command: `wordcraft__list_commands {query}`, then `wordcraft__execute {command, params}`.
+   Several documents open: `wordcraft__list_documents` gives each one's `id`; pass it as `doc` to the other
+   tools to work on one in the background.
 5. `wordcraft__render_page {page}` and look at the image before you deliver.
 6. `wordcraft__save_document {path}` — the extension picks the format: save both `.docx` and `.pdf` when the
    operator will send it on. New paths only; then `send_file`.
 
-## Limits (measured 2026-10-18, WordCraft 0.8.0)
+## Limits (measured 2026-10-18, WordCraft 0.8.0; the round trip re-run 2026-10-29 on 0.12.0)
 
 - `screenshot`, `click`, `key` and `ui_inspect` need a desktop app and fail here.
 - The box lacks some Microsoft fonts: page breaks can differ from Word by a page (measured 51 against

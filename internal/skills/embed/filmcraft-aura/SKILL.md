@@ -16,12 +16,14 @@ than 650, each with its params; `filmcraft__command_run {id, params}` runs one.
 3. Look: `filmcraft__render_frame {seconds, max_side}`; `filmcraft__sequence_inspect` for clips and times.
 4. Export: `command_run {id: "file.exportMedia", params: {path: "/workspace/...mp4", format: "h264",
    width, height, bitrateMode: "crf", crf: 23, wait: true}}`. Always set `bitrateMode` and `crf`: the
-   default bitrate wrote 97 MB for a 52-second 720p trailer (measured).
+   default bitrate wrote 97 MB for a 52-second 720p trailer (measured). A part only:
+   `range: "custom", startSeconds, endSeconds` (measured: the first 10 s of the Sintel trailer at 720p,
+   CRF 23, 10.005 s, 1.59 MB).
 5. `send_file` delivers it.
 
-## Limits (measured 2026-10-18, FilmCraft 0.9.0)
+## Limits (measured 2026-10-18, FilmCraft 0.9.0; the round trip re-run 2026-10-29 on 0.14.0)
 
 - Speed at the box's 2 CPUs: about 12 frames per second for 720p, so a minute of video takes about two
-  minutes; peak memory about 1 GB. The call runs in the background of your turn; tell the operator.
+  minutes; peak memory about 1 GB. On 3 CPUs, 0.14.0 rendered 24 frames per second. The call runs in the background of your turn; tell the operator.
 - The server writes only under `/workspace`: anywhere else it gets "Permission denied" (Aura's landrun fence; FilmCraft has no root flags of its own).
 - The `ui_*` tools need a desktop app and fail here.
