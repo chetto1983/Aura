@@ -35,7 +35,7 @@
    "readOnlyHint": true,
    "title": "Inspect a document"
   },
-  "description": "Metadata, page sizes and labels, bookmarks, annotations, form fields, links, layers, page transitions and display times, attachments, fonts, security and repair notes.",
+  "description": "Metadata, page sizes and labels, bookmarks, annotations, form fields, links, layers, page transitions and display times, the destination it opens at, attachments, fonts, security and repair notes.",
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
@@ -148,7 +148,7 @@
      "type": "integer"
     },
     "hide_text_block": {
-     "description": "Render an inline editor background without this paragraph (index from text_paragraphs). Does not modify the document.",
+     "description": "Render an inline editor background without this paragraph (number from text_paragraphs, resolved as text_edit does: refused once an edit merged that paragraph into a neighbour). Does not modify the document.",
      "minimum": 1,
      "type": "integer"
     },

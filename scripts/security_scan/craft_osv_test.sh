@@ -8,18 +8,22 @@ trap 'rm -rf -- "$fixtures"' EXIT
 
 fail() { echo "security-scan craft test: $*" >&2; exit 1; }
 
-# The pins are the ones the builds use: the five RUN lines of the Craft image and GridCraft's zip.
+# The pins are the ones the builds use: the three RUN lines of the Craft image, and the official
+# zips of GridCraft, PdfCraft and WordCraft.
 pins="$(bash "$here/craft_osv.sh" pins "$repo_root")"
 [[ "$(wc -l <<<"$pins")" == 6 ]] || fail "want six apps, got: $pins"
+[[ "$(awk '{ print $1 }' <<<"$pins" | sort | tr '\n' ' ')" == "deckcraft filmcraft gridcraft pdfcraft photocraft wordcraft " ]] ||
+  fail "want each app once, got: $pins"
 while read -r app tag commit; do
-  grep -qF "RUN /craft-web/build.sh $app $tag $commit /apps" "$repo_root/docker/aura-craft-web/Dockerfile" ||
-    fail "$app $tag $commit is not a build line of docker/aura-craft-web/Dockerfile"
-done < <(grep -v '^gridcraft' <<<"$pins")
-grid="$(grep '^gridcraft' <<<"$pins")"
-read -r _ grid_tag grid_commit <<<"$grid"
-grep -qF "/gridcraft/releases/download/$grid_tag/gridcraft-web-${grid_tag#v}.zip" "$repo_root/docker/aura/Dockerfile" ||
-  fail "gridcraft $grid_tag is not the zip docker/aura/Dockerfile adds"
-[[ $grid_commit == - ]] || fail "gridcraft has no pinned commit, got $grid_commit"
+  if [[ $commit == - ]]; then
+    grep -qF "/$app/releases/download/$tag/$app-web-${tag#v}.zip" "$repo_root/docker/aura/Dockerfile" ||
+      fail "$app $tag is not a zip docker/aura/Dockerfile adds"
+  else
+    grep -qF "RUN /craft-web/build.sh $app $tag $commit /apps" "$repo_root/docker/aura-craft-web/Dockerfile" ||
+      fail "$app $tag $commit is not a build line of docker/aura-craft-web/Dockerfile"
+  fi
+done <<<"$pins"
+[[ "$(grep -c ' -$' <<<"$pins")" == 3 ]] || fail "want three official zips, got: $pins"
 
 # The filter keeps a finding only when its crate and version are in the wasm32 graph. The gate is a
 # fixed version and a CVSS score of 7.0 or more, D2's fixable HIGH or CRITICAL.
