@@ -77,10 +77,11 @@ func TestTranslate_PinsSafe(t *testing.T) {
 	for i, s := range adversarial {
 		hc := toHostConfig(s)
 		assertPinsSafe(t, hc)
-		if len(hc.Mounts) != 5 {
-			t.Fatalf("case %d: want exactly 5 mounts (workspace vol + tmpfs scratch + uv/npm/pip cache vols), got %d", i, len(hc.Mounts))
+		if len(hc.Mounts) != 6 {
+			t.Fatalf("case %d: want exactly 6 mounts (workspace vol + tmpfs scratch + uv cache/uv data/npm/pip vols), got %d", i, len(hc.Mounts))
 		}
 		assertCacheMount(t, hc, "aura-box-"+s.IdentityID+"-uv-cache", uvCacheTarget)
+		assertCacheMount(t, hc, "aura-box-"+s.IdentityID+"-uv-data", uvDataTarget)
 		assertCacheMount(t, hc, "aura-box-"+s.IdentityID+"-npm-cache", npmCacheTarget)
 		assertCacheMount(t, hc, "aura-box-"+s.IdentityID+"-pip-cache", pipCacheTarget)
 	}

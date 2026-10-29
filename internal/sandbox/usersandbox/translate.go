@@ -16,12 +16,17 @@ const (
 	uvCacheTarget   = "/root/.cache/uv"
 	npmCacheTarget  = "/root/.npm"
 	pipCacheTarget  = "/root/.cache/pip"
+	// uv keeps the Pythons it downloads here, outside its cache. Without a volume every box
+	// recreation dropped them, and a `uvx` server's first start downloaded one again: 25 s
+	// against 7 s for broker-analysis on the lab VM (2026-10-29).
+	uvDataTarget = "/root/.local/share/uv"
 )
 
 func identityCacheMounts(identityID string) []mount.Mount {
 	prefix := boxName(identityID)
 	return []mount.Mount{
 		{Type: mount.TypeVolume, Source: prefix + "-uv-cache", Target: uvCacheTarget},
+		{Type: mount.TypeVolume, Source: prefix + "-uv-data", Target: uvDataTarget},
 		{Type: mount.TypeVolume, Source: prefix + "-npm-cache", Target: npmCacheTarget},
 		{Type: mount.TypeVolume, Source: prefix + "-pip-cache", Target: pipCacheTarget},
 	}
@@ -42,7 +47,7 @@ func identityCacheMounts(identityID string) []mount.Mount {
 //     four agent-browser sessions opened and closed, in a box capped at 512 pids.
 //
 // Mounts is built only from the per-identity workspace volume, a tmpfs scratch, and the
-// identity's uv / npm / pip warm-cache volumes. The docker socket is a host path whose only
+// identity's uv (cache and managed Pythons) / npm / pip warm-cache volumes. The docker socket is a host path whose only
 // mount vector is a bind — which never appears here — so the socket is unrepresentable.
 func toHostConfig(s SandboxSpec) *container.HostConfig {
 	pids := s.Limits.PidsLimit
