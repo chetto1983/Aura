@@ -44,7 +44,7 @@ other tools to work on one that is not active.
 To LOOK at a sheet (its layout, a chart): select the sheet (`gridcraft__select {range: "'Sheet'!A1"}`), then
 `gridcraft__execute_command {command: "file.exportPdf", params: {path: "/workspace/.../view.pdf",
 range: "A1:H40", fitToPage: true}}`, then `pdfcraft__doc_open` and `pdfcraft__render_preview` give you the
-image. `##########` there is a number wider than its column, as in Excel: read the value with `read_range`.
+image. The image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it. `##########` there is a number wider than its column, as in Excel: read the value with `read_range`.
 
 ## Limits (measured 2026-10-18, GridCraft 0.8.0; the round trip re-run 2026-10-29 on 0.13.0)
 

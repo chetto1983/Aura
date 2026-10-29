@@ -17,7 +17,7 @@ Your tools are `photocraft__<tool>`. Files: `/workspace` only. Everything is an 
    - `image.crop {x, y, width, height}`;
    - `image.adjustments.brightnessContrast {brightness: -150..150, contrast: -50..100}`;
    - `layer.newAdjustmentLayer.levels {...}` for a non-destructive adjustment.
-3. `photocraft__render_preview {max_side}` and look at it.
+3. `photocraft__render_preview {max_side}` and look at it. The image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it.
 4. `photocraft__doc_export {path, quality}` — format from the extension; EXIF is kept (measured; Pillow drops
    it). `.pcraft` keeps layers. Then `send_file`.
 

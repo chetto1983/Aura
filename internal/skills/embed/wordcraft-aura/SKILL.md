@@ -22,7 +22,7 @@ Your tools are `wordcraft__<tool>`. Files: `/workspace` only.
 4. Anything else is a command: `wordcraft__list_commands {query}`, then `wordcraft__execute {command, params}`.
    Several documents open: `wordcraft__list_documents` gives each one's `id`; pass it as `doc` to the other
    tools to work on one in the background.
-5. `wordcraft__render_page {page}` and look at the image before you deliver.
+5. `wordcraft__render_page {page}` and look at the image before you deliver. The image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it.
 6. `wordcraft__save_document {path}` — the extension picks the format: save both `.docx` and `.pdf` when the
    operator will send it on. New paths only; then `send_file`.
 

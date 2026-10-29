@@ -24,7 +24,7 @@ Your tools are `deckcraft__<tool>`. Files: `/workspace` only.
    reports). `add_text_box`, `add_shape`, `insert_picture {path}`,
    `insert_table {rows, cols, data}`, `insert_chart {type, categories, series}`. Anything else:
    `list_commands {filter}` and `run_command {command, params}`.
-5. `deckcraft__render_slide {slide}` and look at it; `inspect_document` confirms the slide count and order.
+5. `deckcraft__render_slide {slide}` and look at it (the image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it); `inspect_document` confirms the slide count and order.
 6. `deckcraft__export {path: "...pdf", format: "pdf"}` and/or `deckcraft__save_presentation {path}`; then
    `send_file`. Measured on a 15-slide, 23-picture deck: everything kept, PDF in 1.1 s.
 

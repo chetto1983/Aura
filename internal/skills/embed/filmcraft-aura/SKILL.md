@@ -13,7 +13,7 @@ than 650, each with its params; `filmcraft__command_run {id, params}` runs one.
 1. `filmcraft__media_import {paths: [absolute paths]}` — returns `items` (their ids).
 2. `filmcraft__command_run {id: "file.newSequence", params: {name, fromItem: <id>}}` — or `fromItems: [...]`
    for several clips back to back; `timeline.place {item, track, seconds}` puts one where you want.
-3. Look: `filmcraft__render_frame {seconds, max_side}`; `filmcraft__sequence_inspect` for clips and times.
+3. Look: `filmcraft__render_frame {seconds, max_side}` (the image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it); `filmcraft__sequence_inspect` for clips and times.
 4. Export: `command_run {id: "file.exportMedia", params: {path: "/workspace/...mp4", format: "h264",
    width, height, bitrateMode: "crf", crf: 23, wait: true}}`. Always set `bitrateMode` and `crf`: the
    default bitrate wrote 97 MB for a 52-second 720p trailer (measured). A part only:

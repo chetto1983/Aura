@@ -7,7 +7,7 @@ update the skills. Run in a cloud dev container (4 CPUs, 15 GB, Docker 29.9.2 st
 
 **Verdict: every app opens, edits and saves a real file at its new version, through the bridge
 and through the live cockpit, checked with a tool outside the app. The six agent tasks pass on
-the new MCP CLIs. Two patches are gone (WordCraft, PdfCraft): what they did is upstream now.**
+the new MCP CLIs, and again through Aura itself (`craft-live.spec.ts`, Claude as the model). Two patches are gone (WordCraft, PdfCraft): what they did is upstream now.**
 
 | App | From | To | Web build | MCP CLI |
 |---|---|---|---|---|
@@ -140,18 +140,71 @@ What the tasks found is now in the skills:
 - **PhotoCraft.** `command_list` "resize" finds nothing; "size" finds `image.imageSize`.
 - **FilmCraft.** A part of a clip is `file.exportMedia`'s `range: "custom"`.
 
+## Through Aura, with Claude as the model
+
+The operator then asked for the six tasks to go through Aura itself, with Claude as the LLM
+behind a synthetic llama.cpp endpoint ("LLM ci sei te come endpoint usi Llama.cpp sintetico").
+- **The endpoint.** A local OpenAI-compatible server on `127.0.0.1:8084/v1` (`/models`, `/props`,
+  streaming `/chat/completions`). It wrote each request to a file and streamed back the answer
+  Claude wrote, as text or tool calls.
+- **Aura.** `aura serve` (this branch) ran with `AURA_LLM_PROVIDER=llamacpp`, over Postgres,
+  Garage and ArcadeDB 26.10.2 in Docker. The turn's wallclock and stream timeouts were raised for
+  a model that answers by hand.
+- **The images.** `aura-sandbox:latest` and `aura-egress:latest` were built from their Dockerfiles
+  with the session proxy's CA added to a local copy; the files in the repository are unchanged.
+  `scripts/sandbox_image_contract_test.sh` passed on that image: "the six Craft MCP servers
+  initialize offline" and "landrun fences a Craft server to /workspace".
+- **The run.** The six recipes were installed with `aura mcp install <app>`. `web/e2e/craft-live.spec.ts`
+  then ran unchanged, one case at a time: the file attached through presign, PUT and finalize, one
+  turn on `/agent/run`, and the result fetched from Garage. Each turn loaded the server's skill,
+  called `document_open`, loaded the server's tools with `tool_search`, worked in the identity's
+  box behind landrun, and finished with `send_file`.
+
+| Case | Turn | Calls (Craft) | Checked outside the server, on the file `send_file` delivered |
+|---|---|---|---|
+| GridCraft | 65 s | 13 (9) | openpyxl: B39 0.05, B40 untouched, F71 333.6193 (377.14 before) |
+| PdfCraft | 42 s | 10 (6) | `pdftotext`: 0 "ANAC" (2 before), 2 pages; audit `count: 0` |
+| WordCraft | 46 s | 11 (7) | python-docx: "n. 125/2026 del 12 ottobre 2026", 14 paragraphs, 1 table, bold kept |
+| DeckCraft | 45 s | 14 (10) | python-pptx: 3 slides, the last "Domande?" / "Grazie per l'attenzione" |
+| PhotoCraft | 52 s | 8 (4) | Pillow: 2400×1350, 4 EXIF tags kept, mean luma 44.1 → 51.1 |
+| FilmCraft | 37 s | 7 (3) | ffprobe: 10.005 s, H.264 1280×720 + AAC, 1,588,983 bytes |
+
+Every case passed the spec's own checks:
+- no RUN_ERROR;
+- a `<server>__` call and a `send_file` in the turn;
+- a new asset of the right kind;
+- the conversation, with the delivered file, in the cockpit.
+
+The times are a hand-written model's, not Aura's.
+
+What the run through Aura found:
+- **`document_open` needs ArcadeDB.** Opening an attachment by its asset id goes through the
+  document index, which needs the identity's ArcadeDB credential: without ArcadeDB the call failed
+  with "AURA_ARCADEDB_TENANT_SECRET is required". Production always runs it; the first stack here
+  did not.
+- **An MCP image reaches the model only through `read_file`.** The bridge writes an MCP image to
+  `/workspace/mcp-files/…` and puts only its path in the result. `read_file` on that path attached
+  the PNG to the next request as an image part. Measured on WordCraft's `render_page` and
+  DeckCraft's `render_slide`, in a second DeckCraft turn (35 s, 12 calls). The skills now say so
+  where they ask to look at a render.
+- **DeckCraft's placeholder-less deck.** The case of the skill's new note came up inside Aura
+  too: `add_slide` on the `DEFAULT` layout left 0 shapes, and the text went in with
+  `add_text_box`.
+- **A tool-less request.** Aura also asked the model for retrieval text for the attached photo,
+  a request with no tools. It was answered by mistake with the agent's tool calls, so that photo's
+  index text is wrong; the turn itself was not affected.
+
 ## What this does not establish
 
 - **The Craft image.** `publish-craft-web.yml` could not be dispatched from this session (the
   integration's token answers 403). Until it runs on this branch and `docker/aura/Dockerfile` pins
   the digest it prints, `TestCraftWebImagePinMatchesItsInputs` stays red. The image's bytes were
   not driven here; the local builds of the same inputs were.
-- **The sandbox and aura images.** Neither was built here: container HTTPS needs the session
-  proxy's CA, which their Dockerfiles do not take. The CLIs ran in a bookworm box made for the
-  test, without landrun's fence. CI's sandbox job builds the real image and runs the contract
-  test.
-- **The real agent through Aura.** The tasks ran with Claude calling the servers directly, not
-  through `/agent/run`, `tool_search`, the bridge's policy or `send_file`.
+- **The aura image.** It was not built: `aura serve` ran as a binary of this branch, with the six
+  apps from `AURA_APPS_DIR`. The sandbox image was built only with the proxy CA added, so CI's
+  sandbox job is still the build of record.
+- **A real model.** Claude answered every model call through Aura. A local or hosted model may
+  choose other calls; the skills are what steer it.
 - **The operator's files.** Only `fcffginzu.xls` and the Sintel trailer are the operator's. The
   rest are stand-ins: a 2-page ANAC PDF, a generated bando-like docx, the repository's
   `sample.pptx` and a Sintel frame with EXIF added.

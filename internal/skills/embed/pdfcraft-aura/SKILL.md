@@ -13,7 +13,7 @@ Files: `/workspace` only — paths outside are refused.
 
 **Open and read.** `pdfcraft__doc_open {path}` returns `doc` (an id). `pdfcraft__text_extract {doc, pages?}`,
 `pdfcraft__text_find {doc, query}` (every match with page and rectangle), `pdfcraft__render_preview {doc, page}`
-to look at a page.
+to look at a page. The image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it.
 
 **Redact for good** (measured: 10 of 10 marks applied, 0 left in the text, the rest untouched):
 1. `tool_call redact_mark {doc, find: "<text>"}` — or `words: [...]`, or `pattern: email|phone|date|...`.
