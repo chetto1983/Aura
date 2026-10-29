@@ -17,7 +17,12 @@ type seenAccountFake struct {
 	touchErr error
 
 	lookups []int64
-	touches []int64
+	touches []touch
+}
+
+type touch struct {
+	identityID     string
+	telegramUserID int64
 }
 
 func (f *seenAccountFake) GetAccountByTelegramID(_ context.Context, telegramUserID int64) (Account, error) {
@@ -32,8 +37,8 @@ func (f *seenAccountFake) GetAccountByTelegramID(_ context.Context, telegramUser
 	return acct, nil
 }
 
-func (f *seenAccountFake) TouchLastSeen(_ context.Context, telegramUserID int64) error {
-	f.touches = append(f.touches, telegramUserID)
+func (f *seenAccountFake) TouchLastSeen(_ context.Context, identityID string, telegramUserID int64) error {
+	f.touches = append(f.touches, touch{identityID: identityID, telegramUserID: telegramUserID})
 	return f.touchErr
 }
 
@@ -82,8 +87,10 @@ func TestTelegramAuthTouchesLastSeen(t *testing.T) {
 	if len(fake.lookups) != 1 || fake.lookups[0] != 777 {
 		t.Fatalf("lookups = %v, want [777]", fake.lookups)
 	}
-	if len(fake.touches) != 1 || fake.touches[0] != 777 {
-		t.Fatalf("touches = %v, want [777]", fake.touches)
+	// The mark is written under the account's own identity: with RLS on the links, a write
+	// with no identity bound matches no row and reports no error.
+	if want := (touch{identityID: profileAccount().IdentityID, telegramUserID: 777}); len(fake.touches) != 1 || fake.touches[0] != want {
+		t.Fatalf("touches = %+v, want [%+v]", fake.touches, want)
 	}
 }
 

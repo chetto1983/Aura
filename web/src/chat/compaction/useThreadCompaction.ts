@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { COMPACT_COMMAND } from '../composer/commands';
-import { compactionAnchorId } from '../messageSeq';
+import { compactionAnchorId, leafSeqOf, showsSeq } from '../messageSeq';
 import { useCompaction } from './useCompaction';
 import type { CompactionFailure, CompactionState } from './api';
 
@@ -28,7 +28,16 @@ export function useThreadCompaction(
   threadId: string,
   messages: readonly ThreadMessageLike[],
 ): ThreadCompaction {
-  const compaction = useCompaction(threadId);
+  // The branch on screen ends where a send would continue it (spec 2026-10-27, D2).
+  const branch = useMemo(
+    () => ({
+      leafSeq: leafSeqOf(messages[messages.length - 1]),
+      shows: (seq: number) => showsSeq(messages, seq),
+      drawn: messages.length > 0,
+    }),
+    [messages],
+  );
+  const compaction = useCompaction(threadId, branch);
   const { run, state } = compaction;
 
   const runCommand = useCallback(

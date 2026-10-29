@@ -89,10 +89,11 @@ function asSnapshotMessages(value: unknown): readonly SnapshotMessage[] {
   );
 }
 
-function metadataFromSnapshotId(id: string | undefined): ThreadMessageLike['metadata'] | undefined {
-  const seq = /^msg-(\d+)$/.exec(id ?? '')?.[1];
-  if (seq === undefined) return undefined;
-  return { custom: { backendSeq: Number(seq) } };
+/** The turn seq a snapshot id names: msg-<seq>. A result the server synthesized for a call
+ *  that never got one is msg-<seq>-<call> and names no turn of its own. */
+function seqFromSnapshotId(id: string): number | undefined {
+  const seq = /^msg-(\d+)$/.exec(id)?.[1];
+  return seq === undefined ? undefined : Number(seq);
 }
 
 function toolCallsFromSnapshot(value: unknown): ToolPart[] {
@@ -164,107 +165,207 @@ function toolOutcomeFromSnapshot(message: SnapshotMessage): Pick<ToolPart, 'isEr
   };
 }
 
+/** Merge a tool result onto its call in the card, or report false when the card has none. */
 function mergeToolResult(
-  messages: ThreadMessageLike[],
+  card: ThreadMessageLike | undefined,
   toolCallId: string,
   result: string,
   outcome: Pick<ToolPart, 'isError' | 'refused'>,
-): boolean {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const candidate = messages[i];
-    if (candidate?.role !== 'assistant') continue;
-    const parts = typeof candidate.content === 'string' ? [] : [...candidate.content];
-    const partIndex = parts.findIndex(
-      (part) => part.type === 'tool-call' && part.toolCallId === toolCallId,
-    );
-    if (partIndex < 0) continue;
-    const part = parts[partIndex];
-    if (part?.type !== 'tool-call') continue;
-    parts[partIndex] = { ...part, result, ...outcome };
-    messages[i] = { ...candidate, content: parts };
-    return true;
+): ThreadMessageLike | undefined {
+  if (card?.role !== 'assistant' || typeof card.content === 'string') return undefined;
+  const parts = [...card.content];
+  const partIndex = parts.findIndex(
+    (part) => part.type === 'tool-call' && part.toolCallId === toolCallId,
+  );
+  const part = parts[partIndex];
+  if (part?.type !== 'tool-call') return undefined;
+  parts[partIndex] = { ...part, result, ...outcome };
+  return { ...card, content: parts };
+}
+
+export interface ThreadTreeItem {
+  readonly message: ThreadMessageLike;
+  readonly parentId: string | null;
+}
+
+/** The conversation tree, in the order a repository imports it (parents first), and the
+ *  message the thread opens on. */
+export interface ThreadTree {
+  readonly items: readonly ThreadTreeItem[];
+  readonly headId: string | null;
+}
+
+interface DrawnMessage {
+  message: ThreadMessageLike;
+  readonly parentId: string | null;
+  /** The last turn folded into the message: what a send from it continues. */
+  leafSeq: number | undefined;
+}
+
+/** One drawn message per visible turn, and the drawn message every row shows as. */
+class TreeBuilder {
+  readonly drawn: DrawnMessage[] = [];
+  private readonly byId = new Map<string, DrawnMessage>();
+  private readonly shownAs = new Map<string, string | null>();
+  private last: string | null = null;
+
+  /** The drawn message a row hangs from. A snapshot without parentId is one branch, and a
+   *  parent it does not carry falls back to the row before, never to a node the runtime
+   *  cannot place. */
+  parentOf(raw: SnapshotMessage): string | null {
+    if (raw.parentId === null) return null;
+    if (typeof raw.parentId === 'string') {
+      const shown = this.shownAs.get(raw.parentId);
+      if (shown !== undefined) return shown;
+    }
+    return this.last;
   }
-  return false;
+
+  get(id: string | null): DrawnMessage | undefined {
+    return id === null ? undefined : this.byId.get(id);
+  }
+
+  draw(
+    message: ThreadMessageLike & { id: string },
+    parentId: string | null,
+    seq: number | undefined,
+  ) {
+    const drawn = { message, parentId, leafSeq: seq };
+    this.drawn.push(drawn);
+    this.byId.set(message.id, drawn);
+    return message.id;
+  }
+
+  /** Record what the row shows as, and fold its seq into that message. */
+  show(id: string, as: string | null, seq: number | undefined): void {
+    this.shownAs.set(id, as);
+    this.last = as;
+    const target = this.get(as);
+    if (target !== undefined && seq !== undefined)
+      target.leafSeq = Math.max(target.leafSeq ?? 0, seq);
+  }
+
+  tree(): ThreadTree {
+    const items = this.drawn.map(({ message, parentId, leafSeq }) => {
+      const backendSeq = seqFromSnapshotId(message.id ?? '');
+      const seqs = {
+        ...(backendSeq !== undefined ? { backendSeq } : {}),
+        ...(leafSeq !== undefined ? { leafSeq } : {}),
+      };
+      const custom = { ...seqs, ...(message.metadata?.custom ?? {}) };
+      return {
+        message:
+          Object.keys(custom).length > 0
+            ? { ...message, metadata: { ...message.metadata, custom } }
+            : message,
+        parentId,
+      };
+    });
+    return { items, headId: this.last };
+  }
+}
+
+/** The drawn message of one snapshot row, or undefined for a row shown as its parent. */
+function drawnFromSnapshot(
+  raw: SnapshotMessage,
+  id: string,
+  role: string,
+  text: string,
+): (ThreadMessageLike & { id: string }) | undefined {
+  if (role === 'tool') {
+    return {
+      id,
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool-call',
+          toolCallId: raw.toolCallId as string,
+          toolName: '',
+          argsText: '',
+          result: text,
+          ...toolOutcomeFromSnapshot(raw),
+        },
+      ],
+      status: { type: 'complete', reason: 'stop' },
+    };
+  }
+  if (role === 'user') {
+    // The turn's OWN record of what was sent with it (migration 0116). It rides
+    // metadata.custom because that is where the fold already looks for the resolved
+    // assets, and it is the ids that let that fold stop guessing by position.
+    const declared = attachmentIDsFromSnapshot(raw);
+    return {
+      id,
+      ...(declared.length > 0 ? { metadata: { custom: { attachmentIds: declared } } } : {}),
+      role: 'user',
+      content: [{ type: 'text', text }],
+    };
+  }
+  if (role !== 'assistant' || raw.workerReport === true) return undefined;
+  // Reasoning first (live order: the CoT span precedes the answer text).
+  const content: ChatPart[] = [
+    ...reasoningPartFromSnapshot(raw),
+    ...toolCallsFromSnapshot(raw.toolCalls),
+  ];
+  if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
+  return { id, role: 'assistant', content, status: { type: 'complete', reason: 'stop' } };
 }
 
 /**
- * Project a persisted MESSAGES_SNAPSHOT body onto the visible assistant-ui chat
- * model. System turns stay out of the UI (branch/edit seq math depends on that);
- * tool result rows merge into the preceding assistant tool-call card.
+ * Project a persisted MESSAGES_SNAPSHOT body onto the assistant-ui conversation tree. System
+ * turns and worker reports are not drawn, and a tool result folds into the card of the call
+ * it answers: each shows as the message it hangs from, and a child of it hangs from that
+ * message. Every drawn message carries backendSeq, its own turn, and leafSeq, the last turn
+ * folded into it.
  */
-export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[] {
-  const messages: ThreadMessageLike[] = [];
-  for (const raw of asSnapshotMessages(snapshot)) {
-    const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
-    const metadata = metadataFromSnapshotId(id);
+export function snapshotToThreadTree(snapshot: unknown): ThreadTree {
+  const builder = new TreeBuilder();
+  asSnapshotMessages(snapshot).forEach((raw, position) => {
+    const id =
+      typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : `snapshot-${String(position)}`;
+    const seq = seqFromSnapshotId(id);
+    const parentId = builder.parentOf(raw);
     const role = typeof raw.role === 'string' ? raw.role : '';
-    if (role === 'assistant' && raw.workerReport === true) continue;
     const text = visibleTextForSnapshotRole(role, textFromSnapshotContent(raw.content));
-    if (role === 'system') continue;
+    const toolCallId = typeof raw.toolCallId === 'string' ? raw.toolCallId : '';
+    if (role === 'tool' && toolCallId.length === 0) {
+      builder.show(id, parentId, seq);
+      return;
+    }
     if (role === 'tool') {
-      if (typeof raw.toolCallId === 'string' && raw.toolCallId.length > 0) {
-        const outcome = toolOutcomeFromSnapshot(raw);
-        if (!mergeToolResult(messages, raw.toolCallId, text, outcome)) {
-          messages.push({
-            ...(id !== undefined ? { id } : {}),
-            ...(metadata !== undefined ? { metadata } : {}),
-            role: 'assistant',
-            content: [
-              {
-                type: 'tool-call',
-                toolCallId: raw.toolCallId,
-                toolName: '',
-                argsText: '',
-                result: text,
-                ...outcome,
-              },
-            ],
-            status: { type: 'complete', reason: 'stop' },
-          });
-        }
+      const card = builder.get(parentId);
+      const merged = mergeToolResult(card?.message, toolCallId, text, toolOutcomeFromSnapshot(raw));
+      if (card !== undefined && merged !== undefined) {
+        card.message = merged;
+        builder.show(id, parentId, seq);
+        return;
       }
-      continue;
     }
-    if (role === 'user') {
-      // The turn's OWN record of what was sent with it (migration 0116). It rides
-      // metadata.custom because that is where the fold already looks for the resolved
-      // assets, and it is the ids that let that fold stop guessing by position.
-      const declared = attachmentIDsFromSnapshot(raw);
-      const custom =
-        declared.length > 0
-          ? { ...(metadata?.custom ?? {}), attachmentIds: declared }
-          : metadata?.custom;
-      messages.push({
-        ...(id !== undefined ? { id } : {}),
-        ...(custom !== undefined ? { metadata: { ...metadata, custom } } : {}),
-        role: 'user',
-        content: [{ type: 'text', text }],
-      });
-      continue;
-    }
-    if (role === 'assistant') {
-      // Reasoning first (live order: the CoT span precedes the answer text).
-      const content: ChatPart[] = [
-        ...reasoningPartFromSnapshot(raw),
-        ...toolCallsFromSnapshot(raw.toolCalls),
-      ];
-      if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
-      messages.push({
-        ...(id !== undefined ? { id } : {}),
-        ...(metadata !== undefined ? { metadata } : {}),
-        role: 'assistant',
-        content,
-        status: { type: 'complete', reason: 'stop' },
-      });
-    }
-  }
-  return messages;
+    const drawn = drawnFromSnapshot(raw, id, role, text);
+    builder.show(id, drawn === undefined ? parentId : builder.draw(drawn, parentId, seq), seq);
+  });
+  return builder.tree();
 }
 
-export async function fetchThreadMessages(
-  threadId: string,
-  signal?: AbortSignal,
-): Promise<ThreadMessageLike[]> {
+/** The branch a tree opens on: its head and every message above it, root first. */
+export function treeHeadPath(tree: ThreadTree): ThreadMessageLike[] {
+  const byId = new Map(tree.items.map((item) => [item.message.id, item]));
+  const path: ThreadMessageLike[] = [];
+  for (let id = tree.headId; id !== null;) {
+    const item = byId.get(id);
+    if (item === undefined) break;
+    path.push(item.message);
+    id = item.parentId;
+  }
+  return path.reverse();
+}
+
+/** The branch the persisted snapshot opens on, for a caller that replaces the visible list. */
+export function snapshotToThreadMessages(snapshot: unknown): ThreadMessageLike[] {
+  return treeHeadPath(snapshotToThreadTree(snapshot));
+}
+
+export async function fetchThreadTree(threadId: string, signal?: AbortSignal): Promise<ThreadTree> {
   const init: RequestInit = {
     method: 'GET',
     headers: { Accept: 'application/json' },
@@ -275,5 +376,5 @@ export async function fetchThreadMessages(
   if (!res.ok) {
     throw new Error(await errorDetail(res));
   }
-  return snapshotToThreadMessages(await res.json());
+  return snapshotToThreadTree(await res.json());
 }

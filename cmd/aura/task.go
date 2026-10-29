@@ -22,6 +22,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
@@ -89,6 +90,7 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 	kind := fs.String("kind", "", "reminder|agent_job|backup_postgres")
 	argsJSON := fs.String("args", "", "JSON payload, e.g. '{\"text\":\"...\"}'")
 	notify := fs.String("notify", "", "none|whatsapp|email|stdout|telegram")
+	telegramRecipients := fs.String("telegram-recipients", "", "with --notify=telegram: comma-separated Telegram user ids of linked accounts, or all")
 	tz := fs.String("tz", defaultSchedulerTZ(), "IANA timezone for a cron schedule")
 	_ = fs.Parse(args)
 
@@ -134,6 +136,12 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 		fmt.Fprintln(os.Stderr, "aura task schedule: cannot resolve the operator identity to own this task:", err)
 		os.Exit(exitInfra)
 	}
+	recipients, err := cliTelegramRecipients(identityctx.WithIdentityID(ctx, identityID),
+		taskTelegramAccounts{store: telegram.New(pool)}, *notify, *telegramRecipients)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura task schedule:", err)
+		os.Exit(exitUsage)
+	}
 
 	id := uuid.Must(uuid.NewV7()).String()
 	if err := insertScheduledTask(ctx, pool, scheduledTaskRow{
@@ -147,6 +155,7 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 		NextRunAt:    next,
 		NotifyRoute:  *notify,
 		IdentityID:   identityID,
+		Recipients:   recipients,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "aura task schedule:", err)
 		os.Exit(exitInfra)
@@ -175,18 +184,20 @@ type scheduledTaskRow struct {
 	NextRunAt    time.Time
 	NotifyRoute  string
 	IdentityID   string
+	// Recipients are the Telegram accounts a --notify=telegram task reaches (migration 0145).
+	Recipients []int64
 }
 
 func insertScheduledTask(ctx context.Context, pool *pgxpool.Pool, row scheduledTaskRow) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO aura.scheduler_tasks
 			(id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
-			 step_budget, status, next_run_at, notify_route, identity_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+			 step_budget, status, next_run_at, notify_route, identity_id, telegram_recipients)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 		row.ID, row.Kind, row.ScheduleKind,
 		nullableText(row.Spec.CronExpr), nullableInt(row.Spec.EveryMinutes), nullableTime(row.Spec.RunAt),
 		row.Spec.TZ, row.Payload, nullableInt(row.StepBudget), row.Status, nullableTime(row.NextRunAt),
-		nullableText(row.NotifyRoute), row.IdentityID)
+		nullableText(row.NotifyRoute), row.IdentityID, row.Recipients)
 	return err
 }
 

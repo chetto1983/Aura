@@ -226,10 +226,14 @@ func seedOperatorLockout(t *testing.T, ctx context.Context, pool *pgxpool.Pool, 
 	if err := webauth.NewIdentityLinker(pool).LinkOperator(ctx, identityID, user.ID); err != nil {
 		t.Fatalf("link operator identity to Authula user: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO aura.telegram_accounts (telegram_user_id, identity_id, username) VALUES ($1, $2, $3)`,
-		seedTelegramUserID, mustUUID(t, identityID), "operator",
-	); err != nil {
+	// The link is written under its owner: the links' owner isolation refuses an INSERT with
+	// no identity bound.
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO aura.telegram_accounts (telegram_user_id, identity_id, username) VALUES ($1, $2, $3)`,
+			seedTelegramUserID, mustUUID(t, identityID), "operator")
+		return err
+	}); err != nil {
 		t.Fatalf("seed telegram account: %v", err)
 	}
 

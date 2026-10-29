@@ -1,6 +1,7 @@
 import { useCallback, type RefObject } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { assistantErrorMessage, isAbortError } from './ExternalStoreChat_folds';
+import { placeTurn } from './ExternalStoreChat_tree';
 import { streamPost, type TurnUsage } from './sseAdapter';
 import type { ElicitationSignal } from './sseAdapter_elicitation';
 
@@ -46,8 +47,14 @@ export interface StreamFoldDeps {
 }
 
 export interface StreamFolds {
-  /** Re-run from a point: the whole visible list is replaced by `base` + the fresh turn. */
-  readonly foldReRun: (url: string, body: unknown, base: ThreadMessageLike[]) => Promise<void>;
+  /** Re-run from a point: the whole visible list is replaced by `base` + the fresh turn.
+   *  sentUser says `base` ends with the user message this re-run sends (an edit). */
+  readonly foldReRun: (
+    url: string,
+    body: unknown,
+    base: ThreadMessageLike[],
+    sentUser: boolean,
+  ) => Promise<void>;
   /** Append a fresh assistant turn to the current list, replacing it as the stream grows. */
   readonly foldAppendedStream: (
     runThreadId: string,
@@ -122,7 +129,7 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
   );
 
   const foldReRun = useCallback(
-    async (url: string, body: unknown, base: ThreadMessageLike[]) => {
+    async (url: string, body: unknown, base: ThreadMessageLike[], sentUser: boolean) => {
       const controller = beginRun(threadId);
       const usageRunId = usageLifecycle.start();
       try {
@@ -134,7 +141,7 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
-            setMessages([...base, assistant]);
+            setMessages(placeTurn(base, base.length, assistant, sentUser));
           },
         });
       } catch (error) {

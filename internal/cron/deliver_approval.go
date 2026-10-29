@@ -45,11 +45,13 @@ type ApprovalPauseEnsurer interface {
 }
 
 // ApprovalChannel pushes an ACTIONABLE approval prompt (inline accept/reject bound to the pause
-// token) to the channel that owns identityID. *channels.Registry satisfies it (DeliverApproval).
-// Nil → the approval sweep no-ops. A (false,nil) return is expected for a WebUI-origin identity (no
-// push channel owns it; it pulls the pause) and is NOT treated as an error.
+// token) to the channel that owns identityID, or to one Telegram account a task named.
+// *channels.Registry satisfies it. Nil → the approval sweep no-ops. A (false,nil) return is
+// expected for a WebUI-origin identity (no push channel owns it; it pulls the pause) and is NOT
+// treated as an error.
 type ApprovalChannel interface {
 	DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (delivered bool, err error)
+	DeliverApprovalToTelegramAccount(ctx context.Context, identityID string, telegramUserID int64, token, taskID, kind string) (delivered bool, err error)
 }
 
 // approvalReminderInterval resolves AURA_SCHEDULER_APPROVAL_REMINDER_SEC. Unlike envInt,
@@ -136,17 +138,36 @@ func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 			// Push ONLY when the sweep created the surface (the model never relayed). A REUSED pause
 			// is already rendered on the origin channel by the model relay — a second push would
 			// duplicate it. A WebUI-origin mint returns (false,nil) here (no push channel; it pulls).
-			delivered, derr := d.deps.ApprovalChannel.DeliverApproval(ctx, task.IdentityID, token, task.ID, string(task.Kind))
-			switch {
-			case derr != nil:
-				slog.Warn("approval reminder push failed (retry next cadence)", "task", task.ID, "err", derr)
-			case !delivered:
-				slog.Debug("approval reminder: no push channel owns identity (WebUI pulls the pause)", "task", task.ID, "identity", task.IdentityID)
-			}
+			d.pushApproval(ctx, task, token)
 		}
 		if merr := d.deps.ApprovalReminderStore.MarkApprovalReminded(ctx, task.ID); merr != nil {
 			slog.Warn("mark approval reminded", "task", task.ID, "err", merr)
 		}
 	}
 	return nil
+}
+
+// pushApproval sends the minted prompt to each Telegram account the task names, else to the
+// channel that owns the identity. A failed push is logged, not retried: the prompt stays in the
+// cockpit's approvals (spec §4).
+func (d *Dispatch) pushApproval(ctx context.Context, task Task, token string) {
+	recipients := telegramRecipients(task)
+	if len(recipients) == 0 {
+		delivered, err := d.deps.ApprovalChannel.DeliverApproval(ctx, task.IdentityID, token, task.ID, string(task.Kind))
+		logApprovalPush(task, 0, delivered, err)
+		return
+	}
+	for _, account := range recipients {
+		delivered, err := d.deps.ApprovalChannel.DeliverApprovalToTelegramAccount(ctx, task.IdentityID, account, token, task.ID, string(task.Kind))
+		logApprovalPush(task, account, delivered, err)
+	}
+}
+
+func logApprovalPush(task Task, account int64, delivered bool, err error) {
+	switch {
+	case err != nil:
+		slog.Warn("approval reminder push failed (the cockpit keeps the pause)", "task", task.ID, "account", account, "err", err)
+	case !delivered:
+		slog.Debug("approval reminder: no push channel owns identity (WebUI pulls the pause)", "task", task.ID, "identity", task.IdentityID, "account", account)
+	}
 }

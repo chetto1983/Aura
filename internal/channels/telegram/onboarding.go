@@ -1,7 +1,7 @@
 // Package telegram — this file is the onboarding writer (the channel side of
 // UX-03). A Telegram deep-link "/start <token>" carries a single-use onboarding
 // token the setup wizard minted (plan 13-07); this file consumes it through the
-// Store's atomic ConsumeOnboarding (one db.WithTx consume-pending-then-INSERT-
+// Store's atomic ConsumeOnboarding (one transaction: consume-pending-then-INSERT-
 // account, plan 13-01) and greets the now-onboarded user. A consumed / expired /
 // unknown token writes NO account and replies with a clear "link expired or
 // invalid" message (T-13-06-TokenReplay — the single-use chokepoint lives in the
@@ -14,6 +14,10 @@ import (
 	"log/slog"
 	"strings"
 )
+
+// chatOwnedElsewhereMsg answers a /start for a chat whose conversation is another identity's
+// (spec D11). It says what to do without naming the other identity.
+const chatOwnedElsewhereMsg = "Questa chat Telegram è già legata a un'altra identità di Aura, quindi non posso collegarla a questa. Usa un altro account Telegram, oppure chiedi all'operatore di eliminare la conversazione esistente."
 
 // onboardingStore is the consumer-side seam over the Store's single-use consume
 // (telegram.Store.ConsumeOnboarding). Declaring it here keeps the handler
@@ -67,6 +71,9 @@ func (o *onboarding) handleStart(ctx context.Context, m startMsg) (reply string,
 		}
 		if errors.Is(err, ErrAccountExists) {
 			return "Sei già collegato a questa istanza di Aura. Scrivimi pure quello che ti serve.", false
+		}
+		if errors.Is(err, ErrChatOwnedElsewhere) {
+			return chatOwnedElsewhereMsg, false
 		}
 		slog.Warn("telegram onboarding: consume failed", "err", err)
 		return "Non sono riuscita a completare l'attivazione. Riprova più tardi.", false

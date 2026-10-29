@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -49,12 +50,16 @@ func TestRunParentSeq_RefusesWhatNamesNoTurn(t *testing.T) {
 		"far past":      {"9999", http.StatusNotFound},
 		"the last":      {"6", http.StatusOK},
 		"an older turn": {"2", http.StatusOK},
+		"the first":     {"1", http.StatusOK},
 	} {
 		t.Run(name, func(t *testing.T) {
 			run := &scriptedRunner{events: textTurn("ok")}
 			code, body := postOn(t, branchServer(t, run), runPayloadOn(goodID, tc.seq))
 			if code != tc.want {
 				t.Fatalf("parent_seq %s = %d, want %d: %s", tc.seq, code, tc.want, body)
+			}
+			if refused := code != http.StatusOK; refused && run.turnCalled {
+				t.Fatalf("parent_seq %s was refused, and the run started anyway", tc.seq)
 			}
 		})
 	}
@@ -113,5 +118,43 @@ func TestRunParentSeq_TheDetachedPathRefusesAndReleases(t *testing.T) {
 		if resp.StatusCode != tc.want {
 			t.Fatalf("%s = %d, want %d", tc.body, resp.StatusCode, tc.want)
 		}
+	}
+}
+
+// The check for a pending pause reads the approvals. When that read fails, the run is refused
+// with it rather than started on a branch the pause might not allow.
+func TestRunParentSeq_AnUnreadablePauseIsAnError(t *testing.T) {
+	run := &scriptedRunner{events: textTurn("ok")}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{goodID: true}, latestSeq: 6}, ServerConfig{})
+	s.idgen = &fixedIDGen{}
+	s.SetApprovalStore(&fakeApprovalStore{err: errors.New("approvals unreadable")})
+
+	code, body := postOn(t, s, runPayloadOn(goodID, "2"))
+	if code != http.StatusInternalServerError {
+		t.Fatalf("another branch with the pauses unreadable = %d, want 500: %s", code, body)
+	}
+	if run.turnCalled {
+		t.Fatal("the run started although the pause check failed")
+	}
+}
+
+// The first turn is a leaf like any other, and a run that recorded no head reports none: a
+// head_seq of 0 would name no turn.
+func TestRun_ReportsTheFirstLeafAndNoUnknownHead(t *testing.T) {
+	run := &scriptedRunner{events: textTurn("ok")}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{goodID: true}, latestSeq: 1}, ServerConfig{})
+	s.idgen = &fixedIDGen{}
+	s.SetApprovalStore(&fakeApprovalStore{})
+
+	code, body := postOn(t, s, runPayload(goodID))
+	if code != http.StatusOK {
+		t.Fatalf("run = %d: %s", code, body)
+	}
+	_, data := sseFrames(t, body)
+	if !strings.Contains(data, `"path":"/leaf_seq","value":1`) {
+		t.Fatalf("the stream carries no leaf_seq 1: %s", data)
+	}
+	if strings.Contains(data, "/head_seq") {
+		t.Fatalf("a run with no recorded head reported one: %s", data)
 	}
 }

@@ -169,6 +169,7 @@ type Querier interface {
 	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
 	// state points at survives because it is always among the newest.
 	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
+	DeleteTelegramAccountForIdentity(ctx context.Context, arg DeleteTelegramAccountForIdentityParams) (int64, error)
 	// The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
 	// MarkPausedStateResumed, not a second concurrency story): FOR UPDATE serializes two
 	// concurrent Drain calls for the SAME conversation_id rather than racing them, so the
@@ -256,6 +257,9 @@ type Querier interface {
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
+	// The account seen most recently, in the order the password reset and the recovery use. With no
+	// ORDER BY the first row in the heap came back, and every update moves the writer's row to the
+	// end, so the push reached the account used least recently (measured 2026-10-28).
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
 	GetTelegramAccountByTelegramID(ctx context.Context, telegramUserID int64) (AuraTelegramAccounts, error)
 	GetTelegramSetupPending(ctx context.Context, onboardingToken string) (AuraTelegramSetupPending, error)
@@ -516,7 +520,7 @@ type Querier interface {
 	// One history page, newest first, optionally of one kind. before_id is the last row of the
 	// previous page; an id the owner does not hold compares as NULL and yields an empty page.
 	ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error)
-	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
+	ListTelegramAccountsByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	// The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
 	// in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
@@ -573,6 +577,8 @@ type Querier interface {
 	// the increment), so the attempt bound spans an outage instead of being spent in one minute
 	// (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
+	// A push no retry can deliver (migration 0145): it leaves the sweep for good.
+	MarkNotificationUndeliverable(ctx context.Context, arg MarkNotificationUndeliverableParams) error
 	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a
 	// boolean cannot, and "completed" plus "skipped" are not mutually exclusive over time --
 	// an operator may skip today and fill the form next week.

@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { isWebKitViewportNotice } from './support/browserHealth';
 import { stubNoCompaction } from './support/compactionRoute';
 import { stubEmptyWorkerStatuses } from './support/workerStatusRoute';
 
@@ -51,8 +52,7 @@ const TRANSCRIPT = 'voice acceptance gate transcript';
 // that are not voice regressions and must not trip the degrade test's no-error assertion.
 function isExpectedBrowserConsoleNoise(text: string): boolean {
   return (
-    text === 'Viewport argument key "interactive-widget" not recognized and ignored.' ||
-    text.includes('/api/auth/config due to access control checks.')
+    isWebKitViewportNotice(text) || text.includes('/api/auth/config due to access control checks.')
   );
 }
 
@@ -60,12 +60,21 @@ function isExpectedBrowserConsoleNoise(text: string): boolean {
 // artifacts.spec sanctioned approach): a short assistant text answer. The REAL sseAdapter
 // reducer folds it onto one assistant ThreadMessageLike, whose ActionBar then carries the
 // caps-gated speaker control.
+// Every run reports the turn it starts from and the turn it ends on
+// (internal/agui/server_run_branch.go). The cockpit offers Regenerate only on a turn whose
+// seq it knows (spec 2026-10-27, D15), and the no-voice case below reads that button.
 function assistantTurnFrames(): Record<string, unknown>[] {
+  const seq = (path: string, value: number) => ({
+    type: 'STATE_DELTA',
+    delta: [{ op: 'replace', path, value }],
+  });
   return [
     { type: 'RUN_STARTED', threadId: CONV_ID, runId: 'run-voice' },
+    seq('/head_seq', 1),
     { type: 'TEXT_MESSAGE_START', messageId: 'msg-voice' },
     { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-voice', delta: REPLY_TEXT },
     { type: 'TEXT_MESSAGE_END', messageId: 'msg-voice' },
+    seq('/leaf_seq', 2),
     { type: 'RUN_FINISHED', threadId: CONV_ID, runId: 'run-voice', outcome: { type: 'success' } },
   ];
 }
@@ -462,10 +471,15 @@ test.describe('cockpit voice lane — speaker + dictation + hands-free + degrade
     // The reply is read aloud by the overlay itself, and shown while it speaks.
     await expect(page.getByTestId('voice-status')).toHaveText('Answering…', { timeout: 20000 });
     await expect(page.getByTestId('voice-reply')).toContainText(REPLY_TEXT);
-    const plays = await page.evaluate(
-      () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
-    );
-    expect(plays).toBeGreaterThan(0);
+    // The overlay shows the reply first and builds its Audio once /api/tts answers
+    // (useVoiceSession), so the play count is polled rather than read once.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
     assertions += 1;
 
     // Closing returns to the thread with the spoken turn in it — nothing lives only here.

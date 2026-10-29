@@ -10,6 +10,7 @@ import (
 // returns a configurable tri-state ((delivered,err)) so the 6 deliverToOrigin
 // precedence branches can be driven without a real *channels.Registry.
 type fakeChannelDeliverer struct {
+	noTelegramAccounts
 	delivered bool
 	err       error
 

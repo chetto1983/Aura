@@ -97,6 +97,15 @@ export interface TelegramLinkStatus {
   readonly linked: boolean;
 }
 
+/** One Telegram account linked to the signed-in identity. lastSeenAt is null until it writes. */
+export interface TelegramAccount {
+  readonly telegramUserId: number;
+  readonly username: string;
+  readonly firstName: string;
+  readonly addedAt: string;
+  readonly lastSeenAt: string | null;
+}
+
 export async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(await readErrorMessage(res));
@@ -219,4 +228,29 @@ export async function fetchTelegramLinkStatus(sessionToken: string): Promise<Tel
     credentials: 'same-origin',
   });
   return readJSON<TelegramLinkStatus>(res);
+}
+
+/** The query key of the linked accounts list; whatever links or unlinks an account invalidates it. */
+export const TELEGRAM_ACCOUNTS_KEY = ['settings', 'telegram', 'accounts'] as const;
+
+export async function fetchTelegramAccounts(
+  signal?: AbortSignal,
+): Promise<readonly TelegramAccount[]> {
+  const res = await fetch('/api/settings/telegram/accounts', {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+    ...(signal === undefined ? {} : { signal }),
+  });
+  return readJSON<readonly TelegramAccount[]>(res);
+}
+
+// The unlink answers 204 with no body, so readJSON does not apply. A 404 means this identity has
+// no such link (any more): it is reported, and the refetched list shows what is left.
+export async function unlinkTelegramAccount(telegramUserId: number): Promise<void> {
+  const res = await fetch(`/api/settings/telegram/accounts/${String(telegramUserId)}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) throw new Error(await readErrorMessage(res));
 }

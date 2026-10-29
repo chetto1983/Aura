@@ -120,6 +120,9 @@ type Task struct {
 	PausedReason string
 	// ConsecutiveFailures counts failed runs since the last success.
 	ConsecutiveFailures int
+	// TelegramRecipients are the Telegram user ids the task's pushes reach; nil means the
+	// account seen most recently (migration 0145).
+	TelegramRecipients []int64
 }
 
 // Run is the domain projection of aura.agent_job_runs.
@@ -153,6 +156,7 @@ type CreateTaskParams struct {
 	Status               string
 	IdentityID           string
 	OriginConversationID string
+	TelegramRecipients   []int64
 }
 
 // CreateTask inserts a new task at its initial Status (default "active") and returns
@@ -187,6 +191,7 @@ func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error
 		NotifyRoute:          p.NotifyRoute,
 		IdentityID:           identityID,
 		OriginConversationID: uuidOrNull(p.OriginConversationID),
+		TelegramRecipients:   p.TelegramRecipients,
 	})
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
@@ -359,6 +364,7 @@ func taskFromRow(r sqlc.AuraSchedulerTasks) Task {
 		UpdatedAt:            r.UpdatedAt.Time,
 		PausedReason:         r.PausedReason.String,
 		ConsecutiveFailures:  int(r.ConsecutiveFailures),
+		TelegramRecipients:   r.TelegramRecipients,
 	}
 }
 

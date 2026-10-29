@@ -43,7 +43,7 @@ func TestManagedHistoryFilesTheSummaryUnderTheReplayedBranch(t *testing.T) {
 
 	cfg := compactingConfig(&fixedSummarizer{text: "branch summary"})
 	if _, err := store.LoadManagedHistory(ctx, conversationID, forkSeq, cfg); err != nil {
-		t.Fatalf("LoadManagedHistoryForBranch: %v", err)
+		t.Fatalf("LoadManagedHistory(leaf %d): %v", forkSeq, err)
 	}
 
 	stored, ok, err := store.LoadCompaction(ctx, conversationID, branchID.String())
@@ -96,9 +96,7 @@ func TestConcurrentCompactionsKeepTheFurthestWatermark(t *testing.T) {
 	errs := make(chan error, writers)
 	start := make(chan struct{})
 	for i := 1; i <= writers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start // release them together, so the writes actually overlap
 			err := store.SaveCompaction(ctx, conversationID, "", Compaction{
 				Summary:          fmt.Sprintf("summary covering %d", i*10),
@@ -108,7 +106,7 @@ func TestConcurrentCompactionsKeepTheFurthestWatermark(t *testing.T) {
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

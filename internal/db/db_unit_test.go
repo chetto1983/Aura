@@ -387,8 +387,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0141 adds the work board: aura.boards, aura.board_cards and aura.board_views.
 	// 0142 admits backup_objects, the nightly copy of the object store, as a scheduler kind.
 	// 0143 drops the benchmark journal, asset_events, audit_logs and pipeline_generation.
-	if head != 143 {
-		t.Fatalf("MigrationHead=%d, want embedded head 143", head)
+	// 0144 puts the Telegram links under row security and adds aura.retire_legacy_local_rows.
+	// 0145 lets a scheduled task name its Telegram recipients, and a pending push its account.
+	if head != 145 {
+		t.Fatalf("MigrationHead=%d, want embedded head 145", head)
 	}
 }
 

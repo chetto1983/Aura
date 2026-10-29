@@ -908,6 +908,30 @@ preserves the recent working tail and enforces a hard budget. Summaries retain t
 correct source version and branch. Failures are reported; fallback truncation records
 what was dropped. Token estimates and provider usage are separate measurements.
 
+The token estimate cost seconds per turn (2026-10-27). Every turn counts the replayed
+history with tiktoken-go before the model sees it. Measured on 4 cores, against
+`BenchmarkTokenEstimate` and an 800-turn history of mixed prose:
+- **One long run is quadratic.** The byte-pair merge scans all parts once per merge, so a regex
+  piece of length n costs n². 64 KiB of base64 over zeroed bytes, one run of `A` as an
+  attachment encodes, took 3.46 s; prose of the same size takes 19 ms.
+- **The drop recounted the history once per round.** Over the hard cap, L2.5 dropped a round
+  and recounted everything left. At a 128k window: 37.5 s and 12.4 GB allocated per turn.
+- **Nothing was remembered.** Every turn recounted every turn: 224 ms at a 1M window.
+
+What changed:
+- **A piece the encoder sees is bounded.** A run of one character class is cut at 256 bytes.
+  Prose, JSON and base64 of varied bytes never hold such a run, so their counts are unchanged;
+  a longer run can only gain a token per cut. The 64 KiB case is 19 ms.
+- **The drop subtracts each round from one total.** 217 ms and 79 MB, cold.
+- **A count is remembered by a hash of its text.** Two bounded generations of 32,768 counts;
+  the cache holds no conversation text. The turn after: 0.56 ms at 1M and 0.81 ms at 128k.
+- **The runner's overhead uses the same estimate.** Its own encoder downloaded the vocabulary
+  when it ran before the ladder's offline loader was set.
+
+What this does not show: a real conversation's mix of content; the cost of the summarizer
+call, which dominates a compacting turn; the sidecar reads, which are now the largest cost of a
+1000-turn load (46 ms, almost all syscalls); and any host but this 4-core container.
+
 The stable prompt prefix excludes volatile per-turn data. Worker framing and current
 budgets do not mutate that prefix. Definitions and dynamic context obey the same cache
 contract in interactive and delegated runs.
@@ -1131,6 +1155,68 @@ What the measurement does not show:
 Turns written before the change keep their canonical `branch_id`. That costs extra summarizer
 calls, not a wrong context: a stored summary is used only when its boundary seq lies on the
 walked path.
+
+Measured once branches were wired (2026-10-27):
+- **Over HTTP** (`internal/agui/branch_http_e2e_integration_test.go`). The test uses real
+  Postgres, the real `Runner` and a scripted model, and makes three calls: a run, an edit, then a
+  run whose `aura.parent_seq` names A1.
+  - The model received `U1`, then `U1 edited`, then `U1 | A1 | U3`.
+  - The snapshot is the tree.
+- **Through the cockpit**
+  (`docs/superpowers/verification/2026-10-27-conversation-branches-local.md`). Chromium drove
+  `aura serve`, with the reviewer as the model through a llama.cpp-shaped endpoint. The steps were
+  send, edit, Previous, send, regenerate, reload.
+  - Every request held only the branch on screen.
+  - Previous read nothing.
+  - The reload opened on the branch written last.
+  - The snapshot had three leaves and two roots.
+- **One cockpit defect found by the run.** The read after a run could undo a branch switch made
+  in the second before it landed.
+  - The read is `useWorkerReportRefresh`. It fires on the coordinator status, which the watch
+    stream reports for every run.
+  - A switch now advances `historyRequestRef` the way a send does.
+- **Mutation**:
+  - `store_append.go`: 100%.
+  - The cockpit files (Stryker): `ExternalStoreChat_tree.ts` 93.5%, `messageSeq.ts` 93.1%,
+    `sseAdapter_snapshot.ts` 76.7%.
+  - `runner_context.go`: 58.3%, below the floor. Its nine survivors are all in code this change
+    did not touch: the compaction summarizer, the memory context and recall, and the profile
+    block. `loadTurnHistory` has none.
+  - The Go projection (`server_display_tree.go`, `store_display.go`) was not measured: the
+    operator stopped the local run and left the gates to CI.
+
+Closed the same day (spec §7, D13–D15; evidence in
+`docs/superpowers/verification/2026-10-27-branch-compaction-and-edit-local.md`):
+- **`/compact` and its marker follow the branch on screen.** Both compaction routes take
+  `?leaf_seq`, validated as `aura.parent_seq` is. Without it they act on the turn written last.
+  - Before the change, the marker read the canonical branch's row whatever the branch. After a
+    reload, a fork whose latest branch is not canonical drew another branch's marker, or none.
+  - The marker is read again whenever the leaf moves. A compaction the ladder made during a
+    run now shows without a reload.
+  - The read draws only a summary the loader applies to that path: a row whose watermark is
+    past the leaf is none. Without that, a tab whose branch another tab grew and compacted
+    drew the marker under its last message.
+- **No edit is refused in the cockpit.** `@assistant-ui/core` 0.3.31 documents that "an edit
+  composer closes at dispatch, so a rejected edit is not restored". So Edit, and Regenerate,
+  are offered only on a message whose seq is known. A server refusal never lost the text:
+  `foldReRun` puts it back on screen with the error, and Vitest now pins that.
+
+Still open:
+- Turns forked before migration 0095 can still have a NULL `parent_seq` mid-conversation. The
+  old `ForkBranch` copied the diverging turn's parent, which was NULL everywhere before 0095.
+  - A run that walks through such a turn stops there and loses the turns before the fork.
+    Before this change, the same run got the flat history instead.
+  - Code cannot tell these rows from a legitimate root fork, which also has no parent, and the
+    row does not record its divergence point.
+  - Operator decision (2026-10-27, CodeRabbit on #194): measure on the lab VM before choosing
+    between leaving them and a targeted repair. Count forked turns with `parent_seq IS NULL AND
+    seq > 1` written before 0095, and the conversations they sit in. They are candidates, not
+    confirmed breaks.
+
+What this does not show:
+- a real model;
+- the race above in a browser;
+- the forks already on the lab VM.
 
 ## 8. Long-term memory: facts and provenance
 
@@ -3795,6 +3881,22 @@ This does not establish:
 - survival across a restart: an in-flight call dies with the process, as LibreChat's does;
 - a box-runtime stdio server outliving the suspension of its box.
 
+Telegram identity routing selected an obsolete linked account on 2026-10-27
+(appliance `ee04268a05f156723e230904f8298b7864d48775`). Three account rows shared one
+identity, and the unchecked single-row lookup sent scheduled notifications to an
+account that had blocked the bot. An approved backup and removal of the two unwanted
+links restored delivery: the operator received both a direct Bot API message and a
+native scheduler reminder. Nine earlier failed notifications were left untouched.
+This measures an operational repair, not acceptance of a code fix. Identity-routed
+Telegram pushes must fail explicitly when more than one account matches, instead of
+choosing one by row order or activity. Existing links are not automatically deleted.
+The bounded lookup contract and verification scope are in
+`docs/superpowers/specs/2026-10-27-telegram-recipient-design.md`.
+Reconciled on 2026-10-28: the operator chose R6 of
+`docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md` instead of the refusal.
+An identity push with several links goes to the account seen most recently, and a scheduled
+task names its recipients. The incident above is the measurement both decisions answer.
+
 A reminder on an external route reached nobody (2026-10-05). An operator could not get
 reminders on WhatsApp. Reproduced on the lab VM through a real cockpit turn: the agent
 scheduled a reminder with `notify=whatsapp`, the run completed at fire time, and the MCP
@@ -4168,6 +4270,125 @@ This does not establish:
 - the choice on another model or with other phrasings;
 - whether the WhatsApp server's own description, which does not say it sends immediately, also
   needs changing.
+
+Telegram links had no owner isolation, and a push bound to a conversation could miss its chat
+(2026-10-27 and 2026-10-28). Measured on a disposable PostgreSQL 18 with the 118 migrations of
+`2e41ead`, in rolled-back transactions:
+- `aura.telegram_accounts` has no row-level security and no policy. 0087 left it out because
+  the inbound lookup produces the identity. As `aura_app` bound to identity A, a `SELECT`
+  returned B's link and a `DELETE` removed it. No route reads the table per identity yet, and
+  the list and unlink the operator asked for would be the first.
+- The legacy `local` retirement re-keys `local`'s rows with plain `UPDATE`s on the runtime pool,
+  then deletes `local`. With no identity bound, its `UPDATE` of `conversations` (RLS since 0089)
+  moved 0 rows. An identity delete as `aura_app` cascaded into a conversation the session could
+  not see. So the retirement deletes the conversations it was meant to move, and the assets
+  under the same RLS. RLS on the links alone would add the Telegram links to that loss.
+- With two Telegram accounts linked to one identity (`TestConversationPushReachesItsOwnChat`, on
+  `8b57628`), a push bound to the second chat's conversation returned "not mine" and sent
+  nothing. `DeliverConversation` resolved the account by identity, a `:one` query with no
+  `ORDER BY`, before checking the conversation.
+
+The design is `docs/superpowers/specs/2026-10-27-telegram-account-links-design.md`:
+- the links get the `shared_links` shape of 0089;
+- writes bind the owning identity;
+- the retirement re-keys through one definer function that moves only `local`'s rows;
+- a conversation's push picks the linked account whose chat it is;
+- the owner lists and unlinks their links in Settings → Telegram.
+
+The retirement end to end, measured on 2026-10-28 on `28e0c95` with
+`TestLocalIdentityRetirementKeepsLocalsRows` (`cmd/aura`, db_integration):
+- `local` owned a conversation, a live asset, a deleted asset, an ingestion job on the live asset
+  with one event, a Telegram link and an auth link;
+- after the retirement the conversation, both assets, the job and the event were gone. The
+  Telegram link and the auth link had moved, since neither table had RLS.
+- `ingestion_jobs` references `assets (id, identity_id)` and `ingestion_events` references
+  `ingestion_jobs (id, identity_id)`, with no `ON UPDATE` action. A lone `UPDATE` of an asset's
+  owner fails on `ingestion_jobs_asset_identity_fkey`; one statement whose `WITH` clauses move
+  all three passes. So the definer function moves the three together.
+
+The catalog lists 30 foreign keys to `aura.identities`, all but one `ON DELETE CASCADE`. After
+this change the retirement moves the rows of 6 of those tables. `telegram_setup_pending` is
+deleted on purpose, and `mcp_server` keeps its row with a null author. The other 22 tables go
+with `local` when it is deleted:
+- content: `boards`, `board_cards`, `board_views`, `skill_catalog`, `message_drafts`,
+  `shared_links`, `identity_profiles`, `media_job`;
+- settings and credentials: `identity_object_store`, `identity_llm_key`, `identity_mcp_oauth`,
+  `gateway_tool_policies`, `gateway_approval_grants`;
+- grants: `capability_grants`, `resource_acl`;
+- state: `idempotency_operations`, `verification_events`, `verification_state`, `steer_queue`;
+- recovery: `identity_recovery`, `password_reset_challenges`, `password_reset_tokens`.
+
+They are outside this slice.
+
+This does not establish:
+- how many appliances still hold a `local` identity, or what it owns;
+- which of those 22 tables should move to the operator and which should go with `local`;
+- anything on the live stack: these are database probes and db_integration tests.
+
+The operator states (2026-10-28) that every deployment runs `single_user_hardened` and has
+retired `local`. That makes the 22 tables a fresh-install concern only, where `local` owns
+nothing yet; it is a statement, not a measurement.
+
+Landed on 2026-10-28 (`docs/superpowers/verification/2026-10-28-telegram-account-links-local.md`):
+- 0144 isolates the links: bound to A, a session sees and changes only A's; with no identity it
+  reads every link and changes none.
+- The retirement keeps `local`'s conversation, assets, ingestion job and event, Telegram link and
+  auth link (red on `28e0c95`, green after).
+- `GET` and `DELETE /api/settings/telegram/accounts` behind `governance.write`. Across two
+  identities A cannot see or unlink B's link (404).
+- Settings → Channels lists the links and unlinks one after a confirmation, checked in a browser
+  against `aura serve`.
+- A push bound to a conversation reaches that conversation's chat with two accounts linked.
+
+Two risks were left:
+- Identity-wide pushes (`notify=telegram`, approvals) still pick one linked account of the
+  database's choosing (#196). The operator chose a per-task recipient — one account, another, or
+  all — as the next slice (D10).
+- Relinking an unlinked chat to another identity broke that identity's Telegram turns. The
+  chat's conversation stays the first identity's, and the new identity's first append failed
+  with "conversation not found", measured on the store calls. The unlink made this reachable
+  from the cockpit. Closed by D11 (approved 2026-10-28): the consume refuses such a link, and
+  the first identity can still link the chat again.
+
+Which linked Telegram account an identity push reaches (2026-10-28). Measured on PostgreSQL 18
+with a scratch db_integration test on `be99204`, two accounts linked through the real onboarding,
+for both `Deliver` (a task with `notify=telegram`) and `DeliverApproval`:
+- after linking the first and then the second, the push reached the first;
+- after the first chat sent an update (`TouchLastSeen`), it reached the second;
+- after the second chat sent one, it reached the first again.
+
+`GetTelegramAccountByIdentity` is a `:one` query with no `ORDER BY`, so PostgreSQL promises no
+order (docs, "Sorting Rows"). On this database and plan it returned the row first in physical
+order, and each update wrote a new row version that came back last. The push went to the account
+used least recently, which is the #196 symptom. The operator chose a per-task recipient
+list (one account, another, or all), and the most recently seen account when a task names none:
+`docs/superpowers/specs/2026-10-28-telegram-push-recipients-design.md`.
+
+This does not establish:
+- the order on another database, or with more rows: the order is not documented, which is the
+  point;
+- anything on the live stack.
+
+Landed (D10, 2026-10-28; `docs/superpowers/verification/2026-10-28-telegram-push-recipients-local.md`):
+- An identity push goes to the account seen most recently: the `ORDER BY`, red at each step of the
+  test above before it.
+- Migration 0145: `scheduler_tasks.telegram_recipients` (never empty) and
+  `pending_notifications.telegram_user_id`, plus a terminal status `undeliverable`. A swept row
+  whose push turns permanent ends there, instead of spending the attempt bound.
+- The task tool asks which accounts a `notify=telegram` task reaches when two or more are linked,
+  stores the choice in the order given, each id once, and refuses a route with no linked account.
+  `aura task schedule` applies the same rule through `--telegram-recipients` (ids or `all`); a
+  task set to Telegram in the cockpit's scheduler board still names none and takes the default.
+- Each recipient is pushed on its own: the result, and the approval prompt the sweep mints. A
+  failure that can be retried queues a row for that account only. An unlinked account, a blocked
+  bot or a gone chat queues nothing and is named in the origin conversation; that holds on every
+  path, the identity-wide one included. With two accounts linked through the real onboarding, a
+  reminder naming both reached both chats through the real registry and dispatcher; after one was
+  unlinked it reached the other, and the conversation named the skipped one.
+
+This does not establish a real Telegram send (the sends are recorded by a test double), the
+approval sweep end to end on a database, or the two-phone run on the lab VM, which is the
+operator's.
 
 ## 16. Observability and operator experience
 

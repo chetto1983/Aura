@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -95,46 +93,65 @@ func (s *Store) SaveCompaction(ctx context.Context, conversationID, branchID str
 	return nil
 }
 
-// branchIDForLeaf names the branch a replayed path belongs to: the leaf's own branch id.
+// LoadPathCompaction returns the stored summary of the branch leafSeq ends, the read behind
+// the cockpit's marker. A leafSeq <= 0 is the turn written last, which on a conversation with
+// no turn is no compaction. A seq that names no turn is ErrTurnNotFound.
 //
-// It costs one primary-key read per branch load, and it buys the thing the compaction row
-// is keyed on. Without it both call sites passed "", so every branch of a conversation
-// wrote and read ONE row: branch B would be handed a summary describing branch A's turns
-// at the same seq numbers, and B's watermark would then bury A's.
+// The marker shows only a summary the loader would apply to this path. A row whose watermark
+// is past the leaf is no compaction: another tab grew the branch and compacted it. A branch's
+// own turns form one chain, because an append to a parent that already has a child opens a
+// new branch (spec 2026-10-27, D4), so a watermark at or before the leaf is on its path.
+func (s *Store) LoadPathCompaction(ctx context.Context, conversationID string, leafSeq int) (Compaction, bool, error) {
+	if leafSeq <= 0 {
+		latest, err := s.LatestTurnSeq(ctx, conversationID)
+		if err != nil || latest == 0 {
+			return Compaction{}, false, err
+		}
+		leafSeq = latest
+	}
+	branchID, err := s.branchOfTurn(ctx, conversationID, leafSeq)
+	if err != nil {
+		return Compaction{}, false, err
+	}
+	c, ok, err := s.LoadCompaction(ctx, conversationID, branchID)
+	if err != nil || !ok || c.CoversThroughSeq > leafSeq {
+		return Compaction{}, false, err
+	}
+	return c, true, nil
+}
+
+// branchOfTurn names the branch a path belongs to: its leaf's own branch id, "" for the
+// canonical branch, and "" with ErrTurnNotFound when seq names no turn.
 //
-// A failure degrades to the canonical branch rather than failing the turn — that is the
-// behaviour every conversation had before branches existed, and a summary filed under the
-// wrong branch is a worse outcome than an extra summarizer call only when we KNOW the
-// branch; not knowing it, the canonical row is the honest place.
-func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leafSeq int) string {
-	if leafSeq <= 0 || leafSeq > math.MaxInt32 {
-		return ""
+// The compaction row is keyed on it. Until 2026-08-16 both call sites passed "", so every
+// branch of a conversation wrote and read ONE row: branch B was handed a summary describing
+// branch A's turns at the same seq numbers, and B's watermark then buried A's.
+func (s *Store) branchOfTurn(ctx context.Context, conversationID string, seq int) (string, error) {
+	if seq <= 0 || seq > math.MaxInt32 {
+		return "", ErrTurnNotFound
 	}
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	var branch pgtype.UUID
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+	err = s.scoped(ctx, func(q *sqlc.Queries) error {
 		row, qErr := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{
-			ConversationID: id, Seq: int32(leafSeq),
+			ConversationID: id, Seq: int32(seq),
 		})
-		if qErr != nil {
-			return qErr
-		}
 		branch = row.BranchID
-		return nil
-	}); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
-				"conversation_id", redact.Line(conversationID), "leaf_seq", leafSeq, "err", err)
-		}
-		return ""
+		return qErr
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrTurnNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("branch of turn %d in %s: %w", seq, conversationID, err)
 	}
 	if !branch.Valid || branch.Bytes == CanonicalBranchID {
-		return ""
+		return "", nil
 	}
-	return uuid.UUID(branch.Bytes).String()
+	return uuid.UUID(branch.Bytes).String(), nil
 }
 
 // compactionKey parses the pair every statement is keyed on. An empty branch is the

@@ -95,6 +95,21 @@ describe('TelegramSettingsPanel', () => {
     vi.unstubAllGlobals();
   });
 
+  // The linked accounts list beside the panel reads its own query; a QR link completed here
+  // must tell the page, or the list keeps saying no account is linked until it remounts.
+  it('tells the page once a QR link completes', async () => {
+    stubFetch({ overridden: true });
+    const onLinked = vi.fn();
+    render(<TelegramSettingsPanel onLinked={onLinked} />);
+    expect(await screen.findByRole('heading', { name: 'Telegram' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Telegram QR' }));
+    expect(await screen.findByAltText('Telegram setup QR code')).toBeTruthy();
+    expect(onLinked).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Check link status' }));
+    expect(await screen.findByText('Telegram linked.')).toBeTruthy();
+    expect(onLinked).toHaveBeenCalledTimes(1);
+  });
+
   // REWRITTEN with the backend contract, not to make it pass: the save step asserted "Restart
   // Aura to start the bot with it", the dead end this change removes.
   it('saves a bot token, reports the channel active, mints a QR, and checks link status', async () => {

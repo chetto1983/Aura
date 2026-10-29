@@ -19,8 +19,9 @@ type fakeConvStore struct {
 	// one linear branch.
 	turns   map[string][]conversations.DisplayTurn
 	loadErr error
-	// latestSeq is what LatestTurnSeq reports: the turn written last.
+	// latestSeq is what LatestTurnSeq reports: the turn written last. latestErr fails it.
 	latestSeq int
+	latestErr error
 	// forks counts ForkBranch calls; forkLeaf is the seq each one answers.
 	forks    atomic.Int32
 	forkLeaf int

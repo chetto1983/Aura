@@ -44,12 +44,14 @@ func (q *Queries) CancelTask(ctx context.Context, id pgtype.UUID) error {
 const createTask = `-- name: CreateTask :one
 INSERT INTO aura.scheduler_tasks (
     id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
-    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    telegram_recipients
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 `
 
 type CreateTaskParams struct {
@@ -67,6 +69,7 @@ type CreateTaskParams struct {
 	NotifyRoute          string             `json:"notify_route"`
 	IdentityID           string             `json:"identity_id"`
 	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
+	TelegramRecipients   []int64            `json:"telegram_recipients"`
 }
 
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error) {
@@ -85,6 +88,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		arg.NotifyRoute,
 		arg.IdentityID,
 		arg.OriginConversationID,
+		arg.TelegramRecipients,
 	)
 	var i AuraSchedulerTasks
 	err := row.Scan(
@@ -108,6 +112,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		&i.ConsecutiveFailures,
 		&i.PausedReason,
 		&i.TransientRetries,
+		&i.TelegramRecipients,
 	)
 	return i, err
 }
@@ -146,7 +151,8 @@ func (q *Queries) DeleteSettledOneShots(ctx context.Context, attempts int32) (in
 const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -187,6 +193,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
 			&i.TransientRetries,
+			&i.TelegramRecipients,
 		); err != nil {
 			return nil, err
 		}
@@ -201,7 +208,8 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE id = $1
 `
@@ -230,6 +238,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 		&i.ConsecutiveFailures,
 		&i.PausedReason,
 		&i.TransientRetries,
+		&i.TelegramRecipients,
 	)
 	return i, err
 }
@@ -237,7 +246,8 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 const listActiveTasks = `-- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -273,6 +283,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
 			&i.TransientRetries,
+			&i.TelegramRecipients,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +298,8 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 const listDuePendingApprovalReminders = `-- name: ListDuePendingApprovalReminders :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -342,6 +354,7 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
 			&i.TransientRetries,
+			&i.TelegramRecipients,
 		); err != nil {
 			return nil, err
 		}
@@ -356,7 +369,8 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -396,6 +410,7 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
 			&i.TransientRetries,
+			&i.TelegramRecipients,
 		); err != nil {
 			return nil, err
 		}

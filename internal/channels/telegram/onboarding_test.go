@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -94,6 +95,23 @@ func TestOnboardUnknownTokenRejected(t *testing.T) {
 	}
 	if !mentionsInvalidLink(reply) {
 		t.Errorf("an unknown token reply should mention an invalid/expired link, got %q", reply)
+	}
+}
+
+type failingOnboard struct{ err error }
+
+func (f failingOnboard) ConsumeOnboarding(context.Context, ConsumeParams) (Account, error) {
+	return Account{}, f.err
+}
+
+// A chat whose conversation is another identity's is refused by the store (spec D11): the reply
+// says why, instead of the generic "try again later" that would send the user round in circles.
+func TestOnboardChatOwnedElsewhereSaysWhy(t *testing.T) {
+	t.Parallel()
+	o := newOnboarding(failingOnboard{err: fmt.Errorf("consume onboarding tok: %w", ErrChatOwnedElsewhere)})
+	reply, onboarded := o.handleStart(context.Background(), startMsg{Token: "tok", TelegramUserID: 9})
+	if onboarded || reply != chatOwnedElsewhereMsg {
+		t.Fatalf("reply = %q, onboarded = %v; want %q and false", reply, onboarded, chatOwnedElsewhereMsg)
 	}
 }
 

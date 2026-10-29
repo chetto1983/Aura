@@ -7,7 +7,7 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 // by the SAME captured golden fixture (internal/agui/testdata/golden-events.json).
 import goldenEvents from '../../../../internal/agui/testdata/golden-events.json';
 import {
-  fetchThreadMessages,
+  fetchThreadTree,
   messageParts,
   snapshotToThreadMessages,
   streamRun,
@@ -93,23 +93,23 @@ describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
     expect(messageParts(finalAssistant)).toEqual([{ type: 'text', text: 'It is sunny.' }]);
   });
 
-  it('fetchThreadMessages throws the sanitized backend detail on a non-OK status (replay error path)', async () => {
+  it('fetchThreadTree throws the sanitized backend detail on a non-OK status (replay error path)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(new Response('conversation not found', { status: 404 }))),
     );
-    await expect(fetchThreadMessages('missing-thread')).rejects.toThrow('conversation not found');
+    await expect(fetchThreadTree('missing-thread')).rejects.toThrow('conversation not found');
   });
 
-  it('fetchThreadMessages falls back to HTTP <status> when the error body is empty', async () => {
+  it('fetchThreadTree falls back to HTTP <status> when the error body is empty', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(new Response('', { status: 500 }))),
     );
-    await expect(fetchThreadMessages('t')).rejects.toThrow('HTTP 500');
+    await expect(fetchThreadTree('t')).rejects.toThrow('HTTP 500');
   });
 
-  it('fetchThreadMessages GETs the snapshot endpoint with same-origin credentials', async () => {
+  it('fetchThreadTree GETs the snapshot endpoint with same-origin credentials', async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         new Response(
@@ -124,7 +124,7 @@ describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
     vi.stubGlobal('fetch', fetchMock);
     const signal = new AbortController().signal;
 
-    const messages = await fetchThreadMessages('thread/with slash', signal);
+    const tree = await fetchThreadTree('thread/with slash', signal);
 
     const call = fetchMock.mock.calls[0] as [string, RequestInit] | undefined;
     if (call === undefined) throw new Error('expected fetch call');
@@ -134,8 +134,8 @@ describe('sseAdapter — persisted MESSAGES_SNAPSHOT rehydration', () => {
       credentials: 'same-origin',
       signal,
     });
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ role: 'user' });
+    expect(tree.items).toHaveLength(1);
+    expect(tree.items[0]?.message).toMatchObject({ role: 'user' });
   });
 });
 

@@ -1,8 +1,9 @@
 import type { StreamRunOptions } from './sseAdapter';
 
 // buildAuraRunBody assembles the POST /agent/run body from a streamRun request. It folds the
-// optional attachment ids, Garage scope, pinned skill (37D), AND reasoning-effort symbol (37E)
-// into ONE `aura` object — the server decodes all four off `req.Aura` — and emits NO
+// optional attachment ids, Garage scope, pinned skill (37D), reasoning-effort symbol (37E) AND
+// the branch the run continues (parent_seq, spec 2026-10-27) into ONE `aura` object — the
+// server decodes them all off `req.Aura` — and emits NO
 // `aura` key when none is set, so a plain turn is byte-identical to the pre-37D body. The effort is
 // folded ONLY for the six fixed levels and OMITTED for 'auto' (the adaptive default is the absence
 // of the field, WEBMODEL-03). Extracted out of sseAdapter.ts (which sits at the 600-LOC cap).
@@ -18,6 +19,7 @@ export function buildAuraRunBody(id: string, opts: StreamRunOptions): Record<str
     ...(opts.effort !== undefined && opts.effort !== 'auto' && opts.effort.length > 0
       ? { effort: opts.effort }
       : {}),
+    ...(opts.parentSeq !== undefined ? { parent_seq: opts.parentSeq } : {}),
   };
   return {
     threadId: opts.threadId,

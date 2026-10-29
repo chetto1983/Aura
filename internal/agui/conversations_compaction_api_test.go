@@ -23,15 +23,17 @@ import (
 // cannot, so it doubles as the "unavailable" case.
 type compactingRunner struct {
 	*scriptedRunner
-	result conversations.CompactionResult
-	err    error
-	calls  int
-	gotID  string
+	result  conversations.CompactionResult
+	err     error
+	calls   int
+	gotID   string
+	gotLeaf int
 }
 
-func (c *compactingRunner) CompactConversation(_ context.Context, conversationID string) (conversations.CompactionResult, error) {
+func (c *compactingRunner) CompactConversation(_ context.Context, conversationID string, leafSeq int) (conversations.CompactionResult, error) {
 	c.calls++
 	c.gotID = conversationID
+	c.gotLeaf = leafSeq
 	return c.result, c.err
 }
 
@@ -41,9 +43,13 @@ type compactionAwareConv struct {
 	stored  conversations.Compaction
 	present bool
 	loadErr error
+	reads   int
+	gotLeaf int
 }
 
-func (c *compactionAwareConv) LoadCompaction(_ context.Context, _, _ string) (conversations.Compaction, bool, error) {
+func (c *compactionAwareConv) LoadPathCompaction(_ context.Context, _ string, leafSeq int) (conversations.Compaction, bool, error) {
+	c.reads++
+	c.gotLeaf = leafSeq
 	if c.loadErr != nil {
 		return conversations.Compaction{}, false, c.loadErr
 	}
@@ -172,10 +178,11 @@ func TestCompactConversation_Unavailable(t *testing.T) {
 }
 
 // Owner scoping (MUSR-01 / D-06): a thread the caller does not own is 404 on BOTH routes,
-// and the compactor is never reached — the gate precedes the work.
+// and neither the compactor nor the read is reached — the gate precedes the work.
 func TestCompactionRoutes_UnknownThreadIs404BeforeAnyWork(t *testing.T) {
 	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
-	srv := newTestServer(t, run, &fakeConvStore{})
+	conv := &compactionAwareConv{fakeConvStore: &fakeConvStore{}}
+	srv := newTestServer(t, run, conv)
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPost, "/api/conversations/" + goodID + "/compact"},
@@ -189,8 +196,21 @@ func TestCompactionRoutes_UnknownThreadIs404BeforeAnyWork(t *testing.T) {
 			t.Errorf("%s %s = %d, want 404: %s", tc.method, tc.path, code, body)
 		}
 	}
-	if run.calls != 0 {
-		t.Fatalf("compactor called %d times for a thread the caller does not own", run.calls)
+	if run.calls != 0 || conv.reads != 0 {
+		t.Fatalf("a thread the caller does not own reached the work: %d compactions, %d reads",
+			run.calls, conv.reads)
+	}
+}
+
+// A store failure behind the compactor is the server's, not a refusal: 500, never a 200
+// carrying a zero result.
+func TestCompactConversation_StoreFailureIsAnError(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}, err: errors.New("boom")}
+	srv := newTestServer(t, run, knownConv())
+
+	code, body := doCompactionReq(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/compact")
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", code, body)
 	}
 }
 
@@ -250,5 +270,88 @@ func TestGetCompaction_UnreadableRowIsAnError(t *testing.T) {
 	code, _ := doCompactionReq(t, srv, http.MethodGet, "/api/conversations/"+goodID+"/compaction")
 	if code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", code)
+	}
+}
+
+// Both routes name the branch on screen with ?leaf_seq (spec 2026-10-27, D13). Without it,
+// the branch is the one written last, which is what a channel or an old client continues.
+func TestCompactionRoutes_PassTheLeafOnScreen(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
+	conv := &compactionAwareConv{fakeConvStore: knownConv()}
+	conv.latestSeq = 8
+	srv := newTestServer(t, run, conv)
+
+	for _, tc := range []struct {
+		query string
+		leaf  int
+	}{{"?leaf_seq=6", 6}, {"?leaf_seq=8", 8}, {"?leaf_seq=1", 1}, {"", 0}} {
+		if code, body := doCompactionReq(t, srv, http.MethodPost, "/api/conversations/"+goodID+"/compact"+tc.query); code != http.StatusOK {
+			t.Fatalf("POST %q = %d: %s", tc.query, code, body)
+		}
+		if run.gotLeaf != tc.leaf {
+			t.Errorf("POST %q compacted leaf %d, want %d", tc.query, run.gotLeaf, tc.leaf)
+		}
+		if code, body := doCompactionReq(t, srv, http.MethodGet, "/api/conversations/"+goodID+"/compaction"+tc.query); code != http.StatusOK {
+			t.Fatalf("GET %q = %d: %s", tc.query, code, body)
+		}
+		if conv.gotLeaf != tc.leaf {
+			t.Errorf("GET %q read leaf %d, want %d", tc.query, conv.gotLeaf, tc.leaf)
+		}
+	}
+}
+
+// A leaf is validated as aura.parent_seq is: not a positive seq is 400, above the turn written
+// last is 404. Neither reaches the compactor or the read.
+func TestCompactionRoutes_RefuseALeafThatNamesNoTurn(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
+	conv := &compactionAwareConv{fakeConvStore: knownConv()}
+	conv.latestSeq = 8
+	srv := newTestServer(t, run, conv)
+
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"?leaf_seq=0", http.StatusBadRequest},
+		{"?leaf_seq=-3", http.StatusBadRequest},
+		{"?leaf_seq=six", http.StatusBadRequest},
+		{"?leaf_seq=", http.StatusBadRequest},
+		{"?leaf_seq=99999999999999999999", http.StatusBadRequest},
+		{"?leaf_seq=9", http.StatusNotFound},
+	} {
+		for _, route := range []struct{ method, path string }{
+			{http.MethodPost, "/compact"},
+			{http.MethodGet, "/compaction"},
+		} {
+			code, body := doCompactionReq(t, srv, route.method, "/api/conversations/"+goodID+route.path+tc.query)
+			if code != tc.want {
+				t.Errorf("%s %s%s = %d, want %d: %s", route.method, route.path, tc.query, code, tc.want, body)
+			}
+		}
+	}
+	if run.calls != 0 || conv.reads != 0 {
+		t.Fatalf("a refused leaf reached the work: %d compactions, %d reads", run.calls, conv.reads)
+	}
+}
+
+// The check of a leaf reads the turn written last. When that read fails, the request fails
+// with it, before any work.
+func TestCompactionRoutes_AnUnreadableLastTurnIsAnError(t *testing.T) {
+	run := &compactingRunner{scriptedRunner: &scriptedRunner{}}
+	conv := &compactionAwareConv{fakeConvStore: knownConv()}
+	conv.latestErr = errors.New("boom")
+	srv := newTestServer(t, run, conv)
+
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/compact?leaf_seq=3"},
+		{http.MethodGet, "/compaction?leaf_seq=3"},
+	} {
+		code, body := doCompactionReq(t, srv, route.method, "/api/conversations/"+goodID+route.path)
+		if code != http.StatusInternalServerError {
+			t.Errorf("%s %s = %d, want 500: %s", route.method, route.path, code, body)
+		}
+	}
+	if run.calls != 0 || conv.reads != 0 {
+		t.Fatalf("an unreadable leaf reached the work: %d compactions, %d reads", run.calls, conv.reads)
 	}
 }

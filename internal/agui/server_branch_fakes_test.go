@@ -19,7 +19,9 @@ func (f *fakeConvStore) ForkBranch(context.Context, string, int, string, string)
 	return f.forkLeaf, nil
 }
 
-func (f *fakeConvStore) LatestTurnSeq(context.Context, string) (int, error) { return f.latestSeq, nil }
+func (f *fakeConvStore) LatestTurnSeq(context.Context, string) (int, error) {
+	return f.latestSeq, f.latestErr
+}
 
 // TurnBranch records the selected leaf and replays the same scripted events as Turn, so
 // the branch re-run wiring is assertable through the fake (the path-walk fidelity is the

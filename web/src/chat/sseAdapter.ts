@@ -27,6 +27,7 @@ import {
   type TurnUsage,
 } from './sseAdapter_usage';
 import { buildAuraRunBody } from './auraRunBody';
+import { turnSeqsFromDelta } from './messageSeq';
 import type { GarageDocumentScope } from './composer/garageMentions';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
@@ -230,6 +231,7 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       if (limit !== undefined) {
         state.limit = limit;
       }
+      Object.assign(state, turnSeqsFromDelta(frame.delta));
       return state;
     }
     case 'RUN_FINISHED':
@@ -418,6 +420,8 @@ export interface StreamRunOptions {
   /** 37D pinned skill name (a SkillPicker selection); folded into the same aura envelope. */
   readonly skill?: string;
   readonly effort?: string; // 37E reasoning-effort symbol; folded into aura for fixed levels, omitted for 'auto'.
+  /** The last turn of the branch on screen, which the run continues (aura.parent_seq). */
+  readonly parentSeq?: number;
   /** Called after each frame folds into the turn (drives setMessages). */
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   /**
@@ -437,9 +441,9 @@ export interface StreamRunOptions {
 }
 
 export interface StreamPostOptions {
-  /** The endpoint to POST (e.g. /api/conversations/{id}/edit or .../select). */
+  /** The endpoint to POST (e.g. /api/conversations/{id}/edit). */
   readonly url: string;
-  /** The JSON request body (undefined → empty body, e.g. a branch-select re-run). */
+  /** The JSON request body (undefined → empty body). */
   readonly body?: unknown;
   readonly signal: AbortSignal;
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
@@ -564,7 +568,7 @@ export {
   toThreadMessage,
   type AssistantTurnState,
 } from './sseAdapter_parts';
-export { fetchThreadMessages, snapshotToThreadMessages } from './sseAdapter_snapshot';
+export { fetchThreadTree, snapshotToThreadMessages } from './sseAdapter_snapshot';
 export {
   budgetLimitFromStateDelta,
   cacheHitRatio,

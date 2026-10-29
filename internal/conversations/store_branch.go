@@ -122,7 +122,7 @@ func (s *Store) LoadBranchHistory(ctx context.Context, conversationID string, le
 // This is an edit of a user turn or a regenerate. The old branch is left as it is. The
 // append gives the fork a branch id of its own, because its parent already has a child,
 // and every turn appended after it inherits that id. It returns the new turn's seq, which
-// the caller re-runs over (LoadManagedHistoryForBranch). divergeSeq must exist
+// the caller re-runs over (LoadManagedHistory with that seq as the leaf). divergeSeq must exist
 // (ErrTurnNotFound).
 func (s *Store) ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)

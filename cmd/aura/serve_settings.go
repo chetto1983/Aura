@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/settings"
@@ -28,6 +29,7 @@ func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
 	}
 	wireEmbeddingRoutes(server, chat)
 	server.SetTelegramBotProbe(telegramGetMeProbe)
+	server.SetTelegramAccountLinks(telegramAccountLinks{inner: telegram.New(chat.pool)})
 	server.SetLLMRuntime(chat.llmRuntime)
 	if chat.chatGPTPlan != nil {
 		server.SetChatGPTPlan(chat.chatGPTPlan)
@@ -38,6 +40,40 @@ func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
 		server:   server,
 		chatGPT:  chatGPTTokenSourceOrNil(chat.chatGPTPlan),
 	})
+}
+
+// telegramAccountLinks adapts *telegram.Store onto the Settings seam: the owner's list and
+// unlink of their linked accounts (spec 2026-10-27-telegram-account-links, D4).
+type telegramAccountLinks struct {
+	inner *telegram.Store
+}
+
+var _ agui.TelegramAccountLinks = telegramAccountLinks{}
+
+func (a telegramAccountLinks) LinkedAccounts(ctx context.Context, identityID string) ([]agui.TelegramAccount, error) {
+	accounts, err := a.inner.LinkedAccounts(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]agui.TelegramAccount, 0, len(accounts))
+	for _, acct := range accounts {
+		view := agui.TelegramAccount{
+			TelegramUserID: acct.TelegramUserID,
+			Username:       acct.Username,
+			FirstName:      acct.FirstName,
+			AddedAt:        acct.AddedAt,
+		}
+		if !acct.LastSeenAt.IsZero() {
+			seen := acct.LastSeenAt
+			view.LastSeenAt = &seen
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+func (a telegramAccountLinks) UnlinkAccount(ctx context.Context, identityID string, telegramUserID int64) (bool, error) {
+	return a.inner.Unlink(ctx, identityID, telegramUserID)
 }
 
 type primaryLLMRouteReloader struct {

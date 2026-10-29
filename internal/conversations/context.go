@@ -94,6 +94,11 @@ func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, l
 // identity and stays the same while the path grows, because every turn appended to it
 // inherits it, so the watermark keeps advancing on one row instead of colliding with a
 // sibling's.
+//
+// A leaf that names no turn keeps the canonical key, and the walk below refuses it. Any
+// other failure to read the branch fails the load. Until #195 it fell back to the canonical
+// row, so a transient read error let a fork reuse the canonical summary, or file its own
+// summary there.
 func (s *Store) loadManagedPath(ctx context.Context, conversationID string, leafSeq int, cfg *ContextConfig) (managedHistoryLoad, error) {
 	if leafSeq <= 0 {
 		latest, err := s.LatestTurnSeq(ctx, conversationID)
@@ -102,7 +107,11 @@ func (s *Store) loadManagedPath(ctx context.Context, conversationID string, leaf
 		}
 		leafSeq = latest
 	}
-	cfg.branchID = s.branchIDForLeaf(ctx, conversationID, leafSeq)
+	branchID, err := s.branchOfTurn(ctx, conversationID, leafSeq)
+	if err != nil && !errors.Is(err, ErrTurnNotFound) {
+		return managedHistoryLoad{}, err
+	}
+	cfg.branchID = branchID
 	return s.loadManagedBranchTurns(ctx, conversationID, cfg.branchID, leafSeq,
 		normalizeHistoryPageSize(cfg.HistoryHardCapTurns), cfg.ToolEvictAfterTurns)
 }
@@ -437,24 +446,23 @@ func splitHeadHistoryActive(turns []Turn) (head, history, active []Turn) {
 // dropOldestPairs removes complete historical rounds after the protected head
 // while preserving the final user-led active round byte-for-byte. The historical
 // name/signature stays because rot-event accounting consumes its count.
+//
+// The total is counted once and each dropped round subtracted from it. Recounting what was
+// left after every drop made the drop quadratic in the history: measured 2026-10-27, 800
+// turns against a 128k window took 39 s and allocated 12 GB per turn.
 func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
 	head, historyView, active := splitHeadHistoryActive(turns)
 	history := append([]Turn(nil), historyView...)
 
 	pairsDropped := 0
-	for len(history) > 0 {
-		current := make([]Turn, 0, len(head)+len(history)+len(active))
-		current = append(current, head...)
-		current = append(current, history...)
-		current = append(current, active...)
-		if totalTokens(enc, current) <= hardCap {
-			break
-		}
-		var dropped bool
-		history, dropped = dropOldestRound(history)
+	total := totalTokens(enc, turns)
+	for len(history) > 0 && total > hardCap {
+		rest, dropped := dropOldestRound(history)
 		if !dropped {
 			break
 		}
+		total -= totalTokens(enc, history[:len(history)-len(rest)])
+		history = rest
 		pairsDropped++
 	}
 	for len(history) > 0 && history[0].Role == llm.RoleTool {
