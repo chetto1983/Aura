@@ -21,18 +21,22 @@ COPY internal/assets/testdata/studio-project.json /internal/assets/testdata/stud
 RUN npm run build
 
 # The Craft apps the cockpit frames to view and edit files, one folder each under
-# /usr/share/aura/apps (docs/superpowers/specs/2026-10-19-craft-web-apps-design.md). GridCraft's
-# official web release carries the `?host=parent` bridge and needs no change, so its zip goes in as
-# it is, pinned by version and SHA-256: nothing is fetched at run time. The wasm and its glue are
-# gzipped here because nothing in front of aura compresses: aura sends the .gz to a browser that
-# accepts it (internal/staticapp).
+# /usr/share/aura/apps (docs/superpowers/specs/2026-10-19-craft-web-apps-design.md). GridCraft's,
+# PdfCraft's and WordCraft's official web releases carry the `?host=parent` bridge and need no
+# change, so their zips go in as they are, pinned by version and SHA-256: nothing is fetched at run
+# time. The wasm and its glue are gzipped here because nothing in front of aura compresses: aura
+# sends the .gz to a browser that accepts it (internal/staticapp).
 FROM alpine:3.22 AS craft-official
-ADD --checksum=sha256:b9491325936457cebd874656becbe5d189fbd2039db6798d9d7f5c5e0190715e https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-web-0.11.1.zip /tmp/gridcraft.zip
+ADD --checksum=sha256:e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip /tmp/gridcraft.zip
+ADD --checksum=sha256:fdb2508030d7668cb5164db3b7d05baa1011a87497c95ef043844d90cbbc4da2 https://github.com/storytold/pdfcraft/releases/download/v0.15.0/pdfcraft-web-0.15.0.zip /tmp/pdfcraft.zip
+ADD --checksum=sha256:4cf6808b762e6d1211a569dd0cac831b7f1e7eb1a41f70cae90bceeb2c6a6acf https://github.com/storytold/wordcraft/releases/download/v0.12.0/wordcraft-web-0.12.0.zip /tmp/wordcraft.zip
 RUN set -eu; \
     mkdir /apps; \
-    unzip -q /tmp/gridcraft.zip -d /tmp && mv /tmp/gridcraft-web-0.11.1 /apps/gridcraft; \
-    rm -f /apps/gridcraft/_headers /apps/gridcraft/.htaccess; \
-    gzip -9 -k /apps/gridcraft/*.wasm /apps/gridcraft/*.js
+    for app in gridcraft pdfcraft wordcraft; do \
+        unzip -q "/tmp/$app.zip" -d "/tmp/$app" && mv /tmp/$app/$app-web-* "/apps/$app"; \
+        rm -f "/apps/$app/_headers" "/apps/$app/.htaccess"; \
+        gzip -9 -k /apps/$app/*.wasm /apps/$app/*.js; \
+    done
 
 # Keep in lockstep with the garage service pin in compose.yaml — the bootstrap
 # CLI talks native RPC to the server and Garage wants matched versions.
@@ -168,10 +172,10 @@ ENV AURA_IN_CONTAINER=1
 
 COPY --from=payload /payload /usr/share/aura/payload
 COPY --from=craft-official /apps /usr/share/aura/apps
-# The five Craft apps compiled from Rust come prebuilt: docker/aura-craft-web, published by
+# The three Craft apps compiled from Rust come prebuilt: docker/aura-craft-web, published by
 # publish-craft-web.yml under the hash of its inputs. TestCraftWebImagePinMatchesItsInputs fails
 # when docker/craft-web/ changes and this pin does not follow.
-COPY --from=ghcr.io/chetto1983/aura-craft-web:d29d54c8e01cd91c@sha256:40f3f558c6cb11950c3b03033056cdc57f6af51a90733ecf54495aadfbba7a6b /apps /usr/share/aura/apps
+COPY --from=ghcr.io/chetto1983/aura-craft-web:e4b0fdbdef68821b@sha256:0374d04f6f05f9a90c3ac37080a01f0e69f7ac903eda129088f71d6a9e6a95d1 /apps /usr/share/aura/apps
 COPY --from=build /out/aura /usr/local/bin/aura
 COPY --from=garagebin /garage /usr/local/bin/garage
 COPY docker/aura/aura-garage-bootstrap.sh /usr/local/bin/aura-garage-bootstrap.sh

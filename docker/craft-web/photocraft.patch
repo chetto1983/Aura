@@ -1,20 +1,5 @@
-diff --git a/Cargo.lock b/Cargo.lock
-index c925c8f..82cf96f 100644
---- a/Cargo.lock
-+++ b/Cargo.lock
-@@ -6913,7 +6913,10 @@ version = "0.3.2"
- source = "registry+https://github.com/rust-lang/crates.io-index"
- checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
- dependencies = [
-+ "js-sys",
-  "libc",
-+ "wasm-bindgen",
-+ "web-sys",
- ]
- 
- [[package]]
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 279d13b..e57dbaa 100644
+index 0176e0fe..b1587d8b 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
@@ -28,7 +13,7 @@ index 279d13b..e57dbaa 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/host.rs b/apps/photocraft-web/src/host.rs
 new file mode 100644
-index 0000000..f17c650
+index 00000000..f17c650c
 --- /dev/null
 +++ b/apps/photocraft-web/src/host.rs
 @@ -0,0 +1,146 @@
@@ -179,7 +164,7 @@ index 0000000..f17c650
 +    }
 +}
 diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
-index 0802a02..141975e 100644
+index 0802a02e..141975ef 100644
 --- a/apps/photocraft-web/src/main.rs
 +++ b/apps/photocraft-web/src/main.rs
 @@ -12,10 +12,14 @@
@@ -199,7 +184,7 @@ index 0802a02..141975e 100644
  mod preset_bridge;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index 87e6eaf..2f96bf7 100644
+index f82051db..6c0d51e0 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
 @@ -75,6 +75,10 @@ pub fn start() {
@@ -213,7 +198,7 @@ index 87e6eaf..2f96bf7 100644
          let result = eframe::WebRunner::new()
              .start(
                  canvas,
-@@ -88,7 +92,11 @@ pub fn start() {
+@@ -89,7 +93,11 @@ pub fn start() {
                      let (session, warnings) = crate::preset_bridge::session(presets.clone());
                      preset_warnings.extend(warnings);
                      let drag = listen_drag(&pen_target);
@@ -226,7 +211,7 @@ index 87e6eaf..2f96bf7 100644
                      if !preset_warnings.is_empty() {
                          photocraft_ui_egui::notices::post(&mut app, i18n::t("Some brush presets could not be loaded"), preset_warnings, true, None);
                      }
-@@ -102,10 +110,16 @@ pub fn start() {
+@@ -103,10 +111,16 @@ pub fn start() {
                      }
                      let unsaved = Arc::new(AtomicBool::new(false));
                      guard_unload(unsaved.clone());
@@ -244,7 +229,7 @@ index 87e6eaf..2f96bf7 100644
          if let Some(el) = document.get_element_by_id("photocraft_loading") {
              match result {
                  Ok(()) => el.remove(),
-@@ -199,6 +213,10 @@ fn query() -> String {
+@@ -200,6 +214,10 @@ fn query() -> String {
      web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
  }
  
@@ -255,7 +240,7 @@ index 87e6eaf..2f96bf7 100644
  /// Reads the served font manifest, if the host has one, and lists its families in the font menus.
  fn load_font_manifest(served: Served, ctx: egui::Context) {
      wasm_bindgen_futures::spawn_local(async move {
-@@ -269,6 +287,8 @@ struct WebShell {
+@@ -270,6 +288,8 @@ struct WebShell {
      served: Served,
      database: Option<web_sys::IdbDatabase>,
      presets: crate::preset_bridge::Bridge,
@@ -264,31 +249,31 @@ index 87e6eaf..2f96bf7 100644
  }
  
  impl WebShell {
-@@ -356,6 +376,9 @@ impl eframe::App for WebShell {
+@@ -361,6 +381,9 @@ impl eframe::App for WebShell {
              });
          }
          self.serve_fonts(ctx);
 +        if let Some(bridge) = &self.bridge {
 +            bridge.open_arrived(&mut self.app);
 +        }
-         self.app.logic(ctx, frame);
+         self.app.logic_frame(ctx, frame);
          self.save_presets(ctx);
-     }
-@@ -386,6 +409,9 @@ impl eframe::App for WebShell {
+         self.app.finish_type_reset_logic(ctx);
+@@ -392,6 +415,9 @@ impl eframe::App for WebShell {
          }
-         self.app.ui(ui, frame);
+         self.app.ui_frame(ui, frame);
          self.save_presets(ui.ctx());
 +        if let Some(bridge) = &self.bridge {
 +            bridge.sync(&self.app);
 +        }
+         self.app.finish_type_reset_pass(ui.ctx());
      }
  }
- 
 diff --git a/crates/engine/src/shell_commands.rs b/crates/engine/src/shell_commands.rs
-index 33383d1..b266f62 100644
+index 61c33bb8..cccca4d3 100644
 --- a/crates/engine/src/shell_commands.rs
 +++ b/crates/engine/src/shell_commands.rs
-@@ -83,9 +83,9 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+@@ -89,9 +89,9 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
      ("window.theme.softLight", "Soft", &["Window", "Theme", "Light Theme"], None),
      ("window.theme.system", "Sync with system", &["Window", "Theme"], None),
      ("edit.search", "Search…", &["Edit"], Some("Cmd+F")),
@@ -301,10 +286,10 @@ index 33383d1..b266f62 100644
      ("help.reportIssue", "Report an Issue…", &["Help"], None),
      ("help.systemInfo", "System Info…", &["Help"], None),
 diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
-index 23ecfc3..ff1f9eb 100644
+index c95da851..a9bdb0ff 100644
 --- a/crates/ui-egui/Cargo.toml
 +++ b/crates/ui-egui/Cargo.toml
-@@ -46,6 +46,10 @@ rayon = { workspace = true }
+@@ -50,6 +50,10 @@ rayon = { workspace = true }
  # Safe native UI-language APIs (Windows/macOS); no subprocess or web dependency.
  sys-locale = "=0.3.2"
  
@@ -316,10 +301,10 @@ index 23ecfc3..ff1f9eb 100644
  # desktop app already uses, pinned to the same version.
  [target.'cfg(target_os = "windows")'.dependencies]
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 4a7f563..64d3cd5 100644
+index a14b42c3..cdb24b8d 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -647,6 +647,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
+@@ -756,6 +756,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
          "models" => crate::credits::models_ui(ui),
          _ => {
              ui.label(tl!("PhotoCraft — an open-source, native image editor written in Rust."));
@@ -328,7 +313,7 @@ index 4a7f563..64d3cd5 100644
              ui.add_space(12.0);
              ui.vertical_centered(|ui| {
 diff --git a/crates/ui-egui/src/i18n/system.rs b/crates/ui-egui/src/i18n/system.rs
-index 25cc9fe..f4362f1 100644
+index 25cc9fec..9e74453b 100644
 --- a/crates/ui-egui/src/i18n/system.rs
 +++ b/crates/ui-egui/src/i18n/system.rs
 @@ -1,10 +1,9 @@
@@ -352,7 +337,7 @@ index 25cc9fe..f4362f1 100644
  fn bounded_tags(tags: impl IntoIterator<Item = String>) -> Vec<String> {
      tags.into_iter()
          .take(MAX_SYSTEM_TAGS)
-@@ -52,9 +50,17 @@ fn detect_system_tags() -> Vec<String> {
+@@ -52,9 +50,10 @@ fn detect_system_tags() -> Vec<String> {
      std::panic::catch_unwind(|| bounded_tags(sys_locale::get_locales())).unwrap_or_default()
  }
  
@@ -360,36 +345,12 @@ index 25cc9fe..f4362f1 100644
  #[cfg(all(not(test), target_arch = "wasm32"))]
  fn detect_system_tags() -> Vec<String> {
 -    Vec::new()
-+    bounded_tags(sys_locale::get_locales()).into_iter().filter(|tag| !needs_cjk_face(tag)).collect()
-+}
-+
-+/// Japanese, Korean and Chinese need a CJK face and the web build embeds none (`CRAFT_FONTS`
-+/// stays empty on wasm, crates/text/build.rs): Auto skips them there rather than draw boxes.
-+#[cfg(any(test, target_arch = "wasm32"))]
-+fn needs_cjk_face(tag: &str) -> bool {
-+    lang_from_tag(tag).is_some_and(|lang| matches!(lang.code(), "ja" | "ko" | "zh-hans" | "zh-hant"))
++    bounded_tags(sys_locale::get_locales())
  }
  
  #[cfg(test)]
-@@ -119,6 +125,16 @@ mod tests {
-         assert_eq!(system_lang(), Lang::EN);
-     }
- 
-+    #[test]
-+    fn the_web_build_skips_the_languages_it_has_no_face_for() {
-+        for tag in ["ja-JP", "ko-KR", "zh-CN", "zh-TW", "zh-Hant-HK"] {
-+            assert!(needs_cjk_face(tag), "{tag}");
-+        }
-+        for tag in ["it-IT", "ru-RU", "el-GR", "vi-VN", "sv-SE"] {
-+            assert!(!needs_cjk_face(tag), "{tag}");
-+        }
-+    }
-+
-     #[cfg(not(target_arch = "wasm32"))]
-     #[test]
-     fn native_locale_results_are_bounded_and_trimmed() {
 diff --git a/crates/ui-egui/src/links.rs b/crates/ui-egui/src/links.rs
-index e01a19d..729b780 100644
+index 2042d996..6ba95c75 100644
 --- a/crates/ui-egui/src/links.rs
 +++ b/crates/ui-egui/src/links.rs
 @@ -41,15 +41,15 @@ pub fn discord_button(app: &mut PhotocraftApp, ui: &mut egui::Ui, min_width: f32

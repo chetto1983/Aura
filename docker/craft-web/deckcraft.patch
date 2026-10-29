@@ -224,10 +224,10 @@ index 6d2b7e9..c16f198 100644
  mod web;
  
 diff --git a/apps/deckcraft-web/src/web.rs b/apps/deckcraft-web/src/web.rs
-index dabad8a..e8977df 100644
+index f8e68a3..cdb79a4 100644
 --- a/apps/deckcraft-web/src/web.rs
 +++ b/apps/deckcraft-web/src/web.rs
-@@ -28,6 +28,10 @@ pub fn start() {
+@@ -30,6 +30,10 @@ pub fn start() {
          {
              create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
          }
@@ -238,9 +238,9 @@ index dabad8a..e8977df 100644
          let result = eframe::WebRunner::new()
              .start(
                  canvas,
-@@ -37,22 +41,34 @@ pub fn start() {
-                         log::info!("deckcraft-web {}: wgpu backend {:?}", env!("CARGO_PKG_VERSION"), rs.adapter.get_info().backend);
+@@ -40,22 +44,34 @@ pub fn start() {
                      }
+                     deckcraft_ui_egui::install_ime_pass_hooks(&cc.egui_ctx);
                      let inbox: Inbox = Inbox::default();
 -                    let mut app = SlideApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
 -                    let q = query();
@@ -284,7 +284,7 @@ index dabad8a..e8977df 100644
          if let Some(el) = document.get_element_by_id(LOADING_ID) {
              match result {
                  Ok(()) => el.remove(),
-@@ -66,15 +82,25 @@ fn query() -> String {
+@@ -69,16 +85,26 @@ fn query() -> String {
      web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
  }
  
@@ -301,16 +301,17 @@ index dabad8a..e8977df 100644
  }
  
  impl eframe::App for WebShell {
+     /// Delegate one eframe logic pass to the wrapped application.
      fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 +        // A deck the parent sent opens as one picked with File › Open.
 +        for (name, bytes) in self.bridge.as_ref().map(crate::host::Bridge::take_arrived).unwrap_or_default() {
 +            let id = self.app.begin_external_file("open");
 +            push_inbox(&self.inbox, InboxEvent::File(InboxFile { id, name, bytes }));
 +        }
-         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
-         for f in dropped {
-             // Capture the document and slide now. The bytes arrive later, after the user may
-@@ -106,6 +132,9 @@ impl eframe::App for WebShell {
+         self.app.logic(ctx);
+     }
+ 
+@@ -111,6 +137,9 @@ impl eframe::App for WebShell {
  
      fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
          self.app.ui(ui);
@@ -320,11 +321,11 @@ index dabad8a..e8977df 100644
      }
  }
  
-diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
-index 999900d..16034e2 100644
---- a/crates/ui-egui/src/backstage.rs
-+++ b/crates/ui-egui/src/backstage.rs
-@@ -736,8 +736,6 @@ fn home(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome)
+diff --git a/crates/ui-egui/src/backstage/files.rs b/crates/ui-egui/src/backstage/files.rs
+index 4b7cec6..02071ce 100644
+--- a/crates/ui-egui/src/backstage/files.rs
++++ b/crates/ui-egui/src/backstage/files.rs
+@@ -251,8 +251,6 @@ pub(super) fn home(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mu
              }
          });
      }
@@ -333,11 +334,11 @@ index 999900d..16034e2 100644
  }
  
  /// New: a blank presentation, then every theme and starter template, with a search box.
-diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 2393bd6..1b05f0a 100644
---- a/crates/ui-egui/src/dialogs.rs
-+++ b/crates/ui-egui/src/dialogs.rs
-@@ -2627,9 +2627,9 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
+diff --git a/crates/ui-egui/src/dialogs/about.rs b/crates/ui-egui/src/dialogs/about.rs
+index 03c6629..ae081f3 100644
+--- a/crates/ui-egui/src/dialogs/about.rs
++++ b/crates/ui-egui/src/dialogs/about.rs
+@@ -26,9 +26,9 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
          ui.label("Presentations and slide shows, rebuilt from scratch in pure Rust.");
          ui.label("An open-source, clean-room project. Not affiliated with Microsoft.");
          ui.add_space(6.0);

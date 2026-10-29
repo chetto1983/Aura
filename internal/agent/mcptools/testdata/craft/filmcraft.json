@@ -292,7 +292,7 @@
     },
     "count": {
      "default": null,
-     "description": "2 for double-click.",
+     "description": "Number of clicks (0\u201310; defaults to 1). Use 2 for double-click. Larger values are rejected.",
      "format": "uint32",
      "minimum": 0,
      "type": [
@@ -381,6 +381,7 @@
     },
     "steps": {
      "default": null,
+     "description": "Movement steps (0\u20131024; defaults to 12; 0 or 1 uses 2). Larger values are rejected.",
      "format": "uint32",
      "minimum": 0,
      "type": [

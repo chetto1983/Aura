@@ -14,9 +14,19 @@
      "description": "Command id, e.g. \"cell.set\", \"home.fillColor\", \"insert.chart\"",
      "type": "string"
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "params": {
      "description": "Command parameters (see the `params` field of list_commands); omit or {} for defaults",
      "type": "object"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -26,6 +36,22 @@
   },
   "name": "execute_command",
   "title": "Execute command"
+ },
+ {
+  "annotations": {
+   "destructiveHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true,
+   "title": "List windows"
+  },
+  "description": "List the open windows: window id, workbook (`doc`) id, title (\"Book1\", or \"Book1:2\" for a workbook's second window), unsaved changes, active and hidden. Pass a `window` or `doc` id to other tools to act there.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {},
+   "type": "object"
+  },
+  "name": "list_windows",
+  "title": "List windows"
  },
  {
   "annotations": {
@@ -58,7 +84,18 @@
   "description": "Summary of the active workbook: title, path, dirty flag, sheets (name, used range, cell count, tables, charts, merges, filters, freeze panes), defined names, current selection and active cell, calculation mode and undo/redo history.",
   "inputSchema": {
    "additionalProperties": false,
-   "properties": {},
+   "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
    "type": "object"
   },
   "name": "inspect_workbook",
@@ -75,6 +112,11 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "formatted": {
      "description": "Return display text with number formats applied",
      "type": "boolean"
@@ -90,6 +132,11 @@
     "sheet": {
      "description": "Sheet name (default: the active sheet)",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "type": "object"
@@ -108,6 +155,11 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "range": {
      "description": "Top-left cell or range, e.g. \"A1\" or \"Sheet2!B3\"",
      "type": "string"
@@ -126,6 +178,11 @@
       "type": "array"
      },
      "type": "array"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -152,6 +209,11 @@
      "description": "Cell, e.g. \"B7\" or \"Sheet2!C3\"",
      "type": "string"
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "input": {
      "description": "Typed input: number, text or =formula",
      "type": [
@@ -159,6 +221,11 @@
       "number",
       "boolean"
      ]
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -184,6 +251,16 @@
     "cell": {
      "description": "Cell, e.g. \"B7\" or \"Sheet2!C3\"",
      "type": "string"
+    },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -201,7 +278,7 @@
    "readOnlyHint": true,
    "title": "Evaluate formula"
   },
-  "description": "Evaluate a formula against the active sheet WITHOUT changing any cell, e.g. \"=SUM(B2:B10)/COUNT(B2:B10)\" or \"=VLOOKUP(\\\"x\\\",A:B,2,FALSE)\". `cell` sets the formula's position for relative references and ROW()/COLUMN().",
+  "description": "Evaluate a formula against the active sheet WITHOUT changing any cell, e.g. \"=SUM(B2:B10)/COUNT(B2:B10)\" or \"=VLOOKUP(\\\"x\\\",A:B,2,FALSE)\". `cell` sets the formula's position for relative references and ROW()/COLUMN(). Use English function names and `,` between arguments; a formula that couldn't be entered in a cell is an error saying why.",
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
@@ -209,9 +286,19 @@
      "description": "Evaluate as if in this cell (default: active cell)",
      "type": "string"
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "formula": {
      "description": "Formula text, with or without the leading =",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -237,9 +324,19 @@
      "description": "Active cell inside the selection (default: top-left of the last area)",
      "type": "string"
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "range": {
      "description": "A1-style range, e.g. \"A1:D10\", \"B:B\", \"Sheet2!A1:C3\"",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -335,6 +432,11 @@
       }
      ]
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "fillColor": {
      "description": "Background color \"#RRGGBB\" or \"none\"",
      "type": "string"
@@ -379,6 +481,11 @@
      "description": "Single underline on/off",
      "type": "boolean"
     },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "wrapText": {
      "description": "Wrap text on/off",
      "type": "boolean"
@@ -406,6 +513,11 @@
     "at": {
      "description": "Top-left anchor cell (default: right of the data)",
      "type": "string"
+    },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     },
     "range": {
      "description": "Source data range including headers, e.g. \"A1:C6\"",
@@ -447,6 +559,11 @@
       "stock"
      ],
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -469,6 +586,11 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "header": {
      "description": "First row holds headers (default true)",
      "type": "boolean"
@@ -484,6 +606,11 @@
     "style": {
      "description": "Table style, e.g. \"TableStyleMedium2\" (default), \"TableStyleLight9\"",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -505,6 +632,11 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "header": {
      "description": "The first row is a header (kept in place)",
      "type": "boolean"
@@ -546,6 +678,11 @@
     "range": {
      "description": "A1-style range, e.g. \"A1:D10\", \"B:B\", \"Sheet2!A1:C3\"",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -583,6 +720,11 @@
      "description": "Custom criteria: {op: \"=\"|\"<>\"|\">\"|\">=\"|\"<\"|\"<=\"|\"beginsWith\"|\"contains\"\u2026, value, op2?, value2?, and?: bool}",
      "type": "object"
     },
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "range": {
      "description": "Data range to filter (default: the current region of the selection)",
      "type": "string"
@@ -601,6 +743,11 @@
       ]
      },
      "type": "array"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "required": [
@@ -646,9 +793,19 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "path": {
      "description": "Destination path",
      "type": "string"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
     }
    },
    "type": "object"
@@ -693,8 +850,18 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "steps": {
      "description": "Number of steps (default 1)",
+     "minimum": 0,
+     "type": "integer"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
      "minimum": 0,
      "type": "integer"
     }
@@ -715,8 +882,18 @@
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
+    "doc": {
+     "description": "Workbook id from list_windows: its most recent window (default: the active window)",
+     "minimum": 0,
+     "type": "integer"
+    },
     "steps": {
      "description": "Number of steps (default 1)",
+     "minimum": 0,
+     "type": "integer"
+    },
+    "window": {
+     "description": "Window id from list_windows (default: the active window)",
      "minimum": 0,
      "type": "integer"
     }

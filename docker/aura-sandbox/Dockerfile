@@ -219,6 +219,8 @@ COPY --chmod=0755 docker/aura-sandbox/agent-browser.sh /usr/local/bin/agent-brow
 # release builds (the ArtCraft brand terms allow those as they are), each tarball pinned by the SHA-256
 # its GitHub release publishes; only the CLI leaves it, with its licenses and font notices. PdfCraft's
 # is its CLI-only package: no OCR models, which the agent does not need (it reads a rendered page).
+# The CLI is the executable of that name: PhotoCraft 0.17.0 also ships a bash completion called
+# photocraft-cli, which a name-only match picked first.
 RUN set -eu; \
     case "${TARGETARCH:-amd64}" in \
         amd64) arch=x86_64 ;; \
@@ -231,30 +233,30 @@ RUN set -eu; \
         curl -fsSL -o /tmp/craft.tgz "https://github.com/storytold/$app/releases/download/v$ver/$asset"; \
         echo "$sha  /tmp/craft.tgz" | sha256sum -c -; \
         mkdir /tmp/craft && tar -xzf /tmp/craft.tgz -C /tmp/craft --strip-components 1; \
-        install -D -m 0755 "$(find /tmp/craft -type f -name "$app-cli" | head -1)" "/usr/local/bin/$app-cli"; \
+        install -D -m 0755 "$(find /tmp/craft -type f -perm -u+x -name "$app-cli" | head -1)" "/usr/local/bin/$app-cli"; \
         mkdir -p "/usr/local/share/licenses/$app"; \
         find /tmp/craft -type f \( -name 'LICENSE*' -o -name 'NOTICE*' -o -name 'OFL*' -o -name 'ATTRIBUTION*' \) \
             -exec cp {} "/usr/local/share/licenses/$app/" \; ; \
         rm -rf /tmp/craft /tmp/craft.tgz; \
     }; \
-    craft gridcraft 0.11.1 gridcraft-0.11.1 \
-        f2c83e6c26449a6c45983e903bf32c1d4c302b2042f263ead995271129c70e87 \
-        16e4da4873867a9080ec41d76e38430a8d0e62fa22b43edb6d7b1dbde0925435; \
-    craft pdfcraft 0.13.0 pdfcraft-cli-0.13.0 \
-        fd40f80157856cadd4348a464ef0acde8f19894d831d78e9823708ecf70a3352 \
-        1d1181757f281b2291ca218a0446ade4cfd54c5c258f3d4f22953fa1037dd29d; \
-    craft wordcraft 0.10.0 wordcraft-0.10.0 \
-        ca99ea350ba0aea4103fc8020cad98f051c58d9e9fcf670c119d810108cc45ff \
-        77e838120d9da38752ab355066a0987253d9bc95dfddad1c47bac1f180975bbb; \
-    craft deckcraft 0.10.0 deckcraft-0.10.0 \
-        546616eb2300ce8efb20b44a53e60abfe6b96d71ac606b452a36fd21c6b1ff28 \
-        7be0594d90c4c0be15b812a597b85f6005271716be778b2999cb492f52c8676b; \
-    craft photocraft 0.15.1 photocraft-0.15.1 \
-        b622be40355513056f8152afe895d0a05c1bc3c344a027f772a9a12fa3d1c223 \
-        ff2ea1945df3b413b17c64ec7c0131c093b09c717994a47b4c46c0dabf1c822f; \
-    craft filmcraft 0.12.0 filmcraft-0.12.0 \
-        ddff0a2ec0d89e5e9e65644ed724b5b79959600b1602fd4ea6653b5a54bf88fd \
-        83714c4a73774a3f54a3d2bf52ae0065d3fb8ca8c781deb7cb3450f9b4e74568
+    craft gridcraft 0.13.0 gridcraft-0.13.0 \
+        20c6c56ec1ffd6bbcffee6cdee58cf6b5cadd2f4a04a4360dd7cc64d53ad97e5 \
+        ecbef0d833caea65f6879714e037753578344bbc3ad7ad71da0f59449fc2aa6d; \
+    craft pdfcraft 0.15.0 pdfcraft-cli-0.15.0 \
+        a5705977e616852929eb08e7ba6de1e0781289fcc52dab1356215ae644d5973d \
+        c29f5fc4e8fec0e806cae330dd634089b5aaae2328beeac94db42aa3583834e8; \
+    craft wordcraft 0.12.0 wordcraft-0.12.0 \
+        cd9abd0ee7a11b985af1c1571653332c96077e5dcc48b5e187b55c82f475a33e \
+        8fcc2644acef7b43c3e46626e47e92e5542a43288e8e0bebf4b9f79c22a66d0b; \
+    craft deckcraft 0.12.0 deckcraft-0.12.0 \
+        4a410d3caa423e873d0dcab51c98e06588f55bdfcf03e9c1e91409a86c08de3e \
+        2312f1c0e0bf131faa525d71d265ba07734227fd2d174afbea00e95bcf93d353; \
+    craft photocraft 0.17.0 photocraft-0.17.0 \
+        5259f9c428c8ee3478c35500ece98713561cafc050e4c9eb354a5050f36eb2b8 \
+        a9478dee2b34f270a1f845a7d7f4da501c529d443680ee23c2c8b588867d61b8; \
+    craft filmcraft 0.14.0 filmcraft-0.14.0 \
+        d2aa213cc08abd21e05ab511a78cc38f157caf2226992f3fc8a5e0496a3f7e7d \
+        b887277df634854968e9bb20b42a5bf34c35103040a1cae03a6c14dc406e60fe
 COPY --from=landrun /out/landrun /usr/local/bin/landrun
 COPY --from=landrun /out/LICENSE /usr/local/share/licenses/landrun/LICENSE
 # Chrome must not sign itself in to the Google account a user logs into on the web. Measured

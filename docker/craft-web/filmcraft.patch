@@ -154,7 +154,7 @@ index 0000000..57018af
 +    web_sys::File::new_with_buffer_source_sequence(&js_sys::Array::of1(&bytes), name).ok()
 +}
 diff --git a/apps/filmcraft-web/src/lib.rs b/apps/filmcraft-web/src/lib.rs
-index 21512cc..2d4d7a2 100644
+index 1110c64..15ee736 100644
 --- a/apps/filmcraft-web/src/lib.rs
 +++ b/apps/filmcraft-web/src/lib.rs
 @@ -22,6 +22,7 @@ pub mod api;
@@ -174,7 +174,7 @@ index 21512cc..2d4d7a2 100644
  }
  
  impl eframe::App for WebApp {
-@@ -113,11 +116,18 @@ impl eframe::App for WebApp {
+@@ -115,11 +118,18 @@ impl eframe::App for WebApp {
  
      fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
          self.app.ui(ui, frame);
@@ -194,7 +194,7 @@ index 21512cc..2d4d7a2 100644
  }
  
  /// Entry point (called by the page's bootstrap script once the wasm module is instantiated).
-@@ -136,15 +146,20 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
+@@ -138,15 +148,20 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
      set_info("frameWorkers", json!("cooperative"));
      set_info("opfs", json!(opfs::available()));
  
@@ -218,7 +218,7 @@ index 21512cc..2d4d7a2 100644
      let mut web_options = eframe::WebOptions::default();
      // `?webgl`: WebGL2 only. The page reloads with it when starting on WebGPU fails (an adapter
      // whose device can't be created, a driver the browser rejects…); see `index.html`.
-@@ -154,7 +169,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
+@@ -156,7 +171,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
          c.instance_descriptor.backends = eframe::wgpu::Backends::GL;
      }
      let runner = eframe::WebRunner::new();
@@ -227,7 +227,7 @@ index 21512cc..2d4d7a2 100644
          .start(
              canvas,
              web_options,
-@@ -162,11 +177,14 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
+@@ -165,11 +180,14 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                  set_context(cc.egui_ctx.clone());
                  let ctx = cc.egui_ctx.clone();
                  fs::set_on_data(move || ctx.request_repaint());
@@ -247,7 +247,7 @@ index 21512cc..2d4d7a2 100644
                  webcodecs::install();
                  let mut session = Session::new(Arc::new(fs::WebServices));
                  let mut toast = None;
-@@ -214,10 +232,17 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
+@@ -217,10 +235,17 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                  }
                  set_info("audio", json!(audio.is_some()));
                  set_info("restoredMedia", json!(restored));
@@ -268,7 +268,7 @@ index 21512cc..2d4d7a2 100644
      // keep the runner alive for the page's lifetime
      std::mem::forget(runner);
 diff --git a/crates/ui-egui/src/brand.rs b/crates/ui-egui/src/brand.rs
-index 4c41d08..c996a34 100644
+index 3bab46e..c996a34 100644
 --- a/crates/ui-egui/src/brand.rs
 +++ b/crates/ui-egui/src/brand.rs
 @@ -1,33 +1,8 @@
@@ -284,7 +284,7 @@ index 4c41d08..c996a34 100644
 -/// The wordmark for a dark (`dark = true`) or light UI: light ink on dark themes. Its aspect
 -/// ratio is width / height of the returned texture.
 -pub fn wordmark(ctx: &egui::Context, dark: bool) -> Option<egui::TextureHandle> {
--    let id = egui::Id::new(("artcraft-wordmark", dark));
+-    let id = egui::Id::unique(("artcraft-wordmark", dark));
 -    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
 -        return Some(t);
 -    }
@@ -312,22 +312,22 @@ index 4c41d08..c996a34 100644
 +    None
  }
 diff --git a/crates/ui-egui/src/header.rs b/crates/ui-egui/src/header.rs
-index 5b8f23c..5277fca 100644
+index 181de22..8aa845b 100644
 --- a/crates/ui-egui/src/header.rs
 +++ b/crates/ui-egui/src/header.rs
-@@ -126,8 +126,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
+@@ -130,8 +130,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
          let g = p.layout_no_wrap(label.to_string(), Tokens::ui(12.0), Color32::WHITE);
          let w = g.size().x + 34.0;
          let r = Rect::from_min_size(pos2(wr.min.x - w - 14.0, rect.center().y - 12.0), vec2(w, 24.0));
--        let resp = ui.interact(r, egui::Id::new("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the ArtCraft Discord (discord.gg/artcraft)"));
+-        let resp = ui.interact(r, egui::Id::unique("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the ArtCraft Discord (discord.gg/artcraft)"));
 -        app.auto.add("header.discord", r, "Join the ArtCraft Discord");
-+        let resp = ui.interact(r, egui::Id::new("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the FilmCraft Discord"));
++        let resp = ui.interact(r, egui::Id::unique("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the FilmCraft Discord"));
 +        app.auto.add("header.discord", r, "Join the FilmCraft Discord");
          ui.painter().rect_filled(r, 12.0, if resp.hovered() { t.accent_hover } else { t.accent });
          icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)), Icon::Chat, Color32::WHITE);
          ui.painter().galley(pos2(r.min.x + 25.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
 diff --git a/crates/ui-egui/src/links.rs b/crates/ui-egui/src/links.rs
-index 37df98d..d802247 100644
+index da4fa72..d8c8ac9 100644
 --- a/crates/ui-egui/src/links.rs
 +++ b/crates/ui-egui/src/links.rs
 @@ -19,9 +19,9 @@ pub const ISSUES: &str = "https://github.com/storytold/filmcraft/issues";
@@ -344,10 +344,10 @@ index 37df98d..d802247 100644
      ("help.reportIssue", "Report an Issue…", ISSUES),
  ];
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 1d760d0..a91e3a8 100644
+index 6be0e33..f04a5be 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -137,9 +137,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
+@@ -139,9 +139,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
      uic!("mode.import", "Import", [], None),
      uic!("mode.edit", "Edit", [], None),
      uic!("mode.export", "Export", ["File", "Export"], Some("Cmd+M")),
@@ -361,10 +361,10 @@ index 1d760d0..a91e3a8 100644
      uic!("help.reportIssue", "Report an Issue…", ["Help"], None),
      uic!("help.revealLogFiles", "Reveal Log Files…", ["Help"], None),
 diff --git a/crates/ui-egui/src/panels/dialogs.rs b/crates/ui-egui/src/panels/dialogs.rs
-index 8bc23db..7c8152f 100644
+index 4ea69e5..cf12c11 100644
 --- a/crates/ui-egui/src/panels/dialogs.rs
 +++ b/crates/ui-egui/src/panels/dialogs.rs
-@@ -460,7 +460,7 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -461,7 +461,7 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
      ui.add_space(6.0);
      ui.heading("FilmCraft");
      ui.label(tlf!("Version {version}", version = env!("CARGO_PKG_VERSION")));
@@ -373,7 +373,7 @@ index 8bc23db..7c8152f 100644
      ui.add_space(10.0);
      let mut link = |ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, url: &str, primary: bool| {
          let size = egui::vec2(ui.available_width(), if primary { 36.0 } else { 28.0 });
-@@ -489,10 +489,10 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -490,10 +490,10 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
              links::open(app, ui.ctx(), url);
          }
      };

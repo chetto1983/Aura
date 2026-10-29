@@ -1,7 +1,8 @@
 name: Publish Craft web apps
 
-# The five Craft apps compiled from Rust cost about 35 minutes cold (pdfcraft 498 s, wordcraft
-# 388 s, deckcraft 419 s, photocraft 469 s, filmcraft 295 s on 2026-10-21). They change only
+# The Craft apps compiled from Rust cost about 35 minutes cold when they were five (pdfcraft 498 s,
+# wordcraft 388 s, deckcraft 419 s, photocraft 469 s, filmcraft 295 s on 2026-10-21); PdfCraft's and
+# WordCraft's official builds replaced Aura's on 2026-10-29, leaving three. They change only
 # when their inputs do, so they are built here, once per input hash, and the aura image copies
 # them by digest. After a run, pin the printed reference in docker/aura/Dockerfile.
 
@@ -27,7 +28,7 @@ jobs:
   publish:
     name: Build and push
     runs-on: ubuntu-latest
-    # A cold cache compiles all five apps; a cap below that would never let the cache warm.
+    # A cold cache compiles every app; a cap below that would never let the cache warm.
     timeout-minutes: 90
     steps:
       - name: Checkout

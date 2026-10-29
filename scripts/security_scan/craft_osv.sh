@@ -17,8 +17,9 @@ pins() {
   local repo=$1
   sed -nE 's#^RUN /craft-web/build\.sh ([a-z]+) (v[^ ]+) ([0-9a-f]{40}) /apps$#\1 \2 \3#p' \
     "$repo/docker/aura-craft-web/Dockerfile"
-  # GridCraft ships its official release zip: a tag and a checksum, no commit and no patch.
-  sed -nE 's#.*/storytold/gridcraft/releases/download/(v[^/]+)/gridcraft-web-.*\.zip.*#gridcraft \1 -#p' \
+  # GridCraft, PdfCraft and WordCraft ship their official release zips: a tag and a checksum, no
+  # commit and no patch.
+  sed -nE 's#.*/storytold/([a-z]+)/releases/download/(v[^/]+)/[a-z]+-web-.*\.zip.*#\1 \2 -#p' \
     "$repo/docker/aura/Dockerfile"
 }
 

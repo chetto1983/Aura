@@ -29,23 +29,30 @@ Your tools are `gridcraft__<tool>`, deferred: `tool_search` with "gridcraft" lis
    A cell on another sheet is quoted: `'Cost of capital'!B12`. Several cells:
    `gridcraft__write_range {range, values}`.
 5. Every dependent formula recalculates at once. Find the output by its label the same way, read it
-   before and after, and report both numbers. Measured: the result matched LibreOffice's recalculation to
+   before and after, and report both numbers. Its value is not always in the next column: read the whole
+   row (`read_range {range: "'Valuation Model'!A71:J71"}`) BEFORE you change the input (measured: "Value of
+   equity per share" in B71, its value in F71). Measured: the result matched LibreOffice's recalculation to
    the last digit.
 6. `gridcraft__save_workbook {path}` — always a NEW path under `/workspace` (`<name>-modificato.xlsx`),
    never over the original. The saved file carries the cached values, so any reader sees the new numbers.
 7. `send_file` delivers it; that copy also lands in the library.
 
 `gridcraft__evaluate_formula {formula}` answers "what would X be" without touching the sheet.
+`gridcraft__list_windows` lists the open workbooks (its `doc` id, title, unsaved changes); pass `doc` to the
+other tools to work on one that is not active.
 
 To LOOK at a sheet (its layout, a chart): select the sheet (`gridcraft__select {range: "'Sheet'!A1"}`), then
 `gridcraft__execute_command {command: "file.exportPdf", params: {path: "/workspace/.../view.pdf",
 range: "A1:H40", fitToPage: true}}`, then `pdfcraft__doc_open` and `pdfcraft__render_preview` give you the
-image. `##########` there is a number wider than its column, as in Excel: read the value with `read_range`.
+image. The image comes back as a file under `/workspace/mcp-files/` (its path is in the result's `files`): `read_file` that path to see it. `##########` there is a number wider than its column, as in Excel: read the value with `read_range`.
 
-## Limits (measured 2026-10-18, GridCraft 0.8.0)
+## Limits (measured 2026-10-18, GridCraft 0.8.0; the round trip re-run 2026-10-29 on 0.13.0)
 
 - The server writes only under `/workspace`: anywhere else it gets "Permission denied" (Aura's landrun
   fence; GridCraft has no root flags of its own).
 - `screenshot` needs a desktop app (it is not offered); look through `file.exportPdf` as above.
 - Error constants (`#DIV/0!`) are kept as values, not as empty formulas.
+- An .xls keeps its values, formulas, number formats, merges, widths and names; its fonts, fills,
+  borders, charts, pictures, comments and conditional formatting are not imported (the open warns). Say so
+  when you send the .xlsx back.
 - Alpha software: after a save, re-open the file and read the cells you changed before you report.

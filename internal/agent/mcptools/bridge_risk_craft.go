@@ -10,11 +10,12 @@ import "github.com/chetto1983/aura/internal/mcp"
 // the table does not name fails closed instead of trusting its annotations.
 var craftRecipeActions = map[string]map[string]MCPActionClass{
 	mcp.CraftRecipeSource("gridcraft"): craftActions(
-		[]string{"list_commands", "inspect_workbook", "read_range", "get_cell", "evaluate_formula", "list_functions"},
+		[]string{"list_commands", "inspect_workbook", "read_range", "get_cell", "evaluate_formula", "list_functions",
+			"list_windows"},
 		[]string{"execute_command", "write_range", "set_cell", "select", "format_range", "insert_chart", "create_table",
 			"sort_range", "filter", "open_workbook", "save_workbook", "new_workbook", "undo", "redo"}),
 	mcp.CraftRecipeSource("wordcraft"): craftActions(
-		[]string{"list_commands", "get_text", "inspect_document", "render_page", "parity"},
+		[]string{"list_commands", "get_text", "inspect_document", "render_page", "parity", "list_documents"},
 		[]string{"execute", "batch", "new_document", "open_document", "save_document", "type_text", "select_text"}),
 	mcp.CraftRecipeSource("deckcraft"): craftActions(
 		[]string{"list_commands", "inspect_document", "inspect_slide", "render_slide"},
@@ -32,7 +33,8 @@ var craftRecipeActions = map[string]map[string]MCPActionClass{
 	mcp.CraftRecipeSource("photocraft"): craftActions(
 		[]string{"command_list", "doc_inspect", "doc_render_preview", "render_preview", "session_list", "jobs_list"},
 		[]string{"command_batch", "command_run", "doc_close", "doc_export", "doc_export_data_sets", "doc_export_layers",
-			"doc_import_data_sets", "doc_new", "doc_open", "doc_place", "doc_save", "doc_select", "jobs_cancel"}),
+			"doc_import_data_sets", "doc_new", "doc_open", "doc_place", "doc_replace_smart_object", "doc_save",
+			"doc_select", "jobs_cancel"}),
 }
 
 func craftActions(reads, writes []string) map[string]MCPActionClass {

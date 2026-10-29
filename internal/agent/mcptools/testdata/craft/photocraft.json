@@ -197,6 +197,19 @@
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "additionalProperties": false,
    "properties": {
+    "ddsCompression": {
+     "default": null,
+     "description": "DDS: \"none\" (uncompressed, the default), \"bc1\" (DXT1: alpha on or off), \"bc2\" (DXT3) or\n\"bc3\" (DXT5).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "ddsMipmaps": {
+     "default": false,
+     "description": "DDS: also write the full mip chain, each level a box filter of the one above.",
+     "type": "boolean"
+    },
     "dpxBits": {
      "default": null,
      "description": "DPX: 8, 10, 12 or 16 bits per sample. Unset: 8 for an 8-bit document, else 16.",
@@ -337,7 +350,7 @@
  {
   "name": "doc_export_layers",
   "title": "Doc export layers",
-  "description": "Export each exported layer of the document as its own file beneath the write root (the capability-scoped Layers to Files). A file that already exists is an error, not an overwrite.",
+  "description": "Export top-level layers as files (groups merged). Returns files and skipped: [{layer, name, reason}] for hidden layers (visible_only) and adjustments with no pixels of their own. Workspace exports resolve beneath the write root, also return count of written files, and reject existing files instead of overwriting them. Trusted-local/bridge exports use the engine command's file access policy.",
   "inputSchema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "additionalProperties": false,
@@ -679,6 +692,46 @@
   }
  },
  {
+  "name": "doc_replace_smart_object",
+  "title": "Doc replace smart object",
+  "description": "Replace a Smart Object's contents with the file at `path` beneath the read root, keeping its transform and filters (the capability-scoped Replace Contents). `layer` is the Smart Object's id or name (default: the active layer).",
+  "inputSchema": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "additionalProperties": false,
+   "properties": {
+    "index": {
+     "default": null,
+     "description": "Headless mode only: document index from `session_list` (default: the active document).\nBridge mode rejects `index`.",
+     "format": "uint",
+     "minimum": 0,
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "layer": {
+     "default": null,
+     "description": "The Smart Object layer: an id or a name (default: the active layer)."
+    },
+    "path": {
+     "description": "Path beneath the configured automation read root: relative (forward slashes) or absolute.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "type": "object"
+  },
+  "annotations": {
+   "title": "Doc replace smart object",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "doc_save",
   "title": "Doc save",
   "description": "Save the document. `.pcraft` is the lossless native format (incremental); other extensions (psd, png, jpg, tif, webp, exr, \u2026) export. Without `path` only a PSD, PSB or .pcraft document is written back to its own         file. Returns warnings about anything the format cannot hold.",
@@ -686,6 +739,19 @@
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "additionalProperties": false,
    "properties": {
+    "ddsCompression": {
+     "default": null,
+     "description": "DDS: \"none\" (uncompressed, the default), \"bc1\" (DXT1: alpha on or off), \"bc2\" (DXT3) or\n\"bc3\" (DXT5).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "ddsMipmaps": {
+     "default": false,
+     "description": "DDS: also write the full mip chain, each level a box filter of the one above.",
+     "type": "boolean"
+    },
     "dpxBits": {
      "default": null,
      "description": "DPX: 8, 10, 12 or 16 bits per sample. Unset: 8 for an 8-bit document, else 16.",
@@ -1075,7 +1141,7 @@
    "additionalProperties": false,
    "properties": {
     "fields": {
-     "description": "Fields for the control method `ui.set`: tool, panels, dock, dockTabs, dockWidth, colorPanel\n({background: bool} picks which swatch the Color panel edits), maskTarget,\nvectorMaskTarget, selectionMode, zoom, center, rotation (view angle in degrees), fit, theme (pro, proMedium, studio,\nstudioLight, classic, solarizedDark, adwaita, adwaitaDark, breezeLight, breezeDark, softLight, softDark), brushSection, brushTab,\nbrushesView, brushPicker ([x, y] opens the Brush Preset picker there, null closes it),\nbrushPickerName, brushPickerStroke, brushPickerTip (the picker card's parts, at least one\non), brushPickerScale (the picker footer's card-scale slider, 0.15 to 2, 1 the standard),\nbrushSize, gradientBlendMode\n(a blend mode name, for the Gradient tool), gradientClassic (bool), eyedropperSampleSize\n(\"point\" or 1, 3, 5, 11, 31, 51, 101), eyedropperSample (current, currentAndBelow, all,\nallNoAdjustments, currentAndBelowNoAdjustments), eyedropperRing (bool), cropOverlay (thirds,\ngrid, diagonal, triangle, goldenRatio, goldenSpiral), cropOverlayShow (auto, always, never),\ncropOverlayOrientation (0..3), cropShield (an object patching show_cropped_area, enabled,\ncolor (\"matchCanvas\" or \"custom\"), custom_color ([r, g, b]), opacity (0..100),\nauto_adjust, classic_mode and auto_center_preview), cropFill (background or contentAware,\nthe Crop tool's Fill), shapeStroke (an object patching width, align, cap, join, miterLimit,\ndashes, dashOffset and opacity; null disables the stroke). Shape stroke fields use\n`shape.edit` names and units; colour comes from `tools.setColors`. camTransformOnDrop (bool,\nthe Content-Aware Move tool's Transform On Drop). tileGrid (bool, a developer overlay of the\nactive layer's storage tiles). layerFilter (an object patching by (\"kind\", \"name\" or\n\"mode\"), kinds (a list of layer kinds), name (matches part of the layer name) and mode (a\nblend mode name) for the Layers panel filter). strokeTrace (true, false, \"stderr\" or \"off\":\nthe stroke latency trace at runtime; a CSV file is set at launch with --stroke-trace, not\nover this channel). Other fields are an error."
+     "description": "Fields for the control method `ui.set`: tool, panels, dock, dockTabs, dockWidth, colorPanel\n({background: bool} picks which swatch the Color panel edits), maskTarget,\nvectorMaskTarget, filterMaskTarget (paint the active smart object's filter mask), selectionMode, zoom, center, rotation (view angle in degrees), fit, theme (pro, proMedium, studio,\nstudioLight, classic, solarizedDark, adwaita, adwaitaDark, breezeLight, breezeDark, softLight, softDark), brushSection, brushTab,\nbrushesView, brushPicker ([x, y] opens the Brush Preset picker there, null closes it),\nbrushPickerName, brushPickerStroke, brushPickerTip (the picker card's parts, at least one\non), brushPickerScale (the picker footer's card-scale slider, 0.15 to 2, 1 the standard),\nbrushSize, gradientBlendMode\n(a blend mode name, for the Gradient tool), gradientClassic (bool), eyedropperSampleSize\n(\"point\" or 1, 3, 5, 11, 31, 51, 101), eyedropperSample (current, currentAndBelow, all,\nallNoAdjustments, currentAndBelowNoAdjustments), eyedropperRing (bool), cropOverlay (thirds,\ngrid, diagonal, triangle, goldenRatio, goldenSpiral), cropOverlayShow (auto, always, never),\ncropOverlayOrientation (0..3), cropShield (an object patching show_cropped_area, enabled,\ncolor (\"matchCanvas\" or \"custom\"), custom_color ([r, g, b]), opacity (0..100),\nauto_adjust, classic_mode and auto_center_preview), cropFill (background or contentAware,\nthe Crop tool's Fill), shapeStroke (an object patching width, align, cap, join, miterLimit,\ndashes, dashOffset and opacity; null disables the stroke). Shape stroke fields use\n`shape.edit` names and units; colour comes from `tools.setColors`. camTransformOnDrop (bool,\nthe Content-Aware Move tool's Transform On Drop). tileGrid (bool, a developer overlay of the\nactive layer's storage tiles). layerFilter (an object patching by (\"kind\", \"name\" or\n\"mode\"), kinds (a list of layer kinds), name (matches part of the layer name) and mode (a\nblend mode name) for the Layers panel filter). strokeTrace (true, false, \"stderr\" or \"off\":\nthe stroke latency trace at runtime; a CSV file is set at launch with --stroke-trace, not\nover this channel). updatesOpen (bool, the Help \u203a Check for Updates window).\nhistogramPanel (an object patching view (\"compact\", \"expanded\" or \"allChannels\"), channel\n(\"composite\", \"red\", \"green\", \"blue\", \"cyan\", \"magenta\", \"yellow\", \"black\", \"a\", \"b\",\n\"luminosity\" or \"colors\"), showChannelsInColor, showStatistics and source (\"entireImage\",\n\"selectedLayer\" or \"adjustmentComposite\") for the Histogram panel), histogramRange ([from,\nto] levels 0..255 whose Count and Percentile the panel shows, or null) and histogramRefresh\n(true: an Uncached Refresh); `ui.inspect` reports them and the statistics under\n`histogram`. Other fields are an error."
     }
    },
    "required": [

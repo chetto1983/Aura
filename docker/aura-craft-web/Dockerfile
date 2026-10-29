@@ -1,8 +1,8 @@
-# The five Craft apps Aura builds from source, published as their own image so the aura image
+# The three Craft apps Aura builds from source, published as their own image so the aura image
 # copies them by digest instead of compiling them (docker/aura/Dockerfile). Unlike GridCraft,
-# whose release the aura Dockerfile takes as it is, these need a change: WordCraft, DeckCraft,
-# PhotoCraft and FilmCraft have no bridge upstream, PhotoCraft draws its web interface in English
-# whatever the browser's language, and PdfCraft picks languages its web build has no face for.
+# PdfCraft and WordCraft, whose releases the aura Dockerfile takes as they are, these need a
+# change: DeckCraft, PhotoCraft and FilmCraft have no bridge upstream, and PhotoCraft draws its web
+# interface in English whatever the browser's language.
 # docker/craft-web builds each from its release tag, checked against the tag's commit, with the
 # patch beside the script (that change, and the ArtCraft marks a modified build may not carry).
 # WebAssembly is the same on every platform, so it builds once, on the builder's. The tools are
@@ -35,11 +35,9 @@ RUN set -eu; \
     tool "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-$arch-linux.tar.gz" "$binaryen" binaryen-version_123/bin/wasm-opt; \
     rustup target add wasm32-unknown-unknown
 COPY docker/craft-web/ /craft-web/
-RUN /craft-web/build.sh pdfcraft v0.13.0 53199fb4fa36f3c95b539add6218c57aeb2f823c /apps
-RUN /craft-web/build.sh wordcraft v0.10.0 9130181a5fdaee2293e67756fd5458c601489f3c /apps
-RUN /craft-web/build.sh deckcraft v0.10.0 b47195feec0f0fe4220d8943ad1c8add5dad8072 /apps
-RUN /craft-web/build.sh photocraft v0.15.1 60c87b9884fdae0e464614d482a3bc435cbbc578 /apps
-RUN /craft-web/build.sh filmcraft v0.12.0 274c4cf85ba638d4b6f867d97ca3f6478a993c8d /apps
+RUN /craft-web/build.sh deckcraft v0.12.0 29f0f7772c47aa2bfb74fcbb0c4d3b1503300849 /apps
+RUN /craft-web/build.sh photocraft v0.17.0 b8c3f3aa8e2918032cadc0e042664414a03be333 /apps
+RUN /craft-web/build.sh filmcraft v0.14.0 a2d8e9ce269aba9c399e36262522e11456df6fbf /apps
 
 FROM scratch
 COPY --from=craft-web /apps /apps
