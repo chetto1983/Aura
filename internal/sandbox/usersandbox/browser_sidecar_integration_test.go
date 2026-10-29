@@ -98,7 +98,7 @@ func TestBrowserSidecarLazyIsolationPersistenceAndPurge(t *testing.T) {
 		h          BoxHandle
 		volume     string
 		mountCount int
-	}{{shell, "aura-box-" + id, 5}, {browser, "aura-browser-" + id, 2}} {
+	}{{shell, "aura-box-" + id, 2 + len(identityCacheMounts(id))}, {browser, "aura-browser-" + id, 2}} {
 		ins, err := cli.ContainerInspect(ctx, box.h.ContainerID, client.ContainerInspectOptions{})
 		if err != nil {
 			t.Fatal(err)
