@@ -73,9 +73,13 @@ Chromium 1243 with SwiftShader.
 | PdfCraft 0.15.0 (official and patched) | `Appunti.pdf` | Organize pages › rotate › Save pages | `Appunti.pdf`, `pdfinfo` `Page rot: 90` (0 before) |
 | WordCraft 0.12.0 | `sample.docx` | text typed after the last paragraph | `sample.docx` (`saveAs: false`), `document.xml` ends with it |
 | DeckCraft 0.12.0 | `sample.pptx` | title edited | `sample.pptx`, 2 slides, title "Corpus di prova Aura modificato", 13,148 bytes as before |
+| PhotoCraft 0.17.0 | `photo.png` (256×256) | Image › Invert | `photo.png`, all 65,536 pixels the exact inverse; `dirty` false 2 ms after the save |
+| FilmCraft 0.14.0 | `clip.mp4`, imported, sequence made | — | `Untitled.fcproj` (FilmCraft 0.14.0 project) on Ctrl+S; `edited.mp4` on export, H.264 + AAC, 4.02 s |
 
 Every app announced its new version in `<app>:ready`. Each sent `<app>:dirty` true on the edit
-and false after the save. The one 404 in every run is the harness page's favicon.
+and false after the save. The one 404 in every run is the harness page's favicon. PhotoCraft
+also asks for `fonts/manifest.txt`, the optional served-font list its web build reads, which Aura
+does not ship (404).
 
 ## The cockpit, live
 
