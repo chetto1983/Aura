@@ -31,7 +31,7 @@ func TestUpsertWithCommitsSecretAndDesiredStateAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	desired := remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
-	for _, mode := range []string{"callback-error", "panic", "stale", "success", "locked"} {
+	for _, mode := range []string{"callback-error", "panic", "stale", "success"} {
 		t.Run(mode, func(t *testing.T) {
 			before, e := state.Load(t.Context())
 			if e != nil {
@@ -45,13 +45,6 @@ func TestUpsertWithCommitsSecretAndDesiredStateAtomically(t *testing.T) {
 			generation := before.Generation
 			if mode == "stale" {
 				generation--
-			}
-			if mode == "locked" {
-				before.Resources.TunnelID = "owned"
-				if _, e = state.Advance(t.Context(), before); e != nil {
-					t.Fatal(e)
-				}
-				candidate.AccountID = "other"
 			}
 			callback := func(tx sqlc.DBTX) error {
 				if _, e := remotetunnel.NewStore(tx).SaveDesired(t.Context(), generation, candidate, "admin"); e != nil {

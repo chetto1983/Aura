@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -21,7 +22,10 @@ func NewStore(db sqlc.DBTX) *Store { return &Store{q: sqlc.New(db)} }
 // Load resumes the singleton without deriving state from runtime files.
 func (s *Store) Load(ctx context.Context) (State, error) {
 	row, err := s.q.GetCloudflareRemoteAccess(ctx)
-	return stateFromRow(row), err
+	if err != nil {
+		return State{}, err
+	}
+	return stateFromRow(row)
 }
 
 // SaveDesired atomically advances generation and rejects stale operator writes.
@@ -85,10 +89,13 @@ func changedState(row sqlc.AuraCloudflareRemoteAccess, err error) (State, error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return State{}, ErrStaleGeneration
 	}
-	return stateFromRow(row), err
+	if err != nil {
+		return State{}, err
+	}
+	return stateFromRow(row)
 }
 
-func stateFromRow(r sqlc.AuraCloudflareRemoteAccess) State {
+func stateFromRow(r sqlc.AuraCloudflareRemoteAccess) (State, error) {
 	s := State{
 		Desired:    Desired{Enabled: r.Enabled, AccountID: r.AccountID, ZoneName: r.ZoneName, PublicLabel: r.PublicLabel},
 		Generation: r.Generation, Phase: Phase(r.Phase), TunnelName: r.TunnelName,
@@ -101,10 +108,13 @@ func stateFromRow(r sqlc.AuraCloudflareRemoteAccess) State {
 	if r.WarpAppID != "" || r.WarpPolicyID != "" || r.WarpPostureID != "" || r.WarpDnsID != "" {
 		s.Resources.LegacyWARPHostname = r.WarpLabel + "." + r.ZoneName
 	}
-	// A malformed column is a bug in a writer; an empty list is the safe reading.
-	_ = json.Unmarshal(r.Abandoned, &s.Abandoned)
+	if len(r.Abandoned) > 0 {
+		if err := json.Unmarshal(r.Abandoned, &s.Abandoned); err != nil {
+			return State{}, fmt.Errorf("remote access: read abandoned list: %w", err)
+		}
+	}
 	if r.LastReconciledAt.Valid {
 		s.LastReconciledAt = &r.LastReconciledAt.Time
 	}
-	return s
+	return s, nil
 }
