@@ -198,11 +198,11 @@ func TestRemoteAccessCredentialsSaveBeforeProjection(t *testing.T) {
 
 func TestRemoteAccessRetrySchedule(t *testing.T) {
 	for _, tc := range []struct {
-		phase remotetunnel.Phase
+		state remotetunnel.State
 		want  time.Duration
-	}{{remotetunnel.PhaseHealthy, 5 * time.Minute}, {remotetunnel.PhaseWaitingNameservers, 30 * time.Second}, {remotetunnel.PhaseConnecting, 10 * time.Second}, {remotetunnel.PhaseDegraded, time.Second}, {remotetunnel.PhaseDisabled, 0}, {remotetunnel.PhaseError, 0}} {
-		if got := remoteAccessDelay(tc.phase); got != tc.want {
-			t.Fatalf("phase=%s delay=%v", tc.phase, got)
+	}{{remotetunnel.State{Phase: remotetunnel.PhaseHealthy}, 5 * time.Minute}, {remotetunnel.State{Phase: remotetunnel.PhaseWaitingNameservers}, 30 * time.Second}, {remotetunnel.State{Phase: remotetunnel.PhaseConnecting}, 10 * time.Second}, {remotetunnel.State{Phase: remotetunnel.PhaseDegraded}, time.Second}, {remotetunnel.State{Phase: remotetunnel.PhaseDegraded, Reason: remotetunnel.ReasonTunnelDown}, 10 * time.Second}, {remotetunnel.State{Phase: remotetunnel.PhaseDisabled}, 0}, {remotetunnel.State{Phase: remotetunnel.PhaseError}, 0}} {
+		if got := remoteAccessDelay(tc.state); got != tc.want {
+			t.Fatalf("state=%+v delay=%v", tc.state, got)
 		}
 	}
 }

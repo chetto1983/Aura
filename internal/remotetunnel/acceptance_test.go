@@ -39,6 +39,7 @@ func TestOutageAfterAcceptanceDegradesAndHealsWithoutANewTest(t *testing.T) {
 		t.Fatalf("outage state=%+v", s)
 	}
 	h.cloud.tunnel.Status = "healthy"
+	h.r = h.newReconciler()
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}

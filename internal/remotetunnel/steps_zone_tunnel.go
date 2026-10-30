@@ -12,20 +12,23 @@ import (
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func validateDesired(d Desired) error {
-	if d.AccountID == "" || !dnsLabel.MatchString(d.PublicLabel) || len(d.ZoneName) > 253 {
+	if d.AccountID == "" {
 		return ErrConfiguration
+	}
+	if !dnsLabel.MatchString(d.PublicLabel) || len(d.ZoneName) > 253 {
+		return ErrDomainInvalid
 	}
 	parts := strings.Split(d.ZoneName, ".")
 	if len(parts) < 2 {
-		return ErrConfiguration
+		return ErrDomainInvalid
 	}
 	for _, part := range parts {
 		if !dnsLabel.MatchString(part) {
-			return ErrConfiguration
+			return ErrDomainInvalid
 		}
 	}
-	if len(d.PublicLabel)+1+len(d.ZoneName) > 253 {
-		return ErrConfiguration
+	if len(publicHostname(d)) > 253 {
+		return ErrDomainInvalid
 	}
 	return nil
 }

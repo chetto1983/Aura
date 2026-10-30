@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,7 +27,10 @@ func TestTransportSafety(t *testing.T) {
 	for _, tc := range []struct {
 		err   error
 		retry bool
-	}{{context.DeadlineExceeded, true}, {context.Canceled, false}, {errors.New("secret-token"), false}} {
+	}{{context.DeadlineExceeded, true}, {context.Canceled, false}, {errors.New("secret-token"), false},
+		{&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
+		{&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}, true},
+		{&net.DNSError{Err: "no such host", Name: "api.cloudflare.com"}, true}} {
 		c := New("", "secret-token", &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, tc.err })})
 		_, err := c.ListAccounts(t.Context())
 		if err == nil || Retryable(err) != tc.retry || strings.Contains(err.Error(), "secret-token") {

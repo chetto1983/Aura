@@ -19,7 +19,8 @@ func TestReasonOf(t *testing.T) {
 		{"domain elsewhere", ErrDomainElsewhere, ReasonDomainElsewhere},
 		{"no accounts", ErrNoAccounts, ReasonNoAccounts},
 		{"account not visible", ErrAccountNotVisible, ReasonAccountNotVisible},
-		{"configuration", ErrConfiguration, ReasonDomainInvalid},
+		{"domain invalid", ErrDomainInvalid, ReasonDomainInvalid},
+		{"configuration", ErrConfiguration, ReasonUnknown},
 		{"ownership", ErrOwnershipConflict, ReasonNotOwned},
 		{"lockout", ErrMemberLockout, ReasonNoAdministrator},
 		{"remote present", ErrRemotePresent, ReasonOldAddressPresent},
@@ -28,6 +29,7 @@ func TestReasonOf(t *testing.T) {
 		{"forbidden", &cloudflareapi.APIError{Status: 403}, ReasonTokenRejected},
 		{"retryable", &cloudflareapi.APIError{Retryable: true}, ReasonCloudflareUnreachable},
 		{"deadline", context.DeadlineExceeded, ReasonCloudflareUnreachable},
+		{"net timeout", timeoutErr{}, ReasonCloudflareUnreachable},
 		{"other", errors.New("x"), ReasonUnknown},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"sync"
 	"time"
 
@@ -37,7 +36,7 @@ type Reconciler struct {
 	retryGeneration int64
 }
 
-// Option binds credential authority and independently measured readiness.
+// Option binds the credential authority.
 type Option func(*Reconciler)
 
 // WithCredentials is required before enabled reconciliation can publish.
@@ -115,10 +114,12 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if err != nil || !active {
 		return err
 	}
-	s.Phase = PhaseProvisioning
-	s.Reason = ""
-	if err = r.persist(ctx, s); err != nil {
-		return err
+	if !settled(s) {
+		s.Phase = PhaseProvisioning
+		s.Reason = ""
+		if err = r.persist(ctx, s); err != nil {
+			return err
+		}
 	}
 	if err = r.tunnel(ctx, s); err != nil {
 		return err
@@ -174,12 +175,25 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	s.Reason = ""
 	if s.AcceptedHostname == publicHostname(s.Desired) {
 		// The phone test passed once for this address; an outage degrades it and heals by itself.
-		s.Phase, s.ObservedHealthy = PhaseHealthy, tunnel.Status == "healthy"
+		s.Phase, s.ObservedHealthy = PhaseHealthy, tunnelServes(tunnel)
 		if !s.ObservedHealthy {
 			s.Phase, s.Reason = PhaseDegraded, ReasonTunnelDown
 		}
 	}
 	return r.persist(ctx, s)
+}
+
+// settled is a row whose last observation stands until this pass replaces it: writing
+// provisioning over it would show the operator the connection step for the length of the walk.
+func settled(s *State) bool {
+	return s.Phase == PhaseHealthy || s.Phase == PhaseDegraded && s.Reason == ReasonTunnelDown
+}
+
+// tunnelServes: Cloudflare reports degraded for a connector that is running and serving traffic
+// with at least one failed connection (developers.cloudflare.com/cloudflare-one/networks/
+// connectors/cloudflare-tunnel/troubleshoot-tunnels/common-errors/, "Tunnel status").
+func tunnelServes(t cloudflareapi.Tunnel) bool {
+	return t.Status == "healthy" || t.Status == "degraded"
 }
 
 func (r *Reconciler) persist(ctx context.Context, s *State) error {
@@ -213,8 +227,7 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	s.Phase = PhaseError
 	s.ObservedHealthy = false
 	s.Reason = ReasonOf(err)
-	var timeout net.Error
-	if cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout() {
+	if transient(err) {
 		s.Phase = PhaseDegraded
 		if deleting {
 			s.Phase = PhaseDeleting

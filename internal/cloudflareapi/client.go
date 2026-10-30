@@ -65,6 +65,19 @@ func Retryable(err error) bool {
 	return errors.As(err, &e) && e.Retryable
 }
 
+// retryableTransport admits timeouts and the failures of a lost connection (refused, reset,
+// unreachable, name not resolved). net.Error alone would also admit *url.Error, which carries a
+// refused redirect, so the concrete types are named.
+func retryableTransport(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var timeout net.Error
+	var op *net.OpError
+	var dns *net.DNSError
+	return errors.As(err, &timeout) && timeout.Timeout() || errors.As(err, &op) || errors.As(err, &dns)
+}
+
 func failure(reason string) error { return &APIError{reason: reason} }
 
 type pageInfo struct {
@@ -103,8 +116,7 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		var timeout net.Error
-		return info, &APIError{reason: "transport failure", Retryable: errors.As(err, &timeout) && timeout.Timeout() && !errors.Is(err, context.Canceled)}
+		return info, &APIError{reason: "transport failure", Retryable: retryableTransport(err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))

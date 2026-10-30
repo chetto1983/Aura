@@ -292,7 +292,7 @@ func (c *remoteAccessController) run(ctx context.Context) {
 		state, err := c.store.Load(ctx)
 		delay := time.Second
 		if err == nil {
-			delay = remoteAccessDelay(state.Phase)
+			delay = remoteAccessDelay(state)
 		} else if ctx.Err() == nil {
 			slog.Warn("Remote access state unreadable; retrying", "error", err)
 		}
@@ -307,8 +307,12 @@ func (c *remoteAccessController) run(ctx context.Context) {
 	}
 }
 
-func remoteAccessDelay(phase remotetunnel.Phase) time.Duration {
-	switch phase {
+func remoteAccessDelay(state remotetunnel.State) time.Duration {
+	if state.Phase == remotetunnel.PhaseDegraded && state.Reason == remotetunnel.ReasonTunnelDown {
+		// Each pass walks every Cloudflare step; an outage must not repeat that every second.
+		return 10 * time.Second
+	}
+	switch state.Phase {
 	case remotetunnel.PhaseHealthy:
 		return 5 * time.Minute
 	case remotetunnel.PhaseWaitingNameservers:

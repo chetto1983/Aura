@@ -15,6 +15,7 @@ type memoryState struct {
 	failAdvance error
 	advances    int
 	loadError   error
+	log         []State
 }
 
 func (m *memoryState) Load(context.Context) (State, error) { return m.state, m.loadError }
@@ -40,6 +41,7 @@ func (m *memoryState) Advance(_ context.Context, s State) (State, error) {
 		return State{}, ErrStaleGeneration
 	}
 	m.state = s
+	m.log = append(m.log, s)
 	return s, nil
 }
 
@@ -119,6 +121,7 @@ type fakeCloud struct {
 	ambiguousPolicy                                     bool
 	allowUnpersisted                                    bool
 	keepDeleted                                         bool
+	emptyToken                                          bool
 }
 
 func (f *fakeCloud) call() error {
@@ -210,6 +213,9 @@ func (f *fakeCloud) DeleteTunnel(context.Context, string, string) error {
 	return nil
 }
 func (f *fakeCloud) TunnelToken(context.Context, string, string) (cf.Secret, error) {
+	if f.emptyToken {
+		return "", f.call()
+	}
 	return cf.Secret("tunnel-secret"), f.call()
 }
 func (f *fakeCloud) PutTunnelConfig(_ context.Context, _, _ string, c cf.TunnelConfig) error {
