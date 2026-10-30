@@ -1,11 +1,13 @@
 package mcptools
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -148,6 +150,27 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"memory_reembed":        MCPActionMutate,
 		"memory_forget":         MCPActionMutate,
 	},
+}
+
+// MemoryForgetDryRun reports whether a call is the memory recipe's memory_forget asked only to
+// count. The server answers a dry run before any write (internal/arcadedb/forget.go), so the
+// gateway classifies it as a read. The recipe fields are assigned only by this bridge, never by a
+// server or the model.
+//
+// The key is read exactly, the last occurrence winning, because that is what reaches the server:
+// the bridge re-encodes the arguments from a map (bridge_call.go), and go-sdk v1.8.0 decodes them
+// case-sensitively (its internal/json sets DontMatchCaseInsensitiveStructFields). Decoding into a
+// struct with encoding/json would also take "DRY_RUN", which the server ignores.
+func MemoryForgetDryRun(spec tools.Spec, rawArgs json.RawMessage) bool {
+	if spec.TrustedRecipeSource != mcp.SourceRecipeMemory || spec.TrustedRecipeTool != "memory_forget" {
+		return false
+	}
+	var args map[string]json.RawMessage
+	if json.Unmarshal(rawArgs, &args) != nil {
+		return false
+	}
+	var dryRun bool
+	return json.Unmarshal(args["dry_run"], &dryRun) == nil && dryRun
 }
 
 func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {

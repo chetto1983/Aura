@@ -78,11 +78,13 @@ annotations.
 - [x] Commit `docs(prd): measure that memory_forget runs ungated in a headless run`.
 
 ### Task 1 — A dry run is a read (D1's carve-out; acceptance A1, dry-run half)
-- [ ] Red: `classify` of a memory `memory_forget` with `dry_run: true` is `Safe`; without it, with
+- [x] Red: `classify` of a memory `memory_forget` with `dry_run: true` is `Safe`; without it, with
   `dry_run: false`, with `"true"` as a string, with broken JSON, and for another recipe's tool of
   the same name, it is not.
-- [ ] Green: `mcptools.MemoryForgetDryRun`; the branch in `classify`.
-- [ ] Commit `feat(gateway): a memory_forget dry run is a read`.
+- [x] Green: `mcptools.MemoryForgetDryRun`; the branch in `classify`. The key is read exactly
+  from a map: go-sdk v1.8.0 decodes case-sensitively, so a struct decode with encoding/json would
+  have taken `DRY_RUN` as a dry run the server never sees.
+- [x] Commit `feat(gateway): a memory_forget dry run is a read`.
 
 ### Task 2 — Erasing memory is Destructive (D1, D2; acceptance A1–A3)
 - [ ] Red: the bridge classifies `memory_forget` `(true, true)` with nil, lying and read-only
