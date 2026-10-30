@@ -91,11 +91,11 @@ skills, Python 3 for the measurement script.
 - [x] Commit `fix(scheduler): a scheduled agent reads the clock in the identity's zone`.
 
 ### Task 3 — The board shows what is due first
-- [ ] Red, unit: 40 cards, one overdue at position 40. The whole-board list shows it in a "due"
+- [x] Red, unit: 40 cards, one overdue at position 40. The whole-board list shows it in a "due"
   section, the "more not shown" count is exact, and no card is listed twice. A column listing
   has no due section.
-- [ ] Green: `renderBoard`.
-- [ ] Commit `feat(board): the snapshot lists what is due first`.
+- [x] Green: `renderBoard` and `renderDue`; the tool's description names the due section.
+- [x] Commit `feat(board): the snapshot lists what is due first`.
 
 ### Task 4 — The briefing-aura skill
 - [ ] The skill per spec §Shape, with the forbidden list and the 1,500-character cap.
