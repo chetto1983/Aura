@@ -13,22 +13,25 @@ import (
 	"github.com/chetto1983/aura/internal/remotetunnel"
 )
 
-// RemoteAccessStatus deliberately contains no secret-bearing settings or resource objects.
+// RemoteAccessStatus deliberately contains no secret-bearing settings or resource objects. Reason
+// is a code, never upstream text; the wizard picks its step from it.
 type RemoteAccessStatus struct {
-	Enabled            bool       `json:"enabled"`
-	Phase              string     `json:"phase"`
-	PublicHostname     string     `json:"public_hostname,omitempty"`
-	WARPHostname       string     `json:"warp_hostname,omitempty"`
-	APITokenSet        bool       `json:"api_token_set"`
-	TunnelTokenSet     bool       `json:"tunnel_token_set"`
-	Connector          string     `json:"connector"`
-	LastError          string     `json:"last_error,omitempty"`
-	Generation         int64      `json:"generation"`
-	AccountID          string     `json:"account_id,omitempty"`
-	ZoneName           string     `json:"zone_name,omitempty"`
-	Nameservers        []string   `json:"nameservers,omitempty"`
-	LastReconciledAt   *time.Time `json:"last_reconciled_at,omitempty"`
-	AcceptanceRequired bool       `json:"acceptance_required"`
+	Enabled        bool     `json:"enabled"`
+	Phase          string   `json:"phase"`
+	PublicHostname string   `json:"public_hostname,omitempty"`
+	APITokenSet    bool     `json:"api_token_set"`
+	AccountID      string   `json:"account_id,omitempty"`
+	AccountName    string   `json:"account_name,omitempty"`
+	ZoneName       string   `json:"zone_name,omitempty"`
+	PublicLabel    string   `json:"public_label,omitempty"`
+	Nameservers    []string `json:"nameservers"`
+	Reason         string   `json:"reason,omitempty"`
+	// Accepted is the phone test having passed for this address; Reachable is the tunnel serving now.
+	Accepted      bool                             `json:"accepted"`
+	Reachable     bool                             `json:"reachable"`
+	LastCheckedAt *time.Time                       `json:"last_checked_at,omitempty"`
+	Abandoned     []remotetunnel.AbandonedResource `json:"abandoned"`
+	Generation    int64                            `json:"generation"`
 }
 
 // RemoteAccessConfiguration is write-only; it must never enter logs or response bodies.
@@ -38,7 +41,6 @@ type RemoteAccessConfiguration struct {
 	AccountID   string `json:"account_id"`
 	ZoneName    string `json:"zone_name"`
 	PublicLabel string `json:"public_label"`
-	WARPLabel   string `json:"warp_label"`
 	APIToken    string `json:"api_token,omitempty"`
 }
 
@@ -116,8 +118,12 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, r *http.Request) {
 			writeRemoteAccessError(w, e)
 			return
 		}
-		if state.LastError != "" {
-			state.LastError = "Remote access needs attention; retry or check credentials."
+		// The cockpit iterates both lists; null would throw where [] renders nothing.
+		if state.Nameservers == nil {
+			state.Nameservers = []string{}
+		}
+		if state.Abandoned == nil {
+			state.Abandoned = []remotetunnel.AbandonedResource{}
 		}
 		writeJSON(w, state)
 		return
@@ -186,10 +192,6 @@ func (s *Server) configureRemoteAccess(w http.ResponseWriter, r *http.Request, a
 		writeJSONStatus(w, 400, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if strings.TrimSpace(body.ZoneName) == "" {
-		writeJSONStatus(w, 202, map[string]string{"status": "prerequisite_required", "prerequisite": "registered_domain", "message": "Register a domain before continuing. Quick Tunnels do not support Aura's production SSE traffic."})
-		return
-	}
 	if err := s.remoteAccess.Configure(r.Context(), body, actor); err != nil {
 		writeRemoteAccessError(w, err)
 		return
@@ -198,15 +200,27 @@ func (s *Server) configureRemoteAccess(w http.ResponseWriter, r *http.Request, a
 	writeJSONStatus(w, 202, map[string]string{"status": "accepted"})
 }
 
+// writeRemoteAccessError answers with a fixed sentence and the reason code; the error's own text,
+// which may carry upstream detail, never reaches the body.
 func writeRemoteAccessError(w http.ResponseWriter, err error) {
+	reason := remotetunnel.ReasonOf(err)
 	code, message := 502, "remote access operation failed; check configuration or retry"
 	switch {
 	case errors.Is(err, remotetunnel.ErrStaleGeneration):
 		code, message = 409, "configuration changed; refresh and retry"
-	case errors.Is(err, remotetunnel.ErrConfiguration):
-		code, message = 400, "invalid or incomplete remote access configuration"
 	case errors.Is(err, remotetunnel.ErrOwnershipConflict):
 		code, message = 409, "remote resource ownership conflict"
+	case errors.Is(err, remotetunnel.ErrConfiguration) || operatorInputReason(reason):
+		code, message = 400, "invalid or incomplete remote access configuration"
 	}
-	writeJSONStatus(w, code, map[string]string{"error": message})
+	writeJSONStatus(w, code, map[string]string{"error": message, "reason": string(reason)})
+}
+
+// operatorInputReason is a failure only the operator can fix by changing what they typed or chose.
+func operatorInputReason(r remotetunnel.Reason) bool {
+	switch r {
+	case remotetunnel.ReasonTokenRejected, remotetunnel.ReasonNoAccounts, remotetunnel.ReasonAccountNotVisible, remotetunnel.ReasonDomainInvalid:
+		return true
+	}
+	return false
 }

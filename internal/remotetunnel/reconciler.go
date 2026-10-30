@@ -205,7 +205,7 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		return ErrOwnershipConflict
 	}
 	s.Reason = ""
-	if s.AcceptedHostname == publicHostname(s.Desired) {
+	if s.Accepted() {
 		// The phone test passed once for this address; an outage degrades it and heals by itself.
 		s.Phase, s.ObservedHealthy = PhaseHealthy, tunnelServes(tunnel)
 		if !s.ObservedHealthy {

@@ -87,6 +87,9 @@ func (s *remoteMemoryStore) SaveDesired(_ context.Context, g int64, d remotetunn
 	if g != s.state.Generation {
 		return remotetunnel.State{}, remotetunnel.ErrStaleGeneration
 	}
+	if s.state.Desired.ZoneName != d.ZoneName || s.state.Desired.PublicLabel != d.PublicLabel {
+		s.state.AcceptedHostname = ""
+	}
 	s.state.Desired = d
 	s.state.Generation++
 	s.state.ObservedHealthy = false

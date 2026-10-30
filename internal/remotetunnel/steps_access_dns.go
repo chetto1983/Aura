@@ -18,7 +18,7 @@ type route struct {
 	app, policy, dns *string
 }
 
-func routes(s *State) []route { return []route{publicRoute(s, publicHostname(s.Desired))} }
+func routes(s *State) []route { return []route{publicRoute(s, PublicHostname(s.Desired))} }
 
 func publicRoute(s *State, hostname string) route {
 	return route{"public", hostname, &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}

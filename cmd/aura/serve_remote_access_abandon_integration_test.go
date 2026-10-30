@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/cloudflareapi"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/remotetunnel"
@@ -157,5 +158,36 @@ func TestSaveThatAbandonsNothingLeavesTheCredentialAlone(t *testing.T) {
 	after, _ := f.state.Load(f.ctx)
 	if f.secret(t, "CLOUDFLARE_TUNNEL_TOKEN") == "" || after.Resources != before.Resources || len(after.Abandoned) != 0 {
 		t.Fatalf("a plain save forgot something: %+v", after)
+	}
+}
+
+func TestFirstStepSaveAgainstTheRealStore(t *testing.T) {
+	f := newAbandonFixture(t)
+	before, err := f.state.Load(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
+	c := newRemoteAccessController(f.state, f.secrets, &remoteRecordingProjection{}, nil, f.commit)
+	c.client = func(token string) *cloudflareapi.Client { return cloudflareapi.New(cloud.URL, token, cloud.Client()) }
+
+	in := decodeConfiguration(t, firstStepBody)
+	in.Generation = before.Generation
+	if err = c.Configure(f.ctx, in, "admin"); err != nil {
+		t.Fatalf("the table refused a row with no domain: %v", err)
+	}
+	after, err := f.state.Load(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Desired != (remotetunnel.Desired{AccountID: "account"}) || after.Phase != remotetunnel.PhaseDisabled || after.Generation != before.Generation+1 {
+		t.Fatalf("desired=%+v phase=%s generation=%d", after.Desired, after.Phase, after.Generation)
+	}
+	if f.secret(t, "CLOUDFLARE_API_TOKEN") != "candidate" || cloud.zones.Load() != 0 {
+		t.Fatalf("token=%q zone calls=%d", f.secret(t, "CLOUDFLARE_API_TOKEN"), cloud.zones.Load())
+	}
+	status, err := c.Status(f.ctx)
+	if err != nil || !status.APITokenSet || status.AccountName != "Acme" || status.PublicHostname != "" || status.Accepted || status.Enabled {
+		t.Fatalf("err=%v status=%+v", err, status)
 	}
 }

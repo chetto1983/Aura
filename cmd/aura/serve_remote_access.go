@@ -39,10 +39,14 @@ type remoteAccessController struct {
 	done       chan struct{}
 	cancel     context.CancelFunc
 	events     []agui.RemoteAccessEvent
+	// accountNames is keyed by account ID and forgotten when the API token changes. It has its own
+	// lock: mu is held for a whole reconciliation pass, and a status read must not wait for one.
+	namesMu      sync.Mutex
+	accountNames map[string]string
 }
 
 func newRemoteAccessController(store remotetunnel.StateStore, secrets remoteSecrets, projection remotetunnel.Projection, members remotetunnel.Members, commit remoteDesiredCommit) *remoteAccessController {
-	return &remoteAccessController{store: store, secrets: secrets, projection: projection, members: members, commit: commit, client: func(token string) *cloudflareapi.Client { return cloudflareapi.New("", token, nil) }, wake: make(chan struct{}, 1), events: []agui.RemoteAccessEvent{}}
+	return &remoteAccessController{store: store, secrets: secrets, projection: projection, members: members, commit: commit, client: func(token string) *cloudflareapi.Client { return cloudflareapi.New("", token, nil) }, wake: make(chan struct{}, 1), events: []agui.RemoteAccessEvent{}, accountNames: map[string]string{}}
 }
 
 func (c *remoteAccessController) engine(ctx context.Context) (*remotetunnel.Reconciler, error) {
@@ -57,6 +61,7 @@ func (c *remoteAccessController) engine(ctx context.Context) (*remotetunnel.Reco
 	return c.reconciler, nil
 }
 
+// Verify checks a candidate token and lists the accounts it sees; nothing is stored.
 func (c *remoteAccessController) Verify(ctx context.Context, token string) ([]cloudflareapi.Account, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, remotetunnel.ErrConfiguration
@@ -65,14 +70,43 @@ func (c *remoteAccessController) Verify(ctx context.Context, token string) ([]cl
 	if _, err := client.VerifyToken(ctx); err != nil {
 		return nil, err
 	}
-	return client.ListAccounts(ctx)
+	accounts, err := client.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, remotetunnel.ErrNoAccounts
+	}
+	c.rememberAccounts(accounts, false)
+	return accounts, nil
 }
 
+// rememberAccounts keeps the names Cloudflare gave; replace drops the ones the previous token saw.
+func (c *remoteAccessController) rememberAccounts(accounts []cloudflareapi.Account, replace bool) {
+	c.namesMu.Lock()
+	defer c.namesMu.Unlock()
+	if replace {
+		c.accountNames = map[string]string{}
+	}
+	for _, a := range accounts {
+		c.accountNames[a.ID] = a.Name
+	}
+}
+
+func (c *remoteAccessController) accountName(id string) (string, bool) {
+	c.namesMu.Lock()
+	defer c.namesMu.Unlock()
+	name, ok := c.accountNames[id]
+	return name, ok
+}
+
+// Configure saves the token and the address. A disabled save with no domain is the wizard's first
+// step: it proves the token and the account, and asks Cloudflare nothing about zones.
 func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAccessConfiguration, actor string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	desired := remotetunnel.Desired{Enabled: in.Enabled, AccountID: strings.TrimSpace(in.AccountID), ZoneName: strings.ToLower(strings.TrimSpace(in.ZoneName)), PublicLabel: in.PublicLabel}
-	if desired.PublicLabel == "" {
+	if desired.PublicLabel == "" && desired.ZoneName != "" {
 		desired.PublicLabel = "aura"
 	}
 	if err := remotetunnel.ValidateDesired(desired); err != nil {
@@ -90,15 +124,13 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if err != nil {
 		return err
 	}
-	found := false
-	for _, account := range accounts {
-		found = found || account.ID == desired.AccountID
+	if !slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == desired.AccountID }) {
+		return remotetunnel.ErrAccountNotVisible
 	}
-	if !found {
-		return remotetunnel.ErrConfiguration
-	}
-	if _, err = c.client(token).ListZones(ctx, desired.AccountID, desired.ZoneName); err != nil {
-		return err
+	if desired.ZoneName != "" {
+		if _, err = c.client(token).ListZones(ctx, desired.AccountID, desired.ZoneName); err != nil {
+			return err
+		}
 	}
 	if c.commit == nil {
 		return remotetunnel.ErrConfiguration
@@ -110,6 +142,7 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if err = c.commit(ctx, in.Generation, desired, token, abandoned, actor); err != nil {
 		return err
 	}
+	c.rememberAccounts(accounts, true)
 	c.reconciler = nil
 	c.Wake()
 	return nil
@@ -139,27 +172,42 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 	if err != nil {
 		return agui.RemoteAccessStatus{}, err
 	}
-	tunnel, err := c.secrets.Secret(ctx, "CLOUDFLARE_TUNNEL_TOKEN")
-	if err != nil {
-		return agui.RemoteAccessStatus{}, err
+	d := state.Desired
+	out := agui.RemoteAccessStatus{
+		Enabled: d.Enabled, Phase: string(state.Phase), APITokenSet: api != "", AccountID: d.AccountID, AccountName: c.accountNameFor(ctx, api, d.AccountID),
+		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, Nameservers: []string{}, Reason: string(state.Reason), Accepted: state.Accepted(),
+		Reachable: state.ObservedHealthy, LastCheckedAt: state.LastReconciledAt, Abandoned: append([]remotetunnel.AbandonedResource{}, state.Abandoned...),
+		Generation: state.Generation,
 	}
-	out := agui.RemoteAccessStatus{Enabled: state.Desired.Enabled, Phase: string(state.Phase), Generation: state.Generation, APITokenSet: api != "", TunnelTokenSet: tunnel != "", AccountID: state.Desired.AccountID, ZoneName: state.Desired.ZoneName, LastError: string(state.Reason), LastReconciledAt: state.LastReconciledAt, Connector: "disconnected", AcceptanceRequired: state.Desired.Enabled && !state.ObservedHealthy}
-	if state.Desired.ZoneName != "" {
-		out.PublicHostname = state.Desired.PublicLabel + "." + state.Desired.ZoneName
-	}
-	out.WARPHostname = state.Resources.LegacyWARPHostname
-	if state.ObservedHealthy {
-		out.Connector = "healthy"
-	} else if state.Phase == remotetunnel.PhaseConnecting {
-		out.Connector = "awaiting_external_acceptance"
+	if d.ZoneName != "" {
+		out.PublicHostname = remotetunnel.PublicHostname(d)
 	}
 	if state.Phase == remotetunnel.PhaseWaitingNameservers && state.Resources.ZoneID != "" {
 		zone, e := c.client(api).GetZone(ctx, state.Resources.ZoneID)
-		if e == nil && zone.ID == state.Resources.ZoneID && zone.Account.ID == state.Desired.AccountID && zone.Name == state.Desired.ZoneName {
+		if e == nil && zone.ID == state.Resources.ZoneID && zone.Account.ID == state.Resources.AccountID && zone.Name == d.ZoneName {
 			out.Nameservers = zone.NameServers
 		}
 	}
 	return out, nil
+}
+
+// accountNameFor looks the name up once per token. A failed lookup leaves it empty: the name is a
+// courtesy, and a status that fails because of it would hide the step the operator is on.
+func (c *remoteAccessController) accountNameFor(ctx context.Context, token, id string) string {
+	if token == "" || id == "" {
+		return ""
+	}
+	if name, ok := c.accountName(id); ok {
+		return name
+	}
+	accounts, err := c.client(token).ListAccounts(ctx)
+	if err != nil {
+		slog.Warn("Remote access account name unavailable", "error", err)
+		return ""
+	}
+	c.rememberAccounts(accounts, false)
+	name, _ := c.accountName(id)
+	return name
 }
 
 func (c *remoteAccessController) Action(ctx context.Context, action, hostname string, generation int64, actor string) error {
@@ -201,7 +249,7 @@ func (c *remoteAccessController) Action(ctx context.Context, action, hostname st
 		if e != nil {
 			return e
 		}
-		if state.Desired.ZoneName == "" || hostname != state.Desired.PublicLabel+"."+state.Desired.ZoneName {
+		if state.Desired.ZoneName == "" || hostname != remotetunnel.PublicHostname(state.Desired) {
 			return remotetunnel.ErrConfiguration
 		}
 		err = engine.Delete(ctx, actor)

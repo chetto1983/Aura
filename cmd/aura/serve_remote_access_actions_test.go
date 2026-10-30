@@ -117,7 +117,7 @@ func TestRemoteAccessActionsAndStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if status.Generation != 4 || !status.APITokenSet || !status.TunnelTokenSet || status.PublicHostname != "aura.example.com" {
+			if status.Generation != 4 || !status.APITokenSet || status.PublicHostname != "aura.example.com" {
 				t.Fatalf("status=%+v", status)
 			}
 			if action == "disable" && (status.Enabled || len(projection.states) != 1 || projection.states[0].Enabled) {

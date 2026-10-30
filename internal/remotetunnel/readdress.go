@@ -33,7 +33,7 @@ func HasResources(r Resources) bool {
 // hostname than the one now desired. A row that holds nothing has nothing to move.
 func addressChanged(s State) bool {
 	return HasResources(s.Resources) && (s.Resources.AccountID != s.Desired.AccountID ||
-		s.OwnedZoneName != s.Desired.ZoneName || s.OwnedHostname != publicHostname(s.Desired))
+		s.OwnedZoneName != s.Desired.ZoneName || s.OwnedHostname != PublicHostname(s.Desired))
 }
 
 // recordOwned writes the address the resources are about to be created for, so that the first
@@ -41,7 +41,7 @@ func addressChanged(s State) bool {
 func recordOwned(s *State) {
 	s.Resources.AccountID = s.Desired.AccountID
 	s.OwnedZoneName = s.Desired.ZoneName
-	s.OwnedHostname = publicHostname(s.Desired)
+	s.OwnedHostname = PublicHostname(s.Desired)
 }
 
 // teardown proves it can finish before it stops the connector: the token must still see the

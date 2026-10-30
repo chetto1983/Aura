@@ -70,15 +70,29 @@ func (f *fakeRemoteAccess) Events(context.Context) ([]RemoteAccessEvent, error) 
 	return []RemoteAccessEvent{}, f.err
 }
 
-func TestRemoteAccessStatusNeverReturnsSecrets(t *testing.T) {
-	f := &fakeRemoteAccess{status: RemoteAccessStatus{Phase: "degraded", APITokenSet: true, TunnelTokenSet: true, LastError: "api-secret tunnel-secret"}}
+func TestRemoteAccessStatusBodyShape(t *testing.T) {
+	f := &fakeRemoteAccess{status: RemoteAccessStatus{Phase: "degraded", APITokenSet: true, Reason: "tunnel_down", Accepted: true}}
 	s := &Server{idAdmin: remoteAdminCaps()}
 	s.SetRemoteAccess(f)
 	r := withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1")
 	rec := httptest.NewRecorder()
 	s.Mux().ServeHTTP(rec, r)
-	if rec.Code != 200 || strings.Contains(rec.Body.String(), "secret") {
+	if rec.Code != 200 {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"warp_hostname", "last_error", "connector", "tunnel_token_set", "acceptance_required", "last_reconciled_at"} {
+		if _, ok := body[key]; ok {
+			t.Errorf("removed field %q is still served", key)
+		}
+	}
+	for key, want := range map[string]string{"abandoned": "[]", "nameservers": "[]", "reason": `"tunnel_down"`, "accepted": "true", "reachable": "false", "api_token_set": "true"} {
+		if string(body[key]) != want {
+			t.Errorf("%s=%s want %s", key, body[key], want)
+		}
 	}
 }
 
@@ -92,7 +106,8 @@ func TestRemoteAccessErrorsAndStrictBodies(t *testing.T) {
 		{"stale", `{"generation":2,"zone_name":"example.com"}`, remotetunnel.ErrStaleGeneration, 409, 1},
 		{"redacted", `{"generation":2,"zone_name":"example.com"}`, errors.New("api-secret"), 502, 1},
 		{"unknown", `{"zone_name":"example.com","unknown":true}`, nil, 400, 0},
-		{"no domain", `{"generation":2}`, nil, 202, 0},
+		{"first step", `{"generation":2,"account_id":"account","enabled":false,"zone_name":"","public_label":""}`, nil, 202, 1},
+		{"retired warp label", `{"zone_name":"example.com","warp_label":"aura-warp"}`, nil, 400, 0},
 		{"trailing", `{} {}`, nil, 400, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,9 +119,6 @@ func TestRemoteAccessErrorsAndStrictBodies(t *testing.T) {
 			s.Mux().ServeHTTP(rec, r)
 			if rec.Code != tc.code || f.calls != tc.calls || strings.Contains(rec.Body.String(), "api-secret") {
 				t.Fatalf("status=%d calls=%d body=%s", rec.Code, f.calls, rec.Body.String())
-			}
-			if tc.name == "locked" && !strings.Contains(rec.Body.String(), "delete") {
-				t.Fatal("missing delete-first guidance")
 			}
 		})
 	}
@@ -239,5 +251,51 @@ func TestDismissAbandonedRoute(t *testing.T) {
 		if rec.Code != tc.code || !reflect.DeepEqual(f.actions, tc.actions) {
 			t.Fatalf("actor=%s status=%d actions=%v body=%s", tc.actor, rec.Code, f.actions, rec.Body.String())
 		}
+	}
+}
+
+func TestErrorBodiesCarryTheirReasonAndAFixedSentence(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		code   int
+		reason string
+	}{
+		{remotetunnel.ErrStaleGeneration, 409, "unknown"},
+		{remotetunnel.ErrOwnershipConflict, 409, "not_owned"},
+		{&cloudflareapi.APIError{Status: 403}, 400, "token_rejected"},
+		{remotetunnel.ErrNoAccounts, 400, "no_accounts"},
+		{remotetunnel.ErrAccountNotVisible, 400, "account_not_visible"},
+		{remotetunnel.ErrDomainInvalid, 400, "domain_invalid"},
+		{remotetunnel.ErrConfiguration, 400, "unknown"},
+		{remotetunnel.ErrDomainElsewhere, 502, "domain_elsewhere"},
+		{remotetunnel.ErrHostnameTaken, 502, "hostname_taken"},
+		{remotetunnel.ErrMemberLockout, 502, "no_administrator"},
+		{errors.New("secret-abc"), 502, "unknown"},
+	} {
+		t.Run(tc.reason+"/"+tc.err.Error(), func(t *testing.T) {
+			f := &fakeRemoteAccess{err: tc.err}
+			s := &Server{idAdmin: remoteAdminCaps()}
+			s.SetRemoteAccess(f)
+			rec := httptest.NewRecorder()
+			s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("POST", "/api/settings/remote-access/token/verify", strings.NewReader(`{"api_token":"candidate"}`)), "admin-1"))
+			var body map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != tc.code || body["reason"] != tc.reason || body["error"] == "" || len(body) != 2 || strings.Contains(rec.Body.String(), "secret-abc") {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestStatusNeverReturnsUpstreamText(t *testing.T) {
+	f := &fakeRemoteAccess{err: errors.New("upstream said secret-abc")}
+	s := &Server{idAdmin: remoteAdminCaps()}
+	s.SetRemoteAccess(f)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1"))
+	if rec.Code != 502 || strings.Contains(rec.Body.String(), "secret-abc") || !strings.Contains(rec.Body.String(), `"reason":"unknown"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

@@ -132,3 +132,75 @@ func TestExternalAcceptanceRejectsStaleDisabledUnownedAndUnhealthy(t *testing.T)
 		})
 	}
 }
+
+func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T) {
+	h := newHarness(t)
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	h.cloud.tunnel.Status = "degraded"
+	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
+		t.Fatalf("a tunnel serving over a failed connection was refused: %v", err)
+	}
+	if s := h.store.state; !s.Accepted() || s.Phase != PhaseHealthy || !s.ObservedHealthy {
+		t.Fatalf("state=%+v", s)
+	}
+}
+
+func TestAcceptExternalNeverDemotesAnAcceptedRow(t *testing.T) {
+	h := newHarness(t)
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
+		t.Fatal(err)
+	}
+	h.cloud.tunnel.Status = "down"
+	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); !errors.Is(err, ErrConfiguration) {
+		t.Fatalf("err=%v", err)
+	}
+	if s := h.store.state; s.Phase != PhaseHealthy || !s.ObservedHealthy || !s.Accepted() {
+		t.Fatalf("an outage asked an accepted address for the phone test again: %+v", s)
+	}
+}
+
+func TestAcceptedNeedsTheCurrentAddress(t *testing.T) {
+	desired := Desired{AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
+	for name, tc := range map[string]struct {
+		accepted string
+		desired  Desired
+		want     bool
+	}{
+		"same address":       {"aura.example.com", desired, true},
+		"another label":      {"aura.example.com", Desired{ZoneName: "example.com", PublicLabel: "home"}, false},
+		"another zone":       {"aura.example.com", Desired{ZoneName: "example.it", PublicLabel: "aura"}, false},
+		"never accepted":     {"", desired, false},
+		"no address at all":  {"", Desired{}, false},
+		"stale on empty row": {"aura.example.com", Desired{}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := (State{Desired: tc.desired, AcceptedHostname: tc.accepted}).Accepted(); got != tc.want {
+				t.Fatalf("Accepted=%v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateDesiredFirstStep(t *testing.T) {
+	for name, tc := range map[string]struct {
+		d    Desired
+		want error
+	}{
+		"account only":                   {Desired{AccountID: "account"}, nil},
+		"first step without an account":  {Desired{}, ErrConfiguration},
+		"enabled without a domain":       {Desired{Enabled: true, AccountID: "account", PublicLabel: "aura"}, ErrDomainInvalid},
+		"disabled with a malformed zone": {Desired{AccountID: "account", ZoneName: "evil/path", PublicLabel: "aura"}, ErrDomainInvalid},
+		"complete":                       {Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateDesired(tc.d); !errors.Is(err, tc.want) {
+				t.Fatalf("err=%v want %v", err, tc.want)
+			}
+		})
+	}
+}

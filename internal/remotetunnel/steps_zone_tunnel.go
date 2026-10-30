@@ -27,7 +27,7 @@ func validateDesired(d Desired) error {
 			return ErrDomainInvalid
 		}
 	}
-	if len(publicHostname(d)) > 253 {
+	if len(PublicHostname(d)) > 253 {
 		return ErrDomainInvalid
 	}
 	return nil
