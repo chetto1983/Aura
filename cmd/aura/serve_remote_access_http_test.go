@@ -225,3 +225,40 @@ func TestBlankBodyOnAConfiguredInstallIsRefused(t *testing.T) {
 		t.Fatalf("a refused save touched something: state=%+v token=%q projection=%v accounts=%d", store.state, secrets.values["CLOUDFLARE_API_TOKEN"], projection.states, cloud.accounts.Load())
 	}
 }
+
+// deletedInstall is the row Delete leaves: no resources and no acceptance, with the address the
+// operator typed still in place.
+func deletedInstall() remotetunnel.State {
+	return remotetunnel.State{Generation: 4, Phase: remotetunnel.PhaseDisabled, Desired: remotetunnel.Desired{AccountID: "account-a", ZoneName: "a.it", PublicLabel: "aura"}}
+}
+
+func TestStaleBlankSaveAnswersTheRefreshMessage(t *testing.T) {
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	store := &remoteMemoryStore{state: acceptedInstall()}
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	code, body := serveRemoteAccess(t, cloud.controller(store, secrets, memoryCommit(store, secrets))).call(t, "PUT", "", `{"api_token":"token-b","account_id":"account-a","enabled":false,"zone_name":"","public_label":"","generation":2}`)
+	if code != 409 || !strings.Contains(body, `"reason":""`) {
+		t.Fatalf("status=%d body=%s", code, body)
+	}
+}
+
+func TestSaveAfterDeleteCarryingTheAddressIsAccepted(t *testing.T) {
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	store := &remoteMemoryStore{state: deletedInstall()}
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	code, body := serveRemoteAccess(t, cloud.controller(store, secrets, memoryCommit(store, secrets))).call(t, "PUT", "", `{"api_token":"token-b","account_id":"account-a","enabled":true,"zone_name":"a.it","public_label":"aura","generation":4}`)
+	if code != 202 || !store.state.Desired.Enabled || secrets.values["CLOUDFLARE_API_TOKEN"] != "token-b" {
+		t.Fatalf("status=%d body=%s state=%+v", code, body, store.state.Desired)
+	}
+}
+
+func TestBlankSaveAfterDeleteIsRefused(t *testing.T) {
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	before := deletedInstall()
+	store := &remoteMemoryStore{state: before}
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	code, body := serveRemoteAccess(t, cloud.controller(store, secrets, memoryCommit(store, secrets))).call(t, "PUT", "", `{"api_token":"token-b","account_id":"account-a","enabled":false,"zone_name":"","public_label":"","generation":4}`)
+	if code != 400 || !strings.Contains(body, `"reason":"domain_invalid"`) || !reflect.DeepEqual(store.state, before) || secrets.values["CLOUDFLARE_API_TOKEN"] != "token-a" {
+		t.Fatalf("status=%d body=%s state=%+v", code, body, store.state)
+	}
+}

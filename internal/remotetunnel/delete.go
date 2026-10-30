@@ -132,6 +132,8 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 	s.Resources.ZoneID = ""
 	s.Resources.OTPProviderID = ""
 	s.OwnedZoneName = ""
+	// Nothing is left to have passed the phone test: a rebuilt address is a new tunnel and a new Access application.
+	s.AcceptedHostname = ""
 	s.Phase = PhaseDisabled
 	s.Reason = ""
 	return r.persist(ctx, s)

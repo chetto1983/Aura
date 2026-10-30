@@ -267,3 +267,30 @@ func TestDeleteStillDetachesZoneAndOTP(t *testing.T) {
 		t.Fatalf("phase=%q resources=%+v owned=%q/%q", s.Phase, s.Resources, s.OwnedZoneName, s.OwnedHostname)
 	}
 }
+
+func TestDeleteClearsTheAcceptance(t *testing.T) {
+	h := liveHarness(t)
+	if !h.store.state.Accepted() {
+		t.Fatal("the fixture is not an accepted install")
+	}
+	if err := h.r.Delete(t.Context(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	s := h.store.state
+	if s.AcceptedHostname != "" || s.Accepted() {
+		t.Fatalf("a deleted install with no tunnel still reads accepted: %q", s.AcceptedHostname)
+	}
+	if s.Desired.ZoneName != "example.com" || s.Desired.PublicLabel != "aura" {
+		t.Fatalf("Delete keeps the address the operator typed: %+v", s.Desired)
+	}
+}
+
+func TestDisableKeepsTheAcceptance(t *testing.T) {
+	h := liveHarness(t)
+	if err := h.r.Disable(t.Context(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.store.state; !s.Accepted() || s.Phase != PhaseDisabled {
+		t.Fatalf("phase=%q accepted=%q: a disabled install still has its tunnel", s.Phase, s.AcceptedHostname)
+	}
+}

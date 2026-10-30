@@ -120,7 +120,11 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 		return err
 	}
 	if desired.ZoneName == "" && state.Desired.ZoneName != "" {
-		// A save with no domain is the first setup; turning access off is disable's job, removing the address delete's.
+		// A save with no domain is the first setup. A row that has a domain keeps it: Disable turns access
+		// off, and Delete leaves the address in place for the operator to rebuild.
+		if in.Generation != state.Generation {
+			return remotetunnel.ErrStaleGeneration
+		}
 		return remotetunnel.ErrDomainInvalid
 	}
 	token := in.APIToken
