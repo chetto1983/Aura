@@ -28,11 +28,9 @@ func (t *TaskTool) scheduleZone(ctx context.Context) string {
 	return loadableZone(t.DeploymentZone)
 }
 
+// loadableZone is name when it loads, else "". An empty name loads as UTC and stays empty.
 func loadableZone(name string) string {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return ""
-	}
 	if _, err := time.LoadLocation(name); err != nil {
 		return ""
 	}

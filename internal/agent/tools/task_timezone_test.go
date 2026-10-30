@@ -28,6 +28,7 @@ func TestACronWithoutTZRunsInTheIdentitysZone(t *testing.T) {
 		"the identity's zone":                          {fakeTimezones{"identity-ny": "America/New_York"}, "Asia/Tokyo", cronWithoutTZ, "America/New_York"},
 		"the deployment's, with no profile zone":       {fakeTimezones{}, "Asia/Tokyo", cronWithoutTZ, "Asia/Tokyo"},
 		"the deployment's, past a broken profile zone": {fakeTimezones{"identity-ny": "Not/AZone"}, "Asia/Tokyo", cronWithoutTZ, "Asia/Tokyo"},
+		"the identity's zone, trimmed":                 {fakeTimezones{"identity-ny": " America/New_York "}, "Asia/Tokyo", cronWithoutTZ, "America/New_York"},
 		"the last resort, with neither":                {nil, "", cronWithoutTZ, "Europe/Rome"},
 		"an explicit tz always wins": {fakeTimezones{"identity-ny": "America/New_York"}, "Asia/Tokyo",
 			`{"action":"schedule","schedule_kind":"cron","cron":"30 7 * * 1-5","tz":"Europe/Lisbon","kind":"agent_job","payload":{"goal":"x"},"notify":"stdout"}`, "Europe/Lisbon"},
