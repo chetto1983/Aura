@@ -48,11 +48,12 @@ export function ManageActions({ status, onDisable, onDelete }: ManageActionsProp
             {t('remoteAccess.phone.disable')}
           </Button>
         ) : null}
-        {hostname === '' ? null : (
+        {status.has_resources && hostname !== '' ? (
           <Button
             ref={deleteTrigger}
             type="button"
-            variant="destructive"
+            variant="outline"
+            className="border-danger text-danger hover:bg-danger/10"
             onClick={() => {
               setDeleteOpen(true);
             }}
@@ -60,7 +61,7 @@ export function ManageActions({ status, onDisable, onDelete }: ManageActionsProp
             <Trash2 aria-hidden="true" />
             {t('remoteAccess.phone.delete')}
           </Button>
-        )}
+        ) : null}
       </div>
       {disable.failure === null ? null : <FailureLine failure={disable.failure} />}
       <ConfirmDialog

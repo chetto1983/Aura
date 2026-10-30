@@ -100,13 +100,39 @@ func TestStatusCarriesReasonAcceptanceAndAccountName(t *testing.T) {
 	want := agui.RemoteAccessStatus{
 		Enabled: true, Phase: "degraded", PublicHostname: "aura.a.it", APITokenSet: true, AccountID: "account-a", AccountName: "Acme",
 		ZoneName: "a.it", PublicLabel: "aura", Reason: "tunnel_down", Accepted: true, Reachable: false,
-		LastCheckedAt: &checked, Abandoned: state.Abandoned, Generation: 3,
+		LastCheckedAt: &checked, Abandoned: state.Abandoned, Generation: 3, HasResources: true,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("status=%+v\nwant   %+v", got, want)
 	}
 	if _, err = c.Status(t.Context()); err != nil || cloud.accounts.Load() != 1 {
 		t.Fatalf("err=%v: the account name is looked up %d times, want once per token", err, cloud.accounts.Load())
+	}
+}
+
+func TestHasResourcesFollowsCloudflareNotAcceptance(t *testing.T) {
+	never := provisionedInAccountA()
+	never.Phase, never.Desired.Enabled = remotetunnel.PhaseDisabled, false
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	got, err := cloud.controller(&remoteMemoryStore{state: never}, secrets, nil).Status(t.Context())
+	if err != nil || !got.HasResources || got.Accepted {
+		t.Fatalf("a disabled row never accepted: err=%v status=%+v", err, got)
+	}
+
+	// Only the zone: Delete detaches it rather than deleting it, so this Cloudflare needs no delete route.
+	zoneOnly := remotetunnel.State{Generation: 3, Phase: remotetunnel.PhaseDegraded, TunnelName: oldOwner, OwnedHostname: "aura.a.it", OwnedZoneName: "a.it",
+		Desired:   remotetunnel.Desired{Enabled: true, AccountID: "account-a", ZoneName: "a.it", PublicLabel: "aura"},
+		Resources: remotetunnel.Resources{AccountID: "account-a", ZoneID: "zone"}}
+	c := cloud.controller(&remoteMemoryStore{state: zoneOnly}, secrets, nil)
+	if got, err = c.Status(t.Context()); err != nil || !got.HasResources {
+		t.Fatalf("before Delete: err=%v status=%+v", err, got)
+	}
+	if err = c.Action(t.Context(), "delete", "aura.a.it", 3, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = c.Status(t.Context()); err != nil || got.HasResources || got.Phase != "disabled" || got.PublicHostname != "aura.a.it" {
+		t.Fatalf("after Delete: err=%v status=%+v", err, got)
 	}
 }
 

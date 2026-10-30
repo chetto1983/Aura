@@ -12,6 +12,7 @@ import {
   currentStep,
   failureOf,
   hasExit,
+  leftDraft,
   reasonAction,
   reasonOn,
   reasonStep,
@@ -30,6 +31,7 @@ const fresh: RemoteAccessStatusDTO = {
   reason: '',
   accepted: false,
   reachable: false,
+  has_resources: false,
   abandoned: [],
 };
 
@@ -46,6 +48,7 @@ const addressed: RemoteAccessStatusDTO = {
   zone_name: 'example.com',
   public_label: 'aura',
   public_hostname: 'aura.example.com',
+  has_resources: true,
 };
 
 function failed(
@@ -99,6 +102,15 @@ describe('stepStates', () => {
   it('healthy: every step done', () => {
     const healthy = { ...addressed, phase: 'healthy', accepted: true, reachable: true } as const;
     expect(states(healthy)).toEqual(['done', 'done', 'done', 'done']);
+  });
+
+  it('a healthy row the phone test never accepted is not green yet', () => {
+    expect(states({ ...addressed, phase: 'healthy', reachable: true })).toEqual([
+      'done',
+      'done',
+      'done',
+      'active',
+    ]);
   });
 
   it('first setup: Cloudflare active, the rest upcoming', () => {
@@ -205,42 +217,71 @@ describe('reasonOn', () => {
   it('has nothing to say about a row that is working', () => {
     expect(reasonOn({ ...addressed, phase: 'provisioning' }, 'connection')).toBe('');
   });
+
+  // A tab left open across an update can hold a code this build has never heard of.
+  it('calls a code this build does not know unknown', () => {
+    const status = failed('error', 'brand_new_code' as RemoteAccessReason);
+    expect(reasonOn(status, 'connection')).toBe('unknown');
+    expect(currentStep(status)).toBe('connection');
+    expect(stepStates(status).connection).toBe('failed');
+  });
 });
 
 describe('reasonAction', () => {
-  // The controller's ruling: a code that lands on a step with nothing to press is a defect.
-  it.each(REMOTE_ACCESS_REASONS)('%s gives every step something to do', (reason) => {
-    for (const step of STEP_KEYS) {
-      const action = reasonAction(reason, step);
-      const allowed = action === 'fix' || action === 'retry' || STEP_KEYS.includes(action);
-      expect(allowed).toBe(true);
-      if (reasonStep(reason) === step) expect(action).not.toBe(step);
-    }
-  });
-
-  it.each<[Reason, StepKey]>([
+  const FIXED_ON: readonly (readonly [Reason, StepKey])[] = [
     ['token_rejected', 'cloudflare'],
     ['no_accounts', 'cloudflare'],
     ['account_not_visible', 'cloudflare'],
     ['domain_invalid', 'domain'],
     ['domain_elsewhere', 'domain'],
     ['hostname_taken', 'domain'],
-  ])('%s is fixed in place on %s, and opens it from anywhere else', (reason, target) => {
-    expect(reasonAction(reason, target)).toBe('fix');
-    for (const step of STEP_KEYS.filter((key) => key !== target)) {
-      expect(reasonAction(reason, step)).toBe(target);
-    }
-  });
-
-  it.each<Reason>([
+  ];
+  const RETRIED: readonly Reason[] = [
     'not_owned',
     'no_administrator',
     'cloudflare_unreachable',
     'old_address_present',
     'unknown',
     'tunnel_down',
-  ])('%s is retried wherever it shows', (reason) => {
+  ];
+
+  // The ruling: a code that lands on a step with nothing to press is a defect, so a new code has to
+  // land in one of the two tables below before this passes.
+  it('every reason is in exactly one table', () => {
+    const covered = [...FIXED_ON.map(([reason]) => reason), ...RETRIED];
+    expect(covered.toSorted()).toEqual([...REMOTE_ACCESS_REASONS].toSorted());
+  });
+
+  it.each(FIXED_ON)(
+    '%s is fixed in place on %s, and opens it from anywhere else',
+    (reason, target) => {
+      expect(reasonAction(reason, target)).toBe('fix');
+      for (const step of STEP_KEYS.filter((key) => key !== target)) {
+        expect(reasonAction(reason, step)).toBe(target);
+      }
+    },
+  );
+
+  it.each(RETRIED)('%s is retried wherever it shows', (reason) => {
     for (const step of STEP_KEYS) expect(reasonAction(reason, step)).toBe('retry');
+  });
+});
+
+describe('leftDraft', () => {
+  it('forgets a field the operator emptied, so a saved address can come back', () => {
+    expect(leftDraft({ zone: '', label: '' })).toEqual({ zone: null, label: null });
+  });
+
+  it('keeps what was typed', () => {
+    expect(leftDraft({ zone: 'nuovo.it', label: 'casa' })).toEqual({
+      zone: 'nuovo.it',
+      label: 'casa',
+    });
+  });
+
+  it('treats each field on its own', () => {
+    expect(leftDraft({ zone: 'nuovo.it', label: '' })).toEqual({ zone: 'nuovo.it', label: null });
+    expect(leftDraft({ zone: null, label: 'casa' })).toEqual({ zone: null, label: 'casa' });
   });
 });
 
@@ -285,13 +326,16 @@ describe('hasExit', () => {
       { ...addressed, enabled: false, accepted: true },
       true,
     ],
-    ['the row Elimina leaves', { ...addressed, enabled: false }, false],
+    ['a row switched off before it was ever accepted', { ...addressed, enabled: false }, true],
+    ['the row Elimina leaves', { ...addressed, enabled: false, has_resources: false }, false],
     [
       'a healthy install, which has them on the last step',
       { ...addressed, phase: 'healthy' },
       false,
     ],
+    ['a row that is already deleting', { ...addressed, enabled: false, phase: 'deleting' }, false],
     ['a failed row with no address', { ...saved, phase: 'error', reason: 'unknown' }, false],
+    ['a switched-off row with no address', { ...saved, has_resources: true }, false],
   ])('%s', (_name, status, expected) => {
     expect(hasExit(status)).toBe(expected);
   });

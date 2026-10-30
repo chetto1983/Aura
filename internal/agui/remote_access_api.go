@@ -27,8 +27,10 @@ type RemoteAccessStatus struct {
 	Nameservers    []string `json:"nameservers"`
 	Reason         string   `json:"reason"`
 	// Accepted is the phone test having passed for this address; Reachable is the tunnel serving now.
-	Accepted      bool                             `json:"accepted"`
-	Reachable     bool                             `json:"reachable"`
+	Accepted  bool `json:"accepted"`
+	Reachable bool `json:"reachable"`
+	// HasResources is what makes a delete mean something; a row never accepted can hold a tunnel.
+	HasResources  bool                             `json:"has_resources"`
 	LastCheckedAt *time.Time                       `json:"last_checked_at,omitempty"`
 	Abandoned     []remotetunnel.AbandonedResource `json:"abandoned"`
 	Generation    int64                            `json:"generation"`
@@ -213,6 +215,10 @@ func writeRemoteAccessError(w http.ResponseWriter, err error) {
 		code, message = 409, "remote resource ownership conflict"
 	case errors.Is(err, remotetunnel.ErrConfiguration) || operatorInputReason(reason):
 		code, message = 400, "invalid or incomplete remote access configuration"
+	}
+	// The wizard's unknown sentence sends the operator to these logs, and the body never carries the cause.
+	if code != 409 && (reason == "" || reason == remotetunnel.ReasonUnknown) {
+		slog.Warn("Remote access request failed", "code", code, "error", err)
 	}
 	writeJSONStatus(w, code, map[string]string{"error": message, "reason": string(reason)})
 }

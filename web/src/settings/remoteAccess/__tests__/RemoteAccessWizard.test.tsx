@@ -1,119 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import i18n from '../../../i18n/i18n';
-import { RemoteAccessPanel } from '../RemoteAccessPanel';
 import {
   REMOTE_ACCESS_REASONS,
   type RemoteAccessReason,
   type RemoteAccessStatusDTO,
 } from '../remoteAccessApi';
 import { reasonAction, reasonStep } from '../remoteAccessSteps';
-
-const firstSetup: RemoteAccessStatusDTO = {
-  enabled: false,
-  phase: 'disabled',
-  api_token_set: false,
-  generation: 1,
-  nameservers: [],
-  reason: '',
-  accepted: false,
-  reachable: false,
-  abandoned: [],
-};
-
-const healthy: RemoteAccessStatusDTO = {
-  ...firstSetup,
-  enabled: true,
-  phase: 'healthy',
-  api_token_set: true,
-  account_id: 'one',
-  account_name: 'Acme',
-  zone_name: 'example.com',
-  public_label: 'casa',
-  public_hostname: 'casa.example.com',
-  accepted: true,
-  reachable: true,
-  generation: 5,
-};
-
-interface Sent {
-  readonly url: string;
-  readonly method: string;
-  readonly body: unknown;
-}
-
-// A status the test can move on, and every write the wizard sends: the shape of the real API.
-function stubApi(initial: RemoteAccessStatusDTO) {
-  const api = {
-    status: initial,
-    sent: [] as Sent[],
-    refuse: undefined as { status: number; body: object } | undefined,
-    onWrite: (_write: Sent): void => undefined,
-  };
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      const method = init?.method ?? 'GET';
-      if (method === 'GET') return Promise.resolve(new Response(JSON.stringify(api.status)));
-      const write = {
-        url,
-        method,
-        body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
-      };
-      api.sent.push(write);
-      if (api.refuse !== undefined) {
-        const { status, body } = api.refuse;
-        api.refuse = undefined;
-        return Promise.resolve(new Response(JSON.stringify(body), { status }));
-      }
-      api.onWrite(write);
-      if (url.endsWith('/token/verify')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ accounts: [{ id: 'one', name: 'Acme' }] })),
-        );
-      }
-      return Promise.resolve(new Response('{"status":"accepted"}', { status: 202 }));
-    }),
-  );
-  return api;
-}
-
-function renderPanel() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <RemoteAccessPanel />
-    </QueryClientProvider>,
-  );
-  return client;
-}
-
-const strip = () => screen.getByRole('list', { name: 'Avanzamento configurazione accesso remoto' });
-const states = () => [...strip().querySelectorAll('li')].map((li) => li.getAttribute('data-state'));
-const openStep = (name: string) => {
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }));
-};
-const card = (name: string) => screen.findByRole('heading', { level: 3, name });
-
-const CLOUDFLARE = 'Collega il tuo account Cloudflare';
-const DOMAIN = 'Scegli il dominio';
-const CONNECTION = 'Collegamento con Cloudflare';
-const PHONE = 'Prova dal telefono';
+import {
+  CLOUDFLARE,
+  CONNECTION,
+  DOMAIN,
+  PHONE,
+  card,
+  fieldValue,
+  firstSetup,
+  healthy,
+  openStep,
+  renderPanel,
+  shownCard,
+  states,
+  strip,
+  stubApi,
+  verifyToken,
+} from './wizardHarness';
 
 const secretKey = 'top-secret';
-
-async function verifyToken(value: string) {
-  fireEvent.change(await screen.findByLabelText('Token API Cloudflare'), { target: { value } });
-  fireEvent.click(screen.getByRole('button', { name: 'Verifica token' }));
-  await screen.findByRole('combobox', { name: 'Account Cloudflare' });
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: 'Verifica token' }).hasAttribute('aria-busy')).toBe(
-      false,
-    );
-  });
-}
 
 describe('RemoteAccessWizard', () => {
   beforeEach(async () => {
@@ -237,14 +149,20 @@ describe('RemoteAccessWizard', () => {
     });
   });
 
-  it('configured install: a new token keeps the address, and the wizard stays green', async () => {
+  it('configured install: a new token walks the row back to green, and keeps the address', async () => {
     const api = stubApi(healthy);
-    renderPanel();
+    api.onWrite = (write) => {
+      if (write.method === 'PUT') {
+        api.status = { ...healthy, phase: 'validating', reachable: false, generation: 6 };
+      }
+    };
+    const client = renderPanel();
     await card(PHONE);
     openStep('Cloudflare');
     await verifyToken('replacement');
     fireEvent.click(screen.getByRole('button', { name: 'Avanti' }));
-    await card(PHONE);
+
+    await card(CONNECTION);
     expect(api.sent.at(-1)?.body).toEqual({
       enabled: true,
       generation: 5,
@@ -253,7 +171,28 @@ describe('RemoteAccessWizard', () => {
       public_label: 'casa',
       api_token: 'replacement',
     });
+    expect(screen.getByRole('status').textContent).toContain('Aura sta controllando');
+    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(states()).toEqual(['done', 'done', 'active', 'upcoming']);
+
+    api.status = { ...api.status, phase: 'provisioning' };
+    await client.invalidateQueries();
+    expect(shownCard()).toBe(CONNECTION);
+    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(states()).toEqual(['done', 'done', 'active', 'upcoming']);
+
+    api.status = { ...healthy, generation: 7 };
+    await client.invalidateQueries();
+    await card(PHONE);
     expect(states()).toEqual(['done', 'done', 'done', 'done']);
+    expect(screen.getByRole('status').textContent).toContain('Raggiungibile da fuori casa');
+    expect(screen.queryByText(/con i dati mobili/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Conferma l’accesso da fuori' })).toBeNull();
+    expect(screen.getByText('https://casa.example.com')).toBeTruthy();
+
+    openStep('Cloudflare');
+    await card(CLOUDFLARE);
+    expect(fieldValue('Token API Cloudflare')).toBe('');
   });
 
   it('keeps write-only tokens out of the query and mutation caches', async () => {
@@ -303,8 +242,51 @@ describe('RemoteAccessWizard', () => {
     expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(DOMAIN);
   });
 
+  it('Elimina… is quiet, and the filled form stays on the dialog’s confirm', async () => {
+    stubApi(healthy);
+    renderPanel();
+    await card(PHONE);
+    const trigger = screen.getByRole('button', { name: 'Elimina…' });
+    expect(trigger.className.split(' ')).toEqual(
+      expect.arrayContaining(['border-danger', 'text-danger']),
+    );
+    expect(trigger.className).not.toContain('bg-destructive');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('button', { name: 'Elimina definitivamente' }).className).toContain(
+      'bg-destructive',
+    );
+  });
+
+  it('a row switched off before its first acceptance still offers Elimina…', async () => {
+    stubApi({ ...healthy, enabled: false, phase: 'disabled', accepted: false, reachable: false });
+    renderPanel();
+    await card(DOMAIN);
+    expect(screen.getByRole('button', { name: 'Elimina…' })).toBeTruthy();
+  });
+
+  it('a failed row with nothing on Cloudflare has nothing to delete', async () => {
+    stubApi({
+      ...healthy,
+      phase: 'error',
+      reason: 'not_owned',
+      accepted: false,
+      reachable: false,
+      has_resources: false,
+    });
+    renderPanel();
+    await card(CONNECTION);
+    expect(screen.getByRole('button', { name: 'Disattiva' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Elimina…' })).toBeNull();
+  });
+
   it('Elimina leaves a row that opens Dominio with the old address, ready to save again', async () => {
-    const left = { ...healthy, enabled: false, phase: 'disabled', accepted: false } as const;
+    const left = {
+      ...healthy,
+      enabled: false,
+      phase: 'disabled',
+      accepted: false,
+      has_resources: false,
+    } as const;
     const api = stubApi({ ...left, reachable: false });
     renderPanel();
     await card(DOMAIN);

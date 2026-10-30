@@ -1,9 +1,12 @@
 package agui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -320,5 +323,63 @@ func TestStatusAlwaysCarriesAReason(t *testing.T) {
 	s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1"))
 	if !strings.Contains(rec.Body.String(), `"reason":""`) {
 		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestStatusBodyAlwaysSaysWhetherCloudflareHoldsAnything(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		f := &fakeRemoteAccess{status: RemoteAccessStatus{Phase: "disabled", HasResources: held}}
+		s := &Server{idAdmin: remoteAdminCaps()}
+		s.SetRemoteAccess(f)
+		rec := httptest.NewRecorder()
+		s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1"))
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		want, _ := json.Marshal(held)
+		if string(body["has_resources"]) != string(want) {
+			t.Fatalf("has_resources=%s want %s", body["has_resources"], want)
+		}
+	}
+}
+
+func TestARefusalWithNoNamedCauseLogsItAndOnlyLogsIt(t *testing.T) {
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	for _, tc := range []struct {
+		name   string
+		err    error
+		logged bool
+	}{
+		{"unknown cause", errors.New("cause-abc"), true},
+		{"a Cloudflare 400", fmt.Errorf("cause-abc: %w", &cloudflareapi.APIError{Status: 400}), true},
+		{"a named reason", fmt.Errorf("cause-abc: %w", remotetunnel.ErrDomainElsewhere), false},
+		{"a stale generation", fmt.Errorf("cause-abc: %w", remotetunnel.ErrStaleGeneration), false},
+		{"another owner", fmt.Errorf("cause-abc: %w", remotetunnel.ErrOwnershipConflict), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logged.Reset()
+			f := &fakeRemoteAccess{err: tc.err}
+			s := &Server{idAdmin: remoteAdminCaps()}
+			s.SetRemoteAccess(f)
+			rec := httptest.NewRecorder()
+			s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("POST", "/api/settings/remote-access/token/verify", strings.NewReader(`{"api_token":"candidate-token"}`)), "admin-1"))
+			if strings.Contains(rec.Body.String(), "cause-abc") {
+				t.Fatalf("the cause reached the browser: %s", rec.Body.String())
+			}
+			if got := strings.Contains(logged.String(), "cause-abc"); got != tc.logged {
+				t.Fatalf("logged=%v want %v: %s", got, tc.logged, logged.String())
+			}
+			if tc.logged && !strings.Contains(logged.String(), "level=WARN") {
+				t.Fatalf("not a warning: %s", logged.String())
+			}
+			if strings.Contains(logged.String(), "candidate-token") {
+				t.Fatalf("the token reached the log: %s", logged.String())
+			}
+		})
 	}
 }

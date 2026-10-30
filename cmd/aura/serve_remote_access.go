@@ -182,8 +182,8 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 	out := agui.RemoteAccessStatus{
 		Enabled: d.Enabled, Phase: string(state.Phase), APITokenSet: api != "", AccountID: d.AccountID, AccountName: c.accountNameFor(ctx, api, d.AccountID),
 		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, Reason: string(state.Reason), Accepted: state.Accepted(),
-		Reachable: state.ObservedHealthy, LastCheckedAt: state.LastReconciledAt, Abandoned: state.Abandoned,
-		Generation: state.Generation,
+		Reachable: state.ObservedHealthy, HasResources: remotetunnel.HasResources(state.Resources),
+		LastCheckedAt: state.LastReconciledAt, Abandoned: state.Abandoned, Generation: state.Generation,
 	}
 	if d.ZoneName != "" {
 		out.PublicHostname = remotetunnel.PublicHostname(d)
@@ -230,6 +230,7 @@ func (c *remoteAccessController) Action(ctx context.Context, action, hostname st
 	}
 	switch action {
 	case "reconcile":
+		engine.RetryNow()
 		state, e := c.store.Load(ctx)
 		if e != nil {
 			return e

@@ -12,8 +12,11 @@ export function StepCard({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="flex max-w-xl min-w-0 flex-col gap-3 rounded-md border border-border bg-surface p-4">
-      <h3 className="font-semibold text-text">{heading}</h3>
+    <div className="flex min-w-0 flex-col gap-3 rounded-md border border-border bg-surface p-4">
+      {/* The wizard moves focus here on a step change: it is what brings the card into view. */}
+      <h3 tabIndex={-1} className="font-semibold text-text outline-none">
+        {heading}
+      </h3>
       {children}
     </div>
   );

@@ -161,6 +161,38 @@ func TestReconcileBackoffAndTerminalFailures(t *testing.T) {
 	}
 }
 
+func TestRetryNowEndsTheBackoffAndOnlyThePressDoes(t *testing.T) {
+	h := newHarness(t)
+	h.cloud.failure = transientError()
+	now := time.Unix(1000, 0)
+	h.r.now = func() time.Time { return now }
+	if h.r.Reconcile(t.Context()) == nil {
+		t.Fatal("failure expected")
+	}
+	now = now.Add(time.Second)
+	if h.r.Reconcile(t.Context()) == nil {
+		t.Fatal("failure expected")
+	}
+	calls := h.cloud.calls
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrBackoff) || h.cloud.calls != calls {
+		t.Fatalf("a pass with no press: err=%v calls %d to %d", err, calls, h.cloud.calls)
+	}
+	h.r.RetryNow()
+	if err := h.r.Reconcile(t.Context()); errors.Is(err, ErrBackoff) || h.cloud.calls == calls {
+		t.Fatalf("the press changed nothing: err=%v calls %d to %d", err, calls, h.cloud.calls)
+	}
+	// Two failures had grown the wait to 2s; the failure after a press starts again from 1s.
+	now = now.Add(time.Second)
+	calls = h.cloud.calls
+	if err := h.r.Reconcile(t.Context()); errors.Is(err, ErrBackoff) || h.cloud.calls == calls {
+		t.Fatalf("the press kept the attempts: err=%v calls %d to %d", err, calls, h.cloud.calls)
+	}
+	calls = h.cloud.calls
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrBackoff) || h.cloud.calls != calls {
+		t.Fatalf("automatic retries lost their backoff: err=%v calls %d to %d", err, calls, h.cloud.calls)
+	}
+}
+
 func TestDisablePreservesResources(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {

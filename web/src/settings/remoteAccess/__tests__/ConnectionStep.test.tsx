@@ -17,6 +17,7 @@ const running: RemoteAccessStatusDTO = {
   reason: '',
   accepted: false,
   reachable: false,
+  has_resources: true,
   abandoned: [],
 };
 
@@ -46,16 +47,30 @@ describe('ConnectionStep', () => {
     '%s: it says what is happening, and why Avanti waits',
     (phase) => {
       renderStep({ ...running, phase });
-      expect(screen.getByRole('status').textContent).toContain('Aura sta creando');
+      // True on a first setup and on a new token for a working install alike.
+      const said = screen.getByRole('status').textContent;
+      expect(said).toContain('Aura sta controllando il collegamento');
+      expect(said).toContain('quello che manca');
       expect(avanti().hasAttribute('disabled')).toBe(true);
       expect(screen.getByText(/si apre da solo/)).toBeTruthy();
     },
   );
 
-  it('deleting: it says so, and points at what comes next', () => {
+  it('deleting: it says so, points at what comes next, and promises no next step', () => {
     renderStep({ ...running, enabled: false, phase: 'deleting' });
     expect(screen.getByRole('status').textContent).toContain('Aura sta eliminando');
     expect(screen.getByRole('status').textContent).toContain('Dominio');
+    expect(avanti().hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Aspetta che Aura finisca di eliminare per continuare')).toBeTruthy();
+    expect(screen.queryByText(/si apre da solo/)).toBeNull();
+  });
+
+  // Opened by hand on a healthy row, then switched off from another session.
+  it('on a step not reached yet it sends the operator back, and shows nothing running', () => {
+    renderStep({ ...running, enabled: false, phase: 'disabled' });
+    expect(screen.getByText(/non è ancora pronto/)).toBeTruthy();
+    expect(screen.queryByText(/si apre da solo/)).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
     expect(avanti().hasAttribute('disabled')).toBe(true);
   });
 
@@ -126,11 +141,6 @@ describe('ConnectionStep', () => {
 
     it('is not offered before there is a tunnel', () => {
       renderStep(running);
-      expect(screen.queryByRole('button', { name: 'Rileggi il token ruotato' })).toBeNull();
-    });
-
-    it('is not offered on a switched-off row, where the server would refuse it', () => {
-      renderStep({ ...running, enabled: false, phase: 'deleting' });
       expect(screen.queryByRole('button', { name: 'Rileggi il token ruotato' })).toBeNull();
     });
   });

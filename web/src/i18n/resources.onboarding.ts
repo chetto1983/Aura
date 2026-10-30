@@ -266,7 +266,7 @@ export const onboardingIt = {
       heading: 'Completa la configurazione di Aura',
       body: 'Crea il profilo operatore che Aura usera per contesto chat, preferenze salvate e automazioni.',
       progressLabel: 'Avanzamento configurazione profilo',
-      currentStep: 'Passaggio {{current}} di {{total}}',
+      currentStep: 'Passo {{current}} di {{total}}',
       steps: {
         identity: {
           label: 'Chi sei',

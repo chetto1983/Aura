@@ -14,8 +14,7 @@ export const remoteAccessEn = {
     },
     nav: { back: 'Back', next: 'Next' },
     failure: {
-      stale:
-        'The configuration changed in the meantime. Aura reloaded it: check it and press Next again.',
+      stale: 'The configuration changed in the meantime. Aura reloaded it: check it and try again.',
       generic: 'The request failed and the server gave no reason. Try again.',
     },
     cloudflare: {
@@ -30,13 +29,14 @@ export const remoteAccessEn = {
       verify: 'Verify token',
       account: 'Cloudflare account',
       accountPlaceholder: 'Choose the account',
+      accountLocked: 'The account changes with a token that sees another one.',
       needToken: 'Paste the token to continue',
       needNewToken: 'Paste a new token to continue',
       needVerify: 'Verify the token to continue',
       needAccount: 'Choose the account to continue',
       abandoned: {
         heading: 'To delete by hand on Cloudflare',
-        body: 'The new token cannot reach these resources Aura created. Aura has let go of them: they stay in the old account until you delete them from the dashboard.',
+        body: 'These resources are still on Cloudflare and Aura no longer manages them. Delete them from the Cloudflare dashboard, then press Done.',
         done: 'Done',
         kinds: {
           tunnel: 'Tunnel',
@@ -65,16 +65,21 @@ export const remoteAccessEn = {
       nameservers: {
         heading: 'Change the nameservers at your registrar',
         body: 'Replace the domain’s nameservers with these two. Aura carries on by itself once Cloudflare activates the zone.',
+        unread:
+          'Aura cannot read the nameservers right now. You will find them in the Cloudflare dashboard, on the domain’s Overview page.',
         waiting: 'Waiting for Cloudflare to activate the zone…',
       },
     },
     connection: {
       heading: 'Connection to Cloudflare',
-      running: 'Aura is creating the tunnel, the address and the Access protection.',
+      running:
+        'Aura is checking the connection to Cloudflare and creating whatever is missing: the tunnel, the address and the Access protection.',
       ready: 'The connection is ready.',
       deleting:
         'Aura is deleting what it created in your Cloudflare account. When it finishes, Domain opens again so you can save the address.',
       needWait: 'Wait for Aura to finish: the next step opens by itself',
+      needWaitDeleting: 'Wait for Aura to finish deleting to continue',
+      needEarlier: 'This step is not ready yet: go back and finish the ones before it',
       needFix: 'Fix the problem above to continue',
       rotation:
         'If you rotated the tunnel token in the Cloudflare dashboard, Aura has to read it again.',
@@ -180,7 +185,7 @@ export const remoteAccessIt = {
     nav: { back: 'Indietro', next: 'Avanti' },
     failure: {
       stale:
-        'La configurazione è cambiata nel frattempo. Aura l’ha ricaricata: controlla e premi di nuovo Avanti.',
+        'La configurazione è cambiata nel frattempo. Aura l’ha ricaricata: controlla e riprova.',
       generic: 'La richiesta non è andata a buon fine e il server non ha detto perché. Riprova.',
     },
     cloudflare: {
@@ -195,13 +200,14 @@ export const remoteAccessIt = {
       verify: 'Verifica token',
       account: 'Account Cloudflare',
       accountPlaceholder: 'Scegli l’account',
+      accountLocked: 'L’account cambia con un token che ne vede un altro.',
       needToken: 'Incolla il token per continuare',
       needNewToken: 'Incolla un token nuovo per continuare',
       needVerify: 'Verifica il token per continuare',
       needAccount: 'Scegli l’account per continuare',
       abandoned: {
         heading: 'Da eliminare a mano su Cloudflare',
-        body: 'Il nuovo token non raggiunge queste risorse create da Aura. Aura le ha lasciate andare: restano nel vecchio account finché non le elimini dal dashboard.',
+        body: 'Queste risorse sono rimaste su Cloudflare e Aura non le gestisce più. Eliminale dal dashboard Cloudflare, poi premi Fatto.',
         done: 'Fatto',
         kinds: {
           tunnel: 'Tunnel',
@@ -230,16 +236,21 @@ export const remoteAccessIt = {
       nameservers: {
         heading: 'Cambia i nameserver presso il registrar',
         body: 'Sostituisci i nameserver del dominio con questi due. Aura continua da sola quando Cloudflare attiva la zona.',
+        unread:
+          'Aura non riesce a leggere i nameserver in questo momento. Li trovi nel dashboard Cloudflare, nella pagina Overview del dominio.',
         waiting: 'In attesa che Cloudflare attivi la zona…',
       },
     },
     connection: {
       heading: 'Collegamento con Cloudflare',
-      running: 'Aura sta creando il tunnel, l’indirizzo e la protezione Access.',
+      running:
+        'Aura sta controllando il collegamento con Cloudflare e crea quello che manca: tunnel, indirizzo e protezione Access.',
       ready: 'Il collegamento è pronto.',
       deleting:
         'Aura sta eliminando quello che ha creato nel tuo account Cloudflare. Quando ha finito si riapre Dominio, e puoi salvare l’indirizzo.',
       needWait: 'Aspetta che Aura finisca: il passo successivo si apre da solo',
+      needWaitDeleting: 'Aspetta che Aura finisca di eliminare per continuare',
+      needEarlier: 'Questo passo non è ancora pronto: torna indietro e completa quelli prima',
       needFix: 'Risolvi il problema qui sopra per continuare',
       rotation:
         'Se hai ruotato il token del tunnel nel dashboard Cloudflare, Aura deve rileggerlo.',

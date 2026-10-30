@@ -15,7 +15,8 @@ export function RemoteAccessPanel() {
         {t('remoteAccess.loading')}
       </section>
     );
-  if (remote.query.isError || status === undefined)
+  // Never isError: a failed refresh keeps its data, and must not take the wizard off the screen.
+  if (status === undefined)
     return (
       <Alert variant="destructive">
         <AlertDescription>

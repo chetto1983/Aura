@@ -21,6 +21,7 @@ const firstSetup: RemoteAccessStatusDTO = {
   reason: '',
   accepted: false,
   reachable: false,
+  has_resources: false,
   abandoned: [],
 };
 
@@ -36,6 +37,7 @@ const configured: RemoteAccessStatusDTO = {
   public_hostname: 'casa.example.com',
   accepted: true,
   reachable: true,
+  has_resources: true,
   generation: 9,
 };
 
@@ -50,6 +52,7 @@ function renderStep(
     onVerify: vi.fn(() => Promise.resolve(accounts)),
     onSave: vi.fn(() => Promise.resolve()),
     onDismiss: vi.fn(() => Promise.resolve()),
+    onEdit: vi.fn(),
     onNext: vi.fn(),
     onOpenStep: vi.fn(),
   };
@@ -129,6 +132,7 @@ describe('CloudflareStep', () => {
         onVerify={onVerify}
         onSave={vi.fn()}
         onDismiss={vi.fn()}
+        onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
       />,
@@ -284,6 +288,7 @@ describe('CloudflareStep', () => {
         onVerify={onVerify}
         onSave={vi.fn()}
         onDismiss={vi.fn()}
+        onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
       />,
@@ -307,6 +312,7 @@ describe('CloudflareStep', () => {
         onVerify={onVerify}
         onSave={vi.fn()}
         onDismiss={vi.fn()}
+        onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
       />,
@@ -339,7 +345,34 @@ describe('CloudflareStep', () => {
     });
   });
 
-  describe('resources a replaced token can no longer reach', () => {
+  it('a keystroke in the token field tells the wizard', () => {
+    const { onEdit } = renderStep(firstSetup);
+    fireEvent.change(token(), { target: { value: 'c' } });
+    expect(onEdit).toHaveBeenCalledOnce();
+  });
+
+  describe('the account select', () => {
+    const locked = 'L’account cambia con un token che ne vede un altro.';
+
+    it('says why it is locked', () => {
+      renderStep(configured);
+      expect(screen.getByRole('combobox', { name: 'Account Cloudflare' })).toBeTruthy();
+      expect(screen.getByText(locked)).toBeTruthy();
+    });
+
+    it('says nothing once a verified token can change it', async () => {
+      renderStep(configured);
+      await verifyToken();
+      expect(screen.queryByText(locked)).toBeNull();
+    });
+
+    it('says nothing when there is no select at all', () => {
+      renderStep(firstSetup);
+      expect(screen.queryByText(locked)).toBeNull();
+    });
+  });
+
+  describe('resources left on Cloudflare', () => {
     const abandoned = {
       ...configured,
       abandoned: [
@@ -361,6 +394,14 @@ describe('CloudflareStep', () => {
         'Regola Accessaura-1234-public-members',
         'Controllo del dispositivoaura-1234-gateway',
       ]);
+    });
+
+    // The list also comes from retiring the old access method, with the same token and account.
+    it('say what the list is and what to do, and nothing about why', () => {
+      renderStep(abandoned);
+      const said = screen.getByText(/Queste risorse sono rimaste su Cloudflare/).textContent;
+      expect(said).toContain('Eliminale dal dashboard Cloudflare, poi premi Fatto.');
+      expect(said).not.toMatch(/token|account/i);
     });
 
     it('a kind this cockpit does not know still shows, by its own name', () => {

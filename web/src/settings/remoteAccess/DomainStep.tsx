@@ -1,25 +1,35 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StepFailure } from './ReasonNotice';
 import { StepCard, StepFoot } from './StepCard';
 import type { RemoteAccessConfiguration, RemoteAccessStatusDTO } from './remoteAccessApi';
-import { reasonOn, type StepKey } from './remoteAccessSteps';
+import { reasonOn, type DomainDraft, type StepKey } from './remoteAccessSteps';
 import { useStepAction } from './useStepAction';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 interface DomainStepProps {
   readonly status: RemoteAccessStatusDTO;
+  readonly draft: DomainDraft;
+  readonly onDraft: (draft: DomainDraft) => void;
   readonly onSave: (configuration: RemoteAccessConfiguration) => Promise<void>;
   readonly onBack: () => void;
   readonly onNext: () => void;
   readonly onOpenStep: (step: StepKey) => void;
 }
 
-export function DomainStep({ status, onSave, onBack, onNext, onOpenStep }: DomainStepProps) {
+export function DomainStep({
+  status,
+  draft,
+  onDraft,
+  onSave,
+  onBack,
+  onNext,
+  onOpenStep,
+}: DomainStepProps) {
   const { t } = useTranslation();
-  const [zone, setZone] = useState(status.zone_name ?? '');
-  const [label, setLabel] = useState(status.public_label ?? 'aura');
+  const zone = draft.zone ?? status.zone_name ?? '';
+  const label = draft.label ?? status.public_label ?? 'aura';
   const zoneField = useRef<HTMLInputElement>(null);
   const labelField = useRef<HTMLInputElement>(null);
   const { failure, running, run, clear } = useStepAction();
@@ -75,7 +85,7 @@ export function DomainStep({ status, onSave, onBack, onNext, onOpenStep }: Domai
             id="remote-access-domain"
             value={zone}
             onChange={(event) => {
-              setZone(event.target.value);
+              onDraft({ ...draft, zone: event.target.value });
               clear();
             }}
             aria-invalid={zoneFault || undefined}
@@ -91,7 +101,7 @@ export function DomainStep({ status, onSave, onBack, onNext, onOpenStep }: Domai
             id="remote-access-label"
             value={label}
             onChange={(event) => {
-              setLabel(event.target.value);
+              onDraft({ ...draft, label: event.target.value });
               clear();
             }}
             aria-invalid={labelFault || undefined}
@@ -117,19 +127,27 @@ export function DomainStep({ status, onSave, onBack, onNext, onOpenStep }: Domai
           <p className="text-sm font-medium text-text">
             {t('remoteAccess.domain.nameservers.heading')}
           </p>
-          <p className="text-sm leading-relaxed text-text-muted">
-            {t('remoteAccess.domain.nameservers.body')}
-          </p>
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {status.nameservers.map((name) => (
-              <li
-                key={name}
-                className="rounded-md bg-surface-3 px-3 py-2 font-mono text-sm break-all text-text"
-              >
-                {name}
-              </li>
-            ))}
-          </ul>
+          {status.nameservers.length === 0 ? (
+            <p className="text-sm leading-relaxed text-text-muted">
+              {t('remoteAccess.domain.nameservers.unread')}
+            </p>
+          ) : (
+            <>
+              <p className="text-sm leading-relaxed text-text-muted">
+                {t('remoteAccess.domain.nameservers.body')}
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {status.nameservers.map((name) => (
+                  <li
+                    key={name}
+                    className="rounded-md bg-surface-3 px-3 py-2 font-mono text-sm break-all text-text"
+                  >
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <p role="status" className="text-sm text-text-muted">
             {t('remoteAccess.domain.nameservers.waiting')}
           </p>

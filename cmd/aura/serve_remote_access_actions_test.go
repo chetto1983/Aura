@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agui"
@@ -93,6 +94,43 @@ func TestRemoteAccessMissingCredentialStopsBeforeNetwork(t *testing.T) {
 	}
 	if err = engine.Reconcile(t.Context()); !errors.Is(err, remotetunnel.ErrTerminal) {
 		t.Fatalf("missing credential retried: %v", err)
+	}
+}
+
+func TestRetryPressEndsTheBackoffOnEveryPhase(t *testing.T) {
+	for _, phase := range []remotetunnel.Phase{remotetunnel.PhaseDegraded, remotetunnel.PhaseDeleting} {
+		t.Run(string(phase), func(t *testing.T) {
+			var requests atomic.Int32
+			down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer down.Close()
+			state := provisionedInAccountA()
+			state.Phase = phase
+			store := &remoteMemoryStore{state: state}
+			secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+			members := remoteIdentityMembers{store: remoteTestIdentities{identities: []identity.Identity{{ID: "admin", Name: "admin@example.com", Kind: "user"}}}}
+			c := newRemoteAccessController(store, secrets, &remoteRecordingProjection{}, members, nil)
+			c.client = func(token string) *cloudflareapi.Client { return cloudflareapi.New(down.URL, token, down.Client()) }
+			engine, err := c.engine(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = engine.Reconcile(t.Context()); err == nil || errors.Is(err, remotetunnel.ErrBackoff) {
+				t.Fatalf("first pass: %v", err)
+			}
+			before := requests.Load()
+			if err = engine.Reconcile(t.Context()); !errors.Is(err, remotetunnel.ErrBackoff) {
+				t.Fatalf("a pass with no press: %v", err)
+			}
+			if err = c.Action(t.Context(), "reconcile", "", 0, "admin"); err != nil {
+				t.Fatal(err)
+			}
+			if err = engine.Reconcile(t.Context()); errors.Is(err, remotetunnel.ErrBackoff) || requests.Load() == before {
+				t.Fatalf("the press changed nothing: err=%v requests %d to %d", err, before, requests.Load())
+			}
+		})
 	}
 }
 

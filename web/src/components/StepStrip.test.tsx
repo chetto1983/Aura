@@ -109,6 +109,25 @@ describe('StepStrip', () => {
     expect(row.textContent).toContain('da sistemare');
   });
 
+  it('marks a done step with a check inside its green dot, so colour is not alone', () => {
+    render(<StepStrip steps={allDone} current="phone" label="Avanzamento" />);
+    const dot = item('Cloudflare').querySelector('[aria-hidden="true"]');
+    expect(dot?.tagName).toBe('SPAN');
+    expect(dot?.className.split(' ')).toEqual(
+      expect.arrayContaining(['size-3.5', 'rounded-full', 'bg-success']),
+    );
+    expect(dot?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('keeps the plain dot on an active or upcoming step', () => {
+    render(<StepStrip steps={steps} label="Avanzamento" />);
+    for (const name of ['Dominio', 'Collegamento']) {
+      const dot = item(name).querySelector('[aria-hidden="true"]');
+      expect(dot?.className.split(' ')).toEqual(expect.arrayContaining(['h-2', 'w-2']));
+      expect(dot?.querySelector('svg')).toBeNull();
+    }
+  });
+
   it('names a done step to a screen reader', () => {
     render(<StepStrip steps={allDone} current="domain" label="Avanzamento" />);
     expect(item('Cloudflare').textContent).toContain('fatto');
@@ -133,5 +152,13 @@ describe('StepStrip', () => {
     await i18n.changeLanguage('en');
     render(<StepStrip steps={steps} label="Progress" />);
     expect(screen.getByText(/Step 2 of 4/).textContent).toBe('Step 2 of 4 · Dominio');
+  });
+
+  it.each(['it', 'en'])('says it as FirstRunSetup does, in %s', async (language) => {
+    await i18n.changeLanguage(language);
+    const values = { current: 1, total: 4 };
+    expect(i18n.t('onboarding.profile.currentStep', values)).toBe(
+      i18n.t('stepStrip.progress', values),
+    );
   });
 });

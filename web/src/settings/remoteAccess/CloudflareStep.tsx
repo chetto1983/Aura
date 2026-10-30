@@ -38,6 +38,7 @@ interface CloudflareStepProps {
   readonly onVerify: (token: string) => Promise<readonly CloudflareAccount[]>;
   readonly onSave: (configuration: RemoteAccessConfiguration) => Promise<void>;
   readonly onDismiss: () => Promise<void>;
+  readonly onEdit: () => void;
   readonly onNext: () => void;
   readonly onOpenStep: (step: StepKey) => void;
 }
@@ -52,6 +53,7 @@ export function CloudflareStep({
   onVerify,
   onSave,
   onDismiss,
+  onEdit,
   onNext,
   onOpenStep,
 }: CloudflareStepProps) {
@@ -148,6 +150,7 @@ export function CloudflareStep({
             setToken(event.target.value);
             setAccounts(null);
             clear();
+            onEdit();
           }}
           showLabel={t('secret.show', { label: t('remoteAccess.cloudflare.tokenLabel') })}
           hideLabel={t('secret.hide', { label: t('remoteAccess.cloudflare.tokenLabel') })}
@@ -177,6 +180,11 @@ export function CloudflareStep({
             placeholder={t('remoteAccess.cloudflare.accountPlaceholder')}
             options={options}
           />
+          {accounts === null ? (
+            <p className="text-[13px] leading-relaxed text-text-muted">
+              {t('remoteAccess.cloudflare.accountLocked')}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <StepFailure

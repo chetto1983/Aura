@@ -2,6 +2,7 @@ import { HttpError } from '../../api/json';
 import type { StepState } from '../../components/StepStrip';
 import {
   RemoteAccessError,
+  isReason,
   type RemoteAccessReason,
   type RemoteAccessStatusDTO,
 } from './remoteAccessApi';
@@ -47,10 +48,13 @@ export function reasonStep(reason: RemoteAccessReason): StepKey {
   return REASON_STEP[reason] ?? 'connection';
 }
 
-/** A failed row with no code still failed: older rows carry none, and its step must say so. */
+/** A failed row with no code still failed: older rows carry none, and its step must say so. A code
+ * outside the list comes from a server newer than this tab, and has no sentence here. */
 function rowReason(status: RemoteAccessStatusDTO): RemoteAccessReason {
-  if (status.reason !== '') return status.reason;
-  return status.phase === 'error' || status.phase === 'degraded' ? 'unknown' : '';
+  if (status.reason === '') {
+    return status.phase === 'error' || status.phase === 'degraded' ? 'unknown' : '';
+  }
+  return isReason(status.reason) ? status.reason : 'unknown';
 }
 
 /** The row's reason when it belongs to this step, or "". */
@@ -84,7 +88,7 @@ export function stepStates(status: RemoteAccessStatusDTO): Record<StepKey, StepS
   const current = currentStep(status);
   const at = STEP_KEYS.indexOf(current);
   const here: StepState =
-    current === 'phone' && status.phase === 'healthy'
+    current === 'phone' && status.phase === 'healthy' && status.accepted
       ? 'done'
       : reasonOn(status, current) === ''
         ? 'active'
@@ -123,12 +127,25 @@ export function failureOf(err: unknown): Failure {
 }
 
 /** Disattiva and Elimina… live on the last step, which a failed or switched-off row never
- * reaches. Delete clears the acceptance, so a disabled row that keeps it still has resources. */
+ * reaches. A switched-off row needs them only while something is left on Cloudflare: the row
+ * Elimina leaves has nothing, and a row never accepted can still hold a tunnel. */
 export function hasExit(status: RemoteAccessStatusDTO): boolean {
   if (status.public_hostname === undefined) return false;
-  return (
-    status.phase === 'error' ||
-    status.phase === 'degraded' ||
-    (status.phase === 'disabled' && status.accepted)
-  );
+  if (status.phase === 'disabled') return status.has_resources;
+  return status.phase === 'error' || status.phase === 'degraded';
+}
+
+/** What the operator typed on Dominio, kept while they walk the other steps. Null is a field they
+ * have not touched, which follows the status. */
+export interface DomainDraft {
+  readonly zone: string | null;
+  readonly label: string | null;
+}
+
+export const NO_DRAFT: DomainDraft = { zone: null, label: null };
+
+/** A field emptied on the card stays empty there; once the operator walks away it counts as
+ * untouched again, so a saved address wins over it. */
+export function leftDraft({ zone, label }: DomainDraft): DomainDraft {
+  return { zone: zone === '' ? null : zone, label: label === '' ? null : label };
 }

@@ -121,12 +121,33 @@ describe('ReasonNotice', () => {
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
-  it.each(REMOTE_ACCESS_REASONS)('%s has a button on every step', (reason) => {
-    for (const step of STEP_KEYS) {
-      const { unmount } = render(<ReasonNotice reason={reason} step={step} {...handlers()} />);
-      expect(screen.getAllByRole('button')).toHaveLength(1);
-      unmount();
-    }
+  it.each(REMOTE_ACCESS_REASONS)(
+    '%s names its action on every step, and a press does exactly one thing',
+    async (reason) => {
+      await i18n.changeLanguage('it');
+      for (const step of STEP_KEYS) {
+        const act = handlers();
+        const { unmount } = render(<ReasonNotice reason={reason} step={step} {...act} />);
+        const button = screen.getByRole('button', {
+          name: remoteAccessIt.remoteAccess.reasons[reason].action,
+        });
+        fireEvent.click(button);
+        const pressed = [act.onOpenStep, act.onFix, act.onRetry].filter(
+          (handler) => handler.mock.calls.length === 1,
+        );
+        expect(pressed).toHaveLength(1);
+        unmount();
+      }
+    },
+  );
+});
+
+describe('the failure lines', () => {
+  it('never name a button the card may not have', () => {
+    expect(remoteAccessIt.remoteAccess.failure.stale).toMatch(/riprova\.$/);
+    expect(remoteAccessEn.remoteAccess.failure.stale).toMatch(/try again\.$/);
+    expect(remoteAccessIt.remoteAccess.failure.stale).not.toMatch(/Avanti/);
+    expect(remoteAccessEn.remoteAccess.failure.stale).not.toMatch(/Next/);
   });
 });
 
@@ -140,6 +161,7 @@ describe('StepFailure', () => {
     reason: 'hostname_taken',
     accepted: false,
     reachable: false,
+    has_resources: false,
     abandoned: [],
   };
 

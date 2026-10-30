@@ -70,6 +70,15 @@ func (r *Reconciler) SaveDesired(ctx context.Context, generation int64, desired 
 	return r.store.SaveDesired(ctx, generation, desired, by)
 }
 
+// RetryNow is an operator's press: the next pass runs at once and the next failure waits from the
+// start. Automatic passes never call it, so they keep their backoff.
+func (r *Reconciler) RetryNow() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.attempts = 0
+	r.retryAt = time.Time{}
+}
+
 // Reconcile resumes persisted work; terminal errors require an explicit intent save.
 func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.mu.Lock()

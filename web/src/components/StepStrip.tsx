@@ -1,10 +1,10 @@
-import { TriangleAlert } from 'lucide-react';
+import { Check, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // StepStrip renders the linear desktop step strip + the compact mobile "Step N of M" indicator.
-// Color is never the only encoding: the current step carries data-state + aria-current, a failed
-// step carries an icon, a done or failed step says so to a screen reader, and the mobile indicator
-// is text. With onSelect, a step the operator has been through can be reopened.
+// Color is never the only encoding: the current step carries data-state + aria-current, a done or
+// failed step carries an icon and says so to a screen reader, and the mobile indicator is text.
+// With onSelect, a step the operator has been through can be reopened.
 
 export type StepState = 'done' | 'active' | 'upcoming' | 'failed';
 
@@ -16,11 +16,23 @@ interface StepStripProps<K extends string> {
   readonly current?: K;
 }
 
-const DOT_TONE: Record<Exclude<StepState, 'failed'>, string> = {
-  active: 'bg-accent-text',
-  done: 'bg-success',
-  upcoming: 'bg-surface-3',
-};
+function StepMark({ state }: { readonly state: StepState }) {
+  if (state === 'failed') {
+    return <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-danger" />;
+  }
+  if (state === 'done') {
+    return (
+      <span
+        aria-hidden="true"
+        className="grid size-3.5 shrink-0 place-items-center rounded-full bg-success"
+      >
+        <Check className="size-2.5 text-bg" strokeWidth={3} />
+      </span>
+    );
+  }
+  const tone = state === 'active' ? 'bg-accent-text' : 'bg-surface-3';
+  return <span aria-hidden="true" className={`h-2 w-2 rounded-full ${tone}`} />;
+}
 
 export function StepStrip<K extends string>({
   steps,
@@ -46,14 +58,7 @@ export function StepStrip<K extends string>({
               data-state={step.state}
               className="flex items-center gap-2 text-[13px] font-semibold"
             >
-              {step.state === 'failed' ? (
-                <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-danger" />
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className={`h-2 w-2 rounded-full ${DOT_TONE[step.state]}`}
-                />
-              )}
+              <StepMark state={step.state} />
               {onSelect !== undefined && !isCurrent && step.state !== 'upcoming' ? (
                 <button
                   type="button"

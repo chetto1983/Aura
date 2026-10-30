@@ -50,6 +50,8 @@ interface RemoteAccessBase {
   readonly accepted: boolean;
   /** The tunnel is serving now. */
   readonly reachable: boolean;
+  /** Something Aura created is still on Cloudflare, so a delete has something to do. */
+  readonly has_resources: boolean;
   readonly last_checked_at?: string;
   readonly abandoned: readonly AbandonedResource[];
 }
@@ -95,7 +97,7 @@ export class RemoteAccessError extends HttpError {
 
 const ROUTE = '/api/settings/remote-access';
 
-function isReason(value: unknown): value is RemoteAccessReason {
+export function isReason(value: unknown): value is RemoteAccessReason {
   return REMOTE_ACCESS_REASONS.some((reason) => reason === value);
 }
 

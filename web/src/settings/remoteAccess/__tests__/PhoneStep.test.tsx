@@ -18,6 +18,7 @@ const healthy: RemoteAccessStatusDTO = {
   reason: '',
   accepted: true,
   reachable: true,
+  has_resources: true,
   last_checked_at: '2026-10-30T09:15:00Z',
   abandoned: [],
 };

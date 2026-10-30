@@ -33,8 +33,11 @@ export function ConnectionStep({
 
   function whyNotNext(): string | null {
     if (state === 'done') return null;
-    return state === 'failed'
-      ? t('remoteAccess.connection.needFix')
+    if (state === 'failed') return t('remoteAccess.connection.needFix');
+    // Upcoming: opened by hand, then switched off or failed from another session.
+    if (state === 'upcoming') return t('remoteAccess.connection.needEarlier');
+    return deleting
+      ? t('remoteAccess.connection.needWaitDeleting')
       : t('remoteAccess.connection.needWait');
   }
 
@@ -60,7 +63,7 @@ export function ConnectionStep({
         onRetry={() => void retry.run(onRetry)}
         retrying={retry.running}
       />
-      {state === 'done' && status.enabled ? (
+      {state === 'done' ? (
         <div className="flex flex-col items-start gap-2 rounded-md bg-surface-2 p-3">
           <p className="text-sm leading-relaxed text-text-muted">
             {t('remoteAccess.connection.rotation')}

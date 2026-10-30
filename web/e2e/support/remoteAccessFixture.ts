@@ -12,6 +12,7 @@ export const initialRemoteStatus: RemoteAccessStatusDTO = {
   reason: '',
   accepted: false,
   reachable: false,
+  has_resources: false,
   abandoned: [],
 };
 export const configuredRemoteStatus: RemoteAccessStatusDTO = {

@@ -1,3 +1,4 @@
+import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { HttpError } from '../../../api/json';
@@ -9,6 +10,7 @@ import {
   type RemoteAccessReason,
   type RemoteAccessStatusDTO,
 } from '../remoteAccessApi';
+import { NO_DRAFT, type DomainDraft } from '../remoteAccessSteps';
 
 const status: RemoteAccessStatusDTO = {
   enabled: false,
@@ -21,6 +23,7 @@ const status: RemoteAccessStatusDTO = {
   reason: '',
   accepted: false,
   reachable: false,
+  has_resources: false,
   abandoned: [],
 };
 
@@ -30,10 +33,17 @@ const addressed: RemoteAccessStatusDTO = {
   zone_name: 'example.com',
   public_label: 'casa',
   public_hostname: 'casa.example.com',
+  has_resources: true,
 };
 
 const refused = (code: number, reason: RemoteAccessReason) =>
   new RemoteAccessError(new HttpError(code, 'refused'), reason);
+
+// The wizard holds the draft, so that it outlives this card; here a test stands in for it.
+function Holder(props: Omit<ComponentProps<typeof DomainStep>, 'draft' | 'onDraft'>) {
+  const [draft, setDraft] = useState<DomainDraft>(NO_DRAFT);
+  return <DomainStep draft={draft} onDraft={setDraft} {...props} />;
+}
 
 function renderStep(current: RemoteAccessStatusDTO, onSave = vi.fn(() => Promise.resolve())) {
   const props = {
@@ -42,7 +52,7 @@ function renderStep(current: RemoteAccessStatusDTO, onSave = vi.fn(() => Promise
     onNext: vi.fn(),
     onOpenStep: vi.fn(),
   };
-  render(<DomainStep status={current} {...props} />);
+  render(<Holder status={current} {...props} />);
   return props;
 }
 
@@ -168,6 +178,45 @@ describe('DomainStep', () => {
     for (const name of ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com']) {
       expect(screen.getByText(name).className).toContain('font-mono');
     }
+  });
+
+  it('with no nameservers to show it says where to read them, and never “questi due”', () => {
+    renderStep({ ...addressed, phase: 'waiting_nameservers' });
+    expect(screen.queryByText(/questi due/)).toBeNull();
+    expect(screen.queryByRole('list')).toBeNull();
+    expect(screen.getByText(/non riesce a leggere i nameserver/).textContent).toContain(
+      'pagina Overview',
+    );
+  });
+
+  it('with nameservers to show it never says it could not read them', () => {
+    renderStep({ ...addressed, phase: 'waiting_nameservers', nameservers: ['ada.ns'] });
+    expect(screen.getByText(/questi due/)).toBeTruthy();
+    expect(screen.queryByText(/non riesce a leggere i nameserver/)).toBeNull();
+  });
+
+  it('a draft shows over the saved address, and an untouched field follows it', () => {
+    const props = { onSave: vi.fn(), onBack: vi.fn(), onNext: vi.fn(), onOpenStep: vi.fn() };
+    render(
+      <DomainStep
+        status={addressed}
+        draft={{ zone: 'bozza.it', label: null }}
+        onDraft={vi.fn()}
+        {...props}
+      />,
+    );
+    expect(domain().value).toBe('bozza.it');
+    expect(screen.getByLabelText<HTMLInputElement>(/Etichetta/).value).toBe('casa');
+  });
+
+  it('a keystroke hands the whole draft up, leaving the other field as it was', () => {
+    const onDraft = vi.fn();
+    const props = { onSave: vi.fn(), onBack: vi.fn(), onNext: vi.fn(), onOpenStep: vi.fn() };
+    render(<DomainStep status={addressed} draft={NO_DRAFT} onDraft={onDraft} {...props} />);
+    fireEvent.change(domain(), { target: { value: 'nuovo.it' } });
+    expect(onDraft).toHaveBeenCalledExactlyOnceWith({ zone: 'nuovo.it', label: null });
+    fireEvent.change(screen.getByLabelText(/Etichetta/), { target: { value: 'tana' } });
+    expect(onDraft).toHaveBeenLastCalledWith({ zone: null, label: 'tana' });
   });
 
   it('while the zone waits, Avanti says the wait is not the operator’s to end', () => {
