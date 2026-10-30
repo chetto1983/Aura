@@ -94,7 +94,7 @@ test('configured controls refresh truthfully, disable, re-enable saved credentia
       warp_label: 'private',
     },
   });
-  fixture.status = { ...configuredRemoteStatus, phase: 'error', last_error: 'permission_refused' };
+  fixture.status = { ...configuredRemoteStatus, phase: 'error', reason: 'unknown' };
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('needs attention');
   const trigger = page.getByRole('button', { name: 'Delete remote access', exact: true });
@@ -126,7 +126,8 @@ test('external acceptance is interactive and never sends a client tunnel marker'
   const fixture = await remoteAccessFixture(page, {
     ...configuredRemoteStatus,
     phase: 'connecting',
-    acceptance_required: true,
+    accepted: false,
+    reachable: false,
   });
   await openRemoteAccess(page);
   await expect(page.getByRole('button', { name: 'Confirm external access' })).toHaveCount(0);

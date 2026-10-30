@@ -92,7 +92,6 @@ test.describe('attended named-tunnel acceptance', () => {
       if (
         current.public_hostname &&
         (current.public_hostname !== hostname ||
-          current.warp_hostname !== warpHostname ||
           current.account_id !== account ||
           current.zone_name !== zoneName)
       ) {

@@ -8,9 +8,11 @@ export const initialRemoteStatus: RemoteAccessStatusDTO = {
   enabled: false,
   generation: 0,
   api_token_set: false,
-  tunnel_token_set: false,
-  connector: 'disconnected',
-  acceptance_required: false,
+  nameservers: [],
+  reason: '',
+  accepted: false,
+  reachable: false,
+  abandoned: [],
 };
 export const configuredRemoteStatus: RemoteAccessStatusDTO = {
   ...initialRemoteStatus,
@@ -18,12 +20,13 @@ export const configuredRemoteStatus: RemoteAccessStatusDTO = {
   enabled: true,
   generation: 4,
   api_token_set: true,
-  tunnel_token_set: true,
-  connector: 'healthy',
+  accepted: true,
+  reachable: true,
   account_id: 'account-b',
+  account_name: 'Chosen account',
   zone_name: 'example.test',
+  public_label: 'custom',
   public_hostname: 'custom.example.test',
-  warp_hostname: 'private.example.test',
 };
 
 export async function remoteAccessFixture(
@@ -94,7 +97,7 @@ export async function remoteAccessFixture(
     if (path === '/disable')
       fixture.status = { ...fixture.status, enabled: false, phase: 'disabled' };
     if (path === '/accept-external')
-      fixture.status = { ...fixture.status, phase: 'healthy', acceptance_required: false };
+      fixture.status = { ...fixture.status, phase: 'healthy', accepted: true, reachable: true };
     if (request.method() === 'DELETE') {
       if (fixture.refuseDelete) {
         await route.fulfill({ status: 503, json: { error: 'retry later' } });

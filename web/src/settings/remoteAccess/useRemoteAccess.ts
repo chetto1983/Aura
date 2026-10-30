@@ -3,6 +3,7 @@ import {
   acceptExternalRemoteAccess,
   deleteRemoteAccess,
   disableRemoteAccess,
+  dismissAbandonedRemoteAccess,
   fetchRemoteAccess,
   reconcileRemoteAccess,
   refreshRemoteAccessToken,
@@ -38,6 +39,7 @@ export function useRemoteAccess() {
   const refreshToken = useMutation({ mutationFn: refreshRemoteAccessToken, onSettled: invalidate });
   const disable = useMutation({ mutationFn: disableRemoteAccess, onSettled: invalidate });
   const remove = useMutation({ mutationFn: deleteRemoteAccess, onSettled: invalidate });
+  const dismiss = useMutation({ mutationFn: dismissAbandonedRemoteAccess, onSettled: invalidate });
   const acceptExternal = useMutation({
     mutationFn: acceptExternalRemoteAccess,
     onSettled: invalidate,
@@ -48,6 +50,7 @@ export function useRemoteAccess() {
     refreshToken,
     disable,
     remove,
+    dismiss,
     acceptExternal,
   };
 }

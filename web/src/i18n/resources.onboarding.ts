@@ -17,7 +17,6 @@ export const onboardingEn = {
     authExpired: 'Your session expired. Sign in again to continue.',
     starting: 'Starting…',
     retry: 'Retry',
-    progress: 'Step {{current}} of {{total}}',
     cta: {
       continue: 'Continue',
       provision: 'Create identity',
@@ -180,7 +179,6 @@ export const onboardingIt = {
     authExpired: 'La tua sessione è scaduta. Accedi di nuovo per continuare.',
     starting: 'Avvio…',
     retry: 'Riprova',
-    progress: 'Passaggio {{current}} di {{total}}',
     cta: {
       continue: 'Continua',
       provision: 'Crea identità',

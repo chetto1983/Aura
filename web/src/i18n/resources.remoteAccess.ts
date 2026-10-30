@@ -1,116 +1,164 @@
 export const remoteAccessEn = {
   remoteAccess: {
     heading: 'Remote access',
-    body: 'Publish Aura through a Cloudflare named tunnel while keeping direct access available for operators.',
+    body: 'Open your Aura away from home, from an iPad or a phone, through Cloudflare.',
     loading: 'Loading remote access…',
     loadError: 'Could not load remote access. Check the server and try again.',
     retry: 'Retry',
     steps: {
       label: 'Remote access setup progress',
-      account: 'Account',
+      cloudflare: 'Cloudflare',
       domain: 'Domain',
-      nameservers: 'Nameservers',
-      tunnel: 'Tunnel',
-      access: 'Access',
-      warp: 'WARP',
-      verify: 'Verify',
+      connection: 'Connection',
+      phone: 'Try it from your phone',
     },
-    token: {
-      label: 'Cloudflare API token',
-      hint: 'The token is verified before Aura stores it. It is never shown again.',
+    nav: { back: 'Back', next: 'Next' },
+    failure: {
+      stale:
+        'The configuration changed in the meantime. Aura reloaded it: check it and press Next again.',
+      generic: 'The request failed and the server gave no reason. Try again.',
+    },
+    cloudflare: {
+      heading: 'Connect your Cloudflare account',
+      intro:
+        'Aura uses an API token to create the tunnel, the address and the Access protection in your account. The token is never shown again.',
+      createToken: 'Create the token on Cloudflare',
+      tokenHint:
+        'The link opens the form with the permissions already chosen. Add Cloudflare Tunnel Edit yourself: it is the one Cloudflare cannot pre-fill.',
+      permissions: 'Permissions the token needs',
+      tokenLabel: 'Cloudflare API token',
       verify: 'Verify token',
-      verified: 'Token verified. Select the Cloudflare account to use.',
-      error: 'The token could not be verified. Replace it and try again.',
+      account: 'Cloudflare account',
+      accountPlaceholder: 'Choose the account',
+      needToken: 'Paste the token to continue',
+      needNewToken: 'Paste a new token to continue',
+      needVerify: 'Verify the token to continue',
+      needAccount: 'Choose the account to continue',
+      abandoned: {
+        heading: 'To delete by hand on Cloudflare',
+        body: 'The new token cannot reach these resources Aura created. Aura has let go of them: they stay in the old account until you delete them from the dashboard.',
+        done: 'Done',
+        kinds: {
+          tunnel: 'Tunnel',
+          dns: 'DNS record',
+          access_app: 'Access application',
+          access_policy: 'Access policy',
+          posture: 'Device check',
+        },
+      },
     },
     domain: {
-      account: 'Cloudflare account',
-      domain: 'Registered domain',
-      publicLabel: 'Public hostname label',
-      warpLabel: 'WARP hostname label',
-      external:
-        'Buy or register the domain with a registrar first. Aura cannot purchase or change it for you.',
-      quickTunnel:
-        'Quick Tunnels are temporary testing tools and cannot carry Aura production SSE traffic.',
-      preview: 'Published URLs',
-      save: 'Save and start setup',
-      prerequisite: 'A registered domain is required before remote access can be configured.',
+      heading: 'Choose the domain',
+      intro:
+        'The domain must be yours and in this same Cloudflare account. Aura does not buy it: you register it with a registrar.',
+      domain: 'Domain',
+      label: 'Address label',
+      preview: 'You will open Aura at',
+      needDomain: 'Write the domain to continue',
+      needLabel: 'Write the label to continue',
+      waitingNext: 'Waiting for the nameservers: the next step opens by itself',
+      off: 'Remote access is off. Press Next to turn it on at this address.',
+      deleting:
+        'Aura is still deleting the previous address. You can save now: when it finishes, press Next once more to turn access back on.',
+      changeWarning:
+        'The current address stops working, and you will repeat the test from your phone.',
+      nameservers: {
+        heading: 'Change the nameservers at your registrar',
+        body: 'Replace the domain’s nameservers with these two. Aura carries on by itself once Cloudflare activates the zone.',
+        waiting: 'Waiting for Cloudflare to activate the zone…',
+      },
     },
-    nameservers: {
-      heading: 'Point your registrar at Cloudflare',
-      body: 'Replace the domain nameservers at your registrar, then Aura will continue when the zone becomes active.',
-      waiting: 'Waiting for Cloudflare to activate the zone…',
+    connection: {
+      heading: 'Connection to Cloudflare',
+      running: 'Aura is creating the tunnel, the address and the Access protection.',
+      ready: 'The connection is ready.',
+      deleting:
+        'Aura is deleting what it created in your Cloudflare account. When it finishes, Domain opens again so you can save the address.',
+      needWait: 'Wait for Aura to finish: the next step opens by itself',
+      needFix: 'Fix the problem above to continue',
+      rotation:
+        'If you rotated the tunnel token in the Cloudflare dashboard, Aura has to read it again.',
+      rotationGuide: 'How to rotate the tunnel token',
+      rotationRefresh: 'Refresh Dashboard-rotated token',
     },
-    hostnames: { public: 'Public Access hostname', warp: 'WARP-required hostname' },
-    verify: {
-      heading: 'Verify the external path',
-      body: 'Open the public hostname, complete Cloudflare Access one-time PIN and Authula, then confirm from that external cockpit.',
-      open: 'Open public hostname',
-      externalOnly:
-        'This confirmation is available only from the configured public hostname after Cloudflare Access and Authula.',
+    phone: {
+      heading: 'Try it from your phone',
+      test: 'Open this address from your phone on mobile data, away from the home network. Cloudflare asks for a PIN by email, then you sign in to Aura. Confirm from there, in Settings.',
+      open: 'Open the public address',
+      reachable: 'Reachable from outside',
+      unreachable: 'Not reachable',
+      lastChecked: 'Last checked: {{time}}',
+      externalOnly: 'The confirmation is only available from that address.',
       accept: 'Confirm external access',
-      accepted: 'External access confirmation requested.',
-    },
-    status: {
-      heading: 'Remote access status',
-      phase: 'Reconciliation phase',
-      connector: 'Connector',
-      membership:
-        'Access membership is reconciled from active Aura users; administrators remain protected from lockout.',
       direct:
-        'Direct IP or LAN ingress bypasses Cloudflare Access and remains protected by Authula.',
-      lastError: 'Remote access needs attention. Retry or replace the API token.',
-      accepted: 'Action accepted. Refreshing status…',
-      actionError: 'The remote access action was not accepted. Refresh the status and try again.',
-      failedDeletion:
-        'Deletion is still in progress or needs attention. Aura remains disabled until the owned resources are removed.',
-      lastReconciled: 'Last reconciled {{time}}',
-      phases: {
-        disabled: 'Disabled',
-        validating: 'Validating configuration',
-        waiting_nameservers: 'Waiting for nameservers',
-        provisioning: 'Provisioning Cloudflare resources',
-        connecting: 'Waiting for external acceptance',
-        healthy: 'Healthy',
-        degraded: 'Degraded',
-        error: 'Needs attention',
-        deleting: 'Deleting resources',
-      },
-      connectors: {
-        healthy: 'Healthy',
-        disconnected: 'Disconnected',
-        awaiting_external_acceptance: 'Awaiting external acceptance',
-      },
-    },
-    actions: {
-      reconcile: 'Retry reconciliation',
-      rotate: 'Rotate token in Cloudflare Dashboard',
-      refresh: 'Refresh Dashboard-rotated token',
-      disable: 'Disable remote access',
-      reenable: 'Re-enable remote access',
-      delete: 'Delete remote access',
-      deleteForever: 'Delete permanently',
-      cancel: 'Cancel',
-    },
-    rotation: {
-      body: 'Cloudflare does not expose a token-rotation API. Rotate the tunnel token manually in the Cloudflare Dashboard, then refresh Aura’s projected token.',
-      documentation: 'Open Cloudflare token instructions',
-    },
-    permissions: {
-      heading: 'API token permissions',
-      body: 'Create a scoped Cloudflare API token with: Account Settings Read; Zone Read and Zone Write; Cloudflare Tunnel/Connector Write; DNS Write; Access Organizations/Identity Providers/Groups Write; Access Apps/Policies Write; and Zero Trust Write.',
-      documentation: 'Open Cloudflare API token creation',
-    },
-    warp: {
-      heading: 'WARP organization enrollment',
-      body: 'The WARP hostname requires the Cloudflare One client enrolled in this same organization through Gateway. Aura creates no private LAN, CIDR, or Docker route.',
-      documentation: 'Open Gateway enrollment guidance',
-      dependency:
-        'Enroll the Cloudflare One client in the same organization. Aura cannot open an organization-specific enrollment link today.',
+        'At home you can always open Aura by its IP address: Cloudflare asks for no PIN there, and your Aura sign-in still applies.',
+      disable: 'Disable',
+      delete: 'Delete…',
     },
     delete: {
-      title: 'Delete Cloudflare remote access?',
-      body: 'This removes Aura-owned Cloudflare resources. Type the exact current public hostname to continue.',
+      title: 'Delete remote access?',
+      body: 'Aura removes what it created on Cloudflare: the tunnel, the address and the Access protection. Your domain and your token stay. Type the exact address to continue.',
       label: 'Type {{hostname}} to confirm',
+      confirm: 'Delete permanently',
+      cancel: 'Cancel',
+    },
+    reasons: {
+      token_rejected: {
+        sentence:
+          'Cloudflare refused the token: it has expired, was revoked or lacks a permission.',
+        action: 'Paste a new token',
+      },
+      no_accounts: {
+        sentence: 'The token works but sees no account: it lacks Account Settings Read.',
+        action: 'Paste a token with that permission',
+      },
+      account_not_visible: {
+        sentence: 'This token cannot see the chosen account: verify it and choose one it can see.',
+        action: 'Change the token or the account',
+      },
+      domain_invalid: {
+        sentence:
+          'The domain or the label is not valid: use a domain like example.com and a label of letters, digits and hyphens.',
+        action: 'Fix the domain',
+      },
+      domain_elsewhere: {
+        sentence:
+          'This domain is active in another Cloudflare account, and a tunnel only serves domains of its own account. Aura created nothing.',
+        action: 'Use another domain',
+      },
+      hostname_taken: {
+        sentence:
+          'Cloudflare already uses this address for another Access application or a DNS record Aura did not create.',
+        action: 'Choose another label',
+      },
+      not_owned: {
+        sentence:
+          'Cloudflare holds a resource Aura did not create, and Aura leaves what is not its own alone. Remove it in the dashboard or change the domain, then retry.',
+        action: 'Retry',
+      },
+      no_administrator: {
+        sentence:
+          'No active administrator could get through Cloudflare: Aura stops so you are not locked out. Check the Aura users, then retry.',
+        action: 'Retry',
+      },
+      cloudflare_unreachable: {
+        sentence: 'Cloudflare is not answering right now. Try again in a moment.',
+        action: 'Retry now',
+      },
+      tunnel_down: {
+        sentence:
+          'The tunnel is not connected to Cloudflare. When it comes back this step turns green by itself, with no new test.',
+        action: 'Check now',
+      },
+      old_address_present: {
+        sentence:
+          'Cloudflare still shows the old address: Aura waits for confirmation that it is gone and keeps trying.',
+        action: 'Retry now',
+      },
+      unknown: {
+        sentence: 'Something failed and Aura cannot say what: the detail is in the server logs.',
+        action: 'Retry',
+      },
     },
   },
 } as const;
@@ -118,116 +166,165 @@ export const remoteAccessEn = {
 export const remoteAccessIt = {
   remoteAccess: {
     heading: 'Accesso remoto',
-    body: 'Pubblica Aura tramite un tunnel Cloudflare con nome, mantenendo disponibile l’accesso diretto per gli operatori.',
+    body: 'Apri la tua Aura da fuori casa, da iPad e telefono, tramite Cloudflare.',
     loading: 'Caricamento accesso remoto…',
     loadError: 'Impossibile caricare l’accesso remoto. Controlla il server e riprova.',
     retry: 'Riprova',
     steps: {
       label: 'Avanzamento configurazione accesso remoto',
-      account: 'Account',
+      cloudflare: 'Cloudflare',
       domain: 'Dominio',
-      nameservers: 'Nameserver',
-      tunnel: 'Tunnel',
-      access: 'Access',
-      warp: 'WARP',
-      verify: 'Verifica',
+      connection: 'Collegamento',
+      phone: 'Prova dal telefono',
     },
-    token: {
-      label: 'Token API Cloudflare',
-      hint: 'Il token viene verificato prima che Aura lo salvi. Non viene mai mostrato di nuovo.',
+    nav: { back: 'Indietro', next: 'Avanti' },
+    failure: {
+      stale:
+        'La configurazione è cambiata nel frattempo. Aura l’ha ricaricata: controlla e premi di nuovo Avanti.',
+      generic: 'La richiesta non è andata a buon fine e il server non ha detto perché. Riprova.',
+    },
+    cloudflare: {
+      heading: 'Collega il tuo account Cloudflare',
+      intro:
+        'Aura usa un token API per creare il tunnel, l’indirizzo e la protezione Access nel tuo account. Il token non viene mai mostrato di nuovo.',
+      createToken: 'Crea il token su Cloudflare',
+      tokenHint:
+        'Il link apre il modulo con i permessi già scelti. Aggiungi tu Cloudflare Tunnel Edit: è l’unico che Cloudflare non sa precompilare.',
+      permissions: 'Permessi che servono al token',
+      tokenLabel: 'Token API Cloudflare',
       verify: 'Verifica token',
-      verified: 'Token verificato. Seleziona l’account Cloudflare da usare.',
-      error: 'Impossibile verificare il token. Sostituiscilo e riprova.',
+      account: 'Account Cloudflare',
+      accountPlaceholder: 'Scegli l’account',
+      needToken: 'Incolla il token per continuare',
+      needNewToken: 'Incolla un token nuovo per continuare',
+      needVerify: 'Verifica il token per continuare',
+      needAccount: 'Scegli l’account per continuare',
+      abandoned: {
+        heading: 'Da eliminare a mano su Cloudflare',
+        body: 'Il nuovo token non raggiunge queste risorse create da Aura. Aura le ha lasciate andare: restano nel vecchio account finché non le elimini dal dashboard.',
+        done: 'Fatto',
+        kinds: {
+          tunnel: 'Tunnel',
+          dns: 'Record DNS',
+          access_app: 'Applicazione Access',
+          access_policy: 'Regola Access',
+          posture: 'Controllo del dispositivo',
+        },
+      },
     },
     domain: {
-      account: 'Account Cloudflare',
-      domain: 'Dominio registrato',
-      publicLabel: 'Etichetta hostname pubblico',
-      warpLabel: 'Etichetta hostname WARP',
-      external:
-        'Acquista o registra prima il dominio presso un registrar. Aura non puo acquistarlo o modificarlo per te.',
-      quickTunnel:
-        'I Quick Tunnel sono strumenti temporanei di test e non supportano il traffico SSE di produzione di Aura.',
-      preview: 'URL pubblicati',
-      save: 'Salva e avvia configurazione',
-      prerequisite: 'Per configurare l’accesso remoto serve un dominio registrato.',
+      heading: 'Scegli il dominio',
+      intro:
+        'Il dominio deve essere tuo e in questo stesso account Cloudflare. Aura non lo compra: lo registri tu presso un registrar.',
+      domain: 'Dominio',
+      label: 'Etichetta dell’indirizzo',
+      preview: 'Aprirai Aura da',
+      needDomain: 'Scrivi il dominio per continuare',
+      needLabel: 'Scrivi l’etichetta per continuare',
+      waitingNext: 'In attesa dei nameserver: il passo successivo si apre da solo',
+      off: 'L’accesso remoto è spento. Premi Avanti per accenderlo su questo indirizzo.',
+      deleting:
+        'Aura sta ancora eliminando l’indirizzo precedente. Puoi salvare anche ora: quando ha finito, premi Avanti ancora una volta per riaccendere l’accesso.',
+      changeWarning:
+        'L’indirizzo attuale smette di funzionare, e dovrai rifare la prova dal telefono.',
+      nameservers: {
+        heading: 'Cambia i nameserver presso il registrar',
+        body: 'Sostituisci i nameserver del dominio con questi due. Aura continua da sola quando Cloudflare attiva la zona.',
+        waiting: 'In attesa che Cloudflare attivi la zona…',
+      },
     },
-    nameservers: {
-      heading: 'Indica Cloudflare al registrar',
-      body: 'Sostituisci i nameserver del dominio presso il registrar; Aura continua quando la zona diventa attiva.',
-      waiting: 'In attesa che Cloudflare attivi la zona…',
+    connection: {
+      heading: 'Collegamento con Cloudflare',
+      running: 'Aura sta creando il tunnel, l’indirizzo e la protezione Access.',
+      ready: 'Il collegamento è pronto.',
+      deleting:
+        'Aura sta eliminando quello che ha creato nel tuo account Cloudflare. Quando ha finito si riapre Dominio, e puoi salvare l’indirizzo.',
+      needWait: 'Aspetta che Aura finisca: il passo successivo si apre da solo',
+      needFix: 'Risolvi il problema qui sopra per continuare',
+      rotation:
+        'Se hai ruotato il token del tunnel nel dashboard Cloudflare, Aura deve rileggerlo.',
+      rotationGuide: 'Come ruotare il token del tunnel',
+      rotationRefresh: 'Rileggi il token ruotato',
     },
-    hostnames: { public: 'Hostname Access pubblico', warp: 'Hostname con WARP obbligatorio' },
-    verify: {
-      heading: 'Verifica il percorso esterno',
-      body: 'Apri l’hostname pubblico, completa il PIN monouso Cloudflare Access e Authula, poi conferma da quel cockpit esterno.',
-      open: 'Apri hostname pubblico',
-      externalOnly:
-        'Questa conferma e disponibile solo dall’hostname pubblico configurato dopo Cloudflare Access e Authula.',
-      accept: 'Conferma accesso esterno',
-      accepted: 'Richiesta di conferma dell’accesso esterno inviata.',
-    },
-    status: {
-      heading: 'Stato accesso remoto',
-      phase: 'Fase di riconciliazione',
-      connector: 'Connettore',
-      membership:
-        'La membership Access viene riconciliata dagli utenti Aura attivi; gli amministratori restano protetti dal lockout.',
+    phone: {
+      heading: 'Prova dal telefono',
+      test: 'Apri questo indirizzo dal telefono, con i dati mobili e fuori dalla rete di casa. Cloudflare ti chiede un PIN via email, poi entri in Aura. Conferma da lì, in Impostazioni.',
+      open: 'Apri l’indirizzo pubblico',
+      reachable: 'Raggiungibile da fuori casa',
+      unreachable: 'Non raggiungibile',
+      lastChecked: 'Ultimo controllo: {{time}}',
+      externalOnly: 'La conferma è disponibile solo da quell’indirizzo.',
+      accept: 'Conferma l’accesso da fuori',
       direct:
-        'L’ingresso diretto da IP o LAN ignora Cloudflare Access e resta protetto da Authula.',
-      lastError: 'L’accesso remoto richiede attenzione. Riprova o sostituisci il token API.',
-      accepted: 'Azione accettata. Aggiornamento stato…',
-      actionError: 'L’azione di accesso remoto non e stata accettata. Aggiorna lo stato e riprova.',
-      failedDeletion:
-        'L’eliminazione e ancora in corso o richiede attenzione. Aura resta disabilitata finche le risorse possedute non vengono rimosse.',
-      lastReconciled: 'Ultima riconciliazione {{time}}',
-      phases: {
-        disabled: 'Disabilitato',
-        validating: 'Configurazione in verifica',
-        waiting_nameservers: 'In attesa dei nameserver',
-        provisioning: 'Risorse Cloudflare in preparazione',
-        connecting: 'In attesa conferma esterna',
-        healthy: 'Sano',
-        degraded: 'Degradato',
-        error: 'Richiede attenzione',
-        deleting: 'Eliminazione risorse',
-      },
-      connectors: {
-        healthy: 'Sano',
-        disconnected: 'Disconnesso',
-        awaiting_external_acceptance: 'In attesa conferma esterna',
-      },
-    },
-    actions: {
-      reconcile: 'Riprova riconciliazione',
-      rotate: 'Ruota token nel Dashboard Cloudflare',
-      refresh: 'Aggiorna token ruotato nel Dashboard',
-      disable: 'Disabilita accesso remoto',
-      reenable: 'Riattiva accesso remoto',
-      delete: 'Elimina accesso remoto',
-      deleteForever: 'Elimina definitivamente',
-      cancel: 'Annulla',
-    },
-    rotation: {
-      body: 'Cloudflare non espone un’API per ruotare il token. Ruota manualmente il token tunnel nel Dashboard Cloudflare, poi aggiorna il token proiettato da Aura.',
-      documentation: 'Apri istruzioni token Cloudflare',
-    },
-    permissions: {
-      heading: 'Permessi token API',
-      body: 'Crea un token API Cloudflare con scope: Account Settings Read; Zone Read e Zone Write; Cloudflare Tunnel/Connector Write; DNS Write; Access Organizations/Identity Providers/Groups Write; Access Apps/Policies Write; e Zero Trust Write.',
-      documentation: 'Apri creazione token API Cloudflare',
-    },
-    warp: {
-      heading: 'Registrazione organizzazione WARP',
-      body: 'L’hostname WARP richiede il client Cloudflare One registrato nella stessa organizzazione tramite Gateway. Aura non crea route LAN private, CIDR o Docker.',
-      documentation: 'Apri guida registrazione Gateway',
-      dependency:
-        'Registra il client Cloudflare One nella stessa organizzazione. Aura non puo aprire oggi un link di registrazione specifico dell’organizzazione.',
+        'A casa puoi sempre aprire Aura dal suo indirizzo IP: lì Cloudflare non chiede il PIN, e resta il tuo accesso ad Aura.',
+      disable: 'Disattiva',
+      delete: 'Elimina…',
     },
     delete: {
-      title: 'Eliminare l’accesso remoto Cloudflare?',
-      body: 'Rimuove le risorse Cloudflare possedute da Aura. Scrivi l’hostname pubblico corrente esatto per continuare.',
+      title: 'Eliminare l’accesso remoto?',
+      body: 'Aura rimuove quello che ha creato su Cloudflare: il tunnel, l’indirizzo e la protezione Access. Il dominio e il token restano. Scrivi l’indirizzo esatto per continuare.',
       label: 'Scrivi {{hostname}} per confermare',
+      confirm: 'Elimina definitivamente',
+      cancel: 'Annulla',
+    },
+    reasons: {
+      token_rejected: {
+        sentence:
+          'Cloudflare ha rifiutato il token: è scaduto, è stato revocato o gli manca un permesso.',
+        action: 'Incolla un token nuovo',
+      },
+      no_accounts: {
+        sentence: 'Il token funziona ma non vede nessun account: gli manca Account Settings Read.',
+        action: 'Incolla un token con quel permesso',
+      },
+      account_not_visible: {
+        sentence: 'Questo token non vede l’account scelto: verificalo e scegline uno che vede.',
+        action: 'Cambia token o account',
+      },
+      domain_invalid: {
+        sentence:
+          'Il dominio o l’etichetta non vanno bene: serve un dominio come esempio.it e un’etichetta di lettere, numeri e trattini.',
+        action: 'Correggi il dominio',
+      },
+      domain_elsewhere: {
+        sentence:
+          'Questo dominio è attivo in un altro account Cloudflare, e un tunnel serve solo i domini del suo stesso account. Aura non ha creato nulla.',
+        action: 'Usa un altro dominio',
+      },
+      hostname_taken: {
+        sentence:
+          'Questo indirizzo è già occupato su Cloudflare da un’altra applicazione Access o da un record DNS che Aura non ha creato.',
+        action: 'Scegli un’altra etichetta',
+      },
+      not_owned: {
+        sentence:
+          'Su Cloudflare c’è una risorsa che Aura non ha creato, e Aura non tocca ciò che non è suo. Eliminala dal dashboard o cambia dominio, poi riprova.',
+        action: 'Riprova',
+      },
+      no_administrator: {
+        sentence:
+          'Nessun amministratore attivo potrebbe passare da Cloudflare: Aura si ferma per non chiuderti fuori. Controlla gli utenti Aura, poi riprova.',
+        action: 'Riprova',
+      },
+      cloudflare_unreachable: {
+        sentence: 'Cloudflare non risponde in questo momento. Riprova tra poco.',
+        action: 'Riprova ora',
+      },
+      tunnel_down: {
+        sentence:
+          'Il tunnel non è collegato a Cloudflare. Quando torna su, questo passo ridiventa verde da solo, senza rifare la prova.',
+        action: 'Controlla ora',
+      },
+      old_address_present: {
+        sentence:
+          'Il vecchio indirizzo risulta ancora su Cloudflare: Aura aspetta la conferma che sia sparito e continua a provare.',
+        action: 'Riprova ora',
+      },
+      unknown: {
+        sentence:
+          'Qualcosa non ha funzionato e Aura non sa dire cosa: il dettaglio è nei log del server.',
+        action: 'Riprova',
+      },
     },
   },
 } as const;

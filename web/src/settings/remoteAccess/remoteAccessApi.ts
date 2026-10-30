@@ -1,4 +1,4 @@
-import { httpErrorFrom } from '../../api/json';
+import { HttpError, httpErrorFrom } from '../../api/json';
 
 export type RemoteAccessPhase =
   | 'disabled'
@@ -11,20 +11,47 @@ export type RemoteAccessPhase =
   | 'error'
   | 'deleting';
 
+/** Go remotetunnel.Reason and the SQL CHECK, as a list: the wizard iterates every code. */
+export const REMOTE_ACCESS_REASONS = [
+  'token_rejected',
+  'no_accounts',
+  'account_not_visible',
+  'domain_invalid',
+  'domain_elsewhere',
+  'hostname_taken',
+  'not_owned',
+  'no_administrator',
+  'cloudflare_unreachable',
+  'tunnel_down',
+  'old_address_present',
+  'unknown',
+] as const;
+
+/** "" means no reason. */
+export type RemoteAccessReason = (typeof REMOTE_ACCESS_REASONS)[number] | '';
+
+export interface AbandonedResource {
+  readonly kind: string;
+  readonly name: string;
+}
+
 interface RemoteAccessBase {
   readonly enabled: boolean;
   readonly api_token_set: boolean;
-  readonly tunnel_token_set: boolean;
-  readonly connector: string;
   readonly generation: number;
   readonly public_hostname?: string;
-  readonly warp_hostname?: string;
   readonly account_id?: string;
+  readonly account_name?: string;
   readonly zone_name?: string;
-  readonly nameservers?: readonly string[];
-  readonly last_error?: string;
-  readonly last_reconciled_at?: string;
-  readonly acceptance_required: boolean;
+  readonly public_label?: string;
+  readonly nameservers: readonly string[];
+  readonly reason: RemoteAccessReason;
+  /** The phone test passed for this address. */
+  readonly accepted: boolean;
+  /** The tunnel is serving now. */
+  readonly reachable: boolean;
+  readonly last_checked_at?: string;
+  readonly abandoned: readonly AbandonedResource[];
 }
 
 type PhaseStatus<P extends RemoteAccessPhase> = RemoteAccessBase & { readonly phase: P };
@@ -51,15 +78,41 @@ export interface RemoteAccessConfiguration {
   readonly account_id: string;
   readonly zone_name: string;
   readonly public_label: string;
-  readonly warp_label: string;
   /** Write-only: callers must clear their form state immediately after success. */
   readonly api_token?: string;
 }
 
+/** A refusal with the code the wizard acts on. `code` is "" when the server named no cause: a
+ * stale generation, or a body the API's error writer did not write. */
+export class RemoteAccessError extends HttpError {
+  readonly code: RemoteAccessReason;
+
+  constructor(error: HttpError, code: RemoteAccessReason) {
+    super(error.status, error.reason, error.detail);
+    this.code = code;
+  }
+}
+
 const ROUTE = '/api/settings/remote-access';
 
+function isReason(value: unknown): value is RemoteAccessReason {
+  return REMOTE_ACCESS_REASONS.some((reason) => reason === value);
+}
+
+async function bodyReason(res: Response): Promise<RemoteAccessReason> {
+  try {
+    const body = (await res.json()) as { readonly reason?: unknown } | null;
+    return isReason(body?.reason) ? body.reason : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function readJSON<T>(res: Response): Promise<T> {
-  if (!res.ok) throw await httpErrorFrom(res);
+  if (!res.ok) {
+    const code = await bodyReason(res.clone());
+    throw new RemoteAccessError(await httpErrorFrom(res), code);
+  }
   return (await res.json()) as T;
 }
 
@@ -127,6 +180,10 @@ export async function disableRemoteAccess(): Promise<void> {
 
 export async function deleteRemoteAccess(hostname: string): Promise<void> {
   await mutation('', 'DELETE', { hostname });
+}
+
+export async function dismissAbandonedRemoteAccess(): Promise<void> {
+  await mutation('/abandoned/dismiss', 'POST', {});
 }
 
 /** This request intentionally stays relative: when invoked it must traverse the public tunnel. */

@@ -51,6 +51,11 @@ export const resources = {
         show: 'Show {{label}}',
         hide: 'Hide {{label}}',
       },
+      stepStrip: {
+        progress: 'Step {{current}} of {{total}}',
+        done: 'done',
+        failed: 'needs attention',
+      },
       ...loginEn,
       messageDraft: messageDraftEn,
       shell: {
@@ -270,6 +275,11 @@ export const resources = {
       secret: {
         show: 'Mostra {{label}}',
         hide: 'Nascondi {{label}}',
+      },
+      stepStrip: {
+        progress: 'Passo {{current}} di {{total}}',
+        done: 'fatto',
+        failed: 'da sistemare',
       },
       ...loginIt,
       messageDraft: messageDraftIt,
