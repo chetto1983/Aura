@@ -34,20 +34,16 @@ func validateDesired(d Desired) error {
 }
 
 func (r *Reconciler) account(ctx context.Context, s *State) error {
-	if s.Resources.AccountID != "" && s.Resources.AccountID != s.Desired.AccountID {
-		return ErrOwnershipConflict
-	}
 	accounts, err := r.cloud.ListAccounts(ctx)
 	if err != nil {
 		return err
 	}
 	for _, a := range accounts {
 		if a.ID == s.Desired.AccountID {
-			s.Resources.AccountID = a.ID
 			return nil
 		}
 	}
-	return ErrConfiguration
+	return ErrAccountNotVisible
 }
 
 func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {

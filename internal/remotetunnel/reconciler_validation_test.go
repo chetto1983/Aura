@@ -88,14 +88,12 @@ func TestReconcileBackoffResetAndNewIntent(t *testing.T) {
 }
 
 func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
-	for _, kind := range []string{"account", "zone", "tunnel", "otp", "app", "policy", "dns", "unknown-tunnel", "unknown-app", "unknown-dns"} {
+	for _, kind := range []string{"zone", "tunnel", "otp", "app", "policy", "dns", "unknown-tunnel", "unknown-app", "unknown-dns"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.assertResources(t)
 			h.cloud.allowUnpersisted = true
 			switch kind {
-			case "account":
-				h.store.state.Resources.AccountID = "another"
 			case "zone":
 				h.cloud.zone.Account.ID = "another"
 			case "tunnel":

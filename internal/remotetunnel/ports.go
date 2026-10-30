@@ -36,7 +36,8 @@ type Projection interface {
 	Apply(context.Context, ProjectionState) error
 }
 
-// TunnelCredentials must commit encrypted PostgreSQL state before Save returns success.
+// TunnelCredentials must commit encrypted PostgreSQL state before Save returns success. An empty
+// secret clears the stored credential.
 type TunnelCredentials interface {
 	Save(context.Context, cloudflareapi.Secret) error
 }

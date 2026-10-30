@@ -220,3 +220,13 @@ func TestRemoteAccessConfigurationValidationPrecedesWrites(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestRemoteAccessCredentialsClearWhenSavedEmpty(t *testing.T) {
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_TUNNEL_TOKEN": "connector"}}
+	if err := (remoteTunnelCredentials{secrets: secrets}).Save(t.Context(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if secrets.values["CLOUDFLARE_TUNNEL_TOKEN"] != "" {
+		t.Fatal("the retiring tunnel's token survives a clear")
+	}
+}

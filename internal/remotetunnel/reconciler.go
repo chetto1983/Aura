@@ -117,6 +117,13 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if err = r.account(ctx, s); err != nil {
 		return err
 	}
+	if addressChanged(*s) {
+		s.Phase, s.Reason, s.ObservedHealthy = PhaseProvisioning, "", false
+		if err = r.teardown(ctx, s); err != nil {
+			return err
+		}
+	}
+	recordOwned(s)
 	active, err := r.zone(ctx, s)
 	if err != nil || !active {
 		return err

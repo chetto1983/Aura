@@ -3,6 +3,8 @@ package remotetunnel
 import (
 	"context"
 	"slices"
+
+	"github.com/chetto1983/aura/internal/cloudflareapi"
 )
 
 // deletion removes one resource. A non-empty abandon marks a resource the operator can do without
@@ -18,11 +20,13 @@ type deletion struct {
 
 func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 	account := s.Resources.AccountID
-	return append(r.routeDeletions(ctx, s, routes(s)[0]), deletion{&s.Resources.TunnelID, func() error {
+	var last cloudflareapi.Tunnel
+	return append(r.routeDeletions(ctx, s, publicRoute(s, s.OwnedHostname)), deletion{&s.Resources.TunnelID, func() error {
 		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
 		if err != nil {
 			return err
 		}
+		last = t
 		if !ownedTunnel(*s, t) {
 			return ErrOwnershipConflict
 		}
@@ -31,7 +35,9 @@ func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 			return errResourceAbsent
 		}
 		return nil
-	}, func() error { return r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID) }, nil, nil})
+	}, func() error {
+		return tunnelRefusal(r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID), last)
+	}, nil, nil})
 }
 
 // routeDeletions removes the route's DNS record, then its policy, then its application.
@@ -79,9 +85,6 @@ func (r *Reconciler) routeDeletions(ctx context.Context, s *State, route route) 
 }
 
 func (r *Reconciler) verifyOwned(ctx context.Context, s *State) error {
-	if s.Resources.AccountID != s.Desired.AccountID {
-		return ErrOwnershipConflict
-	}
 	for _, step := range r.deletions(ctx, s) {
 		if *step.id == "" {
 			continue
@@ -126,25 +129,16 @@ func (r *Reconciler) delete(ctx context.Context, s *State) error {
 }
 
 func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
-	if err := r.retireWARP(ctx, s); err != nil {
-		return err
-	}
 	if r.projection == nil {
 		return ErrConfiguration
 	}
-	if err := r.projection.Apply(ctx, ProjectionState{Generation: s.Generation}); err != nil {
-		return err
-	}
-	if s.Resources.AccountID != "" && s.Resources.AccountID != s.Desired.AccountID {
-		return ErrOwnershipConflict
-	}
-	if err := r.runDeletions(ctx, s, r.deletions(ctx, s)); err != nil {
+	if err := r.teardown(ctx, s); err != nil {
 		return err
 	}
 	// Zone and account-wide OTP remain in Cloudflare; only detach their local references.
 	s.Resources.ZoneID = ""
 	s.Resources.OTPProviderID = ""
-	s.TunnelName = ""
+	s.OwnedZoneName = ""
 	s.Phase = PhaseDisabled
 	s.ObservedHealthy = false
 	s.Reason = ""

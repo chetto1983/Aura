@@ -23,6 +23,9 @@ func (m *memoryState) SaveDesired(_ context.Context, g int64, d Desired, by stri
 	if g != m.state.Generation {
 		return State{}, ErrStaleGeneration
 	}
+	if m.state.Desired.ZoneName != d.ZoneName || m.state.Desired.PublicLabel != d.PublicLabel {
+		m.state.AcceptedHostname = ""
+	}
 	m.state.Desired = d
 	m.state.Generation++
 	m.state.UpdatedBy = by
@@ -60,6 +63,7 @@ func (m testMembers) ActiveAdminEmails(context.Context) ([]string, error) { retu
 
 type testCredentials struct {
 	saved cf.Secret
+	saves []cf.Secret
 	err   error
 }
 
@@ -68,6 +72,7 @@ func (s *testCredentials) Save(_ context.Context, t cf.Secret) error {
 		return s.err
 	}
 	s.saved = t
+	s.saves = append(s.saves, t)
 	return nil
 }
 
@@ -76,6 +81,9 @@ type testProjection struct {
 	credentials *testCredentials
 	applied     []ProjectionState
 	err         error
+	// deletes reads how many Cloudflare deletions had happened at each Apply.
+	deletes        func() int
+	deletesAtApply []int
 }
 
 func (p *testProjection) Apply(_ context.Context, s ProjectionState) error {
@@ -83,6 +91,9 @@ func (p *testProjection) Apply(_ context.Context, s ProjectionState) error {
 		p.t.Fatal("projection before durable credential")
 	}
 	p.applied = append(p.applied, s)
+	if p.deletes != nil {
+		p.deletesAtApply = append(p.deletesAtApply, p.deletes())
+	}
 	return p.err
 }
 
@@ -98,7 +109,7 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
-	h.projection = &testProjection{t: t, credentials: h.credentials}
+	h.projection = &testProjection{t: t, credentials: h.credentials, deletes: func() int { return h.cloud.deletes }}
 	h.cloud = &fakeCloud{t: t, store: h.store, zone: cf.Zone{Name: "example.com", Status: "active", Account: cf.Account{ID: "account"}}, apps: map[string]cf.AccessApplication{}, policies: map[string]cf.AccessPolicy{}, dns: map[string]cf.DNSRecord{}}
 	h.r = h.newReconciler()
 	return h
@@ -135,6 +146,17 @@ type fakeCloud struct {
 	appReadErr, appRemoveErr                            error
 	postureConfirmErr                                   error
 	deletesAtPublish                                    int
+	otpAccount                                          string
+	publicDNSRemoveErr                                  error
+	// accountIDs are the accounts the token sees; empty means just "account".
+	accountIDs []string
+	// nextZone replaces zone the moment ListZones is asked for its name.
+	nextZone                       cf.Zone
+	zoneCreates                    int
+	deleteAccounts, createAccounts []string
+	// allowDetached lets the zone and the OTP provider outlive their local references.
+	allowDetached   bool
+	refuseConnected bool
 }
 
 func (f *fakeCloud) call() error {
@@ -145,6 +167,10 @@ func (f *fakeCloud) call() error {
 	if !f.allowUnpersisted {
 		s := f.store.state.Resources
 		pairs := [][2]string{{f.zone.ID, s.ZoneID}, {f.tunnel.ID, s.TunnelID}, {f.otp.ID, s.OTPProviderID}, {f.posture.ID, s.GatewayPostureID}, {f.apps["public-app"].ID, s.PublicAppID}, {f.apps["warp-app"].ID, s.WARPAppID}, {f.policies["public-policy"].ID, s.PublicPolicyID}, {f.policies["warp-policy"].ID, s.WARPPolicyID}, {f.dns["public-dns"].ID, s.PublicDNSID}, {f.dns["warp-dns"].ID, s.WARPDNSID}}
+		if f.allowDetached {
+			pairs = pairs[1:2]
+			pairs = append(pairs, [2]string{f.posture.ID, s.GatewayPostureID}, [2]string{f.apps["public-app"].ID, s.PublicAppID}, [2]string{f.policies["public-policy"].ID, s.PublicPolicyID}, [2]string{f.dns["public-dns"].ID, s.PublicDNSID})
+		}
 		for _, p := range pairs {
 			if p[0] != "" && p[0] != p[1] {
 				f.t.Fatalf("next API call before resource %s persisted", p[0])
@@ -173,11 +199,23 @@ func (f *fakeCloud) ListAccounts(context.Context) ([]cf.Account, error) {
 	if f.blind {
 		return nil, f.call()
 	}
-	return []cf.Account{{ID: "account"}}, f.call()
+	ids := f.accountIDs
+	if len(ids) == 0 {
+		ids = []string{"account"}
+	}
+	accounts := []cf.Account{}
+	for _, id := range ids {
+		accounts = append(accounts, cf.Account{ID: id})
+	}
+	return accounts, f.call()
 }
-func (f *fakeCloud) ListZones(context.Context, string, string) ([]cf.Zone, error) {
+func (f *fakeCloud) ListZones(_ context.Context, account, name string) ([]cf.Zone, error) {
 	if err := f.call(); err != nil {
 		return nil, err
+	}
+	f.createAccounts = append(f.createAccounts, "zone:"+account)
+	if f.nextZone.ID != "" && f.nextZone.Name == name {
+		f.zone, f.nextZone = f.nextZone, cf.Zone{}
 	}
 	if f.zone.ID != "" {
 		return []cf.Zone{f.zone}, nil
@@ -190,6 +228,7 @@ func (f *fakeCloud) CreateZone(context.Context, string, string) (cf.Zone, error)
 		return cf.Zone{}, err
 	}
 	f.creates++
+	f.zoneCreates++
 	f.zone.ID = "zone"
 	return f.zone, nil
 }
@@ -211,18 +250,23 @@ func (f *fakeCloud) GetTunnel(context.Context, string, string) (cf.Tunnel, error
 	}
 	return f.tunnel, nil
 }
-func (f *fakeCloud) CreateTunnel(_ context.Context, _, name string) (cf.Tunnel, error) {
+func (f *fakeCloud) CreateTunnel(_ context.Context, account, name string) (cf.Tunnel, error) {
 	if err := f.call(); err != nil {
 		return cf.Tunnel{}, err
 	}
+	f.createAccounts = append(f.createAccounts, "tunnel:"+account)
 	f.creates++
 	f.tunnel = cf.Tunnel{ID: "tunnel", Name: name, RemoteConfig: true, Status: "healthy"}
 	return f.tunnel, nil
 }
-func (f *fakeCloud) DeleteTunnel(context.Context, string, string) error {
+func (f *fakeCloud) DeleteTunnel(_ context.Context, account, _ string) error {
+	if f.refuseConnected && f.tunnel.Status == "healthy" {
+		return &cf.APIError{Status: 400}
+	}
 	if err := f.remove(); err != nil {
 		return err
 	}
+	f.deleteAccounts = append(f.deleteAccounts, "tunnel:"+account)
 	if !f.keepDeleted {
 		f.tunnel = cf.Tunnel{}
 	}
@@ -254,13 +298,18 @@ func (f *fakeCloud) PutTunnelConfig(_ context.Context, _, _ string, c cf.TunnelC
 func (f *fakeCloud) ListIdentityProviders(context.Context, string) ([]cf.IdentityProvider, error) {
 	return []cf.IdentityProvider{f.otp}, f.call()
 }
-func (f *fakeCloud) EnsureOTPProvider(context.Context, string) (cf.IdentityProvider, error) {
+func (f *fakeCloud) EnsureOTPProvider(_ context.Context, account string) (cf.IdentityProvider, error) {
 	if err := f.call(); err != nil {
 		return cf.IdentityProvider{}, err
 	}
-	if f.otp.ID == "" {
+	if f.otp.ID == "" || f.otpAccount != account {
 		f.creates++
+		f.otpAccount = account
 		f.otp = cf.IdentityProvider{ID: "otp", Type: "onetimepin"}
+		if account != "account" {
+			f.otp.ID = "otp-" + account
+		}
+		f.createAccounts = append(f.createAccounts, "otp:"+account)
 	}
 	return f.otp, nil
 }
@@ -287,25 +336,27 @@ func (f *fakeCloud) GetApplication(_ context.Context, _, id string) (cf.AccessAp
 	}
 	return a, nil
 }
-func (f *fakeCloud) PutApplication(_ context.Context, _, id string, a cf.AccessApplication) (cf.AccessApplication, error) {
+func (f *fakeCloud) PutApplication(_ context.Context, account, id string, a cf.AccessApplication) (cf.AccessApplication, error) {
 	if err := f.call(); err != nil {
 		return a, err
 	}
 	if id == "" {
 		f.creates++
+		f.createAccounts = append(f.createAccounts, "app:"+account)
 		id = "public-app"
 	}
 	a.ID = id
 	f.apps[id] = a
 	return a, nil
 }
-func (f *fakeCloud) DeleteApplication(_ context.Context, _, id string) error {
+func (f *fakeCloud) DeleteApplication(_ context.Context, account, id string) error {
 	if id == "warp-app" && f.appRemoveErr != nil {
 		return f.appRemoveErr
 	}
 	if err := f.remove(); err != nil {
 		return err
 	}
+	f.deleteAccounts = append(f.deleteAccounts, "app:"+account)
 	if !f.keepDeleted {
 		delete(f.apps, id)
 	}
@@ -353,13 +404,14 @@ func (f *fakeCloud) PutPolicy(_ context.Context, _, app, id string, p cf.AccessP
 	}
 	return p, nil
 }
-func (f *fakeCloud) DeletePolicy(_ context.Context, _, _, id string) error {
+func (f *fakeCloud) DeletePolicy(_ context.Context, account, _, id string) error {
 	if id == "warp-policy" && f.policyRemoveErr != nil {
 		return f.policyRemoveErr
 	}
 	if err := f.remove(); err != nil {
 		return err
 	}
+	f.deleteAccounts = append(f.deleteAccounts, "policy:"+account)
 	if !f.keepDeleted {
 		delete(f.policies, id)
 	}
@@ -433,6 +485,9 @@ func (f *fakeCloud) EnsureCNAME(_ context.Context, _, id, host, tunnel, owner st
 	return d, nil
 }
 func (f *fakeCloud) DeleteDNS(_ context.Context, _, id, _ string) error {
+	if id == "public-dns" && f.publicDNSRemoveErr != nil {
+		return f.publicDNSRemoveErr
+	}
 	if id == "warp-dns" && f.dnsRemoveErr != nil {
 		return f.dnsRemoveErr
 	}

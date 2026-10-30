@@ -25,9 +25,6 @@ func (r *Reconciler) retireWARP(ctx context.Context, s *State) error {
 	if res.LegacyWARPHostname == "" {
 		return nil
 	}
-	if res.AccountID != s.Desired.AccountID {
-		return ErrOwnershipConflict
-	}
 	warp := route{"warp", res.LegacyWARPHostname, &res.WARPAppID, &res.WARPPolicyID, &res.WARPDNSID}
 	steps := append(r.routeDeletions(ctx, s, warp), deletion{id: &res.GatewayPostureID, read: func() error {
 		p, err := r.cloud.GetPosture(ctx, res.AccountID, res.GatewayPostureID)

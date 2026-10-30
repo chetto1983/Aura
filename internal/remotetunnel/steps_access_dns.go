@@ -18,8 +18,10 @@ type route struct {
 	app, policy, dns *string
 }
 
-func routes(s *State) []route {
-	return []route{{"public", publicHostname(s.Desired), &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}}
+func routes(s *State) []route { return []route{publicRoute(s, publicHostname(s.Desired))} }
+
+func publicRoute(s *State, hostname string) route {
+	return route{"public", hostname, &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}
 }
 func resourceName(s *State, role string) string { return s.TunnelName + "-" + role }
 

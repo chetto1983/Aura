@@ -3,6 +3,7 @@ package remotetunnel
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	cf "github.com/chetto1983/aura/internal/cloudflareapi"
@@ -494,5 +495,18 @@ func TestRetireWARPBlindTokenWithADeniedCNAMEKeepsEveryID(t *testing.T) {
 	r := h.store.state.Resources
 	if r.WARPDNSID == "" || r.WARPPolicyID == "" || r.WARPAppID == "" || r.GatewayPostureID == "" || len(h.store.state.Abandoned) != 0 || h.cloud.deletes != 0 {
 		t.Fatalf("resources=%+v abandoned=%v deletes=%d", r, h.store.state.Abandoned, h.cloud.deletes)
+	}
+}
+
+func TestRetirementDeletesInTheAccountTheResourcesLiveIn(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	seedLegacyWARP(h)
+	h.store.state.Desired.AccountID = "account-b"
+	if err := h.r.retireWARP(t.Context(), &h.store.state); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"policy:account", "app:account"}; !slices.Equal(h.cloud.deleteAccounts, want) {
+		t.Fatalf("deleted in %v, want %v", h.cloud.deleteAccounts, want)
 	}
 }

@@ -52,5 +52,5 @@ func ReasonOf(err error) Reason {
 // schedule both read it, so a row cannot say unreachable while giving up.
 func transient(err error) bool {
 	var timeout net.Error
-	return cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout()
+	return cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, errConnectorDraining) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout()
 }
