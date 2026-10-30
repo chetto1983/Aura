@@ -45,6 +45,8 @@ func ReasonOf(err error) Reason {
 	case errors.Is(err, ErrProjection):
 		// A write to the local sidecar says nothing about Cloudflare, whatever it wraps.
 		return ReasonUnknown
+	case errors.Is(err, cloudflareapi.ErrTokenInactive):
+		return ReasonTokenRejected
 	case errors.As(err, &api) && (api.Status == 401 || api.Status == 403):
 		return ReasonTokenRejected
 	case transient(err):

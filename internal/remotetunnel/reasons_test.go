@@ -50,3 +50,14 @@ func TestFailureWritesTheMappedReason(t *testing.T) {
 		t.Fatalf("phase=%s reason=%q", h.store.state.Phase, h.store.state.Reason)
 	}
 }
+
+func TestReasonOfAnInactiveToken(t *testing.T) {
+	for _, err := range []error{cloudflareapi.ErrTokenInactive, fmt.Errorf("verify: %w", cloudflareapi.ErrTokenInactive)} {
+		if got := ReasonOf(err); got != ReasonTokenRejected {
+			t.Fatalf("%v: reason=%q", err, got)
+		}
+		if transient(err) {
+			t.Fatalf("%v: a dead token is not worth retrying", err)
+		}
+	}
+}

@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -22,18 +20,25 @@ import (
 type wizardCloudflare struct {
 	*httptest.Server
 	accounts, zones atomic.Int32
+	// tokenStatus is what /user/tokens/verify reports; hangAccounts holds /accounts open until the caller gives up.
+	tokenStatus  string
+	hangAccounts bool
 }
 
 func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) *wizardCloudflare {
 	t.Helper()
-	f := &wizardCloudflare{}
+	f := &wizardCloudflare{tokenStatus: "active"}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/user/tokens/verify":
-			_, _ = w.Write([]byte(`{"success":true,"result":{"status":"active"}}`))
+			_, _ = w.Write([]byte(`{"success":true,"result":{"status":"` + f.tokenStatus + `"}}`))
 		case "/accounts":
 			f.accounts.Add(1)
+			if f.hangAccounts {
+				<-r.Context().Done()
+				return
+			}
 			w.WriteHeader(accountsStatus)
 			_, _ = w.Write([]byte(accountsBody))
 		case "/zones":
@@ -94,7 +99,7 @@ func TestStatusCarriesReasonAcceptanceAndAccountName(t *testing.T) {
 	}
 	want := agui.RemoteAccessStatus{
 		Enabled: true, Phase: "degraded", PublicHostname: "aura.a.it", APITokenSet: true, AccountID: "account-a", AccountName: "Acme",
-		ZoneName: "a.it", PublicLabel: "aura", Nameservers: []string{}, Reason: "tunnel_down", Accepted: true, Reachable: false,
+		ZoneName: "a.it", PublicLabel: "aura", Reason: "tunnel_down", Accepted: true, Reachable: false,
 		LastCheckedAt: &checked, Abandoned: state.Abandoned, Generation: 3,
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -105,36 +110,12 @@ func TestStatusCarriesReasonAcceptanceAndAccountName(t *testing.T) {
 	}
 }
 
-func TestStatusDuringAnOutageNeverAsksForThePhoneTest(t *testing.T) {
-	state := acceptedInstall()
-	state.Phase, state.Reason, state.ObservedHealthy = remotetunnel.PhaseDegraded, remotetunnel.ReasonTunnelDown, false
-	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
-	c := cloud.controller(&remoteMemoryStore{state: state}, &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}, nil)
-	got, err := c.Status(t.Context())
-	if err != nil || !got.Accepted || got.Reachable {
-		t.Fatalf("err=%v status=%+v", err, got)
-	}
-	body, _ := json.Marshal(got)
-	if strings.Contains(string(body), "acceptance_required") || !strings.Contains(string(body), `"abandoned":[]`) {
-		t.Fatalf("body=%s", body)
-	}
-}
-
 func TestStatusSurvivesAFailedAccountLookup(t *testing.T) {
 	cloud := newWizardCloudflare(t, `{"success":false,"errors":[{"code":10000,"message":"secret-abc"}]}`, 403)
 	c := cloud.controller(&remoteMemoryStore{state: acceptedInstall()}, &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}, nil)
 	got, err := c.Status(t.Context())
 	if err != nil || got.AccountName != "" || got.AccountID != "account-a" || !got.APITokenSet {
 		t.Fatalf("err=%v status=%+v", err, got)
-	}
-}
-
-func TestStatusWithoutATokenAsksNoOne(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
-	c := cloud.controller(&remoteMemoryStore{state: acceptedInstall()}, &remoteMemorySecrets{values: map[string]string{}}, nil)
-	got, err := c.Status(t.Context())
-	if err != nil || got.APITokenSet || got.AccountName != "" || cloud.accounts.Load() != 0 {
-		t.Fatalf("err=%v status=%+v accounts=%d", err, got, cloud.accounts.Load())
 	}
 }
 
@@ -175,94 +156,5 @@ func TestNameserversAreReadForTheAccountTheZoneWasCreatedIn(t *testing.T) {
 	got, err := c.Status(t.Context())
 	if err != nil || !reflect.DeepEqual(got.Nameservers, []string{"ada.ns.cloudflare.com", "bob.ns.cloudflare.com"}) {
 		t.Fatalf("err=%v nameservers=%v", err, got.Nameservers)
-	}
-}
-
-func TestVerifyWithNoAccountsAnswersNoAccounts(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts(), 200)
-	c := cloud.controller(&remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}, nil)
-	_, err := c.Verify(t.Context(), "candidate")
-	if !errors.Is(err, remotetunnel.ErrNoAccounts) || remotetunnel.ReasonOf(err) != remotetunnel.ReasonNoAccounts {
-		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestConfigureUnknownAccountAnswersAccountNotVisible(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
-	store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}
-	c := cloud.controller(store, secrets, memoryCommit(store, secrets))
-	in := agui.RemoteAccessConfiguration{Enabled: true, AccountID: "other", ZoneName: "example.com", APIToken: "candidate"}
-	err := c.Configure(t.Context(), in, "admin")
-	if !errors.Is(err, remotetunnel.ErrAccountNotVisible) || len(secrets.values) != 0 {
-		t.Fatalf("err=%v stored=%v", err, secrets.values)
-	}
-}
-
-func TestConfigureEnabledWithoutADomainIsDomainInvalid(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
-	store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}
-	c := cloud.controller(store, secrets, memoryCommit(store, secrets))
-	err := c.Configure(t.Context(), agui.RemoteAccessConfiguration{Enabled: true, AccountID: "account", APIToken: "candidate"}, "admin")
-	if remotetunnel.ReasonOf(err) != remotetunnel.ReasonDomainInvalid || len(secrets.values) != 0 {
-		t.Fatalf("err=%v stored=%v", err, secrets.values)
-	}
-}
-
-const firstStepBody = `{"api_token":"candidate","account_id":"account","enabled":false,"zone_name":"","public_label":"","generation":0}`
-
-func decodeConfiguration(t *testing.T, body string) agui.RemoteAccessConfiguration {
-	t.Helper()
-	var in agui.RemoteAccessConfiguration
-	dec := json.NewDecoder(strings.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
-		t.Fatal(err)
-	}
-	return in
-}
-
-func TestConfigureWithoutADomainSavesTheTokenAndAccount(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
-	store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}
-	c := cloud.controller(store, secrets, memoryCommit(store, secrets))
-	if err := c.Configure(t.Context(), decodeConfiguration(t, firstStepBody), "admin"); err != nil {
-		t.Fatal(err)
-	}
-	want := remotetunnel.Desired{AccountID: "account"}
-	if secrets.values["CLOUDFLARE_API_TOKEN"] != "candidate" || store.state.Desired != want || cloud.zones.Load() != 0 {
-		t.Fatalf("token=%q desired=%+v zone calls=%d", secrets.values["CLOUDFLARE_API_TOKEN"], store.state.Desired, cloud.zones.Load())
-	}
-}
-
-func TestReloadBetweenCloudflareAndDomainKeepsTheToken(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
-	store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}
-	if err := cloud.controller(store, secrets, memoryCommit(store, secrets)).Configure(t.Context(), decodeConfiguration(t, firstStepBody), "admin"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := cloud.controller(store, secrets, nil).Status(t.Context())
-	if err != nil || !got.APITokenSet || got.AccountID != "account" || got.AccountName != "Acme" || got.ZoneName != "" || got.PublicHostname != "" || got.Enabled {
-		t.Fatalf("err=%v status=%+v", err, got)
-	}
-}
-
-func TestTokenReplacementKeepsTheAddressAndTheAcceptance(t *testing.T) {
-	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
-	store := &remoteMemoryStore{state: acceptedInstall()}
-	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
-	c := cloud.controller(store, secrets, memoryCommit(store, secrets))
-	before, err := c.Status(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := agui.RemoteAccessConfiguration{Enabled: before.Enabled, Generation: before.Generation, AccountID: before.AccountID, ZoneName: before.ZoneName, PublicLabel: before.PublicLabel, APIToken: "token-b"}
-	if err = c.Configure(t.Context(), in, "admin"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := c.Status(t.Context())
-	s := store.state
-	if err != nil || secrets.values["CLOUDFLARE_API_TOKEN"] != "token-b" || !s.Desired.Enabled || s.Desired.ZoneName != "a.it" || s.Desired.PublicLabel != "aura" ||
-		s.AcceptedHostname != "aura.a.it" || !got.Accepted || got.PublicHostname != "aura.a.it" {
-		t.Fatalf("err=%v state=%+v status=%+v", err, s, got)
 	}
 }

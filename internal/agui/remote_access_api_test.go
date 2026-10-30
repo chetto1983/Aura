@@ -260,9 +260,10 @@ func TestErrorBodiesCarryTheirReasonAndAFixedSentence(t *testing.T) {
 		code   int
 		reason string
 	}{
-		{remotetunnel.ErrStaleGeneration, 409, "unknown"},
+		{remotetunnel.ErrStaleGeneration, 409, ""},
 		{remotetunnel.ErrOwnershipConflict, 409, "not_owned"},
 		{&cloudflareapi.APIError{Status: 403}, 400, "token_rejected"},
+		{cloudflareapi.ErrTokenInactive, 400, "token_rejected"},
 		{remotetunnel.ErrNoAccounts, 400, "no_accounts"},
 		{remotetunnel.ErrAccountNotVisible, 400, "account_not_visible"},
 		{remotetunnel.ErrDomainInvalid, 400, "domain_invalid"},
@@ -272,7 +273,7 @@ func TestErrorBodiesCarryTheirReasonAndAFixedSentence(t *testing.T) {
 		{remotetunnel.ErrMemberLockout, 502, "no_administrator"},
 		{errors.New("secret-abc"), 502, "unknown"},
 	} {
-		t.Run(tc.reason+"/"+tc.err.Error(), func(t *testing.T) {
+		t.Run(tc.err.Error(), func(t *testing.T) {
 			f := &fakeRemoteAccess{err: tc.err}
 			s := &Server{idAdmin: remoteAdminCaps()}
 			s.SetRemoteAccess(f)
@@ -297,5 +298,27 @@ func TestStatusNeverReturnsUpstreamText(t *testing.T) {
 	s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1"))
 	if rec.Code != 502 || strings.Contains(rec.Body.String(), "secret-abc") || !strings.Contains(rec.Body.String(), `"reason":"unknown"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestActionErrorsCarryTheirReason(t *testing.T) {
+	f := &fakeRemoteAccess{err: remotetunnel.ErrOwnershipConflict}
+	s := &Server{idAdmin: remoteAdminCaps()}
+	s.SetRemoteAccess(f)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("POST", "/api/settings/remote-access/reconcile", strings.NewReader(`{}`)), "admin-1"))
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"reason":"not_owned"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStatusAlwaysCarriesAReason(t *testing.T) {
+	f := &fakeRemoteAccess{status: RemoteAccessStatus{Phase: "healthy"}}
+	s := &Server{idAdmin: remoteAdminCaps()}
+	s.SetRemoteAccess(f)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("GET", "/api/settings/remote-access", nil), "admin-1"))
+	if !strings.Contains(rec.Body.String(), `"reason":""`) {
+		t.Fatalf("body=%s", rec.Body.String())
 	}
 }

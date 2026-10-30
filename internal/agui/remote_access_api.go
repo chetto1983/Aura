@@ -25,7 +25,7 @@ type RemoteAccessStatus struct {
 	ZoneName       string   `json:"zone_name,omitempty"`
 	PublicLabel    string   `json:"public_label,omitempty"`
 	Nameservers    []string `json:"nameservers"`
-	Reason         string   `json:"reason,omitempty"`
+	Reason         string   `json:"reason"`
 	// Accepted is the phone test having passed for this address; Reachable is the tunnel serving now.
 	Accepted      bool                             `json:"accepted"`
 	Reachable     bool                             `json:"reachable"`
@@ -207,7 +207,8 @@ func writeRemoteAccessError(w http.ResponseWriter, err error) {
 	code, message := 502, "remote access operation failed; check configuration or retry"
 	switch {
 	case errors.Is(err, remotetunnel.ErrStaleGeneration):
-		code, message = 409, "configuration changed; refresh and retry"
+		// Nothing failed: a newer save won. "" is the defined "no reason".
+		code, message, reason = 409, "configuration changed; refresh and retry", ""
 	case errors.Is(err, remotetunnel.ErrOwnershipConflict):
 		code, message = 409, "remote resource ownership conflict"
 	case errors.Is(err, remotetunnel.ErrConfiguration) || operatorInputReason(reason):

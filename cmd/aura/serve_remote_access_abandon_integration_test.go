@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/cloudflareapi"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
@@ -167,6 +169,10 @@ func TestFirstStepSaveAgainstTheRealStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Earlier tests share the row; the first step starts from a row with no domain.
+	if before, err = f.state.SaveDesired(f.ctx, before.Generation, remotetunnel.Desired{}, "admin"); err != nil {
+		t.Fatal(err)
+	}
 	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
 	c := newRemoteAccessController(f.state, f.secrets, &remoteRecordingProjection{}, nil, f.commit)
 	c.client = func(token string) *cloudflareapi.Client { return cloudflareapi.New(cloud.URL, token, cloud.Client()) }
@@ -186,8 +192,28 @@ func TestFirstStepSaveAgainstTheRealStore(t *testing.T) {
 	if f.secret(t, "CLOUDFLARE_API_TOKEN") != "candidate" || cloud.zones.Load() != 0 {
 		t.Fatalf("token=%q zone calls=%d", f.secret(t, "CLOUDFLARE_API_TOKEN"), cloud.zones.Load())
 	}
+	listed := cloud.accounts.Load()
+	engine, err := c.engine(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = engine.Reconcile(f.ctx); err != nil {
+		t.Fatalf("a pass over a row with no domain failed: %v", err)
+	}
+	if again, _ := f.state.Load(f.ctx); again.Phase != remotetunnel.PhaseDisabled || cloud.accounts.Load() != listed || cloud.zones.Load() != 0 {
+		t.Fatalf("a pass over the first step did work: phase=%s accounts=%d zones=%d", again.Phase, cloud.accounts.Load()-listed, cloud.zones.Load())
+	}
 	status, err := c.Status(f.ctx)
 	if err != nil || !status.APITokenSet || status.AccountName != "Acme" || status.PublicHostname != "" || status.Accepted || status.Enabled {
 		t.Fatalf("err=%v status=%+v", err, status)
 	}
+}
+
+func decodeConfiguration(t *testing.T, body string) agui.RemoteAccessConfiguration {
+	t.Helper()
+	var in agui.RemoteAccessConfiguration
+	if err := json.Unmarshal([]byte(body), &in); err != nil {
+		t.Fatal(err)
+	}
+	return in
 }

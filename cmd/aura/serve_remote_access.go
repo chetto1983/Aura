@@ -61,7 +61,10 @@ func (c *remoteAccessController) engine(ctx context.Context) (*remotetunnel.Reco
 	return c.reconciler, nil
 }
 
-// Verify checks a candidate token and lists the accounts it sees; nothing is stored.
+var accountLookupTimeout = 3 * time.Second
+
+// Verify checks a candidate token and lists the accounts it sees. The token is not stored; the
+// names of its accounts are remembered, because they are facts about Cloudflare, not about the token.
 func (c *remoteAccessController) Verify(ctx context.Context, token string) ([]cloudflareapi.Account, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, remotetunnel.ErrConfiguration
@@ -112,9 +115,16 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if err := remotetunnel.ValidateDesired(desired); err != nil {
 		return err
 	}
+	state, err := c.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if desired.ZoneName == "" && state.Desired.ZoneName != "" {
+		// A save with no domain is the first setup; turning access off is disable's job, removing the address delete's.
+		return remotetunnel.ErrDomainInvalid
+	}
 	token := in.APIToken
 	if token == "" {
-		var err error
 		token, err = c.secrets.Secret(ctx, "CLOUDFLARE_API_TOKEN")
 		if err != nil {
 			return err
@@ -135,11 +145,7 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if c.commit == nil {
 		return remotetunnel.ErrConfiguration
 	}
-	abandoned, err := c.abandonedBy(ctx, accounts)
-	if err != nil {
-		return err
-	}
-	if err = c.commit(ctx, in.Generation, desired, token, abandoned, actor); err != nil {
+	if err = c.commit(ctx, in.Generation, desired, token, abandonedBy(state, accounts), actor); err != nil {
 		return err
 	}
 	c.rememberAccounts(accounts, true)
@@ -151,16 +157,12 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 // abandonedBy lists what the row holds in an account the token cannot see. Such a token can never
 // delete it, so the save forgets it instead of blocking. It is nil when the token sees that account
 // or the row holds nothing; an empty list still means "forget".
-func (c *remoteAccessController) abandonedBy(ctx context.Context, accounts []cloudflareapi.Account) ([]remotetunnel.AbandonedResource, error) {
-	state, err := c.store.Load(ctx)
-	if err != nil {
-		return nil, err
-	}
+func abandonedBy(state remotetunnel.State, accounts []cloudflareapi.Account) []remotetunnel.AbandonedResource {
 	held := state.Resources.AccountID
 	if !remotetunnel.HasResources(state.Resources) || slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == held }) {
-		return nil, nil
+		return nil
 	}
-	return remotetunnel.AbandonedOf(state), nil
+	return remotetunnel.AbandonedOf(state)
 }
 
 func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessStatus, error) {
@@ -175,8 +177,8 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 	d := state.Desired
 	out := agui.RemoteAccessStatus{
 		Enabled: d.Enabled, Phase: string(state.Phase), APITokenSet: api != "", AccountID: d.AccountID, AccountName: c.accountNameFor(ctx, api, d.AccountID),
-		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, Nameservers: []string{}, Reason: string(state.Reason), Accepted: state.Accepted(),
-		Reachable: state.ObservedHealthy, LastCheckedAt: state.LastReconciledAt, Abandoned: append([]remotetunnel.AbandonedResource{}, state.Abandoned...),
+		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, Reason: string(state.Reason), Accepted: state.Accepted(),
+		Reachable: state.ObservedHealthy, LastCheckedAt: state.LastReconciledAt, Abandoned: state.Abandoned,
 		Generation: state.Generation,
 	}
 	if d.ZoneName != "" {
@@ -192,7 +194,7 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 }
 
 // accountNameFor looks the name up once per token. A failed lookup leaves it empty: the name is a
-// courtesy, and a status that fails because of it would hide the step the operator is on.
+// courtesy, and a status that fails or stalls because of it would hide the step the operator is on.
 func (c *remoteAccessController) accountNameFor(ctx context.Context, token, id string) string {
 	if token == "" || id == "" {
 		return ""
@@ -200,6 +202,8 @@ func (c *remoteAccessController) accountNameFor(ctx context.Context, token, id s
 	if name, ok := c.accountName(id); ok {
 		return name
 	}
+	ctx, cancel := context.WithTimeout(ctx, accountLookupTimeout)
+	defer cancel()
 	accounts, err := c.client(token).ListAccounts(ctx)
 	if err != nil {
 		slog.Warn("Remote access account name unavailable", "error", err)

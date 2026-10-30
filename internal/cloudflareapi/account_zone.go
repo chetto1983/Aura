@@ -2,15 +2,19 @@ package cloudflareapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 )
+
+// ErrTokenInactive is a token Cloudflare knows but no longer honours (expired, disabled).
+var ErrTokenInactive = errors.New("cloudflare: token is not active")
 
 // VerifyToken rejects revoked and expired user API tokens.
 func (c *Client) VerifyToken(ctx context.Context) (TokenVerification, error) {
 	token, err := get[TokenVerification](ctx, c, http.MethodGet, nil, "user", "tokens", "verify")
 	if err == nil && token.Status != "active" {
-		err = failure("token is not active")
+		err = ErrTokenInactive
 	}
 	return token, err
 }
