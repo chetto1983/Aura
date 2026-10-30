@@ -25,7 +25,7 @@ func TestReconcileResumesEveryPhase(t *testing.T) {
 			if err := h.r.Reconcile(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if h.cloud.creates != first || first != 10 {
+			if h.cloud.creates != first || first != 6 {
 				t.Fatalf("creates=%d first=%d", h.cloud.creates, first)
 			}
 			if h.store.state.Phase != PhaseConnecting {
@@ -54,7 +54,7 @@ func TestReconcileTransientFailureAtEveryAPIBoundary(t *testing.T) {
 			h.cloud.failureAt = 0
 			h.r = h.newReconciler()
 			h.assertResources(t)
-			if h.cloud.creates != 10 {
+			if h.cloud.creates != 6 {
 				t.Fatalf("duplicate resource after retry: %d", h.cloud.creates)
 			}
 		})
@@ -89,7 +89,7 @@ func TestReconcileConcurrentCallsCreateOnce(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if h.cloud.creates != 10 {
+	if h.cloud.creates != 6 {
 		t.Fatal("concurrent duplicate creation")
 	}
 }
@@ -106,7 +106,7 @@ func TestReconcileCredentialFailureNeverProjects(t *testing.T) {
 }
 
 func TestReconcilePersistsEveryCreateAndResumes(t *testing.T) {
-	for stop := 1; stop <= 10; stop++ {
+	for stop := 1; stop <= 6; stop++ {
 		t.Run(string(rune('A'+stop)), func(t *testing.T) {
 			h := newHarness(t)
 			h.cloud.stopAfter = stop
@@ -118,7 +118,7 @@ func TestReconcilePersistsEveryCreateAndResumes(t *testing.T) {
 			if err := h.r.Reconcile(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if h.cloud.creates != 10 {
+			if h.cloud.creates != 6 {
 				t.Fatalf("duplicate creation: %d", h.cloud.creates)
 			}
 		})

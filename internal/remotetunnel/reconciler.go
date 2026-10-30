@@ -100,6 +100,9 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if err := validateDesired(s.Desired); err != nil {
 		return err
 	}
+	if err := r.retireWARP(ctx, s); err != nil {
+		return err
+	}
 	emails, admins, err := r.activeMembers(ctx)
 	if err != nil {
 		return err

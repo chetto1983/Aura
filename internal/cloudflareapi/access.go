@@ -35,19 +35,6 @@ func EmailPolicy(name string, emails []string, otpID string) (AccessPolicy, erro
 	return p, nil
 }
 
-// GatewayEmailPolicy adds organization enrollment as a mandatory requirement.
-func GatewayEmailPolicy(name string, emails []string, otpID, postureID string) (AccessPolicy, error) {
-	p, err := EmailPolicy(name, emails, otpID)
-	if err != nil {
-		return p, err
-	}
-	if postureID == "" {
-		return p, failure("Gateway posture required")
-	}
-	p.Require = append(p.Require, AccessRule{DevicePosture: &PostureRule{postureID}})
-	return p, nil
-}
-
 // ListIdentityProviders reads every page before deciding whether OTP exists.
 func (c *Client) ListIdentityProviders(ctx context.Context, accountID string) ([]IdentityProvider, error) {
 	return listResource[IdentityProvider](ctx, c, nil, "accounts", accountID, "access", "identity_providers")
@@ -161,37 +148,9 @@ func (c *Client) DeletePolicy(ctx context.Context, accountID, appID, id string) 
 	return c.remove(ctx, "accounts", accountID, "access", "apps", appID, "policies", id)
 }
 
-// ListPosture reads the non-paginated device posture collection.
-func (c *Client) ListPosture(ctx context.Context, accountID string) ([]Posture, error) {
-	return get[[]Posture](ctx, c, http.MethodGet, nil, "accounts", accountID, "devices", "posture")
-}
-
 // GetPosture retains the type and description needed for ownership checks.
 func (c *Client) GetPosture(ctx context.Context, accountID, id string) (Posture, error) {
 	return get[Posture](ctx, c, http.MethodGet, nil, "accounts", accountID, "devices", "posture", id)
-}
-
-// EnsureGatewayPosture requires organization enrollment; Require WARP also admits consumer
-// clients: https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-gateway/
-//
-// The name is the only owner-bearing field to check against: a description is accepted on
-// create but is absent from every posture read, so a rule identified by one can never be
-// recognised again (measured 2026-09-22 — a live gateway rule reads back as {id, type, name}).
-func (c *Client) EnsureGatewayPosture(ctx context.Context, accountID, id, name string) (Posture, error) {
-	if name == "" {
-		return Posture{}, failure("posture ownership required")
-	}
-	if id != "" {
-		p, err := c.GetPosture(ctx, accountID, id)
-		if err != nil {
-			return p, err
-		}
-		if p.ID != id || p.Name != name || p.Type != "gateway" {
-			return Posture{}, failure("posture ownership conflict")
-		}
-		return p, nil
-	}
-	return get[Posture](ctx, c, http.MethodPost, Posture{Name: name, Type: "gateway"}, "accounts", accountID, "devices", "posture")
 }
 
 // DeletePosture refuses missing ownership and non-Gateway checks.

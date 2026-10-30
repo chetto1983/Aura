@@ -7,28 +7,24 @@ import (
 	"github.com/chetto1983/aura/internal/cloudflareapi"
 )
 
+// accessSessionDuration is how long a sign-in on the public address lasts. Cloudflare takes a Go
+// duration ("2h45m") per application, so a month is 730h; the organisation's global session is
+// never written. Field session_duration in
+// developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/
+const accessSessionDuration = "730h"
+
 type route struct {
 	role, hostname   string
 	app, policy, dns *string
 }
 
 func routes(s *State) []route {
-	list := []route{{"public", publicHostname(s.Desired), &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}}
-	// Only an installation that already has WARP resources keeps this leg, until retireWARP removes it.
-	if s.Resources.LegacyWARPHostname != "" {
-		list = append(list, route{"warp", s.Resources.LegacyWARPHostname, &s.Resources.WARPAppID, &s.Resources.WARPPolicyID, &s.Resources.WARPDNSID})
-	}
-	return list
+	return []route{{"public", publicHostname(s.Desired), &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}}
 }
 func resourceName(s *State, role string) string { return s.TunnelName + "-" + role }
 
 func (r *Reconciler) access(ctx context.Context, s *State, emails []string) error {
 	for _, route := range routes(s) {
-		if route.role == "warp" {
-			if err := r.posture(ctx, s); err != nil {
-				return err
-			}
-		}
 		if err := r.application(ctx, s, route); err != nil {
 			return err
 		}
@@ -57,12 +53,18 @@ func (r *Reconciler) application(ctx context.Context, s *State, route route) err
 	}
 	for _, a := range apps {
 		host, _, _ := strings.Cut(strings.ToLower(a.Domain), "/")
-		if a.ID != *route.app && (a.Name == name || host == route.hostname || host == "*."+s.Desired.ZoneName) {
+		if a.ID == *route.app {
+			continue
+		}
+		if a.Name == name {
 			return ErrOwnershipConflict
+		}
+		if host == route.hostname || host == "*."+s.Desired.ZoneName {
+			return ErrHostnameTaken
 		}
 	}
 	a, err := r.cloud.PutApplication(ctx, s.Resources.AccountID, *route.app, cloudflareapi.AccessApplication{
-		Name: name, Domain: route.hostname, Type: "self_hosted", SessionDuration: "24h", AllowedIDPs: []string{s.Resources.OTPProviderID}, AutoRedirectToIdentity: true,
+		Name: name, Domain: route.hostname, Type: "self_hosted", SessionDuration: accessSessionDuration, AllowedIDPs: []string{s.Resources.OTPProviderID}, AutoRedirectToIdentity: true,
 	})
 	if err != nil {
 		return err
@@ -101,12 +103,7 @@ func (r *Reconciler) policy(ctx context.Context, s *State, route route, emails [
 			return ErrOwnershipConflict
 		}
 	}
-	var p cloudflareapi.AccessPolicy
-	if route.role == "warp" {
-		p, err = cloudflareapi.GatewayEmailPolicy(name, emails, s.Resources.OTPProviderID, s.Resources.GatewayPostureID)
-	} else {
-		p, err = cloudflareapi.EmailPolicy(name, emails, s.Resources.OTPProviderID)
-	}
+	p, err := cloudflareapi.EmailPolicy(name, emails, s.Resources.OTPProviderID)
 	if err != nil {
 		return err
 	}
@@ -122,44 +119,6 @@ func (r *Reconciler) policy(ctx context.Context, s *State, route route, emails [
 		return err
 	}
 	if p.Name != name {
-		return ErrOwnershipConflict
-	}
-	return nil
-}
-
-func (r *Reconciler) posture(ctx context.Context, s *State) error {
-	name := resourceName(s, "gateway")
-	if s.Resources.GatewayPostureID != "" {
-		p, err := r.cloud.GetPosture(ctx, s.Resources.AccountID, s.Resources.GatewayPostureID)
-		if err != nil {
-			return err
-		}
-		if !ownedPosture(s, p) {
-			return ErrOwnershipConflict
-		}
-		return nil
-	}
-	checks, err := r.cloud.ListPosture(ctx, s.Resources.AccountID)
-	if err != nil {
-		return err
-	}
-	for _, p := range checks {
-		if p.Name == name {
-			return ErrOwnershipConflict
-		}
-	}
-	p, err := r.cloud.EnsureGatewayPosture(ctx, s.Resources.AccountID, "", name)
-	if err != nil {
-		return err
-	}
-	if p.ID == "" {
-		return ErrConfiguration
-	}
-	s.Resources.GatewayPostureID = p.ID
-	if err = r.persist(ctx, s); err != nil {
-		return err
-	}
-	if !ownedPosture(s, p) {
 		return ErrOwnershipConflict
 	}
 	return nil

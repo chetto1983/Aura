@@ -12,9 +12,27 @@ type deletion struct {
 }
 
 func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
+	account := s.Resources.AccountID
+	return append(r.routeDeletions(ctx, s, routes(s)), deletion{&s.Resources.TunnelID, func() error {
+		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
+		if err != nil {
+			return err
+		}
+		if !ownedTunnel(*s, t) {
+			return ErrOwnershipConflict
+		}
+		// Cloudflare retains deleted_at tombstones; ownership must still match before detaching.
+		if t.DeletedAt != nil {
+			return errResourceAbsent
+		}
+		return nil
+	}, func() error { return r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID) }})
+}
+
+// routeDeletions removes DNS first, then policy, then application, each in reverse route order.
+func (r *Reconciler) routeDeletions(ctx context.Context, s *State, rs []route) []deletion {
 	steps := []deletion{}
 	account := s.Resources.AccountID
-	rs := routes(s)
 	for _, route := range slices.Backward(rs) {
 		steps = append(steps, deletion{route.dns, func() error {
 			d, err := r.cloud.GetDNS(ctx, s.Resources.ZoneID, *route.dns)
@@ -60,32 +78,6 @@ func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 			return nil
 		}, func() error { return r.cloud.DeleteApplication(ctx, account, *route.app) }})
 	}
-	steps = append(steps, deletion{&s.Resources.GatewayPostureID, func() error {
-		p, err := r.cloud.GetPosture(ctx, account, s.Resources.GatewayPostureID)
-		if err != nil {
-			return err
-		}
-		if !ownedPosture(s, p) {
-			return ErrOwnershipConflict
-		}
-		return nil
-	}, func() error {
-		return r.cloud.DeletePosture(ctx, account, s.Resources.GatewayPostureID, resourceName(s, "gateway"))
-	}})
-	steps = append(steps, deletion{&s.Resources.TunnelID, func() error {
-		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
-		if err != nil {
-			return err
-		}
-		if !ownedTunnel(*s, t) {
-			return ErrOwnershipConflict
-		}
-		// Cloudflare retains deleted_at tombstones; ownership must still match before detaching.
-		if t.DeletedAt != nil {
-			return errResourceAbsent
-		}
-		return nil
-	}, func() error { return r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID) }})
 	return steps
 }
 
@@ -137,6 +129,9 @@ func (r *Reconciler) delete(ctx context.Context, s *State) error {
 }
 
 func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
+	if err := r.retireWARP(ctx, s); err != nil {
+		return err
+	}
 	if r.projection == nil {
 		return ErrConfiguration
 	}
@@ -146,7 +141,22 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 	if s.Resources.AccountID != s.Desired.AccountID {
 		return ErrOwnershipConflict
 	}
-	steps := r.deletions(ctx, s)
+	if err := r.runDeletions(ctx, s, r.deletions(ctx, s)); err != nil {
+		return err
+	}
+	// Zone and account-wide OTP remain in Cloudflare; only detach their local references.
+	s.Resources.ZoneID = ""
+	s.Resources.OTPProviderID = ""
+	s.TunnelName = ""
+	s.Phase = PhaseDisabled
+	s.ObservedHealthy = false
+	s.Reason = ""
+	return r.persist(ctx, s)
+}
+
+// runDeletions removes each step's owned resource, treating a 404 as already gone, and persists
+// every cleared ID so a pass interrupted halfway resumes where it stopped.
+func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletion) error {
 	// Verify the entire persisted set first so one foreign ID cannot trigger a partial teardown.
 	for _, step := range steps {
 		if *step.id == "" {
@@ -184,13 +194,5 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 			return err
 		}
 	}
-	// Zone and account-wide OTP remain in Cloudflare; only detach their local references.
-	s.Resources.ZoneID = ""
-	s.Resources.OTPProviderID = ""
-	s.Resources.LegacyWARPHostname = ""
-	s.TunnelName = ""
-	s.Phase = PhaseDisabled
-	s.ObservedHealthy = false
-	s.Reason = ""
-	return r.persist(ctx, s)
+	return nil
 }

@@ -32,7 +32,7 @@ func TestPolicyNeverUsesEveryone(t *testing.T) {
 
 func TestResourceWireContracts(t *testing.T) {
 	ctx := context.Background()
-	policy, _ := GatewayEmailPolicy("Aura users", []string{"admin@example.com"}, "otp-one", "posture-one")
+	policy, _ := EmailPolicy("Aura users", []string{"admin@example.com"}, "otp-one")
 	app := AccessApplication{Name: "aura-owned", Domain: "aura.example.com", Type: "self_hosted", AllowedIDPs: []string{"otp-one"}, SessionDuration: "24h"}
 	config := TunnelConfig{Ingress: []Ingress{{Hostname: "aura.example.com", Service: "http://caddy:8080"}, {Service: "http_status:404"}}}
 	for _, tc := range []struct {
@@ -75,17 +75,13 @@ func TestResourceWireContracts(t *testing.T) {
 		{"app-update", "PUT", "/accounts/account-one/access/apps/app-one", string(fixture(t, "access-app")), map[string]any{"domain": "aura.example.com"}, func(c *Client) error { _, e := c.PutApplication(ctx, "account-one", "app-one", app); return e }},
 		{"app-delete", "DELETE", "/accounts/account-one/access/apps/app-one", `{"success":true}`, nil, func(c *Client) error { return c.DeleteApplication(ctx, "account-one", "app-one") }},
 		{"policy-get", "GET", "/accounts/account-one/access/apps/app-one/policies/policy-one", `{"success":true,"result":{"id":"policy-one"}}`, nil, func(c *Client) error { _, e := c.GetPolicy(ctx, "account-one", "app-one", "policy-one"); return e }},
-		{"policy-create", "POST", "/accounts/account-one/access/apps/app-one/policies", `{"success":true,"result":{"id":"policy-one"}}`, map[string]any{"decision": "allow", "include": []any{map[string]any{"email": map[string]any{"email": "admin@example.com"}}}, "require": []any{map[string]any{"login_method": map[string]any{"id": "otp-one"}}, map[string]any{"device_posture": map[string]any{"integration_uid": "posture-one"}}}}, func(c *Client) error { _, e := c.PutPolicy(ctx, "account-one", "app-one", "", policy); return e }},
+		{"policy-create", "POST", "/accounts/account-one/access/apps/app-one/policies", `{"success":true,"result":{"id":"policy-one"}}`, map[string]any{"decision": "allow", "include": []any{map[string]any{"email": map[string]any{"email": "admin@example.com"}}}, "require": []any{map[string]any{"login_method": map[string]any{"id": "otp-one"}}}}, func(c *Client) error { _, e := c.PutPolicy(ctx, "account-one", "app-one", "", policy); return e }},
 		{"policy-update", "PUT", "/accounts/account-one/access/apps/app-one/policies/policy-one", `{"success":true,"result":{"id":"policy-one"}}`, nil, func(c *Client) error {
 			_, e := c.PutPolicy(ctx, "account-one", "app-one", "policy-one", policy)
 			return e
 		}},
 		{"policy-delete", "DELETE", "/accounts/account-one/access/apps/app-one/policies/policy-one", `{"success":true}`, nil, func(c *Client) error { return c.DeletePolicy(ctx, "account-one", "app-one", "policy-one") }},
-		{"posture-list", "GET", "/accounts/account-one/devices/posture", `{"success":true,"result":[]}`, nil, func(c *Client) error { _, e := c.ListPosture(ctx, "account-one"); return e }},
-		{"posture-create", "POST", "/accounts/account-one/devices/posture", string(fixture(t, "posture-warp")), map[string]any{"type": "gateway", "name": "Aura WARP-required"}, func(c *Client) error {
-			_, e := c.EnsureGatewayPosture(ctx, "account-one", "", "Aura WARP-required")
-			return e
-		}},
+		{"posture-get", "GET", "/accounts/account-one/devices/posture/posture-one", string(fixture(t, "posture-warp")), nil, func(c *Client) error { _, e := c.GetPosture(ctx, "account-one", "posture-one"); return e }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -233,13 +229,9 @@ func TestGatewayPostureOwnership(t *testing.T) {
 			_, _ = w.Write(body)
 		}))
 		c := New(s.URL, "fixture-token", s.Client())
-		_, err := c.EnsureGatewayPosture(t.Context(), "account-one", "posture-one", "Aura WARP-required")
+		err := c.DeletePosture(t.Context(), "account-one", "posture-one", "Aura WARP-required")
 		if (err != nil) != foreign {
 			t.Fatalf("foreign=%v err=%v", foreign, err)
-		}
-		err = c.DeletePosture(t.Context(), "account-one", "posture-one", "Aura WARP-required")
-		if (err != nil) != foreign {
-			t.Fatalf("delete foreign=%v err=%v", foreign, err)
 		}
 		s.Close()
 	}

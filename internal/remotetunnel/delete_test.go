@@ -2,7 +2,6 @@ package remotetunnel
 
 import (
 	"errors"
-	cf "github.com/chetto1983/aura/internal/cloudflareapi"
 	"testing"
 	"time"
 )
@@ -35,7 +34,7 @@ func TestDeleteConfirmsOwnedTombstoneAndRefusesForeignTombstone(t *testing.T) {
 			if !errors.Is(err, ErrOwnershipConflict) || h.cloud.deletes != 0 {
 				t.Fatal("foreign tombstone authorized deletion")
 			}
-		} else if err != nil || h.cloud.deletes != 7 || h.store.state.Resources.TunnelID != "" {
+		} else if err != nil || h.cloud.deletes != 3 || h.store.state.Resources.TunnelID != "" {
 			t.Fatalf("tombstone not detached: %v", err)
 		}
 	}
@@ -55,24 +54,22 @@ func TestDeleteRetainsIDsUntilAbsenceConfirmed(t *testing.T) {
 }
 
 func TestDeleteOwnershipGuardsEveryResource(t *testing.T) {
-	for _, resource := range []string{"tunnel", "public-app", "warp-app", "public-policy", "warp-policy", "gateway", "public-dns", "warp-dns", "marker"} {
+	for _, resource := range []string{"tunnel", "public-app", "public-policy", "public-dns", "marker"} {
 		t.Run(resource, func(t *testing.T) {
 			h := newHarness(t)
 			h.assertResources(t)
 			switch resource {
 			case "tunnel":
 				h.cloud.tunnel.Name = "foreign"
-			case "public-app", "warp-app":
+			case "public-app":
 				a := h.cloud.apps[resource]
 				a.Name = "foreign"
 				h.cloud.apps[resource] = a
-			case "public-policy", "warp-policy":
+			case "public-policy":
 				p := h.cloud.policies[resource]
 				p.Name = "foreign"
 				h.cloud.policies[resource] = p
-			case "gateway":
-				h.cloud.posture.Name = "foreign"
-			case "public-dns", "warp-dns":
+			case "public-dns":
 				d := h.cloud.dns[resource]
 				d.Comment = "foreign"
 				h.cloud.dns[resource] = d
@@ -92,14 +89,13 @@ func TestDeleteOwnershipGuardsEveryResource(t *testing.T) {
 func TestDeleteResumesAfterRemoteAlreadyAbsent(t *testing.T) {
 	h := newHarness(t)
 	h.assertResources(t)
-	delete(h.cloud.dns, "warp-dns")
-	delete(h.cloud.policies, "warp-policy")
-	delete(h.cloud.apps, "warp-app")
-	h.cloud.posture = cf.Posture{}
+	delete(h.cloud.dns, "public-dns")
+	delete(h.cloud.policies, "public-policy")
+	delete(h.cloud.apps, "public-app")
 	if err := h.r.Delete(t.Context(), "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if h.cloud.deletes != 4 || h.store.state.Phase != PhaseDisabled {
+	if h.cloud.deletes != 1 || h.store.state.Phase != PhaseDisabled {
 		t.Fatal("absence reconciliation failed")
 	}
 }
@@ -109,7 +105,7 @@ func TestDeleteResumesAndPreservesZoneAndOTP(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	h.cloud.failDeleteAfter = 3
+	h.cloud.failDeleteAfter = 2
 	if err := h.r.Delete(t.Context(), "admin"); err == nil {
 		t.Fatal("expected interruption")
 	}
@@ -118,7 +114,7 @@ func TestDeleteResumesAndPreservesZoneAndOTP(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if h.cloud.deletes != 8 || h.cloud.zone.ID == "" || h.cloud.otp.ID == "" || h.store.state.Resources != (Resources{AccountID: "account"}) || h.store.state.Phase != PhaseDisabled {
+	if h.cloud.deletes != 4 || h.cloud.zone.ID == "" || h.cloud.otp.ID == "" || h.store.state.Resources != (Resources{AccountID: "account"}) || h.store.state.Phase != PhaseDisabled {
 		t.Fatalf("delete incomplete: %+v count=%d", h.store.state, h.cloud.deletes)
 	}
 }

@@ -92,7 +92,7 @@ type harness struct {
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account", LegacyWARPHostname: "aura-warp.example.com"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
+	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
 	h.projection = &testProjection{t: t, credentials: h.credentials}
 	h.cloud = &fakeCloud{t: t, store: h.store, zone: cf.Zone{Name: "example.com", Status: "active", Account: cf.Account{ID: "account"}}, apps: map[string]cf.AccessApplication{}, policies: map[string]cf.AccessPolicy{}, dns: map[string]cf.DNSRecord{}}
 	h.r = h.newReconciler()
@@ -222,16 +222,11 @@ func (f *fakeCloud) PutTunnelConfig(_ context.Context, _, _ string, c cf.TunnelC
 	if err := f.call(); err != nil {
 		return err
 	}
-	if len(f.apps) != 2 || len(f.policies) != 2 || f.posture.Type != "gateway" {
-		f.t.Fatal("ingress before Access and Gateway")
+	if len(f.apps) != 1 || len(f.policies) != 1 {
+		f.t.Fatal("ingress before Access")
 	}
-	if len(c.Ingress) != 3 || c.Ingress[2].Service != "http_status:404" || c.Ingress[2].Hostname != "" {
+	if len(c.Ingress) != 2 || c.Ingress[1].Service != "http_status:404" || c.Ingress[1].Hostname != "" || c.Ingress[0].Service != "http://caddy:8080" {
 		f.t.Fatal("invalid ingress")
-	}
-	for _, rule := range c.Ingress[:2] {
-		if rule.Service != "http://caddy:8080" {
-			f.t.Fatal("wrong origin")
-		}
 	}
 	f.ingress = c
 	return nil
@@ -276,9 +271,6 @@ func (f *fakeCloud) PutApplication(_ context.Context, _, id string, a cf.AccessA
 	if id == "" {
 		f.creates++
 		id = "public-app"
-		if a.Domain == "aura-warp.example.com" {
-			id = "warp-app"
-		}
 	}
 	a.ID = id
 	f.apps[id] = a
@@ -323,12 +315,6 @@ func (f *fakeCloud) PutPolicy(_ context.Context, _, app, id string, p cf.AccessP
 	if id == "" {
 		f.creates++
 		id = "public-policy"
-		if app == "warp-app" {
-			id = "warp-policy"
-		}
-	}
-	if app == "warp-app" && (len(p.Require) != 2 || p.Require[1].DevicePosture.IntegrationUID != f.posture.ID) {
-		f.t.Fatal("missing organization enrollment")
 	}
 	p.ID = id
 	f.policies[id] = p
@@ -347,15 +333,6 @@ func (f *fakeCloud) DeletePolicy(_ context.Context, _, _, id string) error {
 	}
 	return nil
 }
-func (f *fakeCloud) ListPosture(context.Context, string) ([]cf.Posture, error) {
-	if err := f.call(); err != nil {
-		return nil, err
-	}
-	if f.posture.ID != "" {
-		return []cf.Posture{f.posture}, nil
-	}
-	return nil, nil
-}
 func (f *fakeCloud) GetPosture(context.Context, string, string) (cf.Posture, error) {
 	if err := f.call(); err != nil {
 		return cf.Posture{}, err
@@ -363,14 +340,6 @@ func (f *fakeCloud) GetPosture(context.Context, string, string) (cf.Posture, err
 	if f.posture.ID == "" {
 		return cf.Posture{}, absent()
 	}
-	return f.posture, nil
-}
-func (f *fakeCloud) EnsureGatewayPosture(_ context.Context, _, _, name string) (cf.Posture, error) {
-	if err := f.call(); err != nil {
-		return cf.Posture{}, err
-	}
-	f.creates++
-	f.posture = cf.Posture{ID: "gateway", Name: name, Type: "gateway"}
 	return f.posture, nil
 }
 func (f *fakeCloud) DeletePosture(context.Context, string, string, string) error {
@@ -408,15 +377,12 @@ func (f *fakeCloud) EnsureCNAME(_ context.Context, _, id, host, tunnel, owner st
 	if err := f.call(); err != nil {
 		return cf.DNSRecord{}, err
 	}
-	if len(f.ingress.Ingress) != 3 {
+	if len(f.ingress.Ingress) != 2 {
 		f.t.Fatal("DNS before protected ingress")
 	}
 	if id == "" {
 		f.creates++
 		id = "public-dns"
-		if host == "aura-warp.example.com" {
-			id = "warp-dns"
-		}
 	}
 	d := cf.DNSRecord{ID: id, Name: host, Type: "CNAME", Content: tunnel + ".cfargotunnel.com", Proxied: true, TTL: 1, Comment: owner}
 	f.dns[id] = d

@@ -63,9 +63,7 @@ type Cloudflare interface {
 	GetPolicy(context.Context, string, string, string) (cloudflareapi.AccessPolicy, error)
 	PutPolicy(context.Context, string, string, string, cloudflareapi.AccessPolicy) (cloudflareapi.AccessPolicy, error)
 	DeletePolicy(context.Context, string, string, string) error
-	ListPosture(context.Context, string) ([]cloudflareapi.Posture, error)
 	GetPosture(context.Context, string, string) (cloudflareapi.Posture, error)
-	EnsureGatewayPosture(context.Context, string, string, string) (cloudflareapi.Posture, error)
 	DeletePosture(context.Context, string, string, string) error
 	ListDNS(context.Context, string, string) ([]cloudflareapi.DNSRecord, error)
 	GetDNS(context.Context, string, string) (cloudflareapi.DNSRecord, error)

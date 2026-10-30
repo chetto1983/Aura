@@ -31,7 +31,7 @@ func TestExplicitDeleteRetryRetainsDiagnosticUntilRemoteAttempt(t *testing.T) {
 	if err := h.r.Delete(t.Context(), "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.Reason != "" || h.cloud.deletes != 8 {
-		t.Fatal("successful retry did not finish cleanup")
+	if h.store.state.Reason != "" || h.cloud.deletes != 4 {
+		t.Fatalf("reason=%q deletes=%d", h.store.state.Reason, h.cloud.deletes)
 	}
 }

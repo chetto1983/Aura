@@ -88,7 +88,7 @@ func TestReconcileBackoffResetAndNewIntent(t *testing.T) {
 }
 
 func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
-	for _, kind := range []string{"account", "zone", "tunnel", "otp", "app", "policy", "posture", "dns", "unknown-tunnel", "unknown-app", "unknown-posture", "unknown-dns"} {
+	for _, kind := range []string{"account", "zone", "tunnel", "otp", "app", "policy", "dns", "unknown-tunnel", "unknown-app", "unknown-dns"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newHarness(t)
 			h.assertResources(t)
@@ -110,8 +110,6 @@ func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
 				p := h.cloud.policies["public-policy"]
 				p.Name = "another"
 				h.cloud.policies["public-policy"] = p
-			case "posture":
-				h.cloud.posture.Type = "warp"
 			case "dns":
 				d := h.cloud.dns["public-dns"]
 				d.Comment = "another"
@@ -121,8 +119,6 @@ func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
 			case "unknown-app":
 				h.store.state.Resources.PublicAppID = ""
 				h.store.state.Resources.PublicPolicyID = ""
-			case "unknown-posture":
-				h.store.state.Resources.GatewayPostureID = ""
 			case "unknown-dns":
 				h.store.state.Resources.PublicDNSID = ""
 			}
@@ -140,15 +136,15 @@ func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
 func TestReconcileRepairsOwnedPolicyAndDNSDrift(t *testing.T) {
 	h := newHarness(t)
 	h.assertResources(t)
-	p := h.cloud.policies["warp-policy"]
+	p := h.cloud.policies["public-policy"]
 	p.Require = nil
-	h.cloud.policies["warp-policy"] = p
+	h.cloud.policies["public-policy"] = p
 	d := h.cloud.dns["public-dns"]
 	d.Content = "foreign-target"
 	d.Proxied = false
 	h.cloud.dns["public-dns"] = d
 	h.assertResources(t)
-	if len(h.cloud.policies["warp-policy"].Require) != 2 || !h.cloud.dns["public-dns"].Proxied || h.cloud.dns["public-dns"].Content != "tunnel.cfargotunnel.com" {
+	if len(h.cloud.policies["public-policy"].Require) != 1 || !h.cloud.dns["public-dns"].Proxied || h.cloud.dns["public-dns"].Content != "tunnel.cfargotunnel.com" {
 		t.Fatal("owned drift not repaired")
 	}
 }
@@ -169,7 +165,7 @@ func TestReconcileRefusesPathSpecificForeignAccessApplication(t *testing.T) {
 	h := newHarness(t)
 	h.assertResources(t)
 	h.cloud.apps["foreign"] = cf.AccessApplication{ID: "foreign", Name: "foreign", Domain: "aura.example.com/admin", Type: "self_hosted"}
-	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrOwnershipConflict) {
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrHostnameTaken) {
 		t.Fatalf("err=%v", err)
 	}
 }

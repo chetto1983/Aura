@@ -60,7 +60,7 @@ func TestMembersSyncAddsAndRemovesEmailsWithConfirmedAdministrator(t *testing.T)
 			}
 		}
 	}
-	if h.cloud.creates != 10 || len(h.projection.applied) != 1 {
+	if h.cloud.creates != 6 || len(h.projection.applied) != 1 {
 		t.Fatal("member sync reprovisioned")
 	}
 }
@@ -75,7 +75,7 @@ func TestMembersTerminalFailureStopsAutomaticSync(t *testing.T) {
 	}
 }
 
-func TestMembersSyncRequiresAdministratorConfirmedInBothPolicies(t *testing.T) {
+func TestMembersSyncRequiresAdministratorConfirmedInThePolicy(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
