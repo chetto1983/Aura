@@ -1,9 +1,9 @@
 # A run with no operator cannot erase memory — Implementation Plan
 
-**Status (2026-10-30):** approved by the operator on 2026-10-30 ("procedi con l'implementazione
-della spec memory_forget"). The spec's step 0 on the lab VM has not run: its deterministic part
-(the gateway's verdict) is measured in-process instead, as red tests, and the lab-VM run stays the
-spec's open acceptance (A4).
+**Status (2026-10-30):** Tasks 0–3 done in a cloud container and merged to `master`; the lab-VM run
+(step 0 and A4) is still owed. Approved by the operator on 2026-10-30 ("procedi con
+l'implementazione della spec memory_forget") before the lab VM was available, so step 0's
+deterministic part, the gateway's verdict, was measured in-process instead.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -97,9 +97,11 @@ annotations.
 - [x] Commit `fix(memory): a run with no operator cannot erase memory`.
 
 ### Task 3 — Close
-- [ ] `go vet`, `go build`, `go test -race` on the three packages; `golangci-lint` on them.
-- [ ] Mutation spot-check on the carve-out, if `go-mutesting` is available here.
-- [ ] `docs/superpowers/verification/2026-10-30-headless-memory-erase-local.md`: what ran here, and
-  that the lab VM (step 0, A4) did not.
+- [x] `go vet`, `go build`, `go test -race` on the three packages and their dependants;
+  `golangci-lint` v2.14.0 on them: 0 issues.
+- [x] Mutation: `classify.go` 80.00% through the critical gate's own scope; `bridge_risk.go`
+  92.45% after a test commit that killed the two new survivors only the gateway's tests reached.
+- [x] `docs/superpowers/verification/2026-10-30-headless-memory-erase-local.md`: what ran here, and
+  that the lab VM (step 0, A4) and the `db_integration` coverage gate did not.
 - [ ] Lab VM, step 0 and A4, in its own verification file.
-- [ ] This plan's status; merge to `master`.
+- [x] This plan's status; merge to `master`.
