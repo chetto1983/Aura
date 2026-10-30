@@ -2,6 +2,7 @@ package remotetunnel
 
 import (
 	"context"
+	"net"
 
 	"github.com/chetto1983/aura/internal/cloudflareapi"
 )
@@ -40,6 +41,11 @@ type Projection interface {
 // secret clears the stored credential.
 type TunnelCredentials interface {
 	Save(context.Context, cloudflareapi.Secret) error
+}
+
+// NameServers answers which nameservers currently serve a domain; *net.Resolver satisfies it.
+type NameServers interface {
+	LookupNS(ctx context.Context, name string) ([]*net.NS, error)
 }
 
 // Cloudflare is the control-plane surface consumed by the resumable service.

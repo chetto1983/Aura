@@ -62,7 +62,7 @@ func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {
 		}
 		if len(zones) == 1 {
 			z = zones[0]
-		} else {
+		} else if err = r.refuseZoneHeldElsewhere(ctx, s.Desired.ZoneName); err == nil {
 			z, err = r.cloud.CreateZone(ctx, s.Resources.AccountID, s.Desired.ZoneName)
 		}
 		if err == nil && z.ID != "" {
@@ -83,6 +83,31 @@ func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {
 		return false, r.persist(ctx, s)
 	}
 	return true, nil
+}
+
+// refuseZoneHeldElsewhere: Cloudflare lets an account add a pending zone for a domain that is
+// active in another account, and that zone never activates. A domain served by Cloudflare nameservers
+// while it is absent from this account is therefore in someone else's. Any lookup failure means the
+// domain is not on Cloudflare (a fresh registration, or lame delegation): the cost of being wrong
+// is one pending zone in the operator's own account, whereas refusing would leave them stuck.
+func (r *Reconciler) refuseZoneHeldElsewhere(ctx context.Context, zone string) error {
+	if r.nameServers == nil {
+		return ErrConfiguration
+	}
+	hosts, err := r.nameServers.LookupNS(ctx, zone)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		r.log.WarnContext(ctx, "Nameserver lookup failed; treating the domain as not on Cloudflare", "zone", zone, "error", err)
+		return nil
+	}
+	for _, h := range hosts {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSuffix(h.Host, ".")), ".ns.cloudflare.com") {
+			return ErrDomainElsewhere
+		}
+	}
+	return nil
 }
 
 func validOwner(name string) bool {

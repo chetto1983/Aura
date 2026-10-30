@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -50,7 +51,7 @@ func (c *remoteAccessController) engine(ctx context.Context) (*remotetunnel.Reco
 	}
 	if c.reconciler == nil || c.credential.Reveal() != token {
 		c.credential = cloudflareapi.Secret(token)
-		c.reconciler = remotetunnel.New(c.store, c.client(token), c.members, c.projection, nil, remotetunnel.WithCredentials(remoteTunnelCredentials{secrets: c.secrets}))
+		c.reconciler = remotetunnel.New(c.store, c.client(token), c.members, c.projection, nil, remotetunnel.WithCredentials(remoteTunnelCredentials{secrets: c.secrets}), remotetunnel.WithNameServers(net.DefaultResolver))
 	}
 	return c.reconciler, nil
 }

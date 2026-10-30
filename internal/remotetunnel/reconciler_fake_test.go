@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"testing"
 
 	cf "github.com/chetto1983/aura/internal/cloudflareapi"
@@ -113,12 +114,13 @@ type harness struct {
 	members     testMembers
 	projection  *testProjection
 	credentials *testCredentials
+	ns          *fakeNS
 	r           *Reconciler
 	events      []string
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
+	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}, ns: &fakeNS{hosts: []string{"dns.register.it."}}}
 	h.projection = &testProjection{t: t, credentials: h.credentials, deletes: func() int { return h.cloud.deletes }}
 	h.credentials.events, h.projection.events = &h.events, &h.events
 	h.cloud = &fakeCloud{t: t, store: h.store, zone: cf.Zone{Name: "example.com", Status: "active", Account: cf.Account{ID: "account"}}, apps: map[string]cf.AccessApplication{}, policies: map[string]cf.AccessPolicy{}, dns: map[string]cf.DNSRecord{}}
@@ -126,7 +128,23 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 func (h *harness) newReconciler() *Reconciler {
-	return New(h.store, h.cloud, h.members, h.projection, slog.New(slog.NewTextHandler(io.Discard, nil)), WithCredentials(h.credentials))
+	return New(h.store, h.cloud, h.members, h.projection, slog.New(slog.NewTextHandler(io.Discard, nil)), WithCredentials(h.credentials), WithNameServers(h.ns))
+}
+
+// fakeNS answers every lookup with hosts, or with err; tests never reach real DNS.
+type fakeNS struct {
+	hosts []string
+	err   error
+	asked []string
+}
+
+func (f *fakeNS) LookupNS(_ context.Context, name string) ([]*net.NS, error) {
+	f.asked = append(f.asked, name)
+	var out []*net.NS
+	for _, h := range f.hosts {
+		out = append(out, &net.NS{Host: h})
+	}
+	return out, f.err
 }
 func transientError() error { return &cf.APIError{Status: 503, Retryable: true} }
 func absent() error         { return &cf.APIError{Status: 404} }

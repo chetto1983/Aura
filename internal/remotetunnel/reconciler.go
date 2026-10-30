@@ -29,6 +29,7 @@ type Reconciler struct {
 	members         Members
 	projection      Projection
 	credentials     TunnelCredentials
+	nameServers     NameServers
 	log             *slog.Logger
 	now             func() time.Time
 	retryAt         time.Time
@@ -41,6 +42,10 @@ type Option func(*Reconciler)
 
 // WithCredentials is required before enabled reconciliation can publish.
 func WithCredentials(c TunnelCredentials) Option { return func(r *Reconciler) { r.credentials = c } }
+
+// WithNameServers is required before a domain that Cloudflare does not hold yet can be added: it
+// is how a domain active in another Cloudflare account is told apart from a fresh one.
+func WithNameServers(n NameServers) Option { return func(r *Reconciler) { r.nameServers = n } }
 
 // New constructs one service; callers must share it for all intent mutations.
 func New(s StateStore, c Cloudflare, m Members, p Projection, l *slog.Logger, options ...Option) *Reconciler {
