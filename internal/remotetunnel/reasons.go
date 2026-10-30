@@ -15,6 +15,8 @@ var (
 	ErrDomainElsewhere   = errors.New("remote access: domain belongs to another Cloudflare account")
 	ErrNoAccounts        = errors.New("remote access: token sees no Cloudflare account")
 	ErrAccountNotVisible = errors.New("remote access: chosen account is not visible to the token")
+	// ErrProjection is a failed write of the connector's state; it is retried, never terminal.
+	ErrProjection = errors.New("remote access: connector projection failed")
 	// ErrDomainInvalid is the domain or label failing validation; it is an ErrConfiguration too.
 	ErrDomainInvalid = fmt.Errorf("%w: domain or label is not a valid hostname", ErrConfiguration)
 )
@@ -40,6 +42,9 @@ func ReasonOf(err error) Reason {
 		return ReasonNoAdministrator
 	case errors.Is(err, ErrRemotePresent):
 		return ReasonOldAddressPresent
+	case errors.Is(err, ErrProjection):
+		// A write to the local sidecar says nothing about Cloudflare, whatever it wraps.
+		return ReasonUnknown
 	case errors.As(err, &api) && (api.Status == 401 || api.Status == 403):
 		return ReasonTokenRejected
 	case transient(err):
@@ -52,5 +57,5 @@ func ReasonOf(err error) Reason {
 // schedule both read it, so a row cannot say unreachable while giving up.
 func transient(err error) bool {
 	var timeout net.Error
-	return cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, errConnectorDraining) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout()
+	return cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, errConnectorDraining) || errors.Is(err, ErrProjection) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout()
 }

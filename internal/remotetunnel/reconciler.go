@@ -3,6 +3,7 @@ package remotetunnel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -109,6 +110,13 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if r.credentials == nil || r.projection == nil || r.members == nil {
 		return ErrConfiguration
 	}
+	// Without a tunnel the connector has nothing to serve: a token replacement can leave the old
+	// one running, and no later step may start before it is off.
+	if s.Resources.TunnelID == "" {
+		if err := r.project(ctx, ProjectionState{Generation: s.Generation}); err != nil {
+			return err
+		}
+	}
 	if err := validateDesired(s.Desired); err != nil {
 		return err
 	}
@@ -179,7 +187,7 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if err = r.current(ctx, s); err != nil {
 		return err
 	}
-	if err = r.projection.Apply(ctx, ProjectionState{Enabled: true, Generation: s.Generation, Token: token}); err != nil {
+	if err = r.project(ctx, ProjectionState{Enabled: true, Generation: s.Generation, Token: token}); err != nil {
 		return err
 	}
 	s.Phase = PhaseConnecting
@@ -213,6 +221,15 @@ func settled(s *State) bool {
 // connectors/cloudflare-tunnel/troubleshoot-tunnels/common-errors/, "Tunnel status").
 func tunnelServes(t cloudflareapi.Tunnel) bool {
 	return t.Status == "healthy" || t.Status == "degraded"
+}
+
+// project is the one way the connector's state is written, so that a failed write is always the
+// retryable ErrProjection and never a terminal error.
+func (r *Reconciler) project(ctx context.Context, state ProjectionState) error {
+	if err := r.projection.Apply(ctx, state); err != nil {
+		return fmt.Errorf("%w: %w", ErrProjection, err)
+	}
+	return nil
 }
 
 func (r *Reconciler) persist(ctx context.Context, s *State) error {
@@ -284,7 +301,7 @@ func (r *Reconciler) disableProjection(ctx context.Context, s *State) error {
 	if r.projection == nil {
 		return ErrConfiguration
 	}
-	if err := r.projection.Apply(ctx, ProjectionState{Generation: s.Generation}); err != nil {
+	if err := r.project(ctx, ProjectionState{Generation: s.Generation}); err != nil {
 		return err
 	}
 	s.Phase = PhaseDisabled

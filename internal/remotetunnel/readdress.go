@@ -18,7 +18,8 @@ var errConnectorDraining = errors.New("remote access: tunnel still has connectio
 
 const codeTunnelHasConnections = 1022
 
-func hasResources(r Resources) bool {
+// HasResources is true when any recorded ID says something exists in Cloudflare.
+func HasResources(r Resources) bool {
 	for _, id := range []string{r.ZoneID, r.TunnelID, r.PublicDNSID, r.WARPDNSID, r.OTPProviderID,
 		r.PublicAppID, r.PublicPolicyID, r.WARPAppID, r.WARPPolicyID, r.GatewayPostureID} {
 		if id != "" {
@@ -31,7 +32,7 @@ func hasResources(r Resources) bool {
 // addressChanged is true when what exists in Cloudflare was made for another account, zone or
 // hostname than the one now desired. A row that holds nothing has nothing to move.
 func addressChanged(s State) bool {
-	return hasResources(s.Resources) && (s.Resources.AccountID != s.Desired.AccountID ||
+	return HasResources(s.Resources) && (s.Resources.AccountID != s.Desired.AccountID ||
 		s.OwnedZoneName != s.Desired.ZoneName || s.OwnedHostname != publicHostname(s.Desired))
 }
 
@@ -53,7 +54,7 @@ func (r *Reconciler) teardown(ctx context.Context, s *State) error {
 	if r.credentials == nil || r.projection == nil {
 		return ErrConfiguration
 	}
-	if hasResources(s.Resources) {
+	if HasResources(s.Resources) {
 		visible, err := r.accountVisible(ctx, s)
 		if err != nil {
 			return err
@@ -69,7 +70,7 @@ func (r *Reconciler) teardown(ctx context.Context, s *State) error {
 	if err := r.credentials.Save(ctx, ""); err != nil {
 		return err
 	}
-	if err := r.projection.Apply(ctx, ProjectionState{Generation: s.Generation}); err != nil {
+	if err := r.project(ctx, ProjectionState{Generation: s.Generation}); err != nil {
 		return err
 	}
 	if err := r.retireWARP(ctx, s); err != nil {

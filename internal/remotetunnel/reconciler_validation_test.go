@@ -128,7 +128,7 @@ func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
 			if err := h.r.Reconcile(t.Context()); !errors.Is(err, want) {
 				t.Fatalf("err=%v", err)
 			}
-			if h.cloud.creates != before || len(h.projection.applied) != 1 {
+			if h.cloud.creates != before || len(h.projection.enabled()) != 1 {
 				t.Fatal("conflict published or created")
 			}
 		})
@@ -158,7 +158,7 @@ func TestReconcileFailureDoesNotRemoveLastHealthyProjection(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); err == nil {
 		t.Fatal("expected failure")
 	}
-	if len(h.projection.applied) != 1 || !h.projection.applied[0].Enabled {
+	if len(h.projection.enabled()) != 1 {
 		t.Fatal("healthy connector discarded")
 	}
 }
@@ -178,7 +178,7 @@ func TestReconcileStaleGenerationStopsBeforeProjection(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrStaleGeneration) {
 		t.Fatalf("err=%v", err)
 	}
-	if h.cloud.creates != 1 || len(h.projection.applied) != 0 {
+	if h.cloud.creates != 1 || len(h.projection.enabled()) != 0 {
 		t.Fatal("continued after failed ID persistence")
 	}
 }

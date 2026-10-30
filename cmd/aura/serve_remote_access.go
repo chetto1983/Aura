@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ type remoteSecrets interface {
 	Secret(context.Context, string) (string, error)
 	Upsert(context.Context, string, string, string) (sqlc.AuraSettings, error)
 }
-type remoteDesiredCommit func(context.Context, int64, remotetunnel.Desired, string, string) error
+type remoteDesiredCommit func(context.Context, int64, remotetunnel.Desired, string, []remotetunnel.AbandonedResource, string) error
 
 type remoteAccessController struct {
 	mu         sync.Mutex
@@ -102,12 +103,31 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if c.commit == nil {
 		return remotetunnel.ErrConfiguration
 	}
-	if err = c.commit(ctx, in.Generation, desired, token, actor); err != nil {
+	abandoned, err := c.abandonedBy(ctx, accounts)
+	if err != nil {
+		return err
+	}
+	if err = c.commit(ctx, in.Generation, desired, token, abandoned, actor); err != nil {
 		return err
 	}
 	c.reconciler = nil
 	c.Wake()
 	return nil
+}
+
+// abandonedBy lists what the row holds in an account the token cannot see. Such a token can never
+// delete it, so the save forgets it instead of blocking. It is nil when the token sees that account
+// or the row holds nothing; an empty list still means "forget".
+func (c *remoteAccessController) abandonedBy(ctx context.Context, accounts []cloudflareapi.Account) ([]remotetunnel.AbandonedResource, error) {
+	state, err := c.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	held := state.Resources.AccountID
+	if held == "" || !remotetunnel.HasResources(state.Resources) || slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == held }) {
+		return nil, nil
+	}
+	return remotetunnel.AbandonedOf(state), nil
 }
 
 func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessStatus, error) {
@@ -145,6 +165,9 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 func (c *remoteAccessController) Action(ctx context.Context, action, hostname string, generation int64, actor string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if action == "dismiss-abandoned" {
+		return c.store.DismissAbandoned(ctx)
+	}
 	engine, err := c.engine(ctx)
 	if err != nil {
 		return err
@@ -208,8 +231,15 @@ func (c *remoteAccessController) rebuild(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
-		projection.Enabled = token != "" && state.Resources.TunnelID != ""
-		projection.Token = cloudflareapi.Secret(token)
+		if token != "" && state.Resources.TunnelID != "" {
+			// A restart between a tunnel's creation and its credential's replacement leaves the
+			// previous tunnel's credential stored; starting it would serve the old address.
+			if tunnel, e := tunnelOfCredential(token); e == nil && tunnel == state.Resources.TunnelID {
+				projection.Enabled, projection.Token = true, cloudflareapi.Secret(token)
+			} else {
+				slog.Warn("Remote access stored credential does not belong to the recorded tunnel; the connector stays off", "tunnel", state.Resources.TunnelID)
+			}
+		}
 	}
 	return c.projection.Apply(ctx, projection)
 }

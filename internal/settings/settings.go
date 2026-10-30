@@ -250,10 +250,7 @@ func (s *Store) UpsertWith(ctx context.Context, key, value, by string, companion
 	if err != nil {
 		return sqlc.AuraSettings{}, err
 	}
-	var updatedBy pgtype.Text
-	if by != "" {
-		updatedBy = pgtype.Text{String: by, Valid: true}
-	}
+	updatedBy := author(by)
 	var row sqlc.AuraSettings
 	err = s.withWriteTransaction(ctx, func(tx sqlc.DBTX) error {
 		q := sqlc.New(tx)
@@ -271,6 +268,24 @@ func (s *Store) UpsertWith(ctx context.Context, key, value, by string, companion
 	}
 	row.Value = value
 	return row, nil
+}
+
+// UpsertInTx writes a second allowlisted key inside the transaction UpsertWith passes to its
+// companion, so that both keys commit or neither does. The transaction already holds the settings
+// write lock.
+func (s *Store) UpsertInTx(ctx context.Context, tx sqlc.DBTX, key, value, by string) error {
+	if _, allowed := Allowed(key); !allowed {
+		return fmt.Errorf("settings: unknown key")
+	}
+	stored, err := s.storedValue(key, value)
+	if err != nil {
+		return err
+	}
+	updatedBy := author(by)
+	_, err = sqlc.New(tx).UpsertSetting(ctx, sqlc.UpsertSettingParams{
+		Key: key, Value: stored, IsSecret: AllowedKeys[key].Secret, UpdatedBy: updatedBy,
+	})
+	return err
 }
 
 // ReplaceMany writes one model-profile mutation under one advisory-locked transaction.
@@ -299,10 +314,7 @@ func (s *Store) ReplaceMany(
 			if err != nil {
 				return err
 			}
-			var updatedBy pgtype.Text
-			if by != "" {
-				updatedBy = pgtype.Text{String: by, Valid: true}
-			}
+			updatedBy := author(by)
 			row, err := q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
 				Key: key, Value: stored, IsSecret: meta.Secret, UpdatedBy: updatedBy,
 			})
@@ -375,4 +387,11 @@ func OverlayEnv(ctx context.Context, l Lister) error {
 		_ = os.Setenv(r.Key, r.Value)
 	}
 	return nil
+}
+
+func author(by string) pgtype.Text {
+	if by == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: by, Valid: true}
 }

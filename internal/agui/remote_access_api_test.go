@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -40,9 +41,10 @@ func TestRemoteAccessCredentialsNeverRequestAuraRestart(t *testing.T) {
 }
 
 type fakeRemoteAccess struct {
-	calls  int
-	err    error
-	status RemoteAccessStatus
+	calls   int
+	actions []string
+	err     error
+	status  RemoteAccessStatus
 }
 
 func remoteAdminCaps() *fakeIdentityAdmin {
@@ -59,8 +61,9 @@ func (f *fakeRemoteAccess) Configure(context.Context, RemoteAccessConfiguration,
 	f.calls++
 	return f.err
 }
-func (f *fakeRemoteAccess) Action(context.Context, string, string, int64, string) error {
+func (f *fakeRemoteAccess) Action(_ context.Context, action string, _ string, _ int64, _ string) error {
 	f.calls++
+	f.actions = append(f.actions, action)
 	return f.err
 }
 func (f *fakeRemoteAccess) Events(context.Context) ([]RemoteAccessEvent, error) {
@@ -156,6 +159,7 @@ func TestRemoteAccessEndpointContracts(t *testing.T) {
 		{"POST", "/token/verify", `{"api_token":""}`, "admin-1", 400, 0},
 		{"POST", "/token/refresh", `{}`, "admin-1", 202, 1},
 		{"POST", "/reconcile", `{}`, "admin-1", 202, 1},
+		{"POST", "/abandoned/dismiss", `{}`, "admin-1", 202, 1},
 		{"POST", "/disable", `{}`, "admin-1", 202, 1},
 		{"DELETE", "", `{"hostname":"aura.example.com"}`, "admin-1", 202, 1},
 		{"PUT", "", `{"zone_name":"example.com"}`, "admin-1", 202, 1},
@@ -217,6 +221,23 @@ func TestRemoteAccessFailuresStaySecretSafe(t *testing.T) {
 		s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest(method, "/api/settings/remote-access"+path, strings.NewReader(body)), "admin-1"))
 		if rec.Code != 502 || strings.Contains(rec.Body.String(), "secret") {
 			t.Fatalf("path=%s status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestDismissAbandonedRoute(t *testing.T) {
+	for _, tc := range []struct {
+		actor   string
+		code    int
+		actions []string
+	}{{"admin-1", 202, []string{"dismiss-abandoned"}}, {"member-1", 403, nil}} {
+		f := &fakeRemoteAccess{}
+		s := &Server{idAdmin: remoteAdminCaps()}
+		s.SetRemoteAccess(f)
+		rec := httptest.NewRecorder()
+		s.Mux().ServeHTTP(rec, withPrincipal(httptest.NewRequest("POST", "/api/settings/remote-access/abandoned/dismiss", strings.NewReader(`{}`)), tc.actor))
+		if rec.Code != tc.code || !reflect.DeepEqual(f.actions, tc.actions) {
+			t.Fatalf("actor=%s status=%d actions=%v body=%s", tc.actor, rec.Code, f.actions, rec.Body.String())
 		}
 	}
 }

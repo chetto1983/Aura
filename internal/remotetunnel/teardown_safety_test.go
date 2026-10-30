@@ -191,7 +191,7 @@ func TestDeleteMidTeardownFinishesTheDeletion(t *testing.T) {
 	if err := h.r.Delete(t.Context(), "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if s := h.store.state; s.Phase != PhaseDisabled || hasResources(s.Resources) || s.TunnelName != "" {
+	if s := h.store.state; s.Phase != PhaseDisabled || HasResources(s.Resources) || s.TunnelName != "" {
 		t.Fatalf("phase=%q resources=%+v", s.Phase, s.Resources)
 	}
 }

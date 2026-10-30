@@ -15,7 +15,7 @@ func TestMembersRefuseEmptyAndLastAdminLockout(t *testing.T) {
 		if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrMemberLockout) {
 			t.Fatalf("err=%v", err)
 		}
-		if h.cloud.creates != 0 || len(h.projection.applied) != 0 {
+		if h.cloud.creates != 0 || len(h.projection.enabled()) != 0 {
 			t.Fatal("unsafe publication")
 		}
 	}
@@ -60,7 +60,7 @@ func TestMembersSyncAddsAndRemovesEmailsWithConfirmedAdministrator(t *testing.T)
 			}
 		}
 	}
-	if h.cloud.creates != 6 || len(h.projection.applied) != 1 {
+	if h.cloud.creates != 6 || len(h.projection.enabled()) != 1 {
 		t.Fatal("member sync reprovisioned")
 	}
 }

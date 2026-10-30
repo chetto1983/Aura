@@ -73,7 +73,7 @@ func RemoteAccessRoutes() []string {
 		"GET /api/settings/remote-access", "PUT /api/settings/remote-access",
 		"DELETE /api/settings/remote-access", "GET /api/settings/remote-access/events",
 		"POST /api/settings/remote-access/token/verify", "POST /api/settings/remote-access/token/refresh",
-		"POST /api/settings/remote-access/reconcile",
+		"POST /api/settings/remote-access/reconcile", "POST /api/settings/remote-access/abandoned/dismiss",
 		"POST /api/settings/remote-access/disable", "POST /api/settings/remote-access/accept-external",
 	}
 }
@@ -153,6 +153,9 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(path, "/")
 	if r.Method == http.MethodDelete {
 		action = "delete"
+	}
+	if action == "abandoned/dismiss" {
+		action = "dismiss-abandoned"
 	}
 	if action == "accept-external" {
 		if r.Header.Get("X-Aura-Remote-Ingress") != "tunnel" {

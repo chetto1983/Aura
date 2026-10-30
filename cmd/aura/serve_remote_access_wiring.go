@@ -23,16 +23,9 @@ func wireRemoteAccess(ctx context.Context, server *agui.Server, chat *chatEnv) {
 		return
 	}
 	state := remotetunnel.NewStore(chat.pool)
-	commit := func(ctx context.Context, generation int64, desired remotetunnel.Desired, token, actor string) error {
-		_, err := secrets.UpsertWith(ctx, "CLOUDFLARE_API_TOKEN", token, actor, func(tx sqlc.DBTX) error {
-			_, e := remotetunnel.NewStore(tx).SaveDesired(ctx, generation, desired, actor)
-			return e
-		})
-		return err
-	}
 	// This fixed Compose mount is disposable and is never a configuration authority.
 	projection := remotetunnel.NewFileProjection("/var/lib/aura/cloudflared", 65532, 65532)
-	controller := newRemoteAccessController(state, secrets, projection, remoteIdentityMembers{store: chat.identity}, commit)
+	controller := newRemoteAccessController(state, secrets, projection, remoteIdentityMembers{store: chat.identity}, remoteAccessCommit(secrets))
 	server.SetRemoteAccess(controller)
 	server.SetIdentityChanged(controller.Wake)
 	controller.Start(ctx)
@@ -78,4 +71,28 @@ func (m remoteIdentityMembers) emails(ctx context.Context, admins bool) ([]strin
 		out = append(out, email)
 	}
 	return out, nil
+}
+
+// remoteAccessCommit stores the candidate token and the desired state in one transaction. When
+// the token replaces one that could reach resources this one cannot (abandoned is not nil), the
+// same transaction forgets those resources and the connector credential that served them, so a
+// failure leaves the row, the list and both secrets as they were. Abandon keeps the generation,
+// which is why SaveDesired follows it.
+func remoteAccessCommit(secrets *settings.Store) remoteDesiredCommit {
+	return func(ctx context.Context, generation int64, desired remotetunnel.Desired, token string, abandoned []remotetunnel.AbandonedResource, actor string) error {
+		_, err := secrets.UpsertWith(ctx, "CLOUDFLARE_API_TOKEN", token, actor, func(tx sqlc.DBTX) error {
+			state := remotetunnel.NewStore(tx)
+			if abandoned != nil {
+				if _, e := state.Abandon(ctx, generation, abandoned); e != nil {
+					return e
+				}
+				if e := secrets.UpsertInTx(ctx, tx, "CLOUDFLARE_TUNNEL_TOKEN", "", actor); e != nil {
+					return e
+				}
+			}
+			_, e := state.SaveDesired(ctx, generation, desired, actor)
+			return e
+		})
+		return err
+	}
 }

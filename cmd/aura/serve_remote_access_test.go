@@ -107,6 +107,13 @@ func (s *remoteMemoryStore) AddAbandoned(_ context.Context, list []remotetunnel.
 	return nil
 }
 
+func (s *remoteMemoryStore) DismissAbandoned(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Abandoned = nil
+	return nil
+}
+
 type remoteMemorySecrets struct {
 	mu     sync.Mutex
 	values map[string]string
@@ -143,8 +150,9 @@ func (p *remoteRecordingProjection) Apply(_ context.Context, state remotetunnel.
 func TestRemoteAccessBootRebuildsProjectionAndCloses(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
-			state := &remoteMemoryStore{state: remotetunnel.State{Generation: 7, Desired: remotetunnel.Desired{Enabled: enabled}, Resources: remotetunnel.Resources{TunnelID: "owned-tunnel"}}}
-			secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_TUNNEL_TOKEN": "stored-tunnel-token"}}
+			state := &remoteMemoryStore{state: remotetunnel.State{Generation: 7, Desired: remotetunnel.Desired{Enabled: enabled}, Resources: remotetunnel.Resources{TunnelID: oldTunnelUUID}}}
+			storedToken := connectorToken(t, oldTunnelUUID)
+			secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_TUNNEL_TOKEN": storedToken}}
 			projection := &remoteRecordingProjection{}
 			c := newRemoteAccessController(state, secrets, projection, nil, nil)
 			if err := c.rebuild(t.Context()); err != nil {
@@ -153,7 +161,7 @@ func TestRemoteAccessBootRebuildsProjectionAndCloses(t *testing.T) {
 			if len(projection.states) != 1 || projection.states[0].Enabled != enabled || projection.states[0].Generation != 7 {
 				t.Fatal("projection not rebuilt from database")
 			}
-			if enabled && projection.states[0].Token.Reveal() != "stored-tunnel-token" {
+			if enabled && projection.states[0].Token.Reveal() != storedToken {
 				t.Fatal("database token not projected")
 			}
 			c.Start(t.Context())

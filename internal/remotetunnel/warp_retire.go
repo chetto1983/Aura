@@ -38,13 +38,7 @@ func (r *Reconciler) retireWARP(ctx context.Context, s *State) error {
 	}, remove: func() error {
 		return r.cloud.DeletePosture(ctx, res.AccountID, res.GatewayPostureID, resourceName(s, "gateway"))
 	}})
-	// steps are the CNAME, the policy, the app and the posture, in the order they are deleted.
-	listed := []AbandonedResource{
-		{Kind: "dns", Name: res.LegacyWARPHostname},
-		{Kind: "access_policy", Name: resourceName(s, "warp-members")},
-		{Kind: "access_app", Name: resourceName(s, "warp")},
-		{Kind: "posture", Name: resourceName(s, "gateway")},
-	}
+	listed := legacyWARPNames(s)
 	ids := []*string{&res.WARPDNSID, &res.WARPPolicyID, &res.WARPAppID, &res.GatewayPostureID}
 	for i := range steps {
 		last := len(steps)

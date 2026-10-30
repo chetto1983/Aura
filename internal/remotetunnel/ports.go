@@ -13,6 +13,7 @@ type StateStore interface {
 	SaveDesired(context.Context, int64, Desired, string) (State, error)
 	Advance(context.Context, State) (State, error)
 	AddAbandoned(context.Context, []AbandonedResource) error
+	DismissAbandoned(context.Context) error
 }
 
 // Members supplies active human identity emails, never account-wide domains.

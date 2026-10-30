@@ -40,7 +40,7 @@ func TestRemoteAccessConfigureCommitsOnlyAfterValidation(t *testing.T) {
 			}))
 			defer server.Close()
 			writes := 0
-			commit := func(_ context.Context, g int64, d remotetunnel.Desired, token, actor string) error {
+			commit := func(_ context.Context, g int64, d remotetunnel.Desired, token string, _ []remotetunnel.AbandonedResource, actor string) error {
 				writes++
 				if g != 3 || d.ZoneName != "example.com" || d.PublicLabel != "aura" || token != "candidate" || actor != "admin" {
 					t.Fatal("incorrect commit")

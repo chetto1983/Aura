@@ -94,3 +94,39 @@ func TestUpsertWithCommitsSecretAndDesiredStateAtomically(t *testing.T) {
 		})
 	}
 }
+
+func TestUpsertInTxCommitsWithTheCompanionOrNotAtAll(t *testing.T) {
+	pool := migratedPool(t)
+	secrets, err := NewStore(pool, testAuthulaSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupKeys(t, secrets, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_TUNNEL_TOKEN")
+	for _, key := range []string{"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_TUNNEL_TOKEN"} {
+		if _, err = secrets.Upsert(t.Context(), key, "old", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, fail := range []bool{true, false} {
+		_, err = secrets.UpsertWith(t.Context(), "CLOUDFLARE_API_TOKEN", "new", "admin", func(tx sqlc.DBTX) error {
+			if e := secrets.UpsertInTx(t.Context(), tx, "CLOUDFLARE_TUNNEL_TOKEN", "", "admin"); e != nil {
+				return e
+			}
+			if fail {
+				return errors.New("companion failed")
+			}
+			return nil
+		})
+		api, _ := secrets.Secret(t.Context(), "CLOUDFLARE_API_TOKEN")
+		tunnel, _ := secrets.Secret(t.Context(), "CLOUDFLARE_TUNNEL_TOKEN")
+		if fail && (err == nil || api != "old" || tunnel != "old") {
+			t.Fatalf("a failed commit changed a key: err=%v api=%q tunnel=%q", err, api, tunnel)
+		}
+		if !fail && (err != nil || api != "new" || tunnel != "") {
+			t.Fatalf("commit lost a write: err=%v api=%q tunnel=%q", err, api, tunnel)
+		}
+	}
+	if err = secrets.UpsertInTx(t.Context(), pool, "NOT_A_SETTING", "x", ""); err == nil {
+		t.Fatal("an unknown key was written")
+	}
+}

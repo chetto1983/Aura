@@ -54,6 +54,11 @@ func (m *memoryState) AddAbandoned(_ context.Context, list []AbandonedResource) 
 	return nil
 }
 
+func (m *memoryState) DismissAbandoned(context.Context) error {
+	m.state.Abandoned = nil
+	return nil
+}
+
 type testMembers struct {
 	emails, admins []string
 	err            error
@@ -105,6 +110,18 @@ func (p *testProjection) Apply(_ context.Context, s ProjectionState) error {
 		p.deletesAtApply = append(p.deletesAtApply, p.deletes())
 	}
 	return p.err
+}
+
+// enabled is the projections that started the connector; a pass without a tunnel also records the
+// off projection that stops a stale one.
+func (p *testProjection) enabled() []ProjectionState {
+	var out []ProjectionState
+	for _, s := range p.applied {
+		if s.Enabled {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 type harness struct {

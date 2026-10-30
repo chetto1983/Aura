@@ -31,7 +31,7 @@ func TestReconcileResumesEveryPhase(t *testing.T) {
 			if h.store.state.Phase != PhaseConnecting {
 				t.Fatal("health must require acceptance probe")
 			}
-			if len(h.projection.applied) != 2 || !h.projection.applied[0].Enabled {
+			if len(h.projection.enabled()) != 2 {
 				t.Fatal("missing projection")
 			}
 		})
@@ -100,7 +100,7 @@ func TestReconcileCredentialFailureNeverProjects(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); err == nil {
 		t.Fatal("missing save failure")
 	}
-	if len(h.projection.applied) != 0 {
+	if len(h.projection.enabled()) != 0 {
 		t.Fatal("projected unpersisted token")
 	}
 }
@@ -133,7 +133,7 @@ func TestReconcileWaitsForNameservers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if h.cloud.creates != 1 || h.store.state.Phase != PhaseWaitingNameservers || len(h.projection.applied) != 0 {
+	if h.cloud.creates != 1 || h.store.state.Phase != PhaseWaitingNameservers || len(h.projection.enabled()) != 0 {
 		t.Fatal("pending zone was published or recreated")
 	}
 }
