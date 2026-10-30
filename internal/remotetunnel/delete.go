@@ -135,7 +135,7 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 	if err := r.projection.Apply(ctx, ProjectionState{Generation: s.Generation}); err != nil {
 		return err
 	}
-	if s.Resources.AccountID != s.Desired.AccountID {
+	if s.Resources.AccountID != "" && s.Resources.AccountID != s.Desired.AccountID {
 		return ErrOwnershipConflict
 	}
 	if err := r.runDeletions(ctx, s, r.deletions(ctx, s)); err != nil {

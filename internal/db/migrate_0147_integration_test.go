@@ -22,22 +22,27 @@ func TestMigrate0147BackfillsOwnership(t *testing.T) {
 		name                         string
 		ids                          []string
 		account, zone, owned, legacy string
+		preOwned                     string // owned_hostname already set by 0146, which the backfill must keep
 	}{
-		{"tunnel and warp dns", []string{"tunnel_id", "warp_dns_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it"},
-		{"pending legacy row, zone only", []string{"zone_id"}, "A", "a.it", "aura.a.it", ""},
-		{"partial delete, otp provider only", []string{"otp_idp_id"}, "A", "a.it", "aura.a.it", ""},
-		{"warp posture only", []string{"warp_posture_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it"},
-		{"warp app only", []string{"warp_app_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it"},
-		{"warp policy only", []string{"warp_policy_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it"},
-		{"no resource id", nil, "", "", "", ""},
+		{"tunnel and warp dns", []string{"tunnel_id", "warp_dns_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it", ""},
+		{"pending legacy row, zone only", []string{"zone_id"}, "A", "a.it", "aura.a.it", "", ""},
+		{"partial delete, otp provider only", []string{"otp_idp_id"}, "A", "a.it", "aura.a.it", "", ""},
+		{"warp posture only", []string{"warp_posture_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it", ""},
+		{"warp app only", []string{"warp_app_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it", ""},
+		{"warp policy only", []string{"warp_policy_id"}, "A", "a.it", "aura.a.it", "aura-warp.a.it", ""},
+		{"public dns only", []string{"public_dns_id"}, "A", "a.it", "aura.a.it", "", ""},
+		{"public app only", []string{"public_app_id"}, "A", "a.it", "aura.a.it", "", ""},
+		{"public policy only", []string{"public_policy_id"}, "A", "a.it", "aura.a.it", "", ""},
+		{"owned hostname already set", []string{"tunnel_id"}, "A", "a.it", "kept.a.it", "", "kept.a.it"},
+		{"no resource id", nil, "", "", "", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := admin.Exec(ctx, `
 UPDATE aura.cloudflare_remote_access
-SET account_id = 'A', zone_name = 'a.it', public_label = 'aura', warp_label = 'aura-warp', owned_hostname = '',
+SET account_id = 'A', zone_name = 'a.it', public_label = 'aura', warp_label = 'aura-warp', owned_hostname = $1,
     zone_id = '', tunnel_id = '', public_dns_id = '', warp_dns_id = '', otp_idp_id = '',
-    public_app_id = '', public_policy_id = '', warp_app_id = '', warp_policy_id = '', warp_posture_id = ''`); err != nil {
+    public_app_id = '', public_policy_id = '', warp_app_id = '', warp_policy_id = '', warp_posture_id = ''`, tc.preOwned); err != nil {
 				t.Fatalf("seed the 0146 shape: %v", err)
 			}
 			for _, col := range tc.ids {

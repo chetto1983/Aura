@@ -55,10 +55,10 @@ func (s *Store) Advance(ctx context.Context, state State) (State, error) {
 	return changedState(row, err)
 }
 
-// Abandon forgets every resource ID and hostname, and appends what was forgotten to the list
-// the operator has not seen yet, when a replaced token can no longer reach the account those
-// resources live in. It keeps the generation, so the SaveDesired of the same transaction still
-// matches.
+// Abandon forgets every resource ID, the account and zone they belong to, and the hostnames, and
+// appends what was forgotten to the list the operator has not seen yet, when a replaced token can
+// no longer reach the account those resources live in. It keeps the generation, so the
+// SaveDesired of the same transaction still matches.
 func (s *Store) Abandon(ctx context.Context, generation int64, list []AbandonedResource) (State, error) {
 	abandoned, err := marshalAbandoned(list)
 	if err != nil {

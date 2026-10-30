@@ -109,8 +109,8 @@ func blankRemoteAccess(t *testing.T, s *Store) State {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Resources = Resources{AccountID: state.Resources.AccountID}
-	state.TunnelName, state.OwnedHostname, state.AcceptedHostname = "", "", ""
+	state.Resources = Resources{}
+	state.TunnelName, state.OwnedHostname, state.OwnedZoneName, state.AcceptedHostname = "", "", "", ""
 	state.Reason, state.Phase = "", PhaseDisabled
 	if err = s.DismissAbandoned(t.Context()); err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestSaveDesiredNeverMovesTheResourcesAccount(t *testing.T) {
 func TestLegacyWARPHostnameSurvivesADomainChange(t *testing.T) {
 	s := NewStore(remoteAccessPool(t))
 	state := blankRemoteAccess(t, s)
-	state.Resources.WARPDNSID, state.Resources.LegacyWARPHostname = "wd", "aura-warp.a.it"
+	state.Resources.WARPDNSID, state.Resources.LegacyWARPHostname, state.OwnedZoneName = "wd", "aura-warp.a.it", "a.it"
 	state, err := s.Advance(t.Context(), state)
 	if err != nil {
 		t.Fatal(err)
@@ -298,8 +298,8 @@ func TestLegacyWARPHostnameSurvivesADomainChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Resources.LegacyWARPHostname != "aura-warp.a.it" {
-		t.Fatalf("legacy hostname = %q, want aura-warp.a.it", got.Resources.LegacyWARPHostname)
+	if got.Resources.LegacyWARPHostname != "aura-warp.a.it" || got.OwnedZoneName != "a.it" {
+		t.Fatalf("legacy hostname = %q, owned zone = %q, want aura-warp.a.it and a.it", got.Resources.LegacyWARPHostname, got.OwnedZoneName)
 	}
 }
 
