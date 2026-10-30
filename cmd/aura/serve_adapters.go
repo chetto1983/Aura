@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
@@ -41,12 +42,13 @@ import (
 // genuine nil interface (not an interface wrapping a nil pointer), so the pool-free
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
-func newTaskTool(ts *cronTaskStore, notifier cron.Notifier) *tools.TaskTool {
-	t := &tools.TaskTool{AlertThreshold: scoring.Risky}
+func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string) *tools.TaskTool {
+	t := &tools.TaskTool{AlertThreshold: scoring.Risky, DeploymentZone: deploymentZone}
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier
 		t.TelegramAccounts = taskTelegramAccounts{store: telegram.New(ts.pool)}
+		t.Timezones = onboarding.NewProfileStore(ts.pool)
 	}
 	return t
 }

@@ -41,6 +41,10 @@ type TaskTool struct {
 	// TelegramAccounts lists the Telegram accounts the caller links, so a notify=telegram task
 	// names the ones it reaches (task_telegram_recipients.go). Nil checks nothing.
 	TelegramAccounts taskTelegramAccounts
+	// Timezones and DeploymentZone give a schedule with no tz the identity's zone, then
+	// AURA_TIMEZONE (task_timezone.go). Both empty leave cron.ParseSchedule's Europe/Rome.
+	Timezones      taskTimezones
+	DeploymentZone string
 
 	routerOnce sync.Once
 	router     *ActionRouter
@@ -141,7 +145,7 @@ const taskParamsSchema = `{
     "cron": {"type": "string", "description": "Required when action=schedule and schedule_kind=cron. A standard 5-field cron expression, e.g. '30 9 * * 1-5'."},
     "at": {"type": "string", "description": "Required when action=schedule and schedule_kind=at. An RFC-3339 instant, e.g. '2030-01-01T09:30:00Z'."},
     "every_minutes": {"type": "integer", "description": "Required when action=schedule and schedule_kind=every. Interval in minutes (minimum 5)."},
-    "tz": {"type": "string", "description": "Optional IANA timezone for a cron schedule, e.g. 'Europe/Rome'. Defaults to the scheduler default timezone."},
+    "tz": {"type": "string", "description": "Optional IANA timezone for a cron schedule, e.g. 'Europe/Rome'. Defaults to the operator's own timezone, then the deployment's."},
     "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres (database dump)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
@@ -221,6 +225,9 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	}
 	if strings.TrimSpace(a.Notify) == "" {
 		return taskNotifyChoiceRequiredResult(), nil
+	}
+	if strings.TrimSpace(a.TZ) == "" {
+		a.TZ = t.scheduleZone(ctx)
 	}
 	spec, next, err := t.resolveSchedule(a)
 	if err != nil {

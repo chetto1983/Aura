@@ -75,11 +75,13 @@ skills, Python 3 for the measurement script.
 ## Tasks
 
 ### Task 1 — A cron task with no tz runs in the identity's zone
-- [ ] Red, unit: an identity in `America/New_York` schedules a cron with no `tz`, and the stored
+- [x] Red, unit: an identity in `America/New_York` schedules a cron with no `tz`, and the stored
   `TZ` is New York. With no profile zone, `AURA_TIMEZONE` applies. With neither, `Europe/Rome`.
   An explicit `tz` always wins.
-- [ ] Green: `task_timezone.go`; the seam; the wiring; the tool description names the order.
-- [ ] Commit `fix(scheduler): a cron task without tz runs in the identity's zone`.
+- [x] Green: `task_timezone.go`; the seam; the wiring; the tool description names the order.
+  db_integration: `TestACronWithoutTZFiresOnTheIdentitysWallClock`, red without the fallback
+  (Rome, 02:30 in New York), green with it (07:30).
+- [x] Commit `fix(scheduler): a cron task without tz runs in the identity's zone`.
 
 ### Task 2 — The job's clock is the identity's
 - [ ] Red, unit: `newAgentWorker` for an identity in `America/New_York` builds an agent whose

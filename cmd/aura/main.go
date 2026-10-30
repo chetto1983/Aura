@@ -200,7 +200,7 @@ func buildBaseRegistryWithHandles(
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{Location: tools.LocationOrUTC(cfg.Timezone)})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
-	reg.Register(newTaskTool(ts, newSchedulerNotifier(cfg, reg, taskStorePool(ts))))
+	reg.Register(newTaskTool(ts, newSchedulerNotifier(cfg, reg, taskStorePool(ts)), cfg.Timezone))
 	reg.Register(newBoardTool(taskStorePool(ts)))
 	reg.Register(&tools.TodoTool{}) // working-memory scratchpad (Claude Code's TodoWrite), session-scoped
 
