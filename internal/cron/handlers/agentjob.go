@@ -102,9 +102,10 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	}
 	var summary strings.Builder
 	askedMutating := false
+	loc := h.Deps.clockLocation(runCtx)
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
-		worker := newAgentWorker(h.Deps, client, cfg, job.RunID, job.OriginConversationID, prior)
+		worker := newAgentWorker(h.Deps, client, cfg, loc, job.RunID, job.OriginConversationID, prior)
 		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool)
 		askedMutating = askedMutating || asked
 		if runErr != nil {

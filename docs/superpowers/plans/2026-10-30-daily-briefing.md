@@ -84,10 +84,11 @@ skills, Python 3 for the measurement script.
 - [x] Commit `fix(scheduler): a cron task without tz runs in the identity's zone`.
 
 ### Task 2 — The job's clock is the identity's
-- [ ] Red, unit: `newAgentWorker` for an identity in `America/New_York` builds an agent whose
-  location is New York; with no profile it is the deployment zone.
-- [ ] Green: `AgentDeps` fields, `newAgentWorker`, the wiring in `serve_dispatch.go`.
-- [ ] Commit `fix(scheduler): a scheduled agent reads the clock in the identity's zone`.
+- [x] Red, unit: the clock in a job's model request carries New York's offset for an identity in
+  New York, and the deployment's (Tokyo) with no profile zone. Red without `Location` on both.
+- [x] Green: `AgentDeps.Timezones`/`Location`, `clockLocation`, `newAgentWorker`, the wiring in
+  `serve_dispatch.go` and its test.
+- [x] Commit `fix(scheduler): a scheduled agent reads the clock in the identity's zone`.
 
 ### Task 3 — The board shows what is due first
 - [ ] Red, unit: 40 cards, one overdue at position 40. The whole-board list shows it in a "due"

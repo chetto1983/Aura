@@ -13,11 +13,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -115,6 +117,28 @@ type AgentDeps struct {
 	// degrades to deny-with-guidance and leaves a durable decision-fact keyed on the
 	// originating conversation UUID (Open Q1). nil is an Allow no-op.
 	Gateway *gateway.Gateway
+	// Timezones and Location give the job's clock the identity's zone, then the deployment's
+	// (AURA_TIMEZONE). Without them the clock is the process zone, UTC in the appliance.
+	Timezones jobTimezones
+	Location  *time.Location
+}
+
+// jobTimezones is the identity's own zone, the seam the runner's ProfileProvider also reads.
+type jobTimezones interface {
+	Timezone(ctx context.Context, identityID string) string
+}
+
+// clockLocation is the zone the job's clock is rendered in, resolved as runner.turnLocation
+// resolves an interactive turn's.
+func (d AgentDeps) clockLocation(ctx context.Context) *time.Location {
+	if d.Timezones != nil {
+		if id := identityctx.IdentityID(ctx); id != "" {
+			if zone := strings.TrimSpace(d.Timezones.Timezone(ctx, id)); zone != "" {
+				return tools.LocationOrUTC(zone)
+			}
+		}
+	}
+	return d.Location
 }
 
 // childRegistry is the agent_job's tool registry: the full parent registry MINUS
@@ -135,7 +159,7 @@ func childRegistry(parent *tools.Registry) *tools.Registry {
 // reads deps.Client/deps.LLM/deps.Runtime itself (T-02-08b: that two-step fallback
 // read is the boot-time-capture hole this plan closes), so a nil client here means
 // the caller's own resolution failed to fail closed, which is a bug at the call site.
-func newAgentWorker(deps AgentDeps, client llm.Client, cfg llm.Config, runID, ledgerConvID string, prior []llm.Message) *agent.LlmAgent {
+func newAgentWorker(deps AgentDeps, client llm.Client, cfg llm.Config, loc *time.Location, runID, ledgerConvID string, prior []llm.Message) *agent.LlmAgent {
 	// The workspace announced in the tail hint mirrors runner.New: shell_exec and
 	// the fs tools with an empty WorkspaceRoot resolve against the process cwd, so
 	// the hint must name exactly that when no explicit workspace is configured.
@@ -158,6 +182,7 @@ func newAgentWorker(deps AgentDeps, client llm.Client, cfg llm.Config, runID, le
 		OriginConversationID: ledgerConvID,
 		Gateway:              deps.Gateway,
 		Workspace:            ws,
+		Location:             loc,
 		UserTurns:            prior,
 	})
 }
