@@ -23,6 +23,18 @@ import {
   verifyToken,
 } from './wizardHarness';
 
+const off = { ...healthy, enabled: false, phase: 'disabled', reachable: false } as const;
+
+function confirmDelete() {
+  const trigger = screen.getByRole('button', { name: 'Elimina…' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  fireEvent.change(screen.getByRole('textbox', { name: /Scrivi casa.example.com/ }), {
+    target: { value: 'casa.example.com' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+}
+
 // What a failure, a poll or walking the steps must never take from the operator.
 describe('RemoteAccessWizard, under failures and polls', () => {
   beforeEach(async () => {
@@ -161,14 +173,40 @@ describe('RemoteAccessWizard, under failures and polls', () => {
       };
       renderPanel();
       await card(PHONE);
-      const trigger = screen.getByRole('button', { name: 'Elimina…' });
-      trigger.focus();
-      fireEvent.click(trigger);
-      fireEvent.change(screen.getByRole('textbox', { name: /Scrivi casa.example.com/ }), {
-        target: { value: 'casa.example.com' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+      confirmDelete();
       const heading = await card(DOMAIN);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(heading);
+      });
+    });
+
+    it('after a delete that stays on the same step goes to its heading', async () => {
+      const api = stubApi(off);
+      api.onWrite = () => {
+        api.status = { ...off, accepted: false, has_resources: false };
+      };
+      renderPanel();
+      const heading = await card(DOMAIN);
+      confirmDelete();
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Elimina…' })).toBeNull();
+      });
+      await waitFor(() => {
+        expect(document.activeElement).toBe(heading);
+      });
+    });
+
+    it('after Disattiva on the same step goes to its heading, whose button is gone', async () => {
+      const waiting = { ...healthy, phase: 'waiting_nameservers', accepted: false } as const;
+      const api = stubApi(waiting);
+      api.onWrite = () => {
+        api.status = { ...waiting, enabled: false, phase: 'disabled' };
+      };
+      renderPanel();
+      const heading = await card(DOMAIN);
+      const disable = screen.getByRole('button', { name: 'Disattiva' });
+      disable.focus();
+      fireEvent.click(disable);
       await waitFor(() => {
         expect(document.activeElement).toBe(heading);
       });
@@ -276,6 +314,56 @@ describe('RemoteAccessWizard, under failures and polls', () => {
       await card(DOMAIN);
       type('Dominio', '');
       expect(fieldValue('Dominio')).toBe('');
+    });
+
+    it('a configured row: walking away drops the edit, and Avanti sends nothing', async () => {
+      const api = stubApi(healthy);
+      renderPanel();
+      await card(PHONE);
+      openStep('Dominio');
+      await card(DOMAIN);
+      type('Dominio', 'altro.it');
+      type(/Etichetta/, 'tana');
+      back();
+      await card(CLOUDFLARE);
+      next();
+      await card(DOMAIN);
+      expect(fieldValue('Dominio')).toBe('example.com');
+      expect(fieldValue(/Etichetta/)).toBe('casa');
+      next();
+      await card(CONNECTION);
+      expect(api.sent).toEqual([]);
+    });
+
+    it('a first setup’s draft gives way once the status brings an address', async () => {
+      const api = stubApi(saved);
+      const client = renderPanel();
+      await card(DOMAIN);
+      type('Dominio', 'mio.it');
+      back();
+      await card(CLOUDFLARE);
+      api.status = healthy;
+      await poll(client);
+      openStep('Dominio');
+      await card(DOMAIN);
+      expect(fieldValue('Dominio')).toBe('example.com');
+    });
+
+    it('after Elimina, a draft does not outrank the kept address', async () => {
+      const api = stubApi(off);
+      api.onWrite = () => {
+        api.status = { ...off, accepted: false, has_resources: false };
+      };
+      renderPanel();
+      await card(DOMAIN);
+      type('Dominio', 'altro.it');
+      confirmDelete();
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Elimina…' })).toBeNull();
+      });
+      await waitFor(() => {
+        expect(fieldValue('Dominio')).toBe('example.com');
+      });
     });
 
     it('a saved domain leaves no draft behind to outrank the status', async () => {

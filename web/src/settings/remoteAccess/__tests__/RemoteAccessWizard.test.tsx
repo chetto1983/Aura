@@ -17,6 +17,7 @@ import {
   firstSetup,
   healthy,
   openStep,
+  poll,
   renderPanel,
   shownCard,
   states,
@@ -176,7 +177,7 @@ describe('RemoteAccessWizard', () => {
     expect(states()).toEqual(['done', 'done', 'active', 'upcoming']);
 
     api.status = { ...api.status, phase: 'provisioning' };
-    await client.invalidateQueries();
+    await poll(client);
     expect(shownCard()).toBe(CONNECTION);
     expect(screen.getByTestId('spinner')).toBeTruthy();
     expect(states()).toEqual(['done', 'done', 'active', 'upcoming']);
@@ -367,6 +368,48 @@ describe('RemoteAccessWizard', () => {
     await card(PHONE);
     openStep('Cloudflare');
     await card(CLOUDFLARE);
+  });
+
+  describe('waiting for the nameservers, for as long as the registrar takes', () => {
+    const waiting = {
+      ...healthy,
+      phase: 'waiting_nameservers',
+      accepted: false,
+      reachable: false,
+      nameservers: ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'],
+    } as const;
+
+    it('the card with the nameservers offers both ways out', async () => {
+      stubApi(waiting);
+      renderPanel();
+      await card(DOMAIN);
+      expect(screen.getByText('ada.ns.cloudflare.com')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Disattiva' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Elimina…' })).toBeTruthy();
+    });
+
+    it('Elimina… still follows what is on Cloudflare', async () => {
+      stubApi({ ...waiting, has_resources: false });
+      renderPanel();
+      await card(DOMAIN);
+      expect(screen.getByRole('button', { name: 'Disattiva' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Elimina…' })).toBeNull();
+    });
+
+    it('Disattiva sends it, and the row stays on Dominio, switched off', async () => {
+      const api = stubApi(waiting);
+      api.onWrite = () => {
+        api.status = { ...waiting, enabled: false, phase: 'disabled' };
+      };
+      renderPanel();
+      await card(DOMAIN);
+      fireEvent.click(screen.getByRole('button', { name: 'Disattiva' }));
+      expect(await screen.findByText(/L’accesso remoto è spento/)).toBeTruthy();
+      expect(api.sent).toEqual([
+        { url: '/api/settings/remote-access/disable', method: 'POST', body: {} },
+      ]);
+      expect(shownCard()).toBe(DOMAIN);
+    });
   });
 
   it('a failed row offers its way out on the step it landed on', async () => {

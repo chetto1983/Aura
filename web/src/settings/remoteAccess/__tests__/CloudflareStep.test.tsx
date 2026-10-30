@@ -96,9 +96,12 @@ describe('CloudflareStep', () => {
     expect(screen.getByText(/Aggiungi tu.*Cloudflare Tunnel Edit/)).toBeTruthy();
   });
 
-  it('still lists every permission, and no WARP one', () => {
+  // The card asks the operator to add a permission by hand, so the list cannot sit behind a control.
+  it('always shows every permission under its heading, and no WARP one', () => {
     renderStep(firstSetup);
-    for (const name of [
+    expect(document.querySelector('details')).toBeNull();
+    const list = within(screen.getByRole('list', { name: 'Permessi che servono al token' }));
+    expect(list.getAllByRole('listitem').map((row) => row.textContent)).toEqual([
       'Account Settings Read',
       'Zone Read',
       'Zone Edit',
@@ -106,9 +109,7 @@ describe('CloudflareStep', () => {
       'Cloudflare Tunnel Edit',
       'Access: Apps and Policies Edit',
       'Access: Organizations, Identity Providers, and Groups Edit',
-    ]) {
-      expect(screen.getByText(name)).toBeTruthy();
-    }
+    ]);
     expect(screen.queryByText(/Zero Trust/)).toBeNull();
   });
 

@@ -128,18 +128,18 @@ export function CloudflareStep({
           {t('remoteAccess.cloudflare.tokenHint')}
         </p>
       </div>
-      <details className="rounded-md bg-surface-2 px-3">
-        <summary className="flex min-h-[44px] cursor-pointer items-center text-sm font-medium text-text">
+      <div className="flex flex-col gap-2 rounded-md bg-surface-2 p-3">
+        <p id="remote-access-permissions" className="text-sm font-medium text-text">
           {t('remoteAccess.cloudflare.permissions')}
-        </summary>
-        <ul className="flex flex-col gap-1 pb-3">
+        </p>
+        <ul aria-labelledby="remote-access-permissions" className="flex flex-col gap-1">
           {TOKEN_PERMISSIONS.map((name) => (
             <li key={name} className="font-mono text-[13px] break-words text-text-muted">
               {name}
             </li>
           ))}
         </ul>
-      </details>
+      </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="remote-access-token">{t('remoteAccess.cloudflare.tokenLabel')}</Label>
         <SecretInput

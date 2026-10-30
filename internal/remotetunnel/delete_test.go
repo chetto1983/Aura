@@ -6,6 +6,25 @@ import (
 	"time"
 )
 
+func TestDeleteWhileWaitingForNameserversForgetsTheZoneAndKeepsTheAddress(t *testing.T) {
+	h := waitingHarness(t)
+	if err := h.r.Delete(t.Context(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	creates := h.cloud.creates
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	s := h.store.state
+	if s.Phase != PhaseDisabled || HasResources(s.Resources) || s.Desired.ZoneName != "example.com" {
+		t.Fatalf("phase=%q resources=%+v desired=%+v", s.Phase, s.Resources, s.Desired)
+	}
+	// A zone is never Aura's to delete: only the reference goes.
+	if h.cloud.deletes != 0 || h.cloud.zone.ID == "" || h.cloud.creates != creates {
+		t.Fatalf("deletes=%d zone=%+v creates %d to %d", h.cloud.deletes, h.cloud.zone, creates, h.cloud.creates)
+	}
+}
+
 func TestDeleteRefusesForeignResource(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {

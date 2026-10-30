@@ -126,13 +126,18 @@ export function failureOf(err: unknown): Failure {
   return err instanceof HttpError && err.status === 409 ? 'stale' : 'generic';
 }
 
-/** Disattiva and Elimina… live on the last step, which a failed or switched-off row never
- * reaches. A switched-off row needs them only while something is left on Cloudflare: the row
- * Elimina leaves has nothing, and a row never accepted can still hold a tunnel. */
+/** Disattiva and Elimina… live on the last step, which a failed, waiting or switched-off row never
+ * reaches. waiting_nameservers lasts as long as the registrar takes, and a wrong domain parked
+ * there needs a way out. A switched-off row needs them only while something is left on Cloudflare:
+ * the row Elimina leaves has nothing, and a row never accepted can still hold a tunnel. */
 export function hasExit(status: RemoteAccessStatusDTO): boolean {
   if (status.public_hostname === undefined) return false;
   if (status.phase === 'disabled') return status.has_resources;
-  return status.phase === 'error' || status.phase === 'degraded';
+  return (
+    status.phase === 'error' ||
+    status.phase === 'degraded' ||
+    status.phase === 'waiting_nameservers'
+  );
 }
 
 /** What the operator typed on Dominio, kept while they walk the other steps. Null is a field they

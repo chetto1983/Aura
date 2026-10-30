@@ -193,6 +193,38 @@ func TestRetryNowEndsTheBackoffAndOnlyThePressDoes(t *testing.T) {
 	}
 }
 
+// waitingHarness is a first setup parked on the nameservers, which can last as long as the
+// registrar takes. Cloudflare holds the zone and nothing else.
+func waitingHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t)
+	h.cloud.zone.Status = "pending"
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.store.state; s.Phase != PhaseWaitingNameservers || s.Resources.ZoneID == "" {
+		t.Fatalf("not waiting: phase=%q resources=%+v", s.Phase, s.Resources)
+	}
+	return h
+}
+
+func TestDisableWhileWaitingForNameserversParksTheRow(t *testing.T) {
+	h := waitingHarness(t)
+	before := h.store.state.Resources
+	calls := h.cloud.calls
+	if err := h.r.Disable(t.Context(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	// Every action ends with a wake, so the pass after it must leave the row where it is.
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	s := h.store.state
+	if s.Phase != PhaseDisabled || s.Desired.Enabled || s.Resources != before || s.Desired.ZoneName != "example.com" || h.cloud.calls != calls {
+		t.Fatalf("phase=%q enabled=%v resources=%+v calls %d to %d", s.Phase, s.Desired.Enabled, s.Resources, calls, h.cloud.calls)
+	}
+}
+
 func TestDisablePreservesResources(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {

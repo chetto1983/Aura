@@ -49,19 +49,24 @@ export function RemoteAccessWizard({ status, actions }: RemoteAccessWizardProps)
   // The list exists only until the operator has seen it, and it can appear behind a green wizard.
   const following = status.abandoned.length > 0 ? 'cloudflare' : current;
   const shown = open ?? following;
-  const seen = useRef(shown);
+  const exit = shown === current && shown !== 'phone' && hasExit(status);
+  // The controls the operator can press from here. A delete can leave the step as it was, and its
+  // status lands after the press has returned, so this follows what is on screen, not the press.
+  const controls = `${shown} ${String(exit)} ${String(status.enabled)}`;
+  const seen = useRef(controls);
   const states = stepStates(status);
 
   useEffect(() => {
-    if (seen.current === shown) return;
-    seen.current = shown;
-    // Body means the control that had focus went with the old card. Anywhere else, a poll that
-    // moved the step would be taking focus from the operator.
+    if (seen.current === controls) return;
+    seen.current = controls;
+    // Body means the control that had focus has gone. Anywhere else, a poll that moved the step
+    // would be taking focus from the operator.
     if (document.activeElement === document.body) column.current?.querySelector('h3')?.focus();
-  }, [shown]);
+  }, [controls]);
 
   function go(step: StepKey) {
-    setDraft(leftDraft);
+    // Past a saved address a draft is a change nobody asked for: Avanti would re-address the install.
+    setDraft(status.zone_name === undefined ? leftDraft : NO_DRAFT);
     setOpen(step === following ? null : step);
   }
 
@@ -84,6 +89,11 @@ export function RemoteAccessWizard({ status, actions }: RemoteAccessWizardProps)
 
   async function saveDomain(configuration: RemoteAccessConfiguration) {
     await save(configuration);
+    setDraft(NO_DRAFT);
+  }
+
+  async function remove(hostname: string) {
+    await actions.remove(hostname);
     setDraft(NO_DRAFT);
   }
 
@@ -158,15 +168,15 @@ export function RemoteAccessWizard({ status, actions }: RemoteAccessWizardProps)
             onAccept={actions.acceptExternal}
             onRetry={actions.reconcile}
             onDisable={actions.disable}
-            onDelete={actions.remove}
+            onDelete={remove}
             onBack={() => {
               go('connection');
             }}
             onOpenStep={go}
           />
         ) : null}
-        {shown === current && shown !== 'phone' && hasExit(status) ? (
-          <ManageActions status={status} onDisable={actions.disable} onDelete={actions.remove} />
+        {exit ? (
+          <ManageActions status={status} onDisable={actions.disable} onDelete={remove} />
         ) : null}
       </div>
     </section>

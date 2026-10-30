@@ -1,5 +1,6 @@
 import { Check, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 
 // StepStrip renders the linear desktop step strip + the compact mobile "Step N of M" indicator.
 // Color is never the only encoding: the current step carries data-state + aria-current, a done or
@@ -53,10 +54,14 @@ export function StepStrip<K extends string>({
           const tone = isCurrent ? 'text-text' : 'text-text-muted';
           return (
             // The size sits here because a button takes its font from its parent (atmosphere.css).
+            // With onSelect any step can become a button, and the strip must not grow when one does.
             <li
               key={step.key}
               data-state={step.state}
-              className="flex items-center gap-2 text-[13px] font-semibold"
+              className={cn(
+                'flex items-center gap-2 text-[13px] font-semibold',
+                onSelect !== undefined && 'min-h-[44px]',
+              )}
             >
               <StepMark state={step.state} />
               {onSelect !== undefined && !isCurrent && step.state !== 'upcoming' ? (

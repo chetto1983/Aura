@@ -110,6 +110,40 @@ func TestStatusCarriesReasonAcceptanceAndAccountName(t *testing.T) {
 	}
 }
 
+// pendingZone is a first setup parked on the nameservers. Delete detaches a zone rather than
+// deleting it, so the Cloudflare these tests talk to needs no delete route.
+func pendingZone() remotetunnel.State {
+	return remotetunnel.State{Generation: 3, Phase: remotetunnel.PhaseWaitingNameservers, TunnelName: oldOwner, OwnedHostname: "aura.a.it", OwnedZoneName: "a.it",
+		Desired:   remotetunnel.Desired{Enabled: true, AccountID: "account-a", ZoneName: "a.it", PublicLabel: "aura"},
+		Resources: remotetunnel.Resources{AccountID: "account-a", ZoneID: "zone"}}
+}
+
+func TestAPendingZoneCanBeSwitchedOffThroughTheRoute(t *testing.T) {
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	c := cloud.controller(&remoteMemoryStore{state: pendingZone()}, secrets, nil)
+	if code, body := serveRemoteAccess(t, c).call(t, "POST", "/disable", `{}`); code != 202 {
+		t.Fatalf("status=%d body=%s", code, body)
+	}
+	got, err := c.Status(t.Context())
+	if err != nil || got.Phase != "disabled" || got.Enabled || !got.HasResources || got.PublicHostname != "aura.a.it" {
+		t.Fatalf("err=%v status=%+v", err, got)
+	}
+}
+
+func TestAPendingZoneCanBeDeletedThroughTheRoute(t *testing.T) {
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}
+	c := cloud.controller(&remoteMemoryStore{state: pendingZone()}, secrets, nil)
+	if code, body := serveRemoteAccess(t, c).call(t, "DELETE", "", `{"hostname":"aura.a.it"}`); code != 202 {
+		t.Fatalf("status=%d body=%s", code, body)
+	}
+	got, err := c.Status(t.Context())
+	if err != nil || got.Phase != "disabled" || got.HasResources || got.PublicHostname != "aura.a.it" {
+		t.Fatalf("err=%v status=%+v", err, got)
+	}
+}
+
 func TestHasResourcesFollowsCloudflareNotAcceptance(t *testing.T) {
 	never := provisionedInAccountA()
 	never.Phase, never.Desired.Enabled = remotetunnel.PhaseDisabled, false
@@ -120,10 +154,8 @@ func TestHasResourcesFollowsCloudflareNotAcceptance(t *testing.T) {
 		t.Fatalf("a disabled row never accepted: err=%v status=%+v", err, got)
 	}
 
-	// Only the zone: Delete detaches it rather than deleting it, so this Cloudflare needs no delete route.
-	zoneOnly := remotetunnel.State{Generation: 3, Phase: remotetunnel.PhaseDegraded, TunnelName: oldOwner, OwnedHostname: "aura.a.it", OwnedZoneName: "a.it",
-		Desired:   remotetunnel.Desired{Enabled: true, AccountID: "account-a", ZoneName: "a.it", PublicLabel: "aura"},
-		Resources: remotetunnel.Resources{AccountID: "account-a", ZoneID: "zone"}}
+	zoneOnly := pendingZone()
+	zoneOnly.Phase = remotetunnel.PhaseDegraded
 	c := cloud.controller(&remoteMemoryStore{state: zoneOnly}, secrets, nil)
 	if got, err = c.Status(t.Context()); err != nil || !got.HasResources {
 		t.Fatalf("before Delete: err=%v status=%+v", err, got)

@@ -334,6 +334,10 @@ describe('hasExit', () => {
       false,
     ],
     ['a row that is already deleting', { ...addressed, enabled: false, phase: 'deleting' }, false],
+    ['a row waiting for its nameservers', { ...addressed, phase: 'waiting_nameservers' }, true],
+    ['a waiting row with no address', { ...saved, phase: 'waiting_nameservers' }, false],
+    ['validating, which passes by itself', { ...addressed, phase: 'validating' }, false],
+    ['provisioning, which passes by itself', { ...addressed, phase: 'provisioning' }, false],
     ['a failed row with no address', { ...saved, phase: 'error', reason: 'unknown' }, false],
     ['a switched-off row with no address', { ...saved, has_resources: true }, false],
   ])('%s', (_name, status, expected) => {

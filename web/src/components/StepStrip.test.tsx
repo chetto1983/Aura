@@ -65,6 +65,20 @@ describe('StepStrip', () => {
     );
   });
 
+  // A step that is a button stands 44px tall, so the strip and the card under it would jump as soon
+  // as the first step turned done.
+  it('holds every row at a button’s height when steps can be selected', () => {
+    render(<StepStrip steps={steps} onSelect={vi.fn()} label="Avanzamento" />);
+    for (const name of ['Cloudflare', 'Dominio', 'Collegamento', 'Prova dal telefono']) {
+      expect(item(name).className.split(' ')).toContain('min-h-[44px]');
+    }
+  });
+
+  it('leaves the rows of the onboarding, which selects nothing, as they are', () => {
+    render(<StepStrip steps={steps} label="Avanzamento" />);
+    expect(item('Cloudflare').className.split(' ')).not.toContain('min-h-[44px]');
+  });
+
   it('has no buttons at all without onSelect, as in the onboarding', () => {
     render(<StepStrip steps={allDone} label="Avanzamento" />);
     expect(screen.queryAllByRole('button')).toHaveLength(0);
