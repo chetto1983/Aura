@@ -39,6 +39,9 @@ func TestRetireWARPDeletesOwnedLegacyResources(t *testing.T) {
 	if h.cloud.deletes-deletes != 4 {
 		t.Fatalf("deletes=%d, want the four WARP resources", h.cloud.deletes-deletes)
 	}
+	if h.cloud.deletesAtPublish-deletes != 4 {
+		t.Fatalf("%d WARP deletions came before publish, want all four", h.cloud.deletesAtPublish-deletes)
+	}
 	if r.PublicAppID == "" || r.PublicPolicyID == "" || r.PublicDNSID == "" || h.cloud.apps["public-app"].ID == "" || h.cloud.dns["public-dns"].ID == "" {
 		t.Fatal("public resources touched")
 	}
@@ -312,16 +315,16 @@ func TestRetireWARPDeniedCNAMEKeepsItsProtection(t *testing.T) {
 				t.Fatal(err)
 			}
 			owner := h.store.state.TunnelName
-			want := []AbandonedResource{{"dns", "aura-warp.example.com"}, {"access_policy", owner + "-warp-members"}, {"access_app", owner + "-warp"}}
+			want := []AbandonedResource{{"dns", "aura-warp.example.com"}, {"access_policy", owner + "-warp-members"}, {"access_app", owner + "-warp"}, {"posture", owner + "-gateway"}}
 			r := h.store.state.Resources
-			if !reflect.DeepEqual(h.store.state.Abandoned, want) || r.WARPDNSID != "" || r.WARPPolicyID != "" || r.WARPAppID != "" {
+			if !reflect.DeepEqual(h.store.state.Abandoned, want) || r.WARPDNSID != "" || r.WARPPolicyID != "" || r.WARPAppID != "" || r.GatewayPostureID != "" {
 				t.Fatalf("abandoned=%v resources=%+v", h.store.state.Abandoned, r)
 			}
 			if h.cloud.apps["warp-app"].ID == "" || h.cloud.policies["warp-policy"].ID == "" || h.cloud.dns["warp-dns"].ID == "" {
 				t.Fatal("the route lost its protection while it was still published")
 			}
-			if h.cloud.deletes != 1 || h.cloud.posture.ID != "" || r.GatewayPostureID != "" {
-				t.Fatalf("deletes=%d: only the posture should have been retired", h.cloud.deletes)
+			if h.cloud.deletes != 0 || h.cloud.posture.ID == "" {
+				t.Fatalf("deletes=%d: a retained route keeps everything it depends on", h.cloud.deletes)
 			}
 		})
 	}
@@ -404,5 +407,92 @@ func TestRetireWARPRetriesOnAnErrorRow(t *testing.T) {
 	}
 	if h.store.state.Resources.WARPAppID != "" || h.store.state.Phase != PhaseError || h.store.state.Reason != ReasonDomainInvalid {
 		t.Fatalf("state=%s/%q %+v", h.store.state.Phase, h.store.state.Reason, h.store.state.Resources)
+	}
+}
+
+func TestRetireWARPDeniedPolicyLeavesNoDeadEnd(t *testing.T) {
+	for name, deny := range map[string]func(*harness){
+		"read":   func(h *harness) { h.cloud.policyReadErr = denial() },
+		"remove": func(h *harness) { h.cloud.policyRemoveErr = denial() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := healthyHarness(t)
+			deny(h)
+			h.cloud.allowUnpersisted = true // the abandoned records stay in Cloudflare, their IDs forgotten
+			if err := h.r.Reconcile(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			owner := h.store.state.TunnelName
+			want := []AbandonedResource{{"access_policy", owner + "-warp-members"}, {"access_app", owner + "-warp"}, {"posture", owner + "-gateway"}}
+			r := h.store.state.Resources
+			if !reflect.DeepEqual(h.store.state.Abandoned, want) || r.WARPPolicyID != "" || r.WARPAppID != "" || r.GatewayPostureID != "" || r.WARPDNSID != "" {
+				t.Fatalf("abandoned=%v resources=%+v", h.store.state.Abandoned, r)
+			}
+			if h.store.state.Phase != PhaseHealthy || h.cloud.deletes != 1 || h.cloud.dns["warp-dns"].ID != "" {
+				t.Fatalf("phase=%s reason=%q deletes=%d", h.store.state.Phase, h.store.state.Reason, h.cloud.deletes)
+			}
+			if err := h.r.Reconcile(t.Context()); err != nil || h.cloud.deletes != 1 || len(h.store.state.Abandoned) != 3 || h.store.state.Phase != PhaseHealthy {
+				t.Fatalf("second pass err=%v deletes=%d abandoned=%v", err, h.cloud.deletes, h.store.state.Abandoned)
+			}
+		})
+	}
+}
+
+func TestRetireWARPDeniedAppGoesAlone(t *testing.T) {
+	h := healthyHarness(t)
+	h.cloud.appRemoveErr = denial()
+	h.cloud.allowUnpersisted = true
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	want := []AbandonedResource{{"access_app", h.store.state.TunnelName + "-warp"}}
+	r := h.store.state.Resources
+	if !reflect.DeepEqual(h.store.state.Abandoned, want) || r.WARPAppID != "" || r.WARPPolicyID != "" || r.GatewayPostureID != "" || r.WARPDNSID != "" {
+		t.Fatalf("abandoned=%v resources=%+v", h.store.state.Abandoned, r)
+	}
+	if h.cloud.policies["warp-policy"].ID != "" || h.cloud.posture.ID != "" || h.cloud.dns["warp-dns"].ID != "" || h.store.state.Phase != PhaseHealthy {
+		t.Fatalf("the policy, posture and CNAME should be retired; phase=%s", h.store.state.Phase)
+	}
+}
+
+func TestRetireWARPDeniedConfirmReadIsAbandoned(t *testing.T) {
+	h := healthyHarness(t)
+	h.cloud.postureConfirmErr = denial()
+	h.cloud.allowUnpersisted = true
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	want := []AbandonedResource{{"posture", h.store.state.TunnelName + "-gateway"}}
+	if !reflect.DeepEqual(h.store.state.Abandoned, want) || h.store.state.Resources.GatewayPostureID != "" || h.store.state.Phase != PhaseHealthy {
+		t.Fatalf("abandoned=%v phase=%s", h.store.state.Abandoned, h.store.state.Phase)
+	}
+}
+
+func TestRetireWARPForeignPolicyWithADeniedCNAMETouchesNothing(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	seedLegacyWARP(h)
+	p := h.cloud.policies["warp-policy"]
+	p.Name = "someone-else"
+	h.cloud.policies["warp-policy"] = p
+	h.cloud.dnsReadErr = denial()
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrOwnershipConflict) {
+		t.Fatalf("err=%v", err)
+	}
+	if h.store.state.Reason != ReasonNotOwned || h.cloud.deletes != 0 || len(h.store.state.Abandoned) != 0 || h.store.state.Resources.WARPDNSID == "" {
+		t.Fatalf("reason=%q deletes=%d abandoned=%v", h.store.state.Reason, h.cloud.deletes, h.store.state.Abandoned)
+	}
+}
+
+func TestRetireWARPBlindTokenWithADeniedCNAMEKeepsEveryID(t *testing.T) {
+	h := healthyHarness(t)
+	h.cloud.dnsReadErr = denial()
+	h.cloud.blind = true
+	if err := h.r.Reconcile(t.Context()); err == nil {
+		t.Fatal("the pass should report the real problem of the token")
+	}
+	r := h.store.state.Resources
+	if r.WARPDNSID == "" || r.WARPPolicyID == "" || r.WARPAppID == "" || r.GatewayPostureID == "" || len(h.store.state.Abandoned) != 0 || h.cloud.deletes != 0 {
+		t.Fatalf("resources=%+v abandoned=%v deletes=%d", r, h.store.state.Abandoned, h.cloud.deletes)
 	}
 }

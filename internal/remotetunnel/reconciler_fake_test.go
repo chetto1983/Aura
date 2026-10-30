@@ -131,6 +131,10 @@ type fakeCloud struct {
 	postureReadErr, postureRemoveErr                    error
 	dnsReadErr, dnsRemoveErr                            error
 	failPublish                                         bool
+	policyReadErr, policyRemoveErr                      error
+	appReadErr, appRemoveErr                            error
+	postureConfirmErr                                   error
+	deletesAtPublish                                    int
 }
 
 func (f *fakeCloud) call() error {
@@ -237,6 +241,7 @@ func (f *fakeCloud) PutTunnelConfig(_ context.Context, _, _ string, c cf.TunnelC
 	if f.apps["public-app"].ID == "" || f.policies["public-policy"].ID == "" {
 		f.t.Fatal("ingress before Access")
 	}
+	f.deletesAtPublish = f.deletes
 	if f.failPublish {
 		return transientError()
 	}
@@ -273,6 +278,9 @@ func (f *fakeCloud) GetApplication(_ context.Context, _, id string) (cf.AccessAp
 	if err := f.call(); err != nil {
 		return cf.AccessApplication{}, err
 	}
+	if id == "warp-app" && f.appReadErr != nil {
+		return cf.AccessApplication{}, f.appReadErr
+	}
 	a, ok := f.apps[id]
 	if !ok {
 		return a, absent()
@@ -292,6 +300,9 @@ func (f *fakeCloud) PutApplication(_ context.Context, _, id string, a cf.AccessA
 	return a, nil
 }
 func (f *fakeCloud) DeleteApplication(_ context.Context, _, id string) error {
+	if id == "warp-app" && f.appRemoveErr != nil {
+		return f.appRemoveErr
+	}
 	if err := f.remove(); err != nil {
 		return err
 	}
@@ -317,6 +328,9 @@ func (f *fakeCloud) GetPolicy(_ context.Context, _, _, id string) (cf.AccessPoli
 	if err := f.call(); err != nil {
 		return cf.AccessPolicy{}, err
 	}
+	if id == "warp-policy" && f.policyReadErr != nil {
+		return cf.AccessPolicy{}, f.policyReadErr
+	}
 	p, ok := f.policies[id]
 	if !ok {
 		return p, absent()
@@ -340,6 +354,9 @@ func (f *fakeCloud) PutPolicy(_ context.Context, _, app, id string, p cf.AccessP
 	return p, nil
 }
 func (f *fakeCloud) DeletePolicy(_ context.Context, _, _, id string) error {
+	if id == "warp-policy" && f.policyRemoveErr != nil {
+		return f.policyRemoveErr
+	}
 	if err := f.remove(); err != nil {
 		return err
 	}
@@ -354,6 +371,9 @@ func (f *fakeCloud) GetPosture(context.Context, string, string) (cf.Posture, err
 	}
 	if f.postureReadErr != nil {
 		return cf.Posture{}, f.postureReadErr
+	}
+	if f.posture.ID == "" && f.postureConfirmErr != nil {
+		return cf.Posture{}, f.postureConfirmErr
 	}
 	if f.posture.ID == "" {
 		return cf.Posture{}, absent()
