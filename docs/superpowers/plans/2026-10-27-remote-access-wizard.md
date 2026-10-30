@@ -7,6 +7,9 @@ verdict REVISE with 10 findings, all accepted. Its changes:
 - the old Tasks 4–10 are renumbered 5–11 and amended;
 - the dispositions are recorded in `.superpowers/sdd/2026-10-27-remote-access-wizard/codex-round1-dispositions.md`.
 
+Revision 3 (2026-10-30) follows Codex's round 2: REVISE with 6 new findings, all accepted, recorded in
+`codex-round2-dispositions.md` in the same folder.
+
 This is part 1 of 3 of the spec. Part 2 (the home certificate) and part 3 (finding F-1) are separate
 plans: they share no code with this one.
 
@@ -155,24 +158,43 @@ Decisions added by revision 2 (Codex round 1, `RW-*` ids):
     anything, and never clears an error it did not cause.
   - If a WARP resource answers 401/403 to a token that sees the account, the resource is recorded in
     `abandoned` and its ID is cleared. The public reconcile goes on.
-- **Abandon retires the old connector** (RW-003). It projects the connector off and clears the stored
-  tunnel token in the same transaction. At startup, the projection refuses a credential whose tunnel
-  ID differs from the row's `tunnel_id`.
-- **The first step saves without a domain** (RW-004).
-  - The Cloudflare step calls `configure` with the token, the account, `enabled: false` and an empty
-    domain. The server verifies the token and that the account is visible, stores both, and calls no
-    zone API.
-  - The reconciler stays `disabled`, and the status reads `api_token_set: true`, so the wizard
-    opens *Dominio*.
+- **Abandon retires the old connector** (RW-003). It clears the stored tunnel token in the same
+  transaction, and the pass it wakes projects off (RW-014, below). At startup, the projection refuses
+  a credential whose tunnel ID differs from the row's `tunnel_id`.
+- **The first step saves without a domain** (RW-004, corrected by RW-011).
+  - The Cloudflare step calls `configure` with the token and the account, plus the status's current
+    `zone_name`, `public_label` and `enabled`.
+  - On a first setup those are empty and false. The server verifies the token and that the account is
+    visible, stores both, and calls no zone API. The reconciler stays `disabled`, and the status reads
+    `api_token_set: true`, so the wizard opens *Dominio*.
+  - On a configured install they are the current address. A replaced token keeps the address, the
+    enabled state and the acceptance.
   - The Domain step saves `enabled: true` with the zone and label.
   - The `prerequisite_required` answer for an empty domain goes.
+
+Decisions added by revision 3 (Codex round 2):
+- **A retirement failure on a disabled or `error` install never goes through `failed`** (RW-012).
+  `SaveDesired` reads `error + disabled + retained references` as deletion intent, so writing `error`
+  there would turn a later re-enable into a deletion of the public resources. The failure is logged,
+  and the phase and the reason stay as they were.
+- **Retirement withdraws a route before its protection** (RW-013). Cloudflare leaves a published route
+  without an Access application open to the internet, and the old ingress lives until `publish`.
+  - The WARP app and policy are deleted only once the WARP CNAME is gone.
+  - If the CNAME is denied, the CNAME, the policy and the app go to `abandoned` together, left
+    untouched in Cloudflare.
+  - The posture check is independent of them.
+- **The daemon stops the old connector, not the request** (RW-014). Every `reconcile` pass with no
+  `tunnel_id` projects off, before anything can return early, and a failure stops the pass. So a
+  commit followed by a lost or failed projection is repaired while the new zone is still pending, and
+  nothing is provisioned until the old connector is off.
 
 ## File structure
 
 - `internal/db/migrations/0146_remote_access_reasons.{up,down}.sql` (Task 1, landed) and
   `0147_remote_access_ownership.{up,down}.sql` (Task 4; number at landing).
-- `internal/remotetunnel/projection.go`: teardown and abandon project the connector off (Tasks 5, 7);
-  startup refuses a credential for another tunnel (Task 7).
+- `internal/remotetunnel/reconciler.go` and `cmd/aura/serve_remote_access.go`: teardown stops the
+  connector (Task 5), a pass with no tunnel projects off, and startup refuses a credential for another
+  tunnel (Task 7).
 - `internal/db/queries/cloudflare_remote_access.sql`, regenerated `internal/db/sqlc/cloudflare_remote_access.sql.go`.
 - `internal/remotetunnel/model.go`: `Reason`, `AbandonedResource`, and the new `State` fields.
 - `internal/remotetunnel/reasons.go` (new): `reasonOf`, `ErrHostnameTaken`, `ErrDomainElsewhere`.
@@ -326,8 +348,18 @@ func TestReasonOf(t *testing.T) // table: ErrHostnameTaken→hostname_taken, Err
 Because a reconcile pass now writes `abandoned`, the same round makes a dismiss permanent (the Task 1
 ledger minor):
 - `Advance` stops writing `abandoned`;
-- the reconciler appends through an atomic SQL append (`abandoned = abandoned || $1`);
+- the reconciler and `Abandon` both append through SQL (`abandoned = abandoned || $1`), so nothing
+  leaves the list before the operator dismisses it (RW-016);
 - a pass that loaded the row before a dismiss can no longer bring the list back.
+
+**Revision 3:** RW-012 and RW-013 join the next fix round, with these tests:
+
+```go
+func TestRetireWARPFailureOnADisabledInstallNeverWritesError(t *testing.T)  // foreign WARP resource, disabled → Phase disabled, Reason "", the cause only in the log
+func TestDisabledRetirementFailureNeverBecomesADeletion(t *testing.T)       // db_integration, the real SaveDesired: the row above, then SaveDesired enabled true → Phase validating, public resources untouched
+func TestRetireWARPDeniedCNAMEKeepsItsProtection(t *testing.T)              // DNS answers 403 → no delete call on policy or app, all three in abandoned, all three IDs "", posture still retired
+func TestRetireWARPDeniedCNAMEThenFailureBeforePublish(t *testing.T)        // the same, then a failure before publish → the fake's Access app for the WARP hostname still exists
+```
 
 **Files:**
 - Create: `internal/remotetunnel/warp_retire.go`
@@ -389,7 +421,13 @@ belong to.
 
 ```go
 // internal/db, on the migrateToVersion(..., <previous>) seam, like migrate_0146_integration_test.go:
-func TestMigrate0147BackfillsOwnership(t *testing.T) // row with tunnel_id set, account "A", zone "a.it", label "aura", warp_dns_id set, warp_label "aura-warp" → resource_account_id "A", owned_zone_name "a.it", owned_hostname "aura.a.it" (also when public_dns_id is empty), legacy_warp_hostname "aura-warp.a.it"; a row without any resource id → all ""; down then up again clean
+func TestMigrate0147BackfillsOwnership(t *testing.T) // table over the row's IDs, always account "A", zone "a.it", label "aura", warp_label "aura-warp":
+                                                     //   tunnel_id + warp_dns_id → resource_account_id "A", owned_zone_name "a.it", owned_hostname "aura.a.it", legacy_warp_hostname "aura-warp.a.it";
+                                                     //   zone_id only (a pending legacy row) → the three owned fields set, legacy_warp_hostname "";
+                                                     //   otp_idp_id only (a partial delete) → the three owned fields set, legacy_warp_hostname "";
+                                                     //   warp_posture_id only → the three owned fields set, legacy_warp_hostname "aura-warp.a.it";
+                                                     //   no resource ID → all "".
+                                                     // Down, then up again, is clean.
 // internal/remotetunnel, db_integration:
 func TestSaveDesiredNeverMovesTheResourcesAccount(t *testing.T)     // resources in A; SaveDesired account B → Load: Desired.AccountID "B", Resources.AccountID "A"
 func TestLegacyWARPHostnameSurvivesADomainChange(t *testing.T)      // warp ids set, legacy "aura-warp.a.it"; SaveDesired zone b.it → Load: LegacyWARPHostname still "aura-warp.a.it"
@@ -400,12 +438,14 @@ func TestAdvancePersistsOwnership(t *testing.T)                     // Advance w
 - [ ] **Step 3: Write the migration.**
   - Add `resource_account_id`, `owned_zone_name` and `legacy_warp_hostname`, each
     `text NOT NULL DEFAULT ''`.
-  - Backfill only where any resource ID is set (`tunnel_id`, `public_*`, `warp_*`, `gateway_posture_id`):
+  - Backfill only where any resource ID is set. The columns are the same ten that `SaveDesired`'s
+    `intent` lists: `zone_id`, `tunnel_id`, `public_dns_id`, `warp_dns_id`, `otp_idp_id`,
+    `public_app_id`, `public_policy_id`, `warp_app_id`, `warp_policy_id`, `warp_posture_id`.
     - `resource_account_id = account_id`;
     - `owned_zone_name = zone_name`;
     - `owned_hostname = public_label||'.'||zone_name` where it is still `''`.
-  - Backfill `legacy_warp_hostname = warp_label||'.'||zone_name` where any `warp_*` ID or
-    `gateway_posture_id` is set.
+  - Backfill `legacy_warp_hostname = warp_label||'.'||zone_name` where `warp_dns_id`, `warp_app_id`,
+    `warp_policy_id` or `warp_posture_id` is set.
   - The down file drops the three columns.
 - [ ] **Step 4: Queries and store.** `Advance` gains the three columns, and `SaveDesired` is unchanged.
   `stateFromRow` reads them, and `Abandon` clears them with the resource IDs. Run `make sqlc`.
@@ -417,7 +457,7 @@ func TestAdvancePersistsOwnership(t *testing.T)                     // Advance w
 
 **Files:**
 - Create: `internal/remotetunnel/readdress.go`
-- Modify: `internal/remotetunnel/delete.go`, `reconciler.go`, `projection.go` (teardown projects the connector off), `steps_zone_tunnel.go` (record the owned set before the first resource; `account`)
+- Modify: `internal/remotetunnel/delete.go`, `reconciler.go`, `steps_zone_tunnel.go` (record the owned set before the first resource; `account`)
 - Test: `internal/remotetunnel/readdress_test.go`, `delete_test.go`, `readdress_integration_test.go` (`db_integration`)
 
 **Interfaces:**
@@ -498,8 +538,8 @@ func TestZoneAlreadyInThisAccountSkipsTheLookup(t *testing.T)    // ListZones re
 ### Task 7: A new token that cannot see the old resources never blocks
 
 **Files:**
-- Modify: `cmd/aura/serve_remote_access.go` (`Configure`, `rebuild`), `internal/remotetunnel/projection.go`, `internal/agui/remote_access_api.go`, `internal/agui/idempotency_http.go`, `cmd/aura/serve_remote_access_wiring.go`
-- Test: `cmd/aura/serve_remote_access_test.go`, `internal/remotetunnel/projection_test.go`, `internal/agui/remote_access_api_test.go`, `internal/agui/mutation_coverage_test.go`
+- Modify: `cmd/aura/serve_remote_access.go` (`Configure`, `rebuild`), `internal/remotetunnel/reconciler.go`, `internal/agui/remote_access_api.go`, `internal/agui/idempotency_http.go`, `cmd/aura/serve_remote_access_wiring.go`
+- Test: `cmd/aura/serve_remote_access_test.go`, `internal/remotetunnel/abandon_projection_test.go`, `internal/agui/remote_access_api_test.go`, `internal/agui/mutation_coverage_test.go`
 
 **Interfaces:**
 - Consumes:
@@ -516,10 +556,15 @@ func TestZoneAlreadyInThisAccountSkipsTheLookup(t *testing.T)    // ListZones re
 
 ```go
 func TestConfigureWithATokenBlindToTheOldAccountAbandonsAndSaves(t *testing.T) // state with resources in account A; new token lists only B → Configure returns nil, state resources and ownership cleared, Abandoned lists tunnel aura-<uuid>, dns aura.a.it, access_app aura-<uuid>-public, access_policy aura-<uuid>-public-members; no Cloudflare delete call made
-func TestAbandonStopsTheOldConnector(t *testing.T)                             // same setup → the last projection state is Enabled false, and CLOUDFLARE_TUNNEL_TOKEN is "" after the same commit
-func TestAbandonWhileTheZoneIsPending(t *testing.T)                            // tunnel created, phase waiting_nameservers, blind token → abandoned lists the tunnel, projection off
+func TestAbandonClearsTheCredentialInTheSameCommit(t *testing.T)               // same setup → CLOUDFLARE_TUNNEL_TOKEN is "" after the commit; a failing commit leaves the secret, the row and the list as they were
+func TestAbandonWhileTheZoneIsPending(t *testing.T)                            // tunnel created, phase waiting_nameservers, blind token → abandoned lists the tunnel
+func TestSuccessiveTokenReplacementsKeepTheList(t *testing.T)                  // a posture entry from retirement, then an abandon, then another → all entries present until dismiss
 func TestRestartRefusesACredentialForAnotherTunnel(t *testing.T)               // stored credential for tunnel X, row tunnel_id Y (a restart between tunnel creation and credential replacement) → rebuild projects off, logs the mismatch, returns nil
 func TestConfigureWithATokenThatSeesTheOldAccountAbandonsNothing(t *testing.T)
+// internal/remotetunnel:
+func TestPassWithoutATunnelProjectsOffBeforeAnythingElse(t *testing.T)         // no tunnel_id, projection previously on, invalid domain → the off Apply happened, then domain_invalid
+func TestLostProjectionIsRepairedWhileTheZoneIsPending(t *testing.T)           // abandon committed, projection never applied, new zone pending → the pass ends waiting_nameservers with the projection off
+func TestFailedOffProjectionStopsTheProvisioning(t *testing.T)                 // Apply fails → no zone, tunnel or Access call in this pass
 func TestDismissAbandonedRoute(t *testing.T)                                  // POST …/abandoned/dismiss as admin → 202, Abandoned empty; as member → 403
 ```
 
@@ -527,7 +572,10 @@ func TestDismissAbandonedRoute(t *testing.T)                                  //
 - [ ] **Step 3: Implement.**
   - **One transaction.** The abandon, the cleared `CLOUDFLARE_TUNNEL_TOKEN`, the secret upsert and
     `SaveDesired` run in the same transaction, through the `commit` closure. A failure leaves none of
-    them. After the commit, the projection is rebuilt, and with no tunnel it goes off.
+    them.
+  - **The connector.** `reconcile` projects off when `Resources.TunnelID == ""`, right after its
+    configuration check and before `validateDesired`, and returns the error if that fails. The commit
+    already wakes the pass, so `Configure` projects nothing itself.
   - **The credential check.** `rebuild` projects a credential only when `tunnelOfCredential` equals
     the row's `tunnel_id`. Read Cloudflare's documentation (or cloudflared's source) for the tunnel
     token's format before decoding it, and cite it in the comment. A credential that cannot be decoded
@@ -560,7 +608,8 @@ func TestDismissAbandonedRoute(t *testing.T)                                  //
   - stores both and answers 202;
   - calls no zone API.
 
-  The `prerequisite_required` answer goes.
+  The `prerequisite_required` answer goes. On a configured install, the same call carries the current
+  address and `enabled` (RW-011).
 - `func remotetunnel.PublicHostname(d Desired) string` is exported. `cmd/aura` uses it in place of its
   two concatenations (`serve_remote_access.go` lines 127 and 180 at `ddeadc01f`).
 
@@ -573,6 +622,7 @@ func TestConfigureUnknownAccountAnswersAccountNotVisible(t *testing.T) // 400 {"
 func TestStatusNeverReturnsUpstreamText(t *testing.T)                  // fake error "secret-abc" → body contains no "secret-abc"
 func TestConfigureWithoutADomainSavesTheTokenAndAccount(t *testing.T)  // real handler + controller: {api_token, account_id, enabled:false, zone_name:"", public_label:""} → 202; secret stored; Desired.AccountID set, Enabled false; no zone call on the fake
 func TestReloadBetweenCloudflareAndDomainKeepsTheToken(t *testing.T)   // the save above, then a new controller over the same store and secrets → status api_token_set true, account_id set, zone_name ""
+func TestTokenReplacementKeepsTheAddressAndTheAcceptance(t *testing.T)  // real handler + controller: accepted, enabled install; configure with a new token, the same account and the status's address and enabled → zone, label, Enabled and AcceptedHostname unchanged, status accepted true
 func TestStatusDuringAnOutageNeverAsksForThePhoneTest(t *testing.T)     // accepted row, degraded + tunnel_down → accepted true, reachable false, body has no acceptance_required
 func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T)             // tunnel status "degraded" → accepted, like tunnelServes (Task 2 ledger minor)
 ```
@@ -599,7 +649,7 @@ func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T)             // tunne
 - Delete: `RemoteAccessStatus.tsx`, `HostnamesStep.tsx`, `VerifyStep.tsx`, `ZoneStep.tsx`, `TokenStep.tsx` and their tests
 
 **Interfaces:**
-- Consumes: Task 8's JSON, and its first-step save (`enabled: false`, empty domain).
+- Consumes: Task 8's JSON, and its first-step save.
 - Produces:
   - `StepStrip({ steps: readonly { key: string; label: string; state: 'done' | 'active' | 'upcoming' | 'failed' }[], onSelect?: (key: string) => void, label: string })`.
     A `done` or `failed` step is a `<button>` when `onSelect` is set. The `active` step carries
@@ -641,8 +691,10 @@ func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T)             // tunne
 // CloudflareStep.test.tsx:
 //   - abandoned resources → listed by kind and name, with 'Fatto' calling dismiss;
 //   - the account select shows account_name;
-//   - Avanti sends configure with the token, the account, enabled false and an empty domain,
-//     then the wizard opens Dominio.
+//   - first setup: Avanti sends configure with the token, the account, enabled false and an
+//     empty domain, then the wizard opens Dominio;
+//   - configured install: a new token is sent with the status's zone_name, public_label and
+//     enabled true, and the wizard stays green.
 // ReasonNotice.test.tsx:
 //   - every Reason has an IT and an EN sentence and action (iterate the TS union);
 //   - no string contains a banned word.
@@ -654,8 +706,8 @@ func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T)             // tunne
     `OnboardingStepper` call it with `onSelect` undefined.
   - **The wizard.** It keeps `open: StepKey | null` local state: null means `currentStep(status)`.
   - **Saving.** Each step card saves through the existing `configureRemoteAccess` and refetches. The
-    Cloudflare step sends `enabled: false` with an empty domain; the Domain step sends
-    `enabled: true` with the zone and label.
+    Cloudflare step sends the status's current `zone_name`, `public_label` and `enabled`; the Domain
+    step sends `enabled: true` with the zone and label.
   - **Copy.** Write the new i18n keys for both locales and delete every key no component reads.
   - **The token link.** Read Cloudflare's documentation on creating an API token from a pre-filled
     link before writing `CloudflareStep`'s link, and follow the decision above.
