@@ -63,7 +63,7 @@ func (r *Reconciler) retireWARP(ctx context.Context, s *State) error {
 		return err
 	}
 	res.LegacyWARPHostname = ""
-	return nil
+	return r.persist(ctx, s)
 }
 
 func (r *Reconciler) accountVisible(ctx context.Context, s *State) (bool, error) {

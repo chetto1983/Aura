@@ -55,18 +55,20 @@ type Desired struct {
 type Resources struct {
 	AccountID, ZoneID, TunnelID, PublicDNSID, WARPDNSID                                   string
 	OTPProviderID, PublicAppID, PublicPolicyID, WARPAppID, WARPPolicyID, GatewayPostureID string
-	// LegacyWARPHostname is read-only: warp_label + zone_name while any warp_* ID is set.
+	// LegacyWARPHostname is the second hostname older installs published; retirement clears it.
 	LegacyWARPHostname string
 }
 
 // State separates desired intent from the last reconciled observation.
 type State struct {
-	Desired          Desired
-	Generation       int64
-	Phase            Phase
-	Resources        Resources
-	TunnelName       string
-	OwnedHostname    string
+	Desired       Desired
+	Generation    int64
+	Phase         Phase
+	Resources     Resources
+	TunnelName    string
+	OwnedHostname string
+	// OwnedZoneName is the zone the resources were created in; Desired.ZoneName may differ.
+	OwnedZoneName    string
 	AcceptedHostname string
 	ObservedHealthy  bool
 	Reason           Reason

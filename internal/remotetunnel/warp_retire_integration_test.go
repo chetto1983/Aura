@@ -4,6 +4,7 @@ package remotetunnel
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/cloudflareapi"
@@ -26,7 +27,7 @@ func TestDisabledRetirementFailureNeverBecomesADeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Resources = Resources{AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", PublicDNSID: "pd", OTPProviderID: "otp", PublicAppID: "pa", PublicPolicyID: "pp", WARPAppID: "warp-app"}
+	state.Resources = Resources{AccountID: "account", ZoneID: "zone", TunnelID: "tunnel", PublicDNSID: "pd", OTPProviderID: "otp", PublicAppID: "pa", PublicPolicyID: "pp", WARPAppID: "warp-app", LegacyWARPHostname: "aura-warp.example.com"}
 	state.TunnelName = "aura-00000000-0000-4000-8000-000000000001"
 	state.Phase = PhaseDisabled
 	if state, err = store.Advance(t.Context(), state); err != nil {
@@ -50,5 +51,42 @@ func TestDisabledRetirementFailureNeverBecomesADeletion(t *testing.T) {
 	enabled.Resources.WARPAppID, enabled.Resources.LegacyWARPHostname = "", ""
 	if enabled.Phase != PhaseValidating || !enabled.Desired.Enabled || enabled.Resources != public {
 		t.Fatalf("enable became %s (enabled=%v), resources %+v", enabled.Phase, enabled.Desired.Enabled, enabled.Resources)
+	}
+}
+
+// absentWARPApp answers the one read of a lone WARP application with a 404: the application is
+// already gone from Cloudflare, so the retirement has nothing left to delete.
+type absentWARPApp struct{ Cloudflare }
+
+func (absentWARPApp) GetApplication(context.Context, string, string) (cloudflareapi.AccessApplication, error) {
+	return cloudflareapi.AccessApplication{}, &cloudflareapi.APIError{Status: 404}
+}
+
+// remoteAccessDelay keeps the daemon ticking while the hostname is set, so a retirement that only
+// cleared it in memory would hold the row in a five-minute loop forever. An error row returns
+// before any later write, so only the retirement itself can clear the column.
+func TestRetirementClearsTheLegacyHostnameOnTheRow(t *testing.T) {
+	store := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, store)
+	state, err := store.SaveDesired(t.Context(), state.Generation, Desired{AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Resources = Resources{AccountID: "account", ZoneID: "zone", WARPAppID: "warp-app", LegacyWARPHostname: "aura-warp.example.com"}
+	state.TunnelName = "aura-00000000-0000-4000-8000-000000000001"
+	state.Phase, state.Reason = PhaseError, ReasonUnknown
+	if _, err = store.Advance(t.Context(), state); err != nil {
+		t.Fatal(err)
+	}
+	engine := New(store, absentWARPApp{}, nil, &testProjection{t: t}, nil)
+	if err = engine.Reconcile(t.Context()); !errors.Is(err, ErrTerminal) {
+		t.Fatalf("an error row must stay terminal after retiring: %v", err)
+	}
+	got, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Resources.LegacyWARPHostname != "" || got.Resources.WARPAppID != "" {
+		t.Fatalf("the row keeps the retired leg: legacy=%q app=%q", got.Resources.LegacyWARPHostname, got.Resources.WARPAppID)
 	}
 }

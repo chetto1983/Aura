@@ -58,10 +58,30 @@ func TestStoreStaleGenerationAndReasonIsACode(t *testing.T) {
 	}
 }
 
+func TestAdvancePassesTheOwnershipColumnsAndSaveDesiredPassesNone(t *testing.T) {
+	db := &stubDB{err: pgx.ErrNoRows}
+	s := NewStore(db)
+	state := State{Generation: 7, OwnedZoneName: "zone.it", Resources: Resources{AccountID: "acct", LegacyWARPHostname: "warp.zone.it"}}
+	if _, err := s.Advance(t.Context(), state); !errors.Is(err, ErrStaleGeneration) {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"acct", "zone.it", "warp.zone.it"} {
+		if !slices.Contains(db.args, any(want)) {
+			t.Fatalf("Advance args %v lack %q", db.args, want)
+		}
+	}
+	if _, err := s.SaveDesired(t.Context(), 7, Desired{AccountID: "desired", ZoneName: "z.it"}, "admin"); !errors.Is(err, ErrStaleGeneration) {
+		t.Fatal(err)
+	}
+	if len(db.args) != 6 {
+		t.Fatalf("SaveDesired sends %d args, want the 6 desired ones: %v", len(db.args), db.args)
+	}
+}
+
 func TestStateMappingPreservesResumableResources(t *testing.T) {
 	now := time.Now().UTC()
 	row := sqlc.AuraCloudflareRemoteAccess{
-		Enabled: true, Generation: 9, Phase: "healthy", AccountID: "a", ZoneID: "z", ZoneName: "example.com", TunnelID: "t", TunnelName: "owned",
+		Enabled: true, Generation: 9, Phase: "healthy", AccountID: "desired", ResourceAccountID: "a", OwnedZoneName: "old.example.com", LegacyWarpHostname: "warp.example.com", ZoneID: "z", ZoneName: "example.com", TunnelID: "t", TunnelName: "owned",
 		PublicLabel: "public", WarpLabel: "warp", Reason: "tunnel_down", OwnedHostname: "public.example.com", AcceptedHostname: "public.example.com", Abandoned: []byte(`[{"kind":"tunnel","name":"aura-1"}]`), PublicDnsID: "pd", WarpDnsID: "wd", OtpIdpID: "otp", PublicAppID: "pa", PublicPolicyID: "pp",
 		WarpAppID: "wa", WarpPolicyID: "wp", WarpPostureID: "gateway", ObservedHealthy: true, UpdatedBy: "admin",
 		LastReconciledAt: pgtype.Timestamptz{Time: now, Valid: true}, UpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
@@ -73,7 +93,7 @@ func TestStateMappingPreservesResumableResources(t *testing.T) {
 	if s.Resources != (Resources{AccountID: "a", ZoneID: "z", TunnelID: "t", PublicDNSID: "pd", WARPDNSID: "wd", OTPProviderID: "otp", PublicAppID: "pa", PublicPolicyID: "pp", WARPAppID: "wa", WARPPolicyID: "wp", GatewayPostureID: "gateway", LegacyWARPHostname: "warp.example.com"}) {
 		t.Fatalf("resources=%+v", s.Resources)
 	}
-	if s.Desired != (Desired{Enabled: true, AccountID: "a", ZoneName: "example.com", PublicLabel: "public"}) || s.Reason != ReasonTunnelDown || s.OwnedHostname != "public.example.com" || s.AcceptedHostname != "public.example.com" || !slices.Equal(s.Abandoned, []AbandonedResource{{Kind: "tunnel", Name: "aura-1"}}) || s.Generation != 9 || s.Phase != PhaseHealthy || !s.ObservedHealthy || s.TunnelName != "owned" || s.UpdatedBy != "admin" || s.LastReconciledAt == nil || !s.LastReconciledAt.Equal(now) {
+	if s.Desired != (Desired{Enabled: true, AccountID: "desired", ZoneName: "example.com", PublicLabel: "public"}) || s.Reason != ReasonTunnelDown || s.OwnedHostname != "public.example.com" || s.OwnedZoneName != "old.example.com" || s.AcceptedHostname != "public.example.com" || !slices.Equal(s.Abandoned, []AbandonedResource{{Kind: "tunnel", Name: "aura-1"}}) || s.Generation != 9 || s.Phase != PhaseHealthy || !s.ObservedHealthy || s.TunnelName != "owned" || s.UpdatedBy != "admin" || s.LastReconciledAt == nil || !s.LastReconciledAt.Equal(now) {
 		t.Fatalf("state=%+v", s)
 	}
 	if empty, err := stateFromRow(sqlc.AuraCloudflareRemoteAccess{}); err != nil || empty.LastReconciledAt != nil || len(empty.Abandoned) != 0 {
@@ -81,10 +101,10 @@ func TestStateMappingPreservesResumableResources(t *testing.T) {
 	}
 }
 
-func TestStateMappingLeavesLegacyWARPHostnameEmptyWithoutWARPResources(t *testing.T) {
-	s, err := stateFromRow(sqlc.AuraCloudflareRemoteAccess{WarpLabel: "aura-warp", ZoneName: "example.com", Abandoned: []byte("[]")})
+func TestStateMappingDoesNotDeriveTheLegacyWARPHostname(t *testing.T) {
+	s, err := stateFromRow(sqlc.AuraCloudflareRemoteAccess{WarpLabel: "aura-warp", ZoneName: "example.com", WarpAppID: "wa", Abandoned: []byte("[]")})
 	if err != nil || s.Resources.LegacyWARPHostname != "" || len(s.Abandoned) != 0 {
-		t.Fatalf("legacy=%q abandoned=%v", s.Resources.LegacyWARPHostname, s.Abandoned)
+		t.Fatalf("legacy=%q abandoned=%v err=%v", s.Resources.LegacyWARPHostname, s.Abandoned, err)
 	}
 }
 

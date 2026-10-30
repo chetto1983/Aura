@@ -34,6 +34,8 @@ SET phase = sqlc.arg(phase), zone_id = sqlc.arg(zone_id),
     otp_idp_id = sqlc.arg(otp_idp_id), public_app_id = sqlc.arg(public_app_id), public_policy_id = sqlc.arg(public_policy_id),
     warp_app_id = sqlc.arg(warp_app_id), warp_policy_id = sqlc.arg(warp_policy_id), warp_posture_id = sqlc.arg(warp_posture_id),
     owned_hostname = sqlc.arg(owned_hostname), accepted_hostname = sqlc.arg(accepted_hostname),
+    resource_account_id = sqlc.arg(resource_account_id), owned_zone_name = sqlc.arg(owned_zone_name),
+    legacy_warp_hostname = sqlc.arg(legacy_warp_hostname),
     observed_healthy = sqlc.arg(observed_healthy), reason = sqlc.arg(reason),
     last_reconciled_at = clock_timestamp(), updated_at = clock_timestamp()
 WHERE singleton = true AND generation = sqlc.arg(expected_generation)
@@ -44,7 +46,8 @@ UPDATE aura.cloudflare_remote_access
 SET zone_id = '', tunnel_id = '', tunnel_name = '', public_dns_id = '', warp_dns_id = '',
     otp_idp_id = '', public_app_id = '', public_policy_id = '',
     warp_app_id = '', warp_policy_id = '', warp_posture_id = '',
-    owned_hostname = '', accepted_hostname = '', abandoned = abandoned || sqlc.arg(abandoned)::jsonb,
+    owned_hostname = '', accepted_hostname = '',
+    resource_account_id = '', owned_zone_name = '', legacy_warp_hostname = '', abandoned = abandoned || sqlc.arg(abandoned)::jsonb,
     updated_at = clock_timestamp()
 WHERE singleton = true AND generation = sqlc.arg(expected_generation)
 RETURNING *;

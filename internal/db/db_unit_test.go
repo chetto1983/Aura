@@ -390,8 +390,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0144 puts the Telegram links under row security and adds aura.retire_legacy_local_rows.
 	// 0145 lets a scheduled task name its Telegram recipients, and a pending push its account.
 	// 0146 persists the remote-access reason code and the hostnames its resources belong to.
-	if head != 146 {
-		t.Fatalf("MigrationHead=%d, want embedded head 146", head)
+	// 0147 gives those resources their own account, zone and legacy WARP hostname.
+	if head != 147 {
+		t.Fatalf("MigrationHead=%d, want embedded head 147", head)
 	}
 }
 

@@ -194,8 +194,8 @@ func TestReasonCheckRejectsAnUnknownCode(t *testing.T) {
 func TestAbandonClearsResourcesAndListsThem(t *testing.T) {
 	s := NewStore(remoteAccessPool(t))
 	state := blankRemoteAccess(t, s)
-	state.Resources = Resources{AccountID: "account", ZoneID: "z", TunnelID: "t", PublicDNSID: "d", OTPProviderID: "o", PublicAppID: "a", PublicPolicyID: "p"}
-	state.TunnelName, state.OwnedHostname, state.AcceptedHostname = "aura-1", "aura.a.it", "aura.a.it"
+	state.Resources = Resources{AccountID: "account", ZoneID: "z", TunnelID: "t", PublicDNSID: "d", OTPProviderID: "o", PublicAppID: "a", PublicPolicyID: "p", LegacyWARPHostname: "aura-warp.a.it"}
+	state.TunnelName, state.OwnedHostname, state.OwnedZoneName, state.AcceptedHostname = "aura-1", "aura.a.it", "a.it", "aura.a.it"
 	state, err := s.Advance(t.Context(), state)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestAbandonClearsResourcesAndListsThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Resources != (Resources{AccountID: "account"}) || got.TunnelName != "" || got.OwnedHostname != "" || got.AcceptedHostname != "" {
+	if got.Resources != (Resources{}) || got.TunnelName != "" || got.OwnedHostname != "" || got.OwnedZoneName != "" || got.AcceptedHostname != "" {
 		t.Fatalf("not cleared: %+v", got)
 	}
 	if !slices.Equal(got.Abandoned, list) {
@@ -260,5 +260,61 @@ func TestAbandonKeepsWhatTheOperatorHasNotSeen(t *testing.T) {
 	}
 	if got, err = s.Load(t.Context()); err != nil || len(got.Abandoned) != 3 {
 		t.Fatalf("abandoned=%v err=%v", got.Abandoned, err)
+	}
+}
+
+func TestSaveDesiredNeverMovesTheResourcesAccount(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state.Resources.AccountID, state.Resources.TunnelID = "A", "t"
+	state, err := s.Advance(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveDesired(t.Context(), state.Generation, Desired{Enabled: true, AccountID: "B", ZoneName: "a.it", PublicLabel: "aura"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Desired.AccountID != "B" || got.Resources.AccountID != "A" {
+		t.Fatalf("desired account=%q resources account=%q, want B and A", got.Desired.AccountID, got.Resources.AccountID)
+	}
+}
+
+func TestLegacyWARPHostnameSurvivesADomainChange(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state.Resources.WARPDNSID, state.Resources.LegacyWARPHostname = "wd", "aura-warp.a.it"
+	state, err := s.Advance(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveDesired(t.Context(), state.Generation, Desired{Enabled: true, AccountID: "account", ZoneName: "b.it", PublicLabel: "aura"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Resources.LegacyWARPHostname != "aura-warp.a.it" {
+		t.Fatalf("legacy hostname = %q, want aura-warp.a.it", got.Resources.LegacyWARPHostname)
+	}
+}
+
+func TestAdvancePersistsOwnership(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state.Resources.AccountID, state.Resources.LegacyWARPHostname, state.OwnedZoneName = "A", "aura-warp.a.it", "a.it"
+	if _, err := s.Advance(t.Context(), state); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Resources.AccountID != "A" || got.OwnedZoneName != "a.it" || got.Resources.LegacyWARPHostname != "aura-warp.a.it" {
+		t.Fatalf("account=%q zone=%q legacy=%q", got.Resources.AccountID, got.OwnedZoneName, got.Resources.LegacyWARPHostname)
 	}
 }

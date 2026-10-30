@@ -14,10 +14,11 @@ UPDATE aura.cloudflare_remote_access
 SET zone_id = '', tunnel_id = '', tunnel_name = '', public_dns_id = '', warp_dns_id = '',
     otp_idp_id = '', public_app_id = '', public_policy_id = '',
     warp_app_id = '', warp_policy_id = '', warp_posture_id = '',
-    owned_hostname = '', accepted_hostname = '', abandoned = abandoned || $1::jsonb,
+    owned_hostname = '', accepted_hostname = '',
+    resource_account_id = '', owned_zone_name = '', legacy_warp_hostname = '', abandoned = abandoned || $1::jsonb,
     updated_at = clock_timestamp()
 WHERE singleton = true AND generation = $2
-RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason
+RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason, resource_account_id, owned_zone_name, legacy_warp_hostname
 `
 
 type AbandonCloudflareRemoteAccessParams struct {
@@ -56,6 +57,9 @@ func (q *Queries) AbandonCloudflareRemoteAccess(ctx context.Context, arg Abandon
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }
@@ -63,7 +67,7 @@ func (q *Queries) AbandonCloudflareRemoteAccess(ctx context.Context, arg Abandon
 const addCloudflareRemoteAccessAbandoned = `-- name: AddCloudflareRemoteAccessAbandoned :one
 UPDATE aura.cloudflare_remote_access SET abandoned = abandoned || $1::jsonb, updated_at = clock_timestamp()
 WHERE singleton = true
-RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason
+RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason, resource_account_id, owned_zone_name, legacy_warp_hostname
 `
 
 func (q *Queries) AddCloudflareRemoteAccessAbandoned(ctx context.Context, abandoned []byte) (AuraCloudflareRemoteAccess, error) {
@@ -97,6 +101,9 @@ func (q *Queries) AddCloudflareRemoteAccessAbandoned(ctx context.Context, abando
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }
@@ -109,10 +116,12 @@ SET phase = $1, zone_id = $2,
     otp_idp_id = $7, public_app_id = $8, public_policy_id = $9,
     warp_app_id = $10, warp_policy_id = $11, warp_posture_id = $12,
     owned_hostname = $13, accepted_hostname = $14,
-    observed_healthy = $15, reason = $16,
+    resource_account_id = $15, owned_zone_name = $16,
+    legacy_warp_hostname = $17,
+    observed_healthy = $18, reason = $19,
     last_reconciled_at = clock_timestamp(), updated_at = clock_timestamp()
-WHERE singleton = true AND generation = $17
-RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason
+WHERE singleton = true AND generation = $20
+RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason, resource_account_id, owned_zone_name, legacy_warp_hostname
 `
 
 type AdvanceCloudflareRemoteAccessParams struct {
@@ -130,6 +139,9 @@ type AdvanceCloudflareRemoteAccessParams struct {
 	WarpPostureID      string `json:"warp_posture_id"`
 	OwnedHostname      string `json:"owned_hostname"`
 	AcceptedHostname   string `json:"accepted_hostname"`
+	ResourceAccountID  string `json:"resource_account_id"`
+	OwnedZoneName      string `json:"owned_zone_name"`
+	LegacyWarpHostname string `json:"legacy_warp_hostname"`
 	ObservedHealthy    bool   `json:"observed_healthy"`
 	Reason             string `json:"reason"`
 	ExpectedGeneration int64  `json:"expected_generation"`
@@ -151,6 +163,9 @@ func (q *Queries) AdvanceCloudflareRemoteAccess(ctx context.Context, arg Advance
 		arg.WarpPostureID,
 		arg.OwnedHostname,
 		arg.AcceptedHostname,
+		arg.ResourceAccountID,
+		arg.OwnedZoneName,
+		arg.LegacyWarpHostname,
 		arg.ObservedHealthy,
 		arg.Reason,
 		arg.ExpectedGeneration,
@@ -184,6 +199,9 @@ func (q *Queries) AdvanceCloudflareRemoteAccess(ctx context.Context, arg Advance
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }
@@ -191,7 +209,7 @@ func (q *Queries) AdvanceCloudflareRemoteAccess(ctx context.Context, arg Advance
 const dismissCloudflareRemoteAccessAbandoned = `-- name: DismissCloudflareRemoteAccessAbandoned :one
 UPDATE aura.cloudflare_remote_access SET abandoned = '[]', updated_at = clock_timestamp()
 WHERE singleton = true
-RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason
+RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason, resource_account_id, owned_zone_name, legacy_warp_hostname
 `
 
 func (q *Queries) DismissCloudflareRemoteAccessAbandoned(ctx context.Context) (AuraCloudflareRemoteAccess, error) {
@@ -225,12 +243,15 @@ func (q *Queries) DismissCloudflareRemoteAccessAbandoned(ctx context.Context) (A
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }
 
 const getCloudflareRemoteAccess = `-- name: GetCloudflareRemoteAccess :one
-SELECT singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason FROM aura.cloudflare_remote_access WHERE singleton = true
+SELECT singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, observed_healthy, last_reconciled_at, updated_at, updated_by, owned_hostname, accepted_hostname, abandoned, reason, resource_account_id, owned_zone_name, legacy_warp_hostname FROM aura.cloudflare_remote_access WHERE singleton = true
 `
 
 func (q *Queries) GetCloudflareRemoteAccess(ctx context.Context) (AuraCloudflareRemoteAccess, error) {
@@ -264,6 +285,9 @@ func (q *Queries) GetCloudflareRemoteAccess(ctx context.Context) (AuraCloudflare
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }
@@ -291,7 +315,7 @@ SET enabled = CASE WHEN intent.deleting THEN false ELSE $1::boolean END,
     updated_at = clock_timestamp(), updated_by = $5
 FROM intent
 WHERE state.singleton = intent.singleton AND state.generation = $6
-RETURNING state.singleton, state.enabled, state.generation, state.phase, state.account_id, state.zone_id, state.zone_name, state.tunnel_id, state.tunnel_name, state.public_label, state.warp_label, state.public_dns_id, state.warp_dns_id, state.otp_idp_id, state.public_app_id, state.public_policy_id, state.warp_app_id, state.warp_policy_id, state.warp_posture_id, state.observed_healthy, state.last_reconciled_at, state.updated_at, state.updated_by, state.owned_hostname, state.accepted_hostname, state.abandoned, state.reason
+RETURNING state.singleton, state.enabled, state.generation, state.phase, state.account_id, state.zone_id, state.zone_name, state.tunnel_id, state.tunnel_name, state.public_label, state.warp_label, state.public_dns_id, state.warp_dns_id, state.otp_idp_id, state.public_app_id, state.public_policy_id, state.warp_app_id, state.warp_policy_id, state.warp_posture_id, state.observed_healthy, state.last_reconciled_at, state.updated_at, state.updated_by, state.owned_hostname, state.accepted_hostname, state.abandoned, state.reason, state.resource_account_id, state.owned_zone_name, state.legacy_warp_hostname
 `
 
 type SaveCloudflareRemoteAccessDesiredParams struct {
@@ -341,6 +365,9 @@ func (q *Queries) SaveCloudflareRemoteAccessDesired(ctx context.Context, arg Sav
 		&i.AcceptedHostname,
 		&i.Abandoned,
 		&i.Reason,
+		&i.ResourceAccountID,
+		&i.OwnedZoneName,
+		&i.LegacyWarpHostname,
 	)
 	return i, err
 }

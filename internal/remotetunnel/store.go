@@ -49,6 +49,7 @@ func (s *Store) Advance(ctx context.Context, state State) (State, error) {
 		OtpIdpID: r.OTPProviderID, PublicAppID: r.PublicAppID, PublicPolicyID: r.PublicPolicyID,
 		WarpAppID: r.WARPAppID, WarpPolicyID: r.WARPPolicyID, WarpPostureID: r.GatewayPostureID,
 		OwnedHostname: state.OwnedHostname, AcceptedHostname: state.AcceptedHostname,
+		ResourceAccountID: r.AccountID, OwnedZoneName: state.OwnedZoneName, LegacyWarpHostname: r.LegacyWARPHostname,
 		ObservedHealthy: state.ObservedHealthy, Reason: string(state.Reason),
 	})
 	return changedState(row, err)
@@ -107,14 +108,11 @@ func stateFromRow(r sqlc.AuraCloudflareRemoteAccess) (State, error) {
 	s := State{
 		Desired:    Desired{Enabled: r.Enabled, AccountID: r.AccountID, ZoneName: r.ZoneName, PublicLabel: r.PublicLabel},
 		Generation: r.Generation, Phase: Phase(r.Phase), TunnelName: r.TunnelName,
-		Resources: Resources{AccountID: r.AccountID, ZoneID: r.ZoneID, TunnelID: r.TunnelID, PublicDNSID: r.PublicDnsID, WARPDNSID: r.WarpDnsID,
+		Resources: Resources{AccountID: r.ResourceAccountID, ZoneID: r.ZoneID, TunnelID: r.TunnelID, PublicDNSID: r.PublicDnsID, WARPDNSID: r.WarpDnsID,
 			OTPProviderID: r.OtpIdpID, PublicAppID: r.PublicAppID, PublicPolicyID: r.PublicPolicyID, WARPAppID: r.WarpAppID,
-			WARPPolicyID: r.WarpPolicyID, GatewayPostureID: r.WarpPostureID},
-		OwnedHostname: r.OwnedHostname, AcceptedHostname: r.AcceptedHostname,
+			WARPPolicyID: r.WarpPolicyID, GatewayPostureID: r.WarpPostureID, LegacyWARPHostname: r.LegacyWarpHostname},
+		OwnedHostname: r.OwnedHostname, OwnedZoneName: r.OwnedZoneName, AcceptedHostname: r.AcceptedHostname,
 		ObservedHealthy: r.ObservedHealthy, Reason: Reason(r.Reason), UpdatedAt: r.UpdatedAt.Time, UpdatedBy: r.UpdatedBy,
-	}
-	if r.WarpAppID != "" || r.WarpPolicyID != "" || r.WarpPostureID != "" || r.WarpDnsID != "" {
-		s.Resources.LegacyWARPHostname = r.WarpLabel + "." + r.ZoneName
 	}
 	if len(r.Abandoned) > 0 {
 		if err := json.Unmarshal(r.Abandoned, &s.Abandoned); err != nil {
