@@ -2,16 +2,6 @@ package remotetunnel
 
 import "context"
 
-// PersistedAcceptance carries the browser's authenticated tunnel-path proof across restarts.
-// SaveDesired and every unhealthy observation invalidate it in the same state generation.
-type PersistedAcceptance struct{ Store StateStore }
-
-// Ready admits only previously accepted evidence for the current desired generation.
-func (a PersistedAcceptance) Ready(ctx context.Context, state State) (bool, error) {
-	persisted, err := a.Store.Load(ctx)
-	return err == nil && persisted.Generation == state.Generation && persisted.ObservedHealthy, err
-}
-
 // AcceptExternal must only be called after the HTTP boundary verifies the administrator,
 // configured hostname, and the marker owned by Caddy's private tunnel listener.
 func (r *Reconciler) AcceptExternal(ctx context.Context, generation int64) error {
@@ -42,6 +32,7 @@ func (r *Reconciler) AcceptExternal(ctx context.Context, generation int64) error
 		}
 		return ErrConfiguration
 	}
+	state.AcceptedHostname = publicHostname(state.Desired)
 	state.ObservedHealthy = true
 	state.Phase = PhaseHealthy
 	state.Reason = ""
@@ -50,3 +41,5 @@ func (r *Reconciler) AcceptExternal(ctx context.Context, generation int64) error
 
 // ValidateDesired shares the reconciler's DNS/account validation with configuration writes.
 func ValidateDesired(desired Desired) error { return validateDesired(desired) }
+
+func publicHostname(d Desired) string { return d.PublicLabel + "." + d.ZoneName }

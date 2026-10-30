@@ -40,11 +40,6 @@ type TunnelCredentials interface {
 	Save(context.Context, cloudflareapi.Secret) error
 }
 
-// Acceptance includes supervisor readiness and authenticated external acceptance.
-type Acceptance interface {
-	Ready(context.Context, State) (bool, error)
-}
-
 // Cloudflare is the control-plane surface consumed by the resumable service.
 type Cloudflare interface {
 	VerifyToken(context.Context) (cloudflareapi.TokenVerification, error)

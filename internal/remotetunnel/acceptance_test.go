@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestExternalAcceptancePersistsAndSurvivesRestart(t *testing.T) {
+func TestAcceptExternalRecordsTheHostname(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
@@ -15,33 +15,65 @@ func TestExternalAcceptancePersistsAndSurvivesRestart(t *testing.T) {
 	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if !h.store.state.ObservedHealthy || h.store.state.Phase != PhaseHealthy || h.store.state.Reason != "" {
-		t.Fatal("acceptance not persisted")
+	if h.store.state.AcceptedHostname != "aura.example.com" || h.store.state.Phase != PhaseHealthy || !h.store.state.ObservedHealthy || h.store.state.Reason != "" {
+		t.Fatalf("acceptance not persisted: %+v", h.store.state)
 	}
 	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
 		t.Fatalf("repeat acceptance: %v", err)
 	}
-	h.r = h.newReconciler()
-	h.r.acceptance = PersistedAcceptance{Store: h.store}
+}
+
+func TestOutageAfterAcceptanceDegradesAndHealsWithoutANewTest(t *testing.T) {
+	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.Phase != PhaseHealthy {
-		t.Fatal("restart lost accepted generation")
+	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
+		t.Fatal(err)
 	}
 	h.cloud.tunnel.Status = "down"
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.ObservedHealthy {
-		t.Fatal("disconnect retained acceptance")
+	if s := h.store.state; s.Phase != PhaseDegraded || s.Reason != ReasonTunnelDown || s.AcceptedHostname != "aura.example.com" || s.ObservedHealthy {
+		t.Fatalf("outage state=%+v", s)
 	}
 	h.cloud.tunnel.Status = "healthy"
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.ObservedHealthy {
-		t.Fatal("reconnect bypassed new external acceptance")
+	if s := h.store.state; s.Phase != PhaseHealthy || s.Reason != "" || !s.ObservedHealthy {
+		t.Fatalf("healed state=%+v", s)
+	}
+}
+
+func TestTokenReplacementKeepsAcceptance(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	h.store.state.AcceptedHostname = "aura.example.com"
+	state, err := h.r.SaveDesired(t.Context(), h.store.state.Generation, h.store.state.Desired, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.AcceptedHostname != "aura.example.com" {
+		t.Fatal("same address lost its acceptance")
+	}
+	h.cloud.tunnel.Status = "healthy"
+	if err = h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if h.store.state.Phase != PhaseHealthy || !h.store.state.ObservedHealthy {
+		t.Fatalf("phase=%s", h.store.state.Phase)
+	}
+}
+
+func TestNoAcceptanceStaysConnecting(t *testing.T) {
+	h := newHarness(t)
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.store.state; s.Phase != PhaseConnecting || s.Reason != "" || s.ObservedHealthy {
+		t.Fatalf("state=%+v", s)
 	}
 }
 
@@ -97,17 +129,5 @@ func TestExternalAcceptanceRejectsStaleDisabledUnownedAndUnhealthy(t *testing.T)
 				t.Fatal("disconnected connector still reported healthy")
 			}
 		})
-	}
-}
-
-func TestPersistedAcceptanceRejectsOtherGenerationAndStoreFailure(t *testing.T) {
-	s := &memoryState{state: State{Generation: 2, ObservedHealthy: true}}
-	probe := PersistedAcceptance{Store: s}
-	if ok, err := probe.Ready(t.Context(), State{Generation: 1}); ok || err != nil {
-		t.Fatalf("stale evidence=%v %v", ok, err)
-	}
-	s.loadError = errors.New("database unavailable")
-	if ok, err := probe.Ready(t.Context(), State{Generation: 2}); ok || !errors.Is(err, s.loadError) {
-		t.Fatalf("failed read=%v %v", ok, err)
 	}
 }

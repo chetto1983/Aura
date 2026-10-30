@@ -30,7 +30,6 @@ type Reconciler struct {
 	members         Members
 	projection      Projection
 	credentials     TunnelCredentials
-	acceptance      Acceptance
 	log             *slog.Logger
 	now             func() time.Time
 	retryAt         time.Time
@@ -43,9 +42,6 @@ type Option func(*Reconciler)
 
 // WithCredentials is required before enabled reconciliation can publish.
 func WithCredentials(c TunnelCredentials) Option { return func(r *Reconciler) { r.credentials = c } }
-
-// WithAcceptance permits healthy only after an independently successful probe.
-func WithAcceptance(a Acceptance) Option { return func(r *Reconciler) { r.acceptance = a } }
 
 // New constructs one service; callers must share it for all intent mutations.
 func New(s StateStore, c Cloudflare, m Members, p Projection, l *slog.Logger, options ...Option) *Reconciler {
@@ -175,14 +171,12 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 	if !ownedTunnel(*s, tunnel) || tunnel.DeletedAt != nil {
 		return ErrOwnershipConflict
 	}
-	if tunnel.Status == "healthy" && r.acceptance != nil {
-		ready, e := r.acceptance.Ready(ctx, *s)
-		if e != nil {
-			return e
-		}
-		if ready {
-			s.Phase = PhaseHealthy
-			s.ObservedHealthy = true
+	s.Reason = ""
+	if s.AcceptedHostname == publicHostname(s.Desired) {
+		// The phone test passed once for this address; an outage degrades it and heals by itself.
+		s.Phase, s.ObservedHealthy = PhaseHealthy, tunnel.Status == "healthy"
+		if !s.ObservedHealthy {
+			s.Phase, s.Reason = PhaseDegraded, ReasonTunnelDown
 		}
 	}
 	return r.persist(ctx, s)
@@ -218,7 +212,7 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	deleting := s.Phase == PhaseDeleting
 	s.Phase = PhaseError
 	s.ObservedHealthy = false
-	s.Reason = ReasonUnknown
+	s.Reason = ReasonOf(err)
 	var timeout net.Error
 	if cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout() {
 		s.Phase = PhaseDegraded

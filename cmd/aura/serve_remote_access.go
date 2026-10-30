@@ -50,7 +50,7 @@ func (c *remoteAccessController) engine(ctx context.Context) (*remotetunnel.Reco
 	}
 	if c.reconciler == nil || c.credential.Reveal() != token {
 		c.credential = cloudflareapi.Secret(token)
-		c.reconciler = remotetunnel.New(c.store, c.client(token), c.members, c.projection, nil, remotetunnel.WithCredentials(remoteTunnelCredentials{secrets: c.secrets}), remotetunnel.WithAcceptance(remotetunnel.PersistedAcceptance{Store: c.store}))
+		c.reconciler = remotetunnel.New(c.store, c.client(token), c.members, c.projection, nil, remotetunnel.WithCredentials(remoteTunnelCredentials{secrets: c.secrets}))
 	}
 	return c.reconciler, nil
 }

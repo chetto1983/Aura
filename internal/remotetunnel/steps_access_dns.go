@@ -13,7 +13,7 @@ type route struct {
 }
 
 func routes(s *State) []route {
-	list := []route{{"public", s.Desired.PublicLabel + "." + s.Desired.ZoneName, &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}}
+	list := []route{{"public", publicHostname(s.Desired), &s.Resources.PublicAppID, &s.Resources.PublicPolicyID, &s.Resources.PublicDNSID}}
 	// Only an installation that already has WARP resources keeps this leg, until retireWARP removes it.
 	if s.Resources.LegacyWARPHostname != "" {
 		list = append(list, route{"warp", s.Resources.LegacyWARPHostname, &s.Resources.WARPAppID, &s.Resources.WARPPolicyID, &s.Resources.WARPDNSID})
