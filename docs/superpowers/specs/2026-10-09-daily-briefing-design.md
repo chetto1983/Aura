@@ -1,14 +1,63 @@
 # Daily briefing: one skill, one scheduled job, and a baseline to beat
 
-Proposed on 2026-10-09 at `874a0b7d7`, item 5 of the consolidation inventory
-(`2026-10-09-consolidation-best-of-design.md`), after reading PMSync's `BriefingService` and
-Smart Today (`chetto1983/pmsync` at `042cc04c`) against Aura's tree. Not agreed with the
-operator: every decision below is a proposal for review. Nothing here was run; every fact
-is a reading of code, and the acceptance section names the measurements that decide.
+Proposed on 2026-10-09 at `874a0b7d7` and agreed with the operator on 2026-10-30 (below), item 5
+of the consolidation inventory (`2026-10-09-consolidation-best-of-design.md`), after reading
+PMSync's `BriefingService` and Smart Today (`chetto1983/pmsync` at `042cc04c`) against Aura's
+tree. Nothing here was run; every fact is a reading of code, and the acceptance section names the
+measurements that decide.
 
 Wave 2 does not open before wave 1 closes on its lab-VM acceptances and the operator decides
 the six findings of `docs/superpowers/verification/2026-10-09-wave1-model-in-the-loop.md`.
 This spec is written ahead of that, not landed ahead of it.
+
+## Agreed with the operator, 2026-10-30
+
+- **The design stands as written:** a skill and an `agent_job`, three live sources, nothing
+  stored. The two timezone fixes ride in the same slice, and the blind five-day gate decides at
+  four wins in five.
+- **The board's "due first" order joins this slice** (P4 of the productivity read). It makes the
+  overdue cards visible past the 32-card cap, and it is the baseline's board section. It reuses
+  the cockpit's own definition: overdue is a deadline before now, in no particular zone and in
+  any column (`web/src/board/boardModel.ts`). "Due today" is read as "due within 24 hours",
+  because the tool has no zone of its own.
+- **Unread mail is included.** The verification file names the route that ran, as acceptance 4
+  already says; the local model is preferred until item 7 lands.
+
+Plan: `docs/superpowers/plans/2026-10-30-daily-briefing.md`.
+
+## Re-read against the tree, 2026-10-30 (`6118144`)
+
+The six findings were decided and verified on 2026-10-12 (`2026-10-12-gateway-clarity-design.md`).
+Since `874a0b7d7` the tree moved; what that changes here:
+
+- **An `agent_job` is no longer `pending_approval` by default.** `task` now routes only a
+  destructive payload there (`internal/agent/tools/task.go:146,166`). A briefing job is active
+  the moment it is scheduled. "The operator approves the briefing once" no longer holds. What
+  still holds is that the agent schedules it only when the operator asks (open question 4).
+- **Both timezone defects are still there.**
+  - `ParseSchedule` still defaults an empty `tz` to `Europe/Rome`
+    (`internal/cron/schedule.go:64-66`).
+  - Nothing in `internal/cron/handlers` sets a `Location`, so the job's clock is still the
+    process zone.
+- **Read-only under the strict profiles is stronger.** A run with no responder is denied every
+  Destructive call, and since 2026-10-30 that includes `memory_forget`
+  (`2026-10-30-headless-memory-erase-design.md`). Under `dev` and `local_trusted` nothing changed.
+  The gateway is still a no-op there, and the cockpit now says so (`policies_enforced`). There,
+  read-only remains an instruction.
+- **The board snapshot.** It is still column order with a cap of 32 cards
+  (`internal/agent/tools/board.go:46`). The cards past the cap are counted, not shown, so an
+  overdue card at position 40 is invisible to the briefing unless the skill asks again. The
+  productivity read (P4, `2026-10-09-consolidation-best-of-design.md`) proposes a deterministic
+  "today" order in the snapshot, which would also be this spec's baseline.
+- **The fields of `get_emails`, partly.** The cockpit renders `id`, `accountId`, `subject`, `from`
+  and `receivedDateTime` (`internal/agent/display/sidecars.go:27-30`). Whether the payload also
+  carries a text preview is still not read.
+- **Telegram recipients.** Since 2026-10-28 a task names the Telegram accounts it reaches when
+  two or more are linked (`2026-10-28-telegram-push-recipients-design.md`). The briefing
+  inherits it with no work.
+- **A scheduled worker runs its occurrence.** Since 2026-10-12 it gets an execution instruction
+  before the goal and does not reschedule itself (`2026-10-12-scheduled-job-origin-design.md`).
+  So "Write my daily briefing" is executed, not turned into a new schedule.
 
 ## The problem, measured in the tree
 
