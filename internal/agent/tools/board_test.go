@@ -23,6 +23,8 @@ type fakeBoard struct {
 	// writes counts every call that writes, Board among them: the real one ensures the board.
 	writes  int
 	readErr error
+	// gone are the ids DeleteCard reports as already removed.
+	gone map[string]bool
 }
 
 func newFakeBoard() *fakeBoard {
@@ -101,7 +103,7 @@ func (f *fakeBoard) MoveCard(_ context.Context, _, id, col, _ string, _ board.Ac
 func (f *fakeBoard) DeleteCard(_ context.Context, _, id string) (bool, error) {
 	f.writes++
 	f.deleted = append(f.deleted, id)
-	return true, nil
+	return !f.gone[id], nil
 }
 
 const boardConv = "3b241101-e2bb-4255-8caf-4136c566a962"
