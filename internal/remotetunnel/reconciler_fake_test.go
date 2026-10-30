@@ -129,6 +129,8 @@ type fakeCloud struct {
 	emptyToken                                          bool
 	blind                                               bool
 	postureReadErr, postureRemoveErr                    error
+	dnsReadErr, dnsRemoveErr                            error
+	failPublish                                         bool
 }
 
 func (f *fakeCloud) call() error {
@@ -232,8 +234,11 @@ func (f *fakeCloud) PutTunnelConfig(_ context.Context, _, _ string, c cf.TunnelC
 	if err := f.call(); err != nil {
 		return err
 	}
-	if len(f.apps) != 1 || len(f.policies) != 1 {
+	if f.apps["public-app"].ID == "" || f.policies["public-policy"].ID == "" {
 		f.t.Fatal("ingress before Access")
+	}
+	if f.failPublish {
+		return transientError()
 	}
 	if len(c.Ingress) != 2 || c.Ingress[1].Service != "http_status:404" || c.Ingress[1].Hostname != "" || c.Ingress[0].Service != "http://caddy:8080" {
 		f.t.Fatal("invalid ingress")
@@ -383,6 +388,9 @@ func (f *fakeCloud) GetDNS(_ context.Context, _, id string) (cf.DNSRecord, error
 	if err := f.call(); err != nil {
 		return cf.DNSRecord{}, err
 	}
+	if id == "warp-dns" && f.dnsReadErr != nil {
+		return cf.DNSRecord{}, f.dnsReadErr
+	}
 	d, ok := f.dns[id]
 	if !ok {
 		return d, absent()
@@ -405,6 +413,9 @@ func (f *fakeCloud) EnsureCNAME(_ context.Context, _, id, host, tunnel, owner st
 	return d, nil
 }
 func (f *fakeCloud) DeleteDNS(_ context.Context, _, id, _ string) error {
+	if id == "warp-dns" && f.dnsRemoveErr != nil {
+		return f.dnsRemoveErr
+	}
 	if err := f.remove(); err != nil {
 		return err
 	}

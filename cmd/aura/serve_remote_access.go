@@ -320,6 +320,10 @@ func remoteAccessDelay(state remotetunnel.State) time.Duration {
 	case remotetunnel.PhaseConnecting:
 		return 10 * time.Second
 	case remotetunnel.PhaseDisabled, remotetunnel.PhaseError:
+		// Leftover WARP resources mean a retirement is still owed; nothing else wakes a parked row.
+		if state.Resources.LegacyWARPHostname != "" {
+			return 5 * time.Minute
+		}
 		return 0
 	default:
 		return time.Second

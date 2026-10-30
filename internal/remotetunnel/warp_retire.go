@@ -36,7 +36,7 @@ func (r *Reconciler) retireWARP(ctx context.Context, s *State) error {
 		return nil
 	}, func() error {
 		return r.cloud.DeletePosture(ctx, res.AccountID, res.GatewayPostureID, resourceName(s, "gateway"))
-	}, &AbandonedResource{Kind: "posture", Name: resourceName(s, "gateway")}})
+	}, []AbandonedResource{{Kind: "posture", Name: resourceName(s, "gateway")}}, nil})
 	if err := r.runDeletions(ctx, s, steps); err != nil {
 		if errors.Is(err, errBlindToken) {
 			return nil

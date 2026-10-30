@@ -298,3 +298,111 @@ func TestForeignDNSRecordOnTheHostnameEndsAsHostnameTaken(t *testing.T) {
 		t.Fatalf("err=%v reason=%q", err, h.store.state.Reason)
 	}
 }
+
+func TestRetireWARPDeniedCNAMEKeepsItsProtection(t *testing.T) {
+	for name, deny := range map[string]func(*harness){
+		"read":   func(h *harness) { h.cloud.dnsReadErr = denial() },
+		"remove": func(h *harness) { h.cloud.dnsRemoveErr = denial() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := healthyHarness(t)
+			deny(h)
+			h.cloud.allowUnpersisted = true // the abandoned records stay in Cloudflare, their IDs forgotten
+			if err := h.r.Reconcile(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			owner := h.store.state.TunnelName
+			want := []AbandonedResource{{"dns", "aura-warp.example.com"}, {"access_policy", owner + "-warp-members"}, {"access_app", owner + "-warp"}}
+			r := h.store.state.Resources
+			if !reflect.DeepEqual(h.store.state.Abandoned, want) || r.WARPDNSID != "" || r.WARPPolicyID != "" || r.WARPAppID != "" {
+				t.Fatalf("abandoned=%v resources=%+v", h.store.state.Abandoned, r)
+			}
+			if h.cloud.apps["warp-app"].ID == "" || h.cloud.policies["warp-policy"].ID == "" || h.cloud.dns["warp-dns"].ID == "" {
+				t.Fatal("the route lost its protection while it was still published")
+			}
+			if h.cloud.deletes != 1 || h.cloud.posture.ID != "" || r.GatewayPostureID != "" {
+				t.Fatalf("deletes=%d: only the posture should have been retired", h.cloud.deletes)
+			}
+		})
+	}
+}
+
+func TestRetireWARPDeniedCNAMEThenFailureBeforePublish(t *testing.T) {
+	h := healthyHarness(t)
+	h.cloud.dnsRemoveErr = denial()
+	h.cloud.allowUnpersisted = true
+	h.cloud.failPublish = true
+	if h.r.Reconcile(t.Context()) == nil {
+		t.Fatal("expected the failure before publish")
+	}
+	if a := h.cloud.apps["warp-app"]; a.ID == "" || a.Domain != "aura-warp.example.com" || h.cloud.dns["warp-dns"].ID == "" {
+		t.Fatalf("a published route is open: app=%+v", a)
+	}
+}
+
+func TestRetireWARPFailureOnADisabledInstallNeverWritesError(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	seedLegacyWARP(h)
+	a := h.cloud.apps["warp-app"]
+	a.Name = "someone-else"
+	h.cloud.apps["warp-app"] = a
+	h.store.state.Desired.Enabled = false
+	h.store.state.Phase = PhaseDisabled
+	h.store.log = nil
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, written := range h.store.log {
+		if written.Phase == PhaseError || written.Reason != "" {
+			t.Fatalf("a disabled install was written as %s/%q", written.Phase, written.Reason)
+		}
+	}
+	if h.store.state.Phase != PhaseDisabled || h.store.state.Reason != "" || h.store.state.Resources.WARPAppID == "" {
+		t.Fatalf("state=%s/%q", h.store.state.Phase, h.store.state.Reason)
+	}
+}
+
+func TestRetireWARPRetriesOnADisabledInstall(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	seedLegacyWARP(h)
+	h.store.state.Desired.Enabled = false
+	h.store.state.Phase = PhaseDisabled
+	h.store.log = nil
+	h.cloud.failure = transientError()
+	if err := h.r.Reconcile(t.Context()); err != nil || h.store.state.Resources.WARPAppID == "" {
+		t.Fatalf("first pass err=%v", err)
+	}
+	h.cloud.failure = nil
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	r := h.store.state.Resources
+	if r.WARPAppID != "" || r.WARPDNSID != "" || r.GatewayPostureID != "" || h.store.state.Phase != PhaseDisabled || h.store.state.Desired.Enabled {
+		t.Fatalf("state=%s %+v", h.store.state.Phase, r)
+	}
+	for _, written := range h.store.log {
+		if written.Desired.Enabled {
+			t.Fatal("retirement enabled the install")
+		}
+	}
+}
+
+func TestRetireWARPRetriesOnAnErrorRow(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	seedLegacyWARP(h)
+	h.store.state.Phase, h.store.state.Reason = PhaseError, ReasonDomainInvalid
+	h.cloud.failure = transientError()
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrTerminal) || h.store.state.Resources.WARPAppID == "" {
+		t.Fatalf("first pass err=%v", err)
+	}
+	h.cloud.failure = nil
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrTerminal) {
+		t.Fatalf("second pass err=%v", err)
+	}
+	if h.store.state.Resources.WARPAppID != "" || h.store.state.Phase != PhaseError || h.store.state.Reason != ReasonDomainInvalid {
+		t.Fatalf("state=%s/%q %+v", h.store.state.Phase, h.store.state.Reason, h.store.state.Resources)
+	}
+}
