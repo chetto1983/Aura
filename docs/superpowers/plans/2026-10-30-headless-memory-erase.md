@@ -102,6 +102,9 @@ annotations.
 - [x] Mutation: `classify.go` 80.00% through the critical gate's own scope; `bridge_risk.go`
   92.45% after a test commit that killed the two new survivors only the gateway's tests reached.
 - [x] `docs/superpowers/verification/2026-10-30-headless-memory-erase-local.md`: what ran here, and
-  that the lab VM (step 0, A4) and the `db_integration` coverage gate did not.
+  that the lab VM (step 0, A4) did not.
+- [x] `bash scripts/coverage_docker.sh` on a local Docker stack: 50042/57111 = 87.62%, package
+  policy passed; the `arcadedb_integration` live tier passes, after `e05fed9` fixed a test that
+  leaked `AURA_EMBED_MODEL` into the process env.
 - [ ] Lab VM, step 0 and A4, in its own verification file.
 - [x] This plan's status; merge to `master`.
