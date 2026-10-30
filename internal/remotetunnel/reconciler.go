@@ -95,7 +95,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return ErrTerminal
 	}
 	if !s.Desired.Enabled {
-		return r.disableProjection(ctx, &s)
+		// failed would write error over a disabled row, which SaveDesired reads as deletion intent.
+		err = r.disableProjection(ctx, &s)
+		if err != nil {
+			r.log.WarnContext(ctx, "Stopping the connector of a disabled install failed; retrying", "error", err)
+		}
+		return err
 	}
 	err = r.reconcile(ctx, &s)
 	if err != nil {

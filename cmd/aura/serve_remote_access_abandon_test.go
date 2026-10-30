@@ -128,11 +128,15 @@ func TestSameTokenSaveAbandonsWhatItCannotSee(t *testing.T) {
 func TestConfigureMidTeardownAbandonsWhatItCannotSee(t *testing.T) {
 	state := provisionedInAccountA()
 	state.Phase, state.Reason = remotetunnel.PhaseProvisioning, remotetunnel.ReasonAccountNotVisible
-	state.Resources.TunnelID, state.Resources.PublicAppID, state.Resources.PublicPolicyID = "", "", ""
+	state.Resources.PublicDNSID = "" // teardown deletes the CNAME first
 	got, err := configureAs(t, state, toAccountB("token-b"), "account-b")
-	want := []remotetunnel.AbandonedResource{{Kind: "dns", Name: "aura.a.it"}}
+	want := []remotetunnel.AbandonedResource{
+		{Kind: "tunnel", Name: oldOwner},
+		{Kind: "access_app", Name: oldOwner + "-public"},
+		{Kind: "access_policy", Name: oldOwner + "-public-members"},
+	}
 	if err != nil || got == nil || !reflect.DeepEqual(got.abandoned, want) {
-		t.Fatalf("err=%v commit=%+v, want only the CNAME left in account A", err, got)
+		t.Fatalf("err=%v commit=%+v, want what teardown had not reached", err, got)
 	}
 }
 
@@ -143,6 +147,15 @@ func TestAbandonWhileTheZoneIsPending(t *testing.T) {
 	got, err := configureAs(t, state, toAccountB("token-b"), "account-b")
 	want := []remotetunnel.AbandonedResource{{Kind: "tunnel", Name: oldOwner}}
 	if err != nil || got == nil || !reflect.DeepEqual(got.abandoned, want) {
+		t.Fatalf("err=%v commit=%+v", err, got)
+	}
+}
+
+func TestAbandonOfARowWithoutARecordedAccountStillForgetsIt(t *testing.T) {
+	state := provisionedInAccountA()
+	state.Resources.AccountID = ""
+	got, err := configureAs(t, state, toAccountB("token-b"), "account-b")
+	if err != nil || got == nil || len(got.abandoned) != 4 {
 		t.Fatalf("err=%v commit=%+v", err, got)
 	}
 }

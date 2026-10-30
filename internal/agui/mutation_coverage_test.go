@@ -31,6 +31,7 @@ func TestHTTPMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 		"POST /api/assets/{id}/finalize",
 		"POST /api/governance/mcp",
 		"POST /api/governance/scheduler/{id}/run",
+		"POST /api/settings/remote-access/abandoned/dismiss",
 	} {
 		meta, ok := httpMutationRoutes[route]
 		if !ok {

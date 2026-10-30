@@ -155,11 +155,12 @@ func TestReconcileFailureDoesNotRemoveLastHealthyProjection(t *testing.T) {
 	h := newHarness(t)
 	h.assertResources(t)
 	h.cloud.failure = &cf.APIError{Status: 429, Retryable: true}
+	applied := len(h.projection.applied)
 	if err := h.r.Reconcile(t.Context()); err == nil {
 		t.Fatal("expected failure")
 	}
-	if len(h.projection.enabled()) != 1 {
-		t.Fatal("healthy connector discarded")
+	if len(h.projection.applied) != applied {
+		t.Fatalf("a failing pass touched the connector: %+v", h.projection.applied[applied:])
 	}
 }
 

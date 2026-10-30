@@ -124,7 +124,7 @@ func (c *remoteAccessController) abandonedBy(ctx context.Context, accounts []clo
 		return nil, err
 	}
 	held := state.Resources.AccountID
-	if held == "" || !remotetunnel.HasResources(state.Resources) || slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == held }) {
+	if !remotetunnel.HasResources(state.Resources) || slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == held }) {
 		return nil, nil
 	}
 	return remotetunnel.AbandonedOf(state), nil

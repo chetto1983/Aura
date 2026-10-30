@@ -1,8 +1,11 @@
 package remotetunnel
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	cf "github.com/chetto1983/aura/internal/cloudflareapi"
@@ -117,5 +120,41 @@ func TestProjectionFailureIsNeverTerminalWhateverItsCause(t *testing.T) {
 				t.Fatalf("reason=%q transient=%v", ReasonOf(err), transient(err))
 			}
 		})
+	}
+}
+
+func TestFailedOffProjectionOnADisabledRowIsLoggedAndRetried(t *testing.T) {
+	h := newHarness(t)
+	var logs bytes.Buffer
+	h.r = New(h.store, h.cloud, h.members, h.projection, slog.New(slog.NewTextHandler(&logs, nil)), WithCredentials(h.credentials), WithNameServers(h.ns))
+	h.store.state.Desired.Enabled, h.store.state.Phase = false, PhaseDisabled
+	h.projection.err = errors.New("read-only file system")
+	if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrProjection) {
+		t.Fatalf("err=%v", err)
+	}
+	if s := h.store.state; s.Phase != PhaseDisabled || s.Reason != "" {
+		t.Fatalf("a disabled row became %q/%q: error would read as deletion intent", s.Phase, s.Reason)
+	}
+	if !strings.Contains(logs.String(), "read-only file system") {
+		t.Fatalf("the cause was not logged: %q", logs.String())
+	}
+	h.projection.err = nil
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(h.projection.applied); n < 2 || h.projection.applied[n-1].Enabled {
+		t.Fatalf("the retry did not project off: %+v", h.projection.applied)
+	}
+}
+
+func TestAbandonedRowMidDeletionReachesDisabledInOnePass(t *testing.T) {
+	h := newHarness(t)
+	// What the store holds after Abandon and SaveDesired on a deleting row: nothing owned, deletion intent kept.
+	h.store.state = State{Generation: 4, Phase: PhaseDeleting, Desired: Desired{AccountID: "account-b", ZoneName: "b.it", PublicLabel: "aura"}}
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if h.store.state.Phase != PhaseDisabled || h.cloud.calls != 0 || h.cloud.deletes != 0 {
+		t.Fatalf("phase=%q calls=%d deletes=%d", h.store.state.Phase, h.cloud.calls, h.cloud.deletes)
 	}
 }
