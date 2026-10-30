@@ -13,21 +13,17 @@ WITH intent AS (
 UPDATE aura.cloudflare_remote_access AS state
 SET enabled = CASE WHEN intent.deleting THEN false ELSE sqlc.arg(enabled)::boolean END,
     account_id = sqlc.arg(account_id),
-    zone_name = sqlc.arg(zone_name), public_label = sqlc.arg(public_label), warp_label = sqlc.arg(warp_label),
+    zone_name = sqlc.arg(zone_name), public_label = sqlc.arg(public_label),
+    accepted_hostname = CASE WHEN state.zone_name = sqlc.arg(zone_name) AND state.public_label = sqlc.arg(public_label)
+      THEN state.accepted_hostname ELSE '' END,
     generation = state.generation + 1,
     phase = CASE WHEN intent.deleting THEN 'deleting'
       WHEN sqlc.arg(enabled)::boolean THEN 'validating' ELSE 'disabled' END,
     observed_healthy = false,
-    last_error = CASE WHEN intent.deleting THEN state.last_error ELSE '' END,
+    reason = CASE WHEN intent.deleting THEN state.reason ELSE '' END,
     updated_at = clock_timestamp(), updated_by = sqlc.arg(updated_by)
 FROM intent
 WHERE state.singleton = intent.singleton AND state.generation = sqlc.arg(expected_generation)
-  AND ((account_id = sqlc.arg(account_id) AND zone_name = sqlc.arg(zone_name)
-    AND public_label = sqlc.arg(public_label) AND warp_label = sqlc.arg(warp_label)) OR (
-    zone_id = '' AND tunnel_id = '' AND public_dns_id = '' AND warp_dns_id = ''
-    AND otp_idp_id = '' AND public_app_id = '' AND public_policy_id = ''
-    AND warp_app_id = '' AND warp_policy_id = '' AND warp_posture_id = ''
-  ))
 RETURNING state.*;
 
 -- name: AdvanceCloudflareRemoteAccess :one
@@ -37,7 +33,23 @@ SET phase = sqlc.arg(phase), zone_id = sqlc.arg(zone_id),
     public_dns_id = sqlc.arg(public_dns_id), warp_dns_id = sqlc.arg(warp_dns_id),
     otp_idp_id = sqlc.arg(otp_idp_id), public_app_id = sqlc.arg(public_app_id), public_policy_id = sqlc.arg(public_policy_id),
     warp_app_id = sqlc.arg(warp_app_id), warp_policy_id = sqlc.arg(warp_policy_id), warp_posture_id = sqlc.arg(warp_posture_id),
-    observed_healthy = sqlc.arg(observed_healthy), last_error = sqlc.arg(last_error),
+    owned_hostname = sqlc.arg(owned_hostname), accepted_hostname = sqlc.arg(accepted_hostname),
+    observed_healthy = sqlc.arg(observed_healthy), reason = sqlc.arg(reason), abandoned = sqlc.arg(abandoned)::jsonb,
     last_reconciled_at = clock_timestamp(), updated_at = clock_timestamp()
 WHERE singleton = true AND generation = sqlc.arg(expected_generation)
+RETURNING *;
+
+-- name: AbandonCloudflareRemoteAccess :one
+UPDATE aura.cloudflare_remote_access
+SET zone_id = '', tunnel_id = '', tunnel_name = '', public_dns_id = '', warp_dns_id = '',
+    otp_idp_id = '', public_app_id = '', public_policy_id = '',
+    warp_app_id = '', warp_policy_id = '', warp_posture_id = '',
+    owned_hostname = '', accepted_hostname = '', abandoned = sqlc.arg(abandoned)::jsonb,
+    updated_at = clock_timestamp()
+WHERE singleton = true AND generation = sqlc.arg(expected_generation)
+RETURNING *;
+
+-- name: DismissCloudflareRemoteAccessAbandoned :one
+UPDATE aura.cloudflare_remote_access SET abandoned = '[]', updated_at = clock_timestamp()
+WHERE singleton = true
 RETURNING *;

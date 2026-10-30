@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AbandonCloudflareRemoteAccess(ctx context.Context, arg AbandonCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
 	// Claim an asset that was presigned before its conversation existed.
 	//
 	// The web composer presigns as soon as the file is chosen, and on a BRAND NEW chat there
@@ -170,6 +171,7 @@ type Querier interface {
 	// state points at survives because it is always among the newest.
 	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
 	DeleteTelegramAccountForIdentity(ctx context.Context, arg DeleteTelegramAccountForIdentityParams) (int64, error)
+	DismissCloudflareRemoteAccessAbandoned(ctx context.Context) (AuraCloudflareRemoteAccess, error)
 	// The drain IS the claim (the same conditional-update-as-idempotency-key idiom as
 	// MarkPausedStateResumed, not a second concurrency story): FOR UPDATE serializes two
 	// concurrent Drain calls for the SAME conversation_id rather than racing them, so the

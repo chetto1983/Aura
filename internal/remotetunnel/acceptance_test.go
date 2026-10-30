@@ -11,11 +11,11 @@ func TestExternalAcceptancePersistsAndSurvivesRestart(t *testing.T) {
 	if err := h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	h.store.state.LastError = "prior diagnostic"
+	h.store.state.Reason = ReasonUnknown
 	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if !h.store.state.ObservedHealthy || h.store.state.Phase != PhaseHealthy || h.store.state.LastError != "" {
+	if !h.store.state.ObservedHealthy || h.store.state.Phase != PhaseHealthy || h.store.state.Reason != "" {
 		t.Fatal("acceptance not persisted")
 	}
 	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {

@@ -9,11 +9,11 @@ import (
 
 type deletionDiagnosticCloud struct {
 	*fakeCloud
-	diagnostic string
+	diagnostic Reason
 }
 
 func (c deletionDiagnosticCloud) DeleteDNS(ctx context.Context, zone, id, owner string) error {
-	if c.store.state.LastError != c.diagnostic {
+	if c.store.state.Reason != c.diagnostic {
 		c.t.Error("failed-deletion diagnostic cleared before remote delete attempt")
 	}
 	return c.fakeCloud.DeleteDNS(ctx, zone, id, owner)
@@ -27,11 +27,11 @@ func TestExplicitDeleteRetryRetainsDiagnosticUntilRemoteAttempt(t *testing.T) {
 		t.Fatal("expected refusal")
 	}
 	h.cloud.failure = nil
-	h.r.cloud = deletionDiagnosticCloud{fakeCloud: h.cloud, diagnostic: h.store.state.LastError}
+	h.r.cloud = deletionDiagnosticCloud{fakeCloud: h.cloud, diagnostic: h.store.state.Reason}
 	if err := h.r.Delete(t.Context(), "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.LastError != "" || h.cloud.deletes != 8 {
+	if h.store.state.Reason != "" || h.cloud.deletes != 8 {
 		t.Fatal("successful retry did not finish cleanup")
 	}
 }

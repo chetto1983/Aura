@@ -2,6 +2,7 @@ package remotetunnel
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestDisabledMemberSyncCannotCreateDeletionErrorState(t *testing.T) {
 	if err := h.r.SyncMembers(t.Context()); !errors.Is(err, ErrConfiguration) {
 		t.Fatalf("disabled sync=%v", err)
 	}
-	if h.cloud.calls != calls || h.store.state != before {
+	if h.cloud.calls != calls || !reflect.DeepEqual(h.store.state, before) {
 		t.Fatal("disabled membership sync changed state or reached cloud")
 	}
 }

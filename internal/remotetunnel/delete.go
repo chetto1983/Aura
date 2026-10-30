@@ -187,9 +187,10 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 	// Zone and account-wide OTP remain in Cloudflare; only detach their local references.
 	s.Resources.ZoneID = ""
 	s.Resources.OTPProviderID = ""
+	s.Resources.LegacyWARPHostname = ""
 	s.TunnelName = ""
 	s.Phase = PhaseDisabled
 	s.ObservedHealthy = false
-	s.LastError = ""
+	s.Reason = ""
 	return r.persist(ctx, s)
 }

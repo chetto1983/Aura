@@ -42,11 +42,11 @@ func TestRemoteAccessConfigureCommitsOnlyAfterValidation(t *testing.T) {
 			writes := 0
 			commit := func(_ context.Context, g int64, d remotetunnel.Desired, token, actor string) error {
 				writes++
-				if g != 3 || d.ZoneName != "example.com" || d.PublicLabel != "aura" || d.WARPLabel != "aura-warp" || token != "candidate" || actor != "admin" {
+				if g != 3 || d.ZoneName != "example.com" || d.PublicLabel != "aura" || token != "candidate" || actor != "admin" {
 					t.Fatal("incorrect commit")
 				}
 				if mode == "commit-error" {
-					return remotetunnel.ErrAddressLocked
+					return remotetunnel.ErrStaleGeneration
 				}
 				return nil
 			}
@@ -68,8 +68,8 @@ func TestRemoteAccessConfigureCommitsOnlyAfterValidation(t *testing.T) {
 				if mode != "commit-error" && writes != 0 {
 					t.Fatal("stored unvalidated token")
 				}
-				if mode == "commit-error" && !errors.Is(err, remotetunnel.ErrAddressLocked) {
-					t.Fatalf("lost address lock: %v", err)
+				if mode == "commit-error" && !errors.Is(err, remotetunnel.ErrStaleGeneration) {
+					t.Fatalf("lost the commit error: %v", err)
 				}
 			}
 		})
@@ -79,7 +79,7 @@ func TestRemoteAccessConfigureCommitsOnlyAfterValidation(t *testing.T) {
 func TestRemoteAccessMissingCredentialStopsBeforeNetwork(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("missing credential reached network") }))
 	defer server.Close()
-	state := &remoteMemoryStore{state: remotetunnel.State{Generation: 1, Phase: remotetunnel.PhaseValidating, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}}}
+	state := &remoteMemoryStore{state: remotetunnel.State{Generation: 1, Phase: remotetunnel.PhaseValidating, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}}}
 	secrets := &remoteMemorySecrets{values: map[string]string{}}
 	members := remoteIdentityMembers{store: remoteTestIdentities{identities: []identity.Identity{{ID: "admin", Name: "admin@example.com", Kind: "user"}}}}
 	c := newRemoteAccessController(state, secrets, &remoteRecordingProjection{}, members, nil)
@@ -99,7 +99,7 @@ func TestRemoteAccessMissingCredentialStopsBeforeNetwork(t *testing.T) {
 func TestRemoteAccessActionsAndStatus(t *testing.T) {
 	for _, action := range []string{"reconcile", "token/refresh", "disable", "delete", "unknown"} {
 		t.Run(action, func(t *testing.T) {
-			state := &remoteMemoryStore{state: remotetunnel.State{Generation: 3, Phase: remotetunnel.PhaseError, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}, Resources: remotetunnel.Resources{TunnelID: "owned"}}}
+			state := &remoteMemoryStore{state: remotetunnel.State{Generation: 3, Phase: remotetunnel.PhaseError, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: remotetunnel.Resources{TunnelID: "owned"}}}
 			secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "api", "CLOUDFLARE_TUNNEL_TOKEN": "tunnel"}}
 			projection := &remoteRecordingProjection{}
 			c := newRemoteAccessController(state, secrets, projection, nil, nil)

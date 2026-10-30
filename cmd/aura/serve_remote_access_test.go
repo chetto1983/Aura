@@ -37,7 +37,7 @@ func TestRemoteAccessCloseCancelsInFlightCloudflare(t *testing.T) {
 	reached := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(reached); <-r.Context().Done() }))
 	defer server.Close()
-	state := &remoteMemoryStore{state: remotetunnel.State{Generation: 1, Phase: remotetunnel.PhaseValidating, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}}}
+	state := &remoteMemoryStore{state: remotetunnel.State{Generation: 1, Phase: remotetunnel.PhaseValidating, Desired: remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}}}
 	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "fixture"}}
 	members := remoteIdentityMembers{store: remoteTestIdentities{identities: []identity.Identity{{ID: "admin", Name: "admin@example.com", Kind: "user"}}}}
 	c := newRemoteAccessController(state, secrets, &remoteRecordingProjection{}, members, nil)

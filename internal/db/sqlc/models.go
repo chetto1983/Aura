@@ -142,11 +142,14 @@ type AuraCloudflareRemoteAccess struct {
 	WarpPolicyID   string `json:"warp_policy_id"`
 	// Gateway posture ID for the WARP-required hostname; requires this Zero Trust organization, not consumer WARP.
 	WarpPostureID    string             `json:"warp_posture_id"`
-	LastError        string             `json:"last_error"`
 	ObservedHealthy  bool               `json:"observed_healthy"`
 	LastReconciledAt pgtype.Timestamptz `json:"last_reconciled_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	UpdatedBy        string             `json:"updated_by"`
+	OwnedHostname    string             `json:"owned_hostname"`
+	AcceptedHostname string             `json:"accepted_hostname"`
+	Abandoned        []byte             `json:"abandoned"`
+	Reason           string             `json:"reason"`
 }
 
 // L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).

@@ -86,7 +86,6 @@ func TestRemoteAccessErrorsAndStrictBodies(t *testing.T) {
 		code       int
 		calls      int
 	}{
-		{"locked", `{"generation":2,"zone_name":"example.com","account_id":"account","public_label":"aura","warp_label":"aura-warp"}`, remotetunnel.ErrAddressLocked, 409, 1},
 		{"stale", `{"generation":2,"zone_name":"example.com"}`, remotetunnel.ErrStaleGeneration, 409, 1},
 		{"redacted", `{"generation":2,"zone_name":"example.com"}`, errors.New("api-secret"), 502, 1},
 		{"unknown", `{"zone_name":"example.com","unknown":true}`, nil, 400, 0},

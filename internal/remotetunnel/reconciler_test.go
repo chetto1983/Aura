@@ -137,7 +137,7 @@ func TestReconcileAcceptanceTimeoutBackoffAndRecovery(t *testing.T) {
 			if err := h.r.Reconcile(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if h.store.state.Phase != PhaseHealthy || !h.store.state.ObservedHealthy || h.store.state.LastError != "" {
+			if h.store.state.Phase != PhaseHealthy || !h.store.state.ObservedHealthy || h.store.state.Reason != "" {
 				t.Fatalf("recovery=%+v", h.store.state)
 			}
 			if h.cloud.creates != 10 || h.store.state.Resources != resources || !h.r.retryAt.IsZero() {

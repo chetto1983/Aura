@@ -13,7 +13,7 @@ func TestReconcileRejectsInvalidConfigurationBeforeNetwork(t *testing.T) {
 	for _, change := range []func(*Desired){
 		func(d *Desired) { d.AccountID = "" }, func(d *Desired) { d.ZoneName = "localhost" },
 		func(d *Desired) { d.ZoneName = "bad_underscore.com" }, func(d *Desired) { d.ZoneName = strings.Repeat("a", 254) },
-		func(d *Desired) { d.PublicLabel = "../bad" }, func(d *Desired) { d.WARPLabel = d.PublicLabel },
+		func(d *Desired) { d.PublicLabel = "../bad" },
 		func(d *Desired) {
 			d.ZoneName = strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 60)
 		},

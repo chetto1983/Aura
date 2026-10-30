@@ -30,7 +30,7 @@ func TestUpsertWithCommitsSecretAndDesiredStateAtomically(t *testing.T) {
 	if _, err = secrets.Upsert(t.Context(), "CLOUDFLARE_API_TOKEN", "previous", ""); err != nil {
 		t.Fatal(err)
 	}
-	desired := remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
+	desired := remotetunnel.Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
 	for _, mode := range []string{"callback-error", "panic", "stale", "success", "locked"} {
 		t.Run(mode, func(t *testing.T) {
 			before, e := state.Load(t.Context())

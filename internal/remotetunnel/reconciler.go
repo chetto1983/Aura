@@ -120,7 +120,7 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		return err
 	}
 	s.Phase = PhaseProvisioning
-	s.LastError = ""
+	s.Reason = ""
 	if err = r.persist(ctx, s); err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	deleting := s.Phase == PhaseDeleting
 	s.Phase = PhaseError
 	s.ObservedHealthy = false
-	s.LastError = "Remote access reconciliation failed; retry or check credentials."
+	s.Reason = ReasonUnknown
 	var timeout net.Error
 	if cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout() {
 		s.Phase = PhaseDegraded
@@ -233,7 +233,7 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 		r.retryGeneration = s.Generation
 		r.attempts++
 	}
-	// LastError is sanitised because it reaches a browser; the cause has to survive
+	// Reason is a code, never the cause, because it reaches a browser; the cause has to survive
 	// somewhere, and this log is the only place an operator can read it.
 	r.log.WarnContext(ctx, "Remote access reconciliation failed", "phase", s.Phase, "error", err)
 	return errors.Join(err, r.persist(ctx, s))
@@ -263,7 +263,7 @@ func (r *Reconciler) disableProjection(ctx context.Context, s *State) error {
 	}
 	s.Phase = PhaseDisabled
 	s.ObservedHealthy = false
-	s.LastError = ""
+	s.Reason = ""
 	return r.persist(ctx, s)
 }
 

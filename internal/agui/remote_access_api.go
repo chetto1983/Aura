@@ -198,8 +198,6 @@ func (s *Server) configureRemoteAccess(w http.ResponseWriter, r *http.Request, a
 func writeRemoteAccessError(w http.ResponseWriter, err error) {
 	code, message := 502, "remote access operation failed; check configuration or retry"
 	switch {
-	case errors.Is(err, remotetunnel.ErrAddressLocked):
-		code, message = 409, "delete integration before changing account, domain, or hostnames"
 	case errors.Is(err, remotetunnel.ErrStaleGeneration):
 		code, message = 409, "configuration changed; refresh and retry"
 	case errors.Is(err, remotetunnel.ErrConfiguration):

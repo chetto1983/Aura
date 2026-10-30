@@ -12,7 +12,7 @@ import (
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func validateDesired(d Desired) error {
-	if d.AccountID == "" || !dnsLabel.MatchString(d.PublicLabel) || !dnsLabel.MatchString(d.WARPLabel) || d.PublicLabel == d.WARPLabel || len(d.ZoneName) > 253 {
+	if d.AccountID == "" || !dnsLabel.MatchString(d.PublicLabel) || len(d.ZoneName) > 253 {
 		return ErrConfiguration
 	}
 	parts := strings.Split(d.ZoneName, ".")
@@ -24,7 +24,7 @@ func validateDesired(d Desired) error {
 			return ErrConfiguration
 		}
 	}
-	if len(d.PublicLabel)+1+len(d.ZoneName) > 253 || len(d.WARPLabel)+1+len(d.ZoneName) > 253 {
+	if len(d.PublicLabel)+1+len(d.ZoneName) > 253 {
 		return ErrConfiguration
 	}
 	return nil
@@ -80,7 +80,7 @@ func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {
 	if z.Status != "active" {
 		s.Phase = PhaseWaitingNameservers
 		s.ObservedHealthy = false
-		s.LastError = ""
+		s.Reason = ""
 		return false, r.persist(ctx, s)
 	}
 	return true, nil

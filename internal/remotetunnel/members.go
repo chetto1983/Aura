@@ -124,7 +124,7 @@ func (r *Reconciler) SyncMembers(ctx context.Context) error {
 	if err != nil {
 		return r.failed(ctx, &s, err)
 	}
-	s.LastError = ""
+	s.Reason = ""
 	if s.Phase == PhaseDegraded {
 		s.Phase = PhaseDisabled
 		if s.Desired.Enabled {

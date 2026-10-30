@@ -44,7 +44,7 @@ func (r *Reconciler) AcceptExternal(ctx context.Context, generation int64) error
 	}
 	state.ObservedHealthy = true
 	state.Phase = PhaseHealthy
-	state.LastError = ""
+	state.Reason = ""
 	return r.persist(ctx, &state)
 }
 

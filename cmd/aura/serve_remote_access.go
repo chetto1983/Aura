@@ -69,12 +69,9 @@ func (c *remoteAccessController) Verify(ctx context.Context, token string) ([]cl
 func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAccessConfiguration, actor string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	desired := remotetunnel.Desired{Enabled: in.Enabled, AccountID: strings.TrimSpace(in.AccountID), ZoneName: strings.ToLower(strings.TrimSpace(in.ZoneName)), PublicLabel: in.PublicLabel, WARPLabel: in.WARPLabel}
+	desired := remotetunnel.Desired{Enabled: in.Enabled, AccountID: strings.TrimSpace(in.AccountID), ZoneName: strings.ToLower(strings.TrimSpace(in.ZoneName)), PublicLabel: in.PublicLabel}
 	if desired.PublicLabel == "" {
 		desired.PublicLabel = "aura"
-	}
-	if desired.WARPLabel == "" {
-		desired.WARPLabel = "aura-warp"
 	}
 	if err := remotetunnel.ValidateDesired(desired); err != nil {
 		return err
@@ -125,11 +122,11 @@ func (c *remoteAccessController) Status(ctx context.Context) (agui.RemoteAccessS
 	if err != nil {
 		return agui.RemoteAccessStatus{}, err
 	}
-	out := agui.RemoteAccessStatus{Enabled: state.Desired.Enabled, Phase: string(state.Phase), Generation: state.Generation, APITokenSet: api != "", TunnelTokenSet: tunnel != "", AccountID: state.Desired.AccountID, ZoneName: state.Desired.ZoneName, LastError: state.LastError, LastReconciledAt: state.LastReconciledAt, Connector: "disconnected", AcceptanceRequired: state.Desired.Enabled && !state.ObservedHealthy}
+	out := agui.RemoteAccessStatus{Enabled: state.Desired.Enabled, Phase: string(state.Phase), Generation: state.Generation, APITokenSet: api != "", TunnelTokenSet: tunnel != "", AccountID: state.Desired.AccountID, ZoneName: state.Desired.ZoneName, LastError: string(state.Reason), LastReconciledAt: state.LastReconciledAt, Connector: "disconnected", AcceptanceRequired: state.Desired.Enabled && !state.ObservedHealthy}
 	if state.Desired.ZoneName != "" {
 		out.PublicHostname = state.Desired.PublicLabel + "." + state.Desired.ZoneName
-		out.WARPHostname = state.Desired.WARPLabel + "." + state.Desired.ZoneName
 	}
+	out.WARPHostname = state.Resources.LegacyWARPHostname
 	if state.ObservedHealthy {
 		out.Connector = "healthy"
 	} else if state.Phase == remotetunnel.PhaseConnecting {

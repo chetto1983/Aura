@@ -5,12 +5,14 @@ package remotetunnel
 import (
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/settings"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,7 +57,7 @@ func remoteAccessPool(t *testing.T) *pgxpool.Pool {
 
 func testStorePersistence(t *testing.T, s *Store, pool *pgxpool.Pool, initial State) {
 	t.Helper()
-	d := Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
+	d := Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
 	state, err := s.SaveDesired(t.Context(), initial.Generation, d, "admin")
 	if err != nil || state.Generation != initial.Generation+1 {
 		t.Fatalf("state=%+v err=%v", state, err)
@@ -100,71 +102,119 @@ func testStorePersistence(t *testing.T, s *Store, pool *pgxpool.Pool, initial St
 	}
 }
 
-func TestStoreRejectsAddressChangesWithAnyResource(t *testing.T) {
-	s := NewStore(remoteAccessPool(t))
+// blankRemoteAccess returns the singleton with no resources, hostnames, reason or abandoned list.
+func blankRemoteAccess(t *testing.T, s *Store) State {
+	t.Helper()
 	state, err := s.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	state.Resources = Resources{AccountID: state.Resources.AccountID}
+	state.TunnelName, state.OwnedHostname, state.AcceptedHostname = "", "", ""
+	state.Reason, state.Abandoned, state.Phase = "", nil, PhaseDisabled
 	state, err = s.Advance(t.Context(), state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := Desired{Enabled: true, AccountID: "original", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
-	state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin")
+	return state
+}
+
+func TestSaveDesiredAcceptsAnAddressChangeWithResources(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state, err := s.SaveDesired(t.Context(), state.Generation, Desired{Enabled: true, AccountID: "account", ZoneName: "old.it", PublicLabel: "aura"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, resource := range []Resources{{ZoneID: "owned"}, {TunnelID: "owned"}, {PublicDNSID: "owned"}, {WARPDNSID: "owned"}, {OTPProviderID: "owned"}, {PublicAppID: "owned"}, {PublicPolicyID: "owned"}, {WARPAppID: "owned"}, {WARPPolicyID: "owned"}, {GatewayPostureID: "owned"}} {
-		resource.AccountID = d.AccountID
-		state.Resources = resource
-		state, err = s.Advance(t.Context(), state)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, field := range []string{"account", "zone", "public", "warp"} {
-			changed := d
-			switch field {
-			case "account":
-				changed.AccountID = "other"
-			case "zone":
-				changed.ZoneName = "other.com"
-			case "public":
-				changed.PublicLabel = "other"
-			case "warp":
-				changed.WARPLabel = "other"
-			}
-			if _, err = s.SaveDesired(t.Context(), state.Generation, changed, "admin"); !errors.Is(err, ErrAddressLocked) || errors.Is(err, ErrStaleGeneration) {
-				t.Fatalf("locked %s change with %+v returned %v", field, resource, err)
-			}
-			if _, err = s.SaveDesired(t.Context(), state.Generation-1, changed, "admin"); !errors.Is(err, ErrStaleGeneration) || errors.Is(err, ErrAddressLocked) {
-				t.Fatalf("stale %s change returned %v", field, err)
-			}
-			after, e := s.Load(t.Context())
-			if e != nil {
-				t.Fatal(e)
-			}
-			if after.Desired != d || after.Resources != resource || after.Generation != state.Generation {
-				t.Fatal("rejected update changed ownership context")
-			}
-		}
-		d.Enabled = !d.Enabled
-		state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin")
-		if err != nil {
-			t.Fatalf("enable toggle refused: %v", err)
-		}
+	state.Resources.PublicDNSID = "d1"
+	if state, err = s.Advance(t.Context(), state); err != nil {
+		t.Fatal(err)
 	}
-	state.Resources = Resources{AccountID: d.AccountID}
-	state, err = s.Advance(t.Context(), state)
+	if _, err = s.SaveDesired(t.Context(), state.Generation, Desired{Enabled: true, AccountID: "account", ZoneName: "new.it", PublicLabel: "aura"}, "admin"); err != nil {
+		t.Fatalf("address change refused: %v", err)
+	}
+	after, err := s.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.AccountID = "after-delete"
-	d.ZoneName = "new.example"
-	d.PublicLabel = "new"
-	d.WARPLabel = "new-warp"
-	if _, err = s.SaveDesired(t.Context(), state.Generation, d, "admin"); err != nil {
-		t.Fatalf("re-onboarding refused: %v", err)
+	if after.Desired.ZoneName != "new.it" || after.Resources.PublicDNSID != "d1" {
+		t.Fatalf("zone=%q public_dns_id=%q", after.Desired.ZoneName, after.Resources.PublicDNSID)
+	}
+}
+
+func TestSaveDesiredKeepsAcceptanceOnlyForTheSameHostname(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	d := Desired{Enabled: true, AccountID: "account", ZoneName: "a.it", PublicLabel: "aura"}
+	state, err := s.SaveDesired(t.Context(), state.Generation, d, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.AcceptedHostname = "aura.a.it"
+	if state, err = s.Advance(t.Context(), state); err != nil {
+		t.Fatal(err)
+	}
+	if state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin"); err != nil || state.AcceptedHostname != "aura.a.it" {
+		t.Fatalf("same hostname lost acceptance: %q err=%v", state.AcceptedHostname, err)
+	}
+	d.PublicLabel = "x"
+	if state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin"); err != nil || state.AcceptedHostname != "" {
+		t.Fatalf("changed hostname kept acceptance: %q err=%v", state.AcceptedHostname, err)
+	}
+}
+
+func TestAdvancePersistsReasonAndOwnedHostname(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state.Reason, state.OwnedHostname = ReasonTunnelDown, "aura.a.it"
+	if _, err := s.Advance(t.Context(), state); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reason != ReasonTunnelDown || got.OwnedHostname != "aura.a.it" {
+		t.Fatalf("reason=%q owned=%q", got.Reason, got.OwnedHostname)
+	}
+}
+
+func TestReasonCheckRejectsAnUnknownCode(t *testing.T) {
+	pool := remoteAccessPool(t)
+	_, err := pool.Exec(t.Context(), "UPDATE aura.cloudflare_remote_access SET reason = 'boom' WHERE singleton = true")
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Fatalf("want check violation 23514, got %v", err)
+	}
+}
+
+func TestAbandonClearsResourcesAndListsThem(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	state.Resources = Resources{AccountID: "account", ZoneID: "z", TunnelID: "t", PublicDNSID: "d", OTPProviderID: "o", PublicAppID: "a", PublicPolicyID: "p"}
+	state.TunnelName, state.OwnedHostname, state.AcceptedHostname = "aura-1", "aura.a.it", "aura.a.it"
+	state, err := s.Advance(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := []AbandonedResource{{Kind: "tunnel", Name: "aura-1"}}
+	got, err := s.Abandon(t.Context(), state.Generation, list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Resources != (Resources{AccountID: "account"}) || got.TunnelName != "" || got.OwnedHostname != "" || got.AcceptedHostname != "" {
+		t.Fatalf("not cleared: %+v", got)
+	}
+	if !slices.Equal(got.Abandoned, list) {
+		t.Fatalf("abandoned=%v", got.Abandoned)
+	}
+	if _, err = s.Abandon(t.Context(), state.Generation+1, list); !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("stale abandon: %v", err)
+	}
+	if err = s.DismissAbandoned(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.Load(t.Context()); err != nil || len(got.Abandoned) != 0 {
+		t.Fatalf("abandoned after dismiss=%v err=%v", got.Abandoned, err)
 	}
 }

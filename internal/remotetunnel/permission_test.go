@@ -25,7 +25,7 @@ func TestWritePermissionRefusalIsTerminalUntilCredentialReplacement(t *testing.T
 	if err := h.r.Reconcile(t.Context()); err == nil {
 		t.Fatal("write permission refusal accepted")
 	}
-	if h.store.state.Phase != PhaseError || h.store.state.LastError == "" || h.store.state.ObservedHealthy || cloud.denied != 1 {
+	if h.store.state.Phase != PhaseError || h.store.state.Reason == "" || h.store.state.ObservedHealthy || cloud.denied != 1 {
 		t.Fatalf("phase=%s denied=%d", h.store.state.Phase, cloud.denied)
 	}
 	calls := h.cloud.calls

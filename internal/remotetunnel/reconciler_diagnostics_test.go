@@ -31,7 +31,7 @@ func TestReconcileFailureLogsTheCauseButKeepsStatusSanitised(t *testing.T) {
 	if state.Phase != PhaseError {
 		t.Fatalf("phase = %q, want %q", state.Phase, PhaseError)
 	}
-	if strings.Contains(state.LastError, cause) {
-		t.Fatalf("sanitised status leaked the cause to the UI: %q", state.LastError)
+	if strings.Contains(string(state.Reason), cause) {
+		t.Fatalf("sanitised status leaked the cause to the UI: %q", state.Reason)
 	}
 }

@@ -35,7 +35,7 @@ func TestMembersRetryConvergesFromDegraded(t *testing.T) {
 	if err := h.r.SyncMembers(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if h.store.state.Phase != PhaseConnecting || h.store.state.LastError != "" {
+	if h.store.state.Phase != PhaseConnecting || h.store.state.Reason != "" {
 		t.Fatal("successful sync remained degraded")
 	}
 }

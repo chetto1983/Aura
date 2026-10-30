@@ -54,7 +54,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 			if _, err = store.Advance(t.Context(), initial); err != nil {
 				t.Fatal(err)
 			}
-			desired := Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
+			desired := Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
 			state, err := store.SaveDesired(t.Context(), initial.Generation, desired, "admin")
 			if err != nil {
 				t.Fatal(err)
@@ -75,7 +75,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if failed.Desired.Enabled || failed.Phase != PhaseError || failed.LastError == "" || failed.Resources.TunnelID == "" {
+			if failed.Desired.Enabled || failed.Phase != PhaseError || failed.Reason == "" || failed.Resources.TunnelID == "" {
 				t.Fatalf("not a retained failed deletion: %+v", failed)
 			}
 			cloud.denied = false
@@ -84,7 +84,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 				if e != nil {
 					t.Fatal(e)
 				}
-				if observed.LastError != failed.LastError {
+				if observed.Reason != failed.Reason {
 					t.Error("diagnostic cleared before retry attempted deletion")
 				}
 			}
@@ -114,7 +114,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mode != "disable" && (resumed.Desired.Enabled || resumed.Phase != PhaseDeleting || resumed.LastError != failed.LastError) {
+			if mode != "disable" && (resumed.Desired.Enabled || resumed.Phase != PhaseDeleting || resumed.Reason != failed.Reason) {
 				t.Fatalf("lost deletion intent/diagnostic: %+v", resumed)
 			}
 			if _, e := store.SaveDesired(t.Context(), failed.Generation, failed.Desired, "stale"); !errors.Is(e, ErrStaleGeneration) {
@@ -129,10 +129,10 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 				t.Fatal(err)
 			}
 			if mode == "disable" {
-				if cloud.deleted || cloud.attempts != 1 || final.Phase != PhaseDisabled || final.LastError != "" || final.Resources != failed.Resources {
+				if cloud.deleted || cloud.attempts != 1 || final.Phase != PhaseDisabled || final.Reason != "" || final.Resources != failed.Resources {
 					t.Fatal("intentional disable deleted resources or retained error")
 				}
-			} else if !cloud.deleted || final.Resources != (Resources{AccountID: "account"}) || final.Phase != PhaseDisabled || final.LastError != "" {
+			} else if !cloud.deleted || final.Resources != (Resources{AccountID: "account"}) || final.Phase != PhaseDisabled || final.Reason != "" {
 				t.Fatalf("deletion not completed: %+v", final)
 			}
 		})
@@ -167,13 +167,13 @@ func TestSaveDesiredDeletionIntentTransitions(t *testing.T) {
 			if _, err = store.Advance(t.Context(), current); err != nil {
 				t.Fatal(err)
 			}
-			desired := Desired{Enabled: tc.currentEnabled, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
+			desired := Desired{Enabled: tc.currentEnabled, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}
 			current, err = store.SaveDesired(t.Context(), current.Generation, desired, "admin")
 			if err != nil {
 				t.Fatal(err)
 			}
 			current.Phase = tc.phase
-			current.LastError = "sanitized fixture diagnostic"
+			current.Reason = ReasonUnknown
 			if tc.references {
 				current.Resources.TunnelID = "owned"
 			}
@@ -186,11 +186,11 @@ func TestSaveDesiredDeletionIntentTransitions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantError := ""
+			wantError := Reason("")
 			if tc.keepDiagnostic {
-				wantError = current.LastError
+				wantError = current.Reason
 			}
-			if next.Phase != tc.wantPhase || next.Desired.Enabled != tc.wantEnabled || next.LastError != wantError || next.Generation != current.Generation+1 || next.Resources != current.Resources {
+			if next.Phase != tc.wantPhase || next.Desired.Enabled != tc.wantEnabled || next.Reason != wantError || next.Generation != current.Generation+1 || next.Resources != current.Resources {
 				t.Fatalf("unexpected transition: %+v", next)
 			}
 		})

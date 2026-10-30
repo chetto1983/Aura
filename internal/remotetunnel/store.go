@@ -2,6 +2,7 @@ package remotetunnel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -10,9 +11,6 @@ import (
 
 // ErrStaleGeneration means newer operator intent won the compare-and-swap.
 var ErrStaleGeneration = errors.New("remote access: desired generation changed")
-
-// ErrAddressLocked requires cleanup before changing resource-addressing intent.
-var ErrAddressLocked = errors.New("remote access: delete integration before changing account, zone, or hostnames")
 
 // Store persists non-secret state through the generated SQL authority.
 type Store struct{ q *sqlc.Queries }
@@ -33,41 +31,16 @@ func (s *Store) Load(ctx context.Context) (State, error) {
 func (s *Store) SaveDesired(ctx context.Context, expectedGeneration int64, d Desired, by string) (State, error) {
 	row, err := s.q.SaveCloudflareRemoteAccessDesired(ctx, sqlc.SaveCloudflareRemoteAccessDesiredParams{
 		ExpectedGeneration: expectedGeneration, Enabled: d.Enabled, AccountID: d.AccountID,
-		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, WarpLabel: d.WARPLabel, UpdatedBy: by,
+		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, UpdatedBy: by,
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return State{}, s.desiredFailure(ctx, expectedGeneration, d)
-	}
 	return changedState(row, err)
 }
 
-func (s *Store) desiredFailure(ctx context.Context, generation int64, desired Desired) error {
-	current, err := s.Load(ctx)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrStaleGeneration
-	}
-	if err != nil {
-		return err
-	}
-	if current.Generation != generation {
-		return ErrStaleGeneration
-	}
-	resources := current.Resources
-	resources.AccountID = ""
-	previous := current.Desired
-	previous.Enabled = desired.Enabled
-	if resources != (Resources{}) && previous != desired {
-		return ErrAddressLocked
-	}
-	return ErrStaleGeneration
-}
-
-// Advance collapses arbitrary error text to a safe diagnostic because response bodies
-// and transport errors may contain credentials.
+// Advance writes Reason as is: it is a code, never upstream text, which may carry credentials.
 func (s *Store) Advance(ctx context.Context, state State) (State, error) {
-	diagnostic := ""
-	if state.LastError != "" {
-		diagnostic = "Remote access reconciliation failed; retry or check credentials."
+	abandoned, err := marshalAbandoned(state.Abandoned)
+	if err != nil {
+		return State{}, err
 	}
 	r := state.Resources
 	row, err := s.q.AdvanceCloudflareRemoteAccess(ctx, sqlc.AdvanceCloudflareRemoteAccessParams{
@@ -75,9 +48,37 @@ func (s *Store) Advance(ctx context.Context, state State) (State, error) {
 		TunnelID: r.TunnelID, TunnelName: state.TunnelName, PublicDnsID: r.PublicDNSID, WarpDnsID: r.WARPDNSID,
 		OtpIdpID: r.OTPProviderID, PublicAppID: r.PublicAppID, PublicPolicyID: r.PublicPolicyID,
 		WarpAppID: r.WARPAppID, WarpPolicyID: r.WARPPolicyID, WarpPostureID: r.GatewayPostureID,
-		ObservedHealthy: state.ObservedHealthy, LastError: diagnostic,
+		OwnedHostname: state.OwnedHostname, AcceptedHostname: state.AcceptedHostname,
+		ObservedHealthy: state.ObservedHealthy, Reason: string(state.Reason), Abandoned: abandoned,
 	})
 	return changedState(row, err)
+}
+
+// Abandon forgets every resource ID and hostname, and lists what was forgotten, when a
+// replaced token can no longer reach the account those resources live in. It keeps the
+// generation, so the SaveDesired of the same transaction still matches.
+func (s *Store) Abandon(ctx context.Context, generation int64, list []AbandonedResource) (State, error) {
+	abandoned, err := marshalAbandoned(list)
+	if err != nil {
+		return State{}, err
+	}
+	row, err := s.q.AbandonCloudflareRemoteAccess(ctx, sqlc.AbandonCloudflareRemoteAccessParams{
+		ExpectedGeneration: generation, Abandoned: abandoned,
+	})
+	return changedState(row, err)
+}
+
+// DismissAbandoned clears the list once the operator has seen it.
+func (s *Store) DismissAbandoned(ctx context.Context) error {
+	_, err := s.q.DismissCloudflareRemoteAccessAbandoned(ctx)
+	return err
+}
+
+func marshalAbandoned(list []AbandonedResource) ([]byte, error) {
+	if list == nil {
+		list = []AbandonedResource{}
+	}
+	return json.Marshal(list)
 }
 
 func changedState(row sqlc.AuraCloudflareRemoteAccess, err error) (State, error) {
@@ -89,13 +90,19 @@ func changedState(row sqlc.AuraCloudflareRemoteAccess, err error) (State, error)
 
 func stateFromRow(r sqlc.AuraCloudflareRemoteAccess) State {
 	s := State{
-		Desired:    Desired{Enabled: r.Enabled, AccountID: r.AccountID, ZoneName: r.ZoneName, PublicLabel: r.PublicLabel, WARPLabel: r.WarpLabel},
+		Desired:    Desired{Enabled: r.Enabled, AccountID: r.AccountID, ZoneName: r.ZoneName, PublicLabel: r.PublicLabel},
 		Generation: r.Generation, Phase: Phase(r.Phase), TunnelName: r.TunnelName,
 		Resources: Resources{AccountID: r.AccountID, ZoneID: r.ZoneID, TunnelID: r.TunnelID, PublicDNSID: r.PublicDnsID, WARPDNSID: r.WarpDnsID,
 			OTPProviderID: r.OtpIdpID, PublicAppID: r.PublicAppID, PublicPolicyID: r.PublicPolicyID, WARPAppID: r.WarpAppID,
 			WARPPolicyID: r.WarpPolicyID, GatewayPostureID: r.WarpPostureID},
-		ObservedHealthy: r.ObservedHealthy, LastError: r.LastError, UpdatedAt: r.UpdatedAt.Time, UpdatedBy: r.UpdatedBy,
+		OwnedHostname: r.OwnedHostname, AcceptedHostname: r.AcceptedHostname,
+		ObservedHealthy: r.ObservedHealthy, Reason: Reason(r.Reason), UpdatedAt: r.UpdatedAt.Time, UpdatedBy: r.UpdatedBy,
 	}
+	if r.WarpAppID != "" || r.WarpPolicyID != "" || r.WarpPostureID != "" || r.WarpDnsID != "" {
+		s.Resources.LegacyWARPHostname = r.WarpLabel + "." + r.ZoneName
+	}
+	// A malformed column is a bug in a writer; an empty list is the safe reading.
+	_ = json.Unmarshal(r.Abandoned, &s.Abandoned)
 	if r.LastReconciledAt.Valid {
 		s.LastReconciledAt = &r.LastReconciledAt.Time
 	}

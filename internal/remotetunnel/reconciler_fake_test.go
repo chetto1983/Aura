@@ -90,7 +90,7 @@ type harness struct {
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
+	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account", LegacyWARPHostname: "aura-warp.example.com"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
 	h.projection = &testProjection{t: t, credentials: h.credentials}
 	h.cloud = &fakeCloud{t: t, store: h.store, zone: cf.Zone{Name: "example.com", Status: "active", Account: cf.Account{ID: "account"}}, apps: map[string]cf.AccessApplication{}, policies: map[string]cf.AccessPolicy{}, dns: map[string]cf.DNSRecord{}}
 	h.r = h.newReconciler()
