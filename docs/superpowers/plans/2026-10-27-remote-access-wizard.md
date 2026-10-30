@@ -8,7 +8,8 @@ verdict REVISE with 10 findings, all accepted. Its changes:
 - the dispositions are recorded in `.superpowers/sdd/2026-10-27-remote-access-wizard/codex-round1-dispositions.md`.
 
 Revision 3 (2026-10-30) follows Codex's round 2: REVISE with 6 new findings, all accepted, recorded in
-`codex-round2-dispositions.md` in the same folder.
+`codex-round2-dispositions.md` in the same folder. Revision 4 follows round 3: REVISE with 2 medium
+findings, both accepted, in `codex-round3-dispositions.md`.
 
 This is part 1 of 3 of the spec. Part 2 (the home certificate) and part 3 (finding F-1) are separate
 plans: they share no code with this one.
@@ -188,6 +189,14 @@ Decisions added by revision 3 (Codex round 2):
   commit followed by a lost or failed projection is repaired while the new zone is still pending, and
   nothing is provisioned until the old connector is off.
 
+Decisions added by revision 4 (Codex round 3):
+- **A failed projection write is retried, never terminal** (RW-017). A local file failure says nothing
+  about the operator's configuration. `Apply` failures wrap `ErrProjection`: `transient` is true for
+  it, and `ReasonOf` answers `unknown`, because Cloudflare is not at fault.
+- **A blocked retirement retries by itself** (RW-018). While `LegacyWARPHostname` is set, a disabled
+  or `error` row wakes the daemon every 5 minutes instead of never. The row is the signal, so nothing
+  new is persisted, and the phase and the reason stay as they were.
+
 ## File structure
 
 - `internal/db/migrations/0146_remote_access_reasons.{up,down}.sql` (Task 1, landed) and
@@ -352,13 +361,18 @@ ledger minor):
   leaves the list before the operator dismisses it (RW-016);
 - a pass that loaded the row before a dismiss can no longer bring the list back.
 
-**Revision 3:** RW-012 and RW-013 join the next fix round, with these tests:
+**Revisions 3 and 4:** RW-012, RW-013 and RW-018 join the next fix round, with these tests:
 
 ```go
 func TestRetireWARPFailureOnADisabledInstallNeverWritesError(t *testing.T)  // foreign WARP resource, disabled → Phase disabled, Reason "", the cause only in the log
 func TestDisabledRetirementFailureNeverBecomesADeletion(t *testing.T)       // db_integration, the real SaveDesired: the row above, then SaveDesired enabled true → Phase validating, public resources untouched
 func TestRetireWARPDeniedCNAMEKeepsItsProtection(t *testing.T)              // DNS answers 403 → no delete call on policy or app, all three in abandoned, all three IDs "", posture still retired
 func TestRetireWARPDeniedCNAMEThenFailureBeforePublish(t *testing.T)        // the same, then a failure before publish → the fake's Access app for the WARP hostname still exists
+func TestRetireWARPRetriesOnADisabledInstall(t *testing.T)                  // first pass 503, second pass clean → IDs gone, Phase disabled and Enabled false throughout
+func TestRetireWARPRetriesOnAnErrorRow(t *testing.T)                        // the same on an error row → Phase and Reason unchanged, ErrTerminal both times
+// cmd/aura, new rows in TestRemoteAccessRetrySchedule:
+//   disabled or error with LegacyWARPHostname set → 5 minutes;
+//   disabled or error without it → 0.
 ```
 
 **Files:**
@@ -406,7 +420,7 @@ belong to.
 
 **Files:**
 - Create: `internal/db/migrations/0147_remote_access_ownership.up.sql`, `.down.sql` (number at landing)
-- Modify: `internal/db/queries/cloudflare_remote_access.sql`, `internal/remotetunnel/model.go`, `store.go`
+- Modify: `internal/db/queries/cloudflare_remote_access.sql`, `internal/remotetunnel/model.go`, `store.go`, `internal/db/db_unit_test.go` (the `MigrationHead` pin)
 - Test: `internal/db/migrate_0147_integration_test.go`, `internal/remotetunnel/store_integration_test.go`, `store_test.go`
 
 **Interfaces:**
@@ -565,6 +579,9 @@ func TestConfigureWithATokenThatSeesTheOldAccountAbandonsNothing(t *testing.T)
 func TestPassWithoutATunnelProjectsOffBeforeAnythingElse(t *testing.T)         // no tunnel_id, projection previously on, invalid domain → the off Apply happened, then domain_invalid
 func TestLostProjectionIsRepairedWhileTheZoneIsPending(t *testing.T)           // abandon committed, projection never applied, new zone pending → the pass ends waiting_nameservers with the projection off
 func TestFailedOffProjectionStopsTheProvisioning(t *testing.T)                 // Apply fails → no zone, tunnel or Access call in this pass
+func TestFailedProjectionIsRetriedNotTerminal(t *testing.T)                    // Apply fails once → Phase degraded, Reason unknown, a retry scheduled; the next pass projects off with no new configuration save
+// cmd/aura, the real daemon loop:
+func TestDaemonStopsTheConnectorAfterAFailedProjection(t *testing.T)           // the projection fails once, then recovers → the loop applies off by itself, with no Wake from a save
 func TestDismissAbandonedRoute(t *testing.T)                                  // POST …/abandoned/dismiss as admin → 202, Abandoned empty; as member → 403
 ```
 
@@ -576,6 +593,9 @@ func TestDismissAbandonedRoute(t *testing.T)                                  //
   - **The connector.** `reconcile` projects off when `Resources.TunnelID == ""`, right after its
     configuration check and before `validateDesired`, and returns the error if that fails. The commit
     already wakes the pass, so `Configure` projects nothing itself.
+  - **The failed write.** Add `ErrProjection` to `reasons.go`, and one helper that every
+    `projection.Apply` call in the package goes through, wrapping its failure. `transient` is true for
+    it, and `ReasonOf` answers `unknown` ahead of its `transient` case.
   - **The credential check.** `rebuild` projects a credential only when `tunnelOfCredential` equals
     the row's `tunnel_id`. Read Cloudflare's documentation (or cloudflared's source) for the tunnel
     token's format before decoding it, and cite it in the comment. A credential that cannot be decoded
