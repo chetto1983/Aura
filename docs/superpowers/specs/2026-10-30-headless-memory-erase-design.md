@@ -1,9 +1,12 @@
 # A run with no operator cannot erase memory — design
 
 Date: 2026-10-30
-Status: **proposed, not approved.** Found by a code read during the productivity-repositories read
-(`docs/productivity-repos-behaviours-2026-10-30.md`), at `de1c428`. Nothing here is measured yet:
-per the PRD-first rule, step 0 runs on the lab VM before any amendment or code.
+Status: **approved by the operator on 2026-10-30**, who asked for the implementation before the
+lab VM was available. Found by a code read during the productivity-repositories read
+(`docs/productivity-repos-behaviours-2026-10-30.md`), at `de1c428`. Step 0's deterministic part,
+the gateway's verdict, was measured in-process the same day (prd.md §5): today the erasure is
+allowed with no approval. The lab-VM part of step 0, and A4, are still owed.
+Plan: `docs/superpowers/plans/2026-10-30-headless-memory-erase.md`.
 
 ## 1. Why
 

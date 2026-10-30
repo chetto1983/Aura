@@ -597,6 +597,26 @@ confirmation, which is the stronger statement, so a confirmed draft passes a `de
 model; an outbound tool that is not drafted; whether the cockpit should tell the operator, as
 they confirm, that a deny is set on the tool.
 
+**Erasing memory is Destructive; a run with no operator cannot do it, measured in-process
+2026-10-30.** `memory_forget` removes facts and entities and says so in its own description, yet it
+declared `DestructiveHint: false` and the memory recipe table classified it as an ordinary write.
+Two in-process probes on `de1c428` measured the path:
+- the bridge turned it into `Mutating` and not `Destructive`, while `memory_batch`, which can
+  forget too, came out `Destructive`;
+- `Decide` on `single_user_hardened` with no responder answered `allow`, tier `normal`, reserved,
+  with no approval request.
+
+So a scheduled `agent_job` could erase memory, and so could an untrusted text that one reads. The
+change classifies `memory_forget` as `Destructive`, in the recipe table and in the server's
+annotation, except `dry_run: true`, which only counts and stays `Safe`. The existing
+`gated`/`routeApprove` path then denies an erasure with no responder (`degraded_deny`,
+`no_approver`) and asks once in an interactive turn, where `session` and `always` grants cover
+repeats. The no-prompt rule for memory writes (2026-08-03) was about `memory_upsert_fact` and
+stands. Design: `docs/superpowers/specs/2026-10-30-headless-memory-erase-design.md`. Not shown:
+- a live headless run on the lab VM (step 0 and A4 of the design), which is still owed;
+- whether a model follows an injected "forget";
+- `memory_merge_entities`, which was not read.
+
 ## 6. Model runtime and hot settings
 
 Provider, endpoint, model, supported reasoning settings, limits, credentials, loop
