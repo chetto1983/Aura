@@ -98,9 +98,11 @@ skills, Python 3 for the measurement script.
 - [x] Commit `feat(board): the snapshot lists what is due first`.
 
 ### Task 4 — The briefing-aura skill
-- [ ] The skill per spec §Shape, with the forbidden list and the 1,500-character cap.
-- [ ] `builtin_names_test.go` and the builtin-validity tests pass.
-- [ ] Commit `feat(skills): briefing-aura writes the daily briefing from live sources`.
+- [x] The skill per spec §Shape, with the forbidden list and the 1,500-character cap. The calendar
+  arguments come from the deployed manifest (`testdata/deferred_manifest.json`, 2026-10-25):
+  `get_calendar_events` needs `timeZone`, and `get_emails` has no body preview.
+- [x] `builtin_names_test.go` and the builtin-validity tests pass.
+- [x] Commit `feat(skills): briefing-aura writes the daily briefing from live sources`.
 
 ### Task 5 — The baseline renderer
 - [ ] Red: `briefing_baseline_test.py` with recorded tool results: events in time order, cards due
