@@ -73,7 +73,8 @@ Not taken, with the reason:
 - **Socket.IO, Redis, BullMQ, PWA offline reading**: Aura has SSE, Postgres advisory locks
   and a cockpit that is a home-screen app.
 - **StickyFlow's calendar and Gantt views, presence, encryption, billing**: a product's
-  surfaces; the SVAR Calendar stays a candidate measured on its own (prd.md §16 reading).
+  surfaces; the SVAR Calendar stays a candidate measured on its own (T4 below; prd.md holds
+  no reading of it, though this line once pointed at one).
 - **Plotter-Pen, SacchiBot's scraping pipeline, Market_MCP's models**: other domains. The
   two live siblings, sacchi_agent and Market_MCP, keep Aura's method and stay separate.
 - **PMSync's web push**: Telegram carries every notification today; measure a need first.
@@ -258,6 +259,51 @@ Not taken, with the reason:
   measured fill. The fields spec rules out a query language.
 - **The crawler's Node machinery and the Meilisearch, liteque and SQLite stack.** Stack, not
   behaviour.
+
+## Read 2026-10-30: Teable
+
+Asked by the operator on 2026-10-30: which functions of `github.com/teableio/teable` to bring to
+Aura, then a code read of four candidates and a search for projects whose licence Aura can use.
+- **What it is.** A spreadsheet-style database on PostgreSQL, with views, formulas, aggregation,
+  AI chat, AI field filling, automations and an app builder. Read at `b6ae0a1`.
+- **Licence.** `apps/*` is AGPL-3.0, so behaviours only. `packages/*` is MIT. Aura can take
+  dependencies under MIT, Apache-2.0, BSD, ISC or MPL-2.0 only.
+- **Where the details are.** The code read, with file:line references, the licence of every
+  candidate and the measurements is in `docs/teable-behaviours-2026-10-30.md`.
+
+Teable's two functions closest to Aura, AI field filling and automations, are **not in its
+Community Edition**: the endpoints are stubs and the screens are upgrade walls. Teable gives
+contracts and a catalogue, not a mechanism. In each case most of the mechanism is already in
+Aura's tree.
+
+| # | Behaviour | From | Aura today | Lands in | Gate | State |
+|---|---|---|---|---|---|---|
+| T1 | A conditional schedule: a model-free poll diffs against a watermark, dedups per (trigger, item), and starts an `agent_job` with the new items as input only when there are any | Teable's email trigger, a poll with a minimum interval; its MIT outbox with per-consumer delivery and an inbox for dedup. The engine itself is EE | time-only scheduler (`at`, `every`, `cron`). `agent_job` carries only `{"goal"}`, with no per-run input and no per-event dedup. Zero `pg_notify` | `internal/cron`, the `agent_job` payload, a dedup table; pgx `WaitForNotification` only as a wakeup | item 4's mailbox on the lab VM, five working days, against an `every 15m` triage job: zero missed, zero duplicates, zero empty model calls, a cost margin written before the run | not measured; after item 4's mail-table decision, which the dedup table forces, and item 1 |
+| T2 | Fill one field over the library on demand (`emptyOnly`, a cap, a stop, counters). The model's answer is bound to a JSON schema, coerced to the field's type, anchored to a span of the text, and kept as a suggestion | Teable's MIT auto-fill contract; LangExtract's span anchoring (Apache-2.0). The engine itself is EE | no model writes a field (`SetByLLM` reserved). The extractor reads spreadsheets only. The pass writes raw text. `openai_compat` sets no `response_format` | `docfields` pass with D5's phase 3. REUSE: llama.cpp `json_schema`, openai-go `OfJSONSchema`, `google/jsonschema-go`, all already in | BASELINE OR DROP per field on the bench library of `2026-10-18-document-fields-mirror.md`, against rules plus a date sweep. The office set cannot judge it (14/14 by construction) | not measured; the bench loader is not in the repository |
+| T3 | Group documents by counterparty, type or month, and sum, count, min and max a typed amount, computed in ArcadeDB on the list's own predicate | Teable's per-type function catalogue (MIT) and group points | Monetary is free text (`validateDiff` takes any key), so no sum is correct. No aggregation API. Lists are paged at 50 | a canonical Monetary (minor units plus ISO 4217, `bojanz/currency` MIT), an ArcadeDB `GROUP BY`, SVAR Grid tree rows and footer | the AGG questions are **q04–q07**, not q09 and q18 (`FILTER`, `TEMPORAL`). They are already answered 20/20 from the ledger, so the measure needs a library without it, at scale, with two currencies | not measured; dropped on today's corpus |
+| T4 | A month calendar of the board's cards; dragging a card keeps its time of day | Teable's calendar view on FullCalendar | cards carry one `due_at`; the update already exists; no calendar. The board design puts calendars out of scope | `web/` only, SVAR React Calendar 2.7.1 (MIT; time zones and dynamic loading are PRO) | seven daily snapshots of the live board's dates, against the `due` filter plus a sorted list. Dropped if under about a third of open cards carry a date, or none is rescheduled | not measured |
+
+Already in Aura, no action:
+- AI chat over the data: the agent, with `document_open` and pandas.
+- Kanban and saved views: the board and `docfields`.
+- Typed custom fields, a per-value record history with who set each value, and review of
+  suggestions.
+- Schedules: `agent_job`.
+- A sandbox per AI session.
+- Attachment preview and editing: the Craft apps.
+
+Not taken, with the reason:
+- **The spreadsheet database itself**: tables, formulas, typecast and an SQL query view. A
+  product outside prd.md §1; GridCraft edits sheets.
+- **Realtime collaboration, presence, comments, record undo/redo.** One operator per identity.
+- **Plugins.** MCP servers and skills.
+- **The App Builder's long-lived container per published app.** No measured need.
+- **Form view and button fields.** No consumer.
+- **Code from Teable's MIT `packages/`.** It is TypeScript bound to Teable's SDK. The contracts
+  transfer, re-specified in Go.
+- **River, Watermill, Temporal, DBOS, Hatchet as an event engine.** A second queue beside the cron
+  or a separate server. Hatchet's event key plus filter stays a behaviour reference.
+- **Webhooks.** Still no consumer (§Karakeep).
 
 ## Process, taken now
 
