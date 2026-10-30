@@ -119,24 +119,19 @@ func validatePolicy(p AccessPolicy) error {
 	}
 	emails := []string{}
 	for _, r := range p.Include {
-		if r.Email == nil || r.LoginMethod != nil || r.DevicePosture != nil {
+		if r.Email == nil || r.LoginMethod != nil {
 			return failure("only explicit email includes permitted")
 		}
 		emails = append(emails, r.Email.Email)
 	}
 	otp := ""
 	for _, r := range p.Require {
-		if r.Email != nil || (r.LoginMethod == nil) == (r.DevicePosture == nil) {
+		if r.Email != nil || r.LoginMethod == nil {
 			return failure("invalid policy requirement")
 		}
-		if r.LoginMethod != nil {
-			otp = r.LoginMethod.ID
-			if otp == "" {
-				return failure("OTP provider required")
-			}
-		}
-		if r.DevicePosture != nil && r.DevicePosture.IntegrationUID == "" {
-			return failure("posture identifier required")
+		otp = r.LoginMethod.ID
+		if otp == "" {
+			return failure("OTP provider required")
 		}
 	}
 	_, err := EmailPolicy(p.Name, emails, otp)

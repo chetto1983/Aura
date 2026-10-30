@@ -77,7 +77,7 @@ Cloudflare's [Require Gateway](https://developers.cloudflare.com/cloudflare-one/
 checks enrollment and traffic through the configured organization's Gateway.
 [Require WARP](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-warp/)
 also admits the consumer client, which does not satisfy the spec's enrolled-client acceptance.
-The orchestration ruling therefore selects `EnsureGatewayPosture` and `GatewayPostureID`.
+The orchestration ruling therefore selected a Gateway posture check. The WARP leg was retired on 2026-10-30; `retireWARP` still reads and deletes that check, tracked by `GatewayPostureID`.
 The SQL column `warp_posture_id` (migration 0130) stores that Gateway ID and has a clarifying comment.
 The historical fixture filename `posture-warp.json` describes the hostname purpose; its
 wire type is correctly `gateway`.
@@ -98,7 +98,7 @@ Secrets use `settings.Store` under `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_TUNNEL
 They are encrypted at rest and skipped by `settings.OverlayEnv`.
 
 `EnsureCNAME` refuses an existing hostname unless both its persisted ID and ownership
-comment match. `EnsureGatewayPosture` validates the persisted ID, type and ownership name
+comment match. `DeletePosture` validates the persisted ID, type and ownership name
 (`internal/cloudflareapi/access.go`). Deleting DNS/posture checks ownership again. Raw application, policy and tunnel
 methods are transport primitives: Task 2 must verify persisted ID plus its resource-specific
 ownership name before updating/deleting them, serialize reconciliation per generation, and

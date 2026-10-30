@@ -108,19 +108,13 @@ type IDRule struct {
 	ID string `json:"id"`
 }
 
-// PostureRule requires a successful check identified by its integration UID.
-type PostureRule struct {
-	IntegrationUID string `json:"integration_uid"`
-}
-
 // AccessRule deliberately cannot encode Everyone or bypass selectors.
 type AccessRule struct {
-	Email         *EmailRule   `json:"email,omitempty"`
-	LoginMethod   *IDRule      `json:"login_method,omitempty"`
-	DevicePosture *PostureRule `json:"device_posture,omitempty"`
+	Email       *EmailRule `json:"email,omitempty"`
+	LoginMethod *IDRule    `json:"login_method,omitempty"`
 }
 
-// AccessPolicy separates email includes from mandatory OTP/posture requirements.
+// AccessPolicy separates email includes from the mandatory OTP requirement.
 type AccessPolicy struct {
 	ID         string       `json:"id,omitempty"`
 	Name       string       `json:"name"`

@@ -1,19 +1,23 @@
 package remotetunnel
 
 import (
+	"cmp"
 	"context"
 	"slices"
 )
 
+// deletion removes one resource. A non-nil abandon marks a resource the operator can do without
+// removing: when the token is denied access to it, the pass lists it and goes on.
 type deletion struct {
-	id     *string
-	read   func() error
-	remove func() error
+	id      *string
+	read    func() error
+	remove  func() error
+	abandon *AbandonedResource
 }
 
 func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 	account := s.Resources.AccountID
-	return append(r.routeDeletions(ctx, s, routes(s)), deletion{&s.Resources.TunnelID, func() error {
+	return append(r.routeDeletions(ctx, s, routes(s)[0], false), deletion{&s.Resources.TunnelID, func() error {
 		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
 		if err != nil {
 			return err
@@ -26,27 +30,31 @@ func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 			return errResourceAbsent
 		}
 		return nil
-	}, func() error { return r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID) }})
+	}, func() error { return r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID) }, nil})
 }
 
 // routeDeletions removes DNS first, then policy, then application, each in reverse route order.
-func (r *Reconciler) routeDeletions(ctx context.Context, s *State, rs []route) []deletion {
-	steps := []deletion{}
+// routeDeletions removes the route's DNS record, then its policy, then its application. A step
+// carries an abandon entry only when the caller can live without the resource being removed.
+func (r *Reconciler) routeDeletions(ctx context.Context, s *State, route route, abandon bool) []deletion {
 	account := s.Resources.AccountID
-	for _, route := range slices.Backward(rs) {
-		steps = append(steps, deletion{route.dns, func() error {
-			d, err := r.cloud.GetDNS(ctx, s.Resources.ZoneID, *route.dns)
-			if err != nil {
-				return err
-			}
-			if !ownedDNS(s, route, d) {
-				return ErrOwnershipConflict
-			}
+	entry := func(kind, name string) *AbandonedResource {
+		if !abandon {
 			return nil
-		}, func() error { return r.cloud.DeleteDNS(ctx, s.Resources.ZoneID, *route.dns, s.TunnelName) }})
+		}
+		return &AbandonedResource{Kind: kind, Name: name}
 	}
-	for _, route := range slices.Backward(rs) {
-		steps = append(steps, deletion{route.policy, func() error {
+	return []deletion{{route.dns, func() error {
+		d, err := r.cloud.GetDNS(ctx, s.Resources.ZoneID, *route.dns)
+		if err != nil {
+			return err
+		}
+		if !ownedDNS(s, route, d) {
+			return ErrOwnershipConflict
+		}
+		return nil
+	}, func() error { return r.cloud.DeleteDNS(ctx, s.Resources.ZoneID, *route.dns, s.TunnelName) }, entry("dns", route.hostname)},
+		{route.policy, func() error {
 			p, err := r.cloud.GetPolicy(ctx, account, *route.app, *route.policy)
 			if err != nil {
 				return err
@@ -55,10 +63,8 @@ func (r *Reconciler) routeDeletions(ctx context.Context, s *State, rs []route) [
 				return ErrOwnershipConflict
 			}
 			return nil
-		}, func() error { return r.cloud.DeletePolicy(ctx, account, *route.app, *route.policy) }})
-	}
-	for _, route := range slices.Backward(rs) {
-		steps = append(steps, deletion{route.app, func() error {
+		}, func() error { return r.cloud.DeletePolicy(ctx, account, *route.app, *route.policy) }, entry("access_policy", resourceName(s, route.role+"-members"))},
+		{route.app, func() error {
 			a, err := r.cloud.GetApplication(ctx, account, *route.app)
 			if err != nil {
 				return err
@@ -76,9 +82,7 @@ func (r *Reconciler) routeDeletions(ctx context.Context, s *State, rs []route) [
 				}
 			}
 			return nil
-		}, func() error { return r.cloud.DeleteApplication(ctx, account, *route.app) }})
-	}
-	return steps
+		}, func() error { return r.cloud.DeleteApplication(ctx, account, *route.app) }, entry("access_app", resourceName(s, route.role))}}
 }
 
 func (r *Reconciler) verifyOwned(ctx context.Context, s *State) error {
@@ -157,6 +161,25 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 // runDeletions removes each step's owned resource, treating a 404 as already gone, and persists
 // every cleared ID so a pass interrupted halfway resumes where it stopped.
 func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletion) error {
+	var visible *bool
+	// skippable reports whether a denial lets the pass go on without this step. A token that
+	// cannot see the account is not a denial of one resource, so it stops the retirement.
+	skippable := func(step deletion, err error) (bool, error) {
+		if step.abandon == nil || !denied(err) {
+			return false, nil
+		}
+		if visible == nil {
+			v, e := r.accountVisible(ctx, s)
+			if e != nil {
+				return false, e
+			}
+			visible = &v
+		}
+		if !*visible {
+			return false, errBlindToken
+		}
+		return true, nil
+	}
 	// Verify the entire persisted set first so one foreign ID cannot trigger a partial teardown.
 	for _, step := range steps {
 		if *step.id == "" {
@@ -166,7 +189,9 @@ func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletio
 			return ErrOwnershipConflict
 		}
 		if err := step.read(); err != nil && !notFound(err) {
-			return err
+			if skip, e := skippable(step, err); e != nil || !skip {
+				return cmp.Or(e, err)
+			}
 		}
 	}
 	for _, step := range steps {
@@ -179,12 +204,25 @@ func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletio
 		err := step.read()
 		if err == nil {
 			if err = step.remove(); err != nil && !notFound(err) {
-				return err
+				if skip, e := skippable(step, err); e != nil || !skip {
+					return cmp.Or(e, err)
+				}
+				if err = r.abandonStep(ctx, s, step); err != nil {
+					return err
+				}
+				continue
 			}
 			err = step.read()
 			if err == nil {
 				return ErrRemotePresent
 			}
+		} else if skip, e := skippable(step, err); e != nil {
+			return e
+		} else if skip {
+			if err = r.abandonStep(ctx, s, step); err != nil {
+				return err
+			}
+			continue
 		}
 		if !notFound(err) {
 			return err
@@ -195,4 +233,17 @@ func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletio
 		}
 	}
 	return nil
+}
+
+// abandonStep lists a resource the token cannot touch, then forgets its ID. The list is written
+// before the ID goes, so a crash between the two repeats the step instead of losing the entry.
+func (r *Reconciler) abandonStep(ctx context.Context, s *State, step deletion) error {
+	if !slices.Contains(s.Abandoned, *step.abandon) {
+		if err := r.store.AddAbandoned(ctx, []AbandonedResource{*step.abandon}); err != nil {
+			return err
+		}
+		s.Abandoned = append(s.Abandoned, *step.abandon)
+	}
+	*step.id = ""
+	return r.persist(ctx, s)
 }

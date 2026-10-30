@@ -111,7 +111,10 @@ func blankRemoteAccess(t *testing.T, s *Store) State {
 	}
 	state.Resources = Resources{AccountID: state.Resources.AccountID}
 	state.TunnelName, state.OwnedHostname, state.AcceptedHostname = "", "", ""
-	state.Reason, state.Abandoned, state.Phase = "", nil, PhaseDisabled
+	state.Reason, state.Phase = "", PhaseDisabled
+	if err = s.DismissAbandoned(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	state, err = s.Advance(t.Context(), state)
 	if err != nil {
 		t.Fatal(err)
@@ -216,5 +219,46 @@ func TestAbandonClearsResourcesAndListsThem(t *testing.T) {
 	}
 	if got, err = s.Load(t.Context()); err != nil || len(got.Abandoned) != 0 {
 		t.Fatalf("abandoned after dismiss=%v err=%v", got.Abandoned, err)
+	}
+}
+
+func TestDismissIsNotUndoneByAPassInFlight(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	if _, err := s.Abandon(t.Context(), state.Generation, []AbandonedResource{{Kind: "tunnel", Name: "aura-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	inFlight, err := s.Load(t.Context())
+	if err != nil || len(inFlight.Abandoned) != 1 {
+		t.Fatalf("abandoned=%v err=%v", inFlight.Abandoned, err)
+	}
+	if err = s.DismissAbandoned(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Advance(t.Context(), inFlight); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Load(t.Context()); err != nil || len(got.Abandoned) != 0 {
+		t.Fatalf("a pass in flight resurrected the list: %v err=%v", got.Abandoned, err)
+	}
+}
+
+func TestAbandonKeepsWhatTheOperatorHasNotSeen(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state := blankRemoteAccess(t, s)
+	first := []AbandonedResource{{Kind: "tunnel", Name: "aura-1"}}
+	second := []AbandonedResource{{Kind: "dns", Name: "aura.a.it"}}
+	if _, err := s.Abandon(t.Context(), state.Generation, first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Abandon(t.Context(), state.Generation, second)
+	if err != nil || !slices.Equal(got.Abandoned, append(first, second...)) {
+		t.Fatalf("abandoned=%v err=%v", got.Abandoned, err)
+	}
+	if err = s.AddAbandoned(t.Context(), []AbandonedResource{{Kind: "posture", Name: "aura-1-gateway"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.Load(t.Context()); err != nil || len(got.Abandoned) != 3 {
+		t.Fatalf("abandoned=%v err=%v", got.Abandoned, err)
 	}
 }

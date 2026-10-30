@@ -236,3 +236,15 @@ func TestGatewayPostureOwnership(t *testing.T) {
 		s.Close()
 	}
 }
+
+// Installs that predate the retirement hold a policy with a device_posture requirement; reading
+// one has to keep working although nothing builds such a rule any more.
+func TestLegacyPolicyWithADevicePostureRuleStillDecodes(t *testing.T) {
+	body := `{"success":true,"result":{"id":"policy-one","name":"aura-1-warp-members","decision":"allow","include":[{"email":{"email":"admin@example.com"}}],"require":[{"login_method":{"id":"otp-one"}},{"device_posture":{"integration_uid":"posture-one"}}]}}`
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, body) }))
+	defer s.Close()
+	p, err := New(s.URL, "fixture-token", s.Client()).GetPolicy(t.Context(), "account-one", "app-one", "policy-one")
+	if err != nil || p.ID != "policy-one" || p.Name != "aura-1-warp-members" || len(p.Require) != 2 {
+		t.Fatalf("policy=%+v err=%v", p, err)
+	}
+}

@@ -42,10 +42,6 @@ func (s *Store) SaveDesired(ctx context.Context, expectedGeneration int64, d Des
 
 // Advance writes Reason as is: it is a code, never upstream text, which may carry credentials.
 func (s *Store) Advance(ctx context.Context, state State) (State, error) {
-	abandoned, err := marshalAbandoned(state.Abandoned)
-	if err != nil {
-		return State{}, err
-	}
 	r := state.Resources
 	row, err := s.q.AdvanceCloudflareRemoteAccess(ctx, sqlc.AdvanceCloudflareRemoteAccessParams{
 		ExpectedGeneration: state.Generation, Phase: string(state.Phase), ZoneID: r.ZoneID,
@@ -53,14 +49,15 @@ func (s *Store) Advance(ctx context.Context, state State) (State, error) {
 		OtpIdpID: r.OTPProviderID, PublicAppID: r.PublicAppID, PublicPolicyID: r.PublicPolicyID,
 		WarpAppID: r.WARPAppID, WarpPolicyID: r.WARPPolicyID, WarpPostureID: r.GatewayPostureID,
 		OwnedHostname: state.OwnedHostname, AcceptedHostname: state.AcceptedHostname,
-		ObservedHealthy: state.ObservedHealthy, Reason: string(state.Reason), Abandoned: abandoned,
+		ObservedHealthy: state.ObservedHealthy, Reason: string(state.Reason),
 	})
 	return changedState(row, err)
 }
 
-// Abandon forgets every resource ID and hostname, and lists what was forgotten, when a
-// replaced token can no longer reach the account those resources live in. It keeps the
-// generation, so the SaveDesired of the same transaction still matches.
+// Abandon forgets every resource ID and hostname, and appends what was forgotten to the list
+// the operator has not seen yet, when a replaced token can no longer reach the account those
+// resources live in. It keeps the generation, so the SaveDesired of the same transaction still
+// matches.
 func (s *Store) Abandon(ctx context.Context, generation int64, list []AbandonedResource) (State, error) {
 	abandoned, err := marshalAbandoned(list)
 	if err != nil {
@@ -70,6 +67,17 @@ func (s *Store) Abandon(ctx context.Context, generation int64, list []AbandonedR
 		ExpectedGeneration: generation, Abandoned: abandoned,
 	})
 	return changedState(row, err)
+}
+
+// AddAbandoned appends in SQL, so a pass that loaded the row before a dismissal can neither
+// resurrect the old list nor erase an entry written meanwhile.
+func (s *Store) AddAbandoned(ctx context.Context, list []AbandonedResource) error {
+	abandoned, err := marshalAbandoned(list)
+	if err != nil {
+		return err
+	}
+	_, err = s.q.AddCloudflareRemoteAccessAbandoned(ctx, abandoned)
+	return err
 }
 
 // DismissAbandoned clears the list once the operator has seen it.

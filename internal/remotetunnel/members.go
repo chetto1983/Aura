@@ -79,14 +79,14 @@ func (r *Reconciler) checkAdministrators(ctx context.Context, s *State, admins [
 			return true
 		})
 	}
-	// A replacement administrator must already be granted by both remote policies.
+	// A replacement administrator must already be granted by the remote policy.
 	if len(confirmed) == 0 {
 		return ErrMemberLockout
 	}
 	return nil
 }
 
-// SyncMembers changes only the two email policies after checking administrator continuity.
+// SyncMembers changes only the email policy after checking administrator continuity.
 func (r *Reconciler) SyncMembers(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

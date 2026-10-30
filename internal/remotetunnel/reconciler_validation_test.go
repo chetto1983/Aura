@@ -123,7 +123,11 @@ func TestReconcileRejectsForeignAndUnpersistedResources(t *testing.T) {
 				h.store.state.Resources.PublicDNSID = ""
 			}
 			before := h.cloud.creates
-			if err := h.r.Reconcile(t.Context()); !errors.Is(err, ErrOwnershipConflict) {
+			want := ErrOwnershipConflict
+			if kind == "unknown-dns" {
+				want = ErrHostnameTaken // no stored ID and a record on the hostname: the address is taken
+			}
+			if err := h.r.Reconcile(t.Context()); !errors.Is(err, want) {
 				t.Fatalf("err=%v", err)
 			}
 			if h.cloud.creates != before || len(h.projection.applied) != 1 {

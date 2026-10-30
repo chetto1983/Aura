@@ -72,14 +72,21 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if s.Phase == PhaseError {
-		return ErrTerminal
-	}
 	if s.Generation == r.retryGeneration && r.now().Before(r.retryAt) {
 		return ErrBackoff
 	}
 	if s.Phase == PhaseDeleting {
 		return r.delete(ctx, &s)
+	}
+	// Retirement must not wait for a healthy install: an error row and a disabled one hold WARP too.
+	if err = r.retireWARP(ctx, &s); err != nil {
+		if s.Phase != PhaseError && s.Desired.Enabled {
+			return r.failed(ctx, &s, err)
+		}
+		r.log.WarnContext(ctx, "Retiring the WARP leg failed; the row keeps its state", "phase", s.Phase, "error", err)
+	}
+	if s.Phase == PhaseError {
+		return ErrTerminal
 	}
 	if !s.Desired.Enabled {
 		return r.disableProjection(ctx, &s)
@@ -98,9 +105,6 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		return ErrConfiguration
 	}
 	if err := validateDesired(s.Desired); err != nil {
-		return err
-	}
-	if err := r.retireWARP(ctx, s); err != nil {
 		return err
 	}
 	emails, admins, err := r.activeMembers(ctx)
@@ -275,6 +279,12 @@ func (r *Reconciler) disableProjection(ctx context.Context, s *State) error {
 	s.ObservedHealthy = false
 	s.Reason = ""
 	return r.persist(ctx, s)
+}
+
+// denied is the token lacking permission for a resource, not the resource being absent.
+func denied(err error) bool {
+	var e *cloudflareapi.APIError
+	return errors.As(err, &e) && (e.Status == 401 || e.Status == 403)
 }
 
 func notFound(err error) bool {

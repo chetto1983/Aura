@@ -45,6 +45,11 @@ func (m *memoryState) Advance(_ context.Context, s State) (State, error) {
 	return s, nil
 }
 
+func (m *memoryState) AddAbandoned(_ context.Context, list []AbandonedResource) error {
+	m.state.Abandoned = append(m.state.Abandoned, list...)
+	return nil
+}
+
 type testMembers struct {
 	emails, admins []string
 	err            error
@@ -122,6 +127,8 @@ type fakeCloud struct {
 	allowUnpersisted                                    bool
 	keepDeleted                                         bool
 	emptyToken                                          bool
+	blind                                               bool
+	postureReadErr, postureRemoveErr                    error
 }
 
 func (f *fakeCloud) call() error {
@@ -157,6 +164,9 @@ func (f *fakeCloud) VerifyToken(context.Context) (cf.TokenVerification, error) {
 	return cf.TokenVerification{Status: "active"}, f.call()
 }
 func (f *fakeCloud) ListAccounts(context.Context) ([]cf.Account, error) {
+	if f.blind {
+		return nil, f.call()
+	}
 	return []cf.Account{{ID: "account"}}, f.call()
 }
 func (f *fakeCloud) ListZones(context.Context, string, string) ([]cf.Zone, error) {
@@ -337,12 +347,18 @@ func (f *fakeCloud) GetPosture(context.Context, string, string) (cf.Posture, err
 	if err := f.call(); err != nil {
 		return cf.Posture{}, err
 	}
+	if f.postureReadErr != nil {
+		return cf.Posture{}, f.postureReadErr
+	}
 	if f.posture.ID == "" {
 		return cf.Posture{}, absent()
 	}
 	return f.posture, nil
 }
 func (f *fakeCloud) DeletePosture(context.Context, string, string, string) error {
+	if f.postureRemoveErr != nil {
+		return f.postureRemoveErr
+	}
 	if err := f.remove(); err != nil {
 		return err
 	}

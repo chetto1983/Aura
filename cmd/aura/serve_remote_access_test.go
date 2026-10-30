@@ -100,6 +100,13 @@ func (s *remoteMemoryStore) Advance(_ context.Context, next remotetunnel.State) 
 	return next, nil
 }
 
+func (s *remoteMemoryStore) AddAbandoned(_ context.Context, list []remotetunnel.AbandonedResource) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Abandoned = append(s.state.Abandoned, list...)
+	return nil
+}
+
 type remoteMemorySecrets struct {
 	mu     sync.Mutex
 	values map[string]string

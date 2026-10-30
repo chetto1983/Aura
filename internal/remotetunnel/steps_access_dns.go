@@ -124,10 +124,6 @@ func (r *Reconciler) policy(ctx context.Context, s *State, route route, emails [
 	return nil
 }
 
-func ownedPosture(s *State, p cloudflareapi.Posture) bool {
-	return validOwner(s.TunnelName) && p.ID == s.Resources.GatewayPostureID && p.Name == resourceName(s, "gateway") && p.Type == "gateway"
-}
-
 func (r *Reconciler) publish(ctx context.Context, s *State) error {
 	if err := r.current(ctx, s); err != nil {
 		return err
@@ -159,7 +155,7 @@ func (r *Reconciler) publish(ctx context.Context, s *State) error {
 				return err
 			}
 			if len(records) > 0 {
-				return ErrOwnershipConflict
+				return ErrHostnameTaken
 			}
 		}
 		d, err := r.cloud.EnsureCNAME(ctx, s.Resources.ZoneID, *route.dns, route.hostname, s.Resources.TunnelID, s.TunnelName)
