@@ -87,11 +87,14 @@ annotations.
 - [x] Commit `feat(gateway): a memory_forget dry run is a read`.
 
 ### Task 2 — Erasing memory is Destructive (D1, D2; acceptance A1–A3)
-- [ ] Red: the bridge classifies `memory_forget` `(true, true)` with nil, lying and read-only
-  annotations; `Decide` with no responder denies it with `no_approver`, and allows its dry run;
-  with a responder it returns an approval request.
-- [ ] Green: the recipe table entry; `DestructiveHint: true`; the golden regenerated.
-- [ ] Commit `fix(memory): a run with no operator cannot erase memory`.
+- [x] Red: the bridge classifies `memory_forget` `(true, true)` with nil, lying and read-only
+  annotations (red with `DestructiveHint: false`). `Decide` with no responder denies it with
+  `no_approver` and allows its dry run, and with a responder it returns an approval request; these
+  pass on a Destructive spec already, so they pin the contract rather than turn red.
+- [x] Green: the recipe table entry; `DestructiveHint: true`; the golden regenerated (one line);
+  an assertion that both erasing tools declare the hint, checked to fail with `false` even after
+  the golden is regenerated.
+- [x] Commit `fix(memory): a run with no operator cannot erase memory`.
 
 ### Task 3 — Close
 - [ ] `go vet`, `go build`, `go test -race` on the three packages; `golangci-lint` on them.

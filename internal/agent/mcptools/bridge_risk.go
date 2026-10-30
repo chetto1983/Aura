@@ -132,9 +132,11 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	// to ask the operator whether Aura may remember something. Seen live in the
 	// cockpit on 2026-08-03 on memory_upsert_fact.
 	//
-	// Memory mutations execute in the requesting turn. The server still refuses an
-	// empty forget filter, isolates tenants, and audits the call; the gateway must not
-	// turn an explicit memory operation into a second confirmation loop.
+	// Memory writes execute in the requesting turn: the gateway must not turn an explicit
+	// memory operation into a second confirmation loop. memory_forget is the exception,
+	// because it destroys what a supersede would keep: Destructive, so an interactive turn
+	// asks once and a run with no operator is denied (2026-10-30, prd.md §5). Its dry run
+	// only counts and stays a read (MemoryForgetDryRun).
 	mcp.SourceRecipeMemory: {
 		"graph_schema":          MCPActionRead,
 		"graph_diagnostics":     MCPActionRead,
@@ -148,7 +150,7 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"memory_batch":          MCPActionMutate,
 		"memory_merge_entities": MCPActionMutate,
 		"memory_reembed":        MCPActionMutate,
-		"memory_forget":         MCPActionMutate,
+		"memory_forget":         MCPActionDestructive,
 	},
 }
 

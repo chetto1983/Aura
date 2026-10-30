@@ -56,6 +56,28 @@ func TestToolManifestMatchesServer(t *testing.T) {
 	}
 
 	assertNoUserIdentifierProperty(t, listed.Tools)
+	assertErasingToolsAreDestructive(t, listed.Tools)
+}
+
+// assertErasingToolsAreDestructive pins the hint a client other than Aura reads: both tools
+// that can remove facts declare it, so neither looks safer than the other.
+func assertErasingToolsAreDestructive(t *testing.T, tools []*mcp.Tool) {
+	t.Helper()
+	erasing := map[string]bool{"memory_forget": false, "memory_batch": false}
+	for _, tool := range tools {
+		if _, ok := erasing[tool.Name]; !ok {
+			continue
+		}
+		erasing[tool.Name] = true
+		if a := tool.Annotations; a == nil || a.DestructiveHint == nil || !*a.DestructiveHint {
+			t.Errorf("%s removes facts but does not declare DestructiveHint: true", tool.Name)
+		}
+	}
+	for name, seen := range erasing {
+		if !seen {
+			t.Errorf("%s is not advertised", name)
+		}
+	}
 }
 
 // assertNoUserIdentifierProperty iterates every advertised tool's input schema

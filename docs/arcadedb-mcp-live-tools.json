@@ -1215,7 +1215,7 @@
   },
   {
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": true,
       "readOnlyHint": false
     },

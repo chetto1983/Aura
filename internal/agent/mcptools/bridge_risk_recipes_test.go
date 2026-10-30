@@ -123,7 +123,7 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			"memory_upsert_fact":    {true, false},
 			"memory_merge_entities": {true, false},
 			"memory_reembed":        {true, false},
-			"memory_forget":         {true, false},
+			"memory_forget":         {true, true},
 		},
 	}
 

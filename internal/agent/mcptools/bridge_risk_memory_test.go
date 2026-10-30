@@ -22,6 +22,18 @@ func forgetTool(destructiveHint bool) *sdkmcp.Tool {
 	}
 }
 
+// The recipe table decides, so a server that declares the erasure harmless cannot lower it.
+func TestTheBridgedMemoryForgetIsDestructiveWhateverTheServerDeclares(t *testing.T) {
+	t.Parallel()
+	for _, hint := range []bool{true, false} {
+		spec := specFromToolDefWithPolicy("memory", forgetTool(hint), memoryRecipePolicy())
+		if !spec.Mutating || !spec.Destructive {
+			t.Errorf("memory_forget with DestructiveHint=%v bridged as mutating=%v destructive=%v, want both",
+				hint, spec.Mutating, spec.Destructive)
+		}
+	}
+}
+
 func TestTheBridgedMemoryForgetDryRunIsRecognised(t *testing.T) {
 	t.Parallel()
 	dryRun := json.RawMessage(`{"entity":"x","dry_run":true}`)

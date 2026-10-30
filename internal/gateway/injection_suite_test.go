@@ -33,8 +33,8 @@ func TestInjectionSuiteDestructiveEffectsAreWithheldInProduction(t *testing.T) {
 		},
 		{
 			name: "memory erasure",
-			spec: destructiveMCPSpec("memory__memory_forget"),
-			args: json.RawMessage(`{"node_type":"fact","node_id":"attacker-selected"}`),
+			spec: memoryForgetSpec(),
+			args: json.RawMessage(`{"entity":"attacker-selected"}`),
 		},
 		{
 			name: "calendar email",
@@ -103,11 +103,6 @@ func TestInjectionSuiteOrdinaryMutationsRequireIdempotencyButNotApproval(t *test
 			name: "memory merge",
 			spec: ordinaryMCPSpec("memory__memory_merge_entities"),
 			args: json.RawMessage(`{"source":"duplicate","target":"owned"}`),
-		},
-		{
-			name: "memory forget",
-			spec: ordinaryMCPSpec("memory__memory_forget"),
-			args: json.RawMessage(`{"subject":"owned","predicate":"status","object":"obsolete"}`),
 		},
 		{
 			name: "calendar create",
