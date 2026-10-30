@@ -43,12 +43,18 @@ func TestTheBridgedMemoryForgetDryRunIsRecognised(t *testing.T) {
 		t.Errorf("the memory recipe's memory_forget dry run is not recognised: recipe %q/%q",
 			spec.TrustedRecipeSource, spec.TrustedRecipeTool)
 	}
-	if MemoryForgetDryRun(spec, json.RawMessage(`{"entity":"x"}`)) {
-		t.Error("a memory_forget without dry_run is taken for a dry run")
+	for _, raw := range []string{`{"entity":"x"}`, `{"entity":"x","dry_run":false}`} {
+		if MemoryForgetDryRun(spec, json.RawMessage(raw)) {
+			t.Errorf("%s is taken for a dry run", raw)
+		}
 	}
 
 	unmanaged := specFromToolDefWithPolicy("memory", forgetTool(true), defaultBridgePolicy("memory"))
 	if MemoryForgetDryRun(unmanaged, dryRun) {
 		t.Error("an unmanaged server's memory_forget is trusted as the recipe's")
+	}
+	batch := specFromToolDefWithPolicy("memory", &sdkmcp.Tool{Name: "memory_batch", InputSchema: map[string]any{"type": "object"}}, memoryRecipePolicy())
+	if MemoryForgetDryRun(batch, dryRun) {
+		t.Error("memory_batch with dry_run is taken for a memory_forget dry run")
 	}
 }
