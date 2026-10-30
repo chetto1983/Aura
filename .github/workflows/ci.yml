@@ -110,6 +110,7 @@ jobs:
         run: |
           PYTHONPATH=scripts python3 -m unittest \
             scripts/audit_closure_gate_test.py \
+            scripts/briefing_baseline_test.py \
             scripts/agent_memory_eval_test.py \
             scripts/capability_eval_test.py \
             scripts/critical_mutation_gate_test.py \

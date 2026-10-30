@@ -105,10 +105,13 @@ skills, Python 3 for the measurement script.
 - [x] Commit `feat(skills): briefing-aura writes the daily briefing from live sources`.
 
 ### Task 5 — The baseline renderer
-- [ ] Red: `briefing_baseline_test.py` with recorded tool results: events in time order, cards due
-  on or before the day by due date, the unread count and the five newest senders.
-- [ ] Green: `scripts/briefing_baseline.py`.
-- [ ] Commit `feat(scripts): render the briefing baseline from a run's tool results`.
+- [x] Red: `briefing_baseline_test.py` with recorded tool results: events in time order, cards due
+  on or before the day by due date, the unread count and the five newest senders; plus the
+  operator's day rather than UTC's, a missing source, the snapshot cap and a quiet day.
+- [x] Green: `scripts/briefing_baseline.py`, reading a JSON bundle of the run's three results.
+  Extracting that bundle from a lab-VM run's ledger is part of the acceptance. The test joins
+  the Production-evidence contract list in `ci.yml` and the Makefile; ruff check passes.
+- [x] Commit `feat(scripts): render the briefing baseline from a run's tool results`.
 
 ### Task 6 — Close
 - [ ] vet, build, race, lint, `bash scripts/coverage_docker.sh`, and the mutation spot-check on
