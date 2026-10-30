@@ -100,6 +100,7 @@ func TestBoardCardLineCarriesItsMeta(t *testing.T) {
 	}{
 		"no meta":          {board.Card{ID: "a", Label: "plain", Priority: 2}, false, "- [a] plain\n"},
 		"all meta":         {board.Card{ID: "b", ColumnID: "doing", Label: "full", Priority: 3, DueAt: &due, Tags: []string{"x", "y"}}, true, "- [b] full (in doing, high priority, due 2026-11-03T08:00:00Z, #x #y)\n"},
+		"one tag":          {board.Card{ID: "f", Label: "tagged", Priority: 2, Tags: []string{"solo"}}, false, "- [f] tagged (#solo)\n"},
 		"low priority":     {board.Card{ID: "c", Label: "low", Priority: 1}, false, "- [c] low (low priority)\n"},
 		"description":      {board.Card{ID: "d", Label: "d", Priority: 2, Description: "line one\nline two"}, false, "- [d] d\n  line one line two\n"},
 		"label at the cap": {board.Card{ID: "e", Label: label160, Priority: 2}, false, "- [e] " + label160 + "\n"},

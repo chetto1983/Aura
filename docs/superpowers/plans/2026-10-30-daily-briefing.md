@@ -1,6 +1,7 @@
 # Daily briefing — Implementation Plan
 
-**Status (2026-10-30):** spec agreed with the operator the same day. Nothing implemented yet.
+**Status (2026-10-30):** Tasks 1–6 done locally and merged to `master`; the lab-VM acceptance, five
+working days with the operator, is owed.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -114,8 +115,9 @@ skills, Python 3 for the measurement script.
 - [x] Commit `feat(scripts): render the briefing baseline from a run's tool results`.
 
 ### Task 6 — Close
-- [ ] vet, build, race, lint, `bash scripts/coverage_docker.sh`, and the mutation spot-check on
-  `task_timezone.go` and the due section.
-- [ ] `docs/superpowers/verification/2026-10-30-daily-briefing-local.md`.
+- [x] vet, build, race, lint, `bash scripts/coverage_docker.sh` (87.6%, policy passed), and the
+  mutation spot-check: `task_timezone.go` 100%, `board_actions.go` 98.4%, each after a test commit
+  that the first run called for.
+- [x] `docs/superpowers/verification/2026-10-30-daily-briefing-local.md`.
 - [ ] Lab VM, the spec's acceptance 1–4, over five working days, in its own verification file.
-- [ ] Merge to `master`.
+- [x] Merge to `master`.
