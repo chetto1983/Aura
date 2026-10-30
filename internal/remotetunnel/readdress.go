@@ -8,10 +8,15 @@ import (
 )
 
 // errConnectorDraining is Cloudflare refusing to delete a tunnel that still has connections: the
-// connector was just stopped, so the refusal clears by itself ("The tunnel must have no active
-// connections", developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/
-// subresources/cloudflared/methods/delete/). The reference names no status or code for it.
+// connector was just stopped, so the refusal clears by itself. The delete reference only says
+// "The tunnel must have no active connections"
+// (developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/
+// cloudflared/methods/delete/); the answer itself is HTTP 400 with code 1022, "Cannot delete
+// tunnel because it has active connections", and a second attempt usually succeeds
+// (github.com/cloudflare/terraform-provider-cloudflare/issues/5255).
 var errConnectorDraining = errors.New("remote access: tunnel still has connections")
+
+const codeTunnelHasConnections = 1022
 
 func hasResources(r Resources) bool {
 	for _, id := range []string{r.ZoneID, r.TunnelID, r.PublicDNSID, r.WARPDNSID, r.OTPProviderID,
@@ -38,16 +43,31 @@ func recordOwned(s *State) {
 	s.OwnedHostname = publicHostname(s.Desired)
 }
 
-// teardown stops the connector, then deletes every owned resource and forgets the owned set.
+// teardown proves it can finish before it stops the connector: the token must still see the
+// account the resources live in, and every public resource must pass its ownership check. Past
+// that point it stops the connector, then deletes every owned resource and forgets the owned set.
 // The zone survives when account and zone name are unchanged; the account-wide OTP provider
 // survives an unchanged account. Neither is ever deleted. Each step persists, so a pass cut
 // short resumes with the connector still off.
 func (r *Reconciler) teardown(ctx context.Context, s *State) error {
-	// An empty credential leaves rebuild nothing to project after a reboot.
-	if r.credentials != nil {
-		if err := r.credentials.Save(ctx, ""); err != nil {
+	if r.credentials == nil || r.projection == nil {
+		return ErrConfiguration
+	}
+	if hasResources(s.Resources) {
+		visible, err := r.accountVisible(ctx, s)
+		if err != nil {
 			return err
 		}
+		if !visible {
+			return ErrAccountNotVisible
+		}
+		if err = r.verifyDeletions(s, r.deletions(ctx, s), func(deletion, error) (bool, error) { return false, nil }); err != nil {
+			return err
+		}
+	}
+	// An empty credential leaves rebuild nothing to project after a reboot.
+	if err := r.credentials.Save(ctx, ""); err != nil {
+		return err
 	}
 	if err := r.projection.Apply(ctx, ProjectionState{Generation: s.Generation}); err != nil {
 		return err
@@ -55,10 +75,12 @@ func (r *Reconciler) teardown(ctx context.Context, s *State) error {
 	if err := r.retireWARP(ctx, s); err != nil {
 		return err
 	}
-	accountChanged := s.Resources.AccountID != s.Desired.AccountID
-	if accountChanged && s.Resources.LegacyWARPHostname != "" {
-		return ErrRemotePresent
+	// retireWARP leaves its hostname only for a token that lost the account; the WARP IDs still
+	// need the tunnel name and the account, so nothing is forgotten under them.
+	if s.Resources.LegacyWARPHostname != "" {
+		return ErrAccountNotVisible
 	}
+	accountChanged := s.Resources.AccountID != s.Desired.AccountID
 	if err := r.runDeletions(ctx, s, r.deletions(ctx, s)); err != nil {
 		return err
 	}
@@ -69,14 +91,13 @@ func (r *Reconciler) teardown(ctx context.Context, s *State) error {
 		s.Resources.OTPProviderID, s.Resources.AccountID = "", ""
 	}
 	s.TunnelName, s.OwnedHostname = "", ""
-	s.ObservedHealthy = false
 	return r.persist(ctx, s)
 }
 
-// tunnelRefusal turns Cloudflare's refusal to delete a tunnel that still serves into a retryable one.
-func tunnelRefusal(err error, last cloudflareapi.Tunnel) error {
+// tunnelRefusal turns Cloudflare's refusal to delete a tunnel that still has connections into a retryable one.
+func tunnelRefusal(err error) error {
 	var api *cloudflareapi.APIError
-	if errors.As(err, &api) && api.Status >= 400 && api.Status < 500 && !denied(err) && !notFound(err) && api.Status != 429 && tunnelServes(last) {
+	if errors.As(err, &api) && api.Status == 400 && api.Code == codeTunnelHasConnections {
 		return errConnectorDraining
 	}
 	return err

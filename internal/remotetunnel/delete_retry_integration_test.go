@@ -28,6 +28,10 @@ func (c *retryDeletionCloud) GetTunnel(context.Context, string, string) (cloudfl
 	return c.tunnel, nil
 }
 
+func (*retryDeletionCloud) ListAccounts(context.Context) ([]cloudflareapi.Account, error) {
+	return []cloudflareapi.Account{{ID: "account"}}, nil
+}
+
 func (c *retryDeletionCloud) DeleteTunnel(context.Context, string, string) error {
 	c.attempts++
 	if c.beforeDelete != nil {
@@ -67,7 +71,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 			}
 			cloud := &retryDeletionCloud{denied: true, tunnel: cloudflareapi.Tunnel{ID: "tunnel", Name: state.TunnelName, ConfigSource: "cloudflare"}}
 			projection := &testProjection{t: t}
-			engine := New(store, cloud, nil, projection, nil)
+			engine := New(store, cloud, nil, projection, nil, WithCredentials(&testCredentials{}))
 			if err = engine.Delete(t.Context(), "admin"); err == nil {
 				t.Fatal("expected terminal deletion refusal")
 			}
@@ -120,7 +124,7 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 			if _, e := store.SaveDesired(t.Context(), failed.Generation, failed.Desired, "stale"); !errors.Is(e, ErrStaleGeneration) {
 				t.Fatalf("stale retry=%v", e)
 			}
-			engine = New(store, cloud, nil, projection, nil)
+			engine = New(store, cloud, nil, projection, nil, WithCredentials(&testCredentials{}))
 			if err = engine.Reconcile(t.Context()); err != nil {
 				t.Fatal(err)
 			}

@@ -3,8 +3,6 @@ package remotetunnel
 import (
 	"context"
 	"slices"
-
-	"github.com/chetto1983/aura/internal/cloudflareapi"
 )
 
 // deletion removes one resource. A non-empty abandon marks a resource the operator can do without
@@ -20,13 +18,11 @@ type deletion struct {
 
 func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 	account := s.Resources.AccountID
-	var last cloudflareapi.Tunnel
 	return append(r.routeDeletions(ctx, s, publicRoute(s, s.OwnedHostname)), deletion{&s.Resources.TunnelID, func() error {
 		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
 		if err != nil {
 			return err
 		}
-		last = t
 		if !ownedTunnel(*s, t) {
 			return ErrOwnershipConflict
 		}
@@ -36,7 +32,7 @@ func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 		}
 		return nil
 	}, func() error {
-		return tunnelRefusal(r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID), last)
+		return tunnelRefusal(r.cloud.DeleteTunnel(ctx, account, s.Resources.TunnelID))
 	}, nil, nil})
 }
 
@@ -129,9 +125,6 @@ func (r *Reconciler) delete(ctx context.Context, s *State) error {
 }
 
 func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
-	if r.projection == nil {
-		return ErrConfiguration
-	}
 	if err := r.teardown(ctx, s); err != nil {
 		return err
 	}
@@ -140,9 +133,31 @@ func (r *Reconciler) deleteResources(ctx context.Context, s *State) error {
 	s.Resources.OTPProviderID = ""
 	s.OwnedZoneName = ""
 	s.Phase = PhaseDisabled
-	s.ObservedHealthy = false
 	s.Reason = ""
 	return r.persist(ctx, s)
+}
+
+// verifyDeletions reads the entire persisted set first so one foreign ID cannot trigger a
+// partial teardown. A 404 is already gone; skippable decides which denials the pass tolerates.
+func (r *Reconciler) verifyDeletions(s *State, steps []deletion, skippable func(deletion, error) (bool, error)) error {
+	for _, step := range steps {
+		if *step.id == "" {
+			continue
+		}
+		if !validOwner(s.TunnelName) {
+			return ErrOwnershipConflict
+		}
+		if err := step.read(); err != nil && !notFound(err) {
+			skip, e := skippable(step, err)
+			if e != nil {
+				return e
+			}
+			if !skip {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // runDeletions removes each step's owned resource, treating a 404 as already gone, and persists
@@ -167,23 +182,8 @@ func (r *Reconciler) runDeletions(ctx context.Context, s *State, steps []deletio
 		}
 		return true, nil
 	}
-	// Verify the entire persisted set first so one foreign ID cannot trigger a partial teardown.
-	for _, step := range steps {
-		if *step.id == "" {
-			continue
-		}
-		if !validOwner(s.TunnelName) {
-			return ErrOwnershipConflict
-		}
-		if err := step.read(); err != nil && !notFound(err) {
-			skip, e := skippable(step, err)
-			if e != nil {
-				return e
-			}
-			if !skip {
-				return err
-			}
-		}
+	if err := r.verifyDeletions(s, steps, skippable); err != nil {
+		return err
 	}
 	for _, step := range steps {
 		if *step.id == "" {

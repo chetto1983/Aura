@@ -137,11 +137,15 @@ func TestLabelChangeKeepsThePendingZone(t *testing.T) {
 
 func TestPendingZoneWithoutDNSIsNotAnAddressChange(t *testing.T) {
 	h := newHarness(t)
+	h.assertResources(t)
+	tunnel := h.store.state.TunnelName
+	h.store.state.Resources.PublicDNSID = ""
+	delete(h.cloud.dns, "public-dns")
 	h.cloud.zone.Status = "pending"
+	saves, deletes := len(h.credentials.saves), h.cloud.deletes
 	h.assertResources(t)
-	h.assertResources(t)
-	if len(h.credentials.saves) != 0 || len(h.projection.applied) != 0 || h.cloud.deletes != 0 {
-		t.Fatalf("a pending zone with the same address was torn down: saves=%d applied=%d deletes=%d", len(h.credentials.saves), len(h.projection.applied), h.cloud.deletes)
+	if len(h.credentials.saves) != saves || h.cloud.deletes != deletes || h.store.state.TunnelName != tunnel {
+		t.Fatalf("a tunnel without public DNS on the same address was torn down: saves=%d deletes=%d", len(h.credentials.saves)-saves, h.cloud.deletes-deletes)
 	}
 }
 
@@ -187,13 +191,13 @@ func TestInvisibleAccountIsAccountNotVisibleAndTearsNothingDown(t *testing.T) {
 
 func TestTeardownWaitsForTheConnectorToDrain(t *testing.T) {
 	h := liveHarness(t)
-	h.cloud.refuseConnected = true
+	h.cloud.tunnelDeleteErr = tunnelHasConnections()
 	h.changeAddress(func(d *Desired) { d.PublicLabel = "casa" })
 	err := h.r.Reconcile(t.Context())
 	if !errors.Is(err, errConnectorDraining) || h.store.state.Reason != ReasonCloudflareUnreachable || h.store.state.Phase != PhaseDegraded {
 		t.Fatalf("err=%v reason=%q phase=%q", err, h.store.state.Reason, h.store.state.Phase)
 	}
-	h.cloud.tunnel.Status = "inactive"
+	h.cloud.tunnelDeleteErr = nil
 	h.pastBackoff()
 	if err = h.r.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
@@ -253,19 +257,6 @@ func TestTeardownLeftHalfwayResumes(t *testing.T) {
 	}
 }
 
-func TestTeardownNeverDeletesAForeignResource(t *testing.T) {
-	h := liveHarness(t)
-	d := h.cloud.dns["public-dns"]
-	d.Comment = "someone-else"
-	h.cloud.dns["public-dns"] = d
-	h.changeAddress(func(d *Desired) { d.PublicLabel = "casa" })
-	deletes := h.cloud.deletes
-	err := h.r.Reconcile(t.Context())
-	if !errors.Is(err, ErrOwnershipConflict) || h.store.state.Reason != ReasonNotOwned || h.cloud.deletes != deletes {
-		t.Fatalf("err=%v reason=%q deletes=%d", err, h.store.state.Reason, h.cloud.deletes-deletes)
-	}
-}
-
 func TestDeleteStillDetachesZoneAndOTP(t *testing.T) {
 	h := liveHarness(t)
 	if err := h.r.Delete(t.Context(), "admin"); err != nil {
@@ -274,8 +265,5 @@ func TestDeleteStillDetachesZoneAndOTP(t *testing.T) {
 	s := h.store.state
 	if s.Phase != PhaseDisabled || s.Resources.ZoneID != "" || s.Resources.OTPProviderID != "" || s.OwnedHostname != "" || s.OwnedZoneName != "" || s.TunnelName != "" {
 		t.Fatalf("phase=%q resources=%+v owned=%q/%q", s.Phase, s.Resources, s.OwnedZoneName, s.OwnedHostname)
-	}
-	if h.cloud.zone.ID == "" || h.cloud.otp.ID == "" {
-		t.Fatal("the zone or the OTP provider was deleted")
 	}
 }

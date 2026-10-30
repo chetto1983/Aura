@@ -230,3 +230,16 @@ func TestRemoteAccessCredentialsClearWhenSavedEmpty(t *testing.T) {
 		t.Fatal("the retiring tunnel's token survives a clear")
 	}
 }
+
+func TestRemoteAccessBootProjectsOffWhenTheStoredTokenIsEmpty(t *testing.T) {
+	state := &remoteMemoryStore{state: remotetunnel.State{Generation: 7, Desired: remotetunnel.Desired{Enabled: true}, Resources: remotetunnel.Resources{TunnelID: "retiring-tunnel"}}}
+	secrets := &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_TUNNEL_TOKEN": ""}}
+	projection := &remoteRecordingProjection{}
+	c := newRemoteAccessController(state, secrets, projection, nil, nil)
+	if err := c.rebuild(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(projection.states) != 1 || projection.states[0].Enabled || projection.states[0].Token.Reveal() != "" {
+		t.Fatalf("a cleared credential must leave the connector off: %+v", projection.states)
+	}
+}

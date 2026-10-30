@@ -65,6 +65,8 @@ type testCredentials struct {
 	saved cf.Secret
 	saves []cf.Secret
 	err   error
+	// events is shared with the projection, to assert which of the two came first.
+	events *[]string
 }
 
 func (s *testCredentials) Save(_ context.Context, t cf.Secret) error {
@@ -73,6 +75,9 @@ func (s *testCredentials) Save(_ context.Context, t cf.Secret) error {
 	}
 	s.saved = t
 	s.saves = append(s.saves, t)
+	if s.events != nil {
+		*s.events = append(*s.events, "save:"+string(t))
+	}
 	return nil
 }
 
@@ -84,6 +89,7 @@ type testProjection struct {
 	// deletes reads how many Cloudflare deletions had happened at each Apply.
 	deletes        func() int
 	deletesAtApply []int
+	events         *[]string
 }
 
 func (p *testProjection) Apply(_ context.Context, s ProjectionState) error {
@@ -91,6 +97,9 @@ func (p *testProjection) Apply(_ context.Context, s ProjectionState) error {
 		p.t.Fatal("projection before durable credential")
 	}
 	p.applied = append(p.applied, s)
+	if p.events != nil {
+		*p.events = append(*p.events, fmt.Sprintf("apply:%v", s.Enabled))
+	}
 	if p.deletes != nil {
 		p.deletesAtApply = append(p.deletesAtApply, p.deletes())
 	}
@@ -105,11 +114,13 @@ type harness struct {
 	projection  *testProjection
 	credentials *testCredentials
 	r           *Reconciler
+	events      []string
 }
 
 func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, store: &memoryState{state: State{Generation: 1, Phase: PhaseValidating, Desired: Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, Resources: Resources{AccountID: "account"}}}, members: testMembers{emails: []string{"admin@example.com"}, admins: []string{"admin@example.com"}}, credentials: &testCredentials{}}
 	h.projection = &testProjection{t: t, credentials: h.credentials, deletes: func() int { return h.cloud.deletes }}
+	h.credentials.events, h.projection.events = &h.events, &h.events
 	h.cloud = &fakeCloud{t: t, store: h.store, zone: cf.Zone{Name: "example.com", Status: "active", Account: cf.Account{ID: "account"}}, apps: map[string]cf.AccessApplication{}, policies: map[string]cf.AccessPolicy{}, dns: map[string]cf.DNSRecord{}}
 	h.r = h.newReconciler()
 	return h
@@ -155,8 +166,11 @@ type fakeCloud struct {
 	zoneCreates                    int
 	deleteAccounts, createAccounts []string
 	// allowDetached lets the zone and the OTP provider outlive their local references.
-	allowDetached   bool
-	refuseConnected bool
+	allowDetached bool
+	// tunnelDeleteErr is what DeleteTunnel answers before anything is deleted.
+	tunnelDeleteErr error
+	// blindAfterLists makes ListAccounts lose every account after that many calls.
+	blindAfterLists, listCalls int
 }
 
 func (f *fakeCloud) call() error {
@@ -196,7 +210,8 @@ func (f *fakeCloud) VerifyToken(context.Context) (cf.TokenVerification, error) {
 	return cf.TokenVerification{Status: "active"}, f.call()
 }
 func (f *fakeCloud) ListAccounts(context.Context) ([]cf.Account, error) {
-	if f.blind {
+	f.listCalls++
+	if f.blind || f.blindAfterLists > 0 && f.listCalls > f.blindAfterLists {
 		return nil, f.call()
 	}
 	ids := f.accountIDs
@@ -260,8 +275,8 @@ func (f *fakeCloud) CreateTunnel(_ context.Context, account, name string) (cf.Tu
 	return f.tunnel, nil
 }
 func (f *fakeCloud) DeleteTunnel(_ context.Context, account, _ string) error {
-	if f.refuseConnected && f.tunnel.Status == "healthy" {
-		return &cf.APIError{Status: 400}
+	if f.tunnelDeleteErr != nil {
+		return f.tunnelDeleteErr
 	}
 	if err := f.remove(); err != nil {
 		return err

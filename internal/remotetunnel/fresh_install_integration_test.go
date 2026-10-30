@@ -31,7 +31,7 @@ func TestDeleteOnARowWithNoResourcesReachesDisabled(t *testing.T) {
 	if _, err := store.SaveDesired(t.Context(), state.Generation, Desired{AccountID: "account", ZoneName: "example.com", PublicLabel: "aura"}, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	engine := New(store, pendingZoneCloud{}, nil, &testProjection{t: t}, nil)
+	engine := New(store, pendingZoneCloud{}, nil, &testProjection{t: t}, nil, WithCredentials(&testCredentials{}))
 	if err := engine.Delete(t.Context(), "admin"); err != nil {
 		t.Fatalf("deleting a row that holds nothing failed: %v", err)
 	}
