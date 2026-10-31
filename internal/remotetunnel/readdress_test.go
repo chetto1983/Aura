@@ -170,8 +170,44 @@ func TestAccountChangeDeletesInTheOldAccount(t *testing.T) {
 	if s.Resources.AccountID != "account-b" || s.Resources.ZoneID != "zone-b" || s.Resources.OTPProviderID != "otp-account-b" {
 		t.Fatalf("resources %+v are not the new account's", s.Resources)
 	}
-	if s.AcceptedHostname != "aura.example.com" || s.Phase != PhaseHealthy {
-		t.Fatalf("accepted=%q phase=%q: the same hostname keeps its phone test", s.AcceptedHostname, s.Phase)
+	if s.AcceptedHostname != "" || s.Accepted() || s.Phase != PhaseConnecting || s.ObservedHealthy {
+		t.Fatalf("accepted=%q phase=%q: Access, OTP and the tunnel are new, so nobody has passed the phone test", s.AcceptedHostname, s.Phase)
+	}
+}
+
+func TestAccountChangeCutShortStillAsksThePhoneTest(t *testing.T) {
+	h := liveHarness(t)
+	h.cloud.accountIDs = []string{"account", "account-b"}
+	h.cloud.allowDetached = true
+	h.cloud.nextZone = cf.Zone{ID: "zone-b", Name: "example.com", Status: "active", Account: cf.Account{ID: "account-b"}}
+	h.cloud.publicDNSRemoveErr = transientError()
+	h.changeAddress(func(d *Desired) { d.AccountID = "account-b" })
+	if err := h.r.Reconcile(t.Context()); err == nil {
+		t.Fatal("the interrupted teardown reported success")
+	}
+	h.cloud.publicDNSRemoveErr = nil
+	h.pastBackoff()
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.store.state; s.Accepted() || s.Phase != PhaseConnecting {
+		t.Fatalf("accepted=%q phase=%q after the move finished", s.AcceptedHostname, s.Phase)
+	}
+}
+
+func TestTeardownInTheSameAccountKeepsTheAcceptance(t *testing.T) {
+	h := liveHarness(t)
+	h.cloud.allowDetached = true
+	h.store.state.OwnedZoneName = ""
+	deletes := h.cloud.deletes
+	if err := h.r.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if h.cloud.deletes == deletes {
+		t.Fatal("the fixture tore nothing down")
+	}
+	if s := h.store.state; !s.Accepted() || s.Phase != PhaseHealthy {
+		t.Fatalf("accepted=%q phase=%q: only another account forgets the phone test here", s.AcceptedHostname, s.Phase)
 	}
 }
 

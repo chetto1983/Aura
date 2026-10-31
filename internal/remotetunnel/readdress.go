@@ -101,6 +101,9 @@ func (r *Reconciler) teardown(ctx context.Context, s *State) error {
 	}
 	if accountChanged {
 		s.Resources.OTPProviderID, s.Resources.AccountID = "", ""
+		// Access, the OTP provider and the tunnel are all new in another organisation, so nobody
+		// has passed what the phone test proves, whatever the hostname says.
+		s.AcceptedHostname = ""
 	}
 	s.TunnelName, s.OwnedHostname = "", ""
 	return r.persist(ctx, s)
