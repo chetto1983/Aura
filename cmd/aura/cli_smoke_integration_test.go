@@ -61,7 +61,7 @@ func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "aura")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
+	build := exec.CommandContext(ctx, "go", cliSmokeBuildArgs(binary)...)
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build aura CLI: %v\n%s", err, output)
 	}
@@ -149,4 +149,15 @@ func (s *cliSmoke) expand(t *testing.T, text string) string {
 		}
 	}
 	return text
+}
+
+// cliSmokeBuildArgs instruments the binary when the run sets Go's own GOCOVERDIR, so each row's
+// process writes its coverage there and `go tool covdata percent` can say which CLI code the
+// rows reached. CI's gate passes -test.gocoverdir instead, so its build stays plain.
+func cliSmokeBuildArgs(binary string) []string {
+	if os.Getenv("GOCOVERDIR") == "" {
+		return []string{"build", "-o", binary, "."}
+	}
+	return []string{"build", "-cover", "-covermode=atomic",
+		"-coverpkg=github.com/chetto1983/aura/cmd/aura,github.com/chetto1983/aura/internal/...", "-o", binary, "."}
 }
