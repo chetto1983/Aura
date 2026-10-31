@@ -145,6 +145,9 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		return err
 	}
 	if addressChanged(*s) {
+		if err = r.moveCanFinish(ctx, s); err != nil {
+			return err
+		}
 		s.Phase, s.Reason, s.ObservedHealthy = PhaseProvisioning, "", false
 		if err = r.teardown(ctx, s); err != nil {
 			return err

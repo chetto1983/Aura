@@ -197,7 +197,9 @@ type fakeCloud struct {
 	// accountIDs are the accounts the token sees; empty means just "account".
 	accountIDs []string
 	// nextZone replaces zone the moment ListZones is asked for its name.
-	nextZone                       cf.Zone
+	nextZone cf.Zone
+	// listZones, when set, answers ListZones.
+	listZones                      func(account, name string) ([]cf.Zone, error)
 	zoneCreates                    int
 	deleteAccounts, createAccounts []string
 	// allowDetached lets the zone and the OTP provider outlive their local references.
@@ -264,6 +266,9 @@ func (f *fakeCloud) ListZones(_ context.Context, account, name string) ([]cf.Zon
 		return nil, err
 	}
 	f.createAccounts = append(f.createAccounts, "zone:"+account)
+	if f.listZones != nil {
+		return f.listZones(account, name)
+	}
 	if f.nextZone.ID != "" && f.nextZone.Name == name {
 		f.zone, f.nextZone = f.nextZone, cf.Zone{}
 	}

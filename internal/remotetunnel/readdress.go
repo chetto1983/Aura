@@ -36,6 +36,17 @@ func addressChanged(s State) bool {
 		s.OwnedZoneName != s.Desired.ZoneName || s.OwnedHostname != PublicHostname(s.Desired))
 }
 
+// moveCanFinish runs before the teardown, which cannot be undone: a zone that cannot be had in the
+// desired account would leave the old address dead and the new one never started. A new label
+// stays in the zone the row holds, so it has nothing to ask.
+func (r *Reconciler) moveCanFinish(ctx context.Context, s *State) error {
+	if s.Resources.AccountID == s.Desired.AccountID && s.OwnedZoneName == s.Desired.ZoneName {
+		return nil
+	}
+	_, _, err := r.obtainableZone(ctx, s.Desired.AccountID, s.Desired.ZoneName)
+	return err
+}
+
 // recordOwned writes the address the resources are about to be created for, so that the first
 // persisted ID already carries it.
 func recordOwned(s *State) {

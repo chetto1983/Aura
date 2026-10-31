@@ -71,7 +71,8 @@ func TestAccountChangeAgainstTheRealStore(t *testing.T) {
 	if !slices.Equal(cloud.deletedIn, []string{"account-a"}) {
 		t.Fatalf("deleted in %v, want the old account only", cloud.deletedIn)
 	}
-	if !slices.Equal(cloud.zonesAsked, []string{"account-b"}) || !slices.Equal(credentials.saves, []cloudflareapi.Secret{""}) {
+	// Once before the teardown, to know the move can finish, and once to take the zone.
+	if !slices.Equal(cloud.zonesAsked, []string{"account-b", "account-b"}) || !slices.Equal(credentials.saves, []cloudflareapi.Secret{""}) {
 		t.Fatalf("zones asked in %v, credential saves %q", cloud.zonesAsked, credentials.saves)
 	}
 	got, err := store.Load(t.Context())

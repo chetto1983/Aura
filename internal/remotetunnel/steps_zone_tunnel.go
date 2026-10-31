@@ -52,17 +52,9 @@ func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {
 	if s.Resources.ZoneID != "" {
 		z, err = r.cloud.GetZone(ctx, s.Resources.ZoneID)
 	} else {
-		var zones []cloudflareapi.Zone
-		zones, err = r.cloud.ListZones(ctx, s.Resources.AccountID, s.Desired.ZoneName)
-		if err != nil {
-			return false, err
-		}
-		if len(zones) > 1 {
-			return false, ErrOwnershipConflict
-		}
-		if len(zones) == 1 {
-			z = zones[0]
-		} else if err = r.refuseZoneHeldElsewhere(ctx, s.Desired.ZoneName); err == nil {
+		var found bool
+		z, found, err = r.obtainableZone(ctx, s.Resources.AccountID, s.Desired.ZoneName)
+		if err == nil && !found {
 			z, err = r.cloud.CreateZone(ctx, s.Resources.AccountID, s.Desired.ZoneName)
 		}
 		if err == nil && z.ID != "" {
@@ -83,6 +75,22 @@ func (r *Reconciler) zone(ctx context.Context, s *State) (bool, error) {
 		return false, r.persist(ctx, s)
 	}
 	return true, nil
+}
+
+// obtainableZone is the one decision on a zone the row does not hold yet: found is the account
+// already having it, and with no error and not found it can be created there.
+func (r *Reconciler) obtainableZone(ctx context.Context, account, name string) (zone cloudflareapi.Zone, found bool, err error) {
+	zones, err := r.cloud.ListZones(ctx, account, name)
+	if err != nil {
+		return zone, false, err
+	}
+	if len(zones) > 1 {
+		return zone, false, ErrOwnershipConflict
+	}
+	if len(zones) == 1 {
+		return zones[0], true, nil
+	}
+	return zone, false, r.refuseZoneHeldElsewhere(ctx, name)
 }
 
 // refuseZoneHeldElsewhere: Cloudflare lets an account add a pending zone for a domain that is
