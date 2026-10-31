@@ -64,19 +64,39 @@ func withOperatorIdentity(ctx context.Context) (context.Context, error) {
 }
 
 func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s", memoryUsage)
-	}
-	verb := args[0]
-	rest := args[1:]
-	if verb == "remember" {
-		ctx = tools.WithRequestID(ctx, memoryRememberRun(&rest, time.Now().UTC()))
-	}
-	tool, toolArgs, err := memoryVerbToTool(verb, rest)
+	call, err := memoryCallFor(args, time.Now().UTC())
 	if err != nil {
 		return err
 	}
-	return callMemoryTool(ctx, tool, toolArgs, out)
+	if call.run != "" {
+		ctx = tools.WithRequestID(ctx, call.run)
+	}
+	return callMemoryTool(ctx, call.tool, call.args, out)
+}
+
+// memoryCall is one `aura memory` invocation as it goes on the wire: the RAW tool, its
+// arguments and, for a write, the run the actor headers name. cli_contract_test.go checks
+// every verb's arguments against the schema the server publishes.
+type memoryCall struct {
+	run  string
+	tool string
+	args map[string]any
+}
+
+func memoryCallFor(args []string, now time.Time) (memoryCall, error) {
+	if len(args) == 0 {
+		return memoryCall{}, fmt.Errorf("%s", memoryUsage)
+	}
+	verb, rest := args[0], args[1:]
+	var run string
+	if verb == "remember" {
+		run = memoryRememberRun(&rest, now)
+	}
+	tool, toolArgs, err := memoryVerbToTool(verb, rest)
+	if err != nil {
+		return memoryCall{}, err
+	}
+	return memoryCall{run: run, tool: tool, args: toolArgs}, nil
 }
 
 // memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` wire tool name

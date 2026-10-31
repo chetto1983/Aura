@@ -1,9 +1,12 @@
 # Every CLI verb runs in CI — design
 
 Date: 2026-10-31
-Status: **proposed.** The operator chose on 2026-10-31 to write a spec and a plan for C1 of
-`docs/superpowers/verification/2026-10-31-cli-audit.md` before any code. That audit is step 0's
-measurement; nothing further is owed before the amendment.
+Status: **approved by the operator on 2026-10-31** ("esegui tutto E2E"), with the defaults of the
+two open questions in §6:
+- the memory verbs stay at the contract tier in CI, and run live in the closing verification;
+- the smoke pins today's behaviour, and each row named after the C2–C4 defect it pins.
+
+C1 of `docs/superpowers/verification/2026-10-31-cli-audit.md`; that audit is step 0's measurement.
 Plan: `docs/superpowers/plans/2026-10-31-cli-smoke-tier.md`.
 
 ## 1. Why

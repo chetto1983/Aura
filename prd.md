@@ -5148,6 +5148,26 @@ the native subprocess regression received zero bytes instead of two supplied lin
 operator's sandbox command and wrote all three identity-private caches. This measures
 input transport and sandbox execution, not CLI retry semantics or HTTP authorization.
 
+**The CLI's verbs are gated by contracts, an inventory and a smoke tier, not by the coverage
+denominator (2026-10-31).** `scripts/coverage_gate.sh` leaves `cmd/aura` out of the denominator as
+glue "covered behaviourally by integration + smoke". The CLI audit measured that no such smoke
+existed (`docs/superpowers/verification/2026-10-31-cli-audit.md`, C1):
+- CI ran the CLI only for `db migrate/status/ping` and `mcp install`;
+- the operator's verb files sat between 0% and 10%;
+- `aura memory remember` failed on every call from D-10 until a live run found it.
+
+Decision (operator, 2026-10-31): three layers, from
+`docs/superpowers/specs/2026-10-31-cli-smoke-tier-design.md`.
+- **Contracts.** Each memory verb's arguments must validate against the golden tool schemas
+  that `cmd/arcadedb-mcp` is pinned to, with the go-sdk's own validator.
+- **Inventory.** It is read from the dispatchers' source. Every dispatched verb is a smoke row,
+  a contract row or a named exemption, and it fails closed.
+- **Smoke.** The built binary runs on a per-run database under `db_integration`, which the
+  coverage gate already runs in CI.
+
+The denominator is unchanged; the split spec moves `cmd/aura`'s runtime parts to where the gate
+counts them. Not shown: interactive verbs, the memory verbs live in CI, and the lab VM.
+
 ## 19. Evidence, exclusions and remaining limits
 
 ### Document-field coverage tiers — measured 2026-10-22
