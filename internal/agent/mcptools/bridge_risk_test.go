@@ -88,7 +88,7 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 		{name: "memory read", source: mcp.SourceRecipeMemory, tool: "memory_recall"},
 		{name: "memory ordinary write", source: mcp.SourceRecipeMemory, tool: "memory_upsert_fact", wantMutating: true},
 		{name: "memory hygiene", source: mcp.SourceRecipeMemory, tool: "memory_merge_entities", wantMutating: true},
-		{name: "memory erase without approval loop", source: mcp.SourceRecipeMemory, tool: "memory_forget", wantMutating: true},
+		{name: "memory erase asks first", source: mcp.SourceRecipeMemory, tool: "memory_forget", wantMutating: true, wantDestructive: true},
 		{name: "whatsapp read", source: "recipe:whatsapp", tool: "list_messages"},
 		{name: "whatsapp local download", source: "recipe:whatsapp", tool: "download_media", wantMutating: true},
 		// Read despite the cache write it performs, because a view may only call

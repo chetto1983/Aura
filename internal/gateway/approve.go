@@ -282,9 +282,10 @@ func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, key Reservat
 }
 
 // recordDenyFact durably records a refusal as a TERMINAL `end` row (event_kind='end',
-// status='error') keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01). Two
-// refusals write it: the headless/production degraded deny (reason=no_approver) and an
-// identity's deny policy (reason=policy); marker carries which. This is the only legal
+// status='error') keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01). Three
+// refusals write it: the headless/production degraded deny (reason=no_approver), an
+// identity's deny policy (reason=policy) and an outbound send no review covers
+// (reason=message_review); marker carries which. This is the only legal
 // terminal shape (migration 0011 event_kind ∈ {'start','end'}); because the call never
 // executes, a lone `end` row is correct — the 35-05 reconciler's start∧¬end anti-join never
 // flags it, and a denied triple never later executes (a model retry yields a fresh

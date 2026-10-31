@@ -23,6 +23,8 @@ type fakeBoard struct {
 	// writes counts every call that writes, Board among them: the real one ensures the board.
 	writes  int
 	readErr error
+	// gone are the ids DeleteCard reports as already removed.
+	gone map[string]bool
 }
 
 func newFakeBoard() *fakeBoard {
@@ -101,7 +103,7 @@ func (f *fakeBoard) MoveCard(_ context.Context, _, id, col, _ string, _ board.Ac
 func (f *fakeBoard) DeleteCard(_ context.Context, _, id string) (bool, error) {
 	f.writes++
 	f.deleted = append(f.deleted, id)
-	return true, nil
+	return !f.gone[id], nil
 }
 
 const boardConv = "3b241101-e2bb-4255-8caf-4136c566a962"
@@ -322,5 +324,51 @@ func TestBoardSpecIsDeferredAndMultiplexed(t *testing.T) {
 		if !strings.Contains(strings.ToLower(spec.Summary), word) {
 			t.Errorf("summary lacks %q, which tool_search needs to find the board", word)
 		}
+	}
+}
+
+// An overdue card past the 32-card cap is the one a daily briefing must not miss: the whole-board
+// list shows what is due within 24 hours first, overdue first, each card once.
+func TestBoardListShowsWhatIsDueFirst(t *testing.T) {
+	store := newFakeBoard()
+	now := time.Now()
+	due := func(d time.Duration) *time.Time { at := now.Add(d); return &at }
+	for i := range 40 {
+		store.cards = append(store.cards, board.Card{ID: fmt.Sprintf("c%02d", i), ColumnID: "todo", Label: fmt.Sprintf("card %d", i), Priority: 2})
+	}
+	store.cards[39].DueAt = due(-2 * time.Hour)
+	store.cards[38].DueAt = due(3 * time.Hour)
+	store.cards[37].DueAt = due(72 * time.Hour)
+	store.cards = append(store.cards, board.Card{ID: "d00", ColumnID: "done", Label: "shipped late", Priority: 2, DueAt: due(-48 * time.Hour)})
+	tool := &BoardTool{Store: store}
+	ctx := boardCtx(boardConv)
+
+	out, err := runBoard(t, tool, ctx, `{"action":"list"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, rest, found := strings.Cut(out, "## To do")
+	if !found || !strings.Contains(section, "## Due within 24 hours") {
+		t.Fatalf("no due section before the columns:\n%s", out)
+	}
+	late, overdue, soon := strings.Index(section, "[d00]"), strings.Index(section, "[c39]"), strings.Index(section, "[c38]")
+	if late < 0 || overdue < 0 || soon < 0 || late > overdue || overdue > soon || strings.Contains(section, "[c37]") {
+		t.Errorf("due section = %q, want d00, c39, c38 in due order and not c37", section)
+	}
+	for _, id := range []string{"[d00]", "[c39]", "[c38]"} {
+		if n := strings.Count(out, id); n != 1 {
+			t.Errorf("%s listed %d times, want once", id, n)
+		}
+	}
+	if !strings.Contains(rest, "(9 more card(s) not shown") {
+		t.Errorf("41 cards, 32 shown: want 9 more, got %q", rest)
+	}
+	if _, err := runBoard(t, tool, ctx, `{"action":"delete","id":"c39"}`); err != nil {
+		t.Errorf("the overdue card was shown and must be actionable: %v", err)
+	}
+
+	out, _ = runBoard(t, tool, ctx, `{"action":"list","column":"todo"}`)
+	if strings.Contains(out, "## Due") {
+		t.Errorf("a column listing is a request for that column, got a due section:\n%s", out)
 	}
 }

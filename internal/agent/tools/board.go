@@ -57,7 +57,7 @@ const (
 const boardParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "search", "add", "update", "move", "delete"], "description": "list (the board: columns and up to 32 cards, optionally one column), search (cards whose label or description contains query, or tagged with it), add (a new card), update (change a card's fields), move (to another column or position), delete (remove a card; asks the operator first)."},
+    "action": {"type": "string", "enum": ["list", "search", "add", "update", "move", "delete"], "description": "list (the board: what is due within 24 hours first, then columns, up to 32 cards; optionally one column), search (cards whose label or description contains query, or tagged with it), add (a new card), update (change a card's fields), move (to another column or position), delete (remove a card; asks the operator first)."},
     "column": {"type": "string", "description": "list: show only this column. add: the column to add to (default: the first). move: the target column."},
     "query": {"type": "string", "description": "Required when action=search."},
     "id": {"type": "string", "description": "Required when action=update, move or delete: the id of a card that list, search or add returned in this conversation."},
@@ -79,7 +79,7 @@ func (t *BoardTool) Spec() Spec {
 		Summary: "The operator's work board (kanban, backlog, to-do list, cards in columns such as To do, Doing, Done): list, search, add, update, move or delete cards for work that outlives this turn.",
 		Description: "The identity's work board, shared with the operator who sees it in the cockpit. Use it for work that outlives this turn: something to do later, a follow-up, a task the operator mentions in passing. " +
 			"Use todo, not board, for the steps of the turn you are in, and task, not board, when something must happen at a set time; a card can name that task. " +
-			"action=list shows the columns and up to 32 cards; action=search finds cards; add, update and move change the board; delete removes a card and stops for the operator's approval. " +
+			"action=list shows what is due within 24 hours first (overdue first), then the columns, up to 32 cards; action=search finds cards; add, update and move change the board; delete removes a card and stops for the operator's approval. " +
 			"Before add, search or list: when a card for the same work is already there, update or move it instead of adding a second one. " +
 			"Only act on card ids that list, search or add returned in this conversation, and never delete a card the operator did not ask you to delete.",
 		Parameters:     json.RawMessage(boardParamsSchema),

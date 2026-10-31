@@ -53,9 +53,11 @@ type AgentJobHandler struct {
 	Deps AgentDeps
 }
 
-// agentJobPayload is the agent_job task payload shape: {"goal": "..."}.
+// agentJobPayload is the agent_job task payload shape: {"goal": "...", "keep_results": true}.
+// KeepResults is the daily briefing's acceptance switch (agentjob_results.go).
 type agentJobPayload struct {
-	Goal string `json:"goal"`
+	Goal        string `json:"goal"`
+	KeepResults bool   `json:"keep_results,omitempty"`
 }
 
 // Meta declares the agent_job contract: a missed agent_job DOES reschedule on
@@ -76,9 +78,22 @@ func (h AgentJobHandler) Meta() HandlerMeta {
 // within the SAME shared budget (D-25), never blocking; the wall-clock MaxDuration
 // bounds the whole job end-to-end.
 func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
-	goal := agentJobGoal(job.Payload)
+	payload := parseAgentJobPayload(job.Payload)
+	goal := payload.Goal
 	if goal == "" {
 		return "", fmt.Errorf("agent_job: payload has no goal")
+	}
+	var kept *resultLog
+	if payload.KeepResults {
+		var err error
+		if kept, err = openResultLog(h.Deps.RunDir, job.RunID); err != nil {
+			return "", err
+		}
+		defer func() {
+			if err := kept.Close(); err != nil {
+				slog.Warn("agent_job.keep_results.close", "run", job.RunID, "err", err)
+			}
+		}()
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, h.Meta().MaxDuration)
@@ -102,10 +117,11 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 	}
 	var summary strings.Builder
 	askedMutating := false
+	loc := h.Deps.clockLocation(runCtx)
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
-		worker := newAgentWorker(h.Deps, client, cfg, job.RunID, job.OriginConversationID, prior)
-		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool)
+		worker := newAgentWorker(h.Deps, client, cfg, loc, job.RunID, job.OriginConversationID, prior)
+		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool, kept)
 		askedMutating = askedMutating || asked
 		if runErr != nil {
 			return summary.String(), runFailure(runCtx, runErr, askedMutating)
@@ -177,7 +193,7 @@ func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config
 // row it opens. Unmarked, a job's calls stayed open and read as live runs, holding off the
 // updater's quiet-spell apply (lab VM, 2026-10-14). It is not a worker's dispatch, which would
 // also take a per-run MCP session.
-func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, mutating func(tool string) bool) (content string, pause *agent.AwaitingInput, askedMutating bool, err error) {
+func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, mutating func(tool string) bool, kept *resultLog) (content string, pause *agent.AwaitingInput, askedMutating bool, err error) {
 	ic := agent.InvocationContext{
 		Ctx:       tools.WithUnobservedDispatch(ctx),
 		RequestID: uuid.Must(uuid.NewV7()),
@@ -189,6 +205,9 @@ func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, mu
 		}
 		if ev == nil {
 			continue
+		}
+		if err := kept.record(ev); err != nil {
+			return content, nil, askedMutating, err
 		}
 		for _, tool := range eventTools(ev) {
 			askedMutating = askedMutating || mutating(tool)
@@ -302,12 +321,13 @@ func askUserKind(kind string) string {
 }
 
 // agentJobGoal extracts the goal text from the agent_job payload.
-func agentJobGoal(payload []byte) string {
+func parseAgentJobPayload(payload []byte) agentJobPayload {
 	var p agentJobPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
-		return ""
+		return agentJobPayload{}
 	}
-	return strings.TrimSpace(p.Goal)
+	p.Goal = strings.TrimSpace(p.Goal)
+	return p
 }
 
 // appendLine appends content to the summary builder on its own line.

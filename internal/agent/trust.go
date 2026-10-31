@@ -80,10 +80,16 @@ func wrapUntrustedToolOutput(source, content string) string {
 	return FrameUntrustedPromptContent(source, content)
 }
 
-// EscapePromptText neutralizes prompt-control syntax without assigning a trust class.
-// Memory reuses this encoding but deliberately not the untrusted tool-output envelope.
+// promptTextEscaper escapes the three characters that can forge or close a tag in element
+// content. Quotes are left alone: they matter only inside an attribute, and escaping them
+// turned every JSON a tool returned into {&#34;action&#34;:...} (measured 2026-10-31).
+var promptTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// EscapePromptText neutralizes prompt-control syntax without assigning a trust class. NFKC
+// runs first, so a fullwidth ＜ folds to < and is escaped with it. Memory reuses this encoding
+// but deliberately not the untrusted tool-output envelope.
 func EscapePromptText(content string) string {
-	return html.EscapeString(norm.NFKC.String(content))
+	return promptTextEscaper.Replace(norm.NFKC.String(content))
 }
 
 func toolOutputNonce() string {

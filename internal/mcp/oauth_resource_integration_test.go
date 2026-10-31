@@ -1,4 +1,4 @@
-//go:build calendar_integration || whatsapp_integration
+//go:build calendar_integration || whatsapp_integration || pim_mail_e2e
 
 package mcp
 

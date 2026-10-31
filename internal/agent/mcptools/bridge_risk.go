@@ -1,11 +1,13 @@
 package mcptools
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -84,10 +86,13 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"get_contextual_email_summary": MCPActionRead,
 		"create_contact":               MCPActionMutate,
 		"update_contact":               MCPActionMutate,
-		"bulk_mark_emails_read":        MCPActionMutate,
-		"delete_event":                 MCPActionDestructive,
-		"delete_contact":               MCPActionDestructive,
-		"bulk_delete_emails":           MCPActionDestructive,
+		// bulk_mark_emails_read hides every unread mail at once, from the operator and from the
+		// next briefing; which mails were unread does not come back (2026-10-31 audit, A3). The
+		// single mark_email_read stays an ordinary write.
+		"bulk_mark_emails_read": MCPActionDestructive,
+		"delete_event":          MCPActionDestructive,
+		"delete_contact":        MCPActionDestructive,
+		"bulk_delete_emails":    MCPActionDestructive,
 		// bulk_move_emails inherits move_email's reasoning exactly: 'trash' is an
 		// accepted destination, so tiering it Mutate would route around
 		// bulk_delete_emails' gate. unsubscribe_from_email is Destructive because it
@@ -130,9 +135,11 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	// to ask the operator whether Aura may remember something. Seen live in the
 	// cockpit on 2026-08-03 on memory_upsert_fact.
 	//
-	// Memory mutations execute in the requesting turn. The server still refuses an
-	// empty forget filter, isolates tenants, and audits the call; the gateway must not
-	// turn an explicit memory operation into a second confirmation loop.
+	// Memory writes execute in the requesting turn: the gateway must not turn an explicit
+	// memory operation into a second confirmation loop. memory_forget is the exception,
+	// because it destroys what a supersede would keep: Destructive, so an interactive turn
+	// asks once and a run with no operator is denied (2026-10-30, prd.md §5). Its dry run
+	// only counts and stays a read (MemoryForgetDryRun).
 	mcp.SourceRecipeMemory: {
 		"graph_schema":          MCPActionRead,
 		"graph_diagnostics":     MCPActionRead,
@@ -146,8 +153,29 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"memory_batch":          MCPActionMutate,
 		"memory_merge_entities": MCPActionMutate,
 		"memory_reembed":        MCPActionMutate,
-		"memory_forget":         MCPActionMutate,
+		"memory_forget":         MCPActionDestructive,
 	},
+}
+
+// MemoryForgetDryRun reports whether a call is the memory recipe's memory_forget asked only to
+// count. The server answers a dry run before any write (internal/arcadedb/forget.go), so the
+// gateway classifies it as a read. The recipe fields are assigned only by this bridge, never by a
+// server or the model.
+//
+// The key is read exactly, the last occurrence winning, because that is what reaches the server:
+// the bridge re-encodes the arguments from a map (bridge_call.go), and go-sdk v1.8.0 decodes them
+// case-sensitively (its internal/json sets DontMatchCaseInsensitiveStructFields). Decoding into a
+// struct with encoding/json would also take "DRY_RUN", which the server ignores.
+func MemoryForgetDryRun(spec tools.Spec, rawArgs json.RawMessage) bool {
+	if spec.TrustedRecipeSource != mcp.SourceRecipeMemory || spec.TrustedRecipeTool != "memory_forget" {
+		return false
+	}
+	var args map[string]json.RawMessage
+	if json.Unmarshal(rawArgs, &args) != nil {
+		return false
+	}
+	var dryRun bool
+	return json.Unmarshal(args["dry_run"], &dryRun) == nil && dryRun
 }
 
 func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {

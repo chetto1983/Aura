@@ -19,6 +19,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -29,7 +30,7 @@ const memoryServerName = "memory"
 // memoryUsage mirrors the ArcadeDB memory MCP surface, one verb per tool.
 const memoryUsage = "usage: aura memory {search <query> [--as-of <RFC3339>]|" +
 	"facts <entity> [predicate] [--as-of <RFC3339>]|entities|digest|" +
-	"remember <subject> <predicate> <object> <statement> [--subject-kind <kind>] [--object-kind <kind>] [--supersedes]|" +
+	"remember <subject> <predicate> <object> <statement> [--subject-kind <kind>] [--object-kind <kind>] [--supersedes] [--run <id>]|" +
 	"merge <duplicate> <survivor>|" +
 	"forget [--entity <name>] [--subject <s> --predicate <p> --object <o>] [--run <id>] [--apply]|" +
 	"reembed [--all]|schema}"
@@ -68,6 +69,9 @@ func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
 	}
 	verb := args[0]
 	rest := args[1:]
+	if verb == "remember" {
+		ctx = tools.WithRequestID(ctx, memoryRememberRun(&rest, time.Now().UTC()))
+	}
 	tool, toolArgs, err := memoryVerbToTool(verb, rest)
 	if err != nil {
 		return err
@@ -127,20 +131,28 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 	}
 }
 
+// memoryRememberRun takes remember's --run, else today's cliRunID. It travels as the
+// call's actor, in the headers the bridge sends (mcptools.ActorHeaderFunc): since D-10 the
+// write schema has no field for a run, and a run_id in the arguments failed every
+// remember (measured 2026-10-31).
+func memoryRememberRun(args *[]string, now time.Time) string {
+	if run := takeFlag(args, "--run"); run != "" {
+		return run
+	}
+	return cliRunID(now)
+}
+
 // memoryRememberArgs builds the one write the surface has. The statement is a
 // separate argument rather than derived from the triple because it is what gets
-// indexed and searched, and a restated triple retrieves badly.
+// indexed and searched, and a restated triple retrieves badly. The source is empty
+// but required: its memory_ids name retrieved memories, which a hand-typed fact has none of.
 func memoryRememberArgs(args []string) (string, map[string]any, error) {
 	supersedes := takeBoolFlag(&args, "--supersedes")
-	run := takeFlag(&args, "--run")
 	subjectKind := takeFlag(&args, "--subject-kind")
 	objectKind := takeFlag(&args, "--object-kind")
 	if len(args) < 4 {
 		return "", nil, fmt.Errorf(
 			"memory remember requires <subject> <predicate> <object> <statement> [--subject-kind <kind>] [--object-kind <kind>] [--supersedes] [--run <id>]")
-	}
-	if run == "" {
-		run = cliRunID(time.Now().UTC())
 	}
 	call := map[string]any{
 		"subject":    args[0],
@@ -148,7 +160,7 @@ func memoryRememberArgs(args []string) (string, map[string]any, error) {
 		"object":     args[2],
 		"statement":  strings.Join(args[3:], " "),
 		"supersedes": supersedes,
-		"source":     map[string]any{"run_id": run},
+		"source":     map[string]any{},
 	}
 	if subjectKind != "" {
 		call["subject_kind"] = subjectKind

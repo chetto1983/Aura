@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -46,7 +47,7 @@ func (t *BoardTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 	if err != nil {
 		return ToolResult{}, err
 	}
-	text, shown := renderBoard(b, cards, a.Column)
+	text, shown := renderBoard(b, cards, a.Column, time.Now())
 	return t.render(ctx, text, shown)
 }
 
@@ -172,10 +173,19 @@ func (t *BoardTool) render(ctx context.Context, text string, shown []board.Card)
 }
 
 // renderBoard is the bounded snapshot: columns with their counts and limits, then at most
-// boardSnapshotCards cards, the ones beyond the cap counted rather than silently dropped.
-func renderBoard(b board.Board, cards []board.Card, only string) (string, []board.Card) {
+// boardSnapshotCards cards, the ones beyond the cap counted rather than silently dropped. The
+// whole board starts with what is due within 24 hours, overdue first, so no deadline hides
+// behind the cap; each card is listed once.
+func renderBoard(b board.Board, cards []board.Card, only string, now time.Time) (string, []board.Card) {
 	var out strings.Builder
 	var shown []board.Card
+	listed := map[string]bool{}
+	if only == "" {
+		shown = renderDue(&out, cards, now)
+		for _, c := range shown {
+			listed[c.ID] = true
+		}
+	}
 	for _, col := range b.Columns {
 		if only != "" && col.ID != only {
 			continue
@@ -198,6 +208,9 @@ func renderBoard(b board.Board, cards []board.Card, only string) (string, []boar
 			if len(shown) == boardSnapshotCards {
 				break
 			}
+			if listed[c.ID] {
+				continue
+			}
 			writeCard(&out, c, false)
 			shown = append(shown, c)
 		}
@@ -206,6 +219,29 @@ func renderBoard(b board.Board, cards []board.Card, only string) (string, []boar
 		fmt.Fprintf(&out, "(%d more card(s) not shown; use search or list one column)\n", total-len(shown))
 	}
 	return out.String(), shown
+}
+
+// renderDue lists the cards due before now+24h, earliest first, in any column: overdue is a
+// deadline before now, as the cockpit's filter says (web/src/board/boardModel.ts), and the tool
+// has no zone to call a day "today". It returns the cards it listed, at most the snapshot cap.
+func renderDue(out *strings.Builder, cards []board.Card, now time.Time) []board.Card {
+	horizon := now.Add(24 * time.Hour)
+	var due []board.Card
+	for _, c := range cards {
+		if c.DueAt != nil && c.DueAt.Before(horizon) {
+			due = append(due, c)
+		}
+	}
+	if len(due) == 0 {
+		return nil
+	}
+	slices.SortStableFunc(due, func(a, b board.Card) int { return a.DueAt.Compare(*b.DueAt) })
+	due = due[:min(len(due), boardSnapshotCards)]
+	fmt.Fprintf(out, "## Due within 24 hours, overdue first (now %s)\n", now.UTC().Format(time.RFC3339))
+	for _, c := range due {
+		writeCard(out, c, true)
+	}
+	return due
 }
 
 func countIn(cards []board.Card, only string) int {

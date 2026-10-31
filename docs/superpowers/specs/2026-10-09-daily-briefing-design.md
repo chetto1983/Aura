@@ -1,14 +1,107 @@
 # Daily briefing: one skill, one scheduled job, and a baseline to beat
 
-Proposed on 2026-10-09 at `874a0b7d7`, item 5 of the consolidation inventory
-(`2026-10-09-consolidation-best-of-design.md`), after reading PMSync's `BriefingService` and
-Smart Today (`chetto1983/pmsync` at `042cc04c`) against Aura's tree. Not agreed with the
-operator: every decision below is a proposal for review. Nothing here was run; every fact
-is a reading of code, and the acceptance section names the measurements that decide.
+Proposed on 2026-10-09 at `874a0b7d7` and agreed with the operator on 2026-10-30 (below), item 5
+of the consolidation inventory (`2026-10-09-consolidation-best-of-design.md`), after reading
+PMSync's `BriefingService` and Smart Today (`chetto1983/pmsync` at `042cc04c`) against Aura's
+tree. Nothing here was run; every fact is a reading of code, and the acceptance section names the
+measurements that decide.
 
 Wave 2 does not open before wave 1 closes on its lab-VM acceptances and the operator decides
 the six findings of `docs/superpowers/verification/2026-10-09-wave1-model-in-the-loop.md`.
 This spec is written ahead of that, not landed ahead of it.
+
+## Agreed with the operator, 2026-10-30
+
+- **The design stands as written:** a skill and an `agent_job`, three live sources, nothing
+  stored. The two timezone fixes ride in the same slice, and the blind five-day gate decides at
+  four wins in five.
+- **The board's "due first" order joins this slice** (P4 of the productivity read). It makes the
+  overdue cards visible past the 32-card cap, and it is the baseline's board section. It reuses
+  the cockpit's own definition: overdue is a deadline before now, in no particular zone and in
+  any column (`web/src/board/boardModel.ts`). "Due today" is read as "due within 24 hours",
+  because the tool has no zone of its own.
+- **Unread mail is included.** The verification file names the route that ran, as acceptance 4
+  already says; the local model is preferred until item 7 lands.
+
+Plan: `docs/superpowers/plans/2026-10-30-daily-briefing.md`.
+
+## Open question 1 does not hold as answered, read 2026-10-31 (`8af1b9f`)
+
+The baseline was to be rendered "from the tool results that the same run recorded". The tree does
+not keep them whole:
+- **The ledger keeps a cut copy.** `aura.tool_invocations.result_preview` is capped at 2 KiB and
+  redacted (`ResultPreviewCapBytes`, `internal/toolinvocations/redact.go`); a cut one ends in
+  `…[capped]`.
+- **The full result is kept only above the context cap.** The sidecar
+  (`result_sidecar_path`) exists only for a result over `AURA_CONTEXT_PREVIEW_CAP_BYTES`, 30,000
+  bytes by default.
+- **What falls between is kept by neither.** A board list of a dozen cards, or the JSON of 20
+  unread mails, sits between 2 KiB and 30 KB, so neither keeps it whole.
+- **The reasoning trace does not help.** It is off by default (`AURA_REASONING_TRACE`), capped and
+  redacted too, and its full mode needs an acknowledgement and encryption.
+
+This is read in the code, not measured on a run. It says nothing about how often a real briefing's
+reads exceed 2 KiB. `scripts/briefing_baseline.py` stands, because it renders from a bundle. How
+the bundle is obtained was decided on 2026-10-31 (next section).
+
+## Keeping a run's reads for the acceptance, agreed 2026-10-31
+
+The operator chose to keep the job's results whole during the acceptance and nowhere else:
+- **Opt-in per task.** A payload of `{"goal": ..., "keep_results": true}` makes that one
+  `agent_job` write every tool call it finished to
+  `<AURA_RUN_DIR>/tmp/agent_job-<run id>/results.jsonl`, with mode 0600. Each line carries the
+  call id, tool, arguments, status, error, the result the tool returned, and the sidecar path when
+  the result was too long for the context. No env var. A task without the flag writes nothing.
+- **Deleted by the sweep that already exists.** `tmp/` is the retention class
+  `AURA_RETENTION_TEMP_HOURS` (24 hours by default), swept by the daily `retention_sweep` at
+  02:30. A capture lives one to two days. The acceptance extracts it the same morning.
+- **The renderer reads it.** `scripts/briefing_baseline.py --results results.jsonl --zone <IANA>`
+  picks the run's last successful `board list`, `get_calendar_events` and `get_emails`. A source
+  the run did not read, or that failed, is null.
+- **What it costs.** For one to two days the appliance's disk holds what the model read: event
+  subjects, card labels, mail senders and subjects. The capture is not redacted, because the
+  baseline must read what the model read. A capture the job cannot open fails the run: an
+  acceptance day without its capture would be silently unscored.
+
+## Re-read against the tree, 2026-10-30 (`6118144`)
+
+The six findings were decided and verified on 2026-10-12 (`2026-10-12-gateway-clarity-design.md`).
+Since `874a0b7d7` the tree moved; what that changes here:
+
+- **An `agent_job` is no longer `pending_approval` by default.** `task` now routes only a
+  destructive payload there (`internal/agent/tools/task.go:146,166`). A briefing job is active
+  the moment it is scheduled. "The operator approves the briefing once" no longer holds. What
+  still holds is that the agent schedules it only when the operator asks (open question 4).
+- **Both timezone defects are still there.**
+  - `ParseSchedule` still defaults an empty `tz` to `Europe/Rome`
+    (`internal/cron/schedule.go:64-66`).
+  - Nothing in `internal/cron/handlers` sets a `Location`, so the job's clock is still the
+    process zone.
+- **Read-only under the strict profiles is stronger.** A run with no responder is denied every
+  Destructive call, and since 2026-10-30 that includes `memory_forget`
+  (`2026-10-30-headless-memory-erase-design.md`). Under `dev` and `local_trusted` nothing changed.
+  The gateway is still a no-op there, and the cockpit now says so (`policies_enforced`). There,
+  read-only remains an instruction.
+- **The board snapshot.** It is still column order with a cap of 32 cards
+  (`internal/agent/tools/board.go:46`). The cards past the cap are counted, not shown, so an
+  overdue card at position 40 is invisible to the briefing unless the skill asks again. The
+  productivity read (P4, `2026-10-09-consolidation-best-of-design.md`) proposes a deterministic
+  "today" order in the snapshot, which would also be this spec's baseline.
+- **The fields of `get_emails`, measured 2026-10-31** against the published PIM and a fake mailbox
+  (`verification/2026-10-31-pim-mail-e2e.md`):
+  - an item is `id`, `accountId`, `subject`, `from`, `receivedDateTime`, `isRead` and
+    `hasAttachments`;
+  - `from` is a plain string;
+  - there is no text preview.
+
+  The five messages that ask for something are judged from sender and subject alone, as the skill
+  says.
+- **Telegram recipients.** Since 2026-10-28 a task names the Telegram accounts it reaches when
+  two or more are linked (`2026-10-28-telegram-push-recipients-design.md`). The briefing
+  inherits it with no work.
+- **A scheduled worker runs its occurrence.** Since 2026-10-12 it gets an execution instruction
+  before the goal and does not reschedule itself (`2026-10-12-scheduled-job-origin-design.md`).
+  So "Write my daily briefing" is executed, not turned into a new schedule.
 
 ## The problem, measured in the tree
 

@@ -75,6 +75,9 @@ func TestApplyBootSettingsFailsClosed(t *testing.T) {
 			secretErr: errors.New("sealed row unreadable")},
 	} {
 		t.Run(name, func(t *testing.T) {
+			// The overlay writes the row into the process env before the secret read fails;
+			// without a restore, the live tests that run later in this binary see a cloud model.
+			t.Setenv("AURA_EMBED_MODEL", "")
 			if _, err := applyBootSettings(t.Context(), store); err == nil {
 				t.Fatal("applyBootSettings succeeded; boot must not fall back to stale env")
 			}

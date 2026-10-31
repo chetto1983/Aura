@@ -101,10 +101,14 @@ func runtimeMCPEgressPolicy(server mcp.ManagedServer) mcp.EgressPolicy {
 
 // openManagedMCPSession opens a managed server's session through the SDK. Renamed
 // from its pre-SDK "...Transport" name: that word now names a specific, different
-// SDK type, and keeping the old name would mislead a future reader.
+// SDK type, and keeping the old name would mislead a future reader. A call whose ctx
+// carries a run (tools.WithRequestID) names it in the actor headers the bridge sends,
+// which is how `aura memory remember` attributes its write (D-10); any other call sends
+// none.
 func openManagedMCPSession(ctx context.Context, name string, server mcp.ManagedServer) (*sdkmcp.ClientSession, error) {
 	return mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), mcp.SessionOptions{
-		OAuth: runtimeMCPOAuth(ctx),
+		OAuth:      runtimeMCPOAuth(ctx),
+		HeaderFunc: mcptools.ActorHeaderFunc,
 	})
 }
 

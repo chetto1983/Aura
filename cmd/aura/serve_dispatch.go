@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/moby/moby/client"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -25,6 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/plugins"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -213,6 +215,9 @@ func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
 		// The same policy PEP the interactive runner uses (GATE-01): a headless agent_job
 		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
 		Gateway: chat.gateway,
+		// The job's clock: the identity's zone, then the deployment's, as an interactive turn.
+		Timezones: onboarding.NewProfileStore(chat.pool),
+		Location:  tools.LocationOrUTC(chat.cfg.Timezone),
 	}
 	if resolver != nil {
 		deps.Resolver = resolver

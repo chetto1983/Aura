@@ -49,6 +49,7 @@ func TestClassifyCalendarActionTiers(t *testing.T) {
 		{"destructive send", json.RawMessage(`{"action":"send_email"}`), scoring.Destructive},
 		{"destructive respond", json.RawMessage(`{"action":"respond_to_event"}`), scoring.Destructive},
 		{"mail mutate mark read", json.RawMessage(`{"action":"mark_email_read"}`), scoring.Normal},
+		{"mail bulk mark read hides every unread mail", json.RawMessage(`{"action":"bulk_mark_emails_read"}`), scoring.Destructive},
 		{"mail destructive delete", json.RawMessage(`{"action":"delete_email"}`), scoring.Destructive},
 		// move_email must NOT be cheaper than delete_email: 'trash' is an accepted
 		// destination, so a Mutate tier here would be a bypass of delete_email's gate.

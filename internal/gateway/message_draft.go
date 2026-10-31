@@ -33,7 +33,7 @@ func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, ar
 	}
 	if !protected || !present || !claim.MatchesDispatch(identityctx.IdentityID(ctx), spec.Name, target, args) ||
 		key.ConversationID != claim.ConversationID || key.ToolCallID != claim.ToolCallID || key.RequestID != claim.ID {
-		return Verdict{Decision: Deny, Reason: "message review required or claim mismatch"}, true
+		return g.refuseUnreviewedMessage(ctx, spec, args, key), true
 	}
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "reviewed message claim"}, true
@@ -49,4 +49,17 @@ func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, ar
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, true
+}
+
+// refuseUnreviewedMessage is the policy's answer to a send no review covers. On a strict
+// profile it is recorded like the other two refusals: a headless job has no Runner writing its
+// own row, so without the deny fact an injected send left no trace in the ledger (measured
+// 2026-10-31, docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md).
+func (g *Gateway) refuseUnreviewedMessage(ctx context.Context, spec tools.Spec, args json.RawMessage, key ReservationKey) Verdict {
+	tier := classify(spec, args)
+	verdict := Verdict{Decision: Deny, Tier: tier, Reason: "message review required or claim mismatch", Refusal: true}
+	if g != nil && g.profile.Strict() {
+		g.recordDenyFact(ctx, spec, key, tier, verdict.Reason, map[string]any{"reason": "message_review"})
+	}
+	return verdict
 }

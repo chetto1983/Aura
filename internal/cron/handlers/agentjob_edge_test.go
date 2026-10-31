@@ -112,7 +112,7 @@ func TestAgentJobBoundedOutOnRepeatedAskUser(t *testing.T) {
 // as a "no goal" terminal error.
 func TestAgentJobGoalMalformedJSON(t *testing.T) {
 	t.Parallel()
-	if got := agentJobGoal([]byte(`{not valid json`)); got != "" {
+	if got := parseAgentJobPayload([]byte(`{not valid json`)).Goal; got != "" {
 		t.Fatalf("malformed payload must yield an empty goal, got %q", got)
 	}
 	fc := agenttest.NewFakeClient()

@@ -74,8 +74,8 @@ func TestActorSessionKeyOnlyDivergesForWorkers(t *testing.T) {
 // value -- an empty-but-present header is what a naive "always set" version
 // would produce and is indistinguishable from a real empty actor on the wire.
 func TestActorHeaderFuncNilWhenNoRunID(t *testing.T) {
-	if got := actorHeaderFunc(context.Background()); got != nil {
-		t.Fatalf("actorHeaderFunc = %v, want nil", got)
+	if got := ActorHeaderFunc(context.Background()); got != nil {
+		t.Fatalf("ActorHeaderFunc = %v, want nil", got)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestActorHeaderFuncNilWhenNoRunID(t *testing.T) {
 func TestActorHeaderFuncCarriesRoleAndRunID(t *testing.T) {
 	ctx := tools.WithRequestID(context.Background(), "run-w9")
 	ctx = tools.WithDelegatedDispatch(ctx)
-	got := actorHeaderFunc(ctx)
+	got := ActorHeaderFunc(ctx)
 	if got["X-Aura-Actor-Run-Id"] != "run-w9" {
 		t.Errorf("run id header = %q, want run-w9", got["X-Aura-Actor-Run-Id"])
 	}

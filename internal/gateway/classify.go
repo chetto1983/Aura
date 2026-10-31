@@ -43,9 +43,9 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 }
 
 // classify is the monotone saturate-upward de-escalator (D-02). An action-multiplexed
-// tool is routed to its per-action classifier; any other tool falls back to its
-// Destructive and Mutating bits. It never lowers an unrecognised input below the
-// mutating floor.
+// tool is routed to its per-action classifier; a memory_forget dry run only counts and is
+// a read; any other tool falls back to its Destructive and Mutating bits. It never lowers
+// an unrecognised input below the mutating floor.
 //
 // The generic mutating floor is Normal, NOT Risky: "this tool writes something" is what
 // nearly every tool does, and the vocabulary's own Normal tier exists precisely for it.
@@ -61,6 +61,9 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
 	if fn, ok := multiplexedClassifiers[spec.Name]; ok {
 		return fn(rawArgs)
+	}
+	if mcptools.MemoryForgetDryRun(spec, rawArgs) {
+		return scoring.Safe
 	}
 	if spec.Destructive {
 		return scoring.Destructive

@@ -538,6 +538,15 @@ What this does not show:
 - a family label that shares a token with a tool name (`web`, `memory`) still gets
   suggestions only.
 
+**An untrusted tool result keeps its quotes, measured 2026-10-31.** A model-in-the-loop run on
+`b0c804c` (`docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md`) read the
+briefing skill as `{&#34;action&#34;:&#34;list&#34;}`. The envelope escaped every untrusted result
+with `html.EscapeString`, so each `"` and `'` became an entity, in the JSON a skill teaches and in
+any JSON a tool returns. The body is element content, where only `&`, `<` and `>` can forge or
+close a tag. `EscapePromptText` now escapes those three and keeps quotes. The `source` attribute
+keeps its full escaping, and NFKC folding is unchanged. Not shown: whether a model reads JSON
+better without the entities. That would take a real model, and the reviewer played it here.
+
 ## 5. Approvals and durable grants
 
 Approvals are host-issued and bound to identity, operation and effective arguments.
@@ -596,6 +605,43 @@ confirmation, which is the stronger statement, so a confirmed draft passes a `de
 `docs/superpowers/verification/2026-10-10-lab-vm-wave1-acceptance.md`. Not shown: a second
 model; an outbound tool that is not drafted; whether the cockpit should tell the operator, as
 they confirm, that a deny is set on the tool.
+
+**Erasing memory is Destructive; a run with no operator cannot do it, measured in-process
+2026-10-30.** `memory_forget` removes facts and entities and says so in its own description, yet it
+declared `DestructiveHint: false` and the memory recipe table classified it as an ordinary write.
+Two in-process probes on `de1c428` measured the path:
+- the bridge turned it into `Mutating` and not `Destructive`, while `memory_batch`, which can
+  forget too, came out `Destructive`;
+- `Decide` on `single_user_hardened` with no responder answered `allow`, tier `normal`, reserved,
+  with no approval request.
+
+So a scheduled `agent_job` could erase memory, and so could an untrusted text that one reads. The
+change classifies `memory_forget` as `Destructive`, in the recipe table and in the server's
+annotation, except `dry_run: true`, which only counts and stays `Safe`. The existing
+`gated`/`routeApprove` path then denies an erasure with no responder (`degraded_deny`,
+`no_approver`) and asks once in an interactive turn, where `session` and `always` grants cover
+repeats. The no-prompt rule for memory writes (2026-08-03) was about `memory_upsert_fact` and
+stands. Design: `docs/superpowers/specs/2026-10-30-headless-memory-erase-design.md`. Not shown:
+- a live headless run on the lab VM (step 0 and A4 of the design), which is still owed;
+- whether a model follows an injected "forget";
+- `memory_merge_entities`, which was not read.
+
+**Measured headless 2026-10-31,** in a cloud container and not on the lab VM
+(`docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md`). The reviewer played a
+model that obeys an injected mail in a scheduled `agent_job` on `single_user_hardened`, and the
+gateway answered three ways:
+- `memory_forget` on Anna was denied with `no_approver`, and the fact was still there afterwards;
+- its dry run passed;
+- `bulk_mark_emails_read` was denied the same way.
+
+**A refused unreviewed send leaves a ledger row (2026-10-31).** In the same run, `send_email` to
+the attacker was denied with "message review required or claim mismatch". It was the only denial
+with no row in `aura.tool_invocations`. In a chat the Runner writes its own row for every call. A
+headless job has no Runner, so only the gateway's deny fact records a refusal, and
+`decideReviewedMessage` did not write one. On a strict profile, that refusal now writes the deny
+fact (`reason=message_review`). In every profile it is a `Refusal`, like the other two policy
+answers, so the chat shows it as refused rather than as an error. Not shown: the lab VM, and a
+reviewed send whose claim mismatches in a chat.
 
 ## 6. Model runtime and hot settings
 
@@ -1249,6 +1295,15 @@ and whole-transaction retry cannot duplicate logical effects or cross identities
 Entity merge preserves attributable facts, sources and indexed relationships.
 Forgetting and source/conversation/identity deletion propagate to derived records
 according to ownership and retention authority.
+
+**`aura memory remember` names its run the way the bridge does, measured 2026-10-31.** Since D-10
+the write schema's `source` takes `memory_ids` only. The CLI still sent `"source":{"run_id":…}`, so
+every `remember` failed with "unexpected additional properties [\"run_id\"]"
+(`docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md`). The server's comment
+said such a field "is silently ignored", and that was false. The CLI is a host, like the bridge,
+so it now carries the run in the actor headers: `--run`, or `cli-<day>` by default. It uses the
+bridge's own header function. `aura memory forget --run cli-<day>` then finds that day's facts
+again. Not shown: that this undo is used.
 
 ## 9. Memory retrieval, graph paths and evidence classes
 
@@ -4237,6 +4292,20 @@ Not measured:
 - an archived origin;
 - a goal that calls a mutating tool;
 - the swarm worker's MCP session leak.
+
+**An `agent_job` scheduled outside a conversation answers in one of its own, measured
+2026-10-31.** `aura task add agent_job` stores no `origin_conversation_id`. The job's ledger key then
+fell back to its session, `agent_job-<run id>`, which is not a UUID. On `single_user_hardened` every
+reservation failed, and every tool with a mutating spec was denied with "reservation failed". The
+briefing's three reads were among them, since `board` and `calendar__calendar` are mutating specs
+(`docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md`). The daily briefing's
+acceptance schedules its task this way, because only a raw payload can set `keep_results`.
+
+Decision (operator, 2026-10-31): such a job opens its own conversation, the way a task whose
+origin was deleted does. `homeTask` now also homes an `agent_job` with no origin. It opens "⏰
+<goal>" as the task's identity and records it with `SetTaskOriginRow`; later runs reuse it. Other
+kinds with no origin are left alone, because none of them runs tools through the gateway. A
+failed open leaves the run as before. Not shown: the lab VM.
 
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
