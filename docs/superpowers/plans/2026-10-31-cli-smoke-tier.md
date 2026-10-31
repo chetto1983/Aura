@@ -1,6 +1,6 @@
 # Every CLI verb runs in CI — Implementation Plan
 
-**Status (2026-10-31):** proposed. The spec awaits the operator's approval; no task has started.
+**Status (2026-10-31):** approved by the operator ("esegui tutto E2E"); in progress.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -68,12 +68,12 @@
 ## Tasks
 
 ### Task 0 — Record the measurement (PRD-first)
-- [ ] `prd.md` §18 gets a paragraph:
+- [x] `prd.md` §18 gets a paragraph:
   - the audit's measurement (coverage by file, what CI runs, D4's two months);
   - the decision: the CLI is gated by contracts, inventory and smoke, and not by the
     denominator;
   - what it does not show.
-- [ ] Commit `docs(prd): the CLI's verbs are gated by smoke, not by coverage`, together with the
+- [x] Commit `docs(prd): the CLI's verbs are gated by smoke, not by coverage`, together with the
   spec marked approved.
 
 ### Task 1 — Contracts (A2)
