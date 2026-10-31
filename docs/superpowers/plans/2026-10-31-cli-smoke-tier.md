@@ -1,7 +1,6 @@
 # Every CLI verb runs in CI — Implementation Plan
 
-**Status (2026-10-31):** done and on `master`, except the final mutation score on the memory mapping
-functions, which is owed to the verification file. Approved by the operator ("esegui tutto E2E"). Evidence: `docs/superpowers/verification/2026-10-31-cli-smoke-tier.md`.
+**Status (2026-10-31):** done and on `master`. Approved by the operator ("esegui tutto E2E"). Evidence: `docs/superpowers/verification/2026-10-31-cli-smoke-tier.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -87,7 +86,8 @@ functions, which is owed to the verification file. Approved by the operator ("es
   - `forget --run` keeps `source.run_id`, which the forget schema allows.
 - [x] A golden tool that no verb maps to is listed in the test with a reason. Today those are
   `memory_batch`, `memory_recall`, `graph_path` and `graph_diagnostics`.
-- [x] Mutation on `memoryVerbToTool` and its helpers: see Task 5.
+- [x] Mutation on `memoryVerbToTool` and its helpers: 71 of 71 compiling mutants killed, after
+  four tests added for pre-existing gaps (`68bc5a9` and the closing commit).
 - [x] Commit `test(cli): every memory verb matches its server's schema`.
 
 ### Task 2 — Inventory (A1)

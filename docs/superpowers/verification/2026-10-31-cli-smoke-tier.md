@@ -132,11 +132,15 @@ The `cmd/aura` row's 54.9% is this tree. The audit's 55.3% was taken at `e0c6d77
 
     `68bc5a9` adds tests that kill each one, checked mutant by mutant. That run was then stopped,
     because the disk filled and a failed build looked like a kill.
-  - **Second run, still going when this file was committed.** So far 70 killed, 1 survived and
-    15 skipped (mutants that do not compile).
-  - **The survivor.** `arg`'s blank-argument check, `strings.TrimSpace(args[i]) == ""`. No test
-    passes a blank positional such as `aura memory facts ""`.
-  - The final score is owed to this file.
+  - **Second run.** 86 mutants of `memory.go`: 15 do not compile, 70 are killed and 1 survives.
+  - **The survivor.** `arg`'s blank-argument check: no test passed a blank positional such as
+    `aura memory facts ""`. `TestABlankPositionalIsMissing` kills it, checked by hand. Final: **71
+    of 71** compiling mutants killed.
+  - **The cost.** All 86 mutants were done in about 25 minutes. go-mutesting then spent more than
+    40 minutes type-checking the other 160 files of `package main` one by one. `--match` filters
+    after each file has loaded, and none of those files had a function to mutate. It was stopped
+    by hand. Mutating `cmd/aura` stays this slow until its pure functions leave `package main`,
+    which is step 4 of the split spec.
 - CI on `9697b2e`: green in every workflow (CI with both `db_integration` jobs that run the smoke,
   CodeQL, Skills, Publish Aura edge image, Publish ArcadeDB MCP, create-aura-appliance).
   - `257cc73` had been red, for the two reasons recorded above.
