@@ -102,9 +102,9 @@ export async function expectStillAccepted(page: Page) {
   await page.reload();
   await page.locator('#remote-access-heading').waitFor({ timeout: 30_000 });
   const phone = page.getByRole('heading', { name: 'Try it from your phone', level: 3 });
-  if (!(await phone.isVisible())) {
-    await page.getByRole('button', { name: 'Try it from your phone', exact: true }).click();
-  }
+  const stripStep = page.getByRole('button', { name: 'Try it from your phone', exact: true });
+  await expect(phone.or(stripStep)).toBeVisible();
+  if (!(await phone.isVisible())) await stripStep.click();
   await expect(phone).toBeVisible();
   await expect(page.getByText('Reachable from outside')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirm external access' })).toHaveCount(0);
