@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -377,6 +378,29 @@ func TestMemoryForgetIsADryRunUntilApplied(t *testing.T) {
 	// Matching nothing would sweep everything; it must be refused.
 	if _, _, err := memoryForgetArgs([]string{"--apply"}); err == nil {
 		t.Fatal("forget with no matcher was accepted")
+	}
+}
+
+// memoryVerbCalls is shared by parallel tests, so taking a flag must not write into the caller's
+// array: the race detector caught TestOnlyRememberNamesARun doing it under TestCLIVerbInventory.
+func TestTakingAFlagLeavesTheCallersArgsAlone(t *testing.T) {
+	t.Parallel()
+	argv := []string{"subject", "--subject-kind", "person", "--supersedes", "object"}
+	original := slices.Clone(argv)
+
+	args := argv
+	if got := takeFlag(&args, "--subject-kind"); got != "person" {
+		t.Fatalf("takeFlag = %q", got)
+	}
+	if !takeBoolFlag(&args, "--supersedes") {
+		t.Fatal("takeBoolFlag did not find its flag")
+	}
+
+	if want := []string{"subject", "object"}; !slices.Equal(args, want) {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+	if !slices.Equal(argv, original) {
+		t.Fatalf("the caller's slice became %v, was %v", argv, original)
 	}
 }
 

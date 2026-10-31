@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -236,12 +237,13 @@ func memoryForgetArgs(args []string) (string, map[string]any, error) {
 	return "memory_forget", call, nil
 }
 
-// takeFlag removes "--name value" from args and returns the value.
+// takeFlag removes "--name value" from args and returns the value. It rebinds args to a copy,
+// never writing through it: the caller's array can be a table shared by parallel tests.
 func takeFlag(args *[]string, name string) string {
 	for i, a := range *args {
 		if a == name && i+1 < len(*args) {
 			value := (*args)[i+1]
-			*args = append((*args)[:i], (*args)[i+2:]...)
+			*args = slices.Delete(slices.Clone(*args), i, i+2)
 			return value
 		}
 	}
@@ -251,7 +253,7 @@ func takeFlag(args *[]string, name string) string {
 func takeBoolFlag(args *[]string, name string) bool {
 	for i, a := range *args {
 		if a == name {
-			*args = append((*args)[:i], (*args)[i+1:]...)
+			*args = slices.Delete(slices.Clone(*args), i, i+1)
 			return true
 		}
 	}
