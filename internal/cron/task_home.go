@@ -25,16 +25,25 @@ type TaskOriginSetter interface {
 	SetTaskOrigin(ctx context.Context, taskID, conversationID string) error
 }
 
-// homeTask keeps a task answering when the conversation it was scheduled from is gone. On
-// the lab VM, 2026-10-14, the operator bulk-deleted their conversations, a daily goal's
-// origin among them, and its next run lost every tool-ledger row to the conversation foreign
-// key and its outcome to "conversation not found". Such a task moves into a conversation of
-// its own and keeps it; while the origin exists nothing changes, and a check that cannot be
-// answered moves nothing.
+// homeTask gives a task a conversation of its own when the one it answers in is gone or was
+// never there. On the lab VM, 2026-10-14, the operator bulk-deleted their conversations, a daily
+// goal's origin among them, and its next run lost every tool-ledger row to the conversation
+// foreign key and its outcome to "conversation not found". On 2026-10-31 an agent_job scheduled
+// with `aura task add` had no origin at all: its ledger key fell back to the job's non-UUID
+// session, and a strict profile denied every tool it called. Either task moves into a
+// conversation of its own and keeps it. While the origin exists nothing changes, a check that
+// cannot be answered moves nothing, and a kind other than agent_job with no origin is left
+// alone, because none of them calls tools through the gateway.
 func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 	convs := d.deps.TaskConversations
-	if convs == nil || d.deps.TaskOrigins == nil || task.OriginConversationID == "" {
+	if convs == nil || d.deps.TaskOrigins == nil {
 		return task
+	}
+	if task.OriginConversationID == "" {
+		if task.Kind != KindAgentJob {
+			return task
+		}
+		return d.openTaskConversation(ctx, task, "cron: the agent_job was scheduled outside a conversation; it answers in one of its own")
 	}
 	exists, err := convs.ConversationExists(ctx, task.OriginConversationID, task.IdentityID)
 	if err != nil {
@@ -45,9 +54,15 @@ func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 	if exists {
 		return task
 	}
-	id, err := convs.CreateTaskConversation(ctx, task.IdentityID, taskConversationTitle(task))
+	return d.openTaskConversation(ctx, task, "cron: the task's conversation is gone; it answers in a conversation of its own")
+}
+
+// openTaskConversation opens the task's own conversation, records it as the task's origin for
+// its next runs, and returns the task answering there. A failed open leaves the task as it was.
+func (d *Dispatch) openTaskConversation(ctx context.Context, task Task, moved string) Task {
+	id, err := d.deps.TaskConversations.CreateTaskConversation(ctx, task.IdentityID, taskConversationTitle(task))
 	if err != nil {
-		slog.Warn("cron: the task's conversation is gone and a new one could not be opened",
+		slog.Warn("cron: the task needs a conversation of its own and none could be opened",
 			"task", task.ID, "conversation", task.OriginConversationID, "err", err)
 		return task
 	}
@@ -55,8 +70,7 @@ func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 		slog.Warn("cron: the task's new conversation was not recorded; this run answers there",
 			"task", task.ID, "conversation", id, "err", err)
 	}
-	slog.Info("cron: the task's conversation is gone; it answers in a conversation of its own",
-		"task", task.ID, "deleted", task.OriginConversationID, "conversation", id)
+	slog.Info(moved, "task", task.ID, "previous", task.OriginConversationID, "conversation", id)
 	task.OriginConversationID = id
 	return task
 }

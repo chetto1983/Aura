@@ -47,9 +47,10 @@ type Job struct {
 	// slipped fire. A handler (backup) uses it to decide whether to emit the SC#3
 	// missed-past-the-window alert; it is the zero value for a normal tick run.
 	MissedSince time.Time
-	// OriginConversationID is the conversation UUID the task was scheduled from (may be
-	// empty). The adapter relays it to handlers.Job so a headless agent_job's gateway
-	// decision-fact keys on a real conversation UUID, never the flat run session (Open Q1).
+	// OriginConversationID is the conversation UUID the task answers in. An agent_job has one
+	// unless its own could not be opened (task_home.go). The adapter relays it to handlers.Job
+	// so a headless agent_job's gateway decision-fact keys on a real conversation UUID, never
+	// the flat run session (Open Q1), which is not a UUID and fails every reservation.
 	OriginConversationID string
 }
 
@@ -127,9 +128,9 @@ type DispatchDeps struct {
 	// on the task all along (origin_conversation_id) and only the approval-pause path
 	// read it. LibreChat's rule (D-00): the conversation IS the channel.
 	ConversationRecorder ConversationRecorder
-	// TaskConversations and TaskOrigins move a task whose conversation was deleted into
-	// one of its own (task_home.go). TaskOrigins defaults from Store; either nil → the task
-	// keeps its origin, deleted or not.
+	// TaskConversations and TaskOrigins move a task whose conversation was deleted, or an
+	// agent_job that never had one, into one of its own (task_home.go). TaskOrigins defaults
+	// from Store; either nil → the task keeps its origin, deleted or absent.
 	TaskConversations TaskConversations
 	TaskOrigins       TaskOriginSetter
 	// OutcomeRecorder counts failed runs and pauses a task after
