@@ -86,10 +86,13 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"get_contextual_email_summary": MCPActionRead,
 		"create_contact":               MCPActionMutate,
 		"update_contact":               MCPActionMutate,
-		"bulk_mark_emails_read":        MCPActionMutate,
-		"delete_event":                 MCPActionDestructive,
-		"delete_contact":               MCPActionDestructive,
-		"bulk_delete_emails":           MCPActionDestructive,
+		// bulk_mark_emails_read hides every unread mail at once, from the operator and from the
+		// next briefing; which mails were unread does not come back (2026-10-31 audit, A3). The
+		// single mark_email_read stays an ordinary write.
+		"bulk_mark_emails_read": MCPActionDestructive,
+		"delete_event":          MCPActionDestructive,
+		"delete_contact":        MCPActionDestructive,
+		"bulk_delete_emails":    MCPActionDestructive,
 		// bulk_move_emails inherits move_email's reasoning exactly: 'trash' is an
 		// accepted destination, so tiering it Mutate would route around
 		// bulk_delete_emails' gate. unsubscribe_from_email is Destructive because it

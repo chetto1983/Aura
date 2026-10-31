@@ -51,6 +51,18 @@ responder and an acquired operation:
 | `calendar` `update_contact` | overwrites a contact's fields | no history | **A4.** Data loss, small |
 | `calendar` `create_contact` | adds a contact | yes | safe |
 
+## Decided by the operator, 2026-10-31
+
+- **A1, invitations.** Measure first. On the lab VM, `create_event` with a test address as
+  attendee: does the PIM send the invitation? The classification waits on that answer.
+- **A2, browser.** Unchanged. The risk is recorded here. A per-identity `deny` policy on the
+  browser's write actions (item 1) blocks them for an identity whose jobs must not drive a
+  browser. Legitimate scheduled checks navigate by clicking, so a blanket headless deny would
+  break them.
+- **A3, bulk mark-read.** `bulk_mark_emails_read` is Destructive: it asks once in a turn and is
+  denied with no responder. The single `mark_email_read` stays ordinary.
+- **A4, contact overwrite.** Unchanged. The impact is small and can be repaired by hand.
+
 ## What this audit does not establish
 
 - **That the PIM sends invitations.** The PIM fork is a separate repository, outside this

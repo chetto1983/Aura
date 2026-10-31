@@ -86,7 +86,7 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			"get_contextual_email_summary": {false, false},
 			"create_contact":               {true, false},
 			"update_contact":               {true, false},
-			"bulk_mark_emails_read":        {true, false},
+			"bulk_mark_emails_read":        {true, true},
 			"delete_event":                 {true, true},
 			"delete_contact":               {true, true},
 			"bulk_delete_emails":           {true, true},
