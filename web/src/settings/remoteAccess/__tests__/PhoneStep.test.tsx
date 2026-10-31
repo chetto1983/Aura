@@ -134,6 +134,90 @@ describe('PhoneStep', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('cambiata nel frattempo');
   });
 
+  describe('a confirmation before the tunnel serves', () => {
+    const notServing = () => new RemoteAccessError(new HttpError(400, 'invalid'), 'tunnel_down');
+
+    async function pressTooEarly(status: RemoteAccessStatusDTO = waiting) {
+      vi.stubGlobal('location', new URL('https://aura.example.com/'));
+      const props = renderStep(status);
+      props.onAccept.mockRejectedValueOnce(notServing());
+      fireEvent.click(screen.getByRole('button', { name: acceptName }));
+      return { ...props, alert: await screen.findByRole('alert') };
+    }
+
+    it('says to wait and press again, and promises no outage healing', async () => {
+      const { alert } = await pressTooEarly();
+      expect(alert.textContent).toBe(
+        'Il collegamento non è ancora pronto. Aspetta qualche secondo e premi di nuovo Conferma.',
+      );
+    });
+
+    it('says it in English too', async () => {
+      await i18n.changeLanguage('en');
+      vi.stubGlobal('location', new URL('https://aura.example.com/'));
+      const { onAccept } = renderStep(waiting);
+      onAccept.mockRejectedValueOnce(notServing());
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm external access' }));
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        'The connection is not ready yet. Wait a few seconds and press Confirm again.',
+      );
+    });
+
+    it('offers no reconcile: the confirmation stays the way on', async () => {
+      const { onRetry } = await pressTooEarly();
+      expect(screen.queryByRole('button', { name: 'Controlla ora' })).toBeNull();
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(screen.getByRole('button', { name: acceptName }).hasAttribute('disabled')).toBe(false);
+      expect(onRetry).not.toHaveBeenCalled();
+    });
+
+    it('drops the sentence once the address is confirmed from elsewhere', async () => {
+      vi.stubGlobal('location', new URL('https://aura.example.com/'));
+      const onAccept = vi.fn(() => Promise.reject(notServing()));
+      const props = {
+        onAccept,
+        onRetry: vi.fn(() => Promise.resolve()),
+        onDisable: vi.fn(() => Promise.resolve()),
+        onDelete: vi.fn(() => Promise.resolve()),
+        onBack: vi.fn(),
+        onOpenStep: vi.fn(),
+      };
+      const { rerender } = render(<PhoneStep status={waiting} {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: acceptName }));
+      await screen.findByRole('alert');
+      rerender(<PhoneStep status={healthy} {...props} />);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('a second press that succeeds clears it', async () => {
+      const { onAccept } = await pressTooEarly();
+      fireEvent.click(screen.getByRole('button', { name: acceptName }));
+      await waitFor(() => {
+        expect(onAccept).toHaveBeenCalledTimes(2);
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole('alert')).toBeNull();
+      });
+    });
+
+    it('a second press that fails the same way says it again', async () => {
+      const { onAccept } = await pressTooEarly();
+      onAccept.mockRejectedValueOnce(notServing());
+      fireEvent.click(screen.getByRole('button', { name: acceptName }));
+      await waitFor(() => {
+        expect(onAccept).toHaveBeenCalledTimes(2);
+      });
+      expect((await screen.findByRole('alert')).textContent).toContain('non è ancora pronto');
+    });
+  });
+
+  it('an accepted row with tunnel_down keeps the sentence that promises no new test', () => {
+    renderStep(down);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('senza rifare la prova');
+    expect(alert.textContent).not.toContain('non è ancora pronto');
+  });
+
   it('Disattiva calls it', async () => {
     const { onDisable } = renderStep(healthy);
     fireEvent.click(screen.getByRole('button', { name: 'Disattiva' }));

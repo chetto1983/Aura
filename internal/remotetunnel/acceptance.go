@@ -33,7 +33,7 @@ func (r *Reconciler) AcceptExternal(ctx context.Context, generation int64) error
 				return err
 			}
 		}
-		return ErrConfiguration
+		return ErrTunnelNotServing
 	}
 	state.AcceptedHostname = PublicHostname(state.Desired)
 	state.ObservedHealthy = true

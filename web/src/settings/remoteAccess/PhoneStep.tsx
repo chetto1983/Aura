@@ -31,6 +31,9 @@ export function PhoneStep({
   const hostname = status.public_hostname ?? '';
   // An outage must never ask for the test again, whatever the row says about acceptance.
   const testing = !status.accepted && status.reason !== 'tunnel_down';
+  // The press was refused, not the row: Conferma is the way on, and the row's sentence about an
+  // outage healing with no new test is false for an address nobody has confirmed yet.
+  const tooEarly = accept.failure === 'tunnel_down';
   const onPublicHostname =
     hostname !== '' && window.location.hostname.toLowerCase() === hostname.toLowerCase();
   const checkedAt = parseTime(status.last_checked_at);
@@ -83,10 +86,15 @@ export function PhoneStep({
           {t('remoteAccess.phone.externalOnly')}
         </p>
       ) : null}
+      {testing && tooEarly ? (
+        <p role="alert" className="text-sm leading-relaxed text-danger">
+          {t('remoteAccess.phone.notReady')}
+        </p>
+      ) : null}
       <StepFailure
         status={status}
         step="phone"
-        failure={accept.failure ?? retry.failure}
+        failure={(tooEarly ? null : accept.failure) ?? retry.failure}
         onOpenStep={onOpenStep}
         onRetry={() => void retry.run(onRetry)}
         retrying={retry.running}

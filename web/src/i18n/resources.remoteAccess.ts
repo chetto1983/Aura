@@ -95,6 +95,7 @@ export const remoteAccessEn = {
       lastChecked: 'Last checked: {{time}}',
       externalOnly: 'The confirmation is only available from that address.',
       accept: 'Confirm external access',
+      notReady: 'The connection is not ready yet. Wait a few seconds and press Confirm again.',
       direct:
         'At home you can always open Aura by its IP address: Cloudflare asks for no PIN there, and your Aura sign-in still applies.',
       disable: 'Disable',
@@ -266,6 +267,8 @@ export const remoteAccessIt = {
       lastChecked: 'Ultimo controllo: {{time}}',
       externalOnly: 'La conferma è disponibile solo da quell’indirizzo.',
       accept: 'Conferma l’accesso da fuori',
+      notReady:
+        'Il collegamento non è ancora pronto. Aspetta qualche secondo e premi di nuovo Conferma.',
       direct:
         'A casa puoi sempre aprire Aura dal suo indirizzo IP: lì Cloudflare non chiede il PIN, e resta il tuo accesso ad Aura.',
       disable: 'Disattiva',

@@ -133,6 +133,32 @@ func TestExternalAcceptanceRejectsStaleDisabledUnownedAndUnhealthy(t *testing.T)
 	}
 }
 
+func TestConfirmationBeforeTheTunnelServesSaysSoAndLeavesTheRow(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	for _, status := range []string{"inactive", "down"} {
+		h.cloud.tunnel.Status = status
+		err := h.r.AcceptExternal(t.Context(), h.store.state.Generation)
+		if !errors.Is(err, ErrTunnelNotServing) || !errors.Is(err, ErrConfiguration) {
+			t.Fatalf("%s: err=%v", status, err)
+		}
+		if got := ReasonOf(err); got != ReasonTunnelDown {
+			t.Fatalf("%s: reason=%q", status, got)
+		}
+		// The refusal belongs to the press: a row marked tunnel_down would hide the button that retries it.
+		if s := h.store.state; s.Phase != PhaseConnecting || s.Reason != "" || s.Accepted() || s.ObservedHealthy {
+			t.Fatalf("%s: state=%+v", status, s)
+		}
+	}
+	h.cloud.tunnel.Status = "healthy"
+	if err := h.r.AcceptExternal(t.Context(), h.store.state.Generation); err != nil {
+		t.Fatalf("the second press: %v", err)
+	}
+	if s := h.store.state; !s.Accepted() || s.Phase != PhaseHealthy || !s.ObservedHealthy {
+		t.Fatalf("state=%+v", s)
+	}
+}
+
 func TestAcceptExternalAcceptsADegradedTunnel(t *testing.T) {
 	h := newHarness(t)
 	if err := h.r.Reconcile(t.Context()); err != nil {

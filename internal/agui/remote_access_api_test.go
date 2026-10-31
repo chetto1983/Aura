@@ -271,6 +271,7 @@ func TestErrorBodiesCarryTheirReasonAndAFixedSentence(t *testing.T) {
 		{remotetunnel.ErrAccountNotVisible, 400, "account_not_visible"},
 		{remotetunnel.ErrDomainInvalid, 400, "domain_invalid"},
 		{remotetunnel.ErrConfiguration, 400, "unknown"},
+		{remotetunnel.ErrTunnelNotServing, 400, "tunnel_down"},
 		{remotetunnel.ErrDomainElsewhere, 502, "domain_elsewhere"},
 		{remotetunnel.ErrHostnameTaken, 502, "hostname_taken"},
 		{remotetunnel.ErrMemberLockout, 502, "no_administrator"},
@@ -358,6 +359,7 @@ func TestARefusalWithNoNamedCauseLogsItAndOnlyLogsIt(t *testing.T) {
 		{"unknown cause", errors.New("cause-abc"), true},
 		{"a Cloudflare 400", fmt.Errorf("cause-abc: %w", &cloudflareapi.APIError{Status: 400}), true},
 		{"a named reason", fmt.Errorf("cause-abc: %w", remotetunnel.ErrDomainElsewhere), false},
+		{"a tunnel not serving yet", fmt.Errorf("cause-abc: %w", remotetunnel.ErrTunnelNotServing), false},
 		{"a stale generation", fmt.Errorf("cause-abc: %w", remotetunnel.ErrStaleGeneration), false},
 		{"another owner", fmt.Errorf("cause-abc: %w", remotetunnel.ErrOwnershipConflict), false},
 	} {

@@ -53,7 +53,7 @@ func serveRemoteAccess(t *testing.T, c *remoteAccessController) *remoteHTTP {
 	return &remoteHTTP{srv}
 }
 
-func (s *remoteHTTP) call(t *testing.T, method, path, body string) (int, string) {
+func (s *remoteHTTP) call(t *testing.T, method, path, body string, edits ...func(*http.Request)) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(method, s.URL+"/api/settings/remote-access"+path, strings.NewReader(body))
 	if err != nil {
@@ -62,6 +62,9 @@ func (s *remoteHTTP) call(t *testing.T, method, path, body string) (int, string)
 	if method != http.MethodGet {
 		req.Header.Set("Idempotency-Key", uuid.NewString())
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for _, edit := range edits {
+		edit(req)
 	}
 	resp, err := s.Client().Do(req)
 	if err != nil {
@@ -87,6 +90,39 @@ func TestStatusDuringAnOutageNeverAsksForThePhoneTest(t *testing.T) {
 	}
 	if code != 200 || strings.Contains(body, "acceptance_required") {
 		t.Fatalf("status=%d body=%s", code, body)
+	}
+}
+
+func TestAConfirmationBeforeTheTunnelServesAnswersTunnelDown(t *testing.T) {
+	state := provisionedInAccountA()
+	state.Phase = remotetunnel.PhaseConnecting
+	cloud := newWizardCloudflare(t, acmeAccounts("account-a"), 200)
+	cloud.tunnelStatus = "inactive"
+	store := &remoteMemoryStore{state: state}
+	srv := serveRemoteAccess(t, cloud.controller(store, &remoteMemorySecrets{values: map[string]string{"CLOUDFLARE_API_TOKEN": "token-a"}}, nil))
+	throughTheTunnel := func(r *http.Request) {
+		r.Host = "aura.a.it"
+		r.Header.Set("X-Aura-Remote-Ingress", "tunnel")
+	}
+
+	code, body := srv.call(t, "POST", "/accept-external", `{"generation":3}`, throughTheTunnel)
+	var refused map[string]string
+	if err := json.Unmarshal([]byte(body), &refused); err != nil {
+		t.Fatal(err)
+	}
+	if code != 400 || refused["reason"] != "tunnel_down" {
+		t.Fatalf("status=%d body=%s", code, body)
+	}
+	if s := store.state; s.Phase != remotetunnel.PhaseConnecting || s.Reason != "" || s.Accepted() {
+		t.Fatalf("the refused press changed the row: %+v", s)
+	}
+
+	cloud.tunnelStatus = "healthy"
+	if code, body = srv.call(t, "POST", "/accept-external", `{"generation":3}`, throughTheTunnel); code != 202 {
+		t.Fatalf("the second press: status=%d body=%s", code, body)
+	}
+	if s := store.state; !s.Accepted() || s.Phase != remotetunnel.PhaseHealthy {
+		t.Fatalf("state=%+v", s)
 	}
 }
 

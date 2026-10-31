@@ -23,6 +23,8 @@ type wizardCloudflare struct {
 	// tokenStatus is what /user/tokens/verify reports; hangAccounts holds /accounts open until the caller gives up.
 	tokenStatus  string
 	hangAccounts bool
+	// tunnelStatus is what the tunnel of provisionedInAccountA reports.
+	tunnelStatus string
 }
 
 func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) *wizardCloudflare {
@@ -44,6 +46,8 @@ func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) 
 		case "/zones":
 			f.zones.Add(1)
 			_, _ = w.Write([]byte(`{"success":true,"result":[],"result_info":{"page":1,"total_pages":1}}`))
+		case "/accounts/account-a/cfd_tunnel/" + oldTunnelUUID:
+			_, _ = w.Write([]byte(`{"success":true,"result":{"id":"` + oldTunnelUUID + `","name":"` + oldOwner + `","config_src":"cloudflare","status":"` + f.tunnelStatus + `"}}`))
 		default:
 			t.Errorf("unexpected Cloudflare request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(500)

@@ -20,6 +20,8 @@ func TestReasonOf(t *testing.T) {
 		{"no accounts", ErrNoAccounts, ReasonNoAccounts},
 		{"account not visible", ErrAccountNotVisible, ReasonAccountNotVisible},
 		{"domain invalid", ErrDomainInvalid, ReasonDomainInvalid},
+		{"tunnel not serving", ErrTunnelNotServing, ReasonTunnelDown},
+		{"wrapped tunnel not serving", fmt.Errorf("accept: %w", ErrTunnelNotServing), ReasonTunnelDown},
 		{"configuration", ErrConfiguration, ReasonUnknown},
 		{"ownership", ErrOwnershipConflict, ReasonNotOwned},
 		{"lockout", ErrMemberLockout, ReasonNoAdministrator},

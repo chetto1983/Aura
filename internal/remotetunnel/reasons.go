@@ -19,6 +19,8 @@ var (
 	ErrProjection = errors.New("remote access: connector projection failed")
 	// ErrDomainInvalid is the domain or label failing validation; it is an ErrConfiguration too.
 	ErrDomainInvalid = fmt.Errorf("%w: domain or label is not a valid hostname", ErrConfiguration)
+	// ErrTunnelNotServing is a phone test confirmed before the connector is up; it is an ErrConfiguration too.
+	ErrTunnelNotServing = fmt.Errorf("%w: tunnel is not serving", ErrConfiguration)
 )
 
 // ReasonOf maps a reconciliation error to the code stored on the row. It reads types and
@@ -36,6 +38,8 @@ func ReasonOf(err error) Reason {
 		return ReasonAccountNotVisible
 	case errors.Is(err, ErrDomainInvalid):
 		return ReasonDomainInvalid
+	case errors.Is(err, ErrTunnelNotServing):
+		return ReasonTunnelDown
 	case errors.Is(err, ErrOwnershipConflict):
 		return ReasonNotOwned
 	case errors.Is(err, ErrMemberLockout):
