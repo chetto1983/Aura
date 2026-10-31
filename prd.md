@@ -5180,6 +5180,27 @@ counts them. Not shown: interactive verbs, the memory verbs live in CI, and the 
 
 ## 19. Evidence, exclusions and remaining limits
 
+### Remote access from a phone — measured 2026-10-31
+
+The wizard ran on the lab VM with `chetto1983.it` on a Cloudflare account that had never held a
+zone, through the phone test on mobile data ([ledger](docs/superpowers/verification/2026-10-31-remote-access-wizard-lab-vm.md)).
+What it records:
+
+- Zero Trust is a prerequisite of the account, on its Free plan. Without it Access answered HTTP 403,
+  code 9999, and the wizard blamed the token. A fresh account had never been run.
+- A refusal at the tunnel or Access step now has its own reason, `tunnel_permission` or
+  `access_unavailable`, and the first save reads tunnels and identity providers before storing the
+  token. The reasons replace a generic refusal that surfaced 51 minutes after the nameservers changed.
+- The `.it` registry accepts a zone Cloudflare still calls pending, at once. Activation took under 52
+  minutes with no manual recheck, so Aura does not call `activation_check`.
+- A resolver's NS answer is not the signal: Google served `register.it` for NS while serving
+  Cloudflare's SOA for the same name.
+
+It does not show that the first-step read has met a real refused token, since it was written after
+this run, nor that a Read-only token stops there: such a token is refused at its step, under the
+same reason. Code 9999 was seen once, on one account. The attended live suite, an outage, the
+walk-back while pending and the WARP retirement on Andrea's appliance remain unmeasured.
+
 ### Document-field coverage tiers — measured 2026-10-22
 
 The official unit/database run's native coverage union measured the owned source at

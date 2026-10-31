@@ -1,7 +1,11 @@
 # Remote access from a phone: the wizard and its reconciler — Implementation Plan
 
-**Status (2026-10-30):** IN PROGRESS. Tasks 1 and 2 are done (`a6405bda6`..`ddeadc01f`) and Task 3 is
-in review. Revision 2 (2026-10-30) follows a Codex plan review: claudex-loop runner, gpt-6-astra,
+**Status (2026-10-31):** Tasks 1-10 landed. Task 11 ran on the lab VM with `chetto1983.it`: the wizard
+reached `healthy` through the phone test on a fresh account, and its five defects are fixed. The
+attended live suite and acceptance items 2, 3 and 5 did not run; see
+`docs/superpowers/verification/2026-10-31-remote-access-wizard-lab-vm.md`.
+
+Revision 2 (2026-10-30) follows a Codex plan review: claudex-loop runner, gpt-6-astra,
 verdict REVISE with 10 findings, all accepted. Its changes:
 - a new Task 4 persists the resources' own account and the legacy WARP hostname;
 - the old Tasks 4–10 are renumbered 5–11 and amended;

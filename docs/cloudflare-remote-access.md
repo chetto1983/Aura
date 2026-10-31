@@ -19,11 +19,16 @@ The installer never asks for a Cloudflare token or writes one into `.env`.
 After initial Authula setup, open **Settings > Remote access** as an administrator. The wizard
 has four steps, and you can walk back to any of them at any time:
 
-1. **Cloudflare.** Create the token, verify it and choose the account.
+1. **Cloudflare.** Switch on Zero Trust for the account first: the Free plan is enough, and the
+   one-time PIN page lives there. Create the token, verify it and choose the account. Saving reads
+   tunnels and identity providers, so a token without Cloudflare Tunnel or an account without
+   Zero Trust stops here, not after the nameservers.
 2. **Domain.** Enter the registered domain and the address label. A domain active in another
    Cloudflare account is refused before anything is created. When the zone is pending, copy the
-   two nameservers to the registrar. Registrar propagation can take time; Aura continues by
-   itself when Cloudflare activates the zone.
+   two nameservers to the registrar. Measured on a `.it` domain on 2026-10-31: the registry took
+   them at once with the zone still pending, and Cloudflare activated it in under 52 minutes.
+   Cloudflare itself says one or two hours, at most 24. Aura continues by itself. A Cloudflare zone
+   starts empty, so anything the registrar was serving on the domain, mail included, stops.
 3. **Connection.** Aura creates the tunnel, the address and the Access protection.
 4. **Try it from your phone.** Open the public hostname on mobile data, complete Access OTP and
    Authula, and choose **Confirm external access** there. Confirmation is available only through
@@ -137,7 +142,9 @@ the updater does not switch their sidecar to edge.
 
 | Symptom | Check |
 | --- | --- |
-| Waiting for nameservers | Registrar delegation exactly matches the cockpit; let Cloudflare activate the existing zone. |
+| Waiting for nameservers | Registrar delegation exactly matches the cockpit; let Cloudflare activate the existing zone. Ask the registry, not a resolver: on `.it`, `whois.nic.it` shows the change at once, while public NS answers lagged by the better part of an hour. |
+| Token lacks Cloudflare Tunnel Edit | Add it to the token on Cloudflare and press **Retry**: an edited token keeps its value. |
+| Cloudflare refuses Access | Switch on Zero Trust for the account (Free plan), or add the two Access permissions to the token, then press **Retry**. Seen as HTTP 403, code 9999, on an account without Zero Trust. |
 | Permission/token refused | Replace the scoped API token, then retry; verification alone cannot prove write privileges. |
 | Connector disconnected | Outbound 7844/DNS, `docker compose ps aura-cloudflared`, sanitized sidecar logs; Aura remains available directly. |
 | Domain active in another account | Use a domain of this account, or the account that holds it; the old address keeps serving meanwhile. |

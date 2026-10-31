@@ -1,6 +1,6 @@
 # Cloudflare Tunnel Remote Access Implementation Plan
 
-**Status (2026-10-15):** PARTIAL. Tasks 1-5 and the Task 7 review landed. Task 6's live journeys never ran, for lack of a registered domain. Review finding F-1, cloudflared reaching the databases, has not been re-measured.
+**Status (2026-10-31):** PARTIAL. Tasks 1-5 and the Task 7 review landed. A registered domain now exists: `docs/superpowers/plans/2026-10-27-remote-access-wizard.md` walked the path to `healthy` on it (2026-10-31), but Task 6's live journeys still never ran, and review finding F-1, cloudflared reaching the databases, has not been re-measured.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
