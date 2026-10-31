@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Intentionally interactive: OTP, organization enrollment and Dashboard rotation have no
+# Intentionally interactive: OTP and Dashboard rotation have no
 # approved credential-free automation path. Never source the appliance's secret .env here.
 set -euo pipefail
 case "${AURA_E2E_CLOUDFLARE:-0}" in
@@ -8,7 +8,7 @@ case "${AURA_E2E_CLOUDFLARE:-0}" in
   *) echo 'FAIL: AURA_E2E_CLOUDFLARE must be 1 to opt in' >&2; exit 1 ;;
 esac
 required=(CLOUDFLARE_API_TOKEN CLOUDFLARE_REPLACEMENT_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_TEST_ZONE AURA_E2E_ADMIN_EMAIL AURA_E2E_DENIED_EMAIL
-  CLOUDFLARE_TEAM_NAME AURA_E2E_ORIGIN AURA_E2E_APPLIANCE_DIR AURA_E2E_UNRELATED_TXT_NAME)
+  AURA_E2E_ORIGIN AURA_E2E_APPLIANCE_DIR AURA_E2E_UNRELATED_TXT_NAME)
 for key in "${required[@]}"; do
   [[ -n "${!key:-}" ]] || { echo "FAIL: opted-in live acceptance requires $key" >&2; exit 1; }
 done
@@ -23,7 +23,7 @@ done
   echo 'FAIL: a registered test zone is required; Quick Tunnels cannot prove SSE acceptance' >&2; exit 1;
 }
 [[ -t 0 && -z "${CI:-}" ]] || {
-  echo 'FAIL: this live suite requires an attended desktop for OTP, WARP and Dashboard rotation; hermetic CI is a separate gate' >&2; exit 1;
+  echo 'FAIL: this live suite requires an attended desktop for OTP and Dashboard rotation; hermetic CI is a separate gate' >&2; exit 1;
 }
 [[ -d "$AURA_E2E_APPLIANCE_DIR" && -f "$AURA_E2E_APPLIANCE_DIR/compose.yaml" ]] || {
   echo 'FAIL: dedicated Ubuntu appliance directory/compose.yaml is missing' >&2; exit 1;

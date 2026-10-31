@@ -43,7 +43,7 @@ test.describe('attended named-tunnel acceptance', () => {
   });
   test.describe.configure({ retries: 0, mode: 'serial' });
 
-  test('OTP, Authula, SSE, Garage, Gateway, rotation, recovery and owned cleanup', async ({
+  test('OTP, Authula, SSE, Garage, rotation, recovery and owned cleanup', async ({
     browser,
   }, info) => {
     test.setTimeout(60 * 60 * 1000);
@@ -51,7 +51,6 @@ test.describe('attended named-tunnel acceptance', () => {
     const zoneName = required('CLOUDFLARE_TEST_ZONE');
     const run = required('AURA_E2E_CLOUDFLARE_RUN');
     const admin = required('AURA_E2E_ADMIN_EMAIL');
-    const team = required('CLOUDFLARE_TEAM_NAME');
     required('CLOUDFLARE_API_TOKEN');
     required('CLOUDFLARE_REPLACEMENT_API_TOKEN');
     required('AURA_E2E_DENIED_EMAIL');
@@ -64,7 +63,6 @@ test.describe('attended named-tunnel acceptance', () => {
     expect(process.env.AURA_E2E_CLOUDFLARE_DEDICATED).toBe('1');
     expect(run).toMatch(/^aura-e2e-[0-9]{14}-[a-f0-9]{6}$/);
     const hostname = `${run}.${zoneName}`;
-    const warpHostname = `${run}-warp.${zoneName}`;
     const origin = `https://${hostname}`;
     const direct = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
     const external = await browser.newContext({
@@ -76,7 +74,6 @@ test.describe('attended named-tunnel acceptance', () => {
     const evidence: Record<string, unknown> = {
       run,
       hostname,
-      warpHostname,
       live: true,
       complete: false,
     };
@@ -132,7 +129,8 @@ test.describe('attended named-tunnel acceptance', () => {
         enabled: false,
         phase: 'disabled',
         api_token_set: false,
-        tunnel_token_set: false,
+        accepted: false,
+        has_resources: false,
       });
       expect(pristine.public_hostname).toBeUndefined();
       await idleAndNoProjection();
@@ -150,18 +148,31 @@ test.describe('attended named-tunnel acceptance', () => {
           (row) => row.type === 'TXT' && row.name === required('AURA_E2E_UNRELATED_TXT_NAME'),
         ),
       ).toBe(true);
-      expect(before.dns.some((row) => row.name === hostname || row.name === warpHostname)).toBe(
-        false,
-      );
+      expect(before.dns.some((row) => row.name === hostname)).toBe(false);
       await local.goto(`${required('AURA_E2E_ORIGIN')}/?settings=remote-access`);
       await enterToken(local, required('CLOUDFLARE_API_TOKEN'));
       await local.getByRole('button', { name: 'Verify token', exact: true }).click();
       await chooseValue(local.getByLabel('Cloudflare account', { exact: true }), account);
-      await local.getByLabel('Registered domain', { exact: true }).fill(zoneName);
-      await local.getByLabel('Public hostname label', { exact: true }).fill(run);
-      await local.getByLabel('WARP hostname label', { exact: true }).fill(`${run}-warp`);
+      // The first Next saves the token and the account with access still off: nothing exists on
+      // Cloudflare yet, and the domain step opens by itself.
+      await local.getByRole('button', { name: 'Next', exact: true }).click();
+      await expect(
+        local.getByRole('heading', { name: 'Choose the domain', level: 3 }),
+      ).toBeVisible();
+      await expect
+        .poll(async () => status(local))
+        .toMatchObject({
+          enabled: false,
+          phase: 'disabled',
+          api_token_set: true,
+          account_id: account,
+        });
+      expect((await status(local)).zone_name).toBeUndefined();
+      expect((await status(local)).has_resources).toBe(false);
+      await local.getByLabel('Domain', { exact: true }).fill(zoneName);
+      await local.getByLabel('Address label', { exact: true }).fill(run);
       configured = true;
-      await local.getByRole('button', { name: 'Save and start setup' }).click();
+      await local.getByRole('button', { name: 'Next', exact: true }).click();
       // A pending test zone is deliberate: an already-active zone cannot prove the wait leg.
       await expect.poll(async () => (await status(local)).phase).toBe('waiting_nameservers');
       const waiting = await status(local);
@@ -204,7 +215,6 @@ test.describe('attended named-tunnel acceptance', () => {
       }>(`accounts/${account}/cfd_tunnel/${tunnelId}/configurations`);
       expect(config.result.config.ingress).toEqual([
         { hostname, service: 'http://caddy:8080' },
-        { hostname: warpHostname, service: 'http://caddy:8080' },
         { service: 'http_status:404' },
       ]);
       expect(config.result.config['warp-routing']?.enabled ?? false).toBe(false);
@@ -249,7 +259,9 @@ test.describe('attended named-tunnel acceptance', () => {
         (await external.cookies(origin)).some((cookie) => cookie.name === 'CF_Authorization'),
       ).toBe(true);
       await publicPage.getByRole('button', { name: 'Confirm external access' }).click();
-      await expect.poll(async () => (await status(local)).phase).toBe('healthy');
+      await expect
+        .poll(async () => status(local))
+        .toMatchObject({ phase: 'healthy', accepted: true });
       evidence.otpAndAuthula = true;
       const thread = await createConversation(publicPage, run);
       evidence.sse = await streamAndControl(publicPage, thread);
@@ -267,54 +279,25 @@ test.describe('attended named-tunnel acceptance', () => {
       );
       evidence.garage = asset;
 
-      for (const enrolled of [false, true]) {
-        await checkpoint(
-          enrolled
-            ? `Enroll and connect this browser machine's Cloudflare One client to organization ${team} through Gateway. Do not use consumer WARP. Complete OTP and Authula at https://${warpHostname} in the new browser after continuing.`
-            : 'Disconnect the Cloudflare One client on this browser machine. The next request must be denied.',
-        );
-        const context = await browser.newContext({ ignoreHTTPSErrors: false });
-        try {
-          const page = await context.newPage();
-          await page.goto(`https://${warpHostname}/`);
-          await checkpoint(
-            enrolled
-              ? 'Complete Access OTP and Authula in the WARP browser.'
-              : 'Try the allowed admin email and OTP at the WARP hostname; confirm the Gateway posture denies access.',
-          );
-          if (enrolled) {
-            expect((await auraJSON<{ name: string }>(page, '/api/me')).name.toLowerCase()).toBe(
-              admin.toLowerCase(),
-            );
-          } else {
-            await expect(
-              page.getByText(/you do not have access|access denied|forbidden/i).first(),
-            ).toBeVisible();
-            const response = await context.request.get(`https://${warpHostname}/api/me`, {
-              maxRedirects: 0,
-            });
-            expect([302, 303, 401, 403]).toContain(response.status());
-          }
-        } finally {
-          await context.close();
-        }
-      }
-      evidence.gatewayAllowDeny = true;
       await publicPage.goto(`${origin}/?settings=remote-access`);
       const replacement = required('CLOUDFLARE_REPLACEMENT_API_TOKEN');
       expect(replacement === required('CLOUDFLARE_API_TOKEN')).toBe(false);
       const replacementGeneration = (await status(local)).generation;
+      // The strip is how a desktop gets back to Cloudflare; a phone would press Back.
+      await publicPage.getByRole('button', { name: 'Cloudflare', exact: true }).click();
       await enterToken(publicPage, replacement);
       await publicPage.getByRole('button', { name: 'Verify token', exact: true }).click();
+      await publicPage.getByRole('button', { name: 'Next', exact: true }).click();
       await expect
         .poll(async () => (await status(local)).generation)
         .toBeGreaterThan(replacementGeneration);
+      // The phone test belongs to the address, not to the token: it stays accepted, with no new click.
       await expect
-        .poll(async () => (await status(local)).phase, { timeout: 120_000 })
-        .toBe('connecting');
-      await publicPage.reload();
-      await publicPage.getByRole('button', { name: 'Confirm external access' }).click();
-      await expect.poll(async () => (await status(local)).phase).toBe('healthy');
+        .poll(async () => status(local), { timeout: 120_000 })
+        .toMatchObject({ phase: 'healthy', accepted: true });
+      await expect(publicPage.getByRole('button', { name: 'Confirm external access' })).toHaveCount(
+        0,
+      );
       const oldToken = (
         await cloudflare<string>(`accounts/${account}/cfd_tunnel/${tunnelId}/token`)
       ).result;
@@ -342,16 +325,18 @@ test.describe('attended named-tunnel acceptance', () => {
         expect(rotatedToken !== oldToken, 'Dashboard actually rotated the connector token').toBe(
           true,
         );
+        // Refreshing the token lives on Connection, one click from the strip.
+        await publicPage.getByRole('button', { name: 'Connection', exact: true }).click();
         await publicPage.getByRole('button', { name: 'Refresh Dashboard-rotated token' }).click();
         await expect
           .poll(async () => (await status(local)).generation)
           .toBeGreaterThan(refreshGeneration);
         await expect
-          .poll(async () => (await status(local)).phase, { timeout: 120_000 })
-          .toBe('connecting');
-        await publicPage.reload();
-        await publicPage.getByRole('button', { name: 'Confirm external access' }).click();
-        await expect.poll(async () => (await status(local)).phase).toBe('healthy');
+          .poll(async () => status(local), { timeout: 120_000 })
+          .toMatchObject({ phase: 'healthy', accepted: true });
+        await expect(
+          publicPage.getByRole('button', { name: 'Confirm external access' }),
+        ).toHaveCount(0);
         await auditSecretContainment(publicPage, [
           required('CLOUDFLARE_API_TOKEN'),
           replacement,
@@ -379,6 +364,19 @@ test.describe('attended named-tunnel acceptance', () => {
             { timeout: 120_000 },
           )
           .toBe(hostname);
+        await expect
+          .poll(
+            async () => {
+              try {
+                const current = await status(local);
+                return `${current.phase}:${String(current.accepted)}`;
+              } catch {
+                return 'restarting';
+              }
+            },
+            { timeout: 120_000 },
+          )
+          .toBe('healthy:true');
         await expect
           .poll(
             async () => {
