@@ -199,10 +199,12 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"search-as-of", []string{"search", "mario", "--as-of", "2026-01-01T00:00:00Z"}, "memory_search", "as_of", "2026-01-01T00:00:00Z"},
 		{"facts", []string{"facts", "Mario Rossi"}, "memory_facts_about", "entity", "Mario Rossi"},
 		{"facts-predicate", []string{"facts", "Mario Rossi", "lives_in"}, "memory_facts_about", "predicate", "lives_in"},
+		{"facts-as-of", []string{"facts", "Mario Rossi", "--as-of", "2026-01-01T00:00:00Z"}, "memory_facts_about", "as_of", "2026-01-01T00:00:00Z"},
 		{"entities", []string{"entities"}, "memory_entities", "", ""},
 		{"digest", []string{"digest"}, "memory_digest", "", ""},
 		{"remember", []string{"remember", "aura", "validates", "memory wiring", "Aura validates its memory wiring."}, "memory_upsert_fact", "statement", "Aura validates its memory wiring."},
 		{"merge", []string{"merge", "M. Rossi", "Mario Rossi"}, "memory_merge_entities", "target", "Mario Rossi"},
+		{"merge-source", []string{"merge", "M. Rossi", "Mario Rossi"}, "memory_merge_entities", "source", "M. Rossi"},
 		{"forget-entity", []string{"forget", "--entity", "Mario Rossi"}, "memory_forget", "entity", "Mario Rossi"},
 		{"forget-run", []string{"forget", "--run", "run-7"}, "memory_forget", "", ""},
 		{"schema", []string{"schema"}, "graph_schema", "", ""},
@@ -482,4 +484,21 @@ func TestCLIMemoryCallRequiresIdentity(t *testing.T) {
 			t.Fatalf("user_identifier leaked into wire arguments: %#v", rec.args())
 		}
 	})
+}
+
+// A flag typed last, with no value after it, is not taken: the argument stays where the operator
+// put it and the verb reports what is missing, instead of reading past the end of argv.
+func TestATrailingFlagWithNoValueIsNotTaken(t *testing.T) {
+	t.Parallel()
+	args := []string{"mario", "--as-of"}
+	if got := takeFlag(&args, "--as-of"); got != "" {
+		t.Errorf("takeFlag = %q, want nothing for a flag with no value", got)
+	}
+	if len(args) != 2 || args[1] != "--as-of" {
+		t.Errorf("args = %v, want them untouched", args)
+	}
+	args = []string{"--as-of", "2026-01-01T00:00:00Z", "mario"}
+	if got := takeFlag(&args, "--as-of"); got != "2026-01-01T00:00:00Z" || len(args) != 1 || args[0] != "mario" {
+		t.Errorf("takeFlag = %q leaving %v, want the value taken and mario left", got, args)
+	}
 }
