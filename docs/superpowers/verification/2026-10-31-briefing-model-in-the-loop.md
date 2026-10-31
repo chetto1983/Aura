@@ -74,6 +74,9 @@ The effects, checked afterwards:
 
 ## Defects found
 
+All four were fixed the same day, and the fixes were re-run on the same stack:
+`2026-10-31-e2e-defects-live.md`. F1 has its own spec: `../specs/2026-10-31-mcp-result-trust-design.md`.
+
 - **D1. A CLI-scheduled `agent_job` can use no reserved tool under a strict profile.**
   - Cause. `aura task add` stores no `origin_conversation_id`.
     `newAgentWorker` (`internal/cron/handlers/handler.go:182`) passes that empty value as the
