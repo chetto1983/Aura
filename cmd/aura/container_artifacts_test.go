@@ -80,7 +80,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}",
 		"AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}",
 		"AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-}",
-		"image: ghcr.io/ggml-org/llama.cpp:server-cuda-v",
+		"image: ghcr.io/ggml-org/llama.cpp:server-cuda-b",
 		"AURA_EMBED_NGL:-99",
 		"LLAMA_ARG_HOST: 0.0.0.0",
 		"aura-migrate:",

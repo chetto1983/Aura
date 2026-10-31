@@ -836,10 +836,12 @@ services:
     # moving server-* tags, which a fleet would each pull unverified, and an installer-written
     # AURA_EMBED_IMAGE in .env outranked this line and froze the build per machine (measured
     # 2026-09-14: the mini PC ran b10884 while b10951 was out). Change the pin here and in
-    # both overlays together. The pin is a RELEASE tag, not a bNNNN CI build: upstream
-    # switched to semver and ships server-*-vX.Y.Z for every variant we run. v0.4.1 carried
-    # the same bytes as b10964 (digest-checked 2026-09-21); v0.5.0 keeps CUDA 12.8.1.
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0
+    # both overlays together. The pin is the bNNNN build a GitHub release sits on: upstream
+    # stopped publishing server-*-vX.Y.Z images after v0.5.0, and b11960 is v0.8.0's commit
+    # (git ls-remote, 2026-10-31). server-cuda stays CUDA 12.8.1. aura-ocr-vl and aura-llm
+    # below take the same build, because the stack runs one llama.cpp
+    # (docs/superpowers/verification/2026-10-31-llama-cpp-b11960.md).
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11960
     container_name: aura-llama-embed
     restart: unless-stopped
     environment:
@@ -1209,7 +1211,7 @@ services:
   # Only reached when the operator-selected model does NOT advertise the image
   # modality; a vision-capable primary reads the image itself and this stays down.
   aura-ocr-vl:
-    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0}
+    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b11960}
     container_name: aura-ocr-vl
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
@@ -1356,7 +1358,7 @@ services:
   # Set the env only to OVERRIDE a model that states its own preference.
   aura-llm:
     profiles: [localllm]
-    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0}
+    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b11960}
     container_name: aura-llm
     restart: unless-stopped
     environment:

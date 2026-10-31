@@ -5007,6 +5007,16 @@ cause was not isolated. The operator then removed the image-rollback rehearsal a
 leaves unproven: no release gate starts a previous image on restored data. The Postgres
 restore itself is the disaster-recovery report's restore drill.
 
+Measured 2026-10-31: the stack moved from llama.cpp `v0.5.0` (`b11146`) to `b11960`, the commit
+of `v0.8.0`, with no re-embed sweep. GHCR publishes no `server-*-vX.Y.Z` image after
+`v0.5.0`, so a pin is now the build a release sits on. On CPU the two builds agree to eight
+decimals. On CUDA they differ by a median cosine of 0.99965, the same size as the gap between
+CUDA and CPU at one version, and self-retrieval over 551 `prd.md` paragraphs did not move, with
+an old index or a new one. `AttestLocal` reads only the model's metadata, which is unchanged, so
+nothing forces a sweep. What this leaves unproven: Vulkan, real documents, a running Aura on the
+new build, and `aura-ocr-vl` and `aura-llm`, which move with the stack on a flag check alone
+(`docs/superpowers/verification/2026-10-31-llama-cpp-b11960.md`).
+
 ## 18. Engineering and acceptance
 
 Measure dependency behavior on a disposable live stack before changing architecture.

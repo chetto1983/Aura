@@ -267,8 +267,8 @@ if docker compose version >/dev/null 2>&1; then
   service_image() { sed -n "/^  $1:/,/^  [a-z]/p" "$compose_out" | sed -n 's/^    image: //p' | head -n 1; }
   expect_embed_build() {
     case "$(service_image aura-llama-embed)" in
-      # ggml-org ships semver releases (server-cuda-v0.4.1) as well as bNNNN CI builds,
-      # and a release is the stronger pin. Both are a pin; a bare moving tag is not.
+      # ggml-org stopped publishing semver images after v0.5.0, so a current pin is the bNNNN
+      # build a release sits on. Both shapes are a pin; a bare moving tag is not.
       "ghcr.io/ggml-org/llama.cpp:$1"-b[0-9]* | "ghcr.io/ggml-org/llama.cpp:$1"-v[0-9]*) ;;
       *) echo "FAIL: $2 runs embed image '$(service_image aura-llama-embed)', want the pinned $1 release or build over a stale .env" >&2; exit 1 ;;
     esac

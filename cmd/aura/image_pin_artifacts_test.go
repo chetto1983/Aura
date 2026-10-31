@@ -20,10 +20,9 @@ func TestThirdPartyImagesArePinnedWhereTheUpdaterDeliversThem(t *testing.T) {
 	}
 
 	imageLine := regexp.MustCompile(`(?m)^\s+image:\s*(\S+)\s*$`)
-	// ggml-org moved from bNNNN CI build numbers to semver releases and now publishes
-	// server-*-vX.Y.Z for every variant this stack runs. A release tag is a STRONGER pin
-	// than a build number, so both forms are accepted -- and the single-version check
-	// below still holds CUDA, Vulkan, CPU and CI to ONE llama.cpp, which is the point.
+	// ggml-org stopped publishing server-*-vX.Y.Z images after v0.5.0, so a current pin is the
+	// bNNNN build a GitHub release sits on. Both forms are accepted -- and the single-version
+	// check below still holds CUDA, Vulkan, CPU and CI to ONE llama.cpp, which is the point.
 	llamaBuild := regexp.MustCompile(`llama\.cpp:server(?:-cuda|-vulkan)?-(b\d+|v\d+\.\d+\.\d+)`)
 	builds := map[string][]string{}
 	home, others := imageHomes(t, root)
