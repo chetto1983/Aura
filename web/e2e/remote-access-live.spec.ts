@@ -259,10 +259,12 @@ test.describe('attended named-tunnel acceptance', () => {
       expect(
         (await external.cookies(origin)).some((cookie) => cookie.name === 'CF_Authorization'),
       ).toBe(true);
-      await publicPage.getByRole('button', { name: 'Confirm external access' }).click();
-      await expect
-        .poll(async () => status(local))
-        .toMatchObject({ phase: 'healthy', accepted: true });
+      // A press before the tunnel serves is refused with a sentence, and pressing again is the way on.
+      const confirm = publicPage.getByRole('button', { name: 'Confirm external access' });
+      await expect(async () => {
+        if (await confirm.isVisible()) await confirm.click({ timeout: 5_000 });
+        expect(await status(local)).toMatchObject({ phase: 'healthy', accepted: true });
+      }).toPass({ timeout: 120_000 });
       evidence.otpAndAuthula = true;
       const thread = await createConversation(publicPage, run);
       evidence.sse = await streamAndControl(publicPage, thread);

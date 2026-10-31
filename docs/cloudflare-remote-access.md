@@ -1,14 +1,12 @@
 # Cloudflare Remote Access
 
-Aura supports a stable named tunnel with two HTTPS hostnames: one protected by Cloudflare
-Access OTP and Authula, and another that additionally requires your organization's Cloudflare
-One client through Gateway. A registered domain is required. Aura does not purchase domains.
+Aura supports a stable named tunnel with one HTTPS hostname, protected by Cloudflare Access OTP
+and Authula. A registered domain is required. Aura does not purchase domains. The Access session
+lasts a month, so a phone asks for one email PIN a month.
 
-As of 2026-09-20 the implementation has hermetic browser, installer and isolated Caddy evidence.
-Named-tunnel live acceptance was then **blocked: the operator had no registered domain**. On
-2026-09-22 provisioning ran against an appliance with a registered domain and exposed a Gateway
-posture ownership defect, since fixed; no run of the live acceptance runner below is recorded.
-No result from a mock, a local certificate or a Quick Tunnel closes that acceptance.
+No run of the live acceptance runner below is recorded. The four-step wizard has run against
+mocked API responses only. No result from a mock, a local certificate or a Quick Tunnel closes
+that acceptance.
 
 ## Install and enable
 
@@ -18,32 +16,40 @@ the edge channel, and wait for the default stack to become healthy. Before onboa
 supervisor is healthy-idle; it runs no connector and needs no Cloudflare credential.
 The installer never asks for a Cloudflare token or writes one into `.env`.
 
-After initial Authula setup, open **Settings > Remote access** as an administrator.
-Verify the API token, explicitly choose the account if there is more than one, enter the
-registered domain and two distinct single-label hostnames, then save. When the zone is pending,
-copy the assigned nameservers to the registrar. Refreshing the page or restarting Aura resumes
-the persisted setup. Registrar propagation can take time; repeatedly creating a zone does not
-speed it up.
+After initial Authula setup, open **Settings > Remote access** as an administrator. The wizard
+has four steps, and you can walk back to any of them at any time:
 
-Open the public hostname, complete Access OTP and Authula, and choose **Confirm external
-access** there. Confirmation is generation-bound and available only through the public tunnel;
-the direct cockpit cannot certify the external path. Connector loss or a changed generation
-requires a fresh confirmation.
+1. **Cloudflare.** Create the token, verify it and choose the account.
+2. **Domain.** Enter the registered domain and the address label. A domain active in another
+   Cloudflare account is refused before anything is created. When the zone is pending, copy the
+   two nameservers to the registrar. Registrar propagation can take time; Aura continues by
+   itself when Cloudflare activates the zone.
+3. **Connection.** Aura creates the tunnel, the address and the Access protection.
+4. **Try it from your phone.** Open the public hostname on mobile data, complete Access OTP and
+   Authula, and choose **Confirm external access** there. Confirmation is available only through
+   the public tunnel: the direct cockpit cannot certify the external path.
+
+Refreshing the page or restarting Aura resumes the persisted setup. When every step is green the
+wizard stays on screen, and each step can be reopened from there.
+
+The phone test is done once per address. If the tunnel drops, the last step turns red, and it
+turns green again by itself when the tunnel is back, with no new test. A new domain, label or
+Cloudflare account asks for the test again. A new token in the same account does not.
 
 ## Scoped API token
 
-Create a [custom Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens), scoped
-to the selected account and test/production zone. The cockpit needs:
+**Create the token on Cloudflare** in the first step opens Cloudflare's token form with the
+permissions already chosen. Add Cloudflare Tunnel Edit by hand: Cloudflare documents no pre-fill
+key for it. The cockpit needs:
 
 | Permission | Purpose |
 | --- | --- |
 | Account / Account Settings / Read | Account selection |
 | Zone / Zone / Read and Edit | Discover/create the registered zone and read activation |
 | Account / Cloudflare Tunnel (Connector) / Edit | Named tunnel, ingress and connector token |
-| Zone / DNS / Edit | The two owned CNAMEs |
+| Zone / DNS / Edit | The owned CNAME |
 | Account / Access: Organizations, Identity Providers, and Groups / Edit | Discover/create OTP provider |
-| Account / Access: Apps and Policies / Edit | Both hostname applications and email policies |
-| Account / Zero Trust / Edit | Organization Gateway posture check |
+| Account / Access: Apps and Policies / Edit | The hostname's application and email policy |
 
 Cloudflare labels write permissions as “Edit” in its token creation UI; the Aura guidance calls
 them “Write”. Candidate verification proves token activity/account discovery, and saving verifies
@@ -55,14 +61,16 @@ membership sync. OTP is delivered to that identity's mailbox. Check spam, the ex
 email and the Access policy if no code arrives. Do not add an Everyone/bypass rule as a workaround.
 See [Cloudflare OTP documentation](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/).
 
-## WARP and network boundaries
+## Installs that used WARP
 
-Install the Cloudflare One client, enable device enrollment for your users in Zero Trust, and
-enroll it in **the same organization**. Its team name is chosen in the Cloudflare dashboard.
-Consumer WARP alone is insufficient: Aura uses the [Require Gateway check](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-gateway/).
-Aura's current status API does not expose the team slug, so the cockpit gives generic enrollment
-guidance. Do not infer an enrollment URL from the zone; the live harness requires the operator's
-`CLOUDFLARE_TEAM_NAME` separately.
+Aura no longer offers a WARP hostname. After the update it deletes the WARP hostname's CNAME, its
+Access application and policy, and the Gateway posture check, each only after checking that the
+resource is its own. The public hostname is not touched. A token that cannot delete one of them
+does not stop the install: what is left appears under **To delete by hand on Cloudflare** in the
+first step, and **Done** clears the list once it is gone. An older token keeps the Zero Trust
+permission for this; a new one needs none.
+
+## Network boundaries
 
 No LAN, Docker, Postgres, Garage-admin, MCP or CIDR route is published. Cloudflared joins only
 the dedicated egress-capable tunnel network, with Caddy bridging to the application network.
@@ -93,18 +101,26 @@ the installed configuration.
 ## Lifecycle and recovery
 
 - **Disable** stops the local connector and removes its token projection; it keeps Cloudflare
-  resources and encrypted PostgreSQL settings. **Re-enable** uses the saved credentials.
-- **Replace API token** verifies and stores a new scoped API credential without changing the
-  enabled state or hostnames. It does not rotate the connector credential.
+  resources and encrypted PostgreSQL settings. Pressing **Next** on *Domain* turns it on again
+  with the saved credentials.
+- **Replace API token** in *Cloudflare* verifies and stores a new scoped API credential without
+  changing the enabled state or the address. It does not rotate the connector credential.
+- **Change the domain, label or account** from its own step. Aura first checks that the new zone
+  can be had: if it cannot, it refuses and the old address keeps serving. Otherwise it stops the
+  connector, deletes what it owns and builds the new address. A new domain still pending at the
+  registrar means no address at all until Cloudflare activates its zone. If the old account is
+  out of the new token's reach, the wizard lists what stayed there under **To delete by hand on
+  Cloudflare**.
 - **Rotate connector token** in the Cloudflare Dashboard using the
   [documented action](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/), then
-  click **Refresh Dashboard-rotated token**. Aura retrieves and encrypts the new current token
-  and hands it to the supervisor. There is no documented public rotation mutation; refresh is
-  not revocation. Record handoff interruptions rather than assuming zero downtime.
+  click **Refresh Dashboard-rotated token** in *Connection*. Aura retrieves and encrypts the new
+  current token and hands it to the supervisor. There is no documented public rotation mutation;
+  refresh is not revocation. Record handoff interruptions rather than assuming zero downtime.
 - **Delete remote access** requires the exact current public hostname. It removes only resources
   whose persisted IDs and ownership markers agree. The zone, unrelated DNS and account-wide
   providers reused from other applications remain. Failed deletion preserves IDs for retry;
-  fixing a credential resumes deletion. Hostname/account changes require delete and re-onboard.
+  fixing a credential resumes deletion. *Domain* then opens with the old address, ready to save
+  again.
 
 PostgreSQL is the durable authority for desired state and both AES-GCM encrypted credentials.
 Back up PostgreSQL **and the existing Authula wrapping secret** using the appliance's protected
@@ -124,8 +140,9 @@ the updater does not switch their sidecar to edge.
 | Waiting for nameservers | Registrar delegation exactly matches the cockpit; let Cloudflare activate the existing zone. |
 | Permission/token refused | Replace the scoped API token, then retry; verification alone cannot prove write privileges. |
 | Connector disconnected | Outbound 7844/DNS, `docker compose ps aura-cloudflared`, sanitized sidecar logs; Aura remains available directly. |
-| Access loop | Correct hostname, active Aura email, OTP mailbox, browser cookies and organization enrollment on the WARP host. |
-| Connecting after login | Confirm from the public cockpit after both logins; do not spoof the ingress marker from a direct client. |
+| Domain active in another account | Use a domain of this account, or the account that holds it; the old address keeps serving meanwhile. |
+| Access loop | Correct hostname, active Aura email, OTP mailbox and browser cookies. |
+| Connecting after login | Confirm from the public cockpit after both logins; do not spoof the ingress marker from a direct client. If the tunnel is not ready yet, wait a few seconds and confirm again. |
 | Buffered chat | Use a named tunnel; remove extra proxy buffering and verify incremental SSE arrivals. |
 | Upload/save failure | PUT and download URLs must use the same HTTPS public hostname, with Caddy routing the per-identity bucket to Garage. |
 | Delete remains in error | Repair the credential and retry; do not remove the persisted IDs or delete matching names manually. |
@@ -147,17 +164,18 @@ cd web
 AURA_E2E_ORIGIN=http://127.0.0.1:5173 npx playwright test e2e/remote-access.spec.ts --project=chrome
 ```
 
-Serve the frontend on that origin first (`npm run dev -- --host 127.0.0.1`). API responses are
-controlled browser fixtures. The 390px Italian case measures page/panel scroll widths, actual
-control dimensions and clipped labels, and the workflow case checks keyboard dialog focus.
+Serve the frontend on that origin first (`npm run dev -- --host 127.0.0.1`), with a running Aura
+behind it: the suite signs in for real, while the remote access API responses are controlled
+browser fixtures. The 390px Italian case measures page/panel scroll widths, actual control
+dimensions and clipped labels.
 
 The live runner requires an attended Linux desktop connected to a **dedicated disposable Ubuntu
 appliance**, a registered test domain already added as a **pending** Cloudflare zone, an unrelated
 pre-seeded TXT record, mailbox access, a funded configured chat model and working Garage/Studio.
 A pending zone is necessary to measure restart/resume at nameserver waiting. Start by installing
 that appliance with the generated self-extracting installer; finish Authula setup but leave Remote
-Access pristine. Run the browser on a machine whose One client you can enroll/disconnect; Docker
-must address only that dedicated appliance. `AURA_E2E_APPLIANCE_DIR` names its Compose directory.
+Access pristine. Docker must address only that dedicated appliance. `AURA_E2E_APPLIANCE_DIR` names
+its Compose directory.
 
 Provide these variables through a private session, never a committed file or command-line token:
 
@@ -172,7 +190,6 @@ CLOUDFLARE_API_TOKEN
 CLOUDFLARE_REPLACEMENT_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_TEST_ZONE
-CLOUDFLARE_TEAM_NAME
 AURA_E2E_ADMIN_EMAIL
 AURA_E2E_DENIED_EMAIL
 AURA_E2E_ORIGIN
@@ -182,7 +199,7 @@ AURA_E2E_UNRELATED_TXT_NAME
 
 Run `bash scripts/cloudflare_tunnel_live_e2e.sh`. Missing prerequisites are fatal when opted in;
 without opt-in it exits 2 with BLOCKED, not a green skipped acceptance. CI cannot provide the
-attended OTP/WARP/Dashboard steps and is refused. The browser is headed and all traces, videos
+attended OTP/Dashboard steps and is refused. The browser is headed and all traces, videos
 and screenshots are disabled before credentials enter it. Do not enable debug/network logging.
 
 The runner uses unique `aura-e2e-<run>` labels. It registers cleanup before configuration and
@@ -191,7 +208,7 @@ compares before/after Cloudflare inventories and confirms the zone/TXT remain. A
 kill can prevent cleanup: the failure message names the exact host; reopen the direct cockpit
 and retry deletion there. Never “clean up” by deleting an entire zone or any name match.
 
-Interactive checkpoints supply OTP, enrollment, image-edit actions and Dashboard rotation; the
+Interactive checkpoints supply OTP, image-edit actions and Dashboard rotation; the
 subsequent network/state assertions determine success. Attachments contain only non-secret
 measurements, including continuous health samples during rotation. A failure or missing checkpoint
 leaves acceptance incomplete. No live-suite result is recorded; the 2026-09-21 security and

@@ -74,8 +74,7 @@ The default stack also starts the Cloudflare supervisor healthy-idle. Enable it 
 setup in **Settings > Remote access**; the installer requires no Cloudflare credential.
 Existing edge appliances receive the sidecar through the payload updater without
 replacing database volumes. See [Cloudflare Remote Access](cloudflare-remote-access.md)
-for registered-domain prerequisites, Access OTP, organization WARP, token refresh and
-safe disable/delete.
+for registered-domain prerequisites, Access OTP, token refresh and safe disable/delete.
 
 ## Windows
 

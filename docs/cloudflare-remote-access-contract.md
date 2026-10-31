@@ -52,7 +52,7 @@ than 1,000 pages. The posture list is a non-paginated endpoint.
 | CNAME | `/zones/{zone}/dns_records` | DNS Write; proxied CNAME to `{tunnel}.cfargotunnel.com`, TTL 1, Aura ownership comment. |
 | One-time PIN | `/accounts/{account}/access/identity_providers` | Access: Organizations, Identity Providers, and Groups Write; wire type is `onetimepin`, config `{}`. Reuse an existing provider of that type. |
 | Access application/policy | `/accounts/{account}/access/apps`, `.../{app}/policies` | Access: Apps and Policies Write; self-hosted app restricts allowed IdPs; policy includes explicit individual emails and requires OTP provider. |
-| Enrolled-client posture | `/accounts/{account}/devices/posture` | Zero Trust Write; create type `gateway` with an Aura-owned name (ownership was first a description; since the 2026-09-22 live read it is the name). Require its ID with `device_posture.integration_uid` in the email policy. |
+| Enrolled-client posture (retired 2026-10-30) | `/accounts/{account}/devices/posture` | Zero Trust Write; `retireWARP` reads and deletes the check an older install owns. Aura creates none any more. Ownership was first a description; since the 2026-09-22 live read it is the name. |
 
 Sources read before implementation:
 [token verification](https://developers.cloudflare.com/api/resources/user/subresources/tokens/methods/verify/),
@@ -70,21 +70,17 @@ The permission table is a documentation-derived contract, **not a measured least
 token recipe**. Task 6 must verify the actual permission set on the dedicated account,
 including zone creation and account discovery. The read-only probe cannot prove write access.
 
-## WARP-required means organization-enrolled
+## The retired WARP hostname
 
-The operator-facing hostname remains “WARP-required.” Its API type is Gateway:
+Until 2026-10-30 Aura published a second, "WARP-required" hostname. Its API type was Gateway:
 Cloudflare's [Require Gateway](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-gateway/)
-checks enrollment and traffic through the configured organization's Gateway.
+checks enrollment and traffic through the configured organization's Gateway, while
 [Require WARP](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-warp/)
-also admits the consumer client, which does not satisfy the spec's enrolled-client acceptance.
-The orchestration ruling therefore selected a Gateway posture check. The WARP leg was retired on 2026-10-30; `retireWARP` still reads and deletes that check, tracked by `GatewayPostureID`.
+also admits the consumer client. The WARP leg was retired on 2026-10-30; `retireWARP` still reads
+and deletes that check, tracked by `GatewayPostureID`.
 The SQL column `warp_posture_id` (migration 0130) stores that Gateway ID and has a clarifying comment.
 The historical fixture filename `posture-warp.json` describes the hostname purpose; its
 wire type is correctly `gateway`.
-
-Gateway enrollment alone does not create a LAN or Docker route. Actual allowed enrolled
-traffic, rejected consumer/unmanaged traffic, and absence of private routes remain Task 6
-live acceptance requirements.
 
 ## Ownership and persistence boundaries
 

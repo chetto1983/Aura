@@ -13,7 +13,7 @@ For [Cloudflare Remote Access](cloudflare-remote-access.md), browser presigns us
 public HTTPS origin. Cloudflared reaches Caddy's private HTTP listener, which forwards the
 HTTPS browser scheme to Aura and shares the direct frontdoor's per-identity Garage routes.
 Uploads, finalization, downloads and Studio saves must work on that same public hostname after
-Access OTP and Authula. No Garage service/admin port is published through WARP. An HTTP URL or
+Access OTP and Authula. No Garage service/admin port is published through the tunnel. An HTTP URL or
 private Docker hostname in a browser presign is a failure, not a reason to disable TLS checks.
 
 ## Components

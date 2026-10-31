@@ -106,8 +106,8 @@ Query (`web/src/settings/remoteAccess`), Vitest, Playwright, the lab VM.
   owned resources and clears their IDs, and changes neither `Desired` nor the phase. `deleteResources`
   calls it, then sets `disabled`. Ownership checks read `OwnedHostname` and `Resources.AccountID`, never
   `Desired`. That is what lets an address change remove the old set.
-- **`warp_label` stays in the table.** It is no longer written, and is read only by `retireWARP` to
-  rebuild the legacy WARP hostname. Dropping `warp_label` and the `warp_*` ID columns is a follow-up
+- **`warp_label` stays in the table.** It is no longer written, and only the 0147 backfill reads it,
+  once, into `legacy_warp_hostname`. Dropping `warp_label` and the `warp_*` ID columns is a follow-up
   migration, once this release has reached Andrea's appliance (spec decision 1).
 - **`last_error` is dropped** in the same migration and replaced by `reason`. A non-empty legacy row
   becomes `unknown`.
@@ -183,7 +183,8 @@ Decisions added by revision 3 (Codex round 2):
   - The WARP app and policy are deleted only once the WARP CNAME is gone.
   - If the CNAME is denied, the CNAME, the policy and the app go to `abandoned` together, left
     untouched in Cloudflare.
-  - The posture check is independent of them.
+  - What depends on a retained resource stays with it: a denied policy keeps the app and the posture
+    check, because the policy references it. A denied app or posture check goes alone.
 - **The daemon stops the old connector, not the request** (RW-014). Every `reconcile` pass with no
   `tunnel_id` projects off, before anything can return early, and a failure stops the pass. So a
   commit followed by a lost or failed projection is repaired while the new zone is still pending, and

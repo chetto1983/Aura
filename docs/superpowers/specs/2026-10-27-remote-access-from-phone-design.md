@@ -133,7 +133,10 @@ What failed on 2026-10-27, in code and on the lab VM:
    - Instead, the acceptance holds for the hostname it was given on:
      - a tunnel outage turns the last step red, "not reachable";
      - when the tunnel is back, the step turns green again by itself, with nothing to redo;
-     - only a new domain or label asks for the phone test again, and a new token does not.
+     - only a new domain, label or Cloudflare account asks for the phone test again, and a new
+       token does not. The account was added on 2026-10-31 by the final review: after a move,
+       Access, the OTP provider and the tunnel are all new in another organisation, so nobody has
+       passed what the phone test proves.
 8. **Finding F-1 is closed in this work** (the operator, 2026-10-27).
    - **The finding.** The 2026-09-21 review measured that every `ports:` entry in `compose.yaml`
      installs an accept rule matching any input interface. From the tunnel network it reached
