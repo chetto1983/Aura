@@ -10,7 +10,8 @@ The stack and the method are the same as that file's:
 - `arcadedb-mcp` run natively;
 - the reviewer answering every parked completion as the model.
 
-Tree: `e0c6d77`. The binary reports `+dirty` because this plan's checkboxes were uncommitted.
+Tree: `e0c6d77`, rebased onto `master` as `91123b7` with no code change. The binary reports
+`+dirty` because this plan's checkboxes were uncommitted.
 
 ## What this run does not prove
 
