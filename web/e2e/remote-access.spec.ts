@@ -17,6 +17,7 @@ const step = (page: Page, name: string) => page.getByRole('heading', { name, lev
 test('walks forward, back to Dominio, changes the domain and returns to green', async ({
   page,
 }, info) => {
+  test.setTimeout(90_000);
   const fixture = await remoteAccessFixture(page);
   const token = randomBytes(24).toString('hex');
   const requestURLs: string[] = [];
@@ -80,7 +81,8 @@ test('walks forward, back to Dominio, changes the domain and returns to green', 
     },
   });
 
-  // Cloudflare activates the zone, the tunnel comes up and the phone test passes.
+  // Cloudflare activates the zone, the tunnel comes up and the phone test passes. The nameserver
+  // wait polls every thirty seconds, so the wizard moves by itself on the next one.
   fixture.status = {
     ...fixture.status,
     phase: 'healthy',
@@ -88,7 +90,7 @@ test('walks forward, back to Dominio, changes the domain and returns to green', 
     accepted: true,
     reachable: true,
   };
-  await expect(step(page, 'Try it from your phone')).toBeVisible({ timeout: 15_000 });
+  await expect(step(page, 'Try it from your phone')).toBeVisible({ timeout: 35_000 });
   await expect(page.getByText('Step 4 of 4')).toBeVisible();
   await expect(page.getByText('Reachable from outside')).toBeVisible();
   await expect(page.getByText('https://aura.example.test', { exact: true })).toBeVisible();
