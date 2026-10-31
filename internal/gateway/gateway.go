@@ -61,9 +61,10 @@ type Verdict struct {
 	Tier       scoring.RiskTier
 	Reason     string
 	OperatorID string
-	// Refusal marks the Deny that is the policy's answer — the identity's deny rule, or no
-	// approver to ask — as opposed to a fault in the gateway's own bookkeeping. Only a
-	// refusal writes the deny fact, so it is the one deny a reload can tell apart.
+	// Refusal marks the Deny that is the policy's answer — the identity's deny rule, no
+	// approver to ask, or a send no review covers — as opposed to a fault in the gateway's own
+	// bookkeeping. Only a refusal writes the deny fact, so it is the one deny a reload can tell
+	// apart.
 	Refusal bool
 	// Scope is set on an Allow that a STANDING grant produced (amendment #127) — a
 	// ScopeSession or ScopeAlways the operator granted on an earlier accept. It is empty on
