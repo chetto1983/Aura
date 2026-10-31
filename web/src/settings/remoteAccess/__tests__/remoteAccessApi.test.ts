@@ -114,11 +114,16 @@ describe('remote access API', () => {
   });
 
   it('polls only transient work quickly and configured health slowly', () => {
-    expect(remoteAccessPollInterval('validating')).toBe(2_000);
-    expect(remoteAccessPollInterval('waiting_nameservers')).toBe(2_000);
+    for (const phase of ['validating', 'provisioning', 'connecting', 'deleting'] as const) {
+      expect(remoteAccessPollInterval(phase)).toBe(2_000);
+    }
     expect(remoteAccessPollInterval('healthy')).toBe(30_000);
     expect(remoteAccessPollInterval('degraded')).toBe(30_000);
     expect(remoteAccessPollInterval('disabled')).toBe(false);
     expect(remoteAccessPollInterval('error')).toBe(false);
+  });
+
+  it('waiting for nameservers can last days and calls Cloudflare, so it polls gently', () => {
+    expect(remoteAccessPollInterval('waiting_nameservers')).toBe(30_000);
   });
 });

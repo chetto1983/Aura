@@ -12,9 +12,9 @@ import {
 
 export const REMOTE_ACCESS_KEY = ['settings', 'remote-access'] as const;
 
+// Not waiting_nameservers: it can last days, and every read of it asks Cloudflare for the zone.
 const transientPhases: ReadonlySet<RemoteAccessPhase> = new Set([
   'validating',
-  'waiting_nameservers',
   'provisioning',
   'connecting',
   'deleting',
