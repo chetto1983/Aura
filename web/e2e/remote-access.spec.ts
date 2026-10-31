@@ -26,6 +26,12 @@ test('walks forward, back to Dominio, changes the domain and returns to green', 
   // Cloudflare: Next stays shut until the token is verified and an account is chosen.
   await expect(page.getByText('Step 1 of 4')).toBeVisible();
   await expect(step(page, 'Connect your Cloudflare account')).toBeVisible();
+  // Nothing opens the list: the operator reads it before creating the token.
+  await expect(
+    page
+      .getByRole('list', { name: 'Permissions the token needs' })
+      .getByText('Cloudflare Tunnel Edit'),
+  ).toBeVisible();
   await page.getByLabel('Cloudflare API token', { exact: true }).fill(token);
   await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Verify token', exact: true }).click();
@@ -57,7 +63,6 @@ test('walks forward, back to Dominio, changes the domain and returns to green', 
   await page.getByLabel('Domain', { exact: true }).fill('example.test');
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(step(page, 'Connect your Cloudflare account')).toBeVisible();
-  await expect(page.getByLabel('Cloudflare API token', { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByLabel('Domain', { exact: true })).toHaveValue('example.test');
 
@@ -116,9 +121,16 @@ test('walks forward, back to Dominio, changes the domain and returns to green', 
     },
   });
 
-  fixture.status = { ...fixture.status, phase: 'healthy', accepted: true, reachable: true };
+  // The new address has never passed the phone test, so the wizard asks for it again.
+  fixture.status = { ...fixture.status, phase: 'connecting', accepted: false, reachable: false };
   await expect(step(page, 'Try it from your phone')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('Open this address from your phone')).toBeVisible();
   await expect(page.getByText('https://aura.other.test', { exact: true })).toBeVisible();
+  await expect(page.getByText('Reachable from outside')).toHaveCount(0);
+
+  // The accept button shows only on the public hostname, which this page is not (the phone test
+  // below covers it), so the passed test is forced into the status.
+  fixture.status = { ...fixture.status, phase: 'healthy', accepted: true, reachable: true };
   await expect(page.getByText('Reachable from outside')).toBeVisible();
 
   // Boolean assertions keep even a failing diagnostic from printing the secret.

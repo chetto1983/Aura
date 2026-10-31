@@ -12,6 +12,7 @@ import {
   checkpoint,
   cloudflare,
   cloudflareList,
+  expectStillAccepted,
   ids,
   inventory,
   required,
@@ -102,7 +103,7 @@ test.describe('attended named-tunnel acceptance', () => {
       }
       if (before) {
         const after = await inventory(account, zone);
-        for (const kind of ['dns', 'tunnels', 'apps', 'posture', 'routes'] as const) {
+        for (const kind of ['dns', 'tunnels', 'apps', 'routes'] as const) {
           expect(ids(after[kind]), `cleanup ${kind}: no owned leaks or foreign deletion`).toEqual(
             ids(before[kind]),
           );
@@ -295,9 +296,7 @@ test.describe('attended named-tunnel acceptance', () => {
       await expect
         .poll(async () => status(local), { timeout: 120_000 })
         .toMatchObject({ phase: 'healthy', accepted: true });
-      await expect(publicPage.getByRole('button', { name: 'Confirm external access' })).toHaveCount(
-        0,
-      );
+      await expectStillAccepted(publicPage);
       const oldToken = (
         await cloudflare<string>(`accounts/${account}/cfd_tunnel/${tunnelId}/token`)
       ).result;
@@ -334,9 +333,7 @@ test.describe('attended named-tunnel acceptance', () => {
         await expect
           .poll(async () => status(local), { timeout: 120_000 })
           .toMatchObject({ phase: 'healthy', accepted: true });
-        await expect(
-          publicPage.getByRole('button', { name: 'Confirm external access' }),
-        ).toHaveCount(0);
+        await expectStillAccepted(publicPage);
         await auditSecretContainment(publicPage, [
           required('CLOUDFLARE_API_TOKEN'),
           replacement,

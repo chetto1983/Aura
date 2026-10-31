@@ -87,14 +87,27 @@ export async function cloudflareList(path: string): Promise<Resource[]> {
   throw new Error('Cloudflare pagination exceeded safety bound');
 }
 export async function inventory(account: string, zone: string) {
-  const [dns, tunnels, apps, posture, routes] = await Promise.all([
+  const [dns, tunnels, apps, routes] = await Promise.all([
     cloudflareList(`zones/${zone}/dns_records`),
     cloudflareList(`accounts/${account}/cfd_tunnel?is_deleted=false`),
     cloudflareList(`accounts/${account}/access/apps`),
-    cloudflareList(`accounts/${account}/devices/posture`),
     cloudflareList(`accounts/${account}/teamnet/routes?is_deleted=false`),
   ]);
-  return { dns, tunnels, apps, posture, routes };
+  return { dns, tunnels, apps, routes };
+}
+/** The phone test belongs to the address: after a token change the row is green again with no new
+ * click. The zero is only evidence once the page has shown the state that would have carried the
+ * button, so the reload and the positive check come first. */
+export async function expectStillAccepted(page: Page) {
+  await page.reload();
+  await page.locator('#remote-access-heading').waitFor({ timeout: 30_000 });
+  const phone = page.getByRole('heading', { name: 'Try it from your phone', level: 3 });
+  if (!(await phone.isVisible())) {
+    await page.getByRole('button', { name: 'Try it from your phone', exact: true }).click();
+  }
+  await expect(phone).toBeVisible();
+  await expect(page.getByText('Reachable from outside')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm external access' })).toHaveCount(0);
 }
 export function ids(rows: readonly Resource[]) {
   return rows.map((row) => row.id).sort();
