@@ -141,6 +141,9 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	if !slices.ContainsFunc(accounts, func(a cloudflareapi.Account) bool { return a.ID == desired.AccountID }) {
 		return remotetunnel.ErrAccountNotVisible
 	}
+	if err = proveReach(ctx, c.client(token), desired.AccountID); err != nil {
+		return err
+	}
 	if desired.ZoneName != "" {
 		if _, err = c.client(token).ListZones(ctx, desired.AccountID, desired.ZoneName); err != nil {
 			return err
@@ -156,6 +159,18 @@ func (c *remoteAccessController) Configure(ctx context.Context, in agui.RemoteAc
 	c.reconciler = nil
 	c.Wake()
 	return nil
+}
+
+// proveReach reads what the last steps will write, so a token without Cloudflare Tunnel or an
+// account without Zero Trust stops on the first step. On the lab VM both surfaced only after the
+// zone activated, 51 minutes after the nameservers changed (2026-10-31). A read cannot prove
+// write permission: a Read-only token passes here and is refused at its step, under the same reason.
+func proveReach(ctx context.Context, client *cloudflareapi.Client, account string) error {
+	if _, err := client.ListTunnels(ctx, account); err != nil {
+		return remotetunnel.Refused(err, remotetunnel.ErrTunnelPermission)
+	}
+	_, err := client.ListIdentityProviders(ctx, account)
+	return remotetunnel.Refused(err, remotetunnel.ErrAccessUnavailable)
 }
 
 // abandonedBy lists what the row holds in an account the token cannot see. Such a token can never

@@ -179,6 +179,30 @@ func TestVerifyWithAnInactiveTokenAnswersTokenRejected(t *testing.T) {
 	}
 }
 
+// The refusal has to land on the first step, with nothing stored: on the lab VM it waited for the
+// zone to activate, 51 minutes after the nameservers changed (2026-10-31).
+func TestConfigureProvesWhatTheLastStepsNeedBeforeStoringTheToken(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		refuse func(*wizardCloudflare)
+		reason string
+	}{
+		{"a token without Cloudflare Tunnel", func(c *wizardCloudflare) { c.refuseTunnels = true }, "tunnel_permission"},
+		{"an account without Zero Trust", func(c *wizardCloudflare) { c.refuseAccess = true }, "access_unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
+			tc.refuse(cloud)
+			store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}
+			srv := serveRemoteAccess(t, cloud.controller(store, secrets, memoryCommit(store, secrets)))
+			code, body := srv.call(t, "PUT", "", `{"enabled":false,"account_id":"account","api_token":"candidate"}`)
+			if code != 400 || !strings.Contains(body, `"reason":"`+tc.reason+`"`) || len(secrets.values) != 0 {
+				t.Fatalf("status=%d body=%s stored=%v", code, body, secrets.values)
+			}
+		})
+	}
+}
+
 func TestConfigureUnknownAccountAnswersAccountNotVisible(t *testing.T) {
 	cloud := newWizardCloudflare(t, acmeAccounts("account"), 200)
 	store, secrets := &remoteMemoryStore{}, &remoteMemorySecrets{values: map[string]string{}}

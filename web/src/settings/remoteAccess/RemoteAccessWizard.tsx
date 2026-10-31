@@ -125,6 +125,7 @@ export function RemoteAccessWizard({ status, actions }: RemoteAccessWizardProps)
             status={status}
             onVerify={actions.verify}
             onSave={save}
+            onRetry={actions.reconcile}
             onDismiss={actions.dismissAbandoned}
             onEdit={pin}
             onNext={() => {

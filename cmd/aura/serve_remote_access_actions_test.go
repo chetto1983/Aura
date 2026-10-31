@@ -19,6 +19,9 @@ func TestRemoteAccessConfigureCommitsOnlyAfterValidation(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
+				if answersReachProbe(w, r) {
+					return
+				}
 				switch r.URL.Path {
 				case "/user/tokens/verify":
 					status := "active"

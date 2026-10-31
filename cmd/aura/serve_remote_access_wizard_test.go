@@ -25,6 +25,8 @@ type wizardCloudflare struct {
 	hangAccounts bool
 	// tunnelStatus is what the tunnel of provisionedInAccountA reports.
 	tunnelStatus string
+	// refuseTunnels and refuseAccess answer those lists with the 403 Cloudflare gave on the lab VM.
+	refuseTunnels, refuseAccess bool
 }
 
 func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) *wizardCloudflare {
@@ -32,6 +34,20 @@ func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) 
 	f := &wizardCloudflare{tokenStatus: "active"}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		refused := func(code string) {
+			w.WriteHeader(403)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":` + code + `}]}`))
+		}
+		switch {
+		case f.refuseTunnels && strings.HasSuffix(r.URL.Path, "/cfd_tunnel"):
+			refused("10000")
+			return
+		case f.refuseAccess && strings.HasSuffix(r.URL.Path, "/access/identity_providers"):
+			refused("9999")
+			return
+		case answersReachProbe(w, r):
+			return
+		}
 		switch r.URL.Path {
 		case "/user/tokens/verify":
 			_, _ = w.Write([]byte(`{"success":true,"result":{"status":"` + f.tokenStatus + `"}}`))
@@ -55,6 +71,15 @@ func newWizardCloudflare(t *testing.T, accountsBody string, accountsStatus int) 
 	}))
 	t.Cleanup(f.Close)
 	return f
+}
+
+// answersReachProbe serves the two reads Configure makes before it stores a token.
+func answersReachProbe(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/cfd_tunnel") && !strings.HasSuffix(r.URL.Path, "/access/identity_providers") {
+		return false
+	}
+	_, _ = w.Write([]byte(`{"success":true,"result":[],"result_info":{"page":1,"total_pages":1}}`))
+	return true
 }
 
 func acmeAccounts(ids ...string) string {

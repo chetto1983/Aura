@@ -23,7 +23,7 @@ export const remoteAccessEn = {
         'Aura uses an API token to create the tunnel, the address and the Access protection in your account. The token is never shown again.',
       createToken: 'Create the token on Cloudflare',
       tokenHint:
-        'The link opens the form with the permissions already chosen. Add Cloudflare Tunnel Edit yourself: it is the one Cloudflare cannot pre-fill.',
+        'The link opens the form with the permissions already chosen. Add Cloudflare Tunnel Edit yourself: it is the one Cloudflare cannot pre-fill. The account also needs Zero Trust switched on: the Free plan is enough.',
       permissions: 'Permissions the token needs',
       tokenLabel: 'Cloudflare API token',
       verify: 'Verify token',
@@ -67,7 +67,8 @@ export const remoteAccessEn = {
         body: 'Replace the domain’s nameservers with these two. Aura carries on by itself once Cloudflare activates the zone.',
         unread:
           'Aura cannot read the nameservers right now. You will find them in the Cloudflare dashboard, on the domain’s Overview page.',
-        waiting: 'Waiting for Cloudflare to activate the zone…',
+        waiting:
+          'Waiting for Cloudflare to activate the zone: usually one or two hours, at most 24. If your registrar does not show Cloudflare’s nameservers yet, the change was not saved.',
       },
     },
     connection: {
@@ -113,6 +114,16 @@ export const remoteAccessEn = {
         sentence:
           'Cloudflare refused the token: it has expired, was revoked or lacks a permission.',
         action: 'Paste a new token',
+      },
+      tunnel_permission: {
+        sentence:
+          'The token lacks Cloudflare Tunnel Edit. Add it to the token on Cloudflare, then retry: the token keeps its value.',
+        action: 'Retry',
+      },
+      access_unavailable: {
+        sentence:
+          'Cloudflare refuses Access: Zero Trust is not switched on for this account, or the token lacks the two Access permissions. Switch on Zero Trust with the Free plan or correct the token on Cloudflare, then retry.',
+        action: 'Retry',
       },
       no_accounts: {
         sentence: 'The token works but sees no account: it lacks Account Settings Read.',
@@ -195,7 +206,7 @@ export const remoteAccessIt = {
         'Aura usa un token API per creare il tunnel, l’indirizzo e la protezione Access nel tuo account. Il token non viene mai mostrato di nuovo.',
       createToken: 'Crea il token su Cloudflare',
       tokenHint:
-        'Il link apre il modulo con i permessi già scelti. Aggiungi tu Cloudflare Tunnel Edit: è l’unico che Cloudflare non sa precompilare.',
+        'Il link apre il modulo con i permessi già scelti. Aggiungi tu Cloudflare Tunnel Edit: è l’unico che Cloudflare non sa precompilare. L’account deve avere anche Zero Trust attivo: basta il piano Free.',
       permissions: 'Permessi che servono al token',
       tokenLabel: 'Token API Cloudflare',
       verify: 'Verifica token',
@@ -239,7 +250,8 @@ export const remoteAccessIt = {
         body: 'Sostituisci i nameserver del dominio con questi due. Aura continua da sola quando Cloudflare attiva la zona.',
         unread:
           'Aura non riesce a leggere i nameserver in questo momento. Li trovi nel dashboard Cloudflare, nella pagina Overview del dominio.',
-        waiting: 'In attesa che Cloudflare attivi la zona…',
+        waiting:
+          'In attesa che Cloudflare attivi la zona: di solito una o due ore, al massimo 24. Se il registrar non mostra ancora i nameserver di Cloudflare, il cambio non è stato salvato.',
       },
     },
     connection: {
@@ -286,6 +298,16 @@ export const remoteAccessIt = {
         sentence:
           'Cloudflare ha rifiutato il token: è scaduto, è stato revocato o gli manca un permesso.',
         action: 'Incolla un token nuovo',
+      },
+      tunnel_permission: {
+        sentence:
+          'Al token manca Cloudflare Tunnel Edit. Aggiungilo al token su Cloudflare, poi riprova: il token mantiene il suo valore.',
+        action: 'Riprova',
+      },
+      access_unavailable: {
+        sentence:
+          'Cloudflare rifiuta Access: su questo account Zero Trust non è attivo, oppure al token mancano i due permessi Access. Attiva Zero Trust con il piano Free o correggi il token su Cloudflare, poi riprova.',
+        action: 'Riprova',
       },
       no_accounts: {
         sentence: 'Il token funziona ma non vede nessun account: gli manca Account Settings Read.',

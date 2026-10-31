@@ -36,6 +36,8 @@ export const TOKEN_TEMPLATE_URL = `https://dash.cloudflare.com/profile/api-token
 
 const REASON_STEP: Partial<Record<RemoteAccessReason, StepKey>> = {
   token_rejected: 'cloudflare',
+  tunnel_permission: 'cloudflare',
+  access_unavailable: 'cloudflare',
   no_accounts: 'cloudflare',
   account_not_visible: 'cloudflare',
   domain_invalid: 'domain',
@@ -106,6 +108,13 @@ export function stepStates(status: RemoteAccessStatusDTO): Record<StepKey, StepS
   };
 }
 
+/** Fixed on Cloudflare, not in a field: editing a token keeps its value, and activating Zero Trust
+ * leaves it alone, so the saved token is good once the operator comes back. */
+const FIXED_ON_CLOUDFLARE: readonly RemoteAccessReason[] = [
+  'tunnel_permission',
+  'access_unavailable',
+];
+
 /** What a reason's button does on a step: fix the field here, send the work again, or open the
  * step that can fix it. Connection and phone reasons name nothing the operator can retype, so
  * they are retried wherever they show. */
@@ -114,7 +123,9 @@ export function reasonAction(
   step: StepKey,
 ): 'fix' | 'retry' | StepKey {
   const target = reasonStep(reason);
-  if (target === 'connection' || target === 'phone') return 'retry';
+  if (target === 'connection' || target === 'phone' || FIXED_ON_CLOUDFLARE.includes(reason)) {
+    return 'retry';
+  }
   return target === step ? 'fix' : target;
 }
 

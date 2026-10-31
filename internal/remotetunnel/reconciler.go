@@ -166,10 +166,10 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		}
 	}
 	if err = r.tunnel(ctx, s); err != nil {
-		return err
+		return Refused(err, ErrTunnelPermission)
 	}
 	if err = r.otp(ctx, s); err != nil {
-		return err
+		return Refused(err, ErrAccessUnavailable)
 	}
 	if err = r.verifyOwned(ctx, s); err != nil {
 		return err
@@ -178,7 +178,7 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 		return err
 	}
 	if err = r.access(ctx, s, emails); err != nil {
-		return err
+		return Refused(err, ErrAccessUnavailable)
 	}
 	// Re-read identity state before publication; identity transactions never wait on Cloudflare.
 	current, _, err := r.activeMembers(ctx)

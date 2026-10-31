@@ -15,6 +15,11 @@ var (
 	ErrDomainElsewhere   = errors.New("remote access: domain belongs to another Cloudflare account")
 	ErrNoAccounts        = errors.New("remote access: token sees no Cloudflare account")
 	ErrAccountNotVisible = errors.New("remote access: chosen account is not visible to the token")
+	// ErrTunnelPermission and ErrAccessUnavailable are what Refused turns a tunnel or Access refusal
+	// into. The second has two causes the API does not tell apart: an account with no Zero Trust
+	// organization (HTTP 403, code 9999, lab VM 2026-10-31) and a token without the Access permissions.
+	ErrTunnelPermission  = errors.New("remote access: token lacks Cloudflare Tunnel Edit")
+	ErrAccessUnavailable = errors.New("remote access: Cloudflare refused Access")
 	// ErrProjection is a failed write of the connector's state; it is retried, never terminal.
 	ErrProjection = errors.New("remote access: connector projection failed")
 	// ErrDomainInvalid is the domain or label failing validation; it is an ErrConfiguration too.
@@ -23,11 +28,27 @@ var (
 	ErrTunnelNotServing = fmt.Errorf("%w: tunnel is not serving", ErrConfiguration)
 )
 
+// Refused names a Cloudflare refusal after what the step that met it needs, for a token already
+// known to be alive. Any other outcome passes through, so an outage stays an outage.
+func Refused(err, needed error) error {
+	var api *cloudflareapi.APIError
+	if errors.As(err, &api) && refusal(api) {
+		return fmt.Errorf("%w: %w", needed, err)
+	}
+	return err
+}
+
+func refusal(api *cloudflareapi.APIError) bool { return api.Status == 401 || api.Status == 403 }
+
 // ReasonOf maps a reconciliation error to the code stored on the row. It reads types and
 // fields, never message text, because the code reaches the browser and the text must not.
 func ReasonOf(err error) Reason {
 	var api *cloudflareapi.APIError
 	switch {
+	case errors.Is(err, ErrTunnelPermission):
+		return ReasonTunnelPermission
+	case errors.Is(err, ErrAccessUnavailable):
+		return ReasonAccessUnavailable
 	case errors.Is(err, ErrHostnameTaken):
 		return ReasonHostnameTaken
 	case errors.Is(err, ErrDomainElsewhere):
@@ -51,7 +72,7 @@ func ReasonOf(err error) Reason {
 		return ReasonUnknown
 	case errors.Is(err, cloudflareapi.ErrTokenInactive):
 		return ReasonTokenRejected
-	case errors.As(err, &api) && (api.Status == 401 || api.Status == 403):
+	case errors.As(err, &api) && refusal(api):
 		return ReasonTokenRejected
 	case transient(err):
 		return ReasonCloudflareUnreachable

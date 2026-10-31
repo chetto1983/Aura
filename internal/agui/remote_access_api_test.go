@@ -269,6 +269,8 @@ func TestErrorBodiesCarryTheirReasonAndAFixedSentence(t *testing.T) {
 		{cloudflareapi.ErrTokenInactive, 400, "token_rejected"},
 		{remotetunnel.ErrNoAccounts, 400, "no_accounts"},
 		{remotetunnel.ErrAccountNotVisible, 400, "account_not_visible"},
+		{remotetunnel.ErrTunnelPermission, 400, "tunnel_permission"},
+		{remotetunnel.ErrAccessUnavailable, 400, "access_unavailable"},
 		{remotetunnel.ErrDomainInvalid, 400, "domain_invalid"},
 		{remotetunnel.ErrConfiguration, 400, "unknown"},
 		{remotetunnel.ErrTunnelNotServing, 400, "tunnel_down"},

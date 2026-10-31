@@ -14,6 +14,8 @@ export type RemoteAccessPhase =
 /** Go remotetunnel.Reason and the SQL CHECK, as a list: the wizard iterates every code. */
 export const REMOTE_ACCESS_REASONS = [
   'token_rejected',
+  'tunnel_permission',
+  'access_unavailable',
   'no_accounts',
   'account_not_visible',
   'domain_invalid',

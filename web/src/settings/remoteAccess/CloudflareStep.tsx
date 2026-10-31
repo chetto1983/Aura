@@ -12,6 +12,7 @@ import type {
 import {
   TOKEN_TEMPLATE_URL,
   hasCredentials,
+  reasonAction,
   reasonOn,
   reasonStep,
   type StepKey,
@@ -37,6 +38,7 @@ interface CloudflareStepProps {
   readonly status: RemoteAccessStatusDTO;
   readonly onVerify: (token: string) => Promise<readonly CloudflareAccount[]>;
   readonly onSave: (configuration: RemoteAccessConfiguration) => Promise<void>;
+  readonly onRetry: () => Promise<void>;
   readonly onDismiss: () => Promise<void>;
   readonly onEdit: () => void;
   readonly onNext: () => void;
@@ -52,6 +54,7 @@ export function CloudflareStep({
   status,
   onVerify,
   onSave,
+  onRetry,
   onDismiss,
   onEdit,
   onNext,
@@ -83,7 +86,11 @@ export function CloudflareStep({
       if (accounts === null) return t('remoteAccess.cloudflare.needVerify');
       return account === '' ? t('remoteAccess.cloudflare.needAccount') : null;
     }
-    if (rowReason !== '') return t('remoteAccess.cloudflare.needNewToken');
+    if (rowReason !== '') {
+      return reasonAction(rowReason, 'cloudflare') === 'retry'
+        ? t('remoteAccess.connection.needFix')
+        : t('remoteAccess.cloudflare.needNewToken');
+    }
     return hasCredentials(status) ? null : t('remoteAccess.cloudflare.needToken');
   }
 
@@ -93,6 +100,12 @@ export function CloudflareStep({
       setAccounts(found);
       setChosen(preferredAccount(found, status.account_id));
     });
+  }
+
+  /** A typed token has not been saved yet, so it is the one to try; with none, the saved one. */
+  function retry() {
+    if (typed === '') void run(onRetry);
+    else void (accounts === null ? verify() : save());
   }
 
   async function save() {
@@ -193,7 +206,7 @@ export function CloudflareStep({
         failure={failure}
         onOpenStep={onOpenStep}
         onFix={() => tokenField.current?.focus()}
-        onRetry={() => void (accounts === null ? verify() : save())}
+        onRetry={retry}
         retrying={running}
       />
       <StepFoot

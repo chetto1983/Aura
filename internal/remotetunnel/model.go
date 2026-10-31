@@ -26,6 +26,8 @@ type Reason string
 // "" means no reason.
 const (
 	ReasonTokenRejected         Reason = "token_rejected"
+	ReasonTunnelPermission      Reason = "tunnel_permission"
+	ReasonAccessUnavailable     Reason = "access_unavailable"
 	ReasonNoAccounts            Reason = "no_accounts"
 	ReasonAccountNotVisible     Reason = "account_not_visible"
 	ReasonDomainInvalid         Reason = "domain_invalid"

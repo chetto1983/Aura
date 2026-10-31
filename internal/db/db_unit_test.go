@@ -391,8 +391,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0145 lets a scheduled task name its Telegram recipients, and a pending push its account.
 	// 0146 persists the remote-access reason code and the hostnames its resources belong to.
 	// 0147 gives those resources their own account, zone and legacy WARP hostname.
-	if head != 147 {
-		t.Fatalf("MigrationHead=%d, want embedded head 147", head)
+	// 0148 lets the row name a refusal at the tunnel or Access step.
+	if head != 148 {
+		t.Fatalf("MigrationHead=%d, want embedded head 148", head)
 	}
 }
 

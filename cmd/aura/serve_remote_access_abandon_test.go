@@ -47,13 +47,14 @@ func provisionedInAccountA() remotetunnel.State {
 	}
 }
 
-// accountsServer is a Cloudflare that only verifies a token and lists accounts and zones, and
-// fails the test on anything else: deleting is not what a token replacement does.
+// accountsServer is a Cloudflare that only verifies a token, lists accounts and zones and answers
+// the reach probe, and fails the test on anything else: deleting is not what a token replacement does.
 func accountsServer(t *testing.T, accountIDs ...string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case answersReachProbe(w, r):
 		case r.Method == http.MethodGet && r.URL.Path == "/user/tokens/verify":
 			_, _ = w.Write([]byte(`{"success":true,"result":{"status":"active"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/accounts":

@@ -184,6 +184,8 @@ describe('stepStates', () => {
 describe('reasonStep', () => {
   it.each<[RemoteAccessReason, StepKey]>([
     ['token_rejected', 'cloudflare'],
+    ['tunnel_permission', 'cloudflare'],
+    ['access_unavailable', 'cloudflare'],
     ['no_accounts', 'cloudflare'],
     ['account_not_visible', 'cloudflare'],
     ['domain_invalid', 'domain'],
@@ -237,6 +239,8 @@ describe('reasonAction', () => {
     ['hostname_taken', 'domain'],
   ];
   const RETRIED: readonly Reason[] = [
+    'tunnel_permission',
+    'access_unavailable',
     'not_owned',
     'no_administrator',
     'cloudflare_unreachable',

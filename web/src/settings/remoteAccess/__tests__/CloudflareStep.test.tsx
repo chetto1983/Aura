@@ -55,6 +55,7 @@ function renderStep(
     onEdit: vi.fn(),
     onNext: vi.fn(),
     onOpenStep: vi.fn(),
+    onRetry: vi.fn(() => Promise.resolve()),
   };
   render(<CloudflareStep status={status} {...props} />);
   return props;
@@ -110,7 +111,8 @@ describe('CloudflareStep', () => {
       'Access: Apps and Policies Edit',
       'Access: Organizations, Identity Providers, and Groups Edit',
     ]);
-    expect(screen.queryByText(/Zero Trust/)).toBeNull();
+    // No permission of the WARP leg. The page itself does name Zero Trust: the account needs it.
+    expect(list.queryByText(/Zero Trust/)).toBeNull();
   });
 
   it('no token yet: Avanti is disabled and says why beside it', () => {
@@ -136,6 +138,7 @@ describe('CloudflareStep', () => {
         onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
+        onRetry={vi.fn()}
       />,
     );
     fireEvent.change(token(), { target: { value: 'cf-token' } });
@@ -281,6 +284,38 @@ describe('CloudflareStep', () => {
     },
   );
 
+  // Lab VM, 2026-10-31: the token was fine both times, and the wizard asked for a third one. Editing a
+  // token on Cloudflare keeps its value and activating Zero Trust leaves it alone: nothing to paste.
+  it.each<[RemoteAccessReason, string]>([
+    ['tunnel_permission', 'Cloudflare Tunnel Edit'],
+    ['access_unavailable', 'Zero Trust'],
+  ])('%s on the row: says what is missing and retries the saved token', async (reason, named) => {
+    const { onRetry, onSave } = renderStep({ ...configured, phase: 'error', reason });
+    const notice = screen.getByRole('alert');
+    expect(notice.textContent).toContain(named);
+    expect(screen.getByText('Risolvi il problema qui sopra per continuare')).toBeTruthy();
+    fireEvent.click(within(notice).getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('a save refused for Access keeps the token typed and tries it again', async () => {
+    const { onRetry, onSave } = renderStep(firstSetup);
+    onSave.mockRejectedValueOnce(refused(400, 'access_unavailable'));
+    await verifyToken();
+    fireEvent.click(avanti());
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Zero Trust');
+    expect(token().value).toBe('cf-token');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(2);
+    });
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
   it('a verify with no accounts shows its sentence and keeps what was typed', async () => {
     const onVerify = vi.fn(() => Promise.reject(refused(400, 'no_accounts')));
     render(
@@ -292,6 +327,7 @@ describe('CloudflareStep', () => {
         onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
+        onRetry={vi.fn()}
       />,
     );
     fireEvent.change(token(), { target: { value: 'cf-token' } });
@@ -316,6 +352,7 @@ describe('CloudflareStep', () => {
         onEdit={vi.fn()}
         onNext={vi.fn()}
         onOpenStep={vi.fn()}
+        onRetry={vi.fn()}
       />,
     );
     fireEvent.change(token(), { target: { value: 'cf-token' } });

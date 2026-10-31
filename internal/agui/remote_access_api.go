@@ -226,7 +226,8 @@ func writeRemoteAccessError(w http.ResponseWriter, err error) {
 // operatorInputReason is a failure only the operator can fix by changing what they typed or chose.
 func operatorInputReason(r remotetunnel.Reason) bool {
 	switch r {
-	case remotetunnel.ReasonTokenRejected, remotetunnel.ReasonNoAccounts, remotetunnel.ReasonAccountNotVisible, remotetunnel.ReasonDomainInvalid:
+	case remotetunnel.ReasonTokenRejected, remotetunnel.ReasonTunnelPermission, remotetunnel.ReasonAccessUnavailable,
+		remotetunnel.ReasonNoAccounts, remotetunnel.ReasonAccountNotVisible, remotetunnel.ReasonDomainInvalid:
 		return true
 	}
 	return false
