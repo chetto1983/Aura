@@ -225,9 +225,12 @@ func (r *Reconciler) reconcile(ctx context.Context, s *State) error {
 }
 
 // settled is a row whose last observation stands until this pass replaces it: writing
-// provisioning over it would show the operator the connection step for the length of the walk.
+// provisioning over it would show the operator the connection step for the length of the walk,
+// and a connecting row is passed every ten seconds with the operator on the phone step. A new
+// address leaves this set by itself: SaveDesired writes validating, and reconcile writes
+// provisioning before its teardown.
 func settled(s *State) bool {
-	return s.Phase == PhaseHealthy || s.Phase == PhaseDegraded && s.Reason == ReasonTunnelDown
+	return s.Phase == PhaseHealthy || s.Phase == PhaseConnecting || s.Phase == PhaseDegraded && s.Reason == ReasonTunnelDown
 }
 
 // tunnelServes: Cloudflare reports degraded for a connector that is running and serving traffic

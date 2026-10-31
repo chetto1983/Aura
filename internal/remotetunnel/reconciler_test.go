@@ -38,6 +38,43 @@ func TestReconcileResumesEveryPhase(t *testing.T) {
 	}
 }
 
+// A connecting row is the one the operator holds on the phone step, and a pass runs every ten seconds.
+func TestConnectingPassNeverWritesProvisioning(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	if s := h.store.state; s.Phase != PhaseConnecting || s.Resources.TunnelID == "" {
+		t.Fatalf("fixture phase=%q tunnel=%q", s.Phase, s.Resources.TunnelID)
+	}
+	h.store.log = nil
+	h.assertResources(t)
+	if len(h.store.log) == 0 {
+		t.Fatal("the pass persisted nothing")
+	}
+	for i, saved := range h.store.log {
+		if saved.Phase != PhaseConnecting {
+			t.Fatalf("write %d of %d is %q, want connecting throughout", i+1, len(h.store.log), saved.Phase)
+		}
+	}
+}
+
+func TestConnectingRowThatChangesAddressGoesThroughProvisioning(t *testing.T) {
+	h := newHarness(t)
+	h.assertResources(t)
+	h.changeAddress(func(d *Desired) { d.PublicLabel = "casa" })
+	h.store.state.Phase = PhaseConnecting
+	h.store.log = nil
+	h.assertResources(t)
+	if len(h.store.log) == 0 {
+		t.Fatal("the pass persisted nothing")
+	}
+	if first := h.store.log[0].Phase; first != PhaseProvisioning {
+		t.Fatalf("the first write is %q: a new address shows the connection step while it is replaced", first)
+	}
+	if s := h.store.state; s.Phase != PhaseConnecting || s.OwnedHostname != "casa.example.com" {
+		t.Fatalf("phase=%q owned=%q", s.Phase, s.OwnedHostname)
+	}
+}
+
 func TestReconcileTransientFailureAtEveryAPIBoundary(t *testing.T) {
 	baseline := newHarness(t)
 	baseline.assertResources(t)
