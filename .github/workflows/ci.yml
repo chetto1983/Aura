@@ -1505,7 +1505,11 @@ jobs:
       - name: Compile the calendar_integration tier (always — no-skip-as-green floor)
         # The tier ALWAYS compiles in CI (the cheap, always-green floor proving the
         # tagged file never rots), even before the sidecar is up.
-        run: go vet -tags calendar_integration ./internal/mcp/
+        # pim_mail_e2e (scripts/pim_mail_e2e.sh, a fake mailbox) shares the tier's helpers and
+        # runs only where Docker can host a mail server; it compiles here so it cannot rot.
+        run: |
+          go vet -tags calendar_integration ./internal/mcp/
+          go vet -tags pim_mail_e2e ./internal/mcp/
 
       - name: Start the Aura PIM sidecar (published GHCR image)
         # Standalone `docker run` — the public image carries its own HEALTHCHECK

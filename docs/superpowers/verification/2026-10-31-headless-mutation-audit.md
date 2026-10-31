@@ -55,6 +55,13 @@ responder and an acquired operation:
 
 - **A1, invitations.** Measure first. On the lab VM, `create_event` with a test address as
   attendee: does the PIM send the invitation? The classification waits on that answer.
+  - **Partly answered the same day** (`2026-10-31-pim-mail-e2e.md`):
+    - **M365** sends invitations through Graph by default;
+    - **Google** does not by default;
+    - **CalDAV** depends on the server;
+    - **IMAP, ICS and JSON** accounts refuse `create_event`, as measured.
+  - **A remedy exists without Aura code:** the PIM's per-account
+    `"permissions": {"calendarWrite": false}`.
 - **A2, browser.** Unchanged. The risk is recorded here. A per-identity `deny` policy on the
   browser's write actions (item 1) blocks them for an identity whose jobs must not drive a
   browser. Legitimate scheduled checks navigate by clicking, so a blanket headless deny would
@@ -65,9 +72,8 @@ responder and an acquired operation:
 
 ## What this audit does not establish
 
-- **That the PIM sends invitations.** The PIM fork is a separate repository, outside this
-  session's scope, and was not read. A1's severity depends on it. Microsoft Graph sends
-  invitations on create by default; whether the fork does is a lab-VM probe with a test address.
+- **That the PIM sends invitations.** At the time of this audit the fork had not been read. It was
+  read later the same day (`2026-10-31-pim-mail-e2e.md`).
 - **That a model follows an injected instruction.** These are the gateway's verdicts, not a run.
 - **Built-in tools.** `shell_exec`, the fs tools, `skill_manage` and `task` are outside the MCP
   tables and were not re-read. `shell_exec` has its own destructive-pattern approval.

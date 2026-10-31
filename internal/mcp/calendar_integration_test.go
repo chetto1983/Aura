@@ -54,8 +54,6 @@ const (
 // talks to the sidecar directly over the SDK session, the same handshake
 // bridge.go's initial mount performs before namespacedName prefixes it
 // "calendar__" for the model.
-const curatedCalendarToolName = "calendar"
-
 // calendarActionEnum is the design doc's §5a action list, in the fork's own
 // tools/list order (docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md).
 // The live curated tool's schema.properties.action.enum must equal this exactly.
@@ -167,15 +165,6 @@ func awaitCalendarAccount(
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-}
-
-func callCalendar(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, args map[string]any) (text string, isError bool) {
-	t.Helper()
-	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: curatedCalendarToolName, Arguments: args})
-	if err != nil {
-		t.Fatalf("CallTool %s: %v", curatedCalendarToolName, err)
-	}
-	return DecodeToolResult(res)
 }
 
 // calendarActionSchema parses the curated tool's advertised inputSchema — an `any`

@@ -1,0 +1,35 @@
+{
+  "CalendarMcp": {
+    "Accounts": [
+      {
+        "id": "00000000000000000000000000000001__mail",
+        "tenantId": "00000000-0000-0000-0000-000000000001",
+        "displayName": "Fake operator mailbox (GreenMail)",
+        "provider": "imap",
+        "enabled": true,
+        "priority": 1,
+        "providerConfig": { "imapHost": "pim-greenmail", "imapPort": "3143", "smtpHost": "pim-greenmail", "smtpPort": "3025",
+                            "username": "operator@aura.test", "password": "fake-pass" }
+      },
+      {
+        "id": "00000000000000000000000000000001__fixture",
+        "tenantId": "00000000-0000-0000-0000-000000000001",
+        "displayName": "Fixture calendar (no provider OAuth)",
+        "provider": "json",
+        "enabled": true,
+        "priority": 2,
+        "providerConfig": { "source": "local", "filePath": "/app/data/fixture-calendar.json" }
+      },
+      {
+        "id": "00000000000000000000000000000002__mail",
+        "tenantId": "00000000-0000-0000-0000-000000000002",
+        "displayName": "Fake colleague mailbox (GreenMail)",
+        "provider": "imap",
+        "enabled": true,
+        "priority": 1,
+        "providerConfig": { "imapHost": "pim-greenmail", "imapPort": "3143", "smtpHost": "pim-greenmail", "smtpPort": "3025",
+                            "username": "colleague@aura.test", "password": "fake-pass" }
+      }
+    ]
+  }
+}

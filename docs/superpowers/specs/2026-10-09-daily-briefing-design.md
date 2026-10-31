@@ -87,9 +87,15 @@ Since `874a0b7d7` the tree moved; what that changes here:
   overdue card at position 40 is invisible to the briefing unless the skill asks again. The
   productivity read (P4, `2026-10-09-consolidation-best-of-design.md`) proposes a deterministic
   "today" order in the snapshot, which would also be this spec's baseline.
-- **The fields of `get_emails`, partly.** The cockpit renders `id`, `accountId`, `subject`, `from`
-  and `receivedDateTime` (`internal/agent/display/sidecars.go:27-30`). Whether the payload also
-  carries a text preview is still not read.
+- **The fields of `get_emails`, measured 2026-10-31** against the published PIM and a fake mailbox
+  (`verification/2026-10-31-pim-mail-e2e.md`):
+  - an item is `id`, `accountId`, `subject`, `from`, `receivedDateTime`, `isRead` and
+    `hasAttachments`;
+  - `from` is a plain string;
+  - there is no text preview.
+
+  The five messages that ask for something are judged from sender and subject alone, as the skill
+  says.
 - **Telegram recipients.** Since 2026-10-28 a task names the Telegram accounts it reaches when
   two or more are linked (`2026-10-28-telegram-push-recipients-design.md`). The briefing
   inherits it with no work.
