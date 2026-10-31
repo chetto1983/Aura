@@ -25,6 +25,25 @@ This spec is written ahead of that, not landed ahead of it.
 
 Plan: `docs/superpowers/plans/2026-10-30-daily-briefing.md`.
 
+## Open question 1 does not hold as answered, read 2026-10-31 (`8af1b9f`)
+
+The baseline was to be rendered "from the tool results that the same run recorded". The tree does
+not keep them whole:
+- **The ledger keeps a cut copy.** `aura.tool_invocations.result_preview` is capped at 2 KiB and
+  redacted (`ResultPreviewCapBytes`, `internal/toolinvocations/redact.go`); a cut one ends in
+  `…[capped]`.
+- **The full result is kept only above the context cap.** The sidecar
+  (`result_sidecar_path`) exists only for a result over `AURA_CONTEXT_PREVIEW_CAP_BYTES`, 30,000
+  bytes by default.
+- **What falls between is kept by neither.** A board list of a dozen cards, or the JSON of 20
+  unread mails, sits between 2 KiB and 30 KB, so neither keeps it whole.
+- **The reasoning trace does not help.** It is off by default (`AURA_REASONING_TRACE`), capped and
+  redacted too, and its full mode needs an acknowledgement and encryption.
+
+This is read in the code, not measured on a run. It says nothing about how often a real briefing's
+reads exceed 2 KiB. `scripts/briefing_baseline.py` stands, because it renders from a bundle. How
+the bundle is obtained is the operator's decision, and acceptance 3 waits on it.
+
 ## Re-read against the tree, 2026-10-30 (`6118144`)
 
 The six findings were decided and verified on 2026-10-12 (`2026-10-12-gateway-clarity-design.md`).

@@ -125,5 +125,6 @@ which keep the past; that cost has no measured reason.
 - **Model behaviour.** Whether a model actually follows an injected "forget" is not known; step 0.2
   reports it, and no gate depends on it.
 - **Attacks beyond this tool.** Whether a headless run can do other irreversible damage through a
-  tool classified `Normal` is not inventoried. The same read applied to every `MCPActionMutate`
-  entry is the next step if step 0 confirms this one.
+  tool classified `Normal` is not inventoried here. The read of every `MCPActionMutate` entry ran
+  on 2026-10-31 (`verification/2026-10-31-headless-mutation-audit.md`). It found calendar
+  invitations, browser actions, bulk mark-read and contact updates allowed with no responder.
