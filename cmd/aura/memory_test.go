@@ -502,3 +502,14 @@ func TestATrailingFlagWithNoValueIsNotTaken(t *testing.T) {
 		t.Errorf("takeFlag = %q leaving %v, want the value taken and mario left", got, args)
 	}
 }
+
+// A blank positional is a missing one: `aura memory facts ""` or a quoted space must ask for the
+// entity, not send the server an empty name.
+func TestABlankPositionalIsMissing(t *testing.T) {
+	t.Parallel()
+	for _, argv := range [][]string{{"facts", ""}, {"facts", "   "}, {"search", "\t"}} {
+		if _, err := memoryCallFor(argv, time.Now()); err == nil || !strings.Contains(err.Error(), "requires") {
+			t.Errorf("%q mapped to a call (err=%v); want the missing argument named", argv, err)
+		}
+	}
+}
