@@ -75,6 +75,11 @@ func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 		"AURA_DB_MIGRATE_URL="+migrationTestDSN("aura_migrate", password, host, port, database),
 		"AURA_DB_URL="+migrationTestDSN("aura_app", password, host, port, database),
 		"AURA_PROFILE=single_user_hardened",
+		// The profile refuses to start without these. CI's workflow env happens to set them, so
+		// without this line the smoke passed there and failed on every local coverage run.
+		"GARAGE_RPC_SECRET="+strings.Repeat("0", 62)+"d4",
+		"AURA_EMBED_REVISION=0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
+		"AURA_EMBED_FINGERPRINT=b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
 		"AURA_RUN_DIR="+filepath.Join(dir, "run"),
 		"AURA_SKILLS_DIR="+filepath.Join(dir, "skills"), "AURA_SKILLS_IDENTITY_DIR="+filepath.Join(dir, "skills-identities"),
 		"AURA_LLM_PROVIDER=llamacpp", "AURA_LLM_BASE_URL=http://127.0.0.1:9/v1", "AURA_LLM_MODEL=cli-smoke",
@@ -82,6 +87,7 @@ func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 		// ArcadeDB and another has one with no tenant for this identity (2026-10-31), so a row
 		// that reached them depended on the host. The rows pin what the CLI does without them.
 		"ARCADEDB_URL=http://127.0.0.1:9", "AURA_EMBED_BASE_URL=http://127.0.0.1:9",
+		"AURA_ARCADEDB_TENANT_SECRET="+strings.Repeat("0", 63)+"e",
 		"AURA_OBJECTSTORE_BACKEND=filesystem-dev",
 		"AURA_OBJECTSTORE_ACCESS_KEY=GKclismoke000000000000000ab",
 		"AURA_OBJECTSTORE_SECRET_KEY=cli-smoke-not-a-sample-secret-000000000000000000000000000000000000",
