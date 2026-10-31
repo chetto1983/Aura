@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,7 @@ type recordingMemoryMCPServer struct {
 	lastTool    string
 	lastArgs    map[string]any
 	lastMeta    map[string]any
+	lastActor   [2]string
 	cannedTxt   string
 	initializes int
 	deletes     int
@@ -101,6 +103,7 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			rec.lastTool = params.Name
 			rec.lastArgs = params.Arguments
 			rec.lastMeta = params.Meta
+			rec.lastActor = [2]string{r.Header.Get("X-Aura-Actor-Run-Id"), r.Header.Get("X-Aura-Actor-Role")}
 			rec.mu.Unlock()
 			writeMemoryRPC(t, w, req.ID, map[string]any{
 				"content": []map[string]any{{"type": "text", "text": rec.cannedTxt}},
@@ -248,8 +251,9 @@ func TestMemoryRememberCarriesTheSupersedesFlag(t *testing.T) {
 	if args["supersedes"] != false {
 		t.Fatalf("supersedes = %v, want false by default", args["supersedes"])
 	}
-	if args["statement"] != "Mario knows Luigi." {
-		t.Fatalf("statement = %q", args["statement"])
+	if args["subject"] != "Mario" || args["predicate"] != "KNOWS" || args["object"] != "Luigi" || args["statement"] != "Mario knows Luigi." {
+		t.Fatalf("triple = %v %v %v, statement = %v; want each positional in its own field",
+			args["subject"], args["predicate"], args["object"], args["statement"])
 	}
 
 	_, args, err = memoryRememberArgs([]string{"--supersedes", "Mario", "lives_in", "Bologna", "Mario lives in Bologna."})
@@ -278,35 +282,57 @@ func TestMemoryRememberCarriesEntityKinds(t *testing.T) {
 	}
 }
 
-// TestMemoryRememberAlwaysCarriesASourceRun guards the provenance needed to
-// find and remove a run's writes.
-func TestMemoryRememberAlwaysCarriesASourceRun(t *testing.T) {
-	t.Parallel()
+// TestMemoryRememberNamesItsRunInTheActorHeaders pins D-10 on the CLI (measured broken on
+// 2026-10-31): the write schema's source takes memory_ids only, so a run_id in the arguments
+// failed every remember. The run travels where the bridge sends it, in the actor headers, so
+// `aura memory forget --run cli-<day>` can still reverse a day of manual entry.
+func TestMemoryRememberNamesItsRunInTheActorHeaders(t *testing.T) {
+	rec := newRecordingMemoryMCPServer(t)
+	withMemoryServerAt(t, rec.URL)
 
-	_, args, err := memoryRememberArgs([]string{"Mario", "KNOWS", "Luigi", "Mario knows Luigi."})
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		wantRun string
+	}{
+		{name: "today", args: []string{"remember", "Mario", "KNOWS", "Luigi", "Mario knows Luigi."}, wantRun: cliRunID(time.Now().UTC())},
+		{name: "named", args: []string{"remember", "--run", "import-2026", "Mario", "KNOWS", "Luigi", "Mario knows Luigi."}, wantRun: "import-2026"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := runMemoryCommand(scopedCtx(), tc.args, io.Discard); err != nil {
+				t.Fatalf("runMemoryCommand(%v): %v", tc.args, err)
+			}
+			rec.mu.Lock()
+			args, actor := rec.lastArgs, rec.lastActor
+			rec.mu.Unlock()
+			if actor != [2]string{tc.wantRun, "parent"} {
+				t.Errorf("actor headers = %v, want run %q as parent", actor, tc.wantRun)
+			}
+			if source, ok := args["source"].(map[string]any); !ok || len(source) != 0 {
+				t.Errorf("source = %#v, want an empty object: the write schema has no run_id", args["source"])
+			}
+			if args["subject"] != "Mario" {
+				t.Errorf("--run leaked into the positional args: subject = %v", args["subject"])
+			}
+		})
 	}
-	run := sourceRun(args)
-	if run == "" {
-		t.Fatal("remember sent no source run; the tool rejects the call")
-	}
-	// Grouped by DAY so `aura memory forget --run cli-2026-08-02` can reverse a session
-	// of manual entry. Per-invocation would be precise and impossible to type back.
-	if want := cliRunID(time.Now().UTC()); run != want {
-		t.Errorf("default run = %q, want %q", run, want)
-	}
+}
 
-	_, args, err = memoryRememberArgs(
-		[]string{"--run", "import-2026", "Mario", "KNOWS", "Luigi", "Mario knows Luigi."})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sourceRun(args) != "import-2026" {
-		t.Errorf("--run = %v, want it to override the daily default", args["source"])
-	}
-	if args["subject"] != "Mario" {
-		t.Errorf("--run leaked into the positional args: subject = %v", args["subject"])
+// Only a write names an actor; a read or a forget's --run filter sends no actor header.
+func TestMemoryReadsAndForgetsSendNoActor(t *testing.T) {
+	rec := newRecordingMemoryMCPServer(t)
+	withMemoryServerAt(t, rec.URL)
+
+	for _, args := range [][]string{{"search", "mario"}, {"forget", "--run", "cli-2026-10-31"}} {
+		if err := runMemoryCommand(scopedCtx(), args, io.Discard); err != nil {
+			t.Fatalf("runMemoryCommand(%v): %v", args, err)
+		}
+		rec.mu.Lock()
+		actor := rec.lastActor
+		rec.mu.Unlock()
+		if actor != [2]string{} {
+			t.Errorf("%v sent actor headers %v, want none", args, actor)
+		}
 	}
 }
 

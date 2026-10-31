@@ -26,8 +26,9 @@ type clock func() time.Time
 // keeps reading RunID here unchanged. This struct doubling as "the single
 // provenance shape" for both write and read used to be true and is not
 // anymore -- do not restore that claim; a run_id sent to memory_upsert_fact
-// is silently ignored (unknown JSON field), and believing otherwise is
-// exactly the loophole D-10 closes.
+// is rejected by the schema ("unexpected additional properties", measured
+// 2026-10-31 on `aura memory remember`, which now names its run in the actor
+// headers), and accepting it is exactly the loophole D-10 closes.
 type MemoryFactSource struct {
 	RunID     string   `json:"run_id" jsonschema:"the extraction or operator run supporting this fact"`
 	MemoryIDs []string `json:"memory_ids,omitempty" jsonschema:"message or memory ids supporting this fact"`

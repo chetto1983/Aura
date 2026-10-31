@@ -74,10 +74,11 @@ func actorHeaders(actor mcpActor) map[string]string {
 	return map[string]string{actorRunIDHeader: actor.RunID, actorRoleHeader: actor.Role}
 }
 
-// actorHeaderFunc is internal/mcp.SessionOptions.HeaderFunc's value for every
-// identity-scoped mount: internal/mcp stays actor-oblivious (it only knows
-// "call this function with the request's own ctx, apply what it returns"),
-// while this package owns what an actor IS.
+// ActorHeaderFunc is internal/mcp.SessionOptions.HeaderFunc's value for every
+// identity-scoped mount, and for the CLI's managed sessions (cmd/aura/mcp_tools.go),
+// where `aura memory remember` names its run the same way: internal/mcp stays
+// actor-oblivious (it only knows "call this function with the request's own ctx,
+// apply what it returns"), while this package owns what an actor IS.
 //
 // Read per REQUEST, not fixed once when a session opens (mount.go). That
 // distinction is load-bearing: the operator's own identity session is shared
@@ -88,7 +89,7 @@ func actorHeaders(actor mcpActor) map[string]string {
 // still benefits from this: it does not need a separate static-header path
 // of its own, since this function derives the same answer correctly whether
 // the session it rides is shared or dedicated.
-func actorHeaderFunc(ctx context.Context) map[string]string {
+func ActorHeaderFunc(ctx context.Context) map[string]string {
 	return actorHeaders(actorFromContext(ctx))
 }
 
@@ -96,7 +97,7 @@ func actorHeaderFunc(ctx context.Context) map[string]string {
 // Each source function is evaluated on that request's context, so a reused MCP
 // session cannot retain either a prior turn's actor or recall exclusion.
 func memoryHeaderFunc(ctx context.Context) map[string]string {
-	actor := actorHeaderFunc(ctx)
+	actor := ActorHeaderFunc(ctx)
 	recall := recallContextHeaderFunc(ctx)
 	if len(actor) == 0 && len(recall) == 0 {
 		return nil
