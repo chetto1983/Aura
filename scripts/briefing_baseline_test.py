@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import unittest
 
 import briefing_baseline
@@ -81,6 +83,58 @@ class BriefingBaselineTests(unittest.TestCase):
                             "receivedDateTime": "2026-11-02T05:00:00Z"}]}
         self.assertIn("Anna: Hi", briefing_baseline.render(bundle(emails=json.dumps(mail))))
 
+
+
+def kept(tool, action, result, status="ok", sidecar="", ended="2026-11-02T06:31:00Z"):
+    args = json.dumps({"action": action}) if action else "{}"
+    return json.dumps({"tool_call_id": f"{tool}-{action}", "tool": tool, "arguments": args, "status": status,
+                       "result": result, "result_sidecar_path": sidecar, "ended_at": ended})
+
+
+class KeptResultsTests(unittest.TestCase):
+    """A job scheduled with keep_results writes results.jsonl; the bundle comes from it."""
+
+    def lines(self, *extra):
+        return [kept("board", "list", BOARD, ended="2026-11-02T06:30:30Z"),
+                kept("calendar__calendar", "get_calendar_events", json.dumps(EVENTS)),
+                kept("calendar__calendar", "get_emails", json.dumps(EMAILS)), *extra]
+
+    def test_the_three_reads_make_the_bundle(self) -> None:
+        b = briefing_baseline.bundle_from_results(self.lines(), "Europe/Rome")
+        self.assertEqual(b["now"], "2026-11-02T06:30:30Z")
+        self.assertEqual(b["board"], BOARD)
+        self.assertEqual(briefing_baseline.render(b), briefing_baseline.render(bundle()))
+
+    def test_now_is_the_earliest_instant_as_go_writes_it(self) -> None:
+        lines = [kept("board", "list", BOARD, ended="2026-11-02T06:31:00.5Z"),
+                 kept("calendar__calendar", "get_emails", "{}", ended="2026-11-02T06:31:00Z"),
+                 kept("calendar__calendar", "get_calendar_events", "{}", ended="2026-11-02T06:31:00.123456789Z")]
+        self.assertEqual(briefing_baseline.bundle_from_results(lines, "UTC")["now"], "2026-11-02T06:31:00Z")
+
+    def test_the_last_successful_read_wins(self) -> None:
+        later = kept("calendar__calendar", "get_emails", json.dumps({"emails": []}))
+        failed = kept("calendar__calendar", "get_calendar_events", "boom", status="error")
+        b = briefing_baseline.bundle_from_results(self.lines(later, failed), "Europe/Rome")
+        self.assertEqual(json.loads(b["emails"]), {"emails": []})
+        self.assertEqual(json.loads(b["events"]), EVENTS)
+
+    def test_a_source_not_read_or_failed_is_null(self) -> None:
+        lines = [kept("board", "list", BOARD), kept("calendar__calendar", "get_emails", "x", status="error")]
+        b = briefing_baseline.bundle_from_results(lines, "UTC")
+        self.assertIsNone(b["events"])
+        self.assertIsNone(b["emails"])
+
+    def test_other_board_actions_are_not_the_list(self) -> None:
+        lines = [kept("board", "list", BOARD), kept("board", "search", "1 card(s) match x:")]
+        self.assertEqual(briefing_baseline.bundle_from_results(lines, "UTC")["board"], BOARD)
+
+    def test_a_spilled_result_is_read_from_its_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "full.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(BOARD)
+            lines = [kept("board", "list", "preview only", sidecar=path)]
+            self.assertEqual(briefing_baseline.bundle_from_results(lines, "UTC")["board"], BOARD)
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,11 +12,17 @@ Input, one JSON object:
   events  the JSON text `calendar__calendar` get_calendar_events returned, or null when it failed
   emails  the JSON text `calendar__calendar` get_emails (unreadOnly) returned, or null
 
+or the run's own record: a job scheduled with "keep_results": true writes
+<AURA_RUN_DIR>/tmp/agent_job-<run id>/results.jsonl, one finished tool call per line, and
+--results builds the bundle from it (spec, "Keeping a run's reads").
+
 Usage: briefing_baseline.py BUNDLE.json
+       briefing_baseline.py --results results.jsonl --zone Europe/Rome
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -108,12 +114,60 @@ def render(bundle: dict) -> str:
     return "\n\n".join(sections) + "\n" if sections else QUIET + "\n"
 
 
+def kept_source(row: dict) -> str | None:
+    """Which bundle field a kept call feeds, or None for a call the baseline does not read."""
+    try:
+        action = json.loads(row.get("arguments") or "{}").get("action")
+    except json.JSONDecodeError:
+        return None
+    tool = row.get("tool")
+    if tool == "board" and action == "list":
+        return "board"
+    if tool == "calendar__calendar" and action == "get_calendar_events":
+        return "events"
+    if tool == "calendar__calendar" and action == "get_emails":
+        return "emails"
+    return None
+
+
+def kept_text(row: dict) -> str:
+    """The whole result: the sidecar when the tool spilled it, else the result itself."""
+    if path := row.get("result_sidecar_path"):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return row.get("result") or ""
+
+
+def bundle_from_results(lines: list[str], zone: str) -> dict:
+    """The bundle of a run's last successful read of each source; a source the run did not
+    read, or read only with an error, is null. `now` is the run's first finished call."""
+    rows = [json.loads(line) for line in lines if line.strip()]
+    # Go writes RFC 3339 with 0 to 9 fraction digits, so the strings do not sort as instants.
+    ended = [r["ended_at"] for r in rows if r.get("ended_at")]
+    bundle: dict = {"zone": zone, "board": None, "events": None, "emails": None,
+                    "now": min(ended, key=instant, default=None)}
+    for row in rows:
+        source = kept_source(row)
+        if source and row.get("status") == "ok":
+            bundle[source] = kept_text(row)
+    return bundle
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
-        return 2
-    with open(argv[1], encoding="utf-8") as f:
-        sys.stdout.write(render(json.load(f)))
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument("bundle", nargs="?", help="a bundle JSON file")
+    parser.add_argument("--results", help="a job's kept results.jsonl")
+    parser.add_argument("--zone", help="the operator's IANA zone, with --results")
+    args = parser.parse_args(argv[1:])
+    if args.results and args.zone:
+        with open(args.results, encoding="utf-8") as f:
+            bundle = bundle_from_results(f.readlines(), args.zone)
+    elif args.bundle and not args.results:
+        with open(args.bundle, encoding="utf-8") as f:
+            bundle = json.load(f)
+    else:
+        parser.error("give a bundle, or --results with --zone")
+    sys.stdout.write(render(bundle))
     return 0
 
 

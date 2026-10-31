@@ -33,6 +33,22 @@ EmbeddingGemma, brought up as CI's coverage job brings it up. **Not the lab VM. 
 beyond the columns' cap, so the "listed once" check could never see a duplicate. Removing the map
 that prevents duplicates survived. The new tests put due cards early in their column.
 
+## Added 2026-10-31: keeping a run's reads
+
+- **The finding.** The ledger cannot carry the baseline's inputs. `result_preview` is cut at
+  2 KiB and redacted, and a sidecar exists only above 30,000 bytes (spec, "Open question 1 does
+  not hold as answered").
+- **The decision.** The operator chose to keep the results during the acceptance only (spec,
+  "Keeping a run's reads").
+- **The checks.**
+
+| Check | Result |
+|---|---|
+| `agentjob_results_test.go` | a job with `keep_results` writes one line per finished call, mode 0600, with arguments and the whole result. Without the flag, nothing. With no run dir, the run fails before the model is called. A log that cannot write says so |
+| Mutation, `agentjob_results.go` | 69.2%, then **92.3%** after the error-path tests; the survivor, MkdirAll's return, is equivalent |
+| `briefing_baseline_test.py` (14 cases) | `--results` builds the bundle: last successful read wins, a missing or failed source is null, a sidecar is read, `now` compares instants |
+| End to end, scratch Go test (not committed) | a job with canned `board` and `calendar__calendar` tools kept three lines; `briefing_baseline.py --results ... --zone Europe/Rome` rendered them |
+
 ## What this does not show
 
 - **What the briefing says.** No model ran here. The spec's acceptance is the lab VM over five
@@ -44,9 +60,10 @@ that prevents duplicates survived. The new tests put due cards early in their co
   - cost per run.
 
   All of it is owed, and it needs the operator.
-- **Extracting the baseline's bundle from a real run.** `briefing_baseline.py` reads a JSON bundle
-  of the run's three results. Taking them from `aura.tool_invocations` (`result_preview`, or
-  `result_sidecar_path` when truncated) is a step of the acceptance, not built here.
+- **A real run's capture.** The capture was exercised with canned tools only. On the lab VM, the
+  briefing task is scheduled with `"keep_results": true`. Each morning, `results.jsonl` is
+  copied out of the daemon's run dir, together with any sidecar it names, before the 24-hour
+  retention takes it.
 - **The PIM's real payloads.** The calendar arguments come from the deployed manifest corpus of
   2026-10-25. Whether `from` is a string or an object in `get_emails` is not read. The baseline
   accepts both.

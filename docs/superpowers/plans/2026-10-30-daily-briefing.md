@@ -123,10 +123,13 @@ skills, Python 3 for the measurement script.
 - [x] Commit `feat(scheduler): a job asked to keeps its tool results for the acceptance`.
 
 ### Task 8 — The baseline reads a kept run
-- [ ] Red: `--results` picks the last successful board list, calendar events and unread mail;
-  a missing or failed source is null; a result spilled to a sidecar is read from its path.
-- [ ] Green: `briefing_baseline.py`.
-- [ ] Commit `feat(scripts): the briefing baseline reads a job's kept results`.
+- [x] Red: `--results` picks the last successful board list, calendar events and unread mail;
+  a missing or failed source is null; a result spilled to a sidecar is read from its path; `now`
+  is the earliest instant, compared as instants because Go writes 0–9 fraction digits.
+- [x] Green: `briefing_baseline.py`. End to end, a scratch Go job with canned `board` and
+  `calendar__calendar` tools wrote `results.jsonl`, and `--results` rendered events, an overdue
+  card and the unread mail from it.
+- [x] Commit `feat(scripts): the briefing baseline reads a job's kept results`.
 
 ### Task 6 — Close
 - [x] vet, build, race, lint, `bash scripts/coverage_docker.sh` (87.6%, policy passed), and the
