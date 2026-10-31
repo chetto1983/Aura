@@ -37,8 +37,9 @@ afternoon.
 - **Session duration reads 1 month** in the dashboard's Access application. That is the label for
   the `730h` Aura sets. The exact string was not read from the API.
 - **Gates at `ce299a01f`:** `make quality` green on `e58870048`, coverage 50295/57336 = 87.7% with the
-  package policy passing, web 3687/3687, mocked Playwright 4/4. All workflows green except CI's Stryker
-  job, still running when this was written.
+  package policy passing, web 3687/3687, mocked Playwright 4/4, every workflow green.
+- **Gates at `bd994a7ef`, with the fixes:** `make quality` green, coverage 50300/57343 = 87.7% with the
+  package policy passing, web 3700/3700, every workflow green.
 
 ## Defects found
 
