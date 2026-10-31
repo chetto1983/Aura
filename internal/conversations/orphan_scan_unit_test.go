@@ -108,9 +108,11 @@ func TestDirSize_SumsRegularFiles(t *testing.T) {
 // TestWarnIfOversized_LogsOverThresholdSilentUnder asserts the audit-only WARN fires
 // only when the run dir exceeds the threshold, and NEVER purges. It captures slog
 // output to confirm the branch (the default-threshold fallback is also exercised).
+//
+// No t.Parallel: captureWarn swaps the process-wide default logger, so every parallel test that
+// logs would write into this test's buffer while it reads it (a data race CI's -race tier caught
+// on 2026-10-31).
 func TestWarnIfOversized_LogsOverThresholdSilentUnder(t *testing.T) {
-	t.Parallel()
-
 	root := t.TempDir()
 	payload := filepath.Join(root, "big.content")
 	if err := os.WriteFile(payload, bytes.Repeat([]byte("x"), 4096), 0o600); err != nil {

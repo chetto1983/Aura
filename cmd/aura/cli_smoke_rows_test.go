@@ -106,8 +106,11 @@ var cliSmokeRows = []cliSmokeRow{
 		after: `SELECT status = 'archived' FROM aura.conversations WHERE id = '{conversation}'`},
 	{name: "chat_unarchive", argv: []string{"chat", "unarchive", "{conversation}"},
 		after: `SELECT status = 'active' FROM aura.conversations WHERE id = '{conversation}'`},
-	{name: "chat_delete", argv: []string{"chat", "delete", "{conversation}", "--confirm"},
-		after: `SELECT NOT EXISTS (SELECT 1 FROM aura.conversations WHERE id = '{conversation}')`},
+	// Deleting a conversation also erases the memory derived from it, so with memory unreachable the
+	// delete refuses and leaves the conversation whole rather than half-deleted.
+	{name: "chat_delete_refuses_while_memory_is_unreachable", argv: []string{"chat", "delete", "{conversation}", "--confirm"},
+		exit: 1, stderr: "delete lifecycle",
+		after: `SELECT EXISTS (SELECT 1 FROM aura.conversations WHERE id = '{conversation}')`},
 
 	// The profile rows come first: C9 shows only while the implicit default profile has never
 	// held a server, as on a fresh install.
@@ -131,7 +134,8 @@ var cliSmokeRows = []cliSmokeRow{
 	{name: "mcp_profile_remove", argv: []string{"mcp", "profile", "remove", "cli-smoke", "calendar"}, stdout: "removed calendar"},
 	{name: "mcp_remove", argv: []string{"mcp", "remove", "calendar"}, stdout: "removed calendar"},
 
-	{name: "docs_search", argv: []string{"docs", "search", "fattura"}, stdout: `"status"`},
+	{name: "docs_search_fails_without_the_document_store", argv: []string{"docs", "search", "fattura"},
+		exit: 1, stderr: "route document cards"},
 	{name: "objectstore_bootstrap", argv: []string{"objectstore", "bootstrap"}, stdout: "skipped for filesystem-dev"},
 	{name: "web_doctor_without_searxng", argv: []string{"web", "doctor"}, exit: exitUsage, stderr: "SEARXNG_URL is not configured"},
 }

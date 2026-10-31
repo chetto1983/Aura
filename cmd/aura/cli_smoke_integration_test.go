@@ -41,6 +41,7 @@ type cliSmoke struct {
 // newCLISmoke builds the binary, creates a database for this run and the environment that points
 // the binary at it. The environment is the operator's: a strict profile, a configured local
 // model route that is never called, and a home of its own, since `config set` writes there.
+// Nothing else the host runs is reachable from it.
 func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 	t.Helper()
 	password := cliMigrationEnvOrSkip(t, "POSTGRES_PASSWORD")
@@ -77,6 +78,10 @@ func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 		"AURA_RUN_DIR="+filepath.Join(dir, "run"),
 		"AURA_SKILLS_DIR="+filepath.Join(dir, "skills"), "AURA_SKILLS_IDENTITY_DIR="+filepath.Join(dir, "skills-identities"),
 		"AURA_LLM_PROVIDER=llamacpp", "AURA_LLM_BASE_URL=http://127.0.0.1:9/v1", "AURA_LLM_MODEL=cli-smoke",
+		// Memory and the embedder on a closed port, whatever the host runs: on CI one job has no
+		// ArcadeDB and another has one with no tenant for this identity (2026-10-31), so a row
+		// that reached them depended on the host. The rows pin what the CLI does without them.
+		"ARCADEDB_URL=http://127.0.0.1:9", "AURA_EMBED_BASE_URL=http://127.0.0.1:9",
 		"AURA_OBJECTSTORE_BACKEND=filesystem-dev",
 		"AURA_OBJECTSTORE_ACCESS_KEY=GKclismoke000000000000000ab",
 		"AURA_OBJECTSTORE_SECRET_KEY=cli-smoke-not-a-sample-secret-000000000000000000000000000000000000",
