@@ -1,0 +1,1 @@
+import{t as e}from"./web-CVVY0MFD.js";e();
