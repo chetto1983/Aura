@@ -114,6 +114,20 @@ skills, Python 3 for the measurement script.
   the Production-evidence contract list in `ci.yml` and the Makefile; ruff check passes.
 - [x] Commit `feat(scripts): render the briefing baseline from a run's tool results`.
 
+### Task 7 — A job keeps its results when asked (spec "Keeping a run's reads", 2026-10-31)
+- [x] Red: a job with `keep_results` writes one JSON line per finished call to
+  `<RunDir>/tmp/agent_job-<run>/results.jsonl` (mode 0600), with the arguments and the whole
+  result. A job without the flag writes nothing. With no run dir, the flag fails the run.
+- [x] Green: `agentjob_results.go`; the payload field; `drain` records each end event. Mutation
+  92.3%: the one survivor, MkdirAll's error return, is equivalent (OpenFile then fails).
+- [x] Commit `feat(scheduler): a job asked to keeps its tool results for the acceptance`.
+
+### Task 8 — The baseline reads a kept run
+- [ ] Red: `--results` picks the last successful board list, calendar events and unread mail;
+  a missing or failed source is null; a result spilled to a sidecar is read from its path.
+- [ ] Green: `briefing_baseline.py`.
+- [ ] Commit `feat(scripts): the briefing baseline reads a job's kept results`.
+
 ### Task 6 — Close
 - [x] vet, build, race, lint, `bash scripts/coverage_docker.sh` (87.6%, policy passed), and the
   mutation spot-check: `task_timezone.go` 100%, `board_actions.go` 98.4%, each after a test commit

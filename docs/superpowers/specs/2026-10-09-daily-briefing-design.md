@@ -42,7 +42,26 @@ not keep them whole:
 
 This is read in the code, not measured on a run. It says nothing about how often a real briefing's
 reads exceed 2 KiB. `scripts/briefing_baseline.py` stands, because it renders from a bundle. How
-the bundle is obtained is the operator's decision, and acceptance 3 waits on it.
+the bundle is obtained was decided on 2026-10-31 (next section).
+
+## Keeping a run's reads for the acceptance, agreed 2026-10-31
+
+The operator chose to keep the job's results whole during the acceptance and nowhere else:
+- **Opt-in per task.** A payload of `{"goal": ..., "keep_results": true}` makes that one
+  `agent_job` write every tool call it finished to
+  `<AURA_RUN_DIR>/tmp/agent_job-<run id>/results.jsonl`, with mode 0600. Each line carries the
+  call id, tool, arguments, status, error, the result the tool returned, and the sidecar path when
+  the result was too long for the context. No env var. A task without the flag writes nothing.
+- **Deleted by the sweep that already exists.** `tmp/` is the retention class
+  `AURA_RETENTION_TEMP_HOURS` (24 hours by default), swept by the daily `retention_sweep` at
+  02:30. A capture lives one to two days. The acceptance extracts it the same morning.
+- **The renderer reads it.** `scripts/briefing_baseline.py --results results.jsonl --zone <IANA>`
+  picks the run's last successful `board list`, `get_calendar_events` and `get_emails`. A source
+  the run did not read, or that failed, is null.
+- **What it costs.** For one to two days the appliance's disk holds what the model read: event
+  subjects, card labels, mail senders and subjects. The capture is not redacted, because the
+  baseline must read what the model read. A capture the job cannot open fails the run: an
+  acceptance day without its capture would be silently unscored.
 
 ## Re-read against the tree, 2026-10-30 (`6118144`)
 
