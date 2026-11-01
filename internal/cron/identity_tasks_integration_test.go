@@ -327,11 +327,11 @@ func TestASystemTaskOfAPurgedIdentityIsStillClaimedAndDispatched(t *testing.T) {
 
 // The down migration runs while tasks can be paused this way, so it has to keep them paused and
 // still land the narrower CHECK.
-func TestMigration0149DownKeepsADeactivatedTaskPaused(t *testing.T) {
+func TestMigration0150DownKeepsADeactivatedTaskPaused(t *testing.T) {
 	migrateURL := disposableMigrateURL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	positionDisposableMigration(t, ctx, migrateURL, 149)
+	positionDisposableMigration(t, ctx, migrateURL, 150)
 
 	pool, err := db.Open(ctx, &db.Config{URL: migrateURL})
 	if err != nil {
@@ -348,7 +348,7 @@ func TestMigration0149DownKeepsADeactivatedTaskPaused(t *testing.T) {
 	}
 
 	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("revert 0149: %v", err)
+		t.Fatalf("revert 0150: %v", err)
 	}
 	var status, reason string
 	if err := pool.QueryRow(ctx, `SELECT status, paused_reason FROM aura.scheduler_tasks WHERE id = $1`, id).Scan(&status, &reason); err != nil {
@@ -362,9 +362,9 @@ func TestMigration0149DownKeepsADeactivatedTaskPaused(t *testing.T) {
 	}
 
 	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("re-apply 0149: %v", err)
+		t.Fatalf("re-apply 0150: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET paused_reason = 'identity_deactivated' WHERE id = $1`, id); err != nil {
-		t.Fatalf("re-applied 0149 refuses the reason: %v", err)
+		t.Fatalf("re-applied 0150 refuses the reason: %v", err)
 	}
 }
