@@ -1,6 +1,7 @@
 package pimwatch
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -322,4 +323,29 @@ func TestAnAccountWithNoTenantPrefixKeepsItsName(t *testing.T) {
 			t.Errorf("accountName(%q) = %q, want %q", id, got, want)
 		}
 	}
+}
+
+// The noun comes with its article, so a sentence cannot put a preposition in front of it: the first
+
+// real alarm read "alle modifiche di la posta".
+
+func TestTheGapAlarmIsItalian(t *testing.T) {
+
+	p := phrasesFor(LangIT)
+
+	for resource, want := range map[string]string{
+
+		"mail": "Non riesco più a seguire la posta su lavoro: quello che è arrivato dal 01/11 18:50 a ora non è stato letto.",
+
+		"calendar": "Non riesco più a seguire il calendario su lavoro: quello che è arrivato dal 01/11 18:50 a ora non è stato letto.",
+	} {
+
+		if got := fmt.Sprintf(p.gap, p.resource(resource), "lavoro", "01/11 18:50"); got != want {
+
+			t.Errorf("gap on %s = %q, want %q", resource, got, want)
+
+		}
+
+	}
+
 }

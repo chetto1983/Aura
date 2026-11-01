@@ -55,7 +55,7 @@ var texts = map[Lang]phrases{
 		authFailed:   "mittente non autenticato",
 		noSubject:    "(senza oggetto)",
 		gone:         "(non più disponibile)",
-		gap:          "Non ho più accesso alle modifiche di %[1]s su %[2]s: quello che è arrivato dal %[3]s a ora non è stato letto.",
+		gap:          "Non riesco più a seguire %[1]s su %[2]s: quello che è arrivato dal %[3]s a ora non è stato letto.",
 		failing:      "Non riesco a leggere %[1]s su %[2]s dal %[3]s. Riproverò a ogni giro.",
 		digestTitle:  "Riepilogo di posta e calendario",
 		digestNow:    "Urgenti",
