@@ -68,6 +68,12 @@ type TaskKind string
 // 0142 migration widened the scheduler_tasks.kind CHECK to admit it. It is seeded
 // (seedObjectBackup), never model-schedulable, and managed like backup_postgres: on the board,
 // never cancelled. Its literal MUST equal handlers.KindBackupObjects ("backup_objects").
+//
+// KindPIMWatch (one task per watched account) and KindPIMDigest (one per identity) are the mail
+// and calendar watch, which runs no model — the 0149 migration widened the CHECK. pimwatch.Service
+// creates them, never the task tool's schedule action, because a watch needs two tasks and a
+// conversation of its own. The person may list, pause, resume and cancel them. Their literals MUST
+// equal handlers.KindPIMWatch and handlers.KindPIMDigest.
 const (
 	KindReminder           TaskKind = "reminder"
 	KindAgentJob           TaskKind = "agent_job"
@@ -79,6 +85,8 @@ const (
 	KindShareExpirySweep   TaskKind = "share_expiry_sweep"
 	KindRetentionSweep     TaskKind = "retention_sweep"
 	KindObservabilityCheck TaskKind = "observability_check"
+	KindPIMWatch           TaskKind = "pim_watch"
+	KindPIMDigest          TaskKind = "pim_digest"
 
 	KindMemoryEmbedBackfill TaskKind = "memory_embed_backfill"
 	KindMemoryMentionLink   TaskKind = "memory_mention_link"

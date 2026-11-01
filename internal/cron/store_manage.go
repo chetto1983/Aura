@@ -17,12 +17,12 @@ import (
 )
 
 // IsUserManageableKind reports whether a task kind is operator-managed (reminder,
-// agent_job, the two backups) rather than one of the system-seeded sweeps. The cockpit
-// write handlers refuse to approve/run/edit/cancel a system sweep: those are seeded on a
-// fixed cadence and must never be operator-mutated.
+// agent_job, the two backups, the mail watch) rather than one of the system-seeded sweeps.
+// The cockpit write handlers refuse to approve/run/edit/cancel a system sweep: those are
+// seeded on a fixed cadence and must never be operator-mutated.
 func IsUserManageableKind(k TaskKind) bool {
 	switch k {
-	case KindReminder, KindAgentJob, KindBackupPostgres, KindBackupObjects:
+	case KindReminder, KindAgentJob, KindBackupPostgres, KindBackupObjects, KindPIMWatch, KindPIMDigest:
 		return true
 	default:
 		return false
@@ -35,6 +35,20 @@ func IsUserManageableKind(k TaskKind) bool {
 // backup is its sibling.
 func IsCancellableKind(k TaskKind) bool {
 	return IsUserManageableKind(k) && k != KindBackupPostgres && k != KindBackupObjects
+}
+
+// ListLiveTasksOfKind returns one identity's active and paused tasks of a kind, the ones a
+// repeated enable must find instead of creating a second.
+func (s *Store) ListLiveTasksOfKind(ctx context.Context, identityID string, kind TaskKind) ([]Task, error) {
+	rows, err := s.q.ListLiveTasksOfKind(ctx, sqlc.ListLiveTasksOfKindParams{IdentityID: identityID, Kind: string(kind)})
+	if err != nil {
+		return nil, fmt.Errorf("list live %s tasks: %w", kind, err)
+	}
+	out := make([]Task, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, taskFromRow(r))
+	}
+	return out, nil
 }
 
 // ListManageableTasks returns the active + pending_approval tasks of operator-managed kinds

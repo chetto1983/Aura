@@ -27,6 +27,16 @@ FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
 
+-- name: ListLiveTasksOfKind :many
+-- One identity's tasks of a kind that still fire or could be resumed.
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
+FROM aura.scheduler_tasks
+WHERE identity_id = $1 AND kind = $2 AND status IN ('active', 'paused')
+ORDER BY created_at, id;
+
 -- name: DueTasks :many
 -- Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
 -- row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP

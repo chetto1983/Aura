@@ -25,6 +25,8 @@ type Querier interface {
 	// it is, so this can never move someone's attachment between conversations.
 	AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoThreadParams) (AuraAssets, error)
 	AdvanceCloudflareRemoteAccess(ctx context.Context, arg AdvanceCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
+	// A success ends a failing episode and its alarm. A gap's alarm stays until it is confirmed told.
+	AdvancePIMWatchCursor(ctx context.Context, arg AdvancePIMWatchCursorParams) error
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	// What the host updater waits on before it restarts Aura on its own, system-wide half: the
 	// newest tool event and job heartbeat, and the work in flight right now. Neither table
@@ -82,6 +84,9 @@ type Querier interface {
 	CompleteMediaJob(ctx context.Context, arg CompleteMediaJobParams) (AuraMediaJob, error)
 	CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error)
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
+	// A failing alarm keeps its kind until a success, which is what makes it once per episode.
+	ConfirmPIMWatchAlarm(ctx context.Context, arg ConfirmPIMWatchAlarmParams) error
+	ConfirmPIMWatchAlerts(ctx context.Context, arg ConfirmPIMWatchAlertsParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	// ConsumeTelegramSetupPending atomically marks an unconsumed, unexpired token as
@@ -98,8 +103,10 @@ type Querier interface {
 	// error); a non-NULL result together with a 0-row insert means the queue was full
 	// (steer.ErrQueueFull).
 	ConversationOwner(ctx context.Context, conversationID string) (pgtype.UUID, error)
+	CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatchVerdictParams) (AuraPimWatchVerdicts, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
+	CountPIMWatchAlertsSince(ctx context.Context, arg CountPIMWatchAlertsSinceParams) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -145,6 +152,8 @@ type Querier interface {
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
 	DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error)
 	DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
+	// One bounded batch of what has outlived the identity's retention, for the retention sweep.
+	DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteExpiredPIMWatchVerdictsParams) (int64, error)
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteExpiredVerificationEvents(ctx context.Context, createdAt pgtype.Timestamptz) error
 	// Retention, mirroring the original's two-branch prune: state that was edited before
@@ -157,6 +166,13 @@ type Querier interface {
 	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
 	DeleteMCPProfilesExcept(ctx context.Context, keep []string) error
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
+	DeletePIMWatchCorrections(ctx context.Context, arg DeletePIMWatchCorrectionsParams) error
+	DeletePIMWatchCursors(ctx context.Context, arg DeletePIMWatchCursorsParams) error
+	DeletePIMWatchLabel(ctx context.Context, arg DeletePIMWatchLabelParams) (int64, error)
+	DeletePIMWatchRule(ctx context.Context, arg DeletePIMWatchRuleParams) (int64, error)
+	// A rule that only gave this label says nothing once the label is gone.
+	DeletePIMWatchRulesOfLabel(ctx context.Context, arg DeletePIMWatchRulesOfLabelParams) error
+	DeletePIMWatchVerdicts(ctx context.Context, arg DeletePIMWatchVerdictsParams) error
 	DeleteSetting(ctx context.Context, key string) error
 	// A one-shot task is finished once it fired (it keeps status 'active' with its next fire
 	// cleared) or was cancelled. Once nothing is left for it to do -- no run still running, no
@@ -190,6 +206,9 @@ type Querier interface {
 	// Creates the identity's board on first use and returns it either way. The no-op update makes
 	// RETURNING yield the existing row on conflict.
 	EnsureBoard(ctx context.Context, arg EnsureBoardParams) (AuraBoards, error)
+	// Every statement in this file names the identity as well as running under it: RLS is the
+	// backstop, not the filter.
+	EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.UUID) error
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
@@ -249,6 +268,9 @@ type Querier interface {
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPIMProviderApp(ctx context.Context, provider string) (AuraPimProviderApp, error)
+	GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorParams) (AuraPimWatchCursors, error)
+	GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUID) (AuraPimWatchSettings, error)
+	GetPIMWatchVerdict(ctx context.Context, arg GetPIMWatchVerdictParams) (AuraPimWatchVerdicts, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as
@@ -326,6 +348,10 @@ type Querier interface {
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
 	InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) (AuraMediaJob, error)
 	InsertMessageDraft(ctx context.Context, arg InsertMessageDraftParams) (AuraMessageDrafts, error)
+	InsertPIMWatchCorrection(ctx context.Context, arg InsertPIMWatchCorrectionParams) error
+	InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLabelParams) (AuraPimWatchLabels, error)
+	// A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
+	InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchVerdictParams) (int64, error)
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
 	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
@@ -472,6 +498,8 @@ type Querier interface {
 	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
+	// One identity's tasks of a kind that still fire or could be resumed.
+	ListLiveTasksOfKind(ctx context.Context, arg ListLiveTasksOfKindParams) ([]AuraSchedulerTasks, error)
 	ListMCPProfiles(ctx context.Context) ([]AuraMcpProfile, error)
 	ListMCPServers(ctx context.Context) ([]AuraMcpServer, error)
 	// The cockpit scheduler board (GOV-03 write): active, pending_approval and paused tasks, so
@@ -488,6 +516,14 @@ type Querier interface {
 	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
+	ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWatchAccountVerdictsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchCorrectionsBefore(ctx context.Context, arg ListPIMWatchCorrectionsBeforeParams) ([]AuraPimWatchCorrections, error)
+	ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchCursors, error)
+	ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWatchDigestVerdictsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchFingerprints(ctx context.Context, arg ListPIMWatchFingerprintsParams) ([]ListPIMWatchFingerprintsRow, error)
+	ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchLabels, error)
+	ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOwedAlertsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchRules, error)
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingMessageDrafts(ctx context.Context, arg ListPendingMessageDraftsParams) ([]AuraMessageDrafts, error)
@@ -593,6 +629,9 @@ type Querier interface {
 	MarkOnboardingSkipped(ctx context.Context, identityID pgtype.UUID) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
+	MarkPIMWatchAlert(ctx context.Context, arg MarkPIMWatchAlertParams) error
+	MarkPIMWatchFailing(ctx context.Context, arg MarkPIMWatchFailingParams) (AuraPimWatchCursors, error)
+	MarkPIMWatchUnsupported(ctx context.Context, arg MarkPIMWatchUnsupportedParams) error
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
 	// D-12 fencing (SWARM-06, 51-06a): the same conditional UPDATE as
 	// MarkPausedStateResumed, with ONE more predicate. A NULL pending_action_id (every row
@@ -612,6 +651,9 @@ type Querier interface {
 	// trace (D-07's "the sweep is idempotent").
 	MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
+	// What a repeated correction learned. A tier and a label are learned apart, so each keeps the
+	// rule's current value when this correction says nothing about it.
+	MergePIMWatchRule(ctx context.Context, arg MergePIMWatchRuleParams) (AuraPimWatchRules, error)
 	MoveBoardCard(ctx context.Context, arg MoveBoardCardParams) (AuraBoardCards, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
@@ -646,6 +688,7 @@ type Querier interface {
 	// cheap owner-only probe (conversationOwner) only when execrows is 0 -- never a second
 	// round trip on the (overwhelmingly common) success path.
 	PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int64, error)
+	RaisePIMWatchFailingAlarm(ctx context.Context, arg RaisePIMWatchFailingAlarmParams) error
 	// A library upload onto a name the library already holds replaces that file: the key is the
 	// name's (libraryObjectID), so the row holding it goes back to presigned with the new upload's
 	// name, type and declared size, and finalize checks the new bytes against the new declaration.
@@ -694,6 +737,8 @@ type Querier interface {
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
+	// resetRequired: the gap runs from the last success, which this statement reads before moving it.
+	ResetPIMWatchCursor(ctx context.Context, arg ResetPIMWatchCursorParams) error
 	// 51-06b (Task 3, D-08 extended to the queue row): an unanswered worker pause expires
 	// and its parked row must not be left waiting for a human who never came. `failed` (not
 	// dead_letter) is the terminal state: dead_letter means "retried to exhaustion", and a
@@ -706,6 +751,8 @@ type Querier interface {
 	// failure count that may have paused it and any retry it was waiting for. Returns rows
 	// affected (a non-paused task misses).
 	ResumeTaskRow(ctx context.Context, arg ResumeTaskRowParams) (int64, error)
+	RetellPIMWatchAlarm(ctx context.Context, arg RetellPIMWatchAlarmParams) error
+	RetellPIMWatchAlerts(ctx context.Context, arg RetellPIMWatchAlertsParams) error
 	// Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
 	// has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
 	// lifetime. The outer conditions repeat the inner ones because Postgres re-checks only the
@@ -742,6 +789,7 @@ type Querier interface {
 	SetBoardCardPosition(ctx context.Context, arg SetBoardCardPositionParams) error
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	SetGatewayToolPolicy(ctx context.Context, arg SetGatewayToolPolicyParams) error
+	SetPIMWatchLastDigest(ctx context.Context, arg SetPIMWatchLastDigestParams) error
 	// Move a task into the conversation it answers in from now on, when the one it was
 	// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
 	SetTaskOriginRow(ctx context.Context, arg SetTaskOriginRowParams) (int64, error)
@@ -751,6 +799,9 @@ type Querier interface {
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	// Preserve control intent committed while the worker held its original snapshot.
 	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)
+	// The switch: a cursor from now, or a resource the provider lacks. Nothing from a past watch of
+	// this account survives it.
+	StartPIMWatchCursor(ctx context.Context, arg StartPIMWatchCursorParams) error
 	// Per-identity period spend (CRED-06): sums aura.cache_metrics.cost_usd, joined to
 	// aura.conversations for the identity scope none of the three queries above needs.
 	// Callers MUST run this through internal/db.WithIdentityTx(ctx, pool, identityID, ...)
@@ -807,6 +858,8 @@ type Querier interface {
 	// It matches only the client the secret belongs to, so a save that raced another admin's new
 	// client updates nothing instead of pairing the old ID with the new secret.
 	UpdatePIMProviderAppKeepSecret(ctx context.Context, arg UpdatePIMProviderAppKeepSecretParams) (int64, error)
+	UpdatePIMWatchLabel(ctx context.Context, arg UpdatePIMWatchLabelParams) (AuraPimWatchLabels, error)
+	UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatchSettingsParams) (AuraPimWatchSettings, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
 	// so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
@@ -836,6 +889,9 @@ type Querier interface {
 	UpsertMCPProfile(ctx context.Context, arg UpsertMCPProfileParams) error
 	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
 	UpsertPIMProviderApp(ctx context.Context, arg UpsertPIMProviderAppParams) error
+	// An event is decided again only when its fingerprint moved.
+	UpsertPIMWatchEventVerdict(ctx context.Context, arg UpsertPIMWatchEventVerdictParams) (int64, error)
+	UpsertPIMWatchRule(ctx context.Context, arg UpsertPIMWatchRuleParams) (AuraPimWatchRules, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 	// The per-identity skill catalog (migration 0118). Every statement carries owner_identity_id
 	// in its predicate AND runs under the two RLS policies: the predicate is what makes the

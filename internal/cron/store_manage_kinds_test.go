@@ -20,6 +20,8 @@ func TestManageableAndCancellableKinds(t *testing.T) {
 		{KindAgentJob, true, true},
 		{KindBackupPostgres, true, false},
 		{KindBackupObjects, true, false},
+		{KindPIMWatch, true, true},
+		{KindPIMDigest, true, true},
 		{KindIdentityPurge, false, false},
 		{KindRetentionSweep, false, false},
 		{KindMemoryEmbedBackfill, false, false},
@@ -31,6 +33,30 @@ func TestManageableAndCancellableKinds(t *testing.T) {
 		if got := IsCancellableKind(c.kind); got != c.cancellable {
 			t.Errorf("IsCancellableKind(%s) = %v, want %v", c.kind, got, c.cancellable)
 		}
+	}
+}
+
+func TestTheMailWatchKindsPause(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []TaskKind{KindPIMWatch, KindPIMDigest} {
+		if !IsPausableKind(kind) {
+			t.Errorf("IsPausableKind(%s) = false: a hard failure could not pause the account's task", kind)
+		}
+	}
+}
+
+func TestStoreFakeListLiveTasksOfKindProjectsItsRows(t *testing.T) {
+	t.Parallel()
+	row := schedulerTaskRow(t)
+	row[1] = string(KindPIMWatch)
+	f := &cronFakeDBTX{queryRows: &cronFakeRows{rows: [][]any{row}}}
+
+	got, err := storeWithFake(f).ListLiveTasksOfKind(context.Background(), "identity-1", KindPIMWatch)
+	if err != nil {
+		t.Fatalf("ListLiveTasksOfKind: %v", err)
+	}
+	if len(got) != 1 || got[0].Kind != KindPIMWatch {
+		t.Fatalf("tasks = %+v, want the one watch task", got)
 	}
 }
 

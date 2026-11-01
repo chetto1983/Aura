@@ -47,6 +47,12 @@ func normalizeNativeList(in PreviewInput) (Payload, bool) {
 	}}, true
 }
 
+// listableTaskKinds are the kinds the task tool lists (cron.IsUserManageableKind).
+var listableTaskKinds = map[string]bool{
+	"reminder": true, "agent_job": true, "backup_postgres": true, "backup_objects": true,
+	"pim_watch": true, "pim_digest": true,
+}
+
 func parseTaskList(preview string) ([][]string, bool) {
 	if preview == "no scheduled tasks" {
 		return [][]string{}, true
@@ -69,7 +75,7 @@ func parseTaskList(preview string) ([][]string, bool) {
 			return nil, false
 		}
 		kind := strings.TrimPrefix(fields[1], "kind=")
-		if kind != "reminder" && kind != "agent_job" && kind != "backup_postgres" && kind != "backup_objects" {
+		if !listableTaskKinds[kind] {
 			return nil, false
 		}
 		if fields[2] != "at" && fields[2] != "every" && fields[2] != "cron" {

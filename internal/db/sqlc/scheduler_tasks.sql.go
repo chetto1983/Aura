@@ -366,6 +366,64 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 	return items, nil
 }
 
+const listLiveTasksOfKind = `-- name: ListLiveTasksOfKind :many
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients
+FROM aura.scheduler_tasks
+WHERE identity_id = $1 AND kind = $2 AND status IN ('active', 'paused')
+ORDER BY created_at, id
+`
+
+type ListLiveTasksOfKindParams struct {
+	IdentityID string `json:"identity_id"`
+	Kind       string `json:"kind"`
+}
+
+// One identity's tasks of a kind that still fire or could be resumed.
+func (q *Queries) ListLiveTasksOfKind(ctx context.Context, arg ListLiveTasksOfKindParams) ([]AuraSchedulerTasks, error) {
+	rows, err := q.db.Query(ctx, listLiveTasksOfKind, arg.IdentityID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraSchedulerTasks{}
+	for rows.Next() {
+		var i AuraSchedulerTasks
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ScheduleKind,
+			&i.CronExpr,
+			&i.EveryMinutes,
+			&i.RunAt,
+			&i.Tz,
+			&i.Payload,
+			&i.StepBudget,
+			&i.Status,
+			&i.NextRunAt,
+			&i.NotifyRoute,
+			&i.IdentityID,
+			&i.OriginConversationID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
+			&i.TransientRetries,
+			&i.TelegramRecipients,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,

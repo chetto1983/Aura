@@ -393,8 +393,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0147 gives those resources their own account, zone and legacy WARP hostname.
 	// 0148 lets the row name a refusal at the tunnel or Access step.
 	// 0149 adds the board card's bounded progress ratio.
-	if head != 149 {
-		t.Fatalf("MigrationHead=%d, want embedded head 149", head)
+	// 0150 adds the mail and calendar watch: two scheduler kinds and six owner-isolated tables.
+	if head != 150 {
+		t.Fatalf("MigrationHead=%d, want embedded head 150", head)
 	}
 }
 
