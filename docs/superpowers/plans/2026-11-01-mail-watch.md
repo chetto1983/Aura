@@ -104,8 +104,11 @@ Each of these would bite a real person, and each has a test that names it.
   change is read as a cancellation when anything says when it was,** its own start or the one the verdict row kept,
   because the fork writes a cancelled Google event as `deleted`, with its `event` only when it has a start, and Google
   documents only the id as guaranteed. Graph writes it as `updated`. So the same cancelled meeting is `now` on both. The
-  price is one alert when a person deletes their own event inside 24 hours on Google, since `deleted` cannot say who did
-  it: a missed meeting costs more, and the daily cap bounds the noise. G3 measures it.
+  price is one alert when a person deletes, inside 24 hours, a meeting they did not organize (removing another's
+  invitation from their calendar): a missed meeting costs more, and the daily cap bounds the noise. A meeting the person
+  organized is `later` on a delete too, because the row keeps `event_self` (see below). A `deleted` change on a row
+  already told as cancelled says nothing and leaves the row as it is, so the organizer's cancellation followed by the
+  person's removal on Microsoft is one alert. G3 measures it.
 - **An event with a row is `now` when its new start or its kept start is within 24 hours.** A meeting moved away from
   tomorrow reaches the person at once, because they may turn up to one that is gone. `EventFacts.KeptStart` is filled
   from the row's start in `draftEvents`; the upsert overwrites `event_start` on every change, so a second move
@@ -116,7 +119,8 @@ Each of these would bite a real person, and each has a test that names it.
   id be told at all. `event_start` is the column the review asked for. `event_all_day` and `event_change` come with it
   because the digest and the cockpit read a line later, from the row alone: a date without its flag shows a false hour,
   and a cancelled event's word cannot be re-derived from a PIM that no longer has the event. So a cancelled event with no
-  item is not "no longer there": it is the line that says so, with the time the row kept.
+  item is not "no longer there": it is the line that says so, with the time the row kept. `event_self` keeps
+  whether the person organized the event, which a Microsoft delete no longer names.
 - **A line says what happened: new, moved or cancelled.** The word is fixed, comes from the ladder, stands before the
   subject in the push, the digest and the record, and the decisions API sends it as a code. Mail has none, and neither
   has an `updated` event with no row, which stays `today` with nothing shown about what changed. With neither sender nor
@@ -254,7 +258,7 @@ Every route is under `/api/mail-watch`, behind the session and `governance.write
 | `GET /api/mail-watch/accounts/{id}/decisions?day=YYYY-MM-DD` | | `{day, decisions: [decision]}`, the identity's local day, today when empty |
 | `POST /api/mail-watch/accounts/{id}/decisions/correct` | `{resource?, item_id, tier?, label_id?}` | `{tier, label_id?, rule?, rule_created?}` |
 | `GET /api/mail-watch/rules` | | `[rule]` |
-| `POST /api/mail-watch/rules` | `{key, tier?, label_id?}` | `rule` |
+| `POST /api/mail-watch/rules` | `{key, tier?, label_id?}` | `rule` plus `rule_created?` (the key had none) |
 | `DELETE /api/mail-watch/rules/{id}` | | `{removed: true}` |
 | `GET /api/mail-watch/labels` | | `[label]` |
 | `POST /api/mail-watch/labels` | `{name, tier?}` | `label` |
@@ -543,8 +547,12 @@ the API section already read as the code now does.
 | 17 | Every refusal carries a stable code | `b8a55e231` |
 | 18 | Undo is offered only for a rule the correction created | `1f7726331` |
 | 19 | The report of a pause reads in the person's language | `eaadad95c` |
-
-| 20 | A meeting moved away from the next 24 hours is `now` | the commit that adds `EventFacts.KeptStart` |
+| 20 | A meeting moved away from the next 24 hours is `now` | `f5856a5f2` |
+| 21 | The retention sweep keeps the row of an event still ahead | `5909969ac` |
+| 22 | The person's own meeting, deleted, is told to nobody | `102c6c127` |
+| 23 | A removal after a told cancellation says nothing | `984d16a44` |
+| 24 | A refused permission is not "not offered", and `Enable` retries it | `0f60184a0` |
+| 25 | Undo of a saved rule is offered only when the server says it is new | `52d6c9a84` |
 
 `67be35319` also moved `TestMigration0149DownKeepsADeactivatedTaskPaused` to 0150, which the rebase had left behind.
 
@@ -561,11 +569,26 @@ the API section already read as the code now does.
   back to stdout therefore leaves the record in the Telegram thread.
 - **Item 17:** "400 `reason`" is the wire's `{error}`, which the cockpit's `HttpError.reason` reads on every status, with
   the sentence in `{message}`, the shape the board API uses.
+- **Item 21:** the sweep tests `event_start` with `<= now`, so a row survives the day its meeting starts and goes
+  with the first sweep after. A mail has no start and expires as before.
+- **Item 22:** the finding asked for a column in 0150, which has never shipped, so it was edited in place: `event_self`,
+  no new migration. `PriorEvent` carries it, and `draftEvents` takes it for a delete that arrives with no event.
+- **Item 23:** keyed on the row's word, not on the fingerprint, so a delete of a row told as moved or new is still a
+  cancellation.
+- **Item 24:** the cursor keeps `permission_denied` in `last_error` and the card shows the existing "Reconnect it and
+  allow access" sentence (`failure.permission_denied`, en and it), so no string was added.
+- **Item 25:** the finding said "the same way": the server answers `rule_created` on `POST /rules`. `LearnedRule` is now
+  `WrittenRule`, and the Undo that re-added a previous rule is gone with `ruleInput`.
 - **Item 19:** no new seam on `Job`. The words travel on the error and are read through `errors.As`, as the suppressor
   is, so the handler adapter did not change.
 
 **Limits recorded.** A `deleted` change with no row and no start says nothing, because nothing names it. An `updated`
-event with no row is `today` and carries no change word.
+event with no row is `today` and carries no change word. A meeting
+the watch has never seen, or whose row was removed by retention after the meeting passed, has no kept start. The sweep
+keeps a row while its `event_start` is still ahead, so a meeting booked more than the retention ago is still known when
+it moves; an all-day row keeps its date as a midnight and is kept the same way. A resource refused for permission is
+retried only by `Enable` on the account; the watcher does not retry it by itself. The undo of a rule written by the
+person relies on the server's `rule_created`, read in the write's transaction; a replaced rule has no Undo.
 
 **Noticed, not fixed.**
 
@@ -576,7 +599,10 @@ event with no row is `today` and carries no change word.
 - An `Overdue` hard failure with auto-pause off is not a pause, so it still reports `pim_watch failed: ...: <code>`.
 - `SaveSettings`' comment and the decision "a paused digest cannot be rescheduled" are stale: `UpdateTask` edits a paused
   row, as `TestEditingAPausedTaskKeepsItPaused` shows.
-- `useAddRule`'s Undo still reads what it replaced from the rules cache, the weakness item 18 closed for corrections.
+- With the default of 3 failures before a pause, a deployment that loses the PIM sidecar or whose store fails pushes
+  `pim_watch failed: ...` in English on the first two runs, and only the third, the pause, is told in the person's
+  language. Only the `Overdue` case is listed above; these failures are not suppressed either, and the commit that
+  made the pause the one failure told (`eaadad95c`) overstates it.
 - The cockpit opens the day only from a watched account's card, so lines a disabled watch left are out of sight until
   the account is watched again, though `GET .../decisions` still serves them.
 - `internal/webui/dist` does not carry the watch's cockpit at all, this list's changes included. A rebuild is owed before

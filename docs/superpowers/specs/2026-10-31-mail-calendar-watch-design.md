@@ -253,7 +253,9 @@ failed CI run, and any automated alert a professional depends on.
 structural facts: `now` if the event starts within 24 hours, otherwise `today`. For an event the watch
 already knows, "starts" is the new start or the one it kept: a meeting moved away from tomorrow is still `now`,
 because the person may turn up to it. A new description or someone else's reply leaves the fingerprint unchanged
-and says nothing.
+and says nothing. The person's own events are `later`, and
+so is the delete of one: the row keeps who organized the event, because a delete may arrive with only an id. A delete of
+an event already told as cancelled says nothing.
 
 ### 5.4 Learning, per identity
 
