@@ -94,6 +94,7 @@ func toSDKMessages(
 	toolMedia map[string][]llm.ProjectedRequestPart,
 	target llm.ReasoningTargetKind,
 ) (out []openai.ChatCompletionMessageParamUnion, toolImages int, err error) {
+	messages = joinAssistantRuns(messages)
 	lastUser := -1
 	if len(native) > 0 {
 		for i, message := range slices.Backward(messages) {
@@ -165,6 +166,32 @@ func toSDKMessages(
 		}
 	}
 	return out, toolImages, nil
+}
+
+// joinAssistantRuns makes adjacent assistant turns one, on the wire only. A scheduled outcome, a
+// worker's report and a watch record are stored as assistant turns of their own, so they land next
+// to each other and to the model's reply. Gemma 4's chat template reads a following assistant turn
+// as the same model turn and writes `<|turn>model\nA<turn|>\nB<turn|>`, which leaves B outside any
+// turn and raises nothing (measured 2026-11-01, prd.md §19).
+func joinAssistantRuns(messages []llm.Message) []llm.Message {
+	out := make([]llm.Message, 0, len(messages))
+	for _, message := range messages {
+		last := len(out) - 1
+		if last < 0 || message.Role != llm.RoleAssistant || out[last].Role != llm.RoleAssistant {
+			out = append(out, message)
+			continue
+		}
+		out[last].Content = joinTurnText(out[last].Content, message.Content)
+		out[last].ToolCalls = slices.Concat(out[last].ToolCalls, message.ToolCalls)
+	}
+	return out
+}
+
+func joinTurnText(first, second string) string {
+	if first == "" || second == "" {
+		return first + second
+	}
+	return first + "\n\n" + second
 }
 
 func nativeContentPart(media llm.ProjectedRequestPart, target llm.ReasoningTargetKind) (openai.ChatCompletionContentPartUnionParam, bool) {
