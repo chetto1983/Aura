@@ -51,14 +51,25 @@ describe('MailWatchOverview', () => {
 
   it('shows the reason calmly when the deployment cannot watch', async () => {
     server.on(ROUTE, () => ({
-      body: watchStatus({ configured: false, reason: 'needs the PIM sidecar', accounts: [] }),
+      body: watchStatus({ configured: false, reason: 'pim_not_configured', accounts: [] }),
     }));
     renderWatch(<MailWatchOverview />);
     const note = await screen.findByRole('note');
     expect(note.textContent).toContain('The watch is not available on this installation.');
-    expect(note.textContent).toContain('needs the PIM sidecar');
+    expect(note.textContent).toContain('It needs the PIM service and its authorization');
+    expect(note.textContent).not.toContain('pim_not_configured');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('says nothing more for a reason it cannot read', async () => {
+    server.on(ROUTE, () => ({
+      body: watchStatus({ configured: false, reason: 'something_new', accounts: [] }),
+    }));
+    renderWatch(<MailWatchOverview />);
+    expect((await screen.findByRole('note')).textContent).toBe(
+      'The watch is not available on this installation.',
+    );
   });
 
   it('does without a reason', async () => {

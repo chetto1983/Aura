@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { MailWatchSettings } from '../mailWatchApi';
-import { isUnavailable } from './mailWatchLogic';
+import { isUnavailable, unavailableReason } from './mailWatchLogic';
 import { MailWatchDialog } from './MailWatchDialog';
 import { useMailWatchStatus } from './useMailWatch';
 import { Button } from '@/components/ui/button';
@@ -35,10 +35,11 @@ export function MailWatchOverview() {
   }
   const { configured, reason, settings } = status.data;
   if (!configured) {
+    const why = unavailableReason(reason, t);
     return (
       <p role="note" className="text-[13px] text-text-muted">
         {t('governance.mailWatch.overview.unavailable')}
-        {reason === undefined ? null : <span className="block text-text-faint">{reason}</span>}
+        {why === '' ? null : <span className="block text-text-faint">{why}</span>}
       </p>
     );
   }

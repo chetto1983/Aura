@@ -239,6 +239,11 @@ export function isUnavailable(error: unknown): boolean {
   return error instanceof HttpError && error.reason === MAIL_WATCH_UNAVAILABLE;
 }
 
+/** Why a deployment cannot watch, as a sentence. A code this build does not know adds nothing. */
+export function unavailableReason(reason: string | undefined, t: TFunction): string {
+  return t(`governance.mailWatch.overview.reason.${reason ?? 'none'}`, { defaultValue: '' });
+}
+
 /** A failed call as the sentence the person reads. A 400's `{error}` is the server's own, naming
  * what to fix; the client's checks catch most of those first, so it is the only text not ours. */
 export function errorSentence(error: unknown, t: TFunction): string {

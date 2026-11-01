@@ -75,7 +75,7 @@ func writeMailWatchError(w http.ResponseWriter, err error) {
 	pimErr, isPIM := errors.AsType[*pimwatch.PIMError](err)
 	switch {
 	case errors.Is(err, pimwatch.ErrUnavailable):
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "mail_watch_unavailable", "reason": err.Error()})
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "mail_watch_unavailable", "reason": pimwatch.UnavailableReason})
 	case errors.Is(err, pimwatch.ErrInvalid):
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, pimwatch.ErrNotFound):
@@ -145,7 +145,7 @@ func (s *Server) handleMailWatchStatus(w http.ResponseWriter, r *http.Request, s
 		Accounts: make([]mailWatchAccountJSON, 0, len(status.Accounts)),
 	}
 	if !status.Configured {
-		out.Reason = pimwatch.ErrUnavailable.Error()
+		out.Reason = pimwatch.UnavailableReason
 	}
 	for _, account := range status.Accounts {
 		resources := make([]mailWatchResourceJSON, 0, len(account.Resources))

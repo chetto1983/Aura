@@ -13,6 +13,9 @@ import (
 // fetch an identity's grant to it.
 var ErrUnavailable = errors.New("the mail watch needs the PIM sidecar and its authorization, and this deployment lacks them")
 
+// UnavailableReason is ErrUnavailable as the fixed code the cockpit translates.
+const UnavailableReason = "pim_not_configured"
+
 // decisionsLimit bounds the decisions view of one day.
 const decisionsLimit = 200
 

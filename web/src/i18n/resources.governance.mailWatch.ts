@@ -1,8 +1,8 @@
 // resources.governance.mailWatch.ts holds the mail and calendar watch's cockpit copy (EN + IT),
 // spread into governance.mailWatch. It follows the Go side's words (internal/pimwatch/text.go):
-// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure`, `paused` and `change` keys
-// are reached by template from the wire's fixed codes, so a new code needs a key here in both
-// locales.
+// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure`, `paused`, `change` and
+// `overview.reason` keys are reached by template from the wire's fixed codes, so a new code needs a
+// key here in both locales.
 
 export const mailWatchEn = {
   title: 'Mail and calendar watch',
@@ -67,6 +67,10 @@ export const mailWatchEn = {
     manage: 'Rules, labels and times',
     unavailable: 'The watch is not available on this installation.',
     unreadable: 'The state of the watch cannot be read right now.',
+    reason: {
+      pim_not_configured:
+        'It needs the PIM service and its authorization, and this installation lacks them.',
+    },
   },
   dialog: {
     description: 'What Aura decided about your mail, and why.',
@@ -273,6 +277,10 @@ export const mailWatchIt = {
     manage: 'Regole, etichette e orari',
     unavailable: 'Il controllo non è disponibile su questa installazione.',
     unreadable: 'Lo stato del controllo non si può leggere in questo momento.',
+    reason: {
+      pim_not_configured:
+        'Servono il servizio PIM e la sua autorizzazione, e questa installazione non li ha.',
+    },
   },
   dialog: {
     description: 'Cosa ha deciso Aura sulla tua posta, e perché.',

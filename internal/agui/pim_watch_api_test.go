@@ -148,7 +148,7 @@ func TestMailWatchStatusIsTheCallersAndSaysWhyItCannotRun(t *testing.T) {
 	if service.identity != "11111111-1111-1111-1111-111111111111" {
 		t.Fatalf("identity = %q", service.identity)
 	}
-	if out.Configured || !strings.Contains(out.Reason, "PIM sidecar") || out.Settings.DigestHour != 18 {
+	if out.Configured || out.Reason != "pim_not_configured" || out.Settings.DigestHour != 18 {
 		t.Fatalf("status = %+v", out)
 	}
 	resource := out.Accounts[0].Resources[0]
@@ -300,6 +300,13 @@ func TestMailWatchErrorsKeepToFixedWords(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "secret") {
 			t.Fatalf("a secret reached the wire: %s", rec.Body.String())
 		}
+	}
+}
+
+func TestAnUnavailableAnswerCarriesTheCode(t *testing.T) {
+	refused := mailWatchCall(t, &fakeWatchService{err: pimwatch.ErrUnavailable}, http.MethodPost, "/api/mail-watch/accounts/work/enable", "")
+	if refused.Code != http.StatusServiceUnavailable || !strings.Contains(refused.Body.String(), `"reason":"pim_not_configured"`) {
+		t.Fatalf("enable = %d %s", refused.Code, refused.Body.String())
 	}
 }
 
