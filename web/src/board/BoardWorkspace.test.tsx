@@ -115,6 +115,27 @@ afterEach(() => {
 });
 
 describe('BoardWorkspace', () => {
+  it.each([
+    ['en', 'Progress'],
+    ['it', 'Avanzamento'],
+  ])('shows the live percentage in the %s editor without saving', async (language, label) => {
+    await act(() => i18n.changeLanguage(language));
+    const calls = stubServer();
+    renderBoard();
+    fireEvent.click(await screen.findByText('Call the supplier'));
+    expect(await screen.findByText(`${label} · 55%`)).toBeTruthy();
+    const slider = screen.getByRole('slider', { name: new RegExp(`^${label}`) });
+    for (const [value, percent] of [
+      ['0.15', '15%'],
+      ['0', '0%'],
+      ['1', '100%'],
+    ] as const) {
+      fireEvent.input(slider, { target: { value } });
+      expect(await screen.findByText(`${label} · ${percent}`)).toBeTruthy();
+    }
+    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
+  });
+
   it('preserves a fractional API progress when editing another field', async () => {
     await act(() => i18n.changeLanguage('en'));
     const calls = stubServer();

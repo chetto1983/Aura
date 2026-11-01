@@ -27,7 +27,7 @@ test('card progress is saved, reloaded, reset and completed through the real API
   try {
     const editor = page.locator('.aura-board-editor');
     await editor.getByRole('textbox', { name: /^(Title|Titolo)/ }).fill(label);
-    const slider = editor.getByRole('slider', { name: /^(Progress|Avanzamento)$/ });
+    const slider = editor.getByRole('slider', { name: /^(Progress|Avanzamento) · \d+%$/ });
     await slider.press('Home');
     await expect(slider).toHaveValue('0');
     // Wait for the native controlled input between keys: a rapid key count can lose an
@@ -44,6 +44,7 @@ test('card progress is saved, reloaded, reset and completed through the real API
       .toBe(0.55);
     await slider.press('Tab');
     await expect(slider).toHaveValue('0.55');
+    await expect(slider).toHaveAccessibleName(/ · 55%$/);
     const saved = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/board/cards/${id}`) && response.request().method() === 'PUT',
@@ -63,9 +64,10 @@ test('card progress is saved, reloaded, reset and completed through the real API
       ['End', 1, '100%'],
     ] as const) {
       await page.getByRole('button', { name: label, exact: true }).click();
-      const progress = editor.getByRole('slider', { name: /^(Progress|Avanzamento)$/ });
+      const progress = editor.getByRole('slider', { name: /^(Progress|Avanzamento) · \d+%$/ });
       await progress.press(key);
       await expect(progress).toHaveValue(String(ratio));
+      await expect(progress).toHaveAccessibleName(new RegExp(` · ${percent}$`));
       await progress.press('Tab');
       const updated = page.waitForResponse(
         (response) =>

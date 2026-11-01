@@ -55,3 +55,17 @@ primitive to reuse, so add a semantic HTML progress element inside that existing
 Risk: medium (additive migration and public API field). No env/catalog additions. Every
 edited non-generated source file remains at most 600 lines. Work stays on master and
 preserves other sessions' changes.
+
+## Follow-up: live percentage in the editor
+
+The operator's screenshot showed no numeric value beside the slider. Playwright reproduced
+this on the lab UI on 2026-11-01: input 0 changed to 0.01 with ArrowRight while its label
+remained `Avanzamento`; no write was sent. The editor must show the current percentage
+before Save, including 0% and 100%, in Italian and English.
+
+The installed react-editor exports `labelTemplate(value)` and its Sections renderer calls
+that template with the current field data on each change. Reuse this native option for
+`Avanzamento · 15%` / `Progress · 15%`, retaining the existing slider, 1% step and ratio API.
+No new component, state mirror, dependency or backend change is needed. Verify live input,
+keyboard changes, localization and the saved/reloaded ratio; the dynamic accessible name
+must also be recognized by the existing browser regression.

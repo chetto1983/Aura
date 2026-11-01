@@ -53,15 +53,6 @@ interface BoardWorkspaceProps {
 // The card flags that matter with a custom template: the menu, which the template's button
 // opens. An identity's board has one user and no cover images, so the rest stay off.
 const CARD_SHAPE: CardShape = { menu: true };
-const EDITOR_ITEMS: Record<string, unknown>[] = [
-  ...(
-    getEditorItems({ description: true, priority: true, progress: true, deadline: true }) as Record<
-      string,
-      unknown
-    >[]
-  ).map((item) => (item.key === 'progress' ? { ...item, step: 0.01 } : item)),
-  { comp: TagsEditorItem, key: 'tags', label: 'Tags' },
-];
 const MINUTE_MS = 60_000;
 
 /**
@@ -72,6 +63,29 @@ const MINUTE_MS = 60_000;
  */
 export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspaceProps) {
   const { t, i18n } = useTranslation();
+  const editorItems = useMemo(
+    () => [
+      ...(
+        getEditorItems({
+          description: true,
+          priority: true,
+          progress: true,
+          deadline: true,
+        }) as Record<string, unknown>[]
+      ).map((item) =>
+        item.key === 'progress'
+          ? {
+              ...item,
+              step: 0.01,
+              labelTemplate: (value: number | undefined) =>
+                `${t('board.card.progress')} · ${String(Math.round((value ?? 0) * 100))}%`,
+            }
+          : item,
+      ),
+      { comp: TagsEditorItem, key: 'tags', label: 'Tags' },
+    ],
+    [t],
+  );
   const queryClient = useQueryClient();
   const board = useBoardData();
   const views = useBoardViews();
@@ -340,7 +354,7 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
                   placement="sidebar"
                   css="aura-board-editor"
                   autoSave={false}
-                  items={EDITOR_ITEMS}
+                  items={editorItems}
                   topBar={topBar}
                   onAction={editorAction}
                 />

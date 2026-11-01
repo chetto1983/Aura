@@ -4532,6 +4532,13 @@ and PostgreSQL retained 0 with source chat/actor agent. Model replies were contr
 isolated, and no VM deployment is claimed. Evidence and coverage/mutation measurements:
 `docs/superpowers/verification/2026-11-01-board-progress.md`.
 
+**Live editor percentage, 2026-11-01.** The operator's screenshot and a read-only Playwright
+draft edit showed the slider changing from 0 to 0.01 while its label stayed `Avanzamento`,
+with no numeric feedback and no API write. The installed editor's native
+`labelTemplate(value)` can display the current percentage beside the localized label.
+Use it for live feedback before Save; this measurement does not change the ratio/API
+contract or establish a new deployment. The follow-up is recorded in the board progress spec.
+
 Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
 Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo
 3.1.0 and Grafana 13.2.3:
