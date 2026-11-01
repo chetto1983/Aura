@@ -39,6 +39,7 @@ export function BoardCardContent(props: { readonly card: KanbanCard }) {
   const SourceIcon = sourceIcons[card.source];
   const overdue = card.deadline !== undefined && card.deadline.getTime() < now.getTime();
   const status = card.task_id === undefined ? undefined : taskStatus(card.task_id);
+  const progress = card.progress ?? 0;
 
   return (
     <div className="flex min-w-0 flex-col gap-2 p-3 text-left">
@@ -89,6 +90,17 @@ export function BoardCardContent(props: { readonly card: KanbanCard }) {
           ))}
         </ul>
       )}
+      <div className="flex items-center gap-2">
+        <progress
+          className="aura-board-progress min-w-0 flex-1"
+          aria-label={t('board.card.progress')}
+          max={1}
+          value={progress}
+        />
+        <span className="w-9 shrink-0 text-right text-[11px] text-text-muted tabular-nums">
+          {Math.round(progress * 100)}%
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-text-muted">
         <span className="inline-flex items-center gap-1">
           <SourceIcon aria-hidden="true" className="h-3 w-3" />

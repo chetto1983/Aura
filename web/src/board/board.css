@@ -7,3 +7,27 @@
   width: min(450px, 100vw);
   max-width: 100%;
 }
+
+.aura-board-progress {
+  appearance: none;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-border);
+  color: var(--color-info);
+}
+
+.aura-board-progress::-webkit-progress-bar {
+  border-radius: inherit;
+  background: var(--color-border);
+}
+
+.aura-board-progress::-webkit-progress-value {
+  border-radius: inherit;
+  background: var(--color-info);
+}
+
+.aura-board-progress::-moz-progress-bar {
+  border-radius: inherit;
+  background: var(--color-info);
+}

@@ -33,14 +33,14 @@ SELECT * FROM aura.board_cards WHERE id = $1;
 -- name: InsertBoardCard :one
 INSERT INTO aura.board_cards (
     board_id, identity_id, column_id, position, label, description, priority, tags, due_at,
-    conversation_id, task_id, source, updated_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    conversation_id, task_id, source, updated_by, progress
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING *;
 
 -- name: UpdateBoardCard :one
 UPDATE aura.board_cards
 SET label = $2, description = $3, priority = $4, tags = $5, due_at = $6, task_id = $7,
-    updated_by = $8, updated_at = now()
+    updated_by = $8, progress = $9, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

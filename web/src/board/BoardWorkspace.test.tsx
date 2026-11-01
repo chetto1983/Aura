@@ -27,6 +27,7 @@ const CARDS = [
     description: '',
     column: 'todo',
     priority: 2,
+    progress: 0.55,
     tags: ['ops'],
     conversation_id: 'conv-1',
     task_id: 'task-1',
@@ -114,6 +115,26 @@ afterEach(() => {
 });
 
 describe('BoardWorkspace', () => {
+  it('preserves a fractional API progress when editing another field', async () => {
+    await act(() => i18n.changeLanguage('en'));
+    const calls = stubServer();
+    renderBoard();
+    fireEvent.click(await screen.findByText('Call the supplier'));
+    fireEvent.input(await screen.findByRole('textbox', { name: 'Description' }), {
+      target: { value: 'confirm the renewal date' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      const update = calls.find(
+        (call) => call.method === 'PUT' && call.url === '/api/board/cards/c-1',
+      );
+      expect(update?.body).toMatchObject({
+        progress: 0.55,
+        description: 'confirm the renewal date',
+      });
+    });
+  });
+
   it('shows the columns and the cards the server holds', async () => {
     await act(() => i18n.changeLanguage('en'));
     stubServer();

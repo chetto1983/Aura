@@ -27,6 +27,7 @@ export interface BoardCard {
   readonly description: string;
   readonly column: string;
   readonly priority: number;
+  readonly progress?: number;
   readonly tags: readonly string[];
   readonly deadline?: string;
   readonly conversation_id?: string;

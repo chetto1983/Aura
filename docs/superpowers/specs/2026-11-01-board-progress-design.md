@@ -11,7 +11,8 @@ and subsequent GET omitted the field. The disposable probe card was deleted. Sou
 boardCardInput, board.Card/NewCard/CardPatch and aura.board_cards have no progress field.
 
 Installed SVAR 2.6.0 getEditorItems({progress:true}) produces the native slider with min=0,
-max=1, step=0.1. Its card computes round(progress*100). Use that ratio throughout, with no
+max=1, step=0.1. Configure that item's step to 0.01 so an API value such as 0.55 is editable
+without rounding it to a multiple of 10%. Its card computes round(progress*100). Use that ratio throughout, with no
 adapter or second percent representation. The existing custom card body is necessary for
 Aura metadata; the installed Kanban does not export its stock body. Aura has no progress
 primitive to reuse, so add a semantic HTML progress element inside that existing body.
@@ -19,7 +20,8 @@ primitive to reuse, so add a semantic HTML progress element inside that existing
 ## Contract
 
 - JSON `progress` is a finite number from 0 through 1, inclusive. 0.55 displays as 55%.
-  Missing on create defaults to 0; missing on update leaves the stored value unchanged.
+  Missing or null on create defaults to 0; missing or null on update leaves it unchanged,
+  following the existing optional numeric fields.
   An explicit 0 resets progress. Values outside the range and nonnumeric JSON are refused.
 - PostgreSQL column is NOT NULL double precision DEFAULT 0 with a range CHECK. Existing
   cards receive 0. The migration's down drops only this new field. No inferred progress

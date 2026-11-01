@@ -54,10 +54,12 @@ interface BoardWorkspaceProps {
 // opens. An identity's board has one user and no cover images, so the rest stay off.
 const CARD_SHAPE: CardShape = { menu: true };
 const EDITOR_ITEMS: Record<string, unknown>[] = [
-  ...(getEditorItems({ description: true, priority: true, deadline: true }) as Record<
-    string,
-    unknown
-  >[]),
+  ...(
+    getEditorItems({ description: true, priority: true, progress: true, deadline: true }) as Record<
+      string,
+      unknown
+    >[]
+  ).map((item) => (item.key === 'progress' ? { ...item, step: 0.01 } : item)),
   { comp: TagsEditorItem, key: 'tags', label: 'Tags' },
 ];
 const MINUTE_MS = 60_000;
@@ -135,6 +137,7 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
         ev.card = {
           description: '',
           priority: 2,
+          progress: 0,
           tags: [],
           source: 'cockpit',
           updated_by: 'operator',

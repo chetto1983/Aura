@@ -58,7 +58,7 @@ func (f *fakeBoardStore) Cards(_ context.Context, id string) ([]board.Card, erro
 
 func (f *fakeBoardStore) AddCard(_ context.Context, id string, in board.NewCard, s board.Source, a board.Actor) (board.Card, error) {
 	f.added, f.source, f.actor = in, s, a
-	return board.Card{ID: "c-new", ColumnID: "todo", Label: in.Label, Source: s, UpdatedBy: a}, f.note(id, "add")
+	return board.Card{ID: "c-new", ColumnID: "todo", Label: in.Label, Progress: in.Progress, Source: s, UpdatedBy: a}, f.note(id, "add")
 }
 
 func (f *fakeBoardStore) UpdateCard(_ context.Context, id, cardID string, p board.CardPatch, a board.Actor) (board.Card, error) {

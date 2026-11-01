@@ -64,6 +64,7 @@ const boardParamsSchema = `{
     "label": {"type": "string", "description": "Required when action=add; optional for update. One line, at most 200 characters."},
     "description": {"type": "string", "description": "Optional for add and update. At most 4000 characters."},
     "priority": {"type": "integer", "enum": [1, 2, 3], "description": "Optional for add and update: 1 low, 2 medium (default), 3 high."},
+    "progress": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional for add and update: completed fraction from 0 to 1 (0.55 = 55%, 1 = complete). Defaults to 0 on add; omitted on update preserves it; 0 resets it."},
     "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional for add and update: short tags; on update they replace the card's tags."},
     "due": {"type": "string", "description": "Optional for add and update: an RFC-3339 due date, or an empty string on update to clear it."},
     "before": {"type": "string", "description": "Optional for move: put the card just before this card id; omitted means the bottom of the column."}
@@ -76,7 +77,7 @@ const boardParamsSchema = `{
 func (t *BoardTool) Spec() Spec {
 	return Spec{
 		Name:    "board",
-		Summary: "The operator's work board (kanban, backlog, to-do list, cards in columns such as To do, Doing, Done): list, search, add, update, move or delete cards for work that outlives this turn.",
+		Summary: "The operator's work board (kanban, backlog, to-do list, cards and their progress in columns such as To do, Doing, Done): list, search, add, update, move or delete cards for work that outlives this turn.",
 		Description: "The identity's work board, shared with the operator who sees it in the cockpit. Use it for work that outlives this turn: something to do later, a follow-up, a task the operator mentions in passing. " +
 			"Use todo, not board, for the steps of the turn you are in, and task, not board, when something must happen at a set time; a card can name that task. " +
 			"action=list shows what is due within 24 hours first (overdue first), then the columns, up to 32 cards; action=search finds cards; add, update and move change the board; delete removes a card and stops for the operator's approval. " +

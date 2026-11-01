@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ type Card struct {
 	Label          string
 	Description    string
 	Priority       int
+	Progress       float64 // Completed fraction from 0 to 1, following SVAR's card contract.
 	Tags           []string
 	DueAt          *time.Time
 	ConversationID string
@@ -62,6 +64,7 @@ type NewCard struct {
 	Label          string
 	Description    string
 	Priority       int
+	Progress       float64
 	Tags           []string
 	DueAt          *time.Time
 	ConversationID string
@@ -73,6 +76,7 @@ type CardPatch struct {
 	Label       *string
 	Description *string
 	Priority    *int
+	Progress    *float64
 	Tags        *[]string
 	DueAt       **time.Time
 	TaskID      *string
@@ -83,6 +87,9 @@ const positionGap = 1e-6
 
 // AddCard puts a card at the bottom of its column.
 func (s *Store) AddCard(ctx context.Context, identityID string, in NewCard, source Source, actor Actor) (Card, error) {
+	if err := validateProgress(in.Progress); err != nil {
+		return Card{}, err
+	}
 	fields, err := cleanFields(in.Label, in.Description, in.Priority, in.Tags)
 	if err != nil {
 		return Card{}, err
@@ -123,7 +130,7 @@ func (s *Store) AddCard(ctx context.Context, identityID string, in NewCard, sour
 		}
 		row, err := q.InsertBoardCard(ctx, sqlc.InsertBoardCardParams{
 			BoardID: boardID, IdentityID: identity, ColumnID: column, Position: position,
-			Label: fields.label, Description: fields.description, Priority: int16(fields.priority),
+			Label: fields.label, Description: fields.description, Priority: int16(fields.priority), Progress: in.Progress,
 			Tags: fields.tags, DueAt: timestamp(in.DueAt), ConversationID: conversation, TaskID: task,
 			Source: string(source), UpdatedBy: string(actor),
 		})
@@ -171,6 +178,11 @@ func (s *Store) Card(ctx context.Context, identityID, cardID string) (Card, erro
 
 // UpdateCard applies the set fields of patch.
 func (s *Store) UpdateCard(ctx context.Context, identityID, cardID string, patch CardPatch, actor Actor) (Card, error) {
+	if patch.Progress != nil {
+		if err := validateProgress(*patch.Progress); err != nil {
+			return Card{}, err
+		}
+	}
 	var card Card
 	err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
 		row, err := getCard(ctx, q, cardID)
@@ -178,6 +190,10 @@ func (s *Store) UpdateCard(ctx context.Context, identityID, cardID string, patch
 			return err
 		}
 		current := cardFromRow(row)
+		progress := current.Progress
+		if patch.Progress != nil {
+			progress = *patch.Progress
+		}
 		label, description, priority, tags := current.Label, current.Description, current.Priority, current.Tags
 		if patch.Label != nil {
 			label = *patch.Label
@@ -205,13 +221,13 @@ func (s *Store) UpdateCard(ctx context.Context, identityID, cardID string, patch
 				return err
 			}
 		}
-		if unchanged(row, fields, due, task) {
+		if unchanged(row, fields, due, task) && row.Progress == progress {
 			card = current
 			return nil
 		}
 		updated, err := q.UpdateBoardCard(ctx, sqlc.UpdateBoardCardParams{
 			ID: row.ID, Label: fields.label, Description: fields.description, Priority: int16(fields.priority),
-			Tags: fields.tags, DueAt: due, TaskID: task, UpdatedBy: string(actor),
+			Tags: fields.tags, DueAt: due, TaskID: task, UpdatedBy: string(actor), Progress: progress,
 		})
 		card = cardFromRow(updated)
 		return err
@@ -287,7 +303,7 @@ func (s *Store) DuplicateCard(ctx context.Context, identityID, cardID string) (C
 		}
 		inserted, err := q.InsertBoardCard(ctx, sqlc.InsertBoardCardParams{
 			BoardID: row.BoardID, IdentityID: row.IdentityID, ColumnID: row.ColumnID, Position: position,
-			Label: row.Label, Description: row.Description, Priority: row.Priority, Tags: row.Tags,
+			Label: row.Label, Description: row.Description, Priority: row.Priority, Progress: row.Progress, Tags: row.Tags,
 			DueAt: row.DueAt, Source: string(SourceCockpit), UpdatedBy: string(ActorOperator),
 		})
 		card = cardFromRow(inserted)
@@ -467,7 +483,7 @@ func timestamp(t *time.Time) pgtype.Timestamptz {
 func cardFromRow(r sqlc.AuraBoardCards) Card {
 	c := Card{
 		ID: r.ID.String(), ColumnID: r.ColumnID, Position: r.Position, Label: r.Label,
-		Description: r.Description, Priority: int(r.Priority), Tags: r.Tags,
+		Description: r.Description, Priority: int(r.Priority), Progress: r.Progress, Tags: r.Tags,
 		ConversationID: r.ConversationID.String(), TaskID: r.TaskID.String(),
 		Source: Source(r.Source), UpdatedBy: Actor(r.UpdatedBy),
 		CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
@@ -488,4 +504,11 @@ func cardsFromRows(rows []sqlc.AuraBoardCards) []Card {
 		out = append(out, cardFromRow(r))
 	}
 	return out
+}
+
+func validateProgress(progress float64) error {
+	if math.IsNaN(progress) || progress < 0 || progress > 1 {
+		return fmt.Errorf("%w: progress is a finite number between 0 and 1", ErrInvalid)
+	}
+	return nil
 }

@@ -33,6 +33,23 @@ function renderCard(
 }
 
 describe('BoardCardContent', () => {
+  it('shows fractional progress as a percentage with an accessible bar', async () => {
+    await act(() => i18n.changeLanguage('en'));
+    renderCard({ progress: 0.55 });
+    expect(screen.getByText('55%')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Progress' })).toHaveProperty('value', 0.55);
+  });
+
+  it.each([undefined, 0, 1])('shows both progress bounds and old cards (%s)', async (progress) => {
+    await act(() => i18n.changeLanguage('en'));
+    renderCard(progress === undefined ? {} : { progress });
+    expect(screen.getByText(progress === 1 ? '100%' : '0%')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Progress' })).toHaveProperty(
+      'value',
+      progress ?? 0,
+    );
+  });
+
   it('says where the card came from, and keeps the widget menu reachable', async () => {
     await act(() => i18n.changeLanguage('en'));
     const { container } = renderCard({});

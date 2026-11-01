@@ -73,6 +73,7 @@ type AuraBoardCards struct {
 	UpdatedBy      string             `json:"updated_by"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Progress       float64            `json:"progress"`
 }
 
 type AuraBoardViews struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ type boardArgs struct {
 	Label       *string   `json:"label"`
 	Description *string   `json:"description"`
 	Priority    *int      `json:"priority"`
+	Progress    *float64  `json:"progress"`
 	Tags        *[]string `json:"tags"`
 	Due         *string   `json:"due"`
 	Before      string    `json:"before"`
@@ -87,6 +89,9 @@ func (t *BoardTool) actionAdd(ctx context.Context, raw json.RawMessage) (ToolRes
 	if a.Priority != nil {
 		in.Priority = *a.Priority
 	}
+	if a.Progress != nil {
+		in.Progress = *a.Progress
+	}
 	if a.Tags != nil {
 		in.Tags = *a.Tags
 	}
@@ -117,7 +122,7 @@ func (t *BoardTool) actionUpdate(ctx context.Context, raw json.RawMessage) (Tool
 	if err != nil {
 		return ToolResult{}, err
 	}
-	patch := board.CardPatch{Label: a.Label, Description: a.Description, Priority: a.Priority, Tags: a.Tags, DueAt: due}
+	patch := board.CardPatch{Label: a.Label, Description: a.Description, Priority: a.Priority, Progress: a.Progress, Tags: a.Tags, DueAt: due}
 	c, err := t.Store.UpdateCard(ctx, boardIdentity(ctx), a.ID, patch, board.ActorAgent)
 	if err != nil {
 		return ToolResult{}, err
@@ -261,7 +266,7 @@ var priorityWords = map[int]string{1: "low", 2: "medium", 3: "high"}
 
 func writeCard(out *strings.Builder, c board.Card, withColumn bool) {
 	fmt.Fprintf(out, "- [%s] %s", c.ID, clipRunes(c.Label, boardSnapshotRunes))
-	var meta []string
+	meta := []string{fmt.Sprintf("%.0f%% complete", math.Round(c.Progress*100))}
 	if withColumn {
 		meta = append(meta, "in "+c.ColumnID)
 	}
@@ -274,9 +279,7 @@ func writeCard(out *strings.Builder, c board.Card, withColumn bool) {
 	if len(c.Tags) > 0 {
 		meta = append(meta, "#"+strings.Join(c.Tags, " #"))
 	}
-	if len(meta) > 0 {
-		fmt.Fprintf(out, " (%s)", strings.Join(meta, ", "))
-	}
+	fmt.Fprintf(out, " (%s)", strings.Join(meta, ", "))
 	out.WriteString("\n")
 	if c.Description != "" {
 		fmt.Fprintf(out, "  %s\n", clipRunes(strings.ReplaceAll(c.Description, "\n", " "), boardSnapshotRunes))

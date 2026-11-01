@@ -9,7 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/board"
 )
 
-// boardCardJSON is a card in the widget's shape: id, label, description, column, priority,
+// boardCardJSON is a card in the widget's shape: id, label, description, column, priority, progress,
 // tags and deadline are SVAR's fields; the rest are Aura's, read by the cockpit's card template.
 // deadline is RFC 3339, which the provider's parseCards turns into a Date.
 type boardCardJSON struct {
@@ -18,6 +18,7 @@ type boardCardJSON struct {
 	Description    string     `json:"description"`
 	Column         string     `json:"column"`
 	Priority       int        `json:"priority"`
+	Progress       float64    `json:"progress"`
 	Tags           []string   `json:"tags"`
 	Deadline       *time.Time `json:"deadline,omitempty"`
 	ConversationID string     `json:"conversation_id,omitempty"`
@@ -30,7 +31,7 @@ type boardCardJSON struct {
 func boardCardFrom(c board.Card) boardCardJSON {
 	out := boardCardJSON{
 		ID: c.ID, Label: c.Label, Description: c.Description, Column: c.ColumnID, Priority: c.Priority,
-		Tags: c.Tags, ConversationID: c.ConversationID, TaskID: c.TaskID,
+		Tags: c.Tags, Progress: c.Progress, ConversationID: c.ConversationID, TaskID: c.TaskID,
 		Source: string(c.Source), UpdatedBy: string(c.UpdatedBy), UpdatedAt: c.UpdatedAt.UTC(),
 	}
 	if c.DueAt != nil {
@@ -48,6 +49,7 @@ type boardCardInput struct {
 	Description *string         `json:"description"`
 	Column      string          `json:"column"`
 	Priority    *int            `json:"priority"`
+	Progress    *float64        `json:"progress"`
 	Tags        *[]string       `json:"tags"`
 	Deadline    json.RawMessage `json:"deadline"`
 }
@@ -95,6 +97,9 @@ func (s *Server) handleBoardAddCard(w http.ResponseWriter, r *http.Request, stor
 	if in.Priority != nil {
 		card.Priority = *in.Priority
 	}
+	if in.Progress != nil {
+		card.Progress = *in.Progress
+	}
 	if in.Tags != nil {
 		card.Tags = *in.Tags
 	}
@@ -109,7 +114,7 @@ func (s *Server) handleBoardUpdateCard(w http.ResponseWriter, r *http.Request, s
 	if !ok {
 		return
 	}
-	patch := board.CardPatch{Label: in.Label, Description: in.Description, Priority: in.Priority, Tags: in.Tags}
+	patch := board.CardPatch{Label: in.Label, Description: in.Description, Priority: in.Priority, Progress: in.Progress, Tags: in.Tags}
 	if dueSet {
 		patch.DueAt = &due
 	}

@@ -85,7 +85,7 @@ func (q *Queries) GetBoard(ctx context.Context, id pgtype.UUID) (AuraBoards, err
 }
 
 const getBoardCard = `-- name: GetBoardCard :one
-SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at FROM aura.board_cards WHERE id = $1
+SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress FROM aura.board_cards WHERE id = $1
 `
 
 func (q *Queries) GetBoardCard(ctx context.Context, id pgtype.UUID) (AuraBoardCards, error) {
@@ -108,6 +108,7 @@ func (q *Queries) GetBoardCard(ctx context.Context, id pgtype.UUID) (AuraBoardCa
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Progress,
 	)
 	return i, err
 }
@@ -115,9 +116,9 @@ func (q *Queries) GetBoardCard(ctx context.Context, id pgtype.UUID) (AuraBoardCa
 const insertBoardCard = `-- name: InsertBoardCard :one
 INSERT INTO aura.board_cards (
     board_id, identity_id, column_id, position, label, description, priority, tags, due_at,
-    conversation_id, task_id, source, updated_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at
+    conversation_id, task_id, source, updated_by, progress
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress
 `
 
 type InsertBoardCardParams struct {
@@ -134,6 +135,7 @@ type InsertBoardCardParams struct {
 	TaskID         pgtype.UUID        `json:"task_id"`
 	Source         string             `json:"source"`
 	UpdatedBy      string             `json:"updated_by"`
+	Progress       float64            `json:"progress"`
 }
 
 func (q *Queries) InsertBoardCard(ctx context.Context, arg InsertBoardCardParams) (AuraBoardCards, error) {
@@ -151,6 +153,7 @@ func (q *Queries) InsertBoardCard(ctx context.Context, arg InsertBoardCardParams
 		arg.TaskID,
 		arg.Source,
 		arg.UpdatedBy,
+		arg.Progress,
 	)
 	var i AuraBoardCards
 	err := row.Scan(
@@ -170,12 +173,13 @@ func (q *Queries) InsertBoardCard(ctx context.Context, arg InsertBoardCardParams
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Progress,
 	)
 	return i, err
 }
 
 const listBoardCards = `-- name: ListBoardCards :many
-SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at FROM aura.board_cards
+SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress FROM aura.board_cards
 WHERE board_id = $1
 ORDER BY column_id, position
 `
@@ -206,6 +210,7 @@ func (q *Queries) ListBoardCards(ctx context.Context, boardID pgtype.UUID) ([]Au
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Progress,
 		); err != nil {
 			return nil, err
 		}
@@ -218,7 +223,7 @@ func (q *Queries) ListBoardCards(ctx context.Context, boardID pgtype.UUID) ([]Au
 }
 
 const listBoardColumnCards = `-- name: ListBoardColumnCards :many
-SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at FROM aura.board_cards
+SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress FROM aura.board_cards
 WHERE board_id = $1 AND column_id = $2
 ORDER BY position
 `
@@ -254,6 +259,7 @@ func (q *Queries) ListBoardColumnCards(ctx context.Context, arg ListBoardColumnC
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Progress,
 		); err != nil {
 			return nil, err
 		}
@@ -302,7 +308,7 @@ const moveBoardCard = `-- name: MoveBoardCard :one
 UPDATE aura.board_cards
 SET column_id = $2, position = $3, updated_by = $4, updated_at = now()
 WHERE id = $1
-RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at
+RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress
 `
 
 type MoveBoardCardParams struct {
@@ -337,12 +343,13 @@ func (q *Queries) MoveBoardCard(ctx context.Context, arg MoveBoardCardParams) (A
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Progress,
 	)
 	return i, err
 }
 
 const searchBoardCards = `-- name: SearchBoardCards :many
-SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at FROM aura.board_cards
+SELECT id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress FROM aura.board_cards
 WHERE board_id = $1
   AND (label ILIKE '%' || $2::text || '%'
        OR description ILIKE '%' || $2::text || '%'
@@ -383,6 +390,7 @@ func (q *Queries) SearchBoardCards(ctx context.Context, arg SearchBoardCardsPara
 			&i.UpdatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Progress,
 		); err != nil {
 			return nil, err
 		}
@@ -411,9 +419,9 @@ func (q *Queries) SetBoardCardPosition(ctx context.Context, arg SetBoardCardPosi
 const updateBoardCard = `-- name: UpdateBoardCard :one
 UPDATE aura.board_cards
 SET label = $2, description = $3, priority = $4, tags = $5, due_at = $6, task_id = $7,
-    updated_by = $8, updated_at = now()
+    updated_by = $8, progress = $9, updated_at = now()
 WHERE id = $1
-RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at
+RETURNING id, board_id, identity_id, column_id, position, label, description, priority, tags, due_at, conversation_id, task_id, source, updated_by, created_at, updated_at, progress
 `
 
 type UpdateBoardCardParams struct {
@@ -425,6 +433,7 @@ type UpdateBoardCardParams struct {
 	DueAt       pgtype.Timestamptz `json:"due_at"`
 	TaskID      pgtype.UUID        `json:"task_id"`
 	UpdatedBy   string             `json:"updated_by"`
+	Progress    float64            `json:"progress"`
 }
 
 func (q *Queries) UpdateBoardCard(ctx context.Context, arg UpdateBoardCardParams) (AuraBoardCards, error) {
@@ -437,6 +446,7 @@ func (q *Queries) UpdateBoardCard(ctx context.Context, arg UpdateBoardCardParams
 		arg.DueAt,
 		arg.TaskID,
 		arg.UpdatedBy,
+		arg.Progress,
 	)
 	var i AuraBoardCards
 	err := row.Scan(
@@ -456,6 +466,7 @@ func (q *Queries) UpdateBoardCard(ctx context.Context, arg UpdateBoardCardParams
 		&i.UpdatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Progress,
 	)
 	return i, err
 }

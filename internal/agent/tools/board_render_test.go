@@ -98,12 +98,12 @@ func TestBoardCardLineCarriesItsMeta(t *testing.T) {
 		withColumn bool
 		want       string
 	}{
-		"no meta":          {board.Card{ID: "a", Label: "plain", Priority: 2}, false, "- [a] plain\n"},
-		"all meta":         {board.Card{ID: "b", ColumnID: "doing", Label: "full", Priority: 3, DueAt: &due, Tags: []string{"x", "y"}}, true, "- [b] full (in doing, high priority, due 2026-11-03T08:00:00Z, #x #y)\n"},
-		"one tag":          {board.Card{ID: "f", Label: "tagged", Priority: 2, Tags: []string{"solo"}}, false, "- [f] tagged (#solo)\n"},
-		"low priority":     {board.Card{ID: "c", Label: "low", Priority: 1}, false, "- [c] low (low priority)\n"},
-		"description":      {board.Card{ID: "d", Label: "d", Priority: 2, Description: "line one\nline two"}, false, "- [d] d\n  line one line two\n"},
-		"label at the cap": {board.Card{ID: "e", Label: label160, Priority: 2}, false, "- [e] " + label160 + "\n"},
+		"zero progress":    {board.Card{ID: "a", Label: "plain", Priority: 2}, false, "- [a] plain (0% complete)\n"},
+		"all meta":         {board.Card{ID: "b", ColumnID: "doing", Label: "full", Priority: 3, Progress: 0.55, DueAt: &due, Tags: []string{"x", "y"}}, true, "- [b] full (55% complete, in doing, high priority, due 2026-11-03T08:00:00Z, #x #y)\n"},
+		"one tag":          {board.Card{ID: "f", Label: "tagged", Priority: 2, Tags: []string{"solo"}}, false, "- [f] tagged (0% complete, #solo)\n"},
+		"low priority":     {board.Card{ID: "c", Label: "low", Priority: 1}, false, "- [c] low (0% complete, low priority)\n"},
+		"description":      {board.Card{ID: "d", Label: "d", Priority: 2, Description: "line one\nline two"}, false, "- [d] d (0% complete)\n  line one line two\n"},
+		"label at the cap": {board.Card{ID: "e", Label: label160, Priority: 2}, false, "- [e] " + label160 + " (0% complete)\n"},
 	} {
 		var out strings.Builder
 		writeCard(&out, tc.card, tc.withColumn)
@@ -140,18 +140,18 @@ func TestBoardSearchAddUpdateAndDeleteSayWhatHappened(t *testing.T) {
 	ctx := boardCtx(boardConv)
 
 	out, err := runBoard(t, tool, ctx, `{"action":"search","query":"invoice"}`)
-	if err != nil || !strings.Contains(out, "2 card(s) match invoice:\n- [a] invoice one (in todo)\n- [b] invoice two (in doing)\n") {
+	if err != nil || !strings.Contains(out, "2 card(s) match invoice:\n- [a] invoice one (0% complete, in todo)\n- [b] invoice two (0% complete, in doing)\n") {
 		t.Fatalf("search = %q, %v", out, err)
 	}
 	out, err = runBoard(t, tool, ctx, `{"action":"add","label":"call","description":"the bank","due":"2026-11-03T09:00:00Z"}`)
-	if err != nil || !strings.HasPrefix(out, "added:\n- [c1] call (in todo, due 2026-11-03T09:00:00Z)\n") {
+	if err != nil || !strings.HasPrefix(out, "added:\n- [c1] call (0% complete, in todo, due 2026-11-03T09:00:00Z)\n") {
 		t.Fatalf("add = %q, %v", out, err)
 	}
 	if got := store.added[0]; got.Description != "the bank" || got.DueAt == nil || !got.DueAt.Equal(time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)) {
 		t.Errorf("added %+v, want the description and the due date", got)
 	}
 	out, err = runBoard(t, tool, ctx, `{"action":"update","id":"a","label":"invoice paid"}`)
-	if err != nil || out != "updated:\n- [a] invoice paid (in todo)\n" {
+	if err != nil || out != "updated:\n- [a] invoice paid (0% complete, in todo)\n" {
 		t.Errorf("update = %q, %v", out, err)
 	}
 	if out, err = runBoard(t, tool, ctx, `{"action":"delete","id":"b"}`); err != nil || out != "card b was already gone" {

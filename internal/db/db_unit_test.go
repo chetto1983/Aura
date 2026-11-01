@@ -392,8 +392,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0146 persists the remote-access reason code and the hostnames its resources belong to.
 	// 0147 gives those resources their own account, zone and legacy WARP hostname.
 	// 0148 lets the row name a refusal at the tunnel or Access step.
-	if head != 148 {
-		t.Fatalf("MigrationHead=%d, want embedded head 148", head)
+	// 0149 adds the board card's bounded progress ratio.
+	if head != 149 {
+		t.Fatalf("MigrationHead=%d, want embedded head 149", head)
 	}
 }
 

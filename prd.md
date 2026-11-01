@@ -4523,8 +4523,14 @@ confirmed deletion passed on a disposable card. This does not claim deployment o
 frontend to the VM. Evidence: `docs/superpowers/verification/2026-11-01-board-ui-live-api.md`.
 The operator also requested persisted progress. A live POST with `progress:0.55` answered
 200 while discarding it; native SVAR uses a ratio in [0,1]. The additive store/API/tool/UI
-contract is in `docs/superpowers/specs/2026-11-01-board-progress-design.md`; the probe does
-not establish the future migration or persistence behavior.
+contract is in `docs/superpowers/specs/2026-11-01-board-progress-design.md`.
+Subsequent tests on disposable PostgreSQL with migration 0149 preserved fractional values,
+explicit zero, omitted updates and duplicates; down/up preserved existing cards. Playwright
+against the new Go handlers saved/reloaded 0.56, 0 and 1. The real hardened agent runner
+executed board add 0.55, update 0.73, list and reset 0; its ledger recorded successful calls
+and PostgreSQL retained 0 with source chat/actor agent. Model replies were controlled, memory
+isolated, and no VM deployment is claimed. Evidence and coverage/mutation measurements:
+`docs/superpowers/verification/2026-11-01-board-progress.md`.
 
 Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
 Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo

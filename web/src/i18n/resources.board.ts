@@ -37,6 +37,7 @@ export const boardEn = {
     },
     card: {
       menu: 'Card menu',
+      progress: 'Progress',
       tags: 'Tags',
       overdue: 'overdue',
       hasConversation: 'Linked to a conversation',
@@ -132,6 +133,7 @@ export const boardIt = {
     },
     card: {
       menu: 'Menu della scheda',
+      progress: 'Avanzamento',
       tags: 'Tag',
       overdue: 'scaduta',
       hasConversation: 'Collegata a una conversazione',

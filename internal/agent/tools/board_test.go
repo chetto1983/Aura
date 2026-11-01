@@ -67,7 +67,7 @@ func (f *fakeBoard) AddCard(_ context.Context, _ string, in board.NewCard, src b
 	if col == "" {
 		col = "todo"
 	}
-	c := board.Card{ID: fmt.Sprintf("c%d", f.next), ColumnID: col, Label: in.Label, Priority: max(in.Priority, 2), Tags: in.Tags, DueAt: in.DueAt, Source: src}
+	c := board.Card{ID: fmt.Sprintf("c%d", f.next), ColumnID: col, Label: in.Label, Priority: max(in.Priority, 2), Progress: in.Progress, Tags: in.Tags, DueAt: in.DueAt, Source: src}
 	f.cards = append(f.cards, c)
 	f.added, f.sources = append(f.added, in), append(f.sources, src)
 	return c, nil
@@ -79,6 +79,9 @@ func (f *fakeBoard) UpdateCard(_ context.Context, _, id string, p board.CardPatc
 		if c.ID == id {
 			if p.Label != nil {
 				f.cards[i].Label = *p.Label
+			}
+			if p.Progress != nil {
+				f.cards[i].Progress = *p.Progress
 			}
 			if p.DueAt != nil {
 				f.cards[i].DueAt = *p.DueAt
