@@ -107,7 +107,8 @@ type Querier interface {
 	CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatchVerdictParams) (AuraPimWatchVerdicts, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
-	CountPIMWatchAlertsSince(ctx context.Context, arg CountPIMWatchAlertsSinceParams) (int64, error)
+	// What the account pushed since this local midnight, mail and calendar together.
+	CountPIMWatchAlertsOfDay(ctx context.Context, arg CountPIMWatchAlertsOfDayParams) (int32, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -830,6 +831,8 @@ type Querier interface {
 	// the display boundary.
 	SumIdentitySpendSince(ctx context.Context, arg SumIdentitySpendSinceParams) (interface{}, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]SweepDueNotificationsRow, error)
+	// A row still on an earlier day starts over at what this page told.
+	TallyPIMWatchAlerts(ctx context.Context, arg TallyPIMWatchAlertsParams) error
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
 	// 51-06b (Task 2): the resume observer's un-park, once the worker's pause has been

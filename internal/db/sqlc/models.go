@@ -625,17 +625,19 @@ type AuraPimWatchCorrections struct {
 }
 
 type AuraPimWatchCursors struct {
-	IdentityID   pgtype.UUID        `json:"identity_id"`
-	AccountID    string             `json:"account_id"`
-	Resource     string             `json:"resource"`
-	Cursor       string             `json:"cursor"`
-	Status       string             `json:"status"`
-	LastError    pgtype.Text        `json:"last_error"`
-	FailingSince pgtype.Timestamptz `json:"failing_since"`
-	AlarmKind    pgtype.Text        `json:"alarm_kind"`
-	AlarmSince   pgtype.Timestamptz `json:"alarm_since"`
-	AlarmRunID   pgtype.UUID        `json:"alarm_run_id"`
-	AdvancedAt   pgtype.Timestamptz `json:"advanced_at"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	AccountID      string             `json:"account_id"`
+	Resource       string             `json:"resource"`
+	Cursor         string             `json:"cursor"`
+	Status         string             `json:"status"`
+	LastError      pgtype.Text        `json:"last_error"`
+	FailingSince   pgtype.Timestamptz `json:"failing_since"`
+	AlarmKind      pgtype.Text        `json:"alarm_kind"`
+	AlarmSince     pgtype.Timestamptz `json:"alarm_since"`
+	AlarmRunID     pgtype.UUID        `json:"alarm_run_id"`
+	AdvancedAt     pgtype.Timestamptz `json:"advanced_at"`
+	AlertsDayStart pgtype.Timestamptz `json:"alerts_day_start"`
+	AlertsTold     int32              `json:"alerts_told"`
 }
 
 type AuraPimWatchLabels struct {

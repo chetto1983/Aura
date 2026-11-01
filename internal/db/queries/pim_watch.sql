@@ -94,7 +94,20 @@ INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, s
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (identity_id, account_id, resource) DO UPDATE
 SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = NULL, failing_since = NULL,
-    alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now();
+    alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now(),
+    alerts_day_start = NULL, alerts_told = 0;
+
+-- name: CountPIMWatchAlertsOfDay :one
+-- What the account pushed since this local midnight, mail and calendar together.
+SELECT COALESCE(sum(alerts_told), 0)::integer FROM aura.pim_watch_cursors
+WHERE identity_id = $1 AND account_id = $2 AND alerts_day_start = @day_start;
+
+-- name: TallyPIMWatchAlerts :exec
+-- A row still on an earlier day starts over at what this page told.
+UPDATE aura.pim_watch_cursors
+SET alerts_told = CASE WHEN alerts_day_start = @day_start THEN alerts_told + @told ELSE @told END,
+    alerts_day_start = @day_start
+WHERE identity_id = $1 AND account_id = $2 AND resource = $3;
 
 -- name: AdvancePIMWatchCursor :exec
 -- A success ends a failing episode and its alarm. A gap's alarm stays until it is confirmed told.
@@ -175,10 +188,6 @@ WHERE aura.pim_watch_verdicts.fingerprint <> EXCLUDED.fingerprint;
 UPDATE aura.pim_watch_verdicts
 SET alert_run_id = $5, alerted_at = $6, notified = false
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4;
-
--- name: CountPIMWatchAlertsSince :one
-SELECT count(*) FROM aura.pim_watch_verdicts
-WHERE identity_id = $1 AND account_id = $2 AND alerted_at >= $3;
 
 -- name: ListPIMWatchOwedAlerts :many
 SELECT * FROM aura.pim_watch_verdicts

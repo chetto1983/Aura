@@ -134,22 +134,23 @@ func (q *Queries) CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatc
 	return i, err
 }
 
-const countPIMWatchAlertsSince = `-- name: CountPIMWatchAlertsSince :one
-SELECT count(*) FROM aura.pim_watch_verdicts
-WHERE identity_id = $1 AND account_id = $2 AND alerted_at >= $3
+const countPIMWatchAlertsOfDay = `-- name: CountPIMWatchAlertsOfDay :one
+SELECT COALESCE(sum(alerts_told), 0)::integer FROM aura.pim_watch_cursors
+WHERE identity_id = $1 AND account_id = $2 AND alerts_day_start = $3
 `
 
-type CountPIMWatchAlertsSinceParams struct {
+type CountPIMWatchAlertsOfDayParams struct {
 	IdentityID pgtype.UUID        `json:"identity_id"`
 	AccountID  string             `json:"account_id"`
-	AlertedAt  pgtype.Timestamptz `json:"alerted_at"`
+	DayStart   pgtype.Timestamptz `json:"day_start"`
 }
 
-func (q *Queries) CountPIMWatchAlertsSince(ctx context.Context, arg CountPIMWatchAlertsSinceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPIMWatchAlertsSince, arg.IdentityID, arg.AccountID, arg.AlertedAt)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+// What the account pushed since this local midnight, mail and calendar together.
+func (q *Queries) CountPIMWatchAlertsOfDay(ctx context.Context, arg CountPIMWatchAlertsOfDayParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countPIMWatchAlertsOfDay, arg.IdentityID, arg.AccountID, arg.DayStart)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const deleteExpiredPIMWatchVerdicts = `-- name: DeleteExpiredPIMWatchVerdicts :execrows
@@ -286,7 +287,7 @@ func (q *Queries) EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.
 }
 
 const getPIMWatchCursor = `-- name: GetPIMWatchCursor :one
-SELECT identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at FROM aura.pim_watch_cursors
+SELECT identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at, alerts_day_start, alerts_told FROM aura.pim_watch_cursors
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3
 `
 
@@ -311,6 +312,8 @@ func (q *Queries) GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorPa
 		&i.AlarmSince,
 		&i.AlarmRunID,
 		&i.AdvancedAt,
+		&i.AlertsDayStart,
+		&i.AlertsTold,
 	)
 	return i, err
 }
@@ -571,7 +574,7 @@ func (q *Queries) ListPIMWatchCorrectionsBefore(ctx context.Context, arg ListPIM
 }
 
 const listPIMWatchCursors = `-- name: ListPIMWatchCursors :many
-SELECT identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at FROM aura.pim_watch_cursors
+SELECT identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at, alerts_day_start, alerts_told FROM aura.pim_watch_cursors
 WHERE identity_id = $1
 ORDER BY account_id, resource
 `
@@ -597,6 +600,8 @@ func (q *Queries) ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUI
 			&i.AlarmSince,
 			&i.AlarmRunID,
 			&i.AdvancedAt,
+			&i.AlertsDayStart,
+			&i.AlertsTold,
 		); err != nil {
 			return nil, err
 		}
@@ -842,7 +847,7 @@ const markPIMWatchFailing = `-- name: MarkPIMWatchFailing :one
 UPDATE aura.pim_watch_cursors
 SET status = 'failing', last_error = $4, failing_since = COALESCE(failing_since, $5)
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3
-RETURNING identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at
+RETURNING identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at, alerts_day_start, alerts_told
 `
 
 type MarkPIMWatchFailingParams struct {
@@ -874,6 +879,8 @@ func (q *Queries) MarkPIMWatchFailing(ctx context.Context, arg MarkPIMWatchFaili
 		&i.AlarmSince,
 		&i.AlarmRunID,
 		&i.AdvancedAt,
+		&i.AlertsDayStart,
+		&i.AlertsTold,
 	)
 	return i, err
 }
@@ -1079,7 +1086,8 @@ INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, s
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (identity_id, account_id, resource) DO UPDATE
 SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = NULL, failing_since = NULL,
-    alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now()
+    alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now(),
+    alerts_day_start = NULL, alerts_told = 0
 `
 
 type StartPIMWatchCursorParams struct {
@@ -1099,6 +1107,33 @@ func (q *Queries) StartPIMWatchCursor(ctx context.Context, arg StartPIMWatchCurs
 		arg.Resource,
 		arg.Cursor,
 		arg.Status,
+	)
+	return err
+}
+
+const tallyPIMWatchAlerts = `-- name: TallyPIMWatchAlerts :exec
+UPDATE aura.pim_watch_cursors
+SET alerts_told = CASE WHEN alerts_day_start = $4 THEN alerts_told + $5 ELSE $5 END,
+    alerts_day_start = $4
+WHERE identity_id = $1 AND account_id = $2 AND resource = $3
+`
+
+type TallyPIMWatchAlertsParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	AccountID  string             `json:"account_id"`
+	Resource   string             `json:"resource"`
+	DayStart   pgtype.Timestamptz `json:"day_start"`
+	Told       int32              `json:"told"`
+}
+
+// A row still on an earlier day starts over at what this page told.
+func (q *Queries) TallyPIMWatchAlerts(ctx context.Context, arg TallyPIMWatchAlertsParams) error {
+	_, err := q.db.Exec(ctx, tallyPIMWatchAlerts,
+		arg.IdentityID,
+		arg.AccountID,
+		arg.Resource,
+		arg.DayStart,
+		arg.Told,
 	)
 	return err
 }

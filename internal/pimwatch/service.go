@@ -281,10 +281,10 @@ func (s *Service) Status(ctx context.Context, identityID string) (Status, error)
 	if err != nil {
 		return Status{}, err
 	}
-	since := dayStart(s.now(), s.Locale.Location(ctx, identityID))
+	today := dayStart(s.now(), s.Locale.Location(ctx, identityID))
 	out := Status{Configured: s.Configured(), Settings: settings, Accounts: make([]AccountStatus, 0, len(watches))}
 	for _, watch := range watches {
-		alerts, err := s.Store.AlertsSince(ctx, identityID, watch.AccountID, since)
+		alerts, err := s.Store.AlertsToday(ctx, identityID, watch.AccountID, today)
 		if err != nil {
 			return Status{}, err
 		}

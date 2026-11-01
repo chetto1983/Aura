@@ -49,19 +49,24 @@ CREATE TABLE aura.pim_watch_labels (
 
 -- One cursor per (identity, account, resource). `cursor` may hold a provider URL, so nothing logs
 -- it. last_error is a fixed code, never the PIM's text. An alarm stays owed on its row until the
--- ledger shows the run that told it completed.
+-- ledger shows the run that told it completed. alerts_told counts what this resource pushed since
+-- alerts_day_start, the identity's local midnight. The daily cap is per account, so it sums the
+-- account's rows on today's start. It cannot count verdicts: a moved event keeps one row however
+-- many times it is told.
 CREATE TABLE aura.pim_watch_cursors (
-    identity_id   uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
-    account_id    text        NOT NULL,
-    resource      text        NOT NULL CHECK (resource IN ('mail', 'calendar')),
-    cursor        text        NOT NULL,
-    status        text        NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'failing', 'unsupported')),
-    last_error    text,
-    failing_since timestamptz,
-    alarm_kind    text        CHECK (alarm_kind IN ('gap', 'failing')),
-    alarm_since   timestamptz,
-    alarm_run_id  uuid,
-    advanced_at   timestamptz NOT NULL DEFAULT now(),
+    identity_id      uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
+    account_id       text        NOT NULL,
+    resource         text        NOT NULL CHECK (resource IN ('mail', 'calendar')),
+    cursor           text        NOT NULL,
+    status           text        NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'failing', 'unsupported')),
+    last_error       text,
+    failing_since    timestamptz,
+    alarm_kind       text        CHECK (alarm_kind IN ('gap', 'failing')),
+    alarm_since      timestamptz,
+    alarm_run_id     uuid,
+    advanced_at      timestamptz NOT NULL DEFAULT now(),
+    alerts_day_start timestamptz,
+    alerts_told      integer     NOT NULL DEFAULT 0 CHECK (alerts_told >= 0),
     PRIMARY KEY (identity_id, account_id, resource)
 );
 
@@ -88,8 +93,6 @@ CREATE TABLE aura.pim_watch_verdicts (
 );
 
 CREATE INDEX pim_watch_verdicts_decided ON aura.pim_watch_verdicts (identity_id, decided_at);
-CREATE INDEX pim_watch_verdicts_alerted ON aura.pim_watch_verdicts (identity_id, account_id, alerted_at)
-    WHERE alerted_at IS NOT NULL;
 CREATE INDEX pim_watch_verdicts_owed ON aura.pim_watch_verdicts (identity_id, account_id)
     WHERE alert_run_id IS NOT NULL AND NOT notified;
 

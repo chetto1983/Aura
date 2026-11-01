@@ -72,16 +72,17 @@ type PageResult struct {
 	Capped  int
 }
 
-// CommitPage writes a page's verdicts and its cursor in one transaction. A row that already
-// exists tells nobody: a replayed page cannot double an alert. A `now` beyond the daily cap keeps
-// its tier and is not told, so the digest still lists it.
+// CommitPage writes a page's verdicts, its cursor and what it told in one transaction. A row that
+// already exists tells nobody: a replayed page cannot double an alert. A `now` beyond the daily cap
+// keeps its tier and is not told, so the digest still lists it. The cap counts pushes, on the
+// cursor rows: a moved event is told again on the same verdict row.
 func (s *Store) CommitPage(ctx context.Context, identityID string, p PageCommit) (PageResult, error) {
 	var result PageResult
 	run := optionalUUID(p.RunID)
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		result = PageResult{}
-		alerted, err := q.CountPIMWatchAlertsSince(ctx, sqlc.CountPIMWatchAlertsSinceParams{
-			IdentityID: id, AccountID: p.AccountID, AlertedAt: timestamp(p.DayStart),
+		told, err := q.CountPIMWatchAlertsOfDay(ctx, sqlc.CountPIMWatchAlertsOfDayParams{
+			IdentityID: id, AccountID: p.AccountID, DayStart: timestamp(p.DayStart),
 		})
 		if err != nil {
 			return fmt.Errorf("count alerts: %w", err)
@@ -100,17 +101,24 @@ func (s *Store) CommitPage(ctx context.Context, identityID string, p PageCommit)
 			if draft.Decision.Tier != TierNow {
 				continue
 			}
-			if int(alerted) >= p.Cap {
+			if int(told)+len(result.Alerted) >= p.Cap {
 				result.Capped++
 				continue
 			}
-			alerted++
 			result.Alerted = append(result.Alerted, draft.ItemID)
 			if err := q.MarkPIMWatchAlert(ctx, sqlc.MarkPIMWatchAlertParams{
 				IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
 				AlertRunID: run, AlertedAt: timestamp(p.Now),
 			}); err != nil {
 				return fmt.Errorf("mark alert: %w", err)
+			}
+		}
+		if len(result.Alerted) > 0 {
+			if err := q.TallyPIMWatchAlerts(ctx, sqlc.TallyPIMWatchAlertsParams{
+				IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, DayStart: timestamp(p.DayStart),
+				Told: int32(len(result.Alerted)), //nolint:gosec // G115: bounded by the page and the cap.
+			}); err != nil {
+				return fmt.Errorf("tally alerts: %w", err)
 			}
 		}
 		return moveCursor(ctx, q, id, p, run)
@@ -204,13 +212,13 @@ func (s *Store) Verdict(ctx context.Context, identityID, accountID, resource, it
 	return out, nil
 }
 
-// AlertsSince counts the alerts of an account since an instant, the cap's own measure.
-func (s *Store) AlertsSince(ctx context.Context, identityID, accountID string, since time.Time) (int, error) {
-	var n int64
+// AlertsToday counts what an account pushed since a local midnight, the cap's own measure.
+func (s *Store) AlertsToday(ctx context.Context, identityID, accountID string, dayStart time.Time) (int, error) {
+	var n int32
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		var err error
-		n, err = q.CountPIMWatchAlertsSince(ctx, sqlc.CountPIMWatchAlertsSinceParams{
-			IdentityID: id, AccountID: accountID, AlertedAt: timestamp(since),
+		n, err = q.CountPIMWatchAlertsOfDay(ctx, sqlc.CountPIMWatchAlertsOfDayParams{
+			IdentityID: id, AccountID: accountID, DayStart: timestamp(dayStart),
 		})
 		return err
 	})
