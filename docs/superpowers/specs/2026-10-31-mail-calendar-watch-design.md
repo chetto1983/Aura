@@ -181,7 +181,9 @@ which avoids bug 2 for the watch. Read-only subscribed calendars are left out of
   `now` mark, so a noisy sender or a wrong model cannot teach the person to mute Aura.
 - **Opt-in per account,** with a switch on the account's card in the cockpit and through the deferred
   `mail_watch` tool, which also takes corrections and rules in chat. The `task` tool stays what it is: it can
-  list, pause and resume these tasks, but enabling a watch needs two tasks and a home it does not know about.
+  list and resume these tasks, but enabling a watch needs two tasks and a home it does not know about, and it
+  cannot pause or cancel one (2026-11-01): a job that read a hostile mail can call it, so `mail_watch disable`,
+  which asks the person, is the model's only way to stop a watch.
   The watch is live from the switch, because the ladder alerts narrowly and all the rest is one digest.
 - **A notification always carries sender and subject** (operator, 2026-10-31), as plain text on the route the
   person connected. No switch hides them, because the person and the agent must both know which mail is meant.

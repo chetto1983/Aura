@@ -84,6 +84,67 @@ func TestTaskToolPauseIsOwnerScoped(t *testing.T) {
 	}
 }
 
+// A job that read a hostile mail calls the task tool at Normal tier, so it must not be able to
+// silence the watch (spec §4). mail_watch disable is the model's one way, because it asks first.
+func TestTheTaskToolCannotStopTheWatch(t *testing.T) {
+	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
+		msg := "task pause integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
+		if os.Getenv("CI") != "" {
+			t.Fatal(msg)
+		}
+		t.Skip(msg)
+	}
+	ctx := context.Background()
+	cfg := config.LoadDB()
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	adapter := &cronTaskStore{pool: pool, store: cron.New(pool)}
+	owner := uuid.Must(uuid.NewV7()).String()
+	ownerCtx := identityctx.WithIdentityID(ctx, owner)
+
+	for _, kind := range []string{"pim_watch", "pim_digest"} {
+		id := insertOwnedTask(t, pool, owner, kind)
+		for name, stop := range map[string]func() error{
+			"cancel": func() error { return adapter.CancelScheduledTask(ownerCtx, id) },
+			"pause":  func() error { return adapter.PauseScheduledTask(ownerCtx, id) },
+		} {
+			err := stop()
+			if err == nil || !strings.Contains(err.Error(), "mail_watch") || !strings.Contains(err.Error(), "disable") {
+				t.Fatalf("%s of %s = %v, want it pointed at mail_watch disable", name, kind, err)
+			}
+		}
+		if status := schedulerTaskStatus(t, pool, id); status != "active" {
+			t.Fatalf("%s is %s after the refusals", kind, status)
+		}
+
+		// The approval path is a person's decline, and it reaches only a task awaiting approval.
+		conversation := uuid.Must(uuid.NewV7()).String()
+		if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET origin_conversation_id = $2 WHERE id = $1`, id, conversation); err != nil {
+			t.Fatalf("set origin: %v", err)
+		}
+		if err := adapter.CancelScheduledTaskInConversation(ownerCtx, id, conversation); err == nil {
+			t.Fatalf("a decline cancelled a running %s", kind)
+		}
+		if status := schedulerTaskStatus(t, pool, id); status != "active" {
+			t.Fatalf("%s is %s after a decline", kind, status)
+		}
+
+		// Starting again is not stopping: the tool still resumes what failures paused.
+		if err := adapter.store.PauseTask(ctx, id); err != nil {
+			t.Fatalf("pause %s: %v", kind, err)
+		}
+		if _, err := adapter.ResumeScheduledTask(ownerCtx, id); err != nil {
+			t.Fatalf("resume %s: %v", kind, err)
+		}
+		if err := adapter.store.CancelTask(ctx, id); err != nil {
+			t.Fatalf("the cockpit's own cancel of %s: %v", kind, err)
+		}
+	}
+}
+
 func insertOwnedTask(t *testing.T, pool *pgxpool.Pool, owner, kind string) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()

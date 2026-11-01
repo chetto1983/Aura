@@ -215,8 +215,8 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 }
 
 // CancelScheduledTask soft-cancels only inside the identity carried by the tool call, and
-// only a kind the operator may cancel: never a system sweep or the database backup, which
-// enrolment can hand to the operator's identity.
+// only a kind the agent may stop: never a system sweep or the database backup, which
+// enrolment can hand to the operator's identity, and never the mail watch.
 func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) error {
 	identityID, err := taskIdentity(ctx)
 	if err != nil {
@@ -236,6 +236,9 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 	}
 	if !cron.IsCancellableKind(cron.TaskKind(kind)) {
 		return fmt.Errorf("task %s is a %s task, which cannot be cancelled", id, kind)
+	}
+	if !cron.IsAgentStoppableKind(cron.TaskKind(kind)) {
+		return watchStopRefused(id)
 	}
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks

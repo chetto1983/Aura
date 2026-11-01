@@ -12,8 +12,10 @@ import (
 )
 
 // MailWatchTool is the agent's hand on the mail and calendar watch (spec 2026-10-31 §5.2): the
-// switch, the corrections and the rules, in the shape of `task`. The `task` tool can list, pause
-// and resume these tasks, but enabling a watch needs two tasks and a home it does not know about.
+// switch, the corrections and the rules, in the shape of `task`. The `task` tool can list and
+// resume these tasks, but enabling a watch needs two tasks and a home it does not know about, and
+// stopping one needs the person: disable here is Destructive, and that tool's cancel and pause
+// refuse the watch (cron.IsAgentStoppableKind).
 //
 // It reads no mail. What a person reads in a notification reaches the model through the
 // conversation record, framed as untrusted, and this tool takes the account and the id from there.

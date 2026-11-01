@@ -39,12 +39,20 @@ func IsUserManageableKind(k TaskKind) bool {
 	return IsCancellableKind(k) || k == KindBackupPostgres || k == KindBackupObjects
 }
 
-// IsCancellableKind reports whether an operator or the agent may cancel a task of this
-// kind: an operator-managed one other than a backup. The operator decided on 2026-10-05 that
-// the database backup must never be stopped from the cockpit or the agent, and the object
-// backup is its sibling.
+// IsCancellableKind reports whether the operator may cancel a task of this kind: an
+// operator-managed one other than a backup. The operator decided on 2026-10-05 that the
+// database backup must never be stopped from the cockpit or the agent, and the object backup
+// is its sibling. The agent answers to IsAgentStoppableKind.
 func IsCancellableKind(k TaskKind) bool {
 	return slices.Contains(personKinds, k)
+}
+
+// IsAgentStoppableKind reports whether the agent's task tool may cancel or pause a task of this
+// kind: a cancellable one other than the watch. A job that read a hostile mail can call that tool
+// at Normal tier, and a silenced watch is the failure the spec names first (§4), so the model's
+// one way to stop a watch is mail_watch disable, which asks the person.
+func IsAgentStoppableKind(k TaskKind) bool {
+	return IsCancellableKind(k) && k != KindPIMWatch && k != KindPIMDigest
 }
 
 // ListLiveTasksOfKind returns one identity's active and paused tasks of a kind, the ones a

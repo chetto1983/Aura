@@ -36,6 +36,18 @@ func TestManageableAndCancellableKinds(t *testing.T) {
 	}
 }
 
+func TestTheAgentCanStopWhatTheOperatorCanExceptTheWatch(t *testing.T) {
+	t.Parallel()
+	for kind, want := range map[TaskKind]bool{
+		KindReminder: true, KindAgentJob: true, KindPIMWatch: false, KindPIMDigest: false,
+		KindBackupPostgres: false, KindBackupObjects: false, KindIdentityPurge: false,
+	} {
+		if got := IsAgentStoppableKind(kind); got != want {
+			t.Errorf("IsAgentStoppableKind(%s) = %v, want %v", kind, got, want)
+		}
+	}
+}
+
 func TestABackupIsManageableAndNotCancellable(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []TaskKind{KindBackupPostgres, KindBackupObjects} {

@@ -144,9 +144,9 @@ Each of these would bite a real person, and each has a test that names it.
 - **One live task per account and one digest per identity is a database fact,** two partial unique indexes. A lost race
   to a second click reads as done.
 - **The route is fixed at enable.** A person who links Telegram later turns the watch off and on.
-- **A watch cancelled through the `task` tool or the cockpit's scheduler board** leaves the digest running, because
-  only `Disable` and `RemoveAccount` stop it. The digest then says nothing once its window empties. Enable starts the
-  cursor again.
+- **A watch cancelled on the cockpit's scheduler board** leaves the digest running, because only `Disable` and
+  `RemoveAccount` stop it. The digest then says nothing once its window empties. Enable starts the cursor again. The
+  `task` tool cannot do this: `cron.IsAgentStoppableKind` keeps its cancel and pause off both kinds.
 - **A scheduler edit keeps a watch's payload:** the board omits it for these kinds, and an omitted payload stays. A hand
   written `PATCH` that drops `account_id` fails the run with a clear error, which pauses the task and says so.
 - **A paused digest cannot be rescheduled** (`UpdateTask` refuses it), so it takes a new hour from the next enable.
