@@ -239,15 +239,17 @@ func (e EventFacts) fingerprintOf() string {
 // told is false when the fingerprint did not move, which is a new description or someone else's
 // reply, and the change says nothing.
 //
-// A `deleted` change with no row says nothing either: a delete names little more than an id, and
-// the person may well have made it. The person's own events are `later`: they made the change.
+// A `deleted` change with no row and no start says nothing either: it names only an id, and the
+// person may well have made it. Google writes every cancellation as `deleted`, with the start when
+// it has one, so that delete is read as the cancellation it is: a missed meeting costs more than
+// one alert for the person's own delete. The person's own events are `later`: they made the change.
 // An `updated` event with no row was there before the watch began, so nothing shows that it
 // moved, and doubt goes to the digest. A cancellation is no such doubt: the status is the fact.
 func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Seen && e.Prior == e.fingerprintOf() {
 		return Decision{}, false
 	}
-	if e.Type == ChangeDeleted && !e.Seen {
+	if e.Type == ChangeDeleted && !e.Seen && e.Start.IsZero() {
 		return Decision{}, false
 	}
 	decision = Decision{By: ByCalendar}

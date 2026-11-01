@@ -209,7 +209,8 @@ func TestDecideEvent(t *testing.T) {
 		{"the person's own cancellation", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, OrganizerIsSelf: true, Fingerprint: "a"}, TierLater, true},
 		{"a cancellation told once says nothing again", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, Fingerprint: "a", Prior: "a", Seen: true}, "", false},
 		{"a delete nobody can describe", EventFacts{Type: ChangeDeleted}, "", false},
-		{"Google's delete with a time and no row", EventFacts{Type: ChangeDeleted, Start: soon, Cancelled: true, Fingerprint: "a"}, "", false},
+		{"Google's delete with a time and no row", EventFacts{Type: ChangeDeleted, Start: soon, Cancelled: true, Fingerprint: "a"}, TierNow, true},
+		{"Google's delete far off goes to the digest", EventFacts{Type: ChangeDeleted, Start: far, Cancelled: true, Fingerprint: "a"}, TierToday, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

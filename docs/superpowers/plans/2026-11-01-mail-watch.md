@@ -98,11 +98,11 @@ Each of these would bite a real person, and each has a test that names it.
 - **Calendar.** Rules do not apply to events. An event the person organized is `later`, because they made the change.
   An `updated` event with no row is `today`: nothing shows it moved. A cancelled one is the exception, because the
   status is the fact: it is `now` inside 24 hours, as spec §5.3 says, and `organizerIsSelf` still wins. A `deleted`
-  change with no row says nothing and leaves no row: the person may have deleted it themselves. **On Google that also
-  covers an organizer's cancellation the watch never saw,** because the fork writes a cancelled Google event as
-  `deleted`, with its `event` when it has a start, and Graph as `updated`. So the same cancelled meeting with no row is
-  `now` on Microsoft and silent on Google. With a row both are told. `deleted` cannot tell who deleted it, so G3 is what
-  can say whether to read `event.status` there too.
+  change with no row and no start says nothing and leaves no row: it names only an id, and the person may have deleted
+  it themselves. **A `deleted` change with a start is read as a cancellation,** because the fork writes a cancelled
+  Google event as `deleted`, with its `event` when it has a start, and Graph as `updated`. So the same cancelled meeting
+  is `now` on both. The price is one alert when a person deletes their own event inside 24 hours on Google, since
+  `deleted` cannot say who did it: a missed meeting costs more, and the daily cap bounds the noise. G3 measures it.
 - **`from` is the address and `fromName` the name beside it,** on `changes` and on mail `items`. Rules, corrections and
   `SenderKey` read the address. A notice, a digest line and the record show `Name <address>`, inside the same frame,
   and the name is bounded at 60 runes so a long one cannot push the address out. An event's `from` is the organizer's
