@@ -218,6 +218,22 @@ describe('a resource', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('tells the person to reconnect an account that refuses a permission', async () => {
+    const resources = [
+      {
+        resource: 'calendar',
+        status: 'unsupported',
+        last_error: 'permission_denied',
+        failing_since: null,
+        advanced_at: null,
+      },
+    ] as const;
+    statusWith(account({ resources }));
+    renderWatch(<AccountWatch account={PIM} />);
+    expect(await screen.findByText(/Reconnect it and allow access/)).toBeTruthy();
+    expect(screen.queryByText(/not offered/)).toBeNull();
+  });
+
   it('describes the switch with its state', async () => {
     statusWith(account());
     renderWatch(<AccountWatch account={PIM} />);

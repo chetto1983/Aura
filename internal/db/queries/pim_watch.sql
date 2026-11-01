@@ -94,12 +94,12 @@ WHERE identity_id = $1
 ORDER BY account_id, resource;
 
 -- name: StartPIMWatchCursor :exec
--- The switch: a cursor from now, or a resource the provider lacks. Nothing from a past watch of
--- this account survives it.
-INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, status)
-VALUES ($1, $2, $3, $4, $5)
+-- The switch: a cursor from now, or a resource the provider lacks or the account refuses (its
+-- last_error then says which). Nothing from a past watch of this account survives it.
+INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, status, last_error)
+VALUES ($1, $2, $3, $4, $5, sqlc.narg(last_error))
 ON CONFLICT (identity_id, account_id, resource) DO UPDATE
-SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = NULL, failing_since = NULL,
+SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = EXCLUDED.last_error, failing_since = NULL,
     alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now(),
     alerts_day_start = NULL, alerts_told = 0;
 

@@ -19,6 +19,9 @@ const (
 	CursorUnsupported = "unsupported"
 )
 
+// CodePermissionDenied is the failure code of an account that refuses a resource.
+const CodePermissionDenied = "permission_denied"
+
 // The two alarms a cursor can owe: a gap the PIM reported, and a failing episode.
 const (
 	AlarmGap     = "gap"
@@ -84,9 +87,20 @@ func (s *Store) Cursors(ctx context.Context, identityID string) ([]Cursor, error
 // StartCursor sets a resource's cursor from the empty-cursor call, or records that the provider
 // lacks it. Nothing from a past watch of the account survives.
 func (s *Store) StartCursor(ctx context.Context, identityID, accountID, resource, value, status string) error {
+	return s.startCursor(ctx, identityID, accountID, resource, value, status, "")
+}
+
+// RefuseCursor records that the account refuses the permission for a resource. It reads like a
+// resource the provider lacks, but keeps the code so the person is told to reconnect the account.
+func (s *Store) RefuseCursor(ctx context.Context, identityID, accountID, resource string) error {
+	return s.startCursor(ctx, identityID, accountID, resource, "", CursorUnsupported, CodePermissionDenied)
+}
+
+func (s *Store) startCursor(ctx context.Context, identityID, accountID, resource, value, status, code string) error {
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		return q.StartPIMWatchCursor(ctx, sqlc.StartPIMWatchCursorParams{
 			IdentityID: id, AccountID: accountID, Resource: resource, Cursor: value, Status: status,
+			LastError: optionalText(code),
 		})
 	})
 	if err != nil {

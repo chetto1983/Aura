@@ -453,3 +453,37 @@ func TestDecisionsReadTheDayLive(t *testing.T) {
 		t.Fatalf("a failed read reported success")
 	}
 }
+
+// A refusal is not "not offered": the card tells the person to reconnect, so the cursor keeps the
+// code, and a later Enable on the running watch tries the resource again.
+func TestARefusedResourceKeepsItsReasonAndIsRetriedOnceTheAccountIsReconnected(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	r.pim.changeErr[ResourceCalendar] = denied()
+	if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	refused, err := r.store.Cursor(ctx, r.identity, "home", ResourceCalendar)
+	if err != nil || refused.Status != CursorUnsupported || refused.LastError != "permission_denied" {
+		t.Fatalf("calendar cursor = %+v, %v", refused, err)
+	}
+
+	if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("enable while still refused: %v", err)
+	}
+	if again, _ := r.store.Cursor(ctx, r.identity, "home", ResourceCalendar); again.Status != CursorUnsupported {
+		t.Fatalf("a refusal that stands was dropped: %+v", again)
+	}
+
+	delete(r.pim.changeErr, ResourceCalendar)
+	if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("enable after the grant: %v", err)
+	}
+	started, err := r.store.Cursor(ctx, r.identity, "home", ResourceCalendar)
+	if err != nil || started.Status != CursorOK || started.Value != "start-calendar" || started.LastError != "" {
+		t.Fatalf("calendar cursor after the grant = %+v, %v", started, err)
+	}
+	if r.tasks.created != 2 {
+		t.Fatalf("%d tasks: a retry must not create a second watch", r.tasks.created)
+	}
+}

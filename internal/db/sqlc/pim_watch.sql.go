@@ -1135,10 +1135,10 @@ func (q *Queries) SetPIMWatchLastDigest(ctx context.Context, arg SetPIMWatchLast
 }
 
 const startPIMWatchCursor = `-- name: StartPIMWatchCursor :exec
-INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, status)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO aura.pim_watch_cursors (identity_id, account_id, resource, cursor, status, last_error)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (identity_id, account_id, resource) DO UPDATE
-SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = NULL, failing_since = NULL,
+SET cursor = EXCLUDED.cursor, status = EXCLUDED.status, last_error = EXCLUDED.last_error, failing_since = NULL,
     alarm_kind = NULL, alarm_since = NULL, alarm_run_id = NULL, advanced_at = now(),
     alerts_day_start = NULL, alerts_told = 0
 `
@@ -1149,10 +1149,11 @@ type StartPIMWatchCursorParams struct {
 	Resource   string      `json:"resource"`
 	Cursor     string      `json:"cursor"`
 	Status     string      `json:"status"`
+	LastError  pgtype.Text `json:"last_error"`
 }
 
-// The switch: a cursor from now, or a resource the provider lacks. Nothing from a past watch of
-// this account survives it.
+// The switch: a cursor from now, or a resource the provider lacks or the account refuses (its
+// last_error then says which). Nothing from a past watch of this account survives it.
 func (q *Queries) StartPIMWatchCursor(ctx context.Context, arg StartPIMWatchCursorParams) error {
 	_, err := q.db.Exec(ctx, startPIMWatchCursor,
 		arg.IdentityID,
@@ -1160,6 +1161,7 @@ func (q *Queries) StartPIMWatchCursor(ctx context.Context, arg StartPIMWatchCurs
 		arg.Resource,
 		arg.Cursor,
 		arg.Status,
+		arg.LastError,
 	)
 	return err
 }

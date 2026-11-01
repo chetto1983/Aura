@@ -113,6 +113,8 @@ function WatchState({ watch, cap, resuming, onResume }: WatchStateProps) {
   const { t } = useTranslation();
   const failing = watch.resources.filter((entry) => entry.status === 'failing');
   const unsupported = watch.resources.filter((entry) => entry.status === 'unsupported');
+  const refused = unsupported.filter((entry) => entry.last_error === 'permission_denied');
+  const notOffered = unsupported.filter((entry) => !refused.includes(entry));
   return (
     <>
       {watch.paused ? (
@@ -136,10 +138,10 @@ function WatchState({ watch, cap, resuming, onResume }: WatchStateProps) {
       ) : (
         <RunningLine watch={watch} cap={cap} />
       )}
-      {failing.map((entry) => (
+      {[...failing, ...refused].map((entry) => (
         <FailingLine key={entry.resource} entry={entry} />
       ))}
-      {unsupported.map((entry) => (
+      {notOffered.map((entry) => (
         <p key={entry.resource} className="text-[13px] text-text-muted">
           {t('governance.mailWatch.state.unsupported', {
             resource: t(`governance.mailWatch.resource.${entry.resource}`),

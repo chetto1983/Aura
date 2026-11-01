@@ -815,8 +815,8 @@ type Querier interface {
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	// Preserve control intent committed while the worker held its original snapshot.
 	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)
-	// The switch: a cursor from now, or a resource the provider lacks. Nothing from a past watch of
-	// this account survives it.
+	// The switch: a cursor from now, or a resource the provider lacks or the account refuses (its
+	// last_error then says which). Nothing from a past watch of this account survives it.
 	StartPIMWatchCursor(ctx context.Context, arg StartPIMWatchCursorParams) error
 	// Per-identity period spend (CRED-06): sums aura.cache_metrics.cost_usd, joined to
 	// aura.conversations for the identity scope none of the three queries above needs.

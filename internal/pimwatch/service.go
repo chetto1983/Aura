@@ -124,13 +124,16 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 				return err
 			}
 		}
+		if err := s.retryRefused(ctx, identityID, accountID); err != nil {
+			return err
+		}
 		return s.ensureDigest(ctx, identityID, settings)
 	}
 	lang := s.Locale.Language(ctx, identityID)
 	if err := s.Store.SeedLabels(ctx, identityID, DefaultLabels(lang)); err != nil {
 		return err
 	}
-	if err := s.startCursors(ctx, identityID, accountID); err != nil {
+	if err := s.startCursors(ctx, identityID, accountID, Resources); err != nil {
 		return err
 	}
 	delivery, err := s.Routes.DeliveryFor(ctx, identityID)
@@ -150,13 +153,13 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 // startCursors starts what the account lets the watch read. A resource that refuses the permission
 // is left out like one the provider lacks, so an account granted for mail alone is still watched,
 // and the refusal stands when nothing else started. Any other failure stops the enable.
-func (s *Service) startCursors(ctx context.Context, identityID, accountID string) error {
+func (s *Service) startCursors(ctx context.Context, identityID, accountID string, resources []string) error {
 	var refused error
-	for _, resource := range Resources {
+	for _, resource := range resources {
 		err := StartResource(ctx, s.PIM, s.Store, identityID, accountID, resource)
-		if _, code := failureClass(err); code == "permission_denied" {
+		if _, code := failureClass(err); code == CodePermissionDenied {
 			refused = fmt.Errorf("start the %s cursor: %w", resource, err)
-			err = s.Store.StartCursor(ctx, identityID, accountID, resource, "", CursorUnsupported)
+			err = s.Store.RefuseCursor(ctx, identityID, accountID, resource)
 		}
 		if err != nil {
 			return fmt.Errorf("start the %s cursor: %w", resource, err)
@@ -412,4 +415,23 @@ func (s *Service) SaveSettings(ctx context.Context, identityID string, digestHou
 		return Settings{}, err
 	}
 	return settings, s.Tasks.RescheduleDigest(ctx, digests[0].ID, spec)
+}
+
+// retryRefused asks again for the resources of a running watch that the account refused, so
+// granting the permission needs no off and on. A refusal that stands stays as it is.
+func (s *Service) retryRefused(ctx context.Context, identityID, accountID string) error {
+	cursors, err := s.Store.Cursors(ctx, identityID)
+	if err != nil {
+		return err
+	}
+	var refused []string
+	for _, c := range cursors {
+		if c.AccountID == accountID && c.Status == CursorUnsupported && c.LastError == CodePermissionDenied {
+			refused = append(refused, c.Resource)
+		}
+	}
+	if len(refused) == 0 {
+		return nil
+	}
+	return s.startCursors(ctx, identityID, accountID, refused)
 }
