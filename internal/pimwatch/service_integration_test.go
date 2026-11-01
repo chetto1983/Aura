@@ -323,6 +323,32 @@ func TestDisablingTheLastWatchTakesTheDigestAndKeepsTheVerdicts(t *testing.T) {
 	}
 }
 
+func TestLinesTheLastWatchLeftWaitForTheNextDigest(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	r.clock.advance(time.Minute)
+	r.commit("home", r.draft("h1", TierToday, ""))
+	if err := r.service.Disable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if len(r.tasks.digests) != 0 {
+		t.Fatalf("%d digests with no watch left", len(r.tasks.digests))
+	}
+
+	r.clock.advance(time.Hour)
+	if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+		t.Fatalf("enable again: %v", err)
+	}
+	out, err := r.digester(LangEN).Run(ctx, r.identity)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	mustContain(t, out.Notice, "h1@acme.it")
+}
+
 func TestDisablingWorksWithoutASidecar(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

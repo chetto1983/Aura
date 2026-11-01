@@ -215,8 +215,10 @@ func (s *Service) digestSpec(ctx context.Context, identityID string, settings Se
 }
 
 // Disable turns an account's watch off and forgets where it stood, so a later enable starts from
-// then. Its verdicts stay until they expire, because the day's digest still lists them. The digest
-// goes with the last watch.
+// then. Its verdicts stay until they expire, and while another account is watched the day's digest
+// still lists them. The digest goes with the last watch, so nothing sends what it had not sent:
+// those lines wait for the first digest after a later enable, whose window opens at the last one
+// sent, and are lost if they expire first.
 func (s *Service) Disable(ctx context.Context, identityID, accountID string) error {
 	if err := s.stopWatch(ctx, identityID, accountID); err != nil {
 		return err
