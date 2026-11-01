@@ -415,7 +415,7 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 			facts.OrganizerIsSelf = priors[id].OrganizerIsSelf
 		}
 		prior, seen := priors[id]
-		facts.Prior, facts.Seen = prior.Fingerprint, seen
+		facts.Prior, facts.PriorWord, facts.Seen = prior.Fingerprint, prior.Word, seen
 		facts.KeptStart = prior.Start.In(t.loc)
 		if change.Type == ChangeDeleted && start.IsZero() {
 			start = prior.Start

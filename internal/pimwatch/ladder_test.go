@@ -234,6 +234,8 @@ func TestDecideEvent(t *testing.T) {
 		{"a new description says nothing", EventFacts{Type: ChangeUpdated, Start: soon, Fingerprint: "a", Prior: "a", Seen: true}, "", false},
 		{"a cancelled event within 24 hours", EventFacts{Type: ChangeDeleted, Start: soon, Prior: "a", Seen: true}, TierNow, true},
 		{"a deleted event with no time", EventFacts{Type: ChangeDeleted, Prior: "a", Seen: true}, TierToday, true},
+		{"a delete of a cancellation already told says nothing", EventFacts{Type: ChangeDeleted, Start: soon, Prior: "a", PriorWord: WordCancelled, Seen: true}, "", false},
+		{"a delete of a moved event is still a cancellation", EventFacts{Type: ChangeDeleted, Start: soon, Prior: "a", PriorWord: WordMoved, Seen: true}, TierNow, true},
 		{"the person's own known meeting deleted", EventFacts{Type: ChangeDeleted, Start: soon, Prior: "a", OrganizerIsSelf: true, Seen: true}, TierLater, true},
 		{"a repeated delete says nothing", EventFacts{Type: ChangeDeleted, Prior: deletedFingerprint, Seen: true}, "", false},
 		{"an event already over", EventFacts{Type: ChangeAdded, Start: now.Add(-time.Hour), Fingerprint: "a"}, TierToday, true},

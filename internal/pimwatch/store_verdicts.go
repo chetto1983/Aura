@@ -178,11 +178,12 @@ func moveCursor(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageComm
 }
 
 // PriorEvent is what a row remembers of an event: the fingerprint that tells a move from a new
-// description, and the start and organizer a deleted event no longer names.
+// description, and the start, organizer and word a deleted event no longer names.
 type PriorEvent struct {
 	Fingerprint     string
 	Start           EventTime
 	OrganizerIsSelf bool
+	Word            ChangeWord
 }
 
 // PriorEvents reads what the rows of these items remember. An item with no row has no key.
@@ -198,7 +199,7 @@ func (s *Store) PriorEvents(ctx context.Context, identityID, accountID, resource
 		for _, r := range rows {
 			out[r.ItemID] = PriorEvent{
 				Fingerprint: r.Fingerprint, Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay},
-				OrganizerIsSelf: r.EventSelf,
+				OrganizerIsSelf: r.EventSelf, Word: ChangeWord(r.EventChange.String),
 			}
 		}
 		return nil

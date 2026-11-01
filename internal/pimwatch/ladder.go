@@ -233,7 +233,10 @@ type EventFacts struct {
 	OrganizerIsSelf bool
 	Fingerprint     string
 	Prior           string
-	Seen            bool
+	// PriorWord is the word the row kept: a delete of a cancellation already told says nothing, the
+	// organizer having cancelled and the person then removing it from the calendar.
+	PriorWord ChangeWord
+	Seen      bool
 }
 
 // deletedFingerprint marks an event the PIM reported deleted, which carries no fingerprint of its
@@ -274,14 +277,18 @@ func (e EventFacts) word() ChangeWord {
 // is read as the cancellation it is: a missed meeting costs more than one alert for a delete the
 // person made of a meeting they did not organize. The person's own events are `later`: they made
 // the change, and the row remembers who organized the event, so a bare delete of one stays `later`
-// too. An `updated` event with no row was there before the watch began, so nothing shows that it
-// moved, and doubt goes to the digest. A cancellation is no such doubt: the status is the fact.
+// too. A delete of a row already told as cancelled says nothing and leaves the row as it is. An
+// `updated` event with no row was there before the watch began, so nothing shows that it moved,
+// and doubt goes to the digest. A cancellation is no such doubt: the status is the fact.
 //
 // An event with a row is `now` when its new start or its kept start is within 24 hours: a
 // meeting moved away from tomorrow is one the person may still turn up to. With no row no old time
 // is known, so only the new start counts. The person's own events stay `later` either way.
 func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Seen && e.Prior == e.fingerprintOf() {
+		return Decision{}, false
+	}
+	if e.Type == ChangeDeleted && e.PriorWord == WordCancelled {
 		return Decision{}, false
 	}
 	if e.Type == ChangeDeleted && !e.Seen && e.Start.IsZero() {

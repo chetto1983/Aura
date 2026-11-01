@@ -215,3 +215,24 @@ func TestThePersonsOwnMeetingDeletedInsideADayAlertsNobody(t *testing.T) {
 		t.Fatalf("verdict = %+v", got)
 	}
 }
+
+// The organizer cancels, the person then removes it from the calendar: one alert, not two.
+func TestARemovalAfterAToldCancellationSaysNothingAndLeavesTheRow(t *testing.T) {
+	r := newWatchRig(t)
+	soon := r.clock.at.Add(3 * time.Hour)
+	r.calendarPage("start-calendar", "c1", addedEvent("ev1", EventTime{Time: soon}))
+	r.tick()
+	cancelled := eventChange("ev1", "f2", soon)
+	cancelled.Event.Status = EventCancelled
+	r.calendarPage("c1", "c2", cancelled)
+	mustContain(t, r.tick().Notice, "Cancelled")
+	before := r.verdict("ev1")
+
+	r.calendarPage("c2", "c3", deletedEvent("ev1"))
+	if out := r.tick(); out.Notice != "" {
+		t.Fatalf("the removal pushed again: %q", out.Notice)
+	}
+	if after := r.verdict("ev1"); after.Fingerprint != before.Fingerprint || after.Change != WordCancelled || !after.DecidedAt.Equal(before.DecidedAt) {
+		t.Fatalf("the row moved: before %+v, after %+v", before, after)
+	}
+}

@@ -762,7 +762,7 @@ func (q *Queries) ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOw
 }
 
 const listPIMWatchPriorEvents = `-- name: ListPIMWatchPriorEvents :many
-SELECT item_id, fingerprint, event_start, event_all_day, event_self FROM aura.pim_watch_verdicts
+SELECT item_id, fingerprint, event_start, event_all_day, event_self, event_change FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY($4::text[])
 `
 
@@ -779,6 +779,7 @@ type ListPIMWatchPriorEventsRow struct {
 	EventStart  pgtype.Timestamptz `json:"event_start"`
 	EventAllDay bool               `json:"event_all_day"`
 	EventSelf   bool               `json:"event_self"`
+	EventChange pgtype.Text        `json:"event_change"`
 }
 
 func (q *Queries) ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error) {
@@ -801,6 +802,7 @@ func (q *Queries) ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchP
 			&i.EventStart,
 			&i.EventAllDay,
 			&i.EventSelf,
+			&i.EventChange,
 		); err != nil {
 			return nil, err
 		}

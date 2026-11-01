@@ -168,7 +168,7 @@ SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4;
 
 -- name: ListPIMWatchPriorEvents :many
-SELECT item_id, fingerprint, event_start, event_all_day, event_self FROM aura.pim_watch_verdicts
+SELECT item_id, fingerprint, event_start, event_all_day, event_self, event_change FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY(@item_ids::text[]);
 
 -- name: InsertPIMWatchVerdict :execrows
