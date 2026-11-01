@@ -222,9 +222,10 @@ func recordParts(lines []Line, numbered []string) (refs, quoted string) {
 }
 
 // renderAlert writes one notification for a tick: every alarm, then each alerted item with its
-// sender and subject, then how many the cap held back.
+// sender and subject, then how many the cap held back. A tick that only held something back says
+// nothing: the cap exists to stop the phone, and a count every five minutes would not.
 func renderAlert(lang Lang, loc *time.Location, accountID string, lines []Line, capped int, alarms []string) Outcome {
-	if len(lines) == 0 && capped == 0 && len(alarms) == 0 {
+	if len(lines) == 0 && len(alarms) == 0 {
 		return Outcome{}
 	}
 	p := phrasesFor(lang)
@@ -237,12 +238,12 @@ func renderAlert(lang Lang, loc *time.Location, accountID string, lines []Line, 
 		body = append(body, "- "+text)
 		numbered = append(numbered, fmt.Sprintf("%d. %s", i+1, text))
 	}
-	if len(lines) > 0 || capped > 0 {
-		head = append(head, fmt.Sprintf(p.alertHead, accountID))
-	}
 	var tail []string
-	if capped > 0 {
-		tail = append(tail, fmt.Sprintf(p.moreInDigest, capped))
+	if len(lines) > 0 {
+		head = append(head, fmt.Sprintf(p.alertHead, accountID))
+		if capped > 0 {
+			tail = append(tail, fmt.Sprintf(p.moreInDigest, capped))
+		}
 	}
 	refs, quoted := recordParts(lines, numbered)
 	notice := append(append(append([]string{}, head...), body...), tail...)

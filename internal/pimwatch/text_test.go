@@ -122,6 +122,21 @@ func TestAQuietTickSaysNothing(t *testing.T) {
 	}
 }
 
+// Once the day's cap is spent, the rest of the day's `now` wait for the digest in silence. A count
+// on each tick would be the notification the cap exists to stop.
+func TestATickThatOnlyHeldSomethingBackSaysNothing(t *testing.T) {
+	if out := renderAlert(LangEN, time.UTC, "work", nil, 3, nil); out != (Outcome{}) {
+		t.Fatalf("outcome = %+v", out)
+	}
+}
+
+func TestAnAlarmStandsAloneEvenWhenTheCapHeldMailBack(t *testing.T) {
+	out := renderAlert(LangEN, time.UTC, "work", nil, 3, []string{"gone dark"})
+	if out.Notice != "gone dark" {
+		t.Fatalf("notice = %q", out.Notice)
+	}
+}
+
 func TestANotificationCarriesSenderAndSubjectAndWhatTheCapHeldBack(t *testing.T) {
 	lines := []Line{
 		{AccountID: "work", Resource: ResourceMail, ItemID: "m1", From: "Mario <mario@acme.it>", Subject: "Linea ferma", AuthFailed: true},
