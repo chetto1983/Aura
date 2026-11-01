@@ -67,6 +67,19 @@ func connectGatedRoutes() []writeRoute {
 		{http.MethodPost, "/api/connect/pim/accounts/x/auth/start", ""},
 		{http.MethodGet, "/api/connect/pim/accounts/x/auth/status", ""},
 		{http.MethodPost, "/api/connect/pim/accounts/x/auth/cancel", ""},
+		{http.MethodGet, "/api/mail-watch", ""},
+		{http.MethodPut, "/api/mail-watch/settings", `{"digest_hour":7,"daily_alert_cap":5}`},
+		{http.MethodPost, "/api/mail-watch/accounts/x/enable", ""},
+		{http.MethodPost, "/api/mail-watch/accounts/x/disable", ""},
+		{http.MethodGet, "/api/mail-watch/accounts/x/decisions", ""},
+		{http.MethodPost, "/api/mail-watch/accounts/x/decisions/correct", `{"item_id":"m","tier":"later"}`},
+		{http.MethodGet, "/api/mail-watch/rules", ""},
+		{http.MethodPost, "/api/mail-watch/rules", `{"key":"a@b.it","tier":"later"}`},
+		{http.MethodDelete, "/api/mail-watch/rules/x", ""},
+		{http.MethodGet, "/api/mail-watch/labels", ""},
+		{http.MethodPost, "/api/mail-watch/labels", `{"name":"x"}`},
+		{http.MethodPut, "/api/mail-watch/labels/x", `{"name":"x"}`},
+		{http.MethodDelete, "/api/mail-watch/labels/x", ""},
 	}
 }
 

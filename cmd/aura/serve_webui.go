@@ -137,6 +137,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(fileManagerSubtreeRoute, aguiHandler)
 	mux.Handle(boardRoutePrefix, aguiHandler)
 	mux.Handle(boardSubtreeRoute, aguiHandler)
+	mux.Handle(mailWatchRoutePrefix, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(mailWatchSubtreeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(documentsRoutePrefix, aguiHandler)
 	mux.Handle(documentsSubtreeRoute, aguiHandler)
 	for _, app := range craftApps {

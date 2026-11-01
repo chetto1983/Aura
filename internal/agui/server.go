@@ -148,6 +148,7 @@ type Server struct {
 	policyTools policyToolLister
 	// board serves the work board (board_api.go); nil ⇒ its routes answer 503.
 	board             boardStore
+	mailWatch         mailWatchService
 	documents         documentsStore
 	documentPreviews  documentPreviewer
 	documentIngestion documentIngestionReader
@@ -459,6 +460,7 @@ func (s *Server) Mux() http.Handler {
 	s.registerMCPViewRoutes(mux)
 	s.registerFileRoutes(mux)
 	s.registerBoardRoutes(mux)
+	s.registerMailWatchRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind

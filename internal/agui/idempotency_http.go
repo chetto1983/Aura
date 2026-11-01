@@ -81,6 +81,17 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"DELETE /api/board/cards/{id}":         httpMutationMeta("board_card_delete"),
 	"PUT /api/board/views":                 httpMutationMeta("board_view_save"),
 	"DELETE /api/board/views/{id}":         httpMutationMeta("board_view_delete"),
+	// The mail and calendar watch (pim_watch_api.go). A replayed enable, correction or rule
+	// answers the stored response: a correction applied twice would teach a rule from one click.
+	"PUT /api/mail-watch/settings":                         httpMutationMeta("mail_watch_settings"),
+	"POST /api/mail-watch/accounts/{id}/enable":            httpMutationMeta("mail_watch_enable"),
+	"POST /api/mail-watch/accounts/{id}/disable":           httpMutationMeta("mail_watch_disable"),
+	"POST /api/mail-watch/accounts/{id}/decisions/correct": httpMutationMeta("mail_watch_correct"),
+	"POST /api/mail-watch/rules":                           httpMutationMeta("mail_watch_rule_add"),
+	"DELETE /api/mail-watch/rules/{id}":                    httpMutationMeta("mail_watch_rule_remove"),
+	"POST /api/mail-watch/labels":                          httpMutationMeta("mail_watch_label_add"),
+	"PUT /api/mail-watch/labels/{id}":                      httpMutationMeta("mail_watch_label_update"),
+	"DELETE /api/mail-watch/labels/{id}":                   httpMutationMeta("mail_watch_label_remove"),
 	// A replayed restart answers its stored 202 instead of stopping the daemon again.
 	"POST /api/admin/restart": httpMutationMeta("daemon_restart"),
 	// A replayed decision answers its stored 202 instead of writing a second request with

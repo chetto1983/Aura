@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -135,10 +136,37 @@ func (s *Server) handlePIMCreateAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 // handlePIMDeleteAccount serves DELETE /api/connect/pim/accounts/{id}: forward the sidecar
-// DELETE /admin/accounts/{id}?logout=true (drops the linked Google session as well).
+// DELETE /admin/accounts/{id}?logout=true (drops the linked Google session as well). The watch
+// goes with the account, so a removed account leaves no task to fire and no verdict to keep.
 func (s *Server) handlePIMDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.forwardPIMJSON(w, r, http.MethodDelete, "/admin/accounts/"+id+"?logout=true", nil)
+	answer := &statusCapture{ResponseWriter: w}
+	s.forwardPIMJSON(answer, r, http.MethodDelete, "/admin/accounts/"+id+"?logout=true", nil)
+	if s.mailWatch == nil || !accountLeft(answer.status) {
+		return
+	}
+	// The account is already gone, so a client that hung up must not leave its watch behind. A
+	// failure here leaves a task that fails, pauses and says why.
+	ctx := context.WithoutCancel(r.Context())
+	if err := s.mailWatch.RemoveAccount(ctx, scopedIdentityID(ctx), id); err != nil {
+		slog.Warn("agui: the removed account's watch stayed", "err", sanitizeErr(err))
+	}
+}
+
+// accountLeft reads the sidecar's answer to a delete: a 404 means it was already gone.
+func accountLeft(status int) bool {
+	return status == http.StatusNotFound || (status >= http.StatusOK && status < http.StatusMultipleChoices)
+}
+
+// statusCapture remembers the status a handler answered.
+type statusCapture struct {
+	http.ResponseWriter
+	status int
+}
+
+func (c *statusCapture) WriteHeader(status int) {
+	c.status = status
+	c.ResponseWriter.WriteHeader(status)
 }
 
 // handlePIMGoogleStart serves GET /api/connect/pim/accounts/{id}/google/start: forward the sidecar

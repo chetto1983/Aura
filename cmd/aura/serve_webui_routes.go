@@ -380,6 +380,12 @@ const fileManagerSubtreeRoute = "/api/filemanager/"
 const boardRoutePrefix = "/api/board"
 const boardSubtreeRoute = "/api/board/"
 
+// The mail and calendar watch (internal/agui/pim_watch_api.go) sits on an account's card, so it
+// takes what the Connect routes around it take, governance.write. One subtree mount gates every
+// route the handler has, present and future, and an unmounted route would be an ungated one.
+const mailWatchRoutePrefix = "/api/mail-watch"
+const mailWatchSubtreeRoute = "/api/mail-watch/"
+
 // The Documenti view (internal/agui/documents_api.go) too: the library is the principal's own.
 const documentsRoutePrefix = "/api/documents"
 const documentsSubtreeRoute = "/api/documents/"
