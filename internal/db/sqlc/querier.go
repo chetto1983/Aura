@@ -615,12 +615,15 @@ type Querier interface {
 	MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error)
 	MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error)
 	MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDraftOutcomeParams) (AuraMessageDrafts, error)
+	// A row outlives its push as a trail, but its text does not: a body can name a mail's sender and
+	// subject, and this table holds those only while the push waits.
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	// The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
 	// the increment), so the attempt bound spans an outage instead of being spent in one minute
 	// (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
+	// The failure that reaches the bound ends the row's wait, so its text goes.
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
-	// A push no retry can deliver (migration 0145): it leaves the sweep for good.
+	// A push no retry can deliver (migration 0145): it leaves the sweep for good, and its text with it.
 	MarkNotificationUndeliverable(ctx context.Context, arg MarkNotificationUndeliverableParams) error
 	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a
 	// boolean cannot, and "completed" plus "skipped" are not mutually exclusive over time --

@@ -316,13 +316,17 @@ func (s *Store) MarkNotificationDelivered(ctx context.Context, id string) error 
 
 // MarkNotificationFailed records an undelivered sweep attempt, increments the retry
 // counter and pushes the next attempt back (30 s, doubled per earlier failure). Once
-// attempts reaches the dispatcher bound, the sweep stops re-selecting the row.
+// attempts reaches the dispatcher bound, the sweep stops re-selecting the row and its
+// text is cleared.
 func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) error {
 	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("mark notification failed: %w", err)
 	}
-	if err := s.q.MarkNotificationFailed(ctx, sqlc.MarkNotificationFailedParams{ID: u, LastError: text(lastErr)}); err != nil {
+	params := sqlc.MarkNotificationFailedParams{
+		ID: u, LastError: text(lastErr), AttemptBound: positiveInt32(pendingNotificationAttemptBound(), 1),
+	}
+	if err := s.q.MarkNotificationFailed(ctx, params); err != nil {
 		return fmt.Errorf("mark notification failed %q: %w", id, err)
 	}
 	return nil

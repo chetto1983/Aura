@@ -73,10 +73,12 @@ func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendi
 
 const markNotificationDelivered = `-- name: MarkNotificationDelivered :exec
 UPDATE aura.pending_notifications
-SET status = 'delivered', updated_at = now()
+SET status = 'delivered', body = '', updated_at = now()
 WHERE id = $1
 `
 
+// A row outlives its push as a trail, but its text does not: a body can name a mail's sender and
+// subject, and this table holds those only while the push waits.
 func (q *Queries) MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markNotificationDelivered, id)
 	return err
@@ -88,26 +90,30 @@ SET status = 'failed',
     attempts = attempts + 1,
     last_error = $2,
     notify_after = now() + interval '30 seconds' * power(2, LEAST(attempts, 7)),
+    body = CASE WHEN attempts + 1 >= $3::int THEN '' ELSE body END,
     updated_at = now()
 WHERE id = $1
 `
 
 type MarkNotificationFailedParams struct {
-	ID        pgtype.UUID `json:"id"`
-	LastError pgtype.Text `json:"last_error"`
+	ID           pgtype.UUID `json:"id"`
+	LastError    pgtype.Text `json:"last_error"`
+	AttemptBound int32       `json:"attempt_bound"`
 }
 
 // The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
 // the increment), so the attempt bound spans an outage instead of being spent in one minute
 // (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
+// The failure that reaches the bound ends the row's wait, so its text goes.
 func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error {
-	_, err := q.db.Exec(ctx, markNotificationFailed, arg.ID, arg.LastError)
+	_, err := q.db.Exec(ctx, markNotificationFailed, arg.ID, arg.LastError, arg.AttemptBound)
 	return err
 }
 
 const markNotificationUndeliverable = `-- name: MarkNotificationUndeliverable :exec
 UPDATE aura.pending_notifications
 SET status = 'undeliverable',
+    body = '',
     attempts = attempts + 1,
     last_error = $2,
     updated_at = now()
@@ -119,7 +125,7 @@ type MarkNotificationUndeliverableParams struct {
 	LastError pgtype.Text `json:"last_error"`
 }
 
-// A push no retry can deliver (migration 0145): it leaves the sweep for good.
+// A push no retry can deliver (migration 0145): it leaves the sweep for good, and its text with it.
 func (q *Queries) MarkNotificationUndeliverable(ctx context.Context, arg MarkNotificationUndeliverableParams) error {
 	_, err := q.db.Exec(ctx, markNotificationUndeliverable, arg.ID, arg.LastError)
 	return err

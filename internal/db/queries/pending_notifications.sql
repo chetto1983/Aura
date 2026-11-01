@@ -25,14 +25,17 @@ LIMIT $2
 FOR UPDATE OF n SKIP LOCKED;
 
 -- name: MarkNotificationDelivered :exec
+-- A row outlives its push as a trail, but its text does not: a body can name a mail's sender and
+-- subject, and this table holds those only while the push waits.
 UPDATE aura.pending_notifications
-SET status = 'delivered', updated_at = now()
+SET status = 'delivered', body = '', updated_at = now()
 WHERE id = $1;
 
 -- name: MarkNotificationUndeliverable :exec
--- A push no retry can deliver (migration 0145): it leaves the sweep for good.
+-- A push no retry can deliver (migration 0145): it leaves the sweep for good, and its text with it.
 UPDATE aura.pending_notifications
 SET status = 'undeliverable',
+    body = '',
     attempts = attempts + 1,
     last_error = $2,
     updated_at = now()
@@ -42,10 +45,12 @@ WHERE id = $1;
 -- The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
 -- the increment), so the attempt bound spans an outage instead of being spent in one minute
 -- (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
+-- The failure that reaches the bound ends the row's wait, so its text goes.
 UPDATE aura.pending_notifications
 SET status = 'failed',
     attempts = attempts + 1,
     last_error = $2,
     notify_after = now() + interval '30 seconds' * power(2, LEAST(attempts, 7)),
+    body = CASE WHEN attempts + 1 >= sqlc.arg(attempt_bound)::int THEN '' ELSE body END,
     updated_at = now()
 WHERE id = $1;
