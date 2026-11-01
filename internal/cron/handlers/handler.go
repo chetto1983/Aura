@@ -35,6 +35,8 @@ const (
 	KindAgentJob       TaskKind = "agent_job"
 	KindBackupPostgres TaskKind = "backup_postgres"
 	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
+	KindPIMWatch       TaskKind = "pim_watch"
+	KindPIMDigest      TaskKind = "pim_digest"
 )
 
 // HandlerMeta is the per-kind static contract (Slice 0.9): the kind it serves, its
@@ -64,6 +66,9 @@ type Job struct {
 	// agent_job so a mutating denial is durably recorded on a real conversation UUID
 	// (Open Q1) — the flat "agent_job-<runID>" session never keys the ledger.
 	OriginConversationID string
+	// Tell sets the notification's and the origin record's text for this run, leaving the
+	// returned summary to the ledger. Nil outside the dispatcher.
+	Tell func(notice, record string)
 }
 
 // Handler is the per-kind unit of work (Slice 0.9: Handler ~ a small Run seam, not

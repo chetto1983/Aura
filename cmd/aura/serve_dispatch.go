@@ -254,6 +254,7 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 		RunID:                job.RunID,
 		MissedSince:          job.MissedSince,
 		OriginConversationID: job.OriginConversationID,
+		Tell:                 job.Tell,
 	})
 }
 

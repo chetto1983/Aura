@@ -52,6 +52,10 @@ type Job struct {
 	// so a headless agent_job's gateway decision-fact keys on a real conversation UUID, never
 	// the flat run session (Open Q1), which is not a UUID and fails every reservation.
 	OriginConversationID string
+	// Tell sets the notification's and the origin record's text for this run, leaving the
+	// returned summary to the ledger (dispatch_tell.go). A failed run reports its failure
+	// instead. A handler that never calls it notifies and records its summary.
+	Tell func(notice, record string)
 }
 
 // Handler is the per-kind unit of work the dispatcher routes to. Run returns the
@@ -246,7 +250,8 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 	runCtx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
 	task = d.homeTask(ctx, task)
-	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID}
+	var told toldText
+	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID, Tell: told.tell}
 	summary, runErr := h.Run(runCtx, job)
 
 	status := "completed"
@@ -258,8 +263,9 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 		return runErr
 	}
 	reported := d.recordOutcome(ctx, task, runErr)
-	undelivered := d.notify(ctx, task, c.RunID, summary, reported)
-	d.recordToOrigin(ctx, task, summary, reported, undelivered)
+	notice, record := told.texts(task, summary)
+	undelivered := d.notify(ctx, task, c.RunID, notice, reported)
+	d.recordToOrigin(ctx, task, record, reported, undelivered)
 	return runErr
 }
 
@@ -281,7 +287,7 @@ func (d *Dispatch) recordOutcome(ctx context.Context, task Task, runErr error) e
 	if !outcome.PausedNow {
 		return runErr
 	}
-	return fmt.Errorf("%w; paused after %d failed runs in a row, resume it to run again", runErr, outcome.ConsecutiveFailures)
+	return pausedRunError{cause: runErr, failures: outcome.ConsecutiveFailures}
 }
 
 // scheduledOperationContext derives identity from the durable task row and the

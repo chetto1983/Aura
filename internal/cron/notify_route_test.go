@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -39,10 +40,24 @@ func TestOriginPreferringSplitsRouteIntent(t *testing.T) {
 	}
 }
 
+// A push no channel took stays out of the journal: it can be a mail's sender and subject.
+func TestAnUndeliveredTelegramPushLeavesNoStdoutCopy(t *testing.T) {
+	t.Parallel()
+	var journal bytes.Buffer
+	n := &compositeNotifier{out: &journal}
+	err := n.Notify(t.Context(), RouteTelegram, "Mario Rossi: fermo linea")
+	if err == nil || !strings.Contains(err.Error(), "no MCP self-send") {
+		t.Fatalf("Notify = %v, want the undelivered error the dispatcher retries on", err)
+	}
+	if journal.Len() != 0 {
+		t.Fatalf("the journal holds %q", journal.String())
+	}
+}
+
 // TestSendViaMCPRefusesTelegram: reaching the composite with route=telegram means the
-// origin gate already declined, so the honest answer is an error (Notify then writes the
-// stdout fallback AND reports undelivered, the D-22 retry contract). Silently mapping it
-// onto the WhatsApp self-send would deliver the operator's reminder to the wrong service.
+// origin gate already declined, so the honest answer is an error (Notify reports it
+// undelivered, the D-22 retry contract). Silently mapping it onto the WhatsApp self-send
+// would deliver the operator's reminder to the wrong service.
 func TestSendViaMCPRefusesTelegram(t *testing.T) {
 	t.Parallel()
 	n := &compositeNotifier{}

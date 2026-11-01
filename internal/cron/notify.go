@@ -132,6 +132,9 @@ func NewNotifier(resolver SelfSendResolver, own OwnAddresses) Notifier {
 
 // Notify accepts only an explicit route. RouteNone is intentionally silent; a failed
 // external send writes a diagnostic stdout copy and still returns an undelivered error.
+// Telegram leaves no copy: reaching here means no channel took the push, it is queued for
+// retry, and its text can be a mail's sender and subject, which the journal must not keep
+// (docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md §5.2).
 func (n *compositeNotifier) Notify(ctx context.Context, route NotifyRoute, text string) error {
 	if route == RouteNone {
 		return nil
@@ -143,6 +146,9 @@ func (n *compositeNotifier) Notify(ctx context.Context, route NotifyRoute, text 
 		return n.stdout(route, text)
 	}
 	if err := n.sendViaMCP(ctx, route, text); err != nil {
+		if route == RouteTelegram {
+			return fmt.Errorf("notify %s: %w", route, err)
+		}
 		_ = n.stdout(route, text)
 		return fmt.Errorf("notify %s: MCP self-send failed, wrote diagnostic stdout copy: %w", route, err)
 	}
@@ -177,9 +183,8 @@ func (n *compositeNotifier) selfSend(ctx context.Context, route NotifyRoute) (Se
 	if !ok {
 		// Telegram never had an MCP self-send; the Dispatch origin gate delivers it. Being
 		// here means that gate declined because no channel owns this identity or no
-		// deliverer is wired, so the honest answer is undelivered. Notify then
-		// writes the stdout fallback AND returns non-nil, which is the D-22 contract the
-		// dispatcher retries on.
+		// deliverer is wired, so the honest answer is undelivered, the non-nil return that
+		// is the D-22 contract the dispatcher retries on.
 		return nil, "", fmt.Errorf("route %s has no MCP self-send: no live channel owns this task's identity", route)
 	}
 	if n.resolver == nil {
