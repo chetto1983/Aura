@@ -224,11 +224,47 @@ export const resources = {
         loading: 'Checking runtime...',
         unreachable:
           "Can't read runtime status. The health endpoints aren't responding - the server may be starting or down.",
+        showDetails: '{{title}}: {{status}}. Show details',
+        why: 'Why',
+        reasonsHint: "The technical detail is in Aura's logs.",
+        reasons: {
+          postgres_unavailable: {
+            title: 'Database is not answering',
+            detail: "Aura can't read or save its data.",
+          },
+          memory_unavailable: {
+            title: 'Memory is not answering',
+            detail: "Aura can still reply, but it can't read its long-term memory.",
+          },
+          sandbox_unavailable: {
+            title: 'Sandbox is unavailable',
+            detail: "Aura can still reply, but it can't run commands or work on files.",
+          },
+          listener_unavailable: {
+            title: 'Server is not listening',
+            detail: "Aura's web server has stopped serving requests.",
+          },
+          migration_incompatible: {
+            title: 'Database schema is out of date',
+            detail: 'The database is not at the version this build expects.',
+          },
+          scheduler_stalled: {
+            title: 'Scheduler has stalled',
+            detail: 'Scheduled tasks are not running.',
+          },
+          draining: {
+            title: 'Aura is shutting down',
+            detail: 'It is finishing the work in progress before it stops.',
+          },
+          dependency_unavailable: {
+            title: 'A required service is not answering',
+            detail: 'One of the services Aura needs failed its check.',
+          },
+          unknown: "Aura reported a problem this version can't describe.",
+        },
         labels: {
           liveness: 'Liveness',
           readiness: 'Readiness',
-          postgres: 'Postgres',
-          memory: 'Memory',
           bindAddress: 'Bind address',
           build: 'Build',
           commit: 'Commit',
@@ -449,11 +485,48 @@ export const resources = {
         loading: 'Controllo runtime...',
         unreachable:
           'Impossibile leggere lo stato runtime. Gli endpoint di health non rispondono: il server potrebbe essere in avvio o non attivo.',
+        showDetails: '{{title}}: {{status}}. Mostra dettagli',
+        why: 'Perché',
+        reasonsHint: 'Il dettaglio tecnico è nei log di Aura.',
+        reasons: {
+          postgres_unavailable: {
+            title: 'Il database non risponde',
+            detail: 'Aura non riesce a leggere né a salvare i suoi dati.',
+          },
+          memory_unavailable: {
+            title: 'La memoria non risponde',
+            detail:
+              'Aura può ancora rispondere, ma non riesce a leggere la memoria a lungo termine.',
+          },
+          sandbox_unavailable: {
+            title: 'Sandbox non disponibile',
+            detail: 'Aura può ancora rispondere, ma non può eseguire comandi né lavorare sui file.',
+          },
+          listener_unavailable: {
+            title: 'Il server non è in ascolto',
+            detail: 'Il server web di Aura ha smesso di servire le richieste.',
+          },
+          migration_incompatible: {
+            title: 'Schema del database non aggiornato',
+            detail: 'Il database non è alla versione che questa build si aspetta.',
+          },
+          scheduler_stalled: {
+            title: 'Lo scheduler è fermo',
+            detail: 'I task pianificati non vengono eseguiti.',
+          },
+          draining: {
+            title: 'Aura si sta spegnendo',
+            detail: 'Sta finendo il lavoro in corso prima di fermarsi.',
+          },
+          dependency_unavailable: {
+            title: 'Un servizio richiesto non risponde',
+            detail: 'Uno dei servizi di cui Aura ha bisogno non ha superato il controllo.',
+          },
+          unknown: 'Aura ha segnalato un problema che questa versione non sa descrivere.',
+        },
         labels: {
           liveness: 'Vitalità',
           readiness: 'Prontezza',
-          postgres: 'Postgres',
-          memory: 'Memoria',
           bindAddress: 'Indirizzo bind',
           build: 'Build',
           commit: 'Commit',

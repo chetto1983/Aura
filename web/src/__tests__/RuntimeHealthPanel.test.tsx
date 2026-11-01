@@ -71,23 +71,14 @@ describe('RuntimeHealthPanel', () => {
             build_date: '2026-09-21T14:19:00Z',
           },
         },
-        { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
+        { status: 200, body: { status: 'ready', ready: true, reasons: [] } },
       );
     });
 
     it('renders a TEXT status label for every row (never colour-only)', async () => {
       renderPanel();
       // Row labels present.
-      for (const label of [
-        'Liveness',
-        'Readiness',
-        'Postgres',
-        'Memory',
-        'Bind address',
-        'Build',
-        'Commit',
-        'Built',
-      ]) {
+      for (const label of ['Liveness', 'Readiness', 'Bind address', 'Build', 'Commit', 'Built']) {
         await waitFor(() => {
           expect(screen.getByText(label)).toBeTruthy();
         });
@@ -96,9 +87,8 @@ describe('RuntimeHealthPanel', () => {
       await waitFor(() => {
         expect(screen.getByText('Live')).toBeTruthy();
       });
-      // "Ready" appears for /readyz + postgres + memory → assert at least one.
       await waitFor(() => {
-        expect(screen.getAllByText('Ready').length).toBeGreaterThan(0);
+        expect(screen.getByText('Ready')).toBeTruthy();
       });
       // Mono machine values surfaced via /healthz (D-07, no new endpoint).
       await waitFor(() => {
@@ -117,22 +107,24 @@ describe('RuntimeHealthPanel', () => {
     });
   });
 
-  it('marks a not-ready dependency as Degraded (warning, with text)', async () => {
+  // The body is the one the lab VM answered on 2026-11-01. This panel read a `deps` map the
+  // server stopped sending, which nothing saw because nothing mounted it.
+  it('names the reason of a 503 as /readyz sends it', async () => {
     stubHealth(
       { status: 200, body: { ok: true } },
-      { status: 503, body: { ready: false, deps: { postgres: 'ok', memory: 'dial timeout' } } },
+      {
+        status: 503,
+        body: { status: 'unavailable', ready: false, reasons: ['memory_unavailable'] },
+      },
     );
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Readiness')).toBeTruthy();
+      expect(screen.getByText('Degraded')).toBeTruthy();
     });
-    // The not-ready readiness + memory dep render the Degraded text label.
-    await waitFor(() => {
-      expect(screen.getAllByText('Degraded').length).toBeGreaterThan(0);
-    });
+    expect(screen.getByText('Memory is not answering')).toBeTruthy();
   });
 
-  it('marks readiness + deps Unavailable when only /readyz is unreachable', async () => {
+  it('marks readiness Unavailable when only /readyz is unreachable', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -143,12 +135,12 @@ describe('RuntimeHealthPanel', () => {
       }),
     );
     renderPanel();
-    // Liveness is Live (/healthz ok) but readiness + postgres + memory read Unavailable.
+    // Liveness is Live (/healthz ok) but readiness reads Unavailable.
     await waitFor(() => {
       expect(screen.getByText('Live')).toBeTruthy();
     });
     await waitFor(() => {
-      expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+      expect(screen.getByText('Unavailable')).toBeTruthy();
     });
   });
 
@@ -177,7 +169,7 @@ describe('RuntimeHealthPanel', () => {
           build_date: '2026-09-21T14:19:00Z',
         },
       },
-      { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
+      { status: 200, body: { status: 'ready', ready: true, reasons: [] } },
     );
 
     renderPanel();
@@ -188,7 +180,7 @@ describe('RuntimeHealthPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('Vitalità')).toBeTruthy();
     });
-    expect(screen.getAllByText('Pronto').length).toBeGreaterThan(0);
+    expect(screen.getByText('Pronto')).toBeTruthy();
     expect(screen.getByText('Indirizzo bind')).toBeTruthy();
     expect(screen.getByText('Commit')).toBeTruthy();
     expect(screen.getByText('Build date')).toBeTruthy();

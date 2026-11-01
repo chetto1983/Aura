@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 // The two existing same-origin REST endpoints (D-07: no new backend endpoint).
 //   GET /healthz → 200 {"ok":true,"scheduler_last_tick":"...","bind_address":"...","build_version":"...","build_commit":"...","build_date":"..."}
 //                  503 {"ok":false,"error":"..."}
-//   GET /readyz  → 200 {"ready":true,"deps":{"postgres":"ok","memory":"ok"}}
-//                  503 {"ready":false,"deps":{"postgres":"<err>","memory":"ok"}}
-// We poll both with React Query (REST, not SSE) and surface dataUpdatedAt for the
-// "Last checked" caption.
+//   GET /readyz  → 200 {"status":"ready","ready":true,"reasons":[]}
+//                  503 {"status":"unavailable","ready":false,"reasons":["memory_unavailable"]}
+// Reasons are internal/readiness's stable codes: /readyz is public, so the raw error stays
+// in the daemon's log. We poll both with React Query (REST, not SSE) and surface
+// dataUpdatedAt for the "Last checked" caption.
 
 export interface HealthzBody {
   ok: boolean;
@@ -19,8 +20,9 @@ export interface HealthzBody {
 }
 
 export interface ReadyzBody {
+  status: string;
   ready: boolean;
-  deps: Record<string, string>;
+  reasons: string[];
 }
 
 export const HEALTH_REFETCH_INTERVAL_MS = 5000;

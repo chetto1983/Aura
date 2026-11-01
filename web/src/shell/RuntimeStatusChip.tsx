@@ -1,4 +1,6 @@
 import { useTranslation } from 'react-i18next';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { RuntimeHealthPanel } from '../health/RuntimeHealthPanel';
 import { useRuntimeHealth } from '../health/useRuntimeHealth';
 
 type Tone = 'success' | 'warning' | 'danger';
@@ -33,10 +35,20 @@ export function RuntimeStatusChip() {
       role="status"
       aria-busy={isPending}
       aria-label={`${t('health.title')}: ${label}`}
-      className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--radius-pill)] border border-border bg-surface-2 px-2.5 text-xs font-medium text-text-muted sm:px-3"
+      className="shrink-0"
     >
-      <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-sm ${toneClass(tone)}`} />
-      <span>{label}</span>
+      <Popover>
+        <PopoverTrigger
+          aria-label={t('health.showDetails', { title: t('health.title'), status: label })}
+          className="inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-pill)] border border-border bg-surface-2 px-2.5 text-xs font-medium text-text-muted outline-none transition-colors hover:border-border-strong hover:text-text focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:border-border-strong data-[state=open]:text-text sm:px-3"
+        >
+          <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-sm ${toneClass(tone)}`} />
+          <span>{label}</span>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-0">
+          <RuntimeHealthPanel />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

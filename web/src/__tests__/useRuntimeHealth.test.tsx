@@ -25,7 +25,7 @@ describe('useRuntimeHealth', () => {
   it('polls /healthz + /readyz same-origin as JSON every 5s and surfaces both bodies', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const body = urlOf(input).includes('/readyz')
-        ? { ready: true, deps: { postgres: 'ok', memory: 'ok' } }
+        ? { status: 'ready', ready: true, reasons: [] }
         : {
             ok: true,
             bind_address: '127.0.0.1:9080',
@@ -66,7 +66,7 @@ describe('useRuntimeHealth', () => {
     );
     expect(result.current.healthz?.body.build_date).toBe('2026-09-21T14:19:00Z');
     expect(result.current.readyz?.body.ready).toBe(true);
-    expect(result.current.readyz?.body.deps.postgres).toBe('ok');
+    expect(result.current.readyz?.body.reasons).toEqual([]);
 
     // No errors; not pending after both resolve; lastChecked is a real epoch (> 0).
     expect(result.current.healthzError).toBe(false);
@@ -80,7 +80,9 @@ describe('useRuntimeHealth', () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (urlOf(input).includes('/readyz')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ ready: true, deps: {} }), { status: 200 }),
+          new Response(JSON.stringify({ status: 'ready', ready: true, reasons: [] }), {
+            status: 200,
+          }),
         );
       }
       return Promise.reject(new Error('healthz down'));

@@ -89,7 +89,7 @@ function readiness(
       tone: 'success',
     };
   }
-  // A 503 with a deps map means the probe ran but a dependency is not ready.
+  // A 503 means the probes ran and at least one reason holds; ReasonList names them.
   return {
     label: t('health.labels.readiness'),
     status: t('health.status.degraded'),
@@ -97,24 +97,35 @@ function readiness(
   };
 }
 
-function dependency(
-  label: string,
-  depKey: string,
-  readyz: { status: number; body: ReadyzBody } | undefined,
-  errored: boolean,
-  t: TFunction,
-): RowState {
-  if (errored || !readyz) {
-    return { label, status: t('health.status.unavailable'), tone: 'danger' };
-  }
-  const value = readyz.body.deps[depKey];
-  if (value === undefined) {
-    return { label, status: t('health.status.unknown'), tone: 'warning' };
-  }
-  if (value === 'ok') {
-    return { label, status: t('health.status.ready'), tone: 'success' };
-  }
-  return { label, status: t('health.status.degraded'), tone: 'warning' };
+// A daemon newer than this bundle can report a code it has no copy for, so the code
+// itself is the fallback title: the operator can still search the logs for it.
+function ReasonList({ reasons }: { reasons: string[] }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-2 border-t border-border py-2">
+      <h3 id="runtime-health-why" className="text-xs font-medium text-text-muted">
+        {t('health.why')}
+      </h3>
+      <ul aria-labelledby="runtime-health-why" className="flex flex-col gap-2">
+        {reasons.map((code) => (
+          <li key={code} className="flex items-baseline gap-2">
+            <StatusDot tone="warning" />
+            <span className="min-w-0">
+              <span className="block text-sm text-text">
+                {t(`health.reasons.${code}.title`, { defaultValue: code })}
+              </span>
+              <span className="block text-xs text-text-muted">
+                {t(`health.reasons.${code}.detail`, {
+                  defaultValue: t('health.reasons.unknown'),
+                })}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[0.75rem] text-text-faint">{t('health.reasonsHint')}</p>
+    </div>
+  );
 }
 
 function formatLastChecked(epochMs: number, t: TFunction): string {
@@ -145,12 +156,8 @@ export function RuntimeHealthPanel() {
   const buildCommit = healthz?.body.build_commit;
   const buildDate = healthz?.body.build_date;
 
-  const rows: RowState[] = [
-    liveness(healthz, healthzError, t),
-    readiness(readyz, readyzError, t),
-    dependency(t('health.labels.postgres'), 'postgres', readyz, readyzError, t),
-    dependency(t('health.labels.memory'), 'memory', readyz, readyzError, t),
-  ];
+  const rows: RowState[] = [liveness(healthz, healthzError, t), readiness(readyz, readyzError, t)];
+  const reasons = readyzError ? [] : (readyz?.body.reasons ?? []);
 
   return (
     <section
@@ -175,6 +182,7 @@ export function RuntimeHealthPanel() {
             {rows.map((row) => (
               <StatusRow key={row.label} {...row} />
             ))}
+            {reasons.length > 0 ? <ReasonList reasons={reasons} /> : null}
             <StatusRow
               label={t('health.labels.bindAddress')}
               status={bind ?? '-'}

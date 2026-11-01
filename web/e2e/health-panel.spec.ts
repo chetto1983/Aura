@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
-// WEB-04: the embedded operator shell summarizes runtime readiness in the header.
-// The detailed health panel remains component-tested, but the main shell must not
-// reserve a redundant right rail for rows that are already summarized.
+// WEB-04: the embedded operator shell summarizes runtime readiness in the header, and
+// the chip opens the detailed panel. The main shell must not reserve a redundant right
+// rail for rows that are already summarized.
 
 test.describe('runtime readiness status', () => {
   test('applies dark theme + operator density before paint', async ({ page }) => {
@@ -30,5 +30,19 @@ test.describe('runtime readiness status', () => {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
+  });
+
+  test('opens the runtime detail from the header chip', async ({ page }) => {
+    await gotoAuthenticated(page, '/');
+
+    await page
+      .getByRole('button', {
+        name: /^(Runtime|Stato runtime): .+\. (Show details|Mostra dettagli)$/,
+      })
+      .click();
+
+    await expect(
+      page.getByRole('heading', { name: /^(Runtime|Stato runtime)$/, level: 2 }),
+    ).toBeVisible();
   });
 });
