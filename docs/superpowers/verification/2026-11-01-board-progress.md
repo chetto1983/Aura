@@ -51,8 +51,8 @@ were absent; status is the observed success evidence, not an invented verdict st
 
 An initial attempt timed out while the hand endpoint awaited a reply; no add ran. The
 subsequent automated hand loop completed all calls and the CLI printed its final answer
-and exited. The driver's 15-second process-wait expired during telemetry shutdown; the
-CLI subsequently exited normally. An earlier setup attempt reached local ArcadeDB using
+and printed `bye`. The driver's 15-second process-wait expired during telemetry shutdown;
+the CLI subsequently stopped, but its exit code was not captured. An earlier setup attempt reached local ArcadeDB using
 fixture credentials and was refused; it was stopped before any board mutation. The final
 run pointed ArcadeDB to unused loopback port 2499. Memory was unavailable and is not
 proven. No external LLM, messaging, embedding or provider delivery is claimed.
@@ -83,3 +83,7 @@ proven. No external LLM, messaging, embedding or provider delivery is claimed.
 
 Only additive progress persistence and the requested board presentation are covered.
 Authentication, memory and deployment retain the explicit boundaries above.
+
+Source commit: `119f77078`. All pre-commit checks passed (format, file cap, frontend
+duplication, vet, lint). Task-owned bridge/model processes and the disposable PostgreSQL
+container were removed after collecting the evidence.
