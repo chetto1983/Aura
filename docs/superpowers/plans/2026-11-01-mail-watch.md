@@ -40,8 +40,8 @@ built in parallel and not read. The tag `pim_contract` holds a real sidecar to t
 
 ## Global Constraints
 
-- **Migration 0149**, the slot `ls internal/db/migrations/ | tail -1` gave. All six tables have an identity foreign key
-  with `ON DELETE CASCADE`, the fail-closed RLS pair, and the 0141 GRANTs.
+- **Migration 0150**, the slot `ls internal/db/migrations/ | tail -1` gave after the rebase. All six tables have an
+  identity foreign key with `ON DELETE CASCADE`, the fail-closed RLS pair, and the 0141 GRANTs.
 - **No new env var.** Everything is a per-identity setting, read at use. `AURA_PIM_MCP_URL` already existed.
 - **Files stay ≤ 600 LOC.** `service.go` reached 597 and was split into `service_rules.go`.
 - **No model, no paid call, no real mailbox, no real Telegram, nothing on the lab VM** in any step of this plan.
@@ -135,8 +135,11 @@ Each of these would bite a real person, and each has a test that names it.
 - **A spent cap is silent.** A tick that alerts nobody and only held mail back says nothing. The count appears only
   beside real alerts, because a count on every tick is the notification the cap exists to stop.
 - **The digest sorts before it reads,** so a large window costs one batch of 20, and the rest is a count.
-- **A digest that names an unreadable account does not move the window.** Tomorrow repeats what it did read. A repeated
-  line costs less than a missing one. An empty window sends nothing and still moves.
+- **A digest that could not read an account for now does not move the window.** Tomorrow repeats what it did read. A
+  repeated line costs less than a missing one. **A hard failure names the account and does not hold the window,** because
+  it would fail the same way tomorrow and its old rows would fill the first lines for good, so nobody's new mail would
+  be read again. Its lines leave the digest and stay in the cockpit's day. Only a transient failure holds, and it holds
+  for every account. An empty window sends nothing and still moves.
 - **A crash between moving the window and notifying loses one digest.** This is accepted, unlike the alert's case: the
   same mail is in the decisions view, and a ledger-keyed window for a daily job would be two more columns for a
   millisecond gap.
@@ -149,13 +152,20 @@ Each of these would bite a real person, and each has a test that names it.
   them back on the next enable.
 - **Where a rule's learning lands:** two corrections must agree, and the earlier one must be outside the 15-minute
   window. Tier and label are learned apart. A correction clearing a label teaches nothing, and a calendar item teaches
-  nothing. A sender that cannot be read changes the verdict and teaches nothing.
+  nothing. A sender that cannot be read changes the verdict and teaches nothing, and so does a mail that failed
+  authentication, because a rule beats that rung and one learned from it would let a forged sender reach `now`.
 - **A correction's sender is read live by id**, because no verdict keeps one.
-- **`disable` forgets the cursor and keeps the verdicts,** because the day's digest still lists them. Removing the
+- **`disable` forgets the cursor and keeps the verdicts.** While another account is watched the day's digest still
+  lists them. The digest goes with the last watch, so nothing sends what it had not sent: those lines wait for the first
+  digest after a later enable, whose window opens at the last one sent, and are lost if they expire first. Removing the
   account forgets everything but the sender rules, which are the person's words about senders.
 - **One live task per account and one digest per identity is a database fact,** two partial unique indexes. A lost race
   to a second click reads as done.
-- **The route is fixed at enable.** A person who links Telegram later turns the watch off and on.
+- **The route is fixed at enable.** A person who links Telegram later turns the watch off and on. The digest moves on
+  any enable or saved setting, and its conversation and recipients go with its route, in one statement. A delivery that
+  names no conversation keeps the task's own, because a task on stdout may have opened that conversation by itself, and
+  overwriting it would open another on every save. So a move from Telegram back to stdout leaves the record in the
+  thread, which stays readable in the cockpit.
 - **A watch cancelled on the cockpit's scheduler board** leaves the digest running, because only `Disable` and
   `RemoveAccount` stop it. The digest then says nothing once its window empties. Enable starts the cursor again. The
   `task` tool cannot do this: `cron.IsAgentStoppableKind` keeps its cancel and pause off both kinds.
@@ -166,10 +176,11 @@ Each of these would bite a real person, and each has a test that names it.
   conversation would be one the person's next message never reaches. The seam is optional, and only these two kinds on
   that route use it.
 - **The thread's conversation row is created at enable,** or the first run would read a missing row as a deleted origin.
-- **Deactivating an identity pauses its tasks.** `DeprovisionDeps.Jobs` was nil on every path. `scheduledTaskAdapter`
-  now sits behind it, for every kind and not only the watch's. `cron.Store.PauseIdentityTasks` moves the identity's
-  `active` tasks to `paused` with the reason `identity_deactivated`, in one statement, and a second call finds nothing
-  to change. A `pending_approval` task stays as it is, because a paused task resumes active and that would skip its
+- **Deactivating an identity pauses what the person scheduled.** `DeprovisionDeps.Jobs` was nil on every path.
+  `scheduledTaskAdapter` now sits behind it, for `personKinds`: reminders, agent jobs and the two watch kinds. Owning a
+  task does not make it the person's, because enrolment hands the deployment's sweeps to the operator's identity
+  (`retireLegacyLocalIdentity`). `cron.Store.PauseIdentityTasks` moves the identity's `active` tasks of those kinds to
+  `paused` with the reason `identity_deactivated`, in one statement, and a second call finds nothing to change. A `pending_approval` task stays as it is, because a paused task resumes active and that would skip its
   approval. A task already paused keeps its own reason. **A backup stays active:** the task tool and the CLI let a
   person schedule `backup_postgres` under their own identity, `IsPausableKind` keeps a backup from every pause, and the
   operator decided on 2026-10-05 that one is never stopped from the cockpit or the agent. There is no way back:
@@ -179,9 +190,11 @@ Each of these would bite a real person, and each has a test that names it.
   them. They would keep firing, and their notifications, whose bodies can hold a sender and a subject, would stay. ON
   DELETE CASCADE takes the runs and the notifications, and `TestPurgeRemovesAnIdentitysTasksRunsAndNotifications`
   proves it as `aura_app`. The step runs after the OpenRouter key and before the box, because a task firing after the
-  box is gone would wake another. It needs only the id, so `aura identity purge --resume-resources` runs it. Unlike the
-  pause it covers every kind and status: a task left behind names an identity that no longer exists. That includes a
-  person's own backup task, and the boot seed puts a backup back if it was the only one.
+  box is gone would wake another. It needs only the id, so `aura identity purge --resume-resources` runs it. It covers
+  `personKinds` in every status. A system sweep or a backup stays and keeps firing, owned by an id that no longer
+  exists, and a person's own backup stays with them, because the kind cannot tell it from the deployment's.
+  `TestASystemTaskOfAPurgedIdentityIsStillClaimedAndDispatched` proves the claim, the dispatch and the completion with
+  the identity's row gone: nothing on that path reads it.
 - **A run already in progress still finishes,** through both. `TestARunEndingAfterDeactivationLeavesThePause` pins that
   the pause and its reason survive it. On a purge its rows go first, so by the code `CompleteRun` updates nothing and
   the outcome write logs a warning. That path has no test.
@@ -233,8 +246,8 @@ Every route is under `/api/mail-watch`, behind the session and `governance.write
 | `PUT /api/mail-watch/settings` | `{digest_hour, daily_alert_cap}` | `settings` |
 | `POST /api/mail-watch/accounts/{id}/enable` | | `{enabled: true}` |
 | `POST /api/mail-watch/accounts/{id}/disable` | | `{enabled: false}` |
-| `GET /api/mail-watch/accounts/{id}/decisions?day=YYYY-MM-DD` | | `[decision]`, the identity's local day, today when empty |
-| `POST /api/mail-watch/accounts/{id}/decisions/correct` | `{resource?, item_id, tier?, label_id?}` | `{tier, label_id?, rule?}` |
+| `GET /api/mail-watch/accounts/{id}/decisions?day=YYYY-MM-DD` | | `{day, decisions: [decision]}`, the identity's local day, today when empty |
+| `POST /api/mail-watch/accounts/{id}/decisions/correct` | `{resource?, item_id, tier?, label_id?}` | `{tier, label_id?, rule?, rule_created?}` |
 | `GET /api/mail-watch/rules` | | `[rule]` |
 | `POST /api/mail-watch/rules` | `{key, tier?, label_id?}` | `rule` |
 | `DELETE /api/mail-watch/rules/{id}` | | `{removed: true}` |
@@ -249,18 +262,25 @@ Every route is under `/api/mail-watch`, behind the session and `governance.write
   code, such as `provider_auth`, for the UI to translate: the named ones are in Decisions, *Failure classes*, and an
   unnamed one is `pim_http_<status>`. `paused_reason` is `operator`, `failures` or `identity_deactivated`.
 - `decision`: `{account_id, resource, item_id, calendar_id?, from, from_name, subject, start, all_day?, gone,
-  auth_failed, tier, label_id?, label?, decided_by, decided_at}`. `from` is the address and `from_name` the name beside
-  it, empty when the provider gave none. `from`, `from_name` and `subject` are a stranger's text: render them as text.
-  With `all_day`, `start` is the date at midnight UTC: show the date, in no zone. `gone` means the item no longer
-  exists, and all three are empty. `decided_by` is `rule`, `auth_failed`, `people`, `category`, `default`, `calendar`
-  or `person`.
+  auth_failed, tier, change?, label_id?, label?, decided_by, decided_at}`. `from` is the address and `from_name` the
+  name beside it, empty when the provider gave none. `from`, `from_name` and `subject` are a stranger's text: render
+  them as text. With `all_day`, `start` is the date at midnight UTC: show the date, in no zone. `change` is `new`,
+  `moved` or `cancelled` on an event, a fixed code for the UI to translate. `gone` means the item no longer exists, and
+  all three are empty. A cancelled event is not `gone`: it is the line, with the `start` its verdict kept. `decided_by`
+  is `rule`, `auth_failed`, `people`, `category`, `default`, `calendar` or `person`.
 - `correct`: leaving out `label_id` keeps the label, and `""` clears it. `resource` defaults to `mail`. A `rule` in the
-  answer means this correction taught one, which the UI should say.
+  answer means this correction taught one, which the UI should say. `rule_created` means that rule is new, and only then
+  does the UI offer Undo, because one merged into a rule on file holds the person's earlier words.
 - `rule`: `{id, key, key_kind, tier?, label_id?, source, created_at}`. `key_kind` is `sender` or `domain`, `source` is
   `person` or `correction`. `key` takes a whole address, or a domain with or without its `@`.
 - `label`: `{id, name, tier?, position}`.
-- Errors: `503 {error: "mail_watch_unavailable", reason?}`, `400 {error: <what to fix>}`, `404 {error: "not_found"}`,
-  `502 {error: <fixed PIM code>}`, `500 {error: "mail_watch_failed"}`.
+- Errors: `503 {error: "mail_watch_unavailable", reason}`, `400 {error: <fixed code>, message}`, `404 {error:
+  "not_found"}`, `502 {error: <fixed PIM code>}`, `500 {error: "mail_watch_failed"}`. `reason`, here and on the status,
+  is the fixed code `pim_not_configured`. A 400's code is one of `account_required`, `invalid_day`, `empty_correction`,
+  `invalid_tier`, `unknown_label`, `empty_rule`, `invalid_address`, `invalid_rule_key`, `invalid_label_name`,
+  `label_exists`, `invalid_digest_hour` and `invalid_alert_cap`, and `message` is the English sentence behind it, which
+  the tool reads to the model. The UI translates the code, with one generic sentence for a code it does not know. The
+  route's own `invalid body` and missing-field 400s are not refusals of this list and read as that sentence.
 
 The switch sits on the account's card, and the list of accounts stays `GET /api/connect/pim/accounts`.
 `GET /api/mail-watch` says which of them are watched. Removing an account in the wizard already removes its watch.
@@ -491,3 +511,66 @@ for IMAP.
   a live chat still reaches the approval branch and is not denied, which this plan leaves as it found it.
 - **`pending_notifications` kept every body after delivery,** with no DELETE grant to remove it, against §5.2. Closed in
   `d4bf55e92`, for every kind of notification. Rows written before it keep theirs.
+
+## Review findings 2026-11-01
+
+An independent review of the branch, each finding checked against the code before it was listed. The decisions above and
+the API section already read as the code now does.
+
+| # | Finding | Commit |
+|---|---|---|
+| 1 | A deactivation or purge touches only what the person scheduled | `6738dce8d` |
+| 2 | The daily cap counts pushes, not rows | `8a16b81ad` |
+| 3 | A hard-failing account does not freeze everyone's digest | `1e5e5a9da` |
+| 4 | The agent's `task` tool cannot stop the watch | `9ec422362` |
+| 5 | A cancelled or moved meeting says so | `0a1a7500f` |
+| 6 | The card says the watch reads the Inbox only | `3f526befb` |
+| 7 | `permission_denied` on one resource leaves the other watched | `1c9029d11` |
+| 8 | A suppressed failure is not recorded either | `f234965ec` |
+| 9 | A correction of a mail that failed authentication teaches nothing | `7ce33b1c5` |
+| 10 | Telegram `/search` and `aura chat` show a record with no frame | `f6f86d962` |
+| 11 | Disable's comment says what the digest does with the last watch's lines | `0ca2c844c` |
+| 12 | The client's fixed `pim_*` failures read as sentences | `941b13d5c` |
+| 13 | `DayHeader` shows the day the server answered | `f74079485` |
+| 14 | `RescheduleDigest` moves the conversation with the route | `a4fdc4a5e` |
+| 15 | `Store.Verdict` moved to the test harness | `039315b04` |
+| 16 | `GET /api/mail-watch` sends `reason` as a code | `92fd2bb7d` |
+| 17 | Every refusal carries a stable code | `b8a55e231` |
+| 18 | Undo is offered only for a rule the correction created | `1f7726331` |
+| 19 | The report of a pause reads in the person's language | `eaadad95c` |
+
+`67be35319` also moved `TestMigration0149DownKeepsADeactivatedTaskPaused` to 0150, which the rebase had left behind.
+
+**Decisions that changed, or went further than the finding named.**
+
+- **Item 1 undoes two decisions above:** deactivation "for every kind" and purge "every kind and status". The purge of a
+  system sweep's owner leaves the sweep running, which the test named in that decision measured.
+- **Item 3:** every failure that is not transient drops out of the hold, through `failureClass`, not only the four named
+  codes. A `pim_http_4xx` would freeze the digest the same way.
+- **Item 4:** the spec's §5.2 sentence that the `task` tool can stop a watch was false from then on, and was corrected.
+- **Item 5:** the finding named one column. `event_all_day` and `event_change` came with `event_start`, for the reasons
+  in Decisions. The time is not mail text.
+- **Item 14:** the delivery moves in the same `UPDATE` as the schedule, and an empty value keeps the task's own. Moving
+  back to stdout therefore leaves the record in the Telegram thread.
+- **Item 17:** "400 `reason`" is the wire's `{error}`, which the cockpit's `HttpError.reason` reads on every status, with
+  the sentence in `{message}`, the shape the board API uses.
+- **Item 19:** no new seam on `Job`. The words travel on the error and are read through `errors.As`, as the suppressor
+  is, so the handler adapter did not change.
+
+**Limits recorded.** A `deleted` change with no row and no start says nothing, because nothing names it. An `updated`
+event with no row is `today` and carries no change word.
+
+**Noticed, not fixed.**
+
+- `task schedule` checks `kind` only as non-empty, and the schema's enum is advisory, so a model could insert any kind
+  the database CHECK admits, system sweeps and the watch's kinds included.
+- When a hard-failing account fills the digest's 20 shown rows, the window still moves, so healthy lines past the 20 are
+  only counted and never listed in a digest. They stay in the cockpit.
+- An `Overdue` hard failure with auto-pause off is not a pause, so it still reports `pim_watch failed: ...: <code>`.
+- `SaveSettings`' comment and the decision "a paused digest cannot be rescheduled" are stale: `UpdateTask` edits a paused
+  row, as `TestEditingAPausedTaskKeepsItPaused` shows.
+- `useAddRule`'s Undo still reads what it replaced from the rules cache, the weakness item 18 closed for corrections.
+- The cockpit opens the day only from a watched account's card, so lines a disabled watch left are out of sight until
+  the account is watched again, though `GET .../decisions` still serves them.
+- `internal/webui/dist` does not carry the watch's cockpit at all, this list's changes included. A rebuild is owed before
+  the embedded cockpit shows any of it.
