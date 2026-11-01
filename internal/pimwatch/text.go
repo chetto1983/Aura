@@ -124,6 +124,10 @@ func (p phrases) resource(resource string) string {
 	return p.resourceMail
 }
 
+func (p phrases) watchTitle(accountID string) string {
+	return fmt.Sprintf(p.watchTask, accountName(accountID))
+}
+
 const (
 	// lineRunes bounds one address or subject in a notification.
 	lineRunes = 200
@@ -136,6 +140,16 @@ const (
 // character, so a subject cannot forge a line, and no invisible format character, so it cannot
 // reorder what the person reads.
 func plainLine(s string) string { return boundedLine(s, lineRunes) }
+
+// accountName is the name the person gave an account. The PIM's id is the tenant's hex, two
+// underscores and that name, and the hex means nothing on a phone. A record's refs keep the whole
+// id, because a tool needs it.
+func accountName(accountID string) string {
+	if _, name, ok := strings.Cut(accountID, "__"); ok && name != "" {
+		return plainLine(name)
+	}
+	return plainLine(accountID)
+}
 
 func boundedLine(s string, limit int) string {
 	clean := strings.Map(func(r rune) rune {
@@ -275,7 +289,7 @@ func renderAlert(lang Lang, loc *time.Location, accountID string, lines []Line, 
 	}
 	var tail []string
 	if len(lines) > 0 {
-		head = append(head, fmt.Sprintf(p.alertHead, accountID))
+		head = append(head, fmt.Sprintf(p.alertHead, accountName(accountID)))
 		if capped > 0 {
 			tail = append(tail, fmt.Sprintf(p.moreInDigest, capped))
 		}
@@ -313,7 +327,7 @@ func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest i
 			heading = title
 			body = append(body, title)
 		}
-		text := fmt.Sprintf("%d. [%s] %s", i+1, plainLine(line.AccountID), line.describe(p, loc))
+		text := fmt.Sprintf("%d. [%s] %s", i+1, accountName(line.AccountID), line.describe(p, loc))
 		if urgent && label != "" {
 			text += " (" + label + ")"
 		}
@@ -324,7 +338,11 @@ func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest i
 		tail = append(tail, fmt.Sprintf(p.digestRest, rest))
 	}
 	if len(unreadable) > 0 {
-		tail = append(tail, fmt.Sprintf(p.unreadable, strings.Join(unreadable, ", ")))
+		names := make([]string, 0, len(unreadable))
+		for _, account := range unreadable {
+			names = append(names, accountName(account))
+		}
+		tail = append(tail, fmt.Sprintf(p.unreadable, strings.Join(names, ", ")))
 	}
 	refs, quoted := recordParts(lines, body)
 	notice := append(append([]string{p.digestTitle}, body...), tail...)

@@ -290,3 +290,36 @@ func TestTheDigestRecordKeepsEachNumbersAddress(t *testing.T) {
 		t.Fatalf("head %q quoted %q", out.Head, out.Quoted)
 	}
 }
+
+const tenantAccount = "733cd5d5d8584831b0ca65a2e7c95430__lavoro"
+
+func TestAPersonReadsTheSlugTheyGaveAndTheRecordKeepsTheWholeID(t *testing.T) {
+	line := Line{AccountID: tenantAccount, Resource: ResourceMail, ItemID: "INBOX/1/2", From: "a@b.it", Subject: "Fermo", Tier: TierNow}
+	alert := renderAlert(LangEN, time.UTC, tenantAccount, []Line{line}, 0, nil)
+	digest := renderDigest(LangEN, time.UTC, Book{}, []Line{line}, 0, []string{tenantAccount})
+	running := &tick{AccountID: tenantAccount, loc: time.UTC}
+	running.carry(phrasesFor(LangEN), AlarmGap, ResourceMail, time.Unix(0, 0))
+	failure := (&HardFailure{AccountID: tenantAccount, Resource: ResourceMail, Code: "provider_auth"}).Error()
+
+	for name, text := range map[string]string{
+		"alert": alert.Notice, "digest": digest.Notice, "digest head": digest.Head, "digest quoted": digest.Quoted,
+		"alarm": running.alarms[0], "failure": failure, "task title": phrasesFor(LangEN).watchTitle(tenantAccount),
+	} {
+		if strings.Contains(text, "733cd5d5") || !strings.Contains(text, "lavoro") {
+			t.Errorf("%s reads %q", name, text)
+		}
+	}
+	for name, refs := range map[string]string{"alert": alert.Refs, "digest": digest.Refs} {
+		if !strings.Contains(refs, "account="+tenantAccount) {
+			t.Errorf("%s lost the id a tool needs: %q", name, refs)
+		}
+	}
+}
+
+func TestAnAccountWithNoTenantPrefixKeepsItsName(t *testing.T) {
+	for id, want := range map[string]string{"work": "work", "a__b__c": "b__c", "tenant__": "tenant__", "__solo": "solo"} {
+		if got := accountName(id); got != want {
+			t.Errorf("accountName(%q) = %q, want %q", id, got, want)
+		}
+	}
+}

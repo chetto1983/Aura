@@ -76,7 +76,7 @@ type HardFailure struct {
 }
 
 func (e *HardFailure) Error() string {
-	return fmt.Sprintf("cannot read %s of account %s: %s", e.Resource, e.AccountID, e.Code)
+	return fmt.Sprintf("cannot read %s of account %s: %s", e.Resource, accountName(e.AccountID), e.Code)
 }
 
 // SuppressSchedulerNotification keeps every failure but the reported ones silent.
@@ -120,7 +120,7 @@ func (t *tick) carry(p phrases, kind, resource string, since time.Time) {
 	if kind == AlarmGap {
 		format = p.gap
 	}
-	t.alarms = append(t.alarms, fmt.Sprintf(format, p.resource(resource), t.AccountID, since.In(t.loc).Format(p.timeLayout)))
+	t.alarms = append(t.alarms, fmt.Sprintf(format, p.resource(resource), accountName(t.AccountID), since.In(t.loc).Format(p.timeLayout)))
 }
 
 // Tick runs once. The notification goes out after it returns, so everything a run tells is

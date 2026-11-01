@@ -137,7 +137,7 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 	}
 	spec := WatchSpec{
 		AccountID: accountID, EveryMinutes: settings.IntervalMinutes, Zone: s.Locale.Location(ctx, identityID).String(),
-		Title: fmt.Sprintf(phrasesFor(lang).watchTask, accountID), Delivery: delivery,
+		Title: phrasesFor(lang).watchTitle(accountID), Delivery: delivery,
 	}
 	if err := s.Tasks.CreateWatch(ctx, identityID, spec); err != nil {
 		return err
