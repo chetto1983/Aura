@@ -38,6 +38,20 @@ func (q *Queries) AdvancePIMWatchCursor(ctx context.Context, arg AdvancePIMWatch
 	return err
 }
 
+const claimPIMWatchLabelSeed = `-- name: ClaimPIMWatchLabelSeed :execrows
+UPDATE aura.pim_watch_settings
+SET labels_seeded = true
+WHERE identity_id = $1 AND NOT labels_seeded
+`
+
+func (q *Queries) ClaimPIMWatchLabelSeed(ctx context.Context, identityID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimPIMWatchLabelSeed, identityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const confirmPIMWatchAlarm = `-- name: ConfirmPIMWatchAlarm :exec
 UPDATE aura.pim_watch_cursors
 SET alarm_since = CASE WHEN alarm_kind = 'gap' THEN NULL ELSE alarm_since END,
@@ -145,7 +159,7 @@ USING (
     FROM aura.pim_watch_verdicts AS o
     JOIN aura.pim_watch_settings AS s ON s.identity_id = o.identity_id
     WHERE o.identity_id = $1
-      AND o.decided_at < $2
+      AND o.decided_at + s.verdict_retention_days * interval '1 day' < $2::timestamptz
     LIMIT $3
 ) AS expired
 WHERE v.identity_id = expired.identity_id AND v.account_id = expired.account_id
@@ -153,14 +167,14 @@ WHERE v.identity_id = expired.identity_id AND v.account_id = expired.account_id
 `
 
 type DeleteExpiredPIMWatchVerdictsParams struct {
-	IdentityID                                               pgtype.UUID        `json:"identity_id"`
-	NowtimestamptzSverdictRetentionDays1DaypgCataloginterval pgtype.Timestamptz `json:"-nowtimestamptz*sverdict_retention_days1 daypg_cataloginterval"`
-	Batch                                                    int32              `json:"batch"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Now        pgtype.Timestamptz `json:"now"`
+	Batch      int32              `json:"batch"`
 }
 
 // One bounded batch of what has outlived the identity's retention, for the retention sweep.
 func (q *Queries) DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteExpiredPIMWatchVerdictsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpiredPIMWatchVerdicts, arg.IdentityID, arg.NowtimestamptzSverdictRetentionDays1DaypgCataloginterval, arg.Batch)
+	result, err := q.db.Exec(ctx, deleteExpiredPIMWatchVerdicts, arg.IdentityID, arg.Now, arg.Batch)
 	if err != nil {
 		return 0, err
 	}
@@ -302,7 +316,7 @@ func (q *Queries) GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorPa
 }
 
 const getPIMWatchSettings = `-- name: GetPIMWatchSettings :one
-SELECT identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, created_at, updated_at FROM aura.pim_watch_settings WHERE identity_id = $1
+SELECT identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at FROM aura.pim_watch_settings WHERE identity_id = $1
 `
 
 func (q *Queries) GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUID) (AuraPimWatchSettings, error) {
@@ -315,6 +329,7 @@ func (q *Queries) GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUI
 		&i.IntervalMinutes,
 		&i.LastDigestAt,
 		&i.VerdictRetentionDays,
+		&i.LabelsSeeded,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -419,22 +434,23 @@ func (q *Queries) InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLab
 const insertPIMWatchVerdict = `-- name: InsertPIMWatchVerdict :execrows
 INSERT INTO aura.pim_watch_verdicts (
     identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by,
-    auth_failed, fingerprint
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    auth_failed, fingerprint, decided_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING
 `
 
 type InsertPIMWatchVerdictParams struct {
-	IdentityID  pgtype.UUID `json:"identity_id"`
-	AccountID   string      `json:"account_id"`
-	Resource    string      `json:"resource"`
-	ItemID      string      `json:"item_id"`
-	CalendarID  string      `json:"calendar_id"`
-	Tier        string      `json:"tier"`
-	LabelID     pgtype.UUID `json:"label_id"`
-	DecidedBy   string      `json:"decided_by"`
-	AuthFailed  bool        `json:"auth_failed"`
-	Fingerprint string      `json:"fingerprint"`
+	IdentityID  pgtype.UUID        `json:"identity_id"`
+	AccountID   string             `json:"account_id"`
+	Resource    string             `json:"resource"`
+	ItemID      string             `json:"item_id"`
+	CalendarID  string             `json:"calendar_id"`
+	Tier        string             `json:"tier"`
+	LabelID     pgtype.UUID        `json:"label_id"`
+	DecidedBy   string             `json:"decided_by"`
+	AuthFailed  bool               `json:"auth_failed"`
+	Fingerprint string             `json:"fingerprint"`
+	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
 }
 
 // A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
@@ -450,6 +466,7 @@ func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchV
 		arg.DecidedBy,
 		arg.AuthFailed,
 		arg.Fingerprint,
+		arg.DecidedAt,
 	)
 	if err != nil {
 		return 0, err
@@ -823,16 +840,17 @@ func (q *Queries) MarkPIMWatchAlert(ctx context.Context, arg MarkPIMWatchAlertPa
 
 const markPIMWatchFailing = `-- name: MarkPIMWatchFailing :one
 UPDATE aura.pim_watch_cursors
-SET status = 'failing', last_error = $4, failing_since = COALESCE(failing_since, now())
+SET status = 'failing', last_error = $4, failing_since = COALESCE(failing_since, $5)
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3
 RETURNING identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at
 `
 
 type MarkPIMWatchFailingParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	AccountID  string      `json:"account_id"`
-	Resource   string      `json:"resource"`
-	LastError  pgtype.Text `json:"last_error"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	AccountID  string             `json:"account_id"`
+	Resource   string             `json:"resource"`
+	LastError  pgtype.Text        `json:"last_error"`
+	At         pgtype.Timestamptz `json:"at"`
 }
 
 func (q *Queries) MarkPIMWatchFailing(ctx context.Context, arg MarkPIMWatchFailingParams) (AuraPimWatchCursors, error) {
@@ -841,6 +859,7 @@ func (q *Queries) MarkPIMWatchFailing(ctx context.Context, arg MarkPIMWatchFaili
 		arg.AccountID,
 		arg.Resource,
 		arg.LastError,
+		arg.At,
 	)
 	var i AuraPimWatchCursors
 	err := row.Scan(
@@ -1016,6 +1035,29 @@ func (q *Queries) RetellPIMWatchAlerts(ctx context.Context, arg RetellPIMWatchAl
 	return err
 }
 
+const seedPIMWatchLabel = `-- name: SeedPIMWatchLabel :exec
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (identity_id, name) DO NOTHING
+`
+
+type SeedPIMWatchLabelParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Name       string      `json:"name"`
+	Tier       pgtype.Text `json:"tier"`
+	Position   int32       `json:"position"`
+}
+
+func (q *Queries) SeedPIMWatchLabel(ctx context.Context, arg SeedPIMWatchLabelParams) error {
+	_, err := q.db.Exec(ctx, seedPIMWatchLabel,
+		arg.IdentityID,
+		arg.Name,
+		arg.Tier,
+		arg.Position,
+	)
+	return err
+}
+
 const setPIMWatchLastDigest = `-- name: SetPIMWatchLastDigest :exec
 UPDATE aura.pim_watch_settings
 SET last_digest_at = $2, updated_at = now()
@@ -1098,7 +1140,7 @@ const updatePIMWatchSettings = `-- name: UpdatePIMWatchSettings :one
 UPDATE aura.pim_watch_settings
 SET digest_hour = $2, daily_alert_cap = $3, updated_at = now()
 WHERE identity_id = $1
-RETURNING identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, created_at, updated_at
+RETURNING identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at
 `
 
 type UpdatePIMWatchSettingsParams struct {
@@ -1117,6 +1159,7 @@ func (q *Queries) UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatch
 		&i.IntervalMinutes,
 		&i.LastDigestAt,
 		&i.VerdictRetentionDays,
+		&i.LabelsSeeded,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1125,24 +1168,25 @@ func (q *Queries) UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatch
 
 const upsertPIMWatchEventVerdict = `-- name: UpsertPIMWatchEventVerdict :execrows
 INSERT INTO aura.pim_watch_verdicts (
-    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO UPDATE
 SET calendar_id = EXCLUDED.calendar_id, tier = EXCLUDED.tier, decided_by = EXCLUDED.decided_by,
-    decided_at = now(), fingerprint = EXCLUDED.fingerprint,
+    decided_at = EXCLUDED.decided_at, fingerprint = EXCLUDED.fingerprint,
     alert_run_id = NULL, alerted_at = NULL, notified = false
 WHERE aura.pim_watch_verdicts.fingerprint <> EXCLUDED.fingerprint
 `
 
 type UpsertPIMWatchEventVerdictParams struct {
-	IdentityID  pgtype.UUID `json:"identity_id"`
-	AccountID   string      `json:"account_id"`
-	Resource    string      `json:"resource"`
-	ItemID      string      `json:"item_id"`
-	CalendarID  string      `json:"calendar_id"`
-	Tier        string      `json:"tier"`
-	DecidedBy   string      `json:"decided_by"`
-	Fingerprint string      `json:"fingerprint"`
+	IdentityID  pgtype.UUID        `json:"identity_id"`
+	AccountID   string             `json:"account_id"`
+	Resource    string             `json:"resource"`
+	ItemID      string             `json:"item_id"`
+	CalendarID  string             `json:"calendar_id"`
+	Tier        string             `json:"tier"`
+	DecidedBy   string             `json:"decided_by"`
+	Fingerprint string             `json:"fingerprint"`
+	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
 }
 
 // An event is decided again only when its fingerprint moved.
@@ -1156,6 +1200,7 @@ func (q *Queries) UpsertPIMWatchEventVerdict(ctx context.Context, arg UpsertPIMW
 		arg.Tier,
 		arg.DecidedBy,
 		arg.Fingerprint,
+		arg.DecidedAt,
 	)
 	if err != nil {
 		return 0, err

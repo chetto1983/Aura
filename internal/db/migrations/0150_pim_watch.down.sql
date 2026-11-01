@@ -4,6 +4,9 @@
 -- (same shape as 0091, 0104, 0114 and 0142). Rolling back loses the identity's rules, labels and
 -- corrections, which are its own words: a rollback past 0150 needs the pre-upgrade backup to keep
 -- them (docs/BACKUP-RESTORE.md).
+DROP INDEX IF EXISTS aura.scheduler_tasks_one_pim_digest;
+DROP INDEX IF EXISTS aura.scheduler_tasks_one_pim_watch;
+
 DELETE FROM aura.agent_job_runs
 WHERE task_id IN (
     SELECT id FROM aura.scheduler_tasks WHERE kind IN ('pim_watch', 'pim_digest')

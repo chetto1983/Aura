@@ -74,6 +74,7 @@ type Querier interface {
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
 	ClaimMediaJobDelivery(ctx context.Context, arg ClaimMediaJobDeliveryParams) (AuraMediaJob, error)
 	ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDraftSendParams) (AuraMessageDrafts, error)
+	ClaimPIMWatchLabelSeed(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearActiveMCPProfile(ctx context.Context) error
@@ -786,6 +787,7 @@ type Querier interface {
 	// is the result inside the assistant's tool card) nor a system turn, and tool output took
 	// half the hits (prd.md §7). The filter stays here, before the LIMIT.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
+	SeedPIMWatchLabel(ctx context.Context, arg SeedPIMWatchLabelParams) error
 	SetBoardCardPosition(ctx context.Context, arg SetBoardCardPositionParams) error
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	SetGatewayToolPolicy(ctx context.Context, arg SetGatewayToolPolicyParams) error

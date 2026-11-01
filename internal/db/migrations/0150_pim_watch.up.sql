@@ -24,6 +24,8 @@ CREATE TABLE aura.pim_watch_settings (
     interval_minutes       integer     NOT NULL DEFAULT 5 CHECK (interval_minutes >= 5),
     last_digest_at         timestamptz,
     verdict_retention_days integer     NOT NULL DEFAULT 30 CHECK (verdict_retention_days > 0),
+    -- The default labels go in once: a person who removes them all does not get them back.
+    labels_seeded          boolean     NOT NULL DEFAULT false,
     created_at             timestamptz NOT NULL DEFAULT now(),
     updated_at             timestamptz NOT NULL DEFAULT now()
 );
@@ -170,3 +172,12 @@ CREATE POLICY pim_watch_corrections_require_identity ON aura.pim_watch_correctio
     AS RESTRICTIVE FOR ALL TO aura_app
     USING (current_setting('app.current_identity', true) IS NOT NULL
            AND current_setting('app.current_identity', true) <> '');
+
+-- One live watch per account and one live digest per identity. A double click on the switch would
+-- otherwise leave two tasks walking one cursor.
+CREATE UNIQUE INDEX scheduler_tasks_one_pim_watch
+    ON aura.scheduler_tasks (identity_id, (payload ->> 'account_id'))
+    WHERE kind = 'pim_watch' AND status IN ('active', 'paused');
+CREATE UNIQUE INDEX scheduler_tasks_one_pim_digest
+    ON aura.scheduler_tasks (identity_id)
+    WHERE kind = 'pim_digest' AND status IN ('active', 'paused');

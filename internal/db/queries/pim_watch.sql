@@ -18,6 +18,16 @@ UPDATE aura.pim_watch_settings
 SET last_digest_at = $2, updated_at = now()
 WHERE identity_id = $1;
 
+-- name: ClaimPIMWatchLabelSeed :execrows
+UPDATE aura.pim_watch_settings
+SET labels_seeded = true
+WHERE identity_id = $1 AND NOT labels_seeded;
+
+-- name: SeedPIMWatchLabel :exec
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (identity_id, name) DO NOTHING;
+
 -- name: ListPIMWatchLabels :many
 SELECT * FROM aura.pim_watch_labels
 WHERE identity_id = $1
@@ -104,7 +114,7 @@ WHERE identity_id = $1 AND account_id = $2 AND resource = $3;
 
 -- name: MarkPIMWatchFailing :one
 UPDATE aura.pim_watch_cursors
-SET status = 'failing', last_error = $4, failing_since = COALESCE(failing_since, now())
+SET status = 'failing', last_error = $4, failing_since = COALESCE(failing_since, @at)
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3
 RETURNING *;
 
@@ -146,18 +156,18 @@ WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY(@
 -- A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
 INSERT INTO aura.pim_watch_verdicts (
     identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by,
-    auth_failed, fingerprint
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    auth_failed, fingerprint, decided_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING;
 
 -- name: UpsertPIMWatchEventVerdict :execrows
 -- An event is decided again only when its fingerprint moved.
 INSERT INTO aura.pim_watch_verdicts (
-    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO UPDATE
 SET calendar_id = EXCLUDED.calendar_id, tier = EXCLUDED.tier, decided_by = EXCLUDED.decided_by,
-    decided_at = now(), fingerprint = EXCLUDED.fingerprint,
+    decided_at = EXCLUDED.decided_at, fingerprint = EXCLUDED.fingerprint,
     alert_run_id = NULL, alerted_at = NULL, notified = false
 WHERE aura.pim_watch_verdicts.fingerprint <> EXCLUDED.fingerprint;
 
@@ -213,7 +223,7 @@ USING (
     FROM aura.pim_watch_verdicts AS o
     JOIN aura.pim_watch_settings AS s ON s.identity_id = o.identity_id
     WHERE o.identity_id = $1
-      AND o.decided_at < @now::timestamptz - s.verdict_retention_days * interval '1 day'
+      AND o.decided_at + s.verdict_retention_days * interval '1 day' < sqlc.arg(now)::timestamptz
     LIMIT @batch
 ) AS expired
 WHERE v.identity_id = expired.identity_id AND v.account_id = expired.account_id

@@ -665,6 +665,7 @@ type AuraPimWatchSettings struct {
 	IntervalMinutes      int32              `json:"interval_minutes"`
 	LastDigestAt         pgtype.Timestamptz `json:"last_digest_at"`
 	VerdictRetentionDays int32              `json:"verdict_retention_days"`
+	LabelsSeeded         bool               `json:"labels_seeded"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
