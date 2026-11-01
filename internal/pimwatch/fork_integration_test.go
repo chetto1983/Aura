@@ -138,16 +138,14 @@ func TestEveryShapeTheForkWritesPassesThroughAPage(t *testing.T) {
 		t.Fatalf("cursor = %q", got)
 	}
 	ctx := context.Background()
-	for id, want := range map[string]Tier{"e-4": TierNow, "e-5": TierToday} {
+	for id, want := range map[string]Tier{"e-2": TierToday, "e-4": TierNow, "e-5": TierToday} {
 		verdict, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, id)
 		if err != nil || verdict.Tier != want {
 			t.Fatalf("%s = %+v, %v, want %s", id, verdict, err, want)
 		}
 	}
-	for _, id := range []string{"e-2", "e-3"} {
-		if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, id); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("a delete with no row left one: %s, %v", id, err)
-		}
+	if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "e-3"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a delete with no row and no start left one: %v", err)
 	}
 	mustContain(t, out.Notice, "anna@acme.it: Riunione annullata")
 }
