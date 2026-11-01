@@ -82,7 +82,7 @@ a user Aura has never seen, in any language, on the first day.
 ```text
 scheduler (one task per account, every 5 min, no LLM)
   └─ pim_watch handler
-       ├─ PIM GET /admin/changes(account, resource, cursor)   identity's OAuth grant
+       ├─ PIM POST /admin/changes(account, resource, cursor)  identity's OAuth grant
        ├─ triage: rules, then corrections and a classifier once they earn their place
        ├─ verdicts and cursor, one Postgres transaction
        └─ returns fixed text for `now`, or "" when nothing needs telling
@@ -99,9 +99,10 @@ The contract is PMSync's `getInitialSyncToken` plus `getChangesSince` (the live 
 stateless: Aura holds the cursor, so the sidecar needs no outbox, no worker, no service credential
 and no tenant context outside a request.
 
-`GET /admin/changes?accountId=&resource=mail|calendar&cursor=&limit=`, under the same
-OAuth bearer as `/admin`, so the tenant comes from the token. It is not an MCP action: the model never
-sees it, and the `calendar` tool keeps its description budget.
+`POST /admin/changes` with `{accountId, resource: "mail"|"calendar", cursor, limit}`, under the same
+OAuth bearer as `/admin`, so the tenant comes from the token. It reads and changes nothing, and it is a POST
+because a cursor holds delta links, one per calendar, which would overflow a request line and land in access
+logs. It is not an MCP action: the model never sees it, and the `calendar` tool keeps its description budget.
 
 ```json
 {
@@ -140,9 +141,13 @@ sees it, and the `calendar` tool keeps its description budget.
 - `writtenTo` is rung 3's fact (§5.3): the account has sent mail to this sender, or the thread holds a mail it
   sent. The PIM asks the provider once per sender within a request, skips it for `bulk` mail, and answers
   `null` where it cannot tell, such as an IMAP account with no Sent folder. Aura keeps no address table.
-- `POST /admin/items` with `{accountId, resource, ids}` (at most 50) reads sender, subject and time by id, for
-  the digest and the decisions view. An id that no longer exists comes back in `gone`, so a deleted mail
-  shows as gone instead of failing the digest.
+- `POST /admin/items` with `{accountId, resource, items: [{id, calendarId}]}` (at most 50) reads sender, subject
+  and time by id, for the digest and the decisions view. An item that no longer exists comes back in `gone`, so a
+  deleted mail shows as gone instead of failing the digest.
+- A failure names itself, because Aura treats the two kinds differently (§5.6). `503 {"error":"provider_transient"}`
+  covers a provider timeout, 429 or 5xx. `502 {"error":"provider_auth"}` is a revoked or expired grant,
+  `403 {"error":"permission_denied"}` a lost permission, and `422 {"error":"unsupported_resource"}` a resource the
+  provider lacks.
 - `fingerprint` hashes start, end and status. Provider cursors return the current event, not what
   changed, so this is how Aura tells a moved event from a new description or someone else's reply.
 - Mail means INBOX in the first release. The cursor is a per-folder map from the start, so more folders
