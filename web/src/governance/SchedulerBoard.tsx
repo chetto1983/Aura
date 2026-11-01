@@ -76,7 +76,19 @@ function statusLabel(task: SchedulerTask, t: TFunction): string {
   if (task.PausedReason === 'failures') {
     return t('governance.scheduler.pausedAfterFailures', { count: task.ConsecutiveFailures });
   }
+  if (task.PausedReason === 'identity_deactivated') {
+    return t('governance.scheduler.pausedIdentityDeactivated');
+  }
   return t('governance.scheduler.paused');
+}
+
+// kindLabel gives the mail watch's two kinds a readable name, because nobody typed them. Every
+// other kind stays the word it has always shown.
+function kindLabel(kind: string, t: TFunction): string {
+  if (kind === 'pim_watch' || kind === 'pim_digest') {
+    return t(`governance.scheduler.kind.${kind}`);
+  }
+  return kind;
 }
 
 export function SchedulerBoard() {
@@ -157,7 +169,9 @@ export function SchedulerBoard() {
                 className="flex min-w-0 flex-col items-start gap-0.5 text-left"
               >
                 <span className="flex min-w-0 max-w-full items-center gap-2">
-                  <span className="truncate text-[15px] font-semibold text-text">{task.Kind}</span>
+                  <span className="truncate text-[15px] font-semibold text-text">
+                    {kindLabel(task.Kind, t)}
+                  </span>
                   <span
                     className={`rounded-sm border px-1.5 py-px font-mono text-[10px] uppercase tracking-wider ${chipClass(task.Status)}`}
                   >
@@ -362,7 +376,9 @@ export function SchedulerBoard() {
           if (!next) setPendingDelete(null);
         }}
         title={t('governance.scheduler.delete.title')}
-        description={t('governance.scheduler.delete.body', { kind: pendingDelete?.Kind ?? '' })}
+        description={t('governance.scheduler.delete.body', {
+          kind: kindLabel(pendingDelete?.Kind ?? '', t),
+        })}
         cancelLabel={t('governance.scheduler.delete.cancel')}
         confirmLabel={t('governance.scheduler.delete.confirm')}
         confirmVariant="destructive"

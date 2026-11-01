@@ -110,8 +110,9 @@ export interface SchedulerTask {
   /** False for the database backup, which the operator may run or edit but never stop:
    * neither delete nor pause. */
   readonly Cancellable: boolean;
-  /** Why a paused task stopped: 'operator', or 'failures' when the scheduler paused it after
-   * repeated failed runs. Absent unless Status is 'paused'. */
+  /** Why a paused task stopped: 'operator', 'failures' when the scheduler paused it after
+   * repeated failed runs, or 'identity_deactivated' when its identity was deactivated. Absent
+   * unless Status is 'paused'. */
   readonly PausedReason?: string;
   /** Failed runs in a row since the last success; the count that triggered a 'failures' pause. */
   readonly ConsecutiveFailures: number;

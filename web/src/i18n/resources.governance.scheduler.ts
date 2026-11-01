@@ -25,6 +25,11 @@ export const schedulerEn = {
   paused: 'Paused',
   pausedAfterFailures_one: 'Paused after {{count}} failed run',
   pausedAfterFailures_other: 'Paused after {{count}} failed runs',
+  pausedIdentityDeactivated: 'Paused: identity deactivated',
+  kind: {
+    pim_watch: 'Mail and calendar watch',
+    pim_digest: 'Mail and calendar digest',
+  },
   actions: {
     approve: 'Approve',
     run: 'Run now',
@@ -95,6 +100,11 @@ export const schedulerIt = {
   paused: 'In pausa',
   pausedAfterFailures_one: 'In pausa dopo {{count}} esecuzione fallita',
   pausedAfterFailures_other: 'In pausa dopo {{count}} esecuzioni fallite',
+  pausedIdentityDeactivated: 'In pausa: identità disattivata',
+  kind: {
+    pim_watch: 'Controllo di posta e calendario',
+    pim_digest: 'Riepilogo di posta e calendario',
+  },
   actions: {
     approve: 'Approva',
     run: 'Esegui ora',

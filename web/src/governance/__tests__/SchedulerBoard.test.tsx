@@ -389,6 +389,44 @@ describe('SchedulerBoard (GOV-03)', () => {
     expect(await screen.findByText('Paused after 3 failed runs')).toBeTruthy();
   });
 
+  it('a task its identity took down says so', async () => {
+    fetchSchedulerTasks.mockResolvedValue([
+      { ...baseTask(), Status: 'paused', PausedReason: 'identity_deactivated' },
+    ]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    expect(await screen.findByText('Paused: identity deactivated')).toBeTruthy();
+  });
+
+  it.each([
+    ['pim_watch', 'Mail and calendar watch'],
+    ['pim_digest', 'Mail and calendar digest'],
+  ])('reads the kind %s as words, here and in the delete prompt', async (kind, name) => {
+    fetchSchedulerTasks.mockResolvedValue([{ ...baseTask(), Kind: kind }]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    expect(await screen.findByText(name)).toBeTruthy();
+    expect(screen.queryByText(kind)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect((await screen.findByRole('dialog')).textContent).toContain(name);
+  });
+
+  it('leaves every other kind as the word it has always shown', async () => {
+    fetchSchedulerTasks.mockResolvedValue([{ ...baseTask(), Kind: 'agent_job' }]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    expect(await screen.findByText('agent_job')).toBeTruthy();
+  });
+
   it('the database backup cannot be paused or resumed', async () => {
     fetchSchedulerTasks.mockResolvedValue([
       { ...baseTask(), Kind: 'backup_postgres', Cancellable: false },
