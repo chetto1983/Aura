@@ -28,6 +28,12 @@ export interface SelectProps {
   readonly placeholder?: ReactNode;
   readonly size?: 'sm' | 'default';
   readonly className?: string;
+  /** Controls the menu, for a caller that opens it from a key. */
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Runs as the menu closes. Calling preventDefault keeps the focus off the trigger. */
+  readonly onCloseAutoFocus?: (event: Event) => void;
+  readonly tabIndex?: number;
   readonly 'aria-label'?: string | undefined;
   readonly 'aria-invalid'?: boolean | undefined;
   readonly 'aria-describedby'?: string | undefined;
@@ -42,7 +48,10 @@ export function Select({
   placeholder,
   size = 'default',
   className,
-  ...aria
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+  ...triggerProps
 }: SelectProps) {
   // "" is an option only when one is listed; otherwise it is Radix's "nothing chosen", which
   // shows the placeholder.
@@ -59,12 +68,14 @@ export function Select({
         onValueChange(next === EMPTY_VALUE ? '' : next);
       }}
       {...(disabled === undefined ? {} : { disabled })}
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange })}
     >
       <SelectPrimitive.Trigger
         id={id}
         data-slot="select-trigger"
         className={cn(selectTriggerClass, size === 'sm' && 'min-h-8 px-2 py-1', className)}
-        {...aria}
+        {...triggerProps}
       >
         <span className="min-w-0 truncate">
           <SelectPrimitive.Value placeholder={placeholder} />
@@ -77,6 +88,7 @@ export function Select({
         <SelectPrimitive.Content
           position="popper"
           sideOffset={6}
+          {...(onCloseAutoFocus === undefined ? {} : { onCloseAutoFocus })}
           className={cn(
             selectMenuClass,
             'max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width)',

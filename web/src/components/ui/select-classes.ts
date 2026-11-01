@@ -1,9 +1,10 @@
 // The classes of the cockpit's select, apart from its component so the searchable pickers built
 // on cmdk can draw the same trigger, menu and rows (react/only-export-components).
 
-/** Classes of the open menu. */
+/** Classes of the open menu. It portals to the body, so inside a dialog it must clear the
+ * dialog's z-[100], or it opens behind the overlay and nothing can reach it. */
 export const selectMenuClass =
-  'z-50 overflow-hidden rounded-lg border border-border-strong bg-surface-3 p-1 text-text shadow-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95';
+  'z-[110] overflow-hidden rounded-lg border border-border-strong bg-surface-3 p-1 text-text shadow-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95';
 
 /** Classes of one row of the menu: highlighted on hover or keys, accent once chosen. A
  * disabled row is read from aria-disabled="true", which Radix and cmdk both write: cmdk also
