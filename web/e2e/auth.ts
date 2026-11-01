@@ -173,13 +173,14 @@ interface AuthConfig {
   csrfToken: string;
 }
 
-// browserCookieHeader is the Cookie header Chromium sends to url. page.request builds its own
-// from the same jar but drops every Secure cookie over http unless the host is localhost, while
-// Chromium also trusts 127.0.0.1, where CI serves the cockpit. Without it Authula never sees the
-// __Host- CSRF cookie, and its csrf.protect on sign-in answers 403. The auth calls stay on
-// page.request rather than a page fetch because specs mock /api/* with context.route, which
-// page.request bypasses.
-async function browserCookieHeader(page: Page, url: string): Promise<Record<string, string>> {
+// Capture the browser's cookie selection for auth calls and independent teardown contexts.
+// Passing it explicitly also handles request-context versions whose Secure loopback-cookie
+// policy differs from Chromium. Auth calls use page.request rather than a page fetch because
+// specs mock /api/* with context.route, which page.request bypasses.
+export async function browserCookieHeader(
+  page: Page,
+  url: string,
+): Promise<Record<string, string>> {
   const { hostname, pathname } = new URL(url);
   const value = (await page.context().cookies())
     .filter(

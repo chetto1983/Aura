@@ -51,3 +51,39 @@ their local UI preferences; existing operator cards were not edited.
 
 No agent tool or API behavior changed, so the earlier persistence and real-runner evidence
 remains applicable. This follow-up measures the editor's visible feedback while editing.
+
+## Browser-regression follow-up
+
+The first CI on `cd8cfa02e` passed the frontend unit/static jobs but the progress browser
+cases exceeded their 60-second budget. Their in-page finally cleanup reported a closed
+page and obscured the original pending operation. No percentage-value mismatch was shown.
+
+The exact test was then run with Chromium Linux against the new production assets and
+real lab API, reusing the authenticated browser session privately: both projects passed
+without retries (25.5 s), and again with CPU throttling rate 6 (52.5 s). With explicit
+loading guards and bounded response waits, the old 55-key input setup exhausted its
+15-second polling budget at 0.43 and 0.50 under the same throttle. This demonstrates a
+timing-dependent test setup, not a reason to change the expected 0.55.
+
+The test now clicks the native track near 55% and uses keyboard input only for any neighboring
+step. It waits for the initial title and previous saved ratio before editing, since the
+native editor initially mounts empty field data before its effect copies the selected card.
+All label, API, reload, zero and completion assertions remain. The corrected exact desktop
+and mobile tests passed at the first attempt under rate-6 throttling, 24.4 s total.
+
+Cleanup now runs in afterEach through an independent authenticated API request context,
+targeting only the ID returned by the test's own POST. It captures the existing shared
+browserCookieHeader helper before the page closes. In an intentional forced-page-close
+run, the original witness error remained visible and a subsequent independent DELETE
+returned 404, proving the production test teardown had already removed its card.
+
+A fake-cookie HTTP-loopback smoke returned 204 both with the current request context's
+default cookie handling and with the captured header after closing the browser context.
+The old helper comment's blanket claim about Secure cookies was therefore narrowed to a
+version-dependent precaution. Current CI uses TLS (`scripts/web_e2e_ci.sh`); this smoke
+checks the supported local HTTP configuration, not a different CI origin.
+
+These changes fix demonstrated input-setup slowness, premature field-readiness checks and
+failure masking. They do not establish the sole cause of the original CI's 60-second wait.
+Typecheck/lint/format and independent review cover this test-only follow-up. No production
+bundle, API behavior or expected persistence value was changed by it.
