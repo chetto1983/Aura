@@ -62,11 +62,7 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
 
   return (
     <div className="@container/day flex min-h-full flex-col">
-      <DayHeader
-        day={day ?? decisions.data?.day ?? null}
-        rows={rows}
-        onDayChange={onDayChange}
-      />
+      <DayHeader day={day ?? decisions.data?.day ?? null} rows={rows} onDayChange={onDayChange} />
       <div className="flex-1">
         {decisions.isPending || labels.isPending ? (
           <DayPending />
