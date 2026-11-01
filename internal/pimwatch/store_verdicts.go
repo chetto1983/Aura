@@ -86,8 +86,10 @@ func (s *Store) CommitPage(ctx context.Context, identityID string, p PageCommit)
 		if err != nil {
 			return fmt.Errorf("count alerts: %w", err)
 		}
-		for _, draft := range p.Drafts {
-			written, err := writeVerdict(ctx, q, id, p, draft)
+		for i, draft := range p.Drafts {
+			// A page shares one clock and a provider's id is text, so ties would read as a shuffle:
+			// IMAP's "10" sorts before "9". Each row is a microsecond after the last.
+			written, err := writeVerdict(ctx, q, id, p, draft, p.Now.Add(time.Duration(i)*time.Microsecond))
 			if err != nil {
 				return err
 			}
@@ -119,21 +121,21 @@ func (s *Store) CommitPage(ctx context.Context, identityID string, p PageCommit)
 	return result, nil
 }
 
-func writeVerdict(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageCommit, draft VerdictDraft) (bool, error) {
+func writeVerdict(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageCommit, draft VerdictDraft, decidedAt time.Time) (bool, error) {
 	var n int64
 	var err error
 	if draft.Event {
 		n, err = q.UpsertPIMWatchEventVerdict(ctx, sqlc.UpsertPIMWatchEventVerdictParams{
 			IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
 			CalendarID: draft.CalendarID, Tier: string(draft.Decision.Tier), DecidedBy: string(draft.Decision.By),
-			Fingerprint: draft.Fingerprint, DecidedAt: timestamp(p.Now),
+			Fingerprint: draft.Fingerprint, DecidedAt: timestamp(decidedAt),
 		})
 	} else {
 		n, err = q.InsertPIMWatchVerdict(ctx, sqlc.InsertPIMWatchVerdictParams{
 			IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
 			CalendarID: draft.CalendarID, Tier: string(draft.Decision.Tier), LabelID: optionalUUID(draft.Decision.LabelID),
 			DecidedBy: string(draft.Decision.By), AuthFailed: draft.Decision.AuthFailed, Fingerprint: draft.Fingerprint,
-			DecidedAt: timestamp(p.Now),
+			DecidedAt: timestamp(decidedAt),
 		})
 	}
 	if err != nil {

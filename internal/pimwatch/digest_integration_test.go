@@ -4,6 +4,7 @@ package pimwatch
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -166,4 +167,29 @@ func TestARemovedLabelsMailsReadAsUnsorted(t *testing.T) {
 		t.Fatalf("digest: %v", err)
 	}
 	mustContain(t, out.Notice, "To sort\n1. [work] m1@acme.it")
+}
+
+// A provider's id is text: on IMAP "10" sorts before "9", and a burst arrives in one page, so ties
+// on the page's clock used to read as a shuffle. changesOf pads its ids, which hid this.
+func TestADigestKeepsTheOrderAPageArrivedIn(t *testing.T) {
+	r := newWatchRig(t)
+	drafts := make([]VerdictDraft, 0, 12)
+	for i := 1; i <= 12; i++ {
+		drafts = append(drafts, VerdictDraft{ItemID: fmt.Sprintf("INBOX/1/%d", i), Decision: Decision{Tier: TierToday, By: ByDefault}})
+	}
+	r.commit(rigAccount, drafts...)
+	r.clock.advance(time.Minute)
+
+	verdicts, err := r.store.DigestVerdicts(context.Background(), r.identity, r.clock.at.Add(-time.Hour), r.clock.at)
+	if err != nil {
+		t.Fatalf("digest verdicts: %v", err)
+	}
+	if len(verdicts) != len(drafts) {
+		t.Fatalf("%d verdicts", len(verdicts))
+	}
+	for i, verdict := range verdicts {
+		if verdict.ItemID != drafts[i].ItemID {
+			t.Fatalf("line %d is %s, want %s", i, verdict.ItemID, drafts[i].ItemID)
+		}
+	}
 }
