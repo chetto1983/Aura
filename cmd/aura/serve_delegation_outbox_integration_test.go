@@ -41,6 +41,14 @@ func TestDelegationFanoutClaimRollsBackWithoutOutbox(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("list candidates = %d, %v", len(rows), err)
 	}
+	// The committed claim leaves a due pending notification; internal/cron's sweep tests share the
+	// database and would deliver it as their own.
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(),
+			"DELETE FROM aura.pending_notifications WHERE steer_queue_id = $1", rows[0].ID); err != nil {
+			t.Errorf("remove the outbox row: %v", err)
+		}
+	})
 	candidates := []swarm.UndrainedResult{{
 		ID: rows[0].ID, IdentityID: rows[0].IdentityID, ConversationID: rows[0].ConversationID,
 		Body: rows[0].Body, FanoutKey: rows[0].FanoutKey,
