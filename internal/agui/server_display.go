@@ -157,10 +157,14 @@ func callOutcomes(hist []llm.Message, conversationID string, facts []toolinvocat
 }
 
 func snapshotContent(m llm.Message) string {
-	if m.Role != llm.RoleUser {
+	switch m.Role {
+	case llm.RoleUser:
+		return stripAuraContextEnvelope(m.Content)
+	case llm.RoleAssistant:
+		return displayWatchRecord(m.Content)
+	default:
 		return m.Content
 	}
-	return stripAuraContextEnvelope(m.Content)
 }
 
 func stripAuraContextEnvelope(content string) string {

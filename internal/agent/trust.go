@@ -66,6 +66,11 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 	return toolName, true
 }
 
+// WatchRecordSource names the frame around a mail's sender and subject in a watch's conversation
+// record. A plain line and the refs stay outside the frame, and the cockpit shows the frame's
+// content as plain text (internal/agui/server_display_watch.go).
+const WatchRecordSource = "mail_watch"
+
 // FrameUntrustedPromptContent wraps model-facing untrusted data in the shared
 // nonce-bearing envelope used for tool output and delegated input.
 func FrameUntrustedPromptContent(source, content string) string {
@@ -90,6 +95,16 @@ var promptTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt
 // but deliberately not the untrusted tool-output envelope.
 func EscapePromptText(content string) string {
 	return promptTextEscaper.Replace(norm.NFKC.String(content))
+}
+
+// promptTextUnescaper undoes promptTextEscaper in one pass, so "&amp;lt;" reads as "&lt;" and not
+// as "<". NFKC folding is not undone: a fullwidth bracket stays folded.
+var promptTextUnescaper = strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">")
+
+// UnescapePromptText is the display half of EscapePromptText, for a path that shows framed text
+// to a person. Text it returns is attacker text again and never goes back to a model.
+func UnescapePromptText(content string) string {
+	return promptTextUnescaper.Replace(content)
 }
 
 func toolOutputNonce() string {

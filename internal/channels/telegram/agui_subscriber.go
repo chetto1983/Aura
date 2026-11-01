@@ -184,6 +184,10 @@ func convID(chatID int64) string {
 	return uuid.NewSHA1(telegramChatNamespace, []byte(strconv.FormatInt(chatID, 10))).String()
 }
 
+// ThreadConversationID is the one continuous thread of a Telegram account, for a caller that
+// writes into it from outside the channel. A 1:1 chat's id is the user's.
+func ThreadConversationID(telegramUserID int64) string { return convID(telegramUserID) }
+
 // telegramChatNamespace is a fixed namespace so chat→conversation ids are stable
 // and collision-free across restarts (a random-but-fixed UUID, not a well-known
 // one, so it never collides with another subsystem's UUIDv5 namespace).

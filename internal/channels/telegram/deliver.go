@@ -91,6 +91,10 @@ func (t *Telegram) pushSeams() (botSender, accountResolver, bool) {
 // split (renderer.go), the push path never did. Same splitter, same package: a second one would
 // drift. splitTelegramText returns nil only for the empty string, where the single-send
 // behaviour (and its API error) is preserved deliberately.
+//
+// No parse mode, so nothing in the text is markup, and no link preview: a push can quote a mail's
+// subject, and a preview would make Telegram fetch a URL its sender chose (spec
+// 2026-10-31-mail-calendar-watch-design.md §5.6).
 func (t *Telegram) sendText(ctx context.Context, sender botSender, telegramUserID int64, text string) error {
 	chunks := splitTelegramText(text, telegramTextCap)
 	if len(chunks) == 0 {
@@ -102,7 +106,7 @@ func (t *Telegram) sendText(ctx context.Context, sender botSender, telegramUserI
 				return fmt.Errorf("telegram deliver: pacing chunk %d/%d to %d: %w", i+1, len(chunks), telegramUserID, err)
 			}
 		}
-		if _, err := sender.Send(tele.ChatID(telegramUserID), chunk); err != nil {
+		if _, err := sender.Send(tele.ChatID(telegramUserID), chunk, &tele.SendOptions{DisableWebPagePreview: true}); err != nil {
 			// Stop at the first failure rather than pushing the remainder: the chat has
 			// already received chunks 1..i, and continuing past a rate-limit rejection
 			// only deepens the hole. The caller's retry re-sends the WHOLE text, so a

@@ -30,9 +30,11 @@ type sendRecorder struct {
 }
 
 type recordedSend struct {
-	to     tele.Recipient
-	text   string
-	markup *tele.ReplyMarkup // nil unless the send carried SendOptions (approval keyboard)
+	to        tele.Recipient
+	text      string
+	markup    *tele.ReplyMarkup // nil unless the send carried SendOptions (approval keyboard)
+	noPreview bool
+	parseMode tele.ParseMode
 }
 
 func (b *sendRecorder) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
@@ -48,7 +50,13 @@ func (b *sendRecorder) Send(to tele.Recipient, what any, opts ...any) (*tele.Mes
 		return nil, b.sendErr
 	}
 	text, _ := what.(string)
-	b.sends = append(b.sends, recordedSend{to: to, text: text, markup: replyMarkupFrom(opts)})
+	send := recordedSend{to: to, text: text, markup: replyMarkupFrom(opts)}
+	for _, o := range opts {
+		if v, ok := o.(*tele.SendOptions); ok && v != nil {
+			send.noPreview, send.parseMode = v.DisableWebPagePreview, v.ParseMode
+		}
+	}
+	b.sends = append(b.sends, send)
 	return &tele.Message{ID: len(b.sends)}, nil
 }
 
@@ -123,6 +131,32 @@ func (s *stubResolver) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
+}
+
+// A subject is attacker text. A push goes as plain text, so Markdown in it stays literal, and
+// with no link preview, so Telegram fetches no URL its sender chose.
+func TestAPushIsPlainTextWithNoLinkPreview(t *testing.T) {
+	t.Parallel()
+	bot := &sendRecorder{}
+	tg := NewChannel(Deps{Offline: true})
+	subject := "*urgent* [click](http://evil.example)"
+	if err := tg.sendText(t.Context(), bot, 4242, subject); err != nil {
+		t.Fatalf("sendText: %v", err)
+	}
+	got := bot.recorded()
+	if len(got) != 1 || got[0].text != subject {
+		t.Fatalf("sends = %+v", got)
+	}
+	if !got[0].noPreview || got[0].parseMode != tele.ModeDefault {
+		t.Fatalf("send = %+v, want no preview and no parse mode", got[0])
+	}
+}
+
+func TestThreadConversationIDIsTheAccountsThread(t *testing.T) {
+	t.Parallel()
+	if ThreadConversationID(4242) != convID(4242) {
+		t.Fatal("the exported thread is not the channel's own")
+	}
 }
 
 func TestDeliver(t *testing.T) {
