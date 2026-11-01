@@ -287,7 +287,7 @@ func TestMailWatchErrorsKeepToFixedWords(t *testing.T) {
 		body   string
 	}{
 		{pimwatch.ErrUnavailable, http.StatusServiceUnavailable, "mail_watch_unavailable"},
-		{errors.Join(pimwatch.ErrInvalid, errors.New("the tier is now, today or later")), http.StatusBadRequest, "tier is now"},
+		{&pimwatch.InvalidError{Code: "invalid_tier", Message: "the tier is now, today or later"}, http.StatusBadRequest, `"error":"invalid_tier"`},
 		{pimwatch.ErrNotFound, http.StatusNotFound, "not_found"},
 		{&pimwatch.PIMError{Class: pimwatch.FailureHard, Code: "provider_auth"}, http.StatusBadGateway, "provider_auth"},
 		{errors.New("dial postgres://aura:secret@db:5432"), http.StatusInternalServerError, "mail_watch_failed"},

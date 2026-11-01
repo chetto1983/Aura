@@ -244,11 +244,15 @@ export function unavailableReason(reason: string | undefined, t: TFunction): str
   return t(`governance.mailWatch.overview.reason.${reason ?? 'none'}`, { defaultValue: '' });
 }
 
-/** A failed call as the sentence the person reads. A 400's `{error}` is the server's own, naming
- * what to fix; the client's checks catch most of those first, so it is the only text not ours. */
+const INVALID = 'governance.mailWatch.invalid';
+
+/** A failed call as the sentence the person reads. Every status answers a fixed code in `{error}`,
+ * and a 400's says what to fix; a code this build does not know reads as one generic sentence. */
 export function errorSentence(error: unknown, t: TFunction): string {
   if (error instanceof HttpError) {
-    if (error.status === 400 && error.reason !== '') return error.reason;
+    if (error.status === 400 && error.reason !== '') {
+      return t(`${INVALID}.${error.reason}`, { defaultValue: t(`${INVALID}.unknown`) });
+    }
     if (error.status === 502 && error.reason !== '') return failureSentence(error.reason, t);
     if (error.status === 404) return t('governance.mailWatch.errors.notFound');
     if (isUnavailable(error)) return t('governance.mailWatch.errors.unavailable');

@@ -108,7 +108,7 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 	}
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {
-		return fmt.Errorf("%w: an account id is required", ErrInvalid)
+		return invalid("account_required", "an account id is required")
 	}
 	watches, err := s.Tasks.Watches(ctx, identityID)
 	if err != nil {
@@ -363,7 +363,7 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 	if day != "" {
 		parsed, err := time.ParseInLocation(time.DateOnly, day, loc)
 		if err != nil {
-			return DayDecisions{}, fmt.Errorf("%w: the day is YYYY-MM-DD", ErrInvalid)
+			return DayDecisions{}, invalid("invalid_day", "the day is YYYY-MM-DD")
 		}
 		start = parsed
 	}

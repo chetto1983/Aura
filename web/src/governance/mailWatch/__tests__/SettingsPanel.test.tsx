@@ -134,12 +134,12 @@ describe('SettingsPanel', () => {
   it('says why a save failed', async () => {
     server.on(`PUT ${SETTINGS}`, () => ({
       status: 400,
-      body: { error: 'the digest hour is 0 to 23' },
+      body: { error: 'invalid_digest_hour', message: 'the digest hour is 0 to 23' },
     }));
     renderWatch(<SettingsPanel />);
     await screen.findByText('Digest hour');
     save();
-    expect((await screen.findByRole('alert')).textContent).toBe('the digest hour is 0 to 23');
+    expect((await screen.findByRole('alert')).textContent).toBe('The digest hour is from 0 to 23.');
   });
 
   it('shows the saved values in the cache at once', async () => {

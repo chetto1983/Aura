@@ -48,10 +48,10 @@ func (s *Service) Correct(ctx context.Context, identityID string, c Correction) 
 
 func (s *Service) checkCorrection(ctx context.Context, identityID string, c Correction) error {
 	if c.Tier == "" && c.LabelID == nil {
-		return fmt.Errorf("%w: a correction changes a tier or a label", ErrInvalid)
+		return invalid("empty_correction", "a correction changes a tier or a label")
 	}
 	if c.Tier != "" && !c.Tier.Valid() {
-		return fmt.Errorf("%w: the tier is now, today or later", ErrInvalid)
+		return invalidTier()
 	}
 	if c.LabelID == nil || *c.LabelID == "" {
 		return nil
@@ -65,7 +65,7 @@ func (s *Service) checkLabel(ctx context.Context, identityID, labelID string) er
 		return err
 	}
 	if !slices.ContainsFunc(labels, func(l Label) bool { return l.ID == labelID }) {
-		return fmt.Errorf("%w: no such label", ErrInvalid)
+		return invalid("unknown_label", "no such label")
 	}
 	return nil
 }
@@ -111,10 +111,10 @@ func (s *Service) AddRule(ctx context.Context, identityID string, in RuleInput) 
 		return Rule{}, err
 	}
 	if in.Tier == "" && in.LabelID == "" {
-		return Rule{}, fmt.Errorf("%w: a rule gives a tier or a label", ErrInvalid)
+		return Rule{}, invalid("empty_rule", "a rule gives a tier or a label")
 	}
 	if in.Tier != "" && !in.Tier.Valid() {
-		return Rule{}, fmt.Errorf("%w: the tier is now, today or later", ErrInvalid)
+		return Rule{}, invalidTier()
 	}
 	if in.LabelID != "" {
 		if err := s.checkLabel(ctx, identityID, in.LabelID); err != nil {
@@ -131,10 +131,10 @@ func parseRuleKey(raw string) (string, KeyKind, error) {
 		if address, _ := SenderKey(key); address != "" {
 			return address, KeySender, nil
 		}
-		return "", "", fmt.Errorf("%w: %q is not an address", ErrInvalid, raw)
+		return "", "", invalid("invalid_address", fmt.Sprintf("%q is not an address", raw))
 	}
 	if !strings.Contains(key, ".") || strings.ContainsAny(key, " \t\r\n") {
-		return "", "", fmt.Errorf("%w: a rule names an address or a domain", ErrInvalid)
+		return "", "", invalid("invalid_rule_key", "a rule names an address or a domain")
 	}
 	return key, KeyDomain, nil
 }
@@ -170,7 +170,7 @@ func (s *Service) LabelID(ctx context.Context, identityID, name string) (string,
 			return label.ID, nil
 		}
 	}
-	return "", fmt.Errorf("%w: no label is called %q", ErrInvalid, name)
+	return "", invalid("unknown_label", fmt.Sprintf("no label is called %q", name))
 }
 
 // AddLabel appends a label to the list.
@@ -203,10 +203,10 @@ const labelNameRunes = 60
 func checkLabelInput(name string, tier Tier) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > labelNameRunes {
-		return fmt.Errorf("%w: a label's name is 1 to %d characters", ErrInvalid, labelNameRunes)
+		return invalid("invalid_label_name", fmt.Sprintf("a label's name is 1 to %d characters", labelNameRunes))
 	}
 	if tier != "" && !tier.Valid() {
-		return fmt.Errorf("%w: the tier is now, today or later", ErrInvalid)
+		return invalidTier()
 	}
 	return nil
 }

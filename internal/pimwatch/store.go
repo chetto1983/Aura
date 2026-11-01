@@ -18,9 +18,25 @@ var (
 	// ErrNotFound is a row this identity cannot see, whether it does not exist or belongs to
 	// someone else: RLS makes the two indistinguishable, on purpose.
 	ErrNotFound = errors.New("not found")
-	// ErrInvalid wraps every refusal of a caller's input; its message names what to fix.
+	// ErrInvalid matches every refusal of a caller's input, each one an *InvalidError.
 	ErrInvalid = errors.New("invalid mail watch input")
 )
+
+// InvalidError refuses a caller's input twice over: Code is fixed, for the cockpit to translate,
+// and Message names what to fix, for the model reading the tool's result.
+type InvalidError struct {
+	Code    string
+	Message string
+}
+
+func (e *InvalidError) Error() string { return ErrInvalid.Error() + ": " + e.Message }
+
+// Is makes every refusal an ErrInvalid.
+func (e *InvalidError) Is(target error) bool { return target == ErrInvalid }
+
+func invalid(code, message string) error { return &InvalidError{Code: code, Message: message} }
+
+func invalidTier() error { return invalid("invalid_tier", "the tier is now, today or later") }
 
 // Store is the watch's state in Postgres. Every method binds the identity before it touches a
 // table, because all six carry the fail-closed RLS pair: another identity's verdict is invisible.
@@ -116,10 +132,10 @@ func (s *Store) Settings(ctx context.Context, identityID string) (Settings, erro
 // SaveSettings changes the digest hour and the daily alert cap.
 func (s *Store) SaveSettings(ctx context.Context, identityID string, digestHour, dailyCap int) (Settings, error) {
 	if digestHour < 0 || digestHour > 23 {
-		return Settings{}, fmt.Errorf("%w: the digest hour is 0 to 23", ErrInvalid)
+		return Settings{}, invalid("invalid_digest_hour", "the digest hour is 0 to 23")
 	}
 	if dailyCap < 0 || dailyCap > 100 {
-		return Settings{}, fmt.Errorf("%w: the daily alert cap is 0 to 100", ErrInvalid)
+		return Settings{}, invalid("invalid_alert_cap", "the daily alert cap is 0 to 100")
 	}
 	var out Settings
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
@@ -245,7 +261,7 @@ func labelError(verb string, err error) error {
 	case errors.Is(err, pgx.ErrNoRows):
 		return fmt.Errorf("%s label: %w", verb, ErrNotFound)
 	case db.IsUniqueViolation(err):
-		return fmt.Errorf("%w: a label with that name already exists", ErrInvalid)
+		return invalid("label_exists", "a label with that name already exists")
 	default:
 		return fmt.Errorf("%s label: %w", verb, err)
 	}

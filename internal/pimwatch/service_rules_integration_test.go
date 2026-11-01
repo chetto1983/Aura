@@ -155,6 +155,75 @@ func TestACorrectionOfAnEventTeachesNothing(t *testing.T) {
 	}
 }
 
+func TestEveryRefusalNamesItsCode(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	r.commit(rigAccount, r.draft("m1", TierToday, ""))
+	if _, err := r.service.AddLabel(ctx, r.identity, "Cliente", ""); err != nil {
+		t.Fatalf("label: %v", err)
+	}
+	ghost := "00000000-0000-0000-0000-000000000000"
+	refused := map[string]func() error{
+		"account_required": func() error { return r.service.Enable(ctx, r.identity, " ") },
+		"invalid_day": func() error {
+			_, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026")
+			return err
+		},
+		"empty_correction": func() error {
+			_, _, err := r.service.Correct(ctx, r.identity, Correction{AccountID: rigAccount, Resource: ResourceMail, ItemID: "m1"})
+			return err
+		},
+		"invalid_tier": func() error {
+			_, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "a@b.it", Tier: "soon"})
+			return err
+		},
+		"unknown_label": func() error {
+			_, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "a@b.it", LabelID: ghost})
+			return err
+		},
+		"empty_rule": func() error {
+			_, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "a@b.it"})
+			return err
+		},
+		"invalid_address": func() error {
+			_, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "x@", Tier: TierNow})
+			return err
+		},
+		"invalid_rule_key": func() error {
+			_, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "nodot", Tier: TierNow})
+			return err
+		},
+		"invalid_label_name": func() error {
+			_, err := r.service.AddLabel(ctx, r.identity, " ", "")
+			return err
+		},
+		"label_exists": func() error {
+			_, err := r.service.AddLabel(ctx, r.identity, "Cliente", "")
+			return err
+		},
+		"invalid_digest_hour": func() error {
+			_, err := r.service.SaveSettings(ctx, r.identity, 24, 5)
+			return err
+		},
+		"invalid_alert_cap": func() error {
+			_, err := r.service.SaveSettings(ctx, r.identity, 18, 101)
+			return err
+		},
+	}
+	for code, call := range refused {
+		t.Run(code, func(t *testing.T) {
+			err := call()
+			refusal, ok := errors.AsType[*InvalidError](err)
+			if !ok || refusal.Code != code || refusal.Message == "" {
+				t.Fatalf("err = %v", err)
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("%v is not ErrInvalid", err)
+			}
+		})
+	}
+}
+
 func TestABadCorrectionIsRefused(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

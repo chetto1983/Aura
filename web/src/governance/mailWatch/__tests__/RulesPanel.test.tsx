@@ -160,17 +160,17 @@ describe('adding a rule', () => {
     expect(server.writes('POST', RULES)).toEqual([]);
   });
 
-  it("shows the server's sentence when it refuses", async () => {
+  it('translates what the server refused', async () => {
     server.on(`POST ${RULES}`, () => ({
       status: 400,
-      body: { error: '"x@y" is not an address' },
+      body: { error: 'invalid_address', message: '"x@y" is not an address' },
     }));
     renderWatch(<RulesPanel day={null} />);
     await screen.findByText(/No rules yet/);
     type('x@y');
     await chooseOption('Tier', 'Now');
     submit();
-    expect((await screen.findByRole('alert')).textContent).toBe('"x@y" is not an address');
+    expect((await screen.findByRole('alert')).textContent).toBe('That is not a whole address.');
   });
 });
 

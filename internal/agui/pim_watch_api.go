@@ -68,16 +68,18 @@ func (s *Server) mailWatchRoute(h mailWatchHandler) http.HandlerFunc {
 	}
 }
 
-// writeMailWatchError keeps the wire to fixed words. An ErrInvalid message is this package's own
-// and names what to fix, and a PIM failure answers its fixed code. Anything else stays in the log,
-// sanitized, because it can name the database or the sidecar.
+// writeMailWatchError keeps the wire to fixed words. A refusal answers its fixed code, which the
+// cockpit translates, beside the sentence that names what to fix, and a PIM failure answers its
+// fixed code. Anything else stays in the log, sanitized, because it can name the database or the
+// sidecar.
 func writeMailWatchError(w http.ResponseWriter, err error) {
 	pimErr, isPIM := errors.AsType[*pimwatch.PIMError](err)
+	refusal, isRefusal := errors.AsType[*pimwatch.InvalidError](err)
 	switch {
 	case errors.Is(err, pimwatch.ErrUnavailable):
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "mail_watch_unavailable", "reason": pimwatch.UnavailableReason})
-	case errors.Is(err, pimwatch.ErrInvalid):
-		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case isRefusal:
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": refusal.Code, "message": refusal.Message})
 	case errors.Is(err, pimwatch.ErrNotFound):
 		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 	case isPIM:

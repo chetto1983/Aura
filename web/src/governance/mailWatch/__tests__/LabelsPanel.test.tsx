@@ -120,7 +120,7 @@ describe('adding a label', () => {
   it('shows why the server refused', async () => {
     server.on(`POST ${LABELS}`, () => ({
       status: 400,
-      body: { error: "a label's name is 1 to 60 characters" },
+      body: { error: 'invalid_label_name', message: "a label's name is 1 to 60 characters" },
     }));
     renderWatch(<LabelsPanel />);
     await screen.findByText(/No labels yet/);

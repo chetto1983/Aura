@@ -428,10 +428,26 @@ describe('sentences from fixed codes', () => {
 });
 
 describe('errorSentence', () => {
-  it("shows a 400's sentence, which names what to fix", () => {
-    expect(errorSentence(new HttpError(400, 'a rule names an address or a domain'), t)).toBe(
-      'a rule names an address or a domain',
-    );
+  it.each([
+    ['account_required', /Choose an account/],
+    ['invalid_day', /not a day/],
+    ['empty_correction', /tier or a label/],
+    ['invalid_tier', /not a tier/],
+    ['unknown_label', /no longer exists/],
+    ['empty_rule', /tier, a label or both/],
+    ['invalid_address', /not a whole address/],
+    ['invalid_rule_key', /whole address, or a domain/],
+    ['invalid_label_name', /1 to 60/],
+    ['label_exists', /already exists/],
+    ['invalid_digest_hour', /0 to 23/],
+    ['invalid_alert_cap', /0 to 100/],
+    ['a_code_from_a_newer_server', /cannot be saved as it is/],
+  ])('translates the refusal %s', async (code, sentence) => {
+    expect(errorSentence(new HttpError(400, code), t)).toMatch(sentence);
+    await i18n.changeLanguage('it');
+    const italian = errorSentence(new HttpError(400, code), t);
+    await i18n.changeLanguage('en');
+    expect(italian).not.toBe(errorSentence(new HttpError(400, code), t));
   });
 
   it('translates a 502, which carries a fixed PIM code', () => {

@@ -306,14 +306,14 @@ describe('from now on, always like this', () => {
   it('says what a refused rule means, and leaves the mail alone', async () => {
     server.on('POST /api/mail-watch/rules', () => ({
       status: 400,
-      body: { error: 'a rule names an address or a domain' },
+      body: { error: 'invalid_rule_key', message: 'a rule names an address or a domain' },
     }));
     theDay(server, decision({ subject: 'One' }));
     openDay();
     await screen.findByText('One');
     fireEvent.click(screen.getByRole('button', ALWAYS));
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'a rule names an address or a domain',
+      'Write a whole address, or a domain such as company.com.',
     );
   });
 });

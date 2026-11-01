@@ -1,8 +1,8 @@
 // resources.governance.mailWatch.ts holds the mail and calendar watch's cockpit copy (EN + IT),
 // spread into governance.mailWatch. It follows the Go side's words (internal/pimwatch/text.go):
-// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure`, `paused`, `change` and
-// `overview.reason` keys are reached by template from the wire's fixed codes, so a new code needs a
-// key here in both locales.
+// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure`, `paused`, `change`,
+// `invalid` and `overview.reason` keys are reached by template from the wire's fixed codes, so a
+// new code needs a key here in both locales.
 
 export const mailWatchEn = {
   title: 'Mail and calendar watch',
@@ -210,6 +210,21 @@ export const mailWatchEn = {
     notFound: 'That is no longer there.',
     unavailable: 'The watch is not available on this installation.',
     failed: 'Something went wrong. Try again.',
+  },
+  invalid: {
+    account_required: 'Choose an account first.',
+    invalid_day: 'That is not a day. Pick one from the calendar.',
+    empty_correction: 'Choose a tier or a label to change.',
+    invalid_tier: 'That is not a tier. Choose Now, Today or Later.',
+    unknown_label: 'That label no longer exists.',
+    empty_rule: 'Choose a tier, a label or both.',
+    invalid_address: 'That is not a whole address.',
+    invalid_rule_key: 'Write a whole address, or a domain such as company.com.',
+    invalid_label_name: 'A label has a name of 1 to 60 characters.',
+    label_exists: 'A label with that name already exists.',
+    invalid_digest_hour: 'The digest hour is from 0 to 23.',
+    invalid_alert_cap: 'The daily alerts are from 0 to 100.',
+    unknown: 'That cannot be saved as it is. Check it and try again.',
   },
 } as const;
 
@@ -420,5 +435,20 @@ export const mailWatchIt = {
     notFound: 'Non c’è più.',
     unavailable: 'Il controllo non è disponibile su questa installazione.',
     failed: 'Qualcosa è andato storto. Riprova.',
+  },
+  invalid: {
+    account_required: 'Scegli prima un account.',
+    invalid_day: 'Questo non è un giorno. Scegline uno dal calendario.',
+    empty_correction: "Scegli un livello o un'etichetta da cambiare.",
+    invalid_tier: 'Questo non è un livello. Scegli Ora, Oggi o Dopo.',
+    unknown_label: 'Questa etichetta non esiste più.',
+    empty_rule: "Scegli un livello, un'etichetta o entrambi.",
+    invalid_address: 'Questo non è un indirizzo intero.',
+    invalid_rule_key: 'Scrivi un indirizzo intero, o un dominio come azienda.it.',
+    invalid_label_name: "Un'etichetta ha un nome da 1 a 60 caratteri.",
+    label_exists: "Esiste già un'etichetta con questo nome.",
+    invalid_digest_hour: "L'ora del riepilogo va da 0 a 23.",
+    invalid_alert_cap: 'Gli avvisi al giorno vanno da 0 a 100.',
+    unknown: 'Così non si può salvare. Controlla e riprova.',
   },
 } as const;
