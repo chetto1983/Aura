@@ -52,7 +52,12 @@ type chatEnv struct {
 	// deprovisioner is the ONE de-provisioning saga the daemon runs: the cockpit's removal
 	// route and the cron grace-window sweep are wired with the same instance, so the Authula
 	// legs serve attaches after boot (buildAuthDeps comes later) reach both.
-	deprovisioner         *agui.Deprovisioner
+	deprovisioner *agui.Deprovisioner
+	// mcpAuthSvc is the one MCP authorization service, built on first use (chatEnv.mcpAuth), and
+	// watch the one mail watch (chatEnv.pimWatch): the dispatcher and the AG-UI server share both.
+	mcpAuthSvc            *mcpAuthService
+	mcpAuthBuilt          bool
+	watch                 *pimWatchRuntime
 	cfg                   *config.Config
 	pool                  *pgxpool.Pool
 	conv                  *conversations.Store

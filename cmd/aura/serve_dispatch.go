@@ -66,7 +66,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 			"http://grafana:3000",
 		)
 	}
+	watch := chat.pimWatch()
 	real := map[cron.TaskKind]handlers.Handler{
+		cron.KindPIMWatch:       handlers.PIMWatchHandler{Watcher: watch.watcher},
+		cron.KindPIMDigest:      handlers.PIMDigestHandler{Digester: watch.digester},
 		cron.KindReminder:       handlers.ReminderHandler{},
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
 		cron.KindBackupPostgres: handlers.BackupHandler{Variant: handlers.BackupPostgres},
@@ -91,9 +94,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
-		// The caller's sweepers (the owner-export archives) plus the asset delete sweep.
+		// The caller's sweepers (the owner-export archives), the asset delete sweep and the
+		// watch's verdicts past their retention.
 		cron.KindRetentionSweep: handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool),
-			append(sweepers, buildAssetDeleteSweep(chat))...),
+			append(sweepers, buildAssetDeleteSweep(chat), watch.sweep)...),
 		// The scheduled caller for the vectors (serve_memory_backfill.go): it visits every
 		// identity's memory database and embeds the facts that have none. buildMemoryEmbedBackfill
 		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which
@@ -176,6 +180,12 @@ func (r conversationRecorder) CreateTaskConversation(ctx context.Context, identi
 		return "", err
 	}
 	return id, r.store.SetTitleIfNull(owned, id, title)
+}
+
+// RestoreTaskConversation brings a channel thread back under its own id, the way the channel's
+// next message would.
+func (r conversationRecorder) RestoreTaskConversation(ctx context.Context, conversationID, identityID string) error {
+	return r.runner.EnsureConversation(identityctx.WithIdentityID(ctx, identityID), conversationID)
 }
 
 func (r conversationRecorder) AppendAssistantTurn(ctx context.Context, conversationID, text string) error {

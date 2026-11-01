@@ -311,6 +311,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if chat.elicitation != nil {
 		chat.elicitation.Set(reg)
 	}
+	bindPIMWatch(chat)
 	dispatch := buildDispatch(chat, store, reg, ownerExports)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
 		Dispatch:  dispatch,

@@ -135,6 +135,10 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetPolicyTools(chat.reg)
 	// The work board the cockpit and the agent's `board` tool share (prd.md §16).
 	aguiServer.SetBoardStore(board.New(chat.pool))
+	// The mail and calendar watch, the same service the agent's `mail_watch` tool holds.
+	if service := chat.pimWatch().service; service != nil {
+		aguiServer.SetMailWatch(service)
+	}
 	// The Documenti view: the library with the fields the operator keeps on each document.
 	if fields := newRuntimeDocumentFields(chat.cfg, "documents API"); fields != nil {
 		aguiServer.SetDocumentFieldsStore(fields)
@@ -176,9 +180,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// path both change what is mounted, and two mounters would fight over the same registry.
 	live := newLiveMCPMount(ctx, chat)
 	chat.liveMCP = live
-	if authService, err := newMCPAuthService(chat.cfg, chat.pool, slog.Default()); err != nil {
-		slog.Warn("mcp authorization unavailable", "error", err)
-	} else if authService != nil {
+	if authService := chat.mcpAuth(); authService != nil {
 		// Mount the server as soon as the human authorizes it. Boot could not: it has no
 		// browser and no identity, so an OAuth server is always dropped there. Without
 		// this the consent screen completed, the grant was stored, and the agent still had

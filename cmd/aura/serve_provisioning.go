@@ -358,7 +358,7 @@ func sandboxProvisionerFor(router *usersandbox.SandboxRouter) agui.SandboxProvis
 // Deactivator). The owned Postgres conversation plane and the ArcadeDB
 // memory plane are both mandatory: deprovision refuses identity deletion unless each adapter
 // acknowledges a verified purge.
-// AuthulaDelete/Sessions/Jobs are left nil HERE because the Authula provider is assembled
+// AuthulaDelete/Sessions are left nil HERE because the Authula provider is assembled
 // after this seam. They are not left nil for the run: serve.go attaches the two Authula legs
 // to this instance once buildAuthDeps has answered (SetAuthulaTeardown), and the instance is
 // memoized above so the cockpit's removal route and the cron grace-window sweep share it.
@@ -399,6 +399,7 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 	return agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
+		Jobs:           pimWatchJobs{tasks: pimWatchTasks{store: cron.New(chat.pool)}},
 		Conversations:  conversationPurgeAdapter{store: convStore},
 		Memory:         buildArcadeMemoryPurger(chat.cfg),
 		ObjectStore:    objProv,
