@@ -3,7 +3,8 @@
 **Status (2026-11-01):** Tasks 1–14 are built and verified on branch `mail-watch`, in the worktree
 `D:\tmp\aura-mail-watch-wt`, off `master` at `feeca6797`. Nothing is pushed or merged: the operator has forbidden
 pushes. Task 15, the React cockpit, is built against a mocked API and has not met a live stack. Task 16, the lab-VM run
-(G3), needs the published PIM image and is owed.
+(G3), needs the published PIM image and is owed. The whole backend has run once on a real sidecar over Dovecot, with a
+parked model: `docs/superpowers/verification/2026-11-01-mail-watch-stack.md`.
 
 > **The planner built this code, RED then GREEN, in a scratch copy, and the verified commits are the implementation.**
 > There is no transcription pass. Each task names the commit that carries it. To land it, merge the branch once the
@@ -450,7 +451,8 @@ Re-run on the tree of Task 14c, the same way, 2026-11-01:
 | `go test -count=1 -tags db_integration -p 1 ./internal/cron/` | ok |
 | 12 spot mutants on what Task 14c claims, by `sed`, against `db_integration` | 12 killed, one of them only after `TestAnAllDayEventIsReadInThePersonsZone` was added for it |
 
-**What this does not prove.**
+**What this does not prove.** The first two bullets held at the branch's close. The stack run has since answered both
+for IMAP.
 - No real sidecar answered: the contract is the fork's at `5f182c7`, read from its code and tests, and replayed by a
   fake.
 - `aura serve` was not booted. Each join has its own test (dispatcher to handler, handler to watcher, watcher to the
@@ -475,5 +477,5 @@ Re-run on the tree of Task 14c, the same way, 2026-11-01:
 - **A synchronous swarm worker inherits its turn's responder marker,** though `responderCtxKey`'s comment said a swarm
   context never carries one. `personPresent` closes this for the watch's teaching verbs. On `routeApprove`, a worker in
   a live chat still reaches the approval branch and is not denied, which this plan leaves as it found it.
-- **`/admin/items`'s `gone` shape** (`[{id, calendarId}]`) is read from the fork's code and tests and has not been seen
-  on a running sidecar.
+- **`pending_notifications` kept every body after delivery,** with no DELETE grant to remove it, against §5.2. Closed in
+  `d4bf55e92`, for every kind of notification. Rows written before it keep theirs.
