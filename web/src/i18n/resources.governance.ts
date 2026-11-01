@@ -5,6 +5,7 @@
 // governanceEn/governanceIt into each language's `translation` object. Add every key to
 // BOTH en AND it — a missing key in either language is a defect.
 
+import { mailWatchEn, mailWatchIt } from './resources.governance.mailWatch';
 import { pluginsEn, pluginsIt } from './resources.governance.plugins';
 import { schedulerEn, schedulerIt } from './resources.governance.scheduler';
 import { skillsEn, skillsIt } from './resources.governance.skills';
@@ -261,6 +262,7 @@ export const governanceEn = {
     skills: skillsEn,
     plugins: pluginsEn,
     scheduler: schedulerEn,
+    mailWatch: mailWatchEn,
   },
 } as const;
 
@@ -524,5 +526,6 @@ export const governanceIt = {
     skills: skillsIt,
     plugins: pluginsIt,
     scheduler: schedulerIt,
+    mailWatch: mailWatchIt,
   },
 } as const;

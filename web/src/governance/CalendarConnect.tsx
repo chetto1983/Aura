@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { HttpError } from '../api/json';
 import { useCapabilities } from '../admin/useAdmin';
+import { AccountWatch } from './mailWatch/AccountWatch';
+import { MailWatchOverview } from './mailWatch/MailWatchOverview';
 import { PimDeviceCodePanel } from './PimDeviceCodePanel';
 import { PimGoogleConnectPanel } from './PimGoogleConnectPanel';
 import { PimProviderAppsPanel } from './PimProviderAppsPanel';
@@ -49,7 +51,8 @@ import { Button } from '@/components/ui/button';
 // fields; on create the wizard routes the connect step by the provider's authFlow: Google opens the
 // web-redirect consent (PimGoogleConnectPanel), Microsoft/Outlook render the device-code grant
 // (PimDeviceCodePanel), and credential/URL providers (IMAP/ICS/JSON) are ready immediately. All copy
-// via governance.mcp.calendar.* (en + it); a 503 (sidecar unconfigured) → a calm offline note.
+// via governance.mcp.calendar.* (en + it); a 503 (sidecar unconfigured) → a calm offline note. Each
+// account row also carries the mail and calendar watch's switch (mailWatch/).
 
 const ACCOUNTS_POLL_MS = 10000;
 
@@ -123,29 +126,32 @@ function AccountList({
         {accounts.map((acct) => (
           <li
             key={acct.id}
-            className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
+            className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
           >
-            <span className="flex min-w-0 flex-col">
-              <span className="break-words text-[15.5px] text-text">
-                {acct.displayName || acct.id}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 flex-col">
+                <span className="break-words text-[15.5px] text-text">
+                  {acct.displayName || acct.id}
+                </span>
+                <span className="break-all font-mono text-[13px] text-text-muted">
+                  {acct.provider ? `${acct.provider} · ${acct.id}` : acct.id}
+                </span>
               </span>
-              <span className="break-all font-mono text-[13px] text-text-muted">
-                {acct.provider ? `${acct.provider} · ${acct.id}` : acct.id}
-              </span>
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={remove.isPending}
-              aria-busy={remove.isPending}
-              onClick={() => {
-                remove.mutate(acct.id);
-              }}
-              className="shrink-0 px-3 text-[13px]"
-            >
-              {remove.isPending ? <Spinner /> : null}
-              {t('governance.mcp.calendar.disconnect')}
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={remove.isPending}
+                aria-busy={remove.isPending}
+                onClick={() => {
+                  remove.mutate(acct.id);
+                }}
+                className="shrink-0 px-3 text-[13px]"
+              >
+                {remove.isPending ? <Spinner /> : null}
+                {t('governance.mcp.calendar.disconnect')}
+              </Button>
+            </div>
+            <AccountWatch account={acct} />
           </li>
         ))}
       </ul>
@@ -154,6 +160,7 @@ function AccountList({
           {t('governance.mcp.calendar.disconnectError')}
         </p>
       ) : null}
+      <MailWatchOverview />
     </div>
   );
 }

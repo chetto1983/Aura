@@ -6,6 +6,7 @@ import '../../i18n/i18n';
 import type { PimAccount, PimAuthStatus, PimDeviceStart, PimGoogleStart } from '../pimApi';
 import { HttpError } from '../../api/json';
 import { chooseOption, optionNames } from '../../test/chooseOption';
+import { mailWatchServer } from '../../test/mailWatchServer';
 
 // CalendarConnect test — the cockpit calendar/PIM connect section. It mocks the connect API to drive:
 // the accounts list (render + disconnect), the empty/offline states, and the provider-driven add
@@ -150,6 +151,20 @@ describe('CalendarConnect', () => {
     expect(await screen.findByText('Work calendar')).toBeTruthy();
     expect(screen.getByText('google · work')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeTruthy();
+  });
+
+  it('carries the mail watch on each row, and its terms under the list', async () => {
+    mailWatchServer();
+    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT, { ...ACCOUNT, id: 'home' }] });
+    renderConnect();
+
+    const switches = await screen.findAllByRole('switch', { name: /Mail and calendar watch for/ });
+    expect(switches.map((control) => control.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+    ]);
+    expect(await screen.findByText(/Digest at 18:00/)).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 
   it('shows the empty note when there are no accounts', async () => {

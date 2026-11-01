@@ -78,7 +78,10 @@
     "src/chat/messageSeq.ts",
     "src/chat/ExternalStoreChat_tree.ts",
     "src/chat/ExternalStoreChat_viewport.tsx",
-    "src/chat/ExternalStoreChat_steer.ts"
+    "src/chat/ExternalStoreChat_steer.ts",
+    "src/governance/mailWatchApi.ts",
+    "src/governance/mailWatch/mailWatchLogic.ts",
+    "src/governance/mailWatch/useMailWatch.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

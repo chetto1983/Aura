@@ -96,6 +96,17 @@ const mutationTests = [
   'src/chat/__tests__/ExternalStoreChat_viewport.test.tsx',
   // A refused steer never drops the operator's text (prd.md §7).
   'src/chat/ExternalStoreChat_steer.test.tsx',
+  // The mail watch (spec 2026-10-31): the day's grouping, the rule preview that mirrors the
+  // ladder, the keys, the wire, and what a correction or an undo writes.
+  'src/governance/__tests__/mailWatchApi.test.ts',
+  'src/governance/mailWatch/__tests__/mailWatchLogic.test.ts',
+  'src/governance/mailWatch/__tests__/AccountWatch.test.tsx',
+  'src/governance/mailWatch/__tests__/DecisionsView.test.tsx',
+  'src/governance/mailWatch/__tests__/DecisionKeys.test.tsx',
+  'src/governance/mailWatch/__tests__/DecisionCorrections.test.tsx',
+  'src/governance/mailWatch/__tests__/RulesPanel.test.tsx',
+  'src/governance/mailWatch/__tests__/LabelsPanel.test.tsx',
+  'src/governance/mailWatch/__tests__/SettingsPanel.test.tsx',
 ] as const;
 
 export default defineConfig({
