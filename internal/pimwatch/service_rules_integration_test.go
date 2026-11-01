@@ -41,7 +41,7 @@ func TestTheSecondCorrectionOutsideTheWindowBecomesARule(t *testing.T) {
 	if _, rule, err = r.service.Correct(ctx, r.identity, correctionOf("m3", TierLater)); err != nil {
 		t.Fatalf("outside the window: %v", err)
 	}
-	if rule == nil || rule.Key != "mario@acme.it" || rule.Tier != TierLater || rule.Source != sourceCorrection {
+	if rule == nil || rule.Key != "mario@acme.it" || rule.Tier != TierLater || rule.Source != sourceCorrection || !rule.Created {
 		t.Fatalf("rule = %+v", rule)
 	}
 }

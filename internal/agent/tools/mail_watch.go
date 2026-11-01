@@ -31,7 +31,7 @@ type mailWatchService interface {
 	Status(ctx context.Context, identityID string) (pimwatch.Status, error)
 	Enable(ctx context.Context, identityID, accountID string) error
 	Disable(ctx context.Context, identityID, accountID string) error
-	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.Rule, error)
+	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error)
 	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.Rule, error)
 	RemoveRule(ctx context.Context, identityID, ruleID string) error
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)

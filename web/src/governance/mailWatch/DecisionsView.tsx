@@ -46,8 +46,8 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
   const rules = useRules();
   const [notice, setNotice] = useState<Notice | null>(null);
   const correct = useCorrection(accountId, day, {
-    onLearned: (change) => {
-      setNotice({ kind: 'rule', learned: true, change });
+    onLearned: (change, created) => {
+      setNotice({ kind: 'rule', learned: true, undoable: created, change });
     },
     onFailed: () => {
       setNotice({ kind: 'problem', text: t('governance.mailWatch.notice.correctionFailed') });
@@ -55,7 +55,7 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
   });
   const inFlight = useCorrectionsInFlight();
   const addRule = useAddRule((change) => {
-    setNotice({ kind: 'rule', learned: false, change });
+    setNotice({ kind: 'rule', learned: false, undoable: true, change });
   });
   const when = useDayPhrase(day);
   const rows = decisions.data?.decisions ?? [];

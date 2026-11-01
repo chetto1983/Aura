@@ -64,6 +64,12 @@ ON CONFLICT (identity_id, key_kind, key) DO UPDATE
 SET tier = EXCLUDED.tier, label_id = EXCLUDED.label_id, source = EXCLUDED.source
 RETURNING *;
 
+-- name: PIMWatchRuleExists :one
+SELECT EXISTS (
+    SELECT 1 FROM aura.pim_watch_rules
+    WHERE identity_id = $1 AND key_kind = $2 AND key = $3
+);
+
 -- name: MergePIMWatchRule :one
 -- What a repeated correction learned. A tier and a label are learned apart, so each keeps the
 -- rule's current value when this correction says nothing about it.

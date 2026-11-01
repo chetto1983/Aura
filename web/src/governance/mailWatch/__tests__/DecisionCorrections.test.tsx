@@ -132,7 +132,9 @@ describe('a rule learned is said out loud', () => {
   });
 
   function teaches() {
-    server.on(`POST ${CORRECT}`, () => ({ body: { tier: 'later', rule: LEARNED } }));
+    server.on(`POST ${CORRECT}`, () => ({
+      body: { tier: 'later', rule: LEARNED, rule_created: true },
+    }));
   }
 
   it('says it, and Undo deletes the rule', async () => {
@@ -149,10 +151,9 @@ describe('a rule learned is said out loud', () => {
     expect(screen.queryByText('Second correction: it is a rule now')).toBeNull();
   });
 
-  it("puts back a rule it merged into, so Undo never loses the person's words", async () => {
+  it("offers no Undo for a rule it merged into, so the person's words are safe", async () => {
     const before = labelRule('l1', { id: 'learned' });
     server.on('GET /api/mail-watch/rules', () => ({ body: [before] }));
-    server.on('POST /api/mail-watch/rules', () => ({ body: before }));
     server.on(`POST ${CORRECT}`, () => ({
       body: { tier: 'later', rule: { ...before, tier: 'later', source: 'correction' } },
     }));
@@ -163,13 +164,21 @@ describe('a rule learned is said out loud', () => {
       expect(server.calls.some((call) => call.path === '/api/mail-watch/rules')).toBe(true);
     });
     press('3');
-    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
-    expect(await screen.findByText('Rule undone')).toBeTruthy();
-    expect(server.writes('DELETE', '/api/mail-watch/rules/learned')).toEqual([]);
-    expect(server.writes('POST', '/api/mail-watch/rules')[0]?.body).toEqual({
-      key: 'ada@example.com',
-      label_id: 'l1',
-    });
+    expect(await screen.findByText('Second correction: it is a rule now')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
+  it('offers no Undo for a merge whatever the cockpit has cached', async () => {
+    server.on(`POST ${CORRECT}`, () => ({
+      body: { tier: 'later', rule: { ...LEARNED, label_id: 'l1' } },
+    }));
+    server.on('GET /api/mail-watch/rules', hang);
+    theDay(server, decision({ subject: 'One' }));
+    openDay();
+    await screen.findByText('One');
+    press('3');
+    expect(await screen.findByText('Second correction: it is a rule now')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
   });
 
   it('says nothing when the correction agrees with the rule on file', async () => {

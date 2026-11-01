@@ -107,6 +107,8 @@ export interface MailWatchCorrected {
   readonly label_id?: string;
   /** Set when this correction taught a rule. */
   readonly rule?: MailWatchRule;
+  /** The rule is new. One merged into a rule on file holds the person's earlier words. */
+  readonly rule_created?: boolean;
 }
 
 export interface MailWatchRuleInput {

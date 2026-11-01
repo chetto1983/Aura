@@ -211,6 +211,13 @@ func TestARuleKeepsItsLastWordAndALearnedOneKeepsTheOtherField(t *testing.T) {
 	if err != nil || learned.Tier != TierLater || learned.LabelID != label.ID || learned.Source != sourceCorrection {
 		t.Fatalf("learned = %+v, %v", learned, err)
 	}
+	if learned.Created {
+		t.Fatalf("a rule merged into one on file reads as created: %+v", learned)
+	}
+	fresh, err := r.store.LearnRule(ctx, r.identity, "new@b.it", TierLater, "")
+	if err != nil || !fresh.Created {
+		t.Fatalf("fresh = %+v, %v", fresh, err)
+	}
 }
 
 func TestExpiryFollowsTheIdentitysRetentionInBatches(t *testing.T) {

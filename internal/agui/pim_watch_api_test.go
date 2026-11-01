@@ -21,7 +21,7 @@ type fakeWatchService struct {
 	status   pimwatch.Status
 	lines    []pimwatch.DecisionLine
 	got      pimwatch.Correction
-	rule     *pimwatch.Rule
+	rule     *pimwatch.LearnedRule
 	rules    []pimwatch.Rule
 	added    pimwatch.RuleInput
 	labels   []pimwatch.Label
@@ -56,7 +56,7 @@ func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string
 	return pimwatch.DayDecisions{Day: "2026-11-02", Lines: f.lines}, f.err
 }
 
-func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.Rule, error) {
+func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error) {
 	f.got = c
 	return pimwatch.Verdict{Tier: c.Tier}, f.rule, f.err
 }
@@ -213,14 +213,24 @@ func TestMailWatchDecisionsCarryTheNameAndAnAllDayDate(t *testing.T) {
 }
 
 func TestMailWatchCorrectDefaultsToMailAndReportsARule(t *testing.T) {
-	service := &fakeWatchService{rule: &pimwatch.Rule{ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater}}
+	service := &fakeWatchService{rule: &pimwatch.LearnedRule{
+		ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater, Created: true,
+	}}
 	out := decodeWatch[mailWatchCorrectedJSON](t, mailWatchCall(t, service, http.MethodPost,
 		"/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","tier":"later","label_id":""}`))
 	if service.got.AccountID != "work" || service.got.Resource != pimwatch.ResourceMail || service.got.LabelID == nil || *service.got.LabelID != "" {
 		t.Fatalf("correction = %+v", service.got)
 	}
-	if out.Tier != "later" || out.Rule == nil || out.Rule.Key != "a@b.it" {
+	if out.Tier != "later" || out.Rule == nil || out.Rule.Key != "a@b.it" || !out.RuleCreated {
 		t.Fatalf("out = %+v", out)
+	}
+}
+
+func TestMailWatchCorrectSaysARuleMergedIntoOneOnFile(t *testing.T) {
+	service := &fakeWatchService{rule: &pimwatch.LearnedRule{ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender}}
+	rec := mailWatchCall(t, service, http.MethodPost, "/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","tier":"later"}`)
+	if !strings.Contains(rec.Body.String(), `"rule"`) || strings.Contains(rec.Body.String(), "rule_created") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 

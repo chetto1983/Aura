@@ -149,7 +149,7 @@ export function useCorrection(
   accountId: string,
   day: string | null,
   handlers: {
-    readonly onLearned: (change: RuleChange) => void;
+    readonly onLearned: (change: RuleChange, created: boolean) => void;
     readonly onFailed: () => void;
   },
 ) {
@@ -191,7 +191,9 @@ export function useCorrection(
       if (answer.rule === undefined) return undefined;
       const change = ruleChange(queryClient, answer.rule);
       // A correction that agrees with the rule on file taught nothing new.
-      if (!sameRule(change.previous, change.rule)) handlers.onLearned(change);
+      if (!sameRule(change.previous, change.rule)) {
+        handlers.onLearned(change, answer.rule_created === true);
+      }
       return refreshRules(queryClient);
     },
   });

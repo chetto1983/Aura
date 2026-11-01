@@ -25,7 +25,7 @@ type mailWatchService interface {
 	Disable(ctx context.Context, identityID, accountID string) error
 	RemoveAccount(ctx context.Context, identityID, accountID string) error
 	Decisions(ctx context.Context, identityID, accountID, day string) (pimwatch.DayDecisions, error)
-	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.Rule, error)
+	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error)
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)
 	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.Rule, error)
 	RemoveRule(ctx context.Context, identityID, ruleID string) error
@@ -281,18 +281,20 @@ func (s *Server) handleMailWatchCorrect(w http.ResponseWriter, r *http.Request, 
 	}
 	out := mailWatchCorrectedJSON{Tier: string(verdict.Tier), LabelID: verdict.LabelID}
 	if rule != nil {
-		learned := mailWatchRule(*rule)
-		out.Rule = &learned
+		learned := mailWatchRule(rule.Rule)
+		out.Rule, out.RuleCreated = &learned, rule.Created
 	}
 	writeJSON(w, out)
 }
 
 // mailWatchCorrectedJSON is a verdict after a correction. Rule is set when this correction taught
-// one, so the cockpit can say so.
+// one, so the cockpit can say so, and RuleCreated when that rule is new: only then can it be
+// undone, because one merged into a rule on file holds the person's earlier words.
 type mailWatchCorrectedJSON struct {
-	Tier    string             `json:"tier"`
-	LabelID string             `json:"label_id,omitempty"`
-	Rule    *mailWatchRuleJSON `json:"rule,omitempty"`
+	Tier        string             `json:"tier"`
+	LabelID     string             `json:"label_id,omitempty"`
+	Rule        *mailWatchRuleJSON `json:"rule,omitempty"`
+	RuleCreated bool               `json:"rule_created,omitempty"`
 }
 
 type mailWatchRuleJSON struct {

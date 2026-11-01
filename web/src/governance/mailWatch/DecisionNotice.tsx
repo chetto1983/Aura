@@ -7,11 +7,18 @@ import { Button } from '@/components/ui/button';
 
 // DecisionNotice says what a correction just did. A rule learned is said out loud, with an Undo
 // that stays until the person acts or replaces it: a timed undo would punish a slow reader, and
-// the moment the watch starts acting on its own is the moment to be in plain sight. The live
-// region stays mounted so a screen reader hears each change; a failure speaks as an alert.
+// the moment the watch starts acting on its own is the moment to be in plain sight. A rule merged
+// into one on file has no Undo: only the server knows it merged, and what it replaced may be the
+// person's own words. The live region stays mounted so a screen reader hears each change; a
+// failure speaks as an alert.
 
 export type Notice =
-  | { readonly kind: 'rule'; readonly learned: boolean; readonly change: RuleChange }
+  | {
+      readonly kind: 'rule';
+      readonly learned: boolean;
+      readonly undoable: boolean;
+      readonly change: RuleChange;
+    }
   | { readonly kind: 'undone' }
   | { readonly kind: 'problem'; readonly text: string };
 
@@ -29,6 +36,7 @@ export function DecisionNotice({ notice, onChange }: DecisionNoticeProps) {
           <RuleNotice
             key={notice.change.rule.id}
             learned={notice.learned}
+            undoable={notice.undoable}
             change={notice.change}
             onChange={onChange}
           />
@@ -48,11 +56,12 @@ export function DecisionNotice({ notice, onChange }: DecisionNoticeProps) {
 
 interface RuleNoticeProps {
   readonly learned: boolean;
+  readonly undoable: boolean;
   readonly change: RuleChange;
   readonly onChange: (notice: Notice | null) => void;
 }
 
-function RuleNotice({ learned, change, onChange }: RuleNoticeProps) {
+function RuleNotice({ learned, undoable, change, onChange }: RuleNoticeProps) {
   const { t } = useTranslation();
   const undo = useUndoRule(() => {
     onChange({ kind: 'undone' });
@@ -71,19 +80,21 @@ function RuleNotice({ learned, change, onChange }: RuleNoticeProps) {
         {rule.tier === undefined ? null : <TierBadge tier={rule.tier} />}
       </span>
       <span className="ml-auto flex items-center">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={undo.isPending}
-          aria-busy={undo.isPending || undefined}
-          onClick={() => {
-            undo.mutate(change);
-          }}
-        >
-          {undo.isPending ? <Spinner /> : null}
-          {t('governance.mailWatch.notice.undo')}
-        </Button>
+        {undoable ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={undo.isPending}
+            aria-busy={undo.isPending || undefined}
+            onClick={() => {
+              undo.mutate(change);
+            }}
+          >
+            {undo.isPending ? <Spinner /> : null}
+            {t('governance.mailWatch.notice.undo')}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"

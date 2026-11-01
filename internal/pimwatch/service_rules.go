@@ -18,7 +18,7 @@ const correctionWindow = 15 * time.Minute
 // teaches nothing. A calendar item teaches nothing: rules do not apply to events. Nor does a mail
 // that failed authentication: a rule beats that rung, so one learned from it would let a forged
 // sender reach `now`.
-func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *Rule, error) {
+func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *LearnedRule, error) {
 	if err := s.checkCorrection(ctx, identityID, c); err != nil {
 		return Verdict{}, nil, err
 	}

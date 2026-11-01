@@ -664,6 +664,7 @@ type Querier interface {
 	MergePIMWatchRule(ctx context.Context, arg MergePIMWatchRuleParams) (AuraPimWatchRules, error)
 	MoveBoardCard(ctx context.Context, arg MoveBoardCardParams) (AuraBoardCards, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	PIMWatchRuleExists(ctx context.Context, arg PIMWatchRuleExistsParams) (bool, error)
 	// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
 	// row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
 	// must still be 'running', owned by the SAME lease_generation the claim minted) IS the

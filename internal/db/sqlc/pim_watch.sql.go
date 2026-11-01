@@ -968,6 +968,26 @@ func (q *Queries) MergePIMWatchRule(ctx context.Context, arg MergePIMWatchRulePa
 	return i, err
 }
 
+const pIMWatchRuleExists = `-- name: PIMWatchRuleExists :one
+SELECT EXISTS (
+    SELECT 1 FROM aura.pim_watch_rules
+    WHERE identity_id = $1 AND key_kind = $2 AND key = $3
+)
+`
+
+type PIMWatchRuleExistsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	KeyKind    string      `json:"key_kind"`
+	Key        string      `json:"key"`
+}
+
+func (q *Queries) PIMWatchRuleExists(ctx context.Context, arg PIMWatchRuleExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, pIMWatchRuleExists, arg.IdentityID, arg.KeyKind, arg.Key)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const raisePIMWatchFailingAlarm = `-- name: RaisePIMWatchFailingAlarm :exec
 UPDATE aura.pim_watch_cursors
 SET alarm_kind = 'failing', alarm_since = failing_since, alarm_run_id = $4

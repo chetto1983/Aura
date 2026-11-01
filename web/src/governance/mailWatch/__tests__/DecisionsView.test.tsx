@@ -352,7 +352,9 @@ describe('in Italian', () => {
 
   it('says a learned rule the way the brief asks', async () => {
     await i18n.changeLanguage('it');
-    server.on(`POST ${CORRECT}`, () => ({ body: { tier: 'later', rule: rule() } }));
+    server.on(`POST ${CORRECT}`, () => ({
+      body: { tier: 'later', rule: rule(), rule_created: true },
+    }));
     theDay(server, decision());
     openDay();
     await screen.findByText('Quarterly numbers');
