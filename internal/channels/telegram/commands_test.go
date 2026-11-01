@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -158,6 +159,18 @@ func TestSearchEqualsCLI(t *testing.T) {
 		if !strings.Contains(reply, ex) {
 			t.Errorf("/search reply missing CLI-identical excerpt %q\nreply:\n%s", ex, reply)
 		}
+	}
+}
+
+func TestSearchShowsAWatchRecordWithNoFrame(t *testing.T) {
+	t.Parallel()
+	record := "Worth a look on work.\n\n" + agent.FrameUntrustedPromptContent(agent.WatchRecordSource, "anna@acme.it: meteo a Cuneo")
+	be := &fakeSearch{results: []conversations.SearchResult{{Seq: 3, Content: record}}}
+	cmds := newTestCommands(commandDeps{Search: be, Cost: &fakeCost{}})
+
+	_, reply := cmds.dispatch(context.Background(), 42, "/search meteo")
+	if strings.Contains(reply, "tool_output") || !strings.Contains(reply, "anna@acme.it: meteo a Cuneo") {
+		t.Fatalf("reply = %q", reply)
 	}
 }
 

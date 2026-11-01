@@ -7,11 +7,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+func TestChatSearchShowsAWatchRecordWithNoFrame(t *testing.T) {
+	record := "Worth a look on work.\n\n" + agent.FrameUntrustedPromptContent(agent.WatchRecordSource, "anna@acme.it: meteo a Cuneo")
+	out := captureStdout(t, func() {
+		printSearchResults("meteo", []conversations.SearchResult{{ConversationID: "c1", Seq: 3, Content: record}})
+	})
+	if strings.Contains(out, "tool_output") || !strings.Contains(out, "anna@acme.it: meteo a Cuneo") {
+		t.Fatalf("output = %q", out)
+	}
+}
 
 // pendingClarification builds a clarification-kind Pending for the prompt tests.
 func pendingClarification(toolCallID, question string) askuser.Pending {

@@ -305,7 +305,7 @@ func printSearchResults(query string, hits []conversations.SearchResult) {
 	_, _ = fmt.Fprintln(w, "CONVERSATION\tSEQ\tSIMILARITY\tEXCERPT")
 	for _, h := range hits {
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%.3f\t%s\n",
-			h.ConversationID, h.Seq, h.Similarity, conversations.Excerpt(h.Content, query))
+			h.ConversationID, h.Seq, h.Similarity, conversations.Excerpt(agent.PlainWatchRecord(h.Content), query))
 	}
 	_ = w.Flush()
 }
