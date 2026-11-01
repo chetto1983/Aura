@@ -333,7 +333,7 @@ func TestAnEventInsideADayAlertsOnItsFingerprintAndOnlyThen(t *testing.T) {
 	if err := r.store.StartCursor(ctx, r.identity, rigAccount, ResourceCalendar, "start-calendar", CursorOK); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	mustContain(t, r.tick().Notice, "organizer@acme.it: Audit")
+	mustContain(t, r.tick().Notice, "organizer@acme.it: New: Audit")
 
 	r.pim.page(ResourceCalendar, "c1", ChangesPage{Changes: []Change{eventChange("ev1", "f1", soon)}, NextCursor: "c2"})
 	if out := r.tick(); out.Notice != "" {
@@ -341,7 +341,7 @@ func TestAnEventInsideADayAlertsOnItsFingerprintAndOnlyThen(t *testing.T) {
 	}
 
 	r.pim.page(ResourceCalendar, "c2", ChangesPage{Changes: []Change{eventChange("ev1", "f2", moved)}, NextCursor: "c3"})
-	mustContain(t, r.tick().Notice, "organizer@acme.it: Audit")
+	mustContain(t, r.tick().Notice, "organizer@acme.it: Moved: Audit")
 
 	verdict, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "ev1")
 	if err != nil {

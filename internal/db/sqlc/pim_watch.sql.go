@@ -93,7 +93,7 @@ const correctPIMWatchVerdict = `-- name: CorrectPIMWatchVerdict :one
 UPDATE aura.pim_watch_verdicts
 SET tier = $5, label_id = $6, decided_by = 'person'
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4
-RETURNING identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, alert_run_id, alerted_at, notified
+RETURNING identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_change, alert_run_id, alerted_at, notified
 `
 
 type CorrectPIMWatchVerdictParams struct {
@@ -127,6 +127,9 @@ func (q *Queries) CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatc
 		&i.DecidedAt,
 		&i.AuthFailed,
 		&i.Fingerprint,
+		&i.EventStart,
+		&i.EventAllDay,
+		&i.EventChange,
 		&i.AlertRunID,
 		&i.AlertedAt,
 		&i.Notified,
@@ -340,7 +343,7 @@ func (q *Queries) GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUI
 }
 
 const getPIMWatchVerdict = `-- name: GetPIMWatchVerdict :one
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_change, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4
 `
 
@@ -371,6 +374,9 @@ func (q *Queries) GetPIMWatchVerdict(ctx context.Context, arg GetPIMWatchVerdict
 		&i.DecidedAt,
 		&i.AuthFailed,
 		&i.Fingerprint,
+		&i.EventStart,
+		&i.EventAllDay,
+		&i.EventChange,
 		&i.AlertRunID,
 		&i.AlertedAt,
 		&i.Notified,
@@ -478,7 +484,7 @@ func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchV
 }
 
 const listPIMWatchAccountVerdicts = `-- name: ListPIMWatchAccountVerdicts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_change, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND decided_at >= $3 AND decided_at < $4
 ORDER BY decided_at DESC, item_id
 LIMIT $5
@@ -519,6 +525,9 @@ func (q *Queries) ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWa
 			&i.DecidedAt,
 			&i.AuthFailed,
 			&i.Fingerprint,
+			&i.EventStart,
+			&i.EventAllDay,
+			&i.EventChange,
 			&i.AlertRunID,
 			&i.AlertedAt,
 			&i.Notified,
@@ -614,7 +623,7 @@ func (q *Queries) ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUI
 }
 
 const listPIMWatchDigestVerdicts = `-- name: ListPIMWatchDigestVerdicts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_change, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND decided_at > $2 AND decided_at <= $3 AND tier IN ('now', 'today')
 ORDER BY decided_at, item_id
 `
@@ -646,52 +655,13 @@ func (q *Queries) ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWat
 			&i.DecidedAt,
 			&i.AuthFailed,
 			&i.Fingerprint,
+			&i.EventStart,
+			&i.EventAllDay,
+			&i.EventChange,
 			&i.AlertRunID,
 			&i.AlertedAt,
 			&i.Notified,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPIMWatchFingerprints = `-- name: ListPIMWatchFingerprints :many
-SELECT item_id, fingerprint FROM aura.pim_watch_verdicts
-WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY($4::text[])
-`
-
-type ListPIMWatchFingerprintsParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	AccountID  string      `json:"account_id"`
-	Resource   string      `json:"resource"`
-	ItemIds    []string    `json:"item_ids"`
-}
-
-type ListPIMWatchFingerprintsRow struct {
-	ItemID      string `json:"item_id"`
-	Fingerprint string `json:"fingerprint"`
-}
-
-func (q *Queries) ListPIMWatchFingerprints(ctx context.Context, arg ListPIMWatchFingerprintsParams) ([]ListPIMWatchFingerprintsRow, error) {
-	rows, err := q.db.Query(ctx, listPIMWatchFingerprints,
-		arg.IdentityID,
-		arg.AccountID,
-		arg.Resource,
-		arg.ItemIds,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListPIMWatchFingerprintsRow{}
-	for rows.Next() {
-		var i ListPIMWatchFingerprintsRow
-		if err := rows.Scan(&i.ItemID, &i.Fingerprint); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -736,7 +706,7 @@ func (q *Queries) ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID
 }
 
 const listPIMWatchOwedAlerts = `-- name: ListPIMWatchOwedAlerts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_change, alert_run_id, alerted_at, notified FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND alert_run_id IS NOT NULL AND NOT notified
 ORDER BY alerted_at, item_id
 `
@@ -767,9 +737,61 @@ func (q *Queries) ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOw
 			&i.DecidedAt,
 			&i.AuthFailed,
 			&i.Fingerprint,
+			&i.EventStart,
+			&i.EventAllDay,
+			&i.EventChange,
 			&i.AlertRunID,
 			&i.AlertedAt,
 			&i.Notified,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPIMWatchPriorEvents = `-- name: ListPIMWatchPriorEvents :many
+SELECT item_id, fingerprint, event_start, event_all_day FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY($4::text[])
+`
+
+type ListPIMWatchPriorEventsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	AccountID  string      `json:"account_id"`
+	Resource   string      `json:"resource"`
+	ItemIds    []string    `json:"item_ids"`
+}
+
+type ListPIMWatchPriorEventsRow struct {
+	ItemID      string             `json:"item_id"`
+	Fingerprint string             `json:"fingerprint"`
+	EventStart  pgtype.Timestamptz `json:"event_start"`
+	EventAllDay bool               `json:"event_all_day"`
+}
+
+func (q *Queries) ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error) {
+	rows, err := q.db.Query(ctx, listPIMWatchPriorEvents,
+		arg.IdentityID,
+		arg.AccountID,
+		arg.Resource,
+		arg.ItemIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPIMWatchPriorEventsRow{}
+	for rows.Next() {
+		var i ListPIMWatchPriorEventsRow
+		if err := rows.Scan(
+			&i.ItemID,
+			&i.Fingerprint,
+			&i.EventStart,
+			&i.EventAllDay,
 		); err != nil {
 			return nil, err
 		}
@@ -1203,11 +1225,14 @@ func (q *Queries) UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatch
 
 const upsertPIMWatchEventVerdict = `-- name: UpsertPIMWatchEventVerdict :execrows
 INSERT INTO aura.pim_watch_verdicts (
-    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at,
+    event_start, event_all_day, event_change
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO UPDATE
 SET calendar_id = EXCLUDED.calendar_id, tier = EXCLUDED.tier, decided_by = EXCLUDED.decided_by,
     decided_at = EXCLUDED.decided_at, fingerprint = EXCLUDED.fingerprint,
+    event_start = EXCLUDED.event_start, event_all_day = EXCLUDED.event_all_day,
+    event_change = EXCLUDED.event_change,
     alert_run_id = NULL, alerted_at = NULL, notified = false
 WHERE aura.pim_watch_verdicts.fingerprint <> EXCLUDED.fingerprint
 `
@@ -1222,6 +1247,9 @@ type UpsertPIMWatchEventVerdictParams struct {
 	DecidedBy   string             `json:"decided_by"`
 	Fingerprint string             `json:"fingerprint"`
 	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
+	EventStart  pgtype.Timestamptz `json:"event_start"`
+	EventAllDay bool               `json:"event_all_day"`
+	EventChange pgtype.Text        `json:"event_change"`
 }
 
 // An event is decided again only when its fingerprint moved.
@@ -1236,6 +1264,9 @@ func (q *Queries) UpsertPIMWatchEventVerdict(ctx context.Context, arg UpsertPIMW
 		arg.DecidedBy,
 		arg.Fingerprint,
 		arg.DecidedAt,
+		arg.EventStart,
+		arg.EventAllDay,
+		arg.EventChange,
 	)
 	if err != nil {
 		return 0, err

@@ -184,21 +184,25 @@ function MailText({
 }) {
   const { t } = useTranslation();
   const sender = row.from_name !== '' ? row.from_name : row.from;
+  const word = row.change === undefined ? '' : t(`governance.mailWatch.change.${row.change}`);
+  const nothingToRead = row.subject === '' && word === '';
   return (
     <>
       <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
         {row.resource === 'calendar' ? (
           <CalendarDays aria-hidden="true" className="size-3.5 self-center text-text-muted" />
         ) : null}
-        <bdi
-          title={sender}
-          className={cn(
-            'block max-w-full text-[15px] font-semibold text-text',
-            expanded ? 'break-words' : 'truncate',
-          )}
-        >
-          {sender === '' ? t('governance.mailWatch.row.unknownSender') : sender}
-        </bdi>
+        {sender === '' && word !== '' ? null : (
+          <bdi
+            title={sender}
+            className={cn(
+              'block max-w-full text-[15px] font-semibold text-text',
+              expanded ? 'break-words' : 'truncate',
+            )}
+          >
+            {sender === '' ? t('governance.mailWatch.row.unknownSender') : sender}
+          </bdi>
+        )}
         {row.from_name !== '' ? (
           <bdi className="block max-w-full break-all font-mono text-[12px] text-text-muted">
             {row.from}
@@ -209,10 +213,13 @@ function MailText({
         className={cn(
           'block break-words text-[15px] leading-snug',
           !expanded && 'line-clamp-2',
-          row.subject === '' ? 'italic text-text-muted' : 'text-text',
+          nothingToRead ? 'italic text-text-muted' : 'text-text',
         )}
       >
-        <bdi>{row.subject === '' ? t('governance.mailWatch.row.noSubject') : row.subject}</bdi>
+        {word === '' ? null : (
+          <span className="font-semibold">{row.subject === '' ? word : `${word}: `}</span>
+        )}
+        <bdi>{nothingToRead ? t('governance.mailWatch.row.noSubject') : row.subject}</bdi>
       </span>
     </>
   );

@@ -24,6 +24,8 @@ type Verdict struct {
 	DecidedAt   time.Time
 	AuthFailed  bool
 	Fingerprint string
+	Start       EventTime
+	Change      ChangeWord
 	AlertRunID  string
 	AlertedAt   time.Time
 	Notified    bool
@@ -34,18 +36,20 @@ func verdictFromRow(r sqlc.AuraPimWatchVerdicts) Verdict {
 		AccountID: r.AccountID, Resource: r.Resource, ItemID: r.ItemID, CalendarID: r.CalendarID,
 		Tier: Tier(r.Tier), LabelID: r.LabelID.String(), By: DecidedBy(r.DecidedBy),
 		DecidedAt: r.DecidedAt.Time, AuthFailed: r.AuthFailed, Fingerprint: r.Fingerprint,
+		Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay}, Change: ChangeWord(r.EventChange.String),
 		AlertRunID: r.AlertRunID.String(), AlertedAt: r.AlertedAt.Time, Notified: r.Notified,
 	}
 }
 
 // VerdictDraft is a decision on its way to a row. Event marks a calendar item, decided again each
-// time its fingerprint moves. A mail is decided once.
+// time its fingerprint moves, and Start is what its row keeps of it. A mail is decided once.
 type VerdictDraft struct {
 	ItemID      string
 	CalendarID  string
 	Decision    Decision
 	Fingerprint string
 	Event       bool
+	Start       EventTime
 }
 
 // PageCommit is what one page of changes leaves behind, written in one transaction: "handled"
@@ -137,6 +141,8 @@ func writeVerdict(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageCo
 			IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
 			CalendarID: draft.CalendarID, Tier: string(draft.Decision.Tier), DecidedBy: string(draft.Decision.By),
 			Fingerprint: draft.Fingerprint, DecidedAt: timestamp(decidedAt),
+			EventStart: timestamp(draft.Start.Time), EventAllDay: draft.Start.AllDay,
+			EventChange: optionalText(string(draft.Decision.Change)),
 		})
 	} else {
 		n, err = q.InsertPIMWatchVerdict(ctx, sqlc.InsertPIMWatchVerdictParams{
@@ -169,23 +175,30 @@ func moveCursor(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageComm
 	return nil
 }
 
-// Fingerprints reads the fingerprints on the rows of these items. An item with no row has no key.
-func (s *Store) Fingerprints(ctx context.Context, identityID, accountID, resource string, ids []string) (map[string]string, error) {
-	out := make(map[string]string, len(ids))
+// PriorEvent is what a row remembers of an event: the fingerprint that tells a move from a new
+// description, and the start a deleted event no longer names.
+type PriorEvent struct {
+	Fingerprint string
+	Start       EventTime
+}
+
+// PriorEvents reads what the rows of these items remember. An item with no row has no key.
+func (s *Store) PriorEvents(ctx context.Context, identityID, accountID, resource string, ids []string) (map[string]PriorEvent, error) {
+	out := make(map[string]PriorEvent, len(ids))
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
-		rows, err := q.ListPIMWatchFingerprints(ctx, sqlc.ListPIMWatchFingerprintsParams{
+		rows, err := q.ListPIMWatchPriorEvents(ctx, sqlc.ListPIMWatchPriorEventsParams{
 			IdentityID: id, AccountID: accountID, Resource: resource, ItemIds: ids,
 		})
 		if err != nil {
 			return err
 		}
 		for _, r := range rows {
-			out[r.ItemID] = r.Fingerprint
+			out[r.ItemID] = PriorEvent{Fingerprint: r.Fingerprint, Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay}}
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read pim watch fingerprints: %w", err)
+		return nil, fmt.Errorf("read pim watch prior events: %w", err)
 	}
 	return out, nil
 }

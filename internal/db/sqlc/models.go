@@ -684,6 +684,9 @@ type AuraPimWatchVerdicts struct {
 	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
 	AuthFailed  bool               `json:"auth_failed"`
 	Fingerprint string             `json:"fingerprint"`
+	EventStart  pgtype.Timestamptz `json:"event_start"`
+	EventAllDay bool               `json:"event_all_day"`
+	EventChange pgtype.Text        `json:"event_change"`
 	AlertRunID  pgtype.UUID        `json:"alert_run_id"`
 	AlertedAt   pgtype.Timestamptz `json:"alerted_at"`
 	Notified    bool               `json:"notified"`

@@ -100,10 +100,22 @@ Each of these would bite a real person, and each has a test that names it.
   An `updated` event with no row is `today`: nothing shows it moved. A cancelled one is the exception, because the
   status is the fact: it is `now` inside 24 hours, as spec §5.3 says, and `organizerIsSelf` still wins. A `deleted`
   change with no row and no start says nothing and leaves no row: it names only an id, and the person may have deleted
-  it themselves. **A `deleted` change with a start is read as a cancellation,** because the fork writes a cancelled
-  Google event as `deleted`, with its `event` when it has a start, and Graph as `updated`. So the same cancelled meeting
-  is `now` on both. The price is one alert when a person deletes their own event inside 24 hours on Google, since
-  `deleted` cannot say who did it: a missed meeting costs more, and the daily cap bounds the noise. G3 measures it.
+  it themselves. That is a limit, not a choice: nothing names such a delete, so the watch cannot tell it. **A `deleted`
+  change is read as a cancellation when anything says when it was,** its own start or the one the verdict row kept,
+  because the fork writes a cancelled Google event as `deleted`, with its `event` only when it has a start, and Google
+  documents only the id as guaranteed. Graph writes it as `updated`. So the same cancelled meeting is `now` on both. The
+  price is one alert when a person deletes their own event inside 24 hours on Google, since `deleted` cannot say who did
+  it: a missed meeting costs more, and the daily cap bounds the noise. G3 measures it.
+- **A verdict keeps its event's start, all-day flag and change word.** A time is not mail text: "Aura keeps ids and
+  verdicts, never a mail index" is about what a stranger wrote, and the start is what lets a delete that carries only an
+  id be told at all. `event_start` is the column the review asked for. `event_all_day` and `event_change` come with it
+  because the digest and the cockpit read a line later, from the row alone: a date without its flag shows a false hour,
+  and a cancelled event's word cannot be re-derived from a PIM that no longer has the event. So a cancelled event with no
+  item is not "no longer there": it is the line that says so, with the time the row kept.
+- **A line says what happened: new, moved or cancelled.** The word is fixed, comes from the ladder, stands before the
+  subject in the push, the digest and the record, and the decisions API sends it as a code. Mail has none, and neither
+  has an `updated` event with no row, which stays `today` with nothing shown about what changed. With neither sender nor
+  subject the line is the word and the time, never "(no subject)".
 - **`from` is the address and `fromName` the name beside it,** on `changes` and on mail `items`. Rules, corrections and
   `SenderKey` read the address. A notice, a digest line and the record show `Name <address>`, inside the same frame,
   and the name is bounded at 60 runes so a long one cannot push the address out. An event's `from` is the organizer's

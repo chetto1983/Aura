@@ -176,6 +176,31 @@ describe("a stranger's text", () => {
     expect(await screen.findByText('Unknown sender')).toBeTruthy();
     expect(screen.getByText('No subject')).toBeTruthy();
   });
+
+  it('says what happened to an event before its subject', async () => {
+    theDay(server, decision({ resource: 'calendar', subject: 'Audit', change: 'moved' }));
+    openDay();
+    expect(await screen.findByText('Moved:')).toBeTruthy();
+    expect(screen.getByText('Audit')).toBeTruthy();
+  });
+
+  it('reads as the word alone when the event names nothing', async () => {
+    theDay(
+      server,
+      decision({
+        resource: 'calendar',
+        from: '',
+        from_name: '',
+        subject: '',
+        start: '2026-11-02T12:00:00Z',
+        change: 'cancelled',
+      }),
+    );
+    openDay();
+    expect(await screen.findByText('Cancelled')).toBeTruthy();
+    expect(screen.queryByText('No subject')).toBeNull();
+    expect(screen.queryByText('Unknown sender')).toBeNull();
+  });
 });
 
 describe('why', () => {

@@ -525,9 +525,9 @@ type Querier interface {
 	ListPIMWatchCorrectionsBefore(ctx context.Context, arg ListPIMWatchCorrectionsBeforeParams) ([]AuraPimWatchCorrections, error)
 	ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchCursors, error)
 	ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWatchDigestVerdictsParams) ([]AuraPimWatchVerdicts, error)
-	ListPIMWatchFingerprints(ctx context.Context, arg ListPIMWatchFingerprintsParams) ([]ListPIMWatchFingerprintsRow, error)
 	ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchLabels, error)
 	ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOwedAlertsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error)
 	ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchRules, error)
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)

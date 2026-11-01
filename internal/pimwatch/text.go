@@ -27,74 +27,83 @@ func ResolveLang(raw string) Lang {
 
 // phrases is every fixed sentence the watch writes.
 type phrases struct {
-	alertHead     string // account
-	moreInDigest  string // count
-	authFailed    string
-	noSubject     string
-	gone          string
-	gap           string // resource, account, since
-	failing       string // resource, account, since
-	digestTitle   string
-	digestNow     string
-	unsorted      string
-	digestRest    string // count
-	unreadable    string // accounts
-	droppedLines  string // accounts
-	resourceMail  string
-	resourceCal   string
-	timeLayout    string
-	dayLayout     string
-	watchTask     string // account
-	digestTask    string
-	defaultLabels []Label
+	alertHead       string // account
+	moreInDigest    string // count
+	authFailed      string
+	noSubject       string
+	gone            string
+	changeNew       string
+	changeMoved     string
+	changeCancelled string
+	gap             string // resource, account, since
+	failing         string // resource, account, since
+	digestTitle     string
+	digestNow       string
+	unsorted        string
+	digestRest      string // count
+	unreadable      string // accounts
+	droppedLines    string // accounts
+	resourceMail    string
+	resourceCal     string
+	timeLayout      string
+	dayLayout       string
+	watchTask       string // account
+	digestTask      string
+	defaultLabels   []Label
 }
 
 var texts = map[Lang]phrases{
 	LangIT: {
-		alertHead:    "Da vedere su %s:",
-		moreInDigest: "Altre %d sono nel riepilogo.",
-		authFailed:   "mittente non autenticato",
-		noSubject:    "(senza oggetto)",
-		gone:         "(non più disponibile)",
-		gap:          "Non riesco più a seguire %[1]s su %[2]s: quello che è arrivato dal %[3]s a ora non è stato letto.",
-		failing:      "Non riesco a leggere %[1]s su %[2]s dal %[3]s. Riproverò a ogni giro.",
-		digestTitle:  "Riepilogo di posta e calendario",
-		digestNow:    "Urgenti",
-		unsorted:     "Da smistare",
-		digestRest:   "E altre %d voci.",
-		unreadable:   "Non ho potuto leggere: %s. Le sue voci tornano nel prossimo riepilogo.",
-		droppedLines: "Non ho potuto leggere: %s. Le sue voci restano nella giornata dell'account, nel cockpit.",
-		resourceMail: "la posta",
-		resourceCal:  "il calendario",
-		timeLayout:   "02/01 15:04",
-		dayLayout:    "02/01",
-		watchTask:    "Controllo di posta e calendario: %s",
-		digestTask:   "Riepilogo di posta e calendario",
+		alertHead:       "Da vedere su %s:",
+		moreInDigest:    "Altre %d sono nel riepilogo.",
+		authFailed:      "mittente non autenticato",
+		noSubject:       "(senza oggetto)",
+		gone:            "(non più disponibile)",
+		changeNew:       "Nuovo",
+		changeMoved:     "Spostato",
+		changeCancelled: "Annullato",
+		gap:             "Non riesco più a seguire %[1]s su %[2]s: quello che è arrivato dal %[3]s a ora non è stato letto.",
+		failing:         "Non riesco a leggere %[1]s su %[2]s dal %[3]s. Riproverò a ogni giro.",
+		digestTitle:     "Riepilogo di posta e calendario",
+		digestNow:       "Urgenti",
+		unsorted:        "Da smistare",
+		digestRest:      "E altre %d voci.",
+		unreadable:      "Non ho potuto leggere: %s. Le sue voci tornano nel prossimo riepilogo.",
+		droppedLines:    "Non ho potuto leggere: %s. Le sue voci restano nella giornata dell'account, nel cockpit.",
+		resourceMail:    "la posta",
+		resourceCal:     "il calendario",
+		timeLayout:      "02/01 15:04",
+		dayLayout:       "02/01",
+		watchTask:       "Controllo di posta e calendario: %s",
+		digestTask:      "Riepilogo di posta e calendario",
 		defaultLabels: []Label{
 			{Name: "Cliente"}, {Name: "Lavoro"}, {Name: "Personale"}, {Name: "Opportunità"},
 			{Name: "Pubblicità", Tier: TierLater},
 		},
 	},
 	LangEN: {
-		alertHead:    "Worth a look on %s:",
-		moreInDigest: "%d more are in the digest.",
-		authFailed:   "sender not verified",
-		noSubject:    "(no subject)",
-		gone:         "(no longer there)",
-		gap:          "I lost track of the changes to %[1]s on %[2]s: what arrived from %[3]s until now was not read.",
-		failing:      "I have not been able to read %[1]s on %[2]s since %[3]s. I will try again on every tick.",
-		digestTitle:  "Mail and calendar digest",
-		digestNow:    "Urgent",
-		unsorted:     "To sort",
-		digestRest:   "And %d more.",
-		unreadable:   "I could not read: %s. Its items come back in the next digest.",
-		droppedLines: "I could not read: %s. Its items stay in the account's day in the cockpit.",
-		resourceMail: "the mail",
-		resourceCal:  "the calendar",
-		timeLayout:   "Jan 2 15:04",
-		dayLayout:    "Jan 2",
-		watchTask:    "Mail and calendar watch: %s",
-		digestTask:   "Mail and calendar digest",
+		alertHead:       "Worth a look on %s:",
+		moreInDigest:    "%d more are in the digest.",
+		authFailed:      "sender not verified",
+		noSubject:       "(no subject)",
+		gone:            "(no longer there)",
+		changeNew:       "New",
+		changeMoved:     "Moved",
+		changeCancelled: "Cancelled",
+		gap:             "I lost track of the changes to %[1]s on %[2]s: what arrived from %[3]s until now was not read.",
+		failing:         "I have not been able to read %[1]s on %[2]s since %[3]s. I will try again on every tick.",
+		digestTitle:     "Mail and calendar digest",
+		digestNow:       "Urgent",
+		unsorted:        "To sort",
+		digestRest:      "And %d more.",
+		unreadable:      "I could not read: %s. Its items come back in the next digest.",
+		droppedLines:    "I could not read: %s. Its items stay in the account's day in the cockpit.",
+		resourceMail:    "the mail",
+		resourceCal:     "the calendar",
+		timeLayout:      "Jan 2 15:04",
+		dayLayout:       "Jan 2",
+		watchTask:       "Mail and calendar watch: %s",
+		digestTask:      "Mail and calendar digest",
 		defaultLabels: []Label{
 			{Name: "Client"}, {Name: "Work"}, {Name: "Personal"}, {Name: "Opportunity"},
 			{Name: "Advertising", Tier: TierLater},
@@ -125,6 +134,19 @@ func (p phrases) resource(resource string) string {
 		return p.resourceCal
 	}
 	return p.resourceMail
+}
+
+func (p phrases) word(change ChangeWord) string {
+	switch change {
+	case WordNew:
+		return p.changeNew
+	case WordMoved:
+		return p.changeMoved
+	case WordCancelled:
+		return p.changeCancelled
+	default:
+		return ""
+	}
 }
 
 func (p phrases) watchTitle(accountID string) string {
@@ -185,6 +207,7 @@ type Line struct {
 	Gone       bool
 	Tier       Tier
 	LabelID    string
+	Change     ChangeWord
 }
 
 // sender is who a line comes from: the name beside the address, because the name is whatever the
@@ -209,18 +232,30 @@ func (l Line) when(p phrases, loc *time.Location) string {
 	return l.Start.In(loc).Format(p.timeLayout)
 }
 
+// what is a line's change word and subject. A word needs no subject: "(no subject)" would make a
+// cancelled meeting read as a mail.
+func (l Line) what(p phrases) string {
+	word, subject := p.word(l.Change), plainLine(l.Subject)
+	switch {
+	case word != "" && subject != "":
+		return word + ": " + subject
+	case word != "":
+		return word
+	case subject != "":
+		return subject
+	default:
+		return p.noSubject
+	}
+}
+
 // describe is the sender and subject of a line, what a notification must always carry.
 func (l Line) describe(p phrases, loc *time.Location) string {
 	if l.Gone {
 		return p.gone
 	}
-	subject := plainLine(l.Subject)
-	if subject == "" {
-		subject = p.noSubject
-	}
-	text := subject
+	text := l.what(p)
 	if from := l.sender(); from != "" {
-		text = from + ": " + subject
+		text = from + ": " + text
 	}
 	if !l.Start.IsZero() {
 		text += " (" + l.when(p, loc) + ")"

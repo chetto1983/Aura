@@ -236,6 +236,47 @@ func TestADigestLineCarriesTheNameInsideTheFrame(t *testing.T) {
 	}
 }
 
+func TestALineSaysWhatHappenedToTheEvent(t *testing.T) {
+	start := time.Date(2026, 11, 2, 13, 0, 0, 0, time.UTC)
+	event := func(word ChangeWord) Line {
+		return Line{From: "anna@acme.it", Subject: "Audit", Start: start, Change: word}
+	}
+	cases := []struct {
+		name string
+		lang Lang
+		line Line
+		want string
+	}{
+		{"new", LangIT, event(WordNew), "anna@acme.it: Nuovo: Audit (02/11 13:00)"},
+		{"moved", LangIT, event(WordMoved), "anna@acme.it: Spostato: Audit (02/11 13:00)"},
+		{"cancelled", LangIT, event(WordCancelled), "anna@acme.it: Annullato: Audit (02/11 13:00)"},
+		{"new in English", LangEN, event(WordNew), "anna@acme.it: New: Audit (Nov 2 13:00)"},
+		{"moved in English", LangEN, event(WordMoved), "anna@acme.it: Moved: Audit (Nov 2 13:00)"},
+		{"cancelled in English", LangEN, event(WordCancelled), "anna@acme.it: Cancelled: Audit (Nov 2 13:00)"},
+		{"a delete names nothing", LangIT, Line{Start: start, Change: WordCancelled}, "Annullato (02/11 13:00)"},
+		{"a delete names nothing in English", LangEN, Line{Start: start, Change: WordCancelled}, "Cancelled (Nov 2 13:00)"},
+		{"a sender and no subject", LangEN, Line{From: "anna@acme.it", Start: start, Change: WordCancelled}, "anna@acme.it: Cancelled (Nov 2 13:00)"},
+		{"nothing shows what changed", LangEN, event(""), "anna@acme.it: Audit (Nov 2 13:00)"},
+		{"a mail has no word", LangEN, Line{From: "a@b.it"}, "a@b.it: (no subject)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.line.describe(phrasesFor(tc.lang), time.UTC); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The word is the watch's own and the subject a stranger's, so a subject cannot take the word's
+// place: both stand in the line.
+func TestASubjectCannotReplaceTheWord(t *testing.T) {
+	line := Line{Subject: "New: nothing changed", Start: time.Date(2026, 11, 2, 13, 0, 0, 0, time.UTC), Change: WordCancelled}
+	if got := line.describe(phrasesFor(LangEN), time.UTC); got != "Cancelled: New: nothing changed (Nov 2 13:00)" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestAGoneItemSaysSoAndNothingElse(t *testing.T) {
 	line := Line{From: "a@b.it", Subject: "kept", Gone: true}
 	if got := line.describe(phrasesFor(LangEN), time.UTC); got != "(no longer there)" {

@@ -1,7 +1,8 @@
 // resources.governance.mailWatch.ts holds the mail and calendar watch's cockpit copy (EN + IT),
 // spread into governance.mailWatch. It follows the Go side's words (internal/pimwatch/text.go):
-// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure` and `paused` keys are
-// reached by template from the wire's fixed codes, so a new code needs a key here in both locales.
+// "watch" is "controllo", "digest" is "riepilogo". The `why`, `failure`, `paused` and `change` keys
+// are reached by template from the wire's fixed codes, so a new code needs a key here in both
+// locales.
 
 export const mailWatchEn = {
   title: 'Mail and calendar watch',
@@ -91,6 +92,11 @@ export const mailWatchEn = {
     labelAria: 'Label',
     whenToday: 'today',
     whenDay: 'on {{date}}',
+  },
+  change: {
+    new: 'New',
+    moved: 'Moved',
+    cancelled: 'Cancelled',
   },
   row: {
     gone: 'No longer exists',
@@ -277,6 +283,11 @@ export const mailWatchIt = {
     labelAria: 'Etichetta',
     whenToday: 'di oggi',
     whenDay: 'del {{date}}',
+  },
+  change: {
+    new: 'Nuovo',
+    moved: 'Spostato',
+    cancelled: 'Annullato',
   },
   row: {
     gone: 'Non esiste più',

@@ -7,7 +7,8 @@
 --
 -- No table here holds a subject or a body. pim_watch_verdicts holds no sender either: the only
 -- sender text is the key of a rule or a correction. Sender and subject are read live from the PIM
--- by id, so a deleted mail shows as gone.
+-- by id, so a deleted mail shows as gone. An event's start and a fixed change word are kept, and
+-- neither is mail text: a deleted event names only its id, so what is known of it has to be here.
 
 ALTER TABLE aura.scheduler_tasks DROP CONSTRAINT scheduler_tasks_kind_check;
 ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_kind_check
@@ -72,23 +73,28 @@ CREATE TABLE aura.pim_watch_cursors (
 
 -- "Handled" means a row here (§5.2). alert_run_id names the run that told this verdict in a
 -- notification, and notified turns true once the ledger shows that run completed, so a run that
--- died after committing tells it again and a run that finished never does.
+-- died after committing tells it again and a run that finished never does. An event's row keeps
+-- its start and what happened to it: event_all_day says the start is a date in no zone, and
+-- event_change stays null when nothing shows what changed.
 CREATE TABLE aura.pim_watch_verdicts (
-    identity_id  uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
-    account_id   text        NOT NULL,
-    resource     text        NOT NULL CHECK (resource IN ('mail', 'calendar')),
-    item_id      text        NOT NULL,
-    calendar_id  text        NOT NULL DEFAULT '',
-    tier         text        NOT NULL CHECK (tier IN ('now', 'today', 'later')),
-    label_id     uuid        REFERENCES aura.pim_watch_labels (id) ON DELETE SET NULL,
-    decided_by   text        NOT NULL CHECK (decided_by IN
+    identity_id   uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
+    account_id    text        NOT NULL,
+    resource      text        NOT NULL CHECK (resource IN ('mail', 'calendar')),
+    item_id       text        NOT NULL,
+    calendar_id   text        NOT NULL DEFAULT '',
+    tier          text        NOT NULL CHECK (tier IN ('now', 'today', 'later')),
+    label_id      uuid        REFERENCES aura.pim_watch_labels (id) ON DELETE SET NULL,
+    decided_by    text        NOT NULL CHECK (decided_by IN
         ('rule', 'auth_failed', 'people', 'category', 'default', 'calendar', 'person')),
-    decided_at   timestamptz NOT NULL DEFAULT now(),
-    auth_failed  boolean     NOT NULL DEFAULT false,
-    fingerprint  text        NOT NULL DEFAULT '',
-    alert_run_id uuid,
-    alerted_at   timestamptz,
-    notified     boolean     NOT NULL DEFAULT false,
+    decided_at    timestamptz NOT NULL DEFAULT now(),
+    auth_failed   boolean     NOT NULL DEFAULT false,
+    fingerprint   text        NOT NULL DEFAULT '',
+    event_start   timestamptz,
+    event_all_day boolean     NOT NULL DEFAULT false,
+    event_change  text        CHECK (event_change IN ('new', 'moved', 'cancelled')),
+    alert_run_id  uuid,
+    alerted_at    timestamptz,
+    notified      boolean     NOT NULL DEFAULT false,
     PRIMARY KEY (identity_id, account_id, resource, item_id)
 );
 

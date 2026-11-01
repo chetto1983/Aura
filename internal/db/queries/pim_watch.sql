@@ -161,8 +161,8 @@ DELETE FROM aura.pim_watch_cursors WHERE identity_id = $1 AND account_id = $2;
 SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4;
 
--- name: ListPIMWatchFingerprints :many
-SELECT item_id, fingerprint FROM aura.pim_watch_verdicts
+-- name: ListPIMWatchPriorEvents :many
+SELECT item_id, fingerprint, event_start, event_all_day FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY(@item_ids::text[]);
 
 -- name: InsertPIMWatchVerdict :execrows
@@ -176,11 +176,14 @@ ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING;
 -- name: UpsertPIMWatchEventVerdict :execrows
 -- An event is decided again only when its fingerprint moved.
 INSERT INTO aura.pim_watch_verdicts (
-    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    identity_id, account_id, resource, item_id, calendar_id, tier, decided_by, fingerprint, decided_at,
+    event_start, event_all_day, event_change
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO UPDATE
 SET calendar_id = EXCLUDED.calendar_id, tier = EXCLUDED.tier, decided_by = EXCLUDED.decided_by,
     decided_at = EXCLUDED.decided_at, fingerprint = EXCLUDED.fingerprint,
+    event_start = EXCLUDED.event_start, event_all_day = EXCLUDED.event_all_day,
+    event_change = EXCLUDED.event_change,
     alert_run_id = NULL, alerted_at = NULL, notified = false
 WHERE aura.pim_watch_verdicts.fingerprint <> EXCLUDED.fingerprint;
 

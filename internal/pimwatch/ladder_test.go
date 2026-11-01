@@ -182,6 +182,35 @@ func TestTierValid(t *testing.T) {
 	}
 }
 
+func TestDecideEventNamesWhatHappened(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	soon := now.Add(3 * time.Hour)
+	cases := []struct {
+		name string
+		e    EventFacts
+		want ChangeWord
+	}{
+		{"an invitation", EventFacts{Type: ChangeAdded, Start: soon, Fingerprint: "a"}, WordNew},
+		{"a moved event", EventFacts{Type: ChangeUpdated, Start: soon, Fingerprint: "b", Prior: "a", Seen: true}, WordMoved},
+		{"an added change to a known event", EventFacts{Type: ChangeAdded, Start: soon, Fingerprint: "b", Prior: "a", Seen: true}, WordMoved},
+		{"a cancellation on an update", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, Fingerprint: "a"}, WordCancelled},
+		{"a delete of a known event", EventFacts{Type: ChangeDeleted, Start: soon, Prior: "a", Seen: true}, WordCancelled},
+		{"Google's delete with a time", EventFacts{Type: ChangeDeleted, Start: soon, Cancelled: true, Fingerprint: "a"}, WordCancelled},
+		{"the person's own move", EventFacts{Type: ChangeUpdated, Start: soon, OrganizerIsSelf: true, Fingerprint: "b", Prior: "a", Seen: true}, WordMoved},
+		{"nothing shows what changed", EventFacts{Type: ChangeUpdated, Start: soon, Fingerprint: "a"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, told := DecideEvent(now, tc.e)
+			if !told || got.Change != tc.want {
+				t.Fatalf("DecideEvent = %+v, told %v, want %q", got, told, tc.want)
+			}
+		})
+	}
+}
+
 func TestDecideEvent(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)

@@ -222,6 +222,7 @@ type mailWatchDecisionJSON struct {
 	Gone       bool       `json:"gone"`
 	AuthFailed bool       `json:"auth_failed"`
 	Tier       string     `json:"tier"`
+	Change     string     `json:"change,omitempty"`
 	LabelID    string     `json:"label_id,omitempty"`
 	Label      string     `json:"label,omitempty"`
 	DecidedBy  string     `json:"decided_by"`
@@ -240,7 +241,8 @@ func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request
 			AccountID: line.AccountID, Resource: line.Resource, ItemID: line.ItemID, CalendarID: line.CalendarID,
 			From: line.From, FromName: line.FromName, Subject: line.Subject,
 			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,
-			Tier: string(line.Tier), LabelID: line.LabelID, Label: line.Label, DecidedBy: string(line.By), DecidedAt: line.DecidedAt,
+			Tier: string(line.Tier), Change: string(line.Change), LabelID: line.LabelID, Label: line.Label,
+			DecidedBy: string(line.By), DecidedAt: line.DecidedAt,
 		})
 	}
 	writeJSON(w, out)

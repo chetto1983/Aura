@@ -63,6 +63,8 @@ export interface MailWatchDecision {
   readonly gone: boolean;
   readonly auth_failed: boolean;
   readonly tier: MailWatchTier;
+  /** What happened to an event. A mail has none. */
+  readonly change?: 'new' | 'moved' | 'cancelled';
   readonly label_id?: string;
   readonly label?: string;
   readonly decided_by: string;

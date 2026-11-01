@@ -49,7 +49,7 @@ type WatchStore interface {
 	Book(ctx context.Context, identityID string) (Book, error)
 	Cursor(ctx context.Context, identityID, accountID, resource string) (Cursor, error)
 	StartCursor(ctx context.Context, identityID, accountID, resource, value, status string) error
-	Fingerprints(ctx context.Context, identityID, accountID, resource string, ids []string) (map[string]string, error)
+	PriorEvents(ctx context.Context, identityID, accountID, resource string, ids []string) (map[string]PriorEvent, error)
 	CommitPage(ctx context.Context, identityID string, p PageCommit) (PageResult, error)
 	MarkFailing(ctx context.Context, identityID, accountID, resource, code string, at time.Time) (Cursor, error)
 	MarkUnsupported(ctx context.Context, identityID, accountID, resource string) error
@@ -397,7 +397,7 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 		}
 		latest[change.ID] = change
 	}
-	prior, err := w.Store.Fingerprints(ctx, t.IdentityID, t.AccountID, ResourceCalendar, order)
+	priors, err := w.Store.PriorEvents(ctx, t.IdentityID, t.AccountID, ResourceCalendar, order)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -409,20 +409,26 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 		facts, start := EventFacts{Type: change.Type}, EventTime{}
 		if event := change.Event; event != nil {
 			start = event.Start
-			facts.Start, facts.OrganizerIsSelf, facts.Fingerprint = start.In(t.loc), event.OrganizerIsSelf, event.Fingerprint
+			facts.OrganizerIsSelf, facts.Fingerprint = event.OrganizerIsSelf, event.Fingerprint
 			facts.Cancelled = event.Status == EventCancelled
 		}
-		facts.Prior, facts.Seen = prior[id]
+		prior, seen := priors[id]
+		facts.Prior, facts.Seen = prior.Fingerprint, seen
+		if change.Type == ChangeDeleted && start.IsZero() {
+			start = prior.Start
+		}
+		facts.Start = start.In(t.loc)
 		decision, told := DecideEvent(now, facts)
 		if !told {
 			continue
 		}
 		drafts = append(drafts, VerdictDraft{
-			ItemID: id, CalendarID: change.CalendarID, Decision: decision, Fingerprint: facts.fingerprintOf(), Event: true,
+			ItemID: id, CalendarID: change.CalendarID, Decision: decision, Fingerprint: facts.fingerprintOf(), Event: true, Start: start,
 		})
 		lines[id] = Line{
 			AccountID: t.AccountID, Resource: ResourceCalendar, ItemID: id, CalendarID: change.CalendarID,
 			From: change.From, Subject: change.Subject, Start: start.Time, AllDay: start.AllDay, Tier: decision.Tier,
+			Change: decision.Change,
 		}
 	}
 	return drafts, lines, nil
@@ -490,10 +496,12 @@ func lineOf(verdict Verdict, items map[string]Item) Line {
 	line := Line{
 		AccountID: verdict.AccountID, Resource: verdict.Resource, ItemID: verdict.ItemID,
 		CalendarID: verdict.CalendarID, AuthFailed: verdict.AuthFailed, Tier: verdict.Tier, LabelID: verdict.LabelID,
+		Start: verdict.Start.Time, AllDay: verdict.Start.AllDay, Change: verdict.Change,
 	}
 	item, ok := items[verdict.ItemID]
 	if !ok {
-		line.Gone = true
+		// A cancelled event being gone is the news, and the row still says when it was.
+		line.Gone = verdict.Change != WordCancelled
 		return line
 	}
 	line.From, line.FromName, line.Subject = item.From, item.FromName, item.Subject

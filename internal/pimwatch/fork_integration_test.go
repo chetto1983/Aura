@@ -147,7 +147,7 @@ func TestEveryShapeTheForkWritesPassesThroughAPage(t *testing.T) {
 	if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "e-3"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a delete with no row and no start left one: %v", err)
 	}
-	mustContain(t, out.Notice, "anna@acme.it: Riunione annullata")
+	mustContain(t, out.Notice, "anna@acme.it: Cancelled: Riunione annullata")
 }
 
 // All day on the third has begun for a person in Tokyo while it is still the second in UTC.
@@ -181,7 +181,7 @@ func TestACancelledMeetingNobodySawIsTold(t *testing.T) {
 		Changes: []Change{cancelled("theirs", false), cancelled("mine", true)}, NextCursor: "c1",
 	})
 
-	mustContain(t, r.tick().Notice, "anna@acme.it: Budget")
+	mustContain(t, r.tick().Notice, "anna@acme.it: Cancelled: Budget")
 
 	ctx := context.Background()
 	theirs, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "theirs")
@@ -219,7 +219,7 @@ func TestADeleteIsToldOnlyWhenTheWatchKnewTheEvent(t *testing.T) {
 	}, NextCursor: "c3"})
 	r.tick()
 	verdict, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "known")
-	if err != nil || verdict.Tier != TierToday || verdict.Fingerprint != deletedFingerprint {
+	if err != nil || verdict.Tier != TierNow || verdict.Fingerprint != deletedFingerprint {
 		t.Fatalf("known = %+v, %v", verdict, err)
 	}
 }

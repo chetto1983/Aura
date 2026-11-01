@@ -143,12 +143,24 @@ type Signals struct {
 	WrittenTo         *bool  `json:"writtenTo"`
 }
 
+// ChangeWord is what happened to an event, the fixed word a line puts before its subject. Mail has
+// none, and neither has an event nothing shows the change of.
+type ChangeWord string
+
+// The three change words, stored on the verdict and sent to the cockpit as these codes.
+const (
+	WordNew       ChangeWord = "new"
+	WordMoved     ChangeWord = "moved"
+	WordCancelled ChangeWord = "cancelled"
+)
+
 // Decision is what the ladder says about one item.
 type Decision struct {
 	Tier       Tier
 	LabelID    string
 	By         DecidedBy
 	AuthFailed bool
+	Change     ChangeWord
 }
 
 // DecideMail walks rungs 1 to 4 and 6 of the ladder (spec §5.3). A rule wins over everything,
@@ -234,17 +246,33 @@ func (e EventFacts) fingerprintOf() string {
 	return e.Fingerprint
 }
 
+// word says what happened. An `updated` event with no row was there before the watch began, so
+// nothing shows what changed and the line says nothing.
+func (e EventFacts) word() ChangeWord {
+	switch {
+	case e.Cancelled || e.Type == ChangeDeleted:
+		return WordCancelled
+	case e.Seen:
+		return WordMoved
+	case e.Type == ChangeAdded:
+		return WordNew
+	default:
+		return ""
+	}
+}
+
 // DecideEvent reads a calendar change as a structural fact (spec §5.3): a new invitation, a moved
 // event and a cancelled one are `now` when the event starts within 24 hours, otherwise `today`.
 // told is false when the fingerprint did not move, which is a new description or someone else's
 // reply, and the change says nothing.
 //
 // A `deleted` change with no row and no start says nothing either: it names only an id, and the
-// person may well have made it. Google writes every cancellation as `deleted`, with the start when
-// it has one, so that delete is read as the cancellation it is: a missed meeting costs more than
-// one alert for the person's own delete. The person's own events are `later`: they made the change.
-// An `updated` event with no row was there before the watch began, so nothing shows that it
-// moved, and doubt goes to the digest. A cancellation is no such doubt: the status is the fact.
+// person may well have made it. Google writes every cancellation as `deleted`, and documents only
+// the id as guaranteed, so Start is what the change says or else what the row kept, and a delete
+// is read as the cancellation it is: a missed meeting costs more than one alert for the person's
+// own delete. The person's own events are `later`: they made the change. An `updated` event with
+// no row was there before the watch began, so nothing shows that it moved, and doubt goes to the
+// digest. A cancellation is no such doubt: the status is the fact.
 func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Seen && e.Prior == e.fingerprintOf() {
 		return Decision{}, false
@@ -252,7 +280,7 @@ func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Type == ChangeDeleted && !e.Seen && e.Start.IsZero() {
 		return Decision{}, false
 	}
-	decision = Decision{By: ByCalendar}
+	decision = Decision{By: ByCalendar, Change: e.word()}
 	switch {
 	case e.OrganizerIsSelf:
 		decision.Tier = TierLater

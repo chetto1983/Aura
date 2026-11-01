@@ -200,11 +200,11 @@ func TestMailWatchDecisionsCarryTheNameAndAnAllDayDate(t *testing.T) {
 	day := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
 	service := &fakeWatchService{lines: []pimwatch.DecisionLine{
 		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@b.it", FromName: "Mario Rossi"},
-		{AccountID: "work", Resource: pimwatch.ResourceCalendar, ItemID: "e1", Start: day, AllDay: true},
+		{AccountID: "work", Resource: pimwatch.ResourceCalendar, ItemID: "e1", Start: day, AllDay: true, Change: pimwatch.WordCancelled},
 	}}
 	rec := mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?day=2026-11-01", "")
 	body := rec.Body.String()
-	for _, want := range []string{`"from":"a@b.it"`, `"from_name":"Mario Rossi"`, `"all_day":true`} {
+	for _, want := range []string{`"from":"a@b.it"`, `"from_name":"Mario Rossi"`, `"all_day":true`, `"change":"cancelled"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %s in %s", want, body)
 		}
