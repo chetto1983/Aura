@@ -233,9 +233,6 @@ func TestPortFailuresReachTheCaller(t *testing.T) {
 	if err := r.service.Disable(ctx, r.identity, "home"); !errors.Is(err, errBroken) {
 		t.Fatalf("disable: %v", err)
 	}
-	if err := r.service.StopIdentity(ctx, r.identity); !errors.Is(err, errBroken) {
-		t.Fatalf("stop: %v", err)
-	}
 	if _, err := r.service.Status(ctx, r.identity); !errors.Is(err, errBroken) {
 		t.Fatalf("status: %v", err)
 	}

@@ -333,13 +333,3 @@ func (r pimWatchRoutes) DeliveryFor(ctx context.Context, identityID string) (pim
 		TelegramRecipients: []int64{account.TelegramUserID},
 	}, nil
 }
-
-// pimWatchJobs stops an identity's watch when it is deactivated. The tasks are rows, so the
-// short-lived `aura identity` process can cancel them as well as the daemon can.
-type pimWatchJobs struct {
-	tasks pimwatch.Tasks
-}
-
-func (j pimWatchJobs) TerminateJobs(ctx context.Context, identityID string) error {
-	return (&pimwatch.Service{Tasks: j.tasks}).StopIdentity(ctx, identityID)
-}

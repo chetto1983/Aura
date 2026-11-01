@@ -124,8 +124,25 @@ Each of these would bite a real person, and each has a test that names it.
   conversation would be one the person's next message never reaches. The seam is optional, and only these two kinds on
   that route use it.
 - **The thread's conversation row is created at enable,** or the first run would read a missing row as a deleted origin.
-- **Deactivating an identity cancels its watch.** `DeprovisionDeps.Jobs` was nil on every path, so `pimWatchJobs` is
-  wired there. It cancels only the two watch kinds. See "Found in existing code".
+- **Deactivating an identity pauses its tasks.** `DeprovisionDeps.Jobs` was nil on every path. `scheduledTaskAdapter`
+  now sits behind it, for every kind and not only the watch's. `cron.Store.PauseIdentityTasks` moves the identity's
+  `active` tasks to `paused` with the reason `identity_deactivated`, in one statement, and a second call finds nothing
+  to change. A `pending_approval` task stays as it is, because a paused task resumes active and that would skip its
+  approval. A task already paused keeps its own reason. **A backup stays active:** the task tool and the CLI let a
+  person schedule `backup_postgres` under their own identity, `IsPausableKind` keeps a backup from every pause, and the
+  operator decided on 2026-10-05 that one is never stopped from the cockpit or the agent. There is no way back:
+  nothing clears `deactivated_at`.
+- **Purging an identity deletes its tasks,** in a journaled step, `scheduled_tasks`, behind the port
+  `ScheduledTaskPurger`. `scheduler_tasks.identity_id` is text with no foreign key, so the identity's row does not reach
+  them. They would keep firing, and their notifications, whose bodies can hold a sender and a subject, would stay. ON
+  DELETE CASCADE takes the runs and the notifications, and `TestPurgeRemovesAnIdentitysTasksRunsAndNotifications`
+  proves it as `aura_app`. The step runs after the OpenRouter key and before the box, because a task firing after the
+  box is gone would wake another. It needs only the id, so `aura identity purge --resume-resources` runs it. Unlike the
+  pause it covers every kind and status: a task left behind names an identity that no longer exists. That includes a
+  person's own backup task, and the boot seed puts a backup back if it was the only one.
+- **A run already in progress still finishes,** through both. `TestARunEndingAfterDeactivationLeavesThePause` pins that
+  the pause and its reason survive it. On a purge its rows go first, so by the code `CompleteRun` updates nothing and
+  the outcome write logs a warning. That path has no test.
 - **`add_rule` and `correct` need a person in the conversation.** A rule filing a sender to `later` hides that person's
   mail from the digest, so an instruction injected into a headless job could silence a sender with nobody seeing it.
   The tier stays Normal, because Destructive would prompt, and "di queste non avvisarmi più" stays one sentence.
@@ -146,9 +163,10 @@ Each of these would bite a real person, and each has a test that names it.
 | File | Change |
 |---|---|
 | `prd.md`, `docs/teable-behaviours-2026-10-30.md`, `docs/superpowers/specs/2026-10-09-consolidation-best-of-design.md` | The amendments, with what the measures do not prove. |
-| `internal/db/migrations/0149_pim_watch.{up,down}.sql` | Kinds, six tables, RLS, the two partial unique indexes. |
+| `internal/db/migrations/0149_pim_watch.{up,down}.sql` | Kinds, the `identity_deactivated` reason, six tables, RLS, the two partial unique indexes. |
 | `internal/db/queries/pim_watch.sql`, `scheduler_tasks.sql`, `internal/db/sqlc/*` | Queries and generated code. |
-| `internal/cron/store.go`, `store_manage.go` | The two kinds, `ListLiveTasksOfKind`. |
+| `internal/cron/store.go`, `store_manage.go`, `pause.go` | The two kinds, `ListLiveTasksOfKind`, `PauseIdentityTasks`, `DeleteIdentityTasks`. |
+| `internal/agui/deprovision.go`, `saga_journal.go`, `cmd/aura/serve_deprovision_purgers.go` | `ScheduledTaskPurger`, the `scheduled_tasks` step, `scheduledTaskAdapter`. |
 | `internal/cron/dispatch.go`, `dispatch_tell.go`, `notify.go` | `Job.Tell`, `pausedRunError`, no stdout copy of a Telegram push. |
 | `internal/cron/task_home.go` | A watch keeps a conversation; a Telegram thread comes back. |
 | `internal/cron/handlers/handler.go`, `pim_watch.go` | The kinds' constants, `Job.Tell`, the two handlers. |
@@ -186,7 +204,8 @@ Every route is under `/api/mail-watch`, behind the session and `governance.write
 - `settings`: `{digest_hour, daily_alert_cap, interval_minutes, last_digest_at}`.
 - `account`: `{account_id, paused, paused_reason?, next_run_at, alerts_today, resources: [{resource, status,
   last_error?, failing_since, advanced_at}]}`. `status` is `ok`, `failing` or `unsupported`. `last_error` is a fixed
-  code, such as `provider_auth`, for the UI to translate.
+  code, such as `provider_auth`, for the UI to translate. `paused_reason` is `operator`, `failures` or
+  `identity_deactivated`.
 - `decision`: `{account_id, resource, item_id, calendar_id?, from, subject, start, gone, auth_failed, tier, label_id?,
   label?, decided_by, decided_at}`. `from` and `subject` are a stranger's text: render them as text. `gone` means the
   item no longer exists, and both are empty. `decided_by` is `rule`, `auth_failed`, `people`, `category`, `default`,
@@ -313,6 +332,18 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
   `internal/cron/pim_watch_tasks_integration_test.go`.
 - **Commit:** `f4636b4cc`.
 
+### Task 14b — De-provisioning stops and removes an identity's tasks
+
+- [x] **Files:** `internal/db/migrations/0149_pim_watch.{up,down}.sql`, `internal/db/queries/scheduler_tasks.sql`,
+  `internal/cron/pause.go`, `store_manage.go`, `internal/agui/deprovision.go`, `saga_journal.go`,
+  `cmd/aura/serve_deprovision_purgers.go`, `serve_provisioning.go`. `pimWatchJobs` and `Service.StopIdentity` are gone.
+- **Interfaces:** `cron.PausedByIdentityDeactivated`, `Store.PauseIdentityTasks`, `Store.DeleteIdentityTasks`,
+  `agui.ScheduledTaskPurger`, `DeprovisionDeps.ScheduledTasks`.
+- **Tests:** `internal/cron/identity_tasks_integration_test.go`, `identity_tasks_test.go`,
+  `internal/agui/deprovision_tasks_test.go`, `cmd/aura/serve_deprovision_tasks_integration_test.go`,
+  `TestDeprovisionDepsReachTheScheduledTasks`.
+- **Commit:** the commit `fix(deprovision): deactivation pauses an identity's tasks and a purge deletes them`.
+
 ### Task 15 — The React cockpit (not built)
 
 - [ ] The switch on the account's card, with `reason` when `configured` is false.
@@ -368,9 +399,13 @@ All in WSL at `f4636b4cc`, 2026-11-01, on the disposable container for the tagge
 
 ## Found in existing code
 
-- **`DeprovisionDeps.Jobs` was nil on every path, so deactivating an identity stopped none of its scheduled tasks.**
-  The watch is now cancelled. Every other kind, `agent_job` included, still fires for a deactivated identity. That is
-  outside this plan and needs its own decision, because cancelling a person's jobs cannot be undone by reactivation.
+- **`DeprovisionDeps.Jobs` was nil on every path, and `Purge` had no step for tasks,** so a deactivated identity's tasks
+  kept firing and a purged identity's rows survived it. Both are closed: see Decisions.
+- **`ResumeTask` does not read the reason, and approval does not read `deactivated_at`.** The scheduler board can resume
+  a task paused by a deactivation during the grace window, or approve a `pending_approval` one, and it fires. Neither
+  is closed here.
+- **An identity deactivated before this change stays unpaused.** Its journal marks `deactivate` done, so running it
+  again skips the step. Its tasks fire until the purge deletes them.
 - **A push to Telegram also printed its text to the process journal, and a stdout route did too.** Both would have put a
   subject in the journal, and both are closed in Task 3.
 - **A synchronous swarm worker inherits its turn's responder marker,** though `responderCtxKey`'s comment said a swarm

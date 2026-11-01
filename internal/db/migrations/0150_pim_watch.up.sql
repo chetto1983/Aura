@@ -16,6 +16,11 @@ ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_kind_check
         'retention_sweep', 'memory_embed_backfill', 'observability_check',
         'memory_mention_link', 'backup_objects', 'pim_watch', 'pim_digest'));
 
+-- Deactivating an identity pauses its tasks, and the reason says so. 0138's list plus the one.
+ALTER TABLE aura.scheduler_tasks DROP CONSTRAINT scheduler_tasks_paused_reason_chk;
+ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_paused_reason_chk
+    CHECK (paused_reason IN ('operator', 'failures', 'identity_deactivated'));
+
 -- Per-identity settings, read at use and never snapshotted at boot.
 CREATE TABLE aura.pim_watch_settings (
     identity_id            uuid        PRIMARY KEY REFERENCES aura.identities (id) ON DELETE CASCADE,

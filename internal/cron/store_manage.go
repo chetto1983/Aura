@@ -51,6 +51,16 @@ func (s *Store) ListLiveTasksOfKind(ctx context.Context, identityID string, kind
 	return out, nil
 }
 
+// DeleteIdentityTasks removes every task of a purged identity and, by ON DELETE CASCADE, their
+// runs and those runs' notifications. Deleting an identity's row does not reach them:
+// scheduler_tasks.identity_id is text with no foreign key.
+func (s *Store) DeleteIdentityTasks(ctx context.Context, identityID string) error {
+	if err := s.q.DeleteIdentityTaskRows(ctx, identityID); err != nil {
+		return fmt.Errorf("delete tasks of identity %q: %w", identityID, err)
+	}
+	return nil
+}
+
 // ListManageableTasks returns the active + pending_approval tasks of operator-managed kinds
 // (the cockpit board), so a gated task can be approved on-screen alongside the running ones.
 // System sweeps are left out: the board has nothing to offer for them.

@@ -1,4 +1,5 @@
--- Reverse 0150: drop the watch's tables and restore the 0142 scheduler_tasks.kind CHECK.
+-- Reverse 0150: drop the watch's tables and restore the 0142 scheduler_tasks.kind CHECK and the
+-- 0138 paused_reason CHECK.
 --
 -- A watch task violates the narrowed list, so its rows go first or the down aborts mid-chain
 -- (same shape as 0091, 0104, 0114 and 0142). Rolling back loses the identity's rules, labels and
@@ -20,6 +21,13 @@ ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_kind_check
         'skill_ttl_sweep', 'identity_purge', 'sandbox_reap', 'share_expiry_sweep',
         'retention_sweep', 'memory_embed_backfill', 'observability_check',
         'memory_mention_link', 'backup_objects'));
+
+-- A task its deactivated owner left paused stays paused: 'operator' is the reason the narrowed
+-- list has for a pause nothing lifts by itself.
+UPDATE aura.scheduler_tasks SET paused_reason = 'operator' WHERE paused_reason = 'identity_deactivated';
+ALTER TABLE aura.scheduler_tasks DROP CONSTRAINT scheduler_tasks_paused_reason_chk;
+ALTER TABLE aura.scheduler_tasks ADD CONSTRAINT scheduler_tasks_paused_reason_chk
+    CHECK (paused_reason IN ('operator', 'failures'));
 
 DROP TABLE IF EXISTS aura.pim_watch_corrections;
 DROP TABLE IF EXISTS aura.pim_watch_rules;

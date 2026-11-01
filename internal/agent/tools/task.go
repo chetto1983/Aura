@@ -69,7 +69,7 @@ type ScheduledTask struct {
 	RiskTier     string
 	Payload      string
 	NotifyRoute  string
-	// PausedReason is "operator" or "failures" while Status is "paused".
+	// PausedReason is one of cron's PausedBy constants while Status is "paused".
 	PausedReason        string
 	ConsecutiveFailures int
 	TelegramRecipients  []int64

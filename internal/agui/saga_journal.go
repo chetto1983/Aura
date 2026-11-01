@@ -39,21 +39,22 @@ const (
 // identity_id is NOT NULL) so it is not journaled — a crash before the aura leg leaves
 // only an Authula user the duplicate-email pre-check reconciles on retry.
 const (
-	sagaStepIdentity      = "identity"
-	sagaStepRecovery      = "recovery"
-	sagaStepGarage        = "garage"
-	sagaStepFilesystem    = "filesystem"
-	sagaStepTelegram      = "telegram"
-	sagaStepFirstLogin    = "first_login"
-	sagaStepAudit         = "audit"
-	sagaStepDeactivate    = "deactivate"
-	sagaStepConversations = "conversations"
-	sagaStepMemory        = "memory"
-	sagaStepObjectStore   = "objectstore"
-	sagaStepDirs          = "dirs"
-	sagaStepSandbox       = "sandbox"
-	sagaStepIdentityRow   = "identity_row"
-	sagaStepAuthula       = "authula"
+	sagaStepIdentity       = "identity"
+	sagaStepRecovery       = "recovery"
+	sagaStepGarage         = "garage"
+	sagaStepFilesystem     = "filesystem"
+	sagaStepTelegram       = "telegram"
+	sagaStepFirstLogin     = "first_login"
+	sagaStepAudit          = "audit"
+	sagaStepDeactivate     = "deactivate"
+	sagaStepScheduledTasks = "scheduled_tasks"
+	sagaStepConversations  = "conversations"
+	sagaStepMemory         = "memory"
+	sagaStepObjectStore    = "objectstore"
+	sagaStepDirs           = "dirs"
+	sagaStepSandbox        = "sandbox"
+	sagaStepIdentityRow    = "identity_row"
+	sagaStepAuthula        = "authula"
 	// The credit leg both sagas share (plan 02-06): forward, mint and journal the
 	// identity's own OpenRouter key; reverse, revoke and verify that revocation. One
 	// constant, reused by both — the same convention every other step name here

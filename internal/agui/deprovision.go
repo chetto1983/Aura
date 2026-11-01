@@ -12,12 +12,12 @@ import (
 
 // deprovision.go is the symmetric de-provisioning saga (Phase 36 D-27), the reverse of the
 // provisioning saga in onboarding_provision.go. Soft-delete is two-phase: Deactivate is
-// IMMEDIATE (block login by killing the Authula sessions, terminate the identity's
-// background jobs, stamp deactivated_at + a grace-window purge_after) and retains the data
-// for a grace window; Purge runs AFTER the grace window and tears down every plane the
-// provisioning saga built, in reverse order — the sandbox box, the OpenRouter key (plan
-// 02-06, CRED-08), conversations, memory, the Garage bucket/key, the per-identity dirs, then
-// the aura identity row and the Authula user. Every step is journaled on
+// IMMEDIATE (block login by killing the Authula sessions, pause the identity's scheduled
+// tasks, stamp deactivated_at + a grace-window purge_after) and retains the data for a grace
+// window; Purge runs AFTER the grace window and tears down every plane the provisioning saga
+// built, in reverse order — the OpenRouter key (plan 02-06, CRED-08), the scheduled tasks, the
+// sandbox box, conversations, memory, the Garage bucket/key, the per-identity dirs, then the
+// aura identity row and the Authula user. Every step is journaled on
 // aura.provisioning_saga with kind='deprovision' (migration 0028) and is idempotent
 // (Delete/Deny by-id 404=success, RemoveAll, FK-cascade delete), so an interrupted purge
 // re-runs and converges to a fully-removed identity with NO orphaned Authula user, Garage
@@ -92,10 +92,18 @@ type SessionTerminator interface {
 	KillSessions(ctx context.Context, authulaUserID string) error
 }
 
-// JobTerminator terminates the identity's in-flight background jobs (the plan-03
-// owner-scoped kill). Idempotent — terminating an already-stopped job is a no-op.
+// JobTerminator stops an identity's scheduled tasks from firing. It kills no in-flight job: a
+// run already in progress still finishes. Idempotent.
 type JobTerminator interface {
 	TerminateJobs(ctx context.Context, identityID string) error
+}
+
+// ScheduledTaskPurger deletes every scheduled task of the identity, whatever its status, and
+// with them their runs and those runs' notifications. Nothing else does: the tasks name the
+// identity in a text column with no foreign key, so they outlive its row, keep firing, and keep
+// what the notifications told the person. Idempotent: an identity with no tasks is a success.
+type ScheduledTaskPurger interface {
+	PurgeScheduledTasks(ctx context.Context, identityID string) error
 }
 
 // OpenRouterKeyRevoker revokes one identity's OpenRouter key (plan 02-06, CRED-08). It
@@ -163,6 +171,7 @@ type DeprovisionDeps struct {
 	Deactivator    IdentityDeactivator
 	Sessions       SessionTerminator
 	Jobs           JobTerminator
+	ScheduledTasks ScheduledTaskPurger
 	Conversations  ConversationPurger
 	Memory         MemoryPurger
 	ObjectStore    ObjectStoreProvisioner
@@ -226,9 +235,9 @@ func (d *Deprovisioner) graceWindow() time.Duration {
 }
 
 // Deactivate is the IMMEDIATE soft-delete step (D-27): it stamps deactivated_at + a
-// grace-window purge_after, kills the Authula sessions (blocking login), terminates the
-// identity's background jobs and disables its OpenRouter key. Journaled (kind=deprovision,
-// step=deactivate) and idempotent.
+// grace-window purge_after, kills the Authula sessions (blocking login), pauses the identity's
+// scheduled tasks and disables its OpenRouter key. A run already in progress still finishes.
+// Journaled (kind=deprovision, step=deactivate) and idempotent.
 // It resolves the target (for the Authula user id) from the identity id.
 func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error {
 	target, err := d.resolve(ctx, identityID)
@@ -265,10 +274,10 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 	})
 }
 
-// Purge runs the symmetric reverse saga after the grace window: conversations, then the
-// memory database, then the Garage bucket+key, then the
-// per-identity dirs, then the aura identity (cascading grants + link + object-store row),
-// then the Authula user. Journaled
+// Purge runs the symmetric reverse saga after the grace window: the OpenRouter key, then the
+// scheduled tasks with their runs and notifications, then the sandbox box, then conversations,
+// then the memory database, then the Garage bucket+key, then the per-identity dirs, then the
+// aura identity (cascading grants + link + object-store row), then the Authula user. Journaled
 // (kind=deprovision), idempotent, and resumable — a re-run skips the steps the journal
 // marks done and re-runs the rest until the identity is fully removed with no orphans.
 func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) error {
@@ -304,6 +313,18 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	if d.deps.OpenRouterKey != nil {
 		if err := run.step(ctx, sagaStepOpenRouterKey, func(ctx context.Context) error {
 			return d.deps.OpenRouterKey.RevokeKey(ctx, target.IdentityID)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Ahead of the box, because a task is what starts new work: one firing after the box is
+	// gone would wake another, and a purge that came straight here without a deactivation
+	// still has active tasks. An id-only target reaches this step too, so a purge resumed
+	// after the identity row went (`--resume-resources`) still finds what names that id.
+	if d.deps.ScheduledTasks != nil {
+		if err := run.step(ctx, sagaStepScheduledTasks, func(ctx context.Context) error {
+			return d.deps.ScheduledTasks.PurgeScheduledTasks(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}

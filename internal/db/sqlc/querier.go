@@ -165,6 +165,9 @@ type Querier interface {
 	// whether a row existed cannot tell a real revocation from a no-op on someone else's row
 	// that RLS filtered away.
 	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
+	// Purging an identity removes its tasks whatever their status. ON DELETE CASCADE takes their
+	// runs and those runs' notifications.
+	DeleteIdentityTaskRows(ctx context.Context, identityID string) error
 	DeleteMCPProfilesExcept(ctx context.Context, keep []string) error
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
 	DeletePIMWatchCorrections(ctx context.Context, arg DeletePIMWatchCorrectionsParams) error
@@ -669,6 +672,10 @@ type Querier interface {
 	// sqlc.arg(payload) rather than a jsonb `||` merge. attempt_count is untouched
 	// deliberately -- a human being asked a question is not a failed attempt.
 	ParkIngestionJobAwaitingInput(ctx context.Context, arg ParkIngestionJobAwaitingInputParams) (int64, error)
+	// Deactivating an identity stops what it scheduled, in one statement. Only an active task
+	// changes: a paused task resumes active, so pausing one that awaits approval would skip the
+	// approval. A backup stays active: IsPausableKind keeps it from every pause.
+	PauseIdentityTaskRows(ctx context.Context, identityID string) error
 	// The operator pause: an active task stops firing until resumed. Returns rows affected so a
 	// task that is not active (pending, already paused, cancelled, absent) maps to a miss.
 	PauseTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)

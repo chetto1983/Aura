@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 // serve builds the de-provisioning saga before the Authula provider exists and attaches the
 // two Authula legs afterwards (serve.go, SetAuthulaTeardown). That only reaches the cockpit's
@@ -16,6 +22,25 @@ func TestBuildDeprovisionerIsOneSharedInstance(t *testing.T) {
 	}
 	if first != second {
 		t.Fatalf("buildDeprovisioner returned %p then %p; want one shared instance", first, second)
+	}
+}
+
+// Jobs was nil on every path, which is how a deactivated identity's tasks went on firing. The
+// pool stays lazy: no test here reaches Postgres.
+func TestDeprovisionDepsReachTheScheduledTasks(t *testing.T) {
+	pool, err := pgxpool.New(context.Background(), "postgres://aura@127.0.0.1:1/unused")
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	deps := deprovisionDeps(&chatEnv{pool: pool, cfg: &config.Config{}})
+
+	if _, ok := deps.Jobs.(scheduledTaskAdapter); !ok {
+		t.Fatalf("Jobs = %T", deps.Jobs)
+	}
+	if _, ok := deps.ScheduledTasks.(scheduledTaskAdapter); !ok {
+		t.Fatalf("ScheduledTasks = %T", deps.ScheduledTasks)
 	}
 }
 

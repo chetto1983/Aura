@@ -301,22 +301,6 @@ func TestRemovingAnAccountForgetsItAndKeepsTheRules(t *testing.T) {
 	}
 }
 
-func TestStoppingAnIdentityLeavesNothingToFire(t *testing.T) {
-	r := newServiceRig(t)
-	ctx := context.Background()
-	for _, account := range []string{"home", "work"} {
-		if err := r.service.Enable(ctx, r.identity, account); err != nil {
-			t.Fatalf("enable: %v", err)
-		}
-	}
-	if err := r.service.StopIdentity(ctx, r.identity); err != nil {
-		t.Fatalf("stop: %v", err)
-	}
-	if len(r.tasks.watches) != 0 || len(r.tasks.digests) != 0 {
-		t.Fatalf("%d watches, %d digests", len(r.tasks.watches), len(r.tasks.digests))
-	}
-}
-
 func TestStatusShowsEachWatchAndHowItFares(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

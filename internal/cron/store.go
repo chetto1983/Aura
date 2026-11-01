@@ -124,7 +124,7 @@ type Task struct {
 	OriginConversationID string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
-	// PausedReason is PausedByOperator or PausedByFailures while Status is "paused", else "".
+	// PausedReason is one of the PausedBy constants while Status is "paused", else "".
 	PausedReason string
 	// ConsecutiveFailures counts failed runs since the last success.
 	ConsecutiveFailures int

@@ -1,0 +1,251 @@
+//go:build db_integration
+
+// Integration tests for what de-provisioning does to an identity's tasks (pause.go,
+// store_manage.go) against a real Postgres, as aura_app: deactivation pauses them, the purge
+// removes them, and the cascade takes their runs and notifications.
+package cron
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/google/uuid"
+)
+
+func newOwner() string { return uuid.Must(uuid.NewV7()).String() }
+
+// ownedTask is a past-due task of owner, so DueTasks would return it were it active.
+func ownedTask(t *testing.T, s *Store, ctx context.Context, owner string, kind TaskKind, status string) string {
+	t.Helper()
+	id := makeTask(t, s, ctx, kind, status)
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE aura.scheduler_tasks SET identity_id = $2, next_run_at = now() - interval '1 minute'
+		WHERE id = $1`, id, owner); err != nil {
+		t.Fatalf("own task: %v", err)
+	}
+	return id
+}
+
+func dueIDs(t *testing.T, s *Store, ctx context.Context) map[string]bool {
+	t.Helper()
+	due, err := s.DueTasks(ctx, 1000)
+	if err != nil {
+		t.Fatalf("DueTasks: %v", err)
+	}
+	ids := make(map[string]bool, len(due))
+	for _, task := range due {
+		ids[task.ID] = true
+	}
+	return ids
+}
+
+func TestDeactivationPausesOnlyTheIdentitysActiveTasks(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx := pauseCtx(t)
+	owner := newOwner()
+
+	active := ownedTask(t, s, ctx, owner, KindAgentJob, "active")
+	watch := ownedTask(t, s, ctx, owner, KindReminder, "active")
+	awaitingApproval := ownedTask(t, s, ctx, owner, KindAgentJob, "pending_approval")
+	pausedByHand := ownedTask(t, s, ctx, owner, KindReminder, "active")
+	if err := s.PauseTask(ctx, pausedByHand); err != nil {
+		t.Fatal(err)
+	}
+	cancelled := ownedTask(t, s, ctx, owner, KindReminder, "active")
+	if err := s.CancelTask(ctx, cancelled); err != nil {
+		t.Fatal(err)
+	}
+	backup := ownedTask(t, s, ctx, owner, KindBackupPostgres, "active")
+	someoneElses := ownedTask(t, s, ctx, newOwner(), KindAgentJob, "active")
+
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("PauseIdentityTasks: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name, id, status, reason string
+	}{
+		{"active agent job", active, "paused", PausedByIdentityDeactivated},
+		{"active reminder", watch, "paused", PausedByIdentityDeactivated},
+		{"awaiting approval", awaitingApproval, "pending_approval", ""},
+		{"paused by hand", pausedByHand, "paused", PausedByOperator},
+		{"cancelled", cancelled, "cancelled", ""},
+		{"backup", backup, "active", ""},
+		{"another identity's", someoneElses, "active", ""},
+	} {
+		got, err := s.GetTask(ctx, tc.id)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.Status != tc.status || got.PausedReason != tc.reason {
+			t.Errorf("%s = %s/%q, want %s/%q", tc.name, got.Status, got.PausedReason, tc.status, tc.reason)
+		}
+	}
+
+	due := dueIDs(t, s, ctx)
+	if due[active] || due[watch] {
+		t.Fatal("a task paused by deactivation is still due")
+	}
+	if !due[someoneElses] {
+		t.Fatal("another identity's task stopped being due")
+	}
+}
+
+func TestDeactivatingTwiceChangesNothing(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx := pauseCtx(t)
+	owner := newOwner()
+	id := ownedTask(t, s, ctx, owner, KindAgentJob, "active")
+
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	first, err := s.GetTask(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	second, err := s.GetTask(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.UpdatedAt.Equal(first.UpdatedAt) || second.Status != first.Status || second.PausedReason != first.PausedReason {
+		t.Fatalf("second call changed the row: %+v, then %+v", first, second)
+	}
+}
+
+// The run finishing after the pause is the one a deactivation does not stop. It must not lift
+// the pause or replace its reason.
+func TestARunEndingAfterDeactivationLeavesThePause(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx := pauseCtx(t)
+	owner := newOwner()
+	id := ownedTask(t, s, ctx, owner, KindAgentJob, "active")
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.RecordRunOutcome(ctx, id, false, 1); err != nil {
+		t.Fatalf("RecordRunOutcome: %v", err)
+	}
+	got, err := s.GetTask(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "paused" || got.PausedReason != PausedByIdentityDeactivated {
+		t.Fatalf("after the run = %s/%q", got.Status, got.PausedReason)
+	}
+}
+
+// seedRunAndNotification gives a task one run and one undelivered notification whose body would
+// be what the person was told.
+func seedRunAndNotification(t *testing.T, s *Store, ctx context.Context, taskID, owner string) (runID, notificationID string) {
+	t.Helper()
+	runID, notificationID = newOwner(), newOwner()
+	if _, err := s.pool.Exec(ctx, `INSERT INTO aura.agent_job_runs (id, task_id, status) VALUES ($1, $2, 'failed')`, runID, taskID); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO aura.pending_notifications (id, run_id, notify_route, body, notify_after, status, identity_id)
+		VALUES ($1, $2, 'stdout', 'Mario Rossi: fattura scaduta', now(), 'pending', $3)`, notificationID, runID, owner); err != nil {
+		t.Fatalf("seed notification: %v", err)
+	}
+	return runID, notificationID
+}
+
+func rowExists(t *testing.T, s *Store, ctx context.Context, table, id string) bool {
+	t.Helper()
+	var found bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM aura.`+table+` WHERE id = $1)`, id).Scan(&found); err != nil {
+		t.Fatalf("read %s: %v", table, err)
+	}
+	return found
+}
+
+func TestPurgeRemovesAnIdentitysTasksRunsAndNotifications(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx := pauseCtx(t)
+	owner, other := newOwner(), newOwner()
+
+	paused := ownedTask(t, s, ctx, owner, KindAgentJob, "active")
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	awaitingApproval := ownedTask(t, s, ctx, owner, KindAgentJob, "pending_approval")
+	run, notification := seedRunAndNotification(t, s, ctx, paused, owner)
+
+	kept := ownedTask(t, s, ctx, other, KindAgentJob, "active")
+	keptRun, keptNotification := seedRunAndNotification(t, s, ctx, kept, other)
+
+	if err := s.DeleteIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("DeleteIdentityTasks: %v", err)
+	}
+
+	for _, row := range []struct{ table, id string }{
+		{"scheduler_tasks", paused}, {"scheduler_tasks", awaitingApproval},
+		{"agent_job_runs", run}, {"pending_notifications", notification},
+	} {
+		if rowExists(t, s, ctx, row.table, row.id) {
+			t.Errorf("%s %s survived the purge", row.table, row.id)
+		}
+	}
+	for _, row := range []struct{ table, id string }{
+		{"scheduler_tasks", kept}, {"agent_job_runs", keptRun}, {"pending_notifications", keptNotification},
+	} {
+		if !rowExists(t, s, ctx, row.table, row.id) {
+			t.Errorf("another identity's %s %s went with the purge", row.table, row.id)
+		}
+	}
+
+	if err := s.DeleteIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("second purge: %v", err)
+	}
+}
+
+// The down migration runs while tasks can be paused this way, so it has to keep them paused and
+// still land the narrower CHECK.
+func TestMigration0149DownKeepsADeactivatedTaskPaused(t *testing.T) {
+	migrateURL := disposableMigrateURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	positionDisposableMigration(t, ctx, migrateURL, 149)
+
+	pool, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		t.Fatalf("open disposable database: %v", err)
+	}
+	defer pool.Close()
+
+	id := newOwner()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO aura.scheduler_tasks
+			(id, kind, schedule_kind, every_minutes, tz, payload, status, next_run_at, notify_route, identity_id, paused_reason)
+		VALUES ($1, 'reminder', 'every', 5, 'UTC', '{}'::jsonb, 'paused', now(), 'none', $2, 'identity_deactivated')`, id, newOwner()); err != nil {
+		t.Fatalf("seed a deactivated pause: %v", err)
+	}
+
+	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
+		t.Fatalf("revert 0149: %v", err)
+	}
+	var status, reason string
+	if err := pool.QueryRow(ctx, `SELECT status, paused_reason FROM aura.scheduler_tasks WHERE id = $1`, id).Scan(&status, &reason); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if status != "paused" || reason != PausedByOperator {
+		t.Fatalf("after the down = %s/%s", status, reason)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET paused_reason = 'identity_deactivated' WHERE id = $1`, id); err == nil {
+		t.Fatal("the down left the wider paused_reason CHECK")
+	}
+
+	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("re-apply 0149: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET paused_reason = 'identity_deactivated' WHERE id = $1`, id); err != nil {
+		t.Fatalf("re-applied 0149 refuses the reason: %v", err)
+	}
+}

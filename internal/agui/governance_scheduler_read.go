@@ -46,7 +46,7 @@ type schedulerTaskRow struct {
 	// Cancellable tells the board whether to offer delete and pause, so the rule that keeps the
 	// database backup (cron.IsCancellableKind) is stated once, here, not mirrored in TS.
 	Cancellable bool `json:"Cancellable"`
-	// PausedReason is "operator" or "failures" on a paused task, absent otherwise.
+	// PausedReason is one of cron's PausedBy constants on a paused task, absent otherwise.
 	PausedReason string `json:"PausedReason,omitempty"`
 	// ConsecutiveFailures is how many runs failed since the last success.
 	ConsecutiveFailures int `json:"ConsecutiveFailures"`

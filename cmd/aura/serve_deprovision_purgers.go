@@ -9,13 +9,31 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/cron"
 )
 
 var (
-	_ agui.ConversationPurger = conversationPurgeAdapter{}
-	_ agui.MemoryPurger       = arcadeMemoryPurgeAdapter{}
-	_ agui.MemoryProvisioner  = arcadeMemoryPurgeAdapter{}
+	_ agui.ConversationPurger  = conversationPurgeAdapter{}
+	_ agui.MemoryPurger        = arcadeMemoryPurgeAdapter{}
+	_ agui.MemoryProvisioner   = arcadeMemoryPurgeAdapter{}
+	_ agui.JobTerminator       = scheduledTaskAdapter{}
+	_ agui.ScheduledTaskPurger = scheduledTaskAdapter{}
 )
+
+// scheduledTaskAdapter is the saga's hold on an identity's scheduled tasks: deactivation pauses
+// them and the purge deletes them. They are rows, so the short-lived `aura identity` process can
+// do both as well as the daemon can.
+type scheduledTaskAdapter struct {
+	store *cron.Store
+}
+
+func (a scheduledTaskAdapter) TerminateJobs(ctx context.Context, identityID string) error {
+	return a.store.PauseIdentityTasks(ctx, identityID)
+}
+
+func (a scheduledTaskAdapter) PurgeScheduledTasks(ctx context.Context, identityID string) error {
+	return a.store.DeleteIdentityTasks(ctx, identityID)
+}
 
 type memoryTenantResolver interface {
 	For(context.Context, string) (*arcadedb.Client, error)

@@ -396,10 +396,12 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 			TurnCapBytes: chat.cfg.ConversationTurnCapBytes,
 		})
 	}
+	tasks := scheduledTaskAdapter{store: cron.New(chat.pool)}
 	return agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
-		Jobs:           pimWatchJobs{tasks: pimWatchTasks{store: cron.New(chat.pool)}},
+		Jobs:           tasks,
+		ScheduledTasks: tasks,
 		Conversations:  conversationPurgeAdapter{store: convStore},
 		Memory:         buildArcadeMemoryPurger(chat.cfg),
 		ObjectStore:    objProv,

@@ -215,9 +215,9 @@ func (a authulaTeardownAdapter) DeleteUser(ctx context.Context, authulaUserID st
 // for a purge that means the Authula user OUTLIVES its identity, so identityDeprovision
 // refuses rather than reaching here with nothing wired.
 //
-// DeprovisionDeps.Jobs reaches the watch's scheduled tasks, which are rows this short-lived
-// process can cancel as well as the daemon. It kills no in-flight job: those belong to the
-// `aura serve` process, and they die with their runs.
+// DeprovisionDeps.Jobs pauses the identity's scheduled tasks, which are rows this short-lived
+// process can change as well as the daemon. It kills no in-flight job: a run already in
+// progress belongs to the `aura serve` process and still finishes.
 func withAuthulaTeardown(deps agui.DeprovisionDeps, core *authulaservices.CoreServices) agui.DeprovisionDeps {
 	if core == nil {
 		return deps

@@ -117,6 +117,17 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 	return i, err
 }
 
+const deleteIdentityTaskRows = `-- name: DeleteIdentityTaskRows :exec
+DELETE FROM aura.scheduler_tasks WHERE identity_id = $1
+`
+
+// Purging an identity removes its tasks whatever their status. ON DELETE CASCADE takes their
+// runs and those runs' notifications.
+func (q *Queries) DeleteIdentityTaskRows(ctx context.Context, identityID string) error {
+	_, err := q.db.Exec(ctx, deleteIdentityTaskRows, identityID)
+	return err
+}
+
 const deleteSettledOneShots = `-- name: DeleteSettledOneShots :execrows
 DELETE FROM aura.scheduler_tasks AS t
 WHERE t.schedule_kind = 'at'
@@ -490,6 +501,20 @@ WHERE id = $1
 // re-nudges at most once per cadence and a failing channel cannot spam the tick.
 func (q *Queries) MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markApprovalReminded, id)
+	return err
+}
+
+const pauseIdentityTaskRows = `-- name: PauseIdentityTaskRows :exec
+UPDATE aura.scheduler_tasks
+SET status = 'paused', paused_reason = 'identity_deactivated', updated_at = now()
+WHERE identity_id = $1 AND status = 'active' AND kind NOT IN ('backup_postgres', 'backup_objects')
+`
+
+// Deactivating an identity stops what it scheduled, in one statement. Only an active task
+// changes: a paused task resumes active, so pausing one that awaits approval would skip the
+// approval. A backup stays active: IsPausableKind keeps it from every pause.
+func (q *Queries) PauseIdentityTaskRows(ctx context.Context, identityID string) error {
+	_, err := q.db.Exec(ctx, pauseIdentityTaskRows, identityID)
 	return err
 }
 

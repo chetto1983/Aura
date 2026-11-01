@@ -328,19 +328,6 @@ func TestADeliveryThatCannotBeFoundSaysSo(t *testing.T) {
 	}
 }
 
-func TestDeactivatingAnIdentityCancelsItsWatch(t *testing.T) {
-	store := &stubTaskStore{live: []cron.Task{
-		{ID: "t1", Kind: cron.KindPIMWatch, Payload: []byte(`{"account_id":"work"}`)},
-		{ID: "t2", Kind: cron.KindPIMDigest},
-	}}
-	if err := (pimWatchJobs{tasks: pimWatchTasks{store: store}}).TerminateJobs(context.Background(), "id-1"); err != nil {
-		t.Fatalf("terminate: %v", err)
-	}
-	if len(store.cancelled) != 2 {
-		t.Fatalf("cancelled %v", store.cancelled)
-	}
-}
-
 func TestWithoutAPoolTheWatchHasNoParts(t *testing.T) {
 	runtime := newPIMWatchRuntime(&chatEnv{cfg: &config.Config{}})
 	if runtime.service != nil || runtime.watcher != nil || runtime.digester != nil || runtime.sweep != nil {

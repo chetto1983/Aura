@@ -212,25 +212,6 @@ func (s *Service) RemoveAccount(ctx context.Context, identityID, accountID strin
 	return s.stopDigestIfIdle(ctx, identityID)
 }
 
-// StopIdentity cancels every task of an identity that is going away, leaving nothing to fire.
-func (s *Service) StopIdentity(ctx context.Context, identityID string) error {
-	watches, err := s.Tasks.Watches(ctx, identityID)
-	if err != nil {
-		return err
-	}
-	digests, err := s.Tasks.Digests(ctx, identityID)
-	if err != nil {
-		return err
-	}
-	var failures []error
-	for _, task := range append(watches, digests...) {
-		if err := s.Tasks.Cancel(ctx, task.ID); err != nil {
-			failures = append(failures, err)
-		}
-	}
-	return errors.Join(failures...)
-}
-
 func (s *Service) stopWatch(ctx context.Context, identityID, accountID string) error {
 	watches, err := s.Tasks.Watches(ctx, identityID)
 	if err != nil {

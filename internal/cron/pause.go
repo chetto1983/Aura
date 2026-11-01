@@ -20,6 +20,9 @@ import (
 const (
 	PausedByOperator = "operator"
 	PausedByFailures = "failures"
+	// PausedByIdentityDeactivated is a task whose owner was deactivated (migration 0149). The
+	// purge deletes it when the grace window ends.
+	PausedByIdentityDeactivated = "identity_deactivated"
 )
 
 const defaultPauseAfterFailures = 3
@@ -61,6 +64,15 @@ func (s *Store) PauseTask(ctx context.Context, id string) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("pause task %q: %w", id, ErrTaskNotFound)
+	}
+	return nil
+}
+
+// PauseIdentityTasks stops everything a deactivated identity scheduled from firing. A second
+// call finds nothing active, so it changes nothing. A run already in progress still finishes.
+func (s *Store) PauseIdentityTasks(ctx context.Context, identityID string) error {
+	if err := s.q.PauseIdentityTaskRows(ctx, identityID); err != nil {
+		return fmt.Errorf("pause tasks of identity %q: %w", identityID, err)
 	}
 	return nil
 }
