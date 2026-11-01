@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RuntimeHealthPanel } from '../health/RuntimeHealthPanel';
 import { useRuntimeHealth } from '../health/useRuntimeHealth';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 type Tone = 'success' | 'warning' | 'danger';
 
