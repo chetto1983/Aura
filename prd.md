@@ -2448,6 +2448,34 @@ The floors are out of this slice.
 
 Record: `docs/superpowers/verification/2026-10-23-document-search-lists-lab-vm.md`.
 
+### Mail: ids and verdicts, not a mail index (2026-11-01)
+
+The mail-table decision the consolidation left open (item 4, "Wave 2") is answered:
+**Aura keeps ids and verdicts, never a mail index.** The rule is in
+`docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md` §5.2.
+
+- One row per (identity, account, resource, item id) holds a tier, an optional label, who decided,
+  when, whether an alert went out, and a fingerprint and calendar id for an event. No sender, subject
+  or body. Sender and subject are read live from the PIM by id when a digest or the decisions view
+  needs them, so a deleted mail shows as gone.
+- Sender text exists in one place, the key of a rule or a correction. Sender and subject live in
+  the conversation that received them, and in `pending_notifications` while a push waits.
+  `agent_job_runs.summary` holds counts.
+
+Why, measured on 2026-10-31 (spec §2, §7):
+- One "read today's mail" question cost 196,240 input tokens over 8 calls, and one mail body was
+  62k characters of raw HTML. A verdict row needs none of that text, and no model reads it to file one.
+- A job with a model every 15 minutes costs at least 96 × 15k = 1.4M tokens a day with no mail at
+  all (arithmetic on 14-16k per empty call, 2 samples, `gpt-6.1-sol`).
+- In the 200-mail pilot, the ladder alone filed nothing it should not and found 1 of 23 `now`. The
+  corpus is invented, so no real mail was stored to learn that.
+
+What this does not establish:
+- that the digest stays useful when many mails are gone: no real mailbox has run;
+- provider rate limits for live reads across many identities, which were not measured;
+- that `POST /admin/items` answers within the digest's time budget on a real account. It is built
+  against spec §5.1 with a fake PIM, and the fork's endpoint has its own contract fixture.
+
 ## 12. Workspace, shell and web
 
 Tools and artifact delivery resolve the persistent working root consistently. Sandbox
@@ -4458,6 +4486,38 @@ Landed (D10, 2026-10-28; `docs/superpowers/verification/2026-10-28-telegram-push
 This does not establish a real Telegram send (the sends are recorded by a test double), the
 approval sweep end to end on a database, or the two-phone run on the lab VM, which is the
 operator's.
+
+### Mail and calendar watch: no model on the path (2026-11-01)
+
+`docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md`, approved by the operator on
+2026-11-01, amends three rows of the consolidation. Only the spikes and the pilot in its §7 ran.
+
+| Row | Was | Now | Why, measured |
+|---|---|---|---|
+| T1 (`docs/teable-behaviours-2026-10-30.md`) | a poll that starts an `agent_job` with the new items, judged against an `every 15m` job | a handler with no model; the tier is decided by a ladder and told in fixed text; G3 judges it against the provider's own INBOX list | the comparison would cost at least 7.2M tokens against a path with no model, and would put real mail in front of a headless model (spec §7) |
+| Item 4 (consolidation) | inbox triage as an `agent_job` feeding the board, blocked on the mail table | the watch; the mail table is answered in §11 | an empty call costs 14-16k tokens, 2 samples; spec §2 |
+| P3's gate (consolidation) | McNemar on an operator-labelled week | a corpus Claude writes from public datasets, ten personas, four held out. The never-contacted rule stays in the ladder | a default tuned to one inbox fails a user Aura has never seen; operator, 2026-10-31 (spec §7.1) |
+
+Two kinds, `pim_watch` per watched account and `pim_digest` per identity, on the existing
+scheduler. Neither calls a model. Tokens are spent only when the person writes back.
+
+The ladder's pilot numbers (spec §7, 200 invented Italian mails, four personas, labels frozen first):
+- the ladder finds 1 of 23 `now`, and files nothing to `later` that should not be there;
+- always `later` scores 52.5% and loses all 95 mails that matter, so accuracy is not the metric;
+- `providerImportant` was true on 25 mails and 23 were `later`, so it counts only for a person the
+  account has written to.
+
+So this release ships alerts that are narrow on purpose: rules and known people. The rest reaches
+one digest a day. The classifier (spec §8 step 5) is not built, and rung 5 does not exist in code.
+
+What this does not establish:
+- that the ladder holds on real mail. The pilot is 200 invented mails, 23 `now`, one language;
+- zero missed and zero duplicates on a real mailbox. That is G3, five working days per adapter on
+  the lab VM, and it needs the published PIM image;
+- the alert rate a person tolerates. The cap of 5 a day per account is the engineer's call (spec
+  §9), not a measure;
+- that people correct enough for rules to form (spec §5.4);
+- provider rate limits at 5 minutes across many accounts.
 
 ## 16. Observability and operator experience
 

@@ -102,6 +102,13 @@ there are any. Decisions already on record:
 | emersion/go-imap v2 | MIT, `dd8c632` | IMAP IDLE | rejected: bypasses the PIM and its OAuth providers |
 | Inngest, Windmill, n8n, Activepieces EE | SSPL, AGPL, Sustainable Use, commercial | | behaviour only |
 
+**Amended 2026-11-01** (`docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md`, prd.md
+§15): the poll calls no model at all, whether or not there is new mail. It reads the PIM's
+`changes` contract, not `search_emails`, and no `agent_job` starts. The comparison below with an
+`every 15m` job is dropped: it would cost at least 7.2M tokens against a path with no model and put
+real mail in front of a headless model. G3 judges the watch against the provider's own INBOX list.
+The text below stands as what was proposed on 2026-10-30.
+
 **Real case and measure.** Item 4, inbox triage feeding the board.
 - **Candidate:** every 5 minutes a model-free step asks `search_emails` for mail after the
   watermark, records (trigger, message id), and starts an `agent_job` with the new ids only
