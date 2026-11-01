@@ -7,10 +7,12 @@ package cron
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 )
 
@@ -41,6 +43,34 @@ func dueIDs(t *testing.T, s *Store, ctx context.Context) map[string]bool {
 	return ids
 }
 
+func TestDeactivationLeavesTheDeploymentsTasksRunning(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx := pauseCtx(t)
+	owner := newOwner()
+	kept := make(map[TaskKind]string, len(systemKinds))
+	for _, kind := range systemKinds {
+		kept[kind] = ownedTask(t, s, ctx, owner, kind, "active")
+	}
+	watch := ownedTask(t, s, ctx, owner, KindPIMDigest, "active")
+
+	if err := s.PauseIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("PauseIdentityTasks: %v", err)
+	}
+
+	for kind, id := range kept {
+		got, err := s.GetTask(ctx, id)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if got.Status != "active" || got.PausedReason != "" {
+			t.Errorf("%s = %s/%q, want it still active", kind, got.Status, got.PausedReason)
+		}
+	}
+	if got, err := s.GetTask(ctx, watch); err != nil || got.Status != "paused" {
+		t.Fatalf("the person's digest = %+v, %v", got, err)
+	}
+}
+
 func TestDeactivationPausesOnlyTheIdentitysActiveTasks(t *testing.T) {
 	s := New(migratedPool(t))
 	ctx := pauseCtx(t)
@@ -48,6 +78,7 @@ func TestDeactivationPausesOnlyTheIdentitysActiveTasks(t *testing.T) {
 
 	active := ownedTask(t, s, ctx, owner, KindAgentJob, "active")
 	watch := ownedTask(t, s, ctx, owner, KindReminder, "active")
+	sweep := ownedTask(t, s, ctx, owner, KindIdentityPurge, "active")
 	awaitingApproval := ownedTask(t, s, ctx, owner, KindAgentJob, "pending_approval")
 	pausedByHand := ownedTask(t, s, ctx, owner, KindReminder, "active")
 	if err := s.PauseTask(ctx, pausedByHand); err != nil {
@@ -73,6 +104,7 @@ func TestDeactivationPausesOnlyTheIdentitysActiveTasks(t *testing.T) {
 		{"paused by hand", pausedByHand, "paused", PausedByOperator},
 		{"cancelled", cancelled, "cancelled", ""},
 		{"backup", backup, "active", ""},
+		{"system sweep", sweep, "active", ""},
 		{"another identity's", someoneElses, "active", ""},
 	} {
 		got, err := s.GetTask(ctx, tc.id)
@@ -90,6 +122,9 @@ func TestDeactivationPausesOnlyTheIdentitysActiveTasks(t *testing.T) {
 	}
 	if !due[someoneElses] {
 		t.Fatal("another identity's task stopped being due")
+	}
+	if !due[sweep] {
+		t.Fatal("the deployment's sweep stopped with its owner")
 	}
 }
 
@@ -180,9 +215,23 @@ func TestPurgeRemovesAnIdentitysTasksRunsAndNotifications(t *testing.T) {
 
 	kept := ownedTask(t, s, ctx, other, KindAgentJob, "active")
 	keptRun, keptNotification := seedRunAndNotification(t, s, ctx, kept, other)
+	deployment := make(map[TaskKind]string, len(systemKinds))
+	for _, kind := range systemKinds {
+		deployment[kind] = ownedTask(t, s, ctx, owner, kind, "active")
+	}
 
 	if err := s.DeleteIdentityTasks(ctx, owner); err != nil {
 		t.Fatalf("DeleteIdentityTasks: %v", err)
+	}
+
+	for kind, id := range deployment {
+		got, err := s.GetTask(ctx, id)
+		if err != nil {
+			t.Fatalf("the purge took %s: %v", kind, err)
+		}
+		if got.Status != "active" {
+			t.Errorf("%s = %s, want it still active", kind, got.Status)
+		}
 	}
 
 	for _, row := range []struct{ table, id string }{
@@ -203,6 +252,76 @@ func TestPurgeRemovesAnIdentitysTasksRunsAndNotifications(t *testing.T) {
 
 	if err := s.DeleteIdentityTasks(ctx, owner); err != nil {
 		t.Fatalf("second purge: %v", err)
+	}
+}
+
+// sweepOfAPurgedOwner is a system handler that says who it ran as.
+type sweepOfAPurgedOwner struct{ ranAs string }
+
+func (h *sweepOfAPurgedOwner) Meta() HandlerMeta {
+	return HandlerMeta{Kind: KindRetentionSweep, MaxDuration: time.Minute}
+}
+
+func (h *sweepOfAPurgedOwner) Run(ctx context.Context, _ Job) (string, error) {
+	h.ranAs = identityctx.IdentityID(ctx)
+	return "swept", nil
+}
+
+// Enrolment hands the deployment's sweeps to the operator's identity, so purging that identity
+// leaves them owned by a row that no longer exists. One of them is the purge sweep itself. They
+// must go on firing: claimed, dispatched and completed through the real scheduler.
+func TestASystemTaskOfAPurgedIdentityIsStillClaimedAndDispatched(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	ctx := pauseCtx(t)
+	owner := newOwner()
+	if _, err := pool.Exec(ctx, `INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user')`, owner, "purged-"+owner); err != nil {
+		t.Fatalf("seed identity: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1`, owner) })
+	sweep := ownedTask(t, s, ctx, owner, KindRetentionSweep, "active")
+
+	if err := s.DeleteIdentityTasks(ctx, owner); err != nil {
+		t.Fatalf("DeleteIdentityTasks: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM aura.identities WHERE id = $1`, owner); err != nil {
+		t.Fatalf("delete identity: %v", err)
+	}
+
+	due, err := s.DueTasks(ctx, 1000)
+	if err != nil {
+		t.Fatalf("DueTasks: %v", err)
+	}
+	found := slices.IndexFunc(due, func(task Task) bool { return task.ID == sweep })
+	if found < 0 {
+		t.Fatal("the sweep of a purged identity is not due")
+	}
+	task := due[found]
+
+	scheduler := NewScheduler(pool, s, SchedulerConfig{MaxConcurrent: 1, TickInterval: time.Second})
+	claim, err := scheduler.claim(ctx, task)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	defer claim.release(ctx)
+
+	handler := &sweepOfAPurgedOwner{}
+	dispatch := NewDispatch(map[TaskKind]Handler{KindRetentionSweep: handler}, DispatchDeps{Store: s})
+	if err := dispatch.Dispatch(ctx, task, claim); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if handler.ranAs != owner {
+		t.Fatalf("the sweep ran as %q", handler.ranAs)
+	}
+	run, err := s.GetRun(ctx, claim.RunID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if run.Status != "completed" {
+		t.Fatalf("run = %+v", run)
+	}
+	if got, err := s.GetTask(ctx, sweep); err != nil || got.Status != "active" {
+		t.Fatalf("after the run = %+v, %v", got, err)
 	}
 }
 

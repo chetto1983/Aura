@@ -36,6 +36,15 @@ func TestManageableAndCancellableKinds(t *testing.T) {
 	}
 }
 
+func TestABackupIsManageableAndNotCancellable(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []TaskKind{KindBackupPostgres, KindBackupObjects} {
+		if !IsUserManageableKind(kind) || IsCancellableKind(kind) {
+			t.Errorf("%s: manageable %v, cancellable %v", kind, IsUserManageableKind(kind), IsCancellableKind(kind))
+		}
+	}
+}
+
 func TestTheMailWatchKindsPause(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []TaskKind{KindPIMWatch, KindPIMDigest} {

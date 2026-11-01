@@ -118,13 +118,18 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 }
 
 const deleteIdentityTaskRows = `-- name: DeleteIdentityTaskRows :exec
-DELETE FROM aura.scheduler_tasks WHERE identity_id = $1
+DELETE FROM aura.scheduler_tasks WHERE identity_id = $1 AND kind = ANY($2::text[])
 `
 
-// Purging an identity removes its tasks whatever their status. ON DELETE CASCADE takes their
-// runs and those runs' notifications.
-func (q *Queries) DeleteIdentityTaskRows(ctx context.Context, identityID string) error {
-	_, err := q.db.Exec(ctx, deleteIdentityTaskRows, identityID)
+type DeleteIdentityTaskRowsParams struct {
+	IdentityID string   `json:"identity_id"`
+	Kinds      []string `json:"kinds"`
+}
+
+// Purging an identity removes what it scheduled, whatever the status, and only that: @kinds is
+// PauseIdentityTaskRows' list. ON DELETE CASCADE takes their runs and those runs' notifications.
+func (q *Queries) DeleteIdentityTaskRows(ctx context.Context, arg DeleteIdentityTaskRowsParams) error {
+	_, err := q.db.Exec(ctx, deleteIdentityTaskRows, arg.IdentityID, arg.Kinds)
 	return err
 }
 
@@ -507,14 +512,20 @@ func (q *Queries) MarkApprovalReminded(ctx context.Context, id pgtype.UUID) erro
 const pauseIdentityTaskRows = `-- name: PauseIdentityTaskRows :exec
 UPDATE aura.scheduler_tasks
 SET status = 'paused', paused_reason = 'identity_deactivated', updated_at = now()
-WHERE identity_id = $1 AND status = 'active' AND kind NOT IN ('backup_postgres', 'backup_objects')
+WHERE identity_id = $1 AND status = 'active' AND kind = ANY($2::text[])
 `
+
+type PauseIdentityTaskRowsParams struct {
+	IdentityID string   `json:"identity_id"`
+	Kinds      []string `json:"kinds"`
+}
 
 // Deactivating an identity stops what it scheduled, in one statement. Only an active task
 // changes: a paused task resumes active, so pausing one that awaits approval would skip the
-// approval. A backup stays active: IsPausableKind keeps it from every pause.
-func (q *Queries) PauseIdentityTaskRows(ctx context.Context, identityID string) error {
-	_, err := q.db.Exec(ctx, pauseIdentityTaskRows, identityID)
+// approval. @kinds is what a person may stop (identityTaskKinds in internal/cron): enrolment
+// hands the deployment's sweeps to the operator's identity, and they must not stop with it.
+func (q *Queries) PauseIdentityTaskRows(ctx context.Context, arg PauseIdentityTaskRowsParams) error {
+	_, err := q.db.Exec(ctx, pauseIdentityTaskRows, arg.IdentityID, arg.Kinds)
 	return err
 }
 

@@ -10,23 +10,33 @@ package cron
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
+// personKinds is what a person schedules and may stop. It is also all an identity's deactivation
+// or purge may touch: enrolment hands the deployment's sweeps to the operator's identity
+// (retireLegacyLocalIdentity), so owning a task does not make it that person's. The queries take
+// this list as a parameter, so Go and SQL cannot name two different sets.
+var personKinds = []TaskKind{KindReminder, KindAgentJob, KindPIMWatch, KindPIMDigest}
+
+func identityTaskKinds() []string {
+	kinds := make([]string, 0, len(personKinds))
+	for _, kind := range personKinds {
+		kinds = append(kinds, string(kind))
+	}
+	return kinds
+}
+
 // IsUserManageableKind reports whether a task kind is operator-managed (reminder,
 // agent_job, the two backups, the mail watch) rather than one of the system-seeded sweeps.
 // The cockpit write handlers refuse to approve/run/edit/cancel a system sweep: those are
 // seeded on a fixed cadence and must never be operator-mutated.
 func IsUserManageableKind(k TaskKind) bool {
-	switch k {
-	case KindReminder, KindAgentJob, KindBackupPostgres, KindBackupObjects, KindPIMWatch, KindPIMDigest:
-		return true
-	default:
-		return false
-	}
+	return IsCancellableKind(k) || k == KindBackupPostgres || k == KindBackupObjects
 }
 
 // IsCancellableKind reports whether an operator or the agent may cancel a task of this
@@ -34,7 +44,7 @@ func IsUserManageableKind(k TaskKind) bool {
 // the database backup must never be stopped from the cockpit or the agent, and the object
 // backup is its sibling.
 func IsCancellableKind(k TaskKind) bool {
-	return IsUserManageableKind(k) && k != KindBackupPostgres && k != KindBackupObjects
+	return slices.Contains(personKinds, k)
 }
 
 // ListLiveTasksOfKind returns one identity's active and paused tasks of a kind, the ones a
@@ -51,11 +61,13 @@ func (s *Store) ListLiveTasksOfKind(ctx context.Context, identityID string, kind
 	return out, nil
 }
 
-// DeleteIdentityTasks removes every task of a purged identity and, by ON DELETE CASCADE, their
-// runs and those runs' notifications. Deleting an identity's row does not reach them:
-// scheduler_tasks.identity_id is text with no foreign key.
+// DeleteIdentityTasks removes what a purged identity scheduled (personKinds) and, by ON DELETE
+// CASCADE, their runs and those runs' notifications. Deleting an identity's row does not reach
+// them: scheduler_tasks.identity_id is text with no foreign key. A system task stays and keeps
+// firing, owned by an id that no longer exists: nothing on its path reads the identity's row.
 func (s *Store) DeleteIdentityTasks(ctx context.Context, identityID string) error {
-	if err := s.q.DeleteIdentityTaskRows(ctx, identityID); err != nil {
+	err := s.q.DeleteIdentityTaskRows(ctx, sqlc.DeleteIdentityTaskRowsParams{IdentityID: identityID, Kinds: identityTaskKinds()})
+	if err != nil {
 		return fmt.Errorf("delete tasks of identity %q: %w", identityID, err)
 	}
 	return nil

@@ -68,10 +68,12 @@ func (s *Store) PauseTask(ctx context.Context, id string) error {
 	return nil
 }
 
-// PauseIdentityTasks stops everything a deactivated identity scheduled from firing. A second
-// call finds nothing active, so it changes nothing. A run already in progress still finishes.
+// PauseIdentityTasks stops what a deactivated identity scheduled from firing (personKinds). A
+// second call finds nothing active, so it changes nothing. A run already in progress still
+// finishes.
 func (s *Store) PauseIdentityTasks(ctx context.Context, identityID string) error {
-	if err := s.q.PauseIdentityTaskRows(ctx, identityID); err != nil {
+	err := s.q.PauseIdentityTaskRows(ctx, sqlc.PauseIdentityTaskRowsParams{IdentityID: identityID, Kinds: identityTaskKinds()})
+	if err != nil {
 		return fmt.Errorf("pause tasks of identity %q: %w", identityID, err)
 	}
 	return nil

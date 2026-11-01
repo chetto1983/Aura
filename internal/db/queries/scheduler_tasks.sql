@@ -170,15 +170,16 @@ WHERE id = $1 AND status = 'active';
 -- name: PauseIdentityTaskRows :exec
 -- Deactivating an identity stops what it scheduled, in one statement. Only an active task
 -- changes: a paused task resumes active, so pausing one that awaits approval would skip the
--- approval. A backup stays active: IsPausableKind keeps it from every pause.
+-- approval. @kinds is what a person may stop (identityTaskKinds in internal/cron): enrolment
+-- hands the deployment's sweeps to the operator's identity, and they must not stop with it.
 UPDATE aura.scheduler_tasks
 SET status = 'paused', paused_reason = 'identity_deactivated', updated_at = now()
-WHERE identity_id = $1 AND status = 'active' AND kind NOT IN ('backup_postgres', 'backup_objects');
+WHERE identity_id = $1 AND status = 'active' AND kind = ANY(@kinds::text[]);
 
 -- name: DeleteIdentityTaskRows :exec
--- Purging an identity removes its tasks whatever their status. ON DELETE CASCADE takes their
--- runs and those runs' notifications.
-DELETE FROM aura.scheduler_tasks WHERE identity_id = $1;
+-- Purging an identity removes what it scheduled, whatever the status, and only that: @kinds is
+-- PauseIdentityTaskRows' list. ON DELETE CASCADE takes their runs and those runs' notifications.
+DELETE FROM aura.scheduler_tasks WHERE identity_id = $1 AND kind = ANY(@kinds::text[]);
 
 -- name: ResumeTaskRow :execrows
 -- Reactivate a paused task at the next fire the caller computed from now, clearing the
