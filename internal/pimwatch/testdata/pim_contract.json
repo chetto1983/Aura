@@ -1,0 +1,57 @@
+{
+  "_": "spec 2026-10-31-mail-calendar-watch-design.md §5.1 as Aura reads it. client_test.go answers from this file; contract_live_test.go (tag pim_contract) holds a real sidecar to the same shapes.",
+  "emptyCursorRequest": {"accountId": "work", "resource": "mail", "cursor": "", "limit": 50},
+  "emptyCursorResponse": {"changes": [], "nextCursor": "cursor-from-now", "hasMore": false, "resetRequired": false},
+  "changesRequest": {"accountId": "work", "resource": "mail", "cursor": "cur-1", "limit": 25},
+  "changesResponse": {
+    "changes": [
+      {
+        "type": "added",
+        "id": "m-1",
+        "occurredAt": "2026-10-31T14:47:00Z",
+        "from": "Mario Rossi <mario@acme.it>",
+        "subject": "Fermo linea 3",
+        "snippet": "La pompa si è fermata",
+        "signals": {
+          "providerImportant": true,
+          "providerCategory": "promotions",
+          "bulk": false,
+          "authFailed": false,
+          "threadId": "t-1",
+          "writtenTo": true
+        }
+      },
+      {
+        "type": "updated",
+        "id": "e-1",
+        "calendarId": "primary",
+        "occurredAt": "2026-10-31T14:50:00Z",
+        "from": "Anna <anna@acme.it>",
+        "subject": "Riunione budget",
+        "signals": {"writtenTo": null},
+        "event": {
+          "start": "2026-11-01T09:00:00Z",
+          "end": "2026-11-01T10:00:00Z",
+          "status": "confirmed",
+          "organizerIsSelf": false,
+          "myResponse": "needsAction",
+          "fingerprint": "hash-1"
+        }
+      }
+    ],
+    "nextCursor": "cur-2",
+    "hasMore": true,
+    "resetRequired": false
+  },
+  "itemsRequest": {"accountId": "work", "resource": "mail", "items": [{"id": "m-1"}, {"id": "m-2"}]},
+  "itemsResponse": {
+    "items": [{"id": "m-1", "from": "Mario Rossi <mario@acme.it>", "subject": "Fermo linea 3", "occurredAt": "2026-10-31T14:47:00Z"}],
+    "gone": [{"id": "m-2"}]
+  },
+  "failures": [
+    {"status": 503, "body": "{\"error\":\"provider_transient\"}"},
+    {"status": 502, "body": "{\"error\":\"provider_auth\"}"},
+    {"status": 403, "body": "{\"error\":\"permission_denied\"}"},
+    {"status": 422, "body": "{\"error\":\"unsupported_resource\"}"}
+  ]
+}
