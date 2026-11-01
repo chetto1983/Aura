@@ -154,12 +154,15 @@ func (s *Store) SetTaskOrigin(ctx context.Context, id, conversationID string) er
 }
 
 // UpdateTaskParams carries a reschedule edit: the new grammar (validated by the caller
-// via ParseSchedule + FirstFire), the recomputed first fire, and the payload/notify.
+// via ParseSchedule + FirstFire), the recomputed first fire, and the payload/notify. An empty
+// OriginConversationID or TelegramRecipients keeps the task's own.
 type UpdateTaskParams struct {
-	Spec        ScheduleSpec
-	NextRunAt   time.Time
-	Payload     []byte
-	NotifyRoute string
+	Spec                 ScheduleSpec
+	NextRunAt            time.Time
+	Payload              []byte
+	NotifyRoute          string
+	OriginConversationID string
+	TelegramRecipients   []int64
 }
 
 // UpdateTask rewrites a task's schedule + payload + notify route (the cockpit edit). Only
@@ -173,15 +176,17 @@ func (s *Store) UpdateTask(ctx context.Context, id string, p UpdateTaskParams) e
 		return fmt.Errorf("update task: %w", err)
 	}
 	n, err := s.q.UpdateTaskScheduleRow(ctx, sqlc.UpdateTaskScheduleRowParams{
-		ID:           u,
-		ScheduleKind: string(p.Spec.Kind),
-		CronExpr:     text(p.Spec.CronExpr),
-		EveryMinutes: int4OrNull(p.Spec.EveryMinutes),
-		RunAt:        tsOrNull(p.Spec.RunAt),
-		Tz:           p.Spec.TZ,
-		Payload:      payloadOrEmpty(p.Payload),
-		NotifyRoute:  p.NotifyRoute,
-		NextRunAt:    tsOrNull(p.NextRunAt),
+		ID:                   u,
+		ScheduleKind:         string(p.Spec.Kind),
+		CronExpr:             text(p.Spec.CronExpr),
+		EveryMinutes:         int4OrNull(p.Spec.EveryMinutes),
+		RunAt:                tsOrNull(p.Spec.RunAt),
+		Tz:                   p.Spec.TZ,
+		Payload:              payloadOrEmpty(p.Payload),
+		NotifyRoute:          p.NotifyRoute,
+		NextRunAt:            tsOrNull(p.NextRunAt),
+		OriginConversationID: uuidOrNull(p.OriginConversationID),
+		TelegramRecipients:   p.TelegramRecipients,
 	})
 	if err != nil {
 		return fmt.Errorf("update task %q: %w", id, err)

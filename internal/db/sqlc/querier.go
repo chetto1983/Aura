@@ -878,8 +878,10 @@ type Querier interface {
 	UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatchSettingsParams) (AuraPimWatchSettings, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
-	// so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
-	// rows affected.
+	// so a cancelled/completed task is not silently revived; a paused task stays paused. A delivery
+	// that names a conversation or recipients moves them with the route, and NULL keeps the task's
+	// own: the cockpit edit knows neither, and a task may have opened its conversation by itself
+	// (internal/cron/task_home.go). Returns rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBoardView(ctx context.Context, arg UpsertBoardViewParams) (AuraBoardViews, error)
 	// Writes the branch's summary, advancing the watermark.

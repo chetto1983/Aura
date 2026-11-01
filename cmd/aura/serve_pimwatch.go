@@ -281,7 +281,10 @@ func (t pimWatchTasks) RescheduleDigest(ctx context.Context, taskID string, spec
 	if err != nil {
 		return err
 	}
-	return t.store.UpdateTask(ctx, taskID, cron.UpdateTaskParams{Spec: schedule, NextRunAt: next, Payload: raw, NotifyRoute: spec.Delivery.Route})
+	return t.store.UpdateTask(ctx, taskID, cron.UpdateTaskParams{
+		Spec: schedule, NextRunAt: next, Payload: raw, NotifyRoute: spec.Delivery.Route,
+		OriginConversationID: spec.Delivery.OriginConversationID, TelegramRecipients: spec.Delivery.TelegramRecipients,
+	})
 }
 
 func (t pimWatchTasks) Resume(ctx context.Context, taskID string) error {

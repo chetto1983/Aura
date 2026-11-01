@@ -153,12 +153,18 @@ WHERE id = $1;
 -- name: UpdateTaskScheduleRow :execrows
 -- Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 -- payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
--- so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
--- rows affected.
+-- so a cancelled/completed task is not silently revived; a paused task stays paused. A delivery
+-- that names a conversation or recipients moves them with the route, and NULL keeps the task's
+-- own: the cockpit edit knows neither, and a task may have opened its conversation by itself
+-- (internal/cron/task_home.go). Returns rows affected.
 UPDATE aura.scheduler_tasks
-SET schedule_kind = $2, cron_expr = $3, every_minutes = $4, run_at = $5, tz = $6,
-    payload = $7, notify_route = $8, next_run_at = $9, updated_at = now()
-WHERE id = $1 AND status IN ('active', 'pending_approval', 'paused');
+SET schedule_kind = @schedule_kind, cron_expr = @cron_expr, every_minutes = @every_minutes,
+    run_at = @run_at, tz = @tz, payload = @payload, notify_route = @notify_route,
+    next_run_at = @next_run_at,
+    origin_conversation_id = COALESCE(sqlc.narg('origin_conversation_id')::uuid, origin_conversation_id),
+    telegram_recipients = COALESCE(sqlc.narg('telegram_recipients')::bigint[], telegram_recipients),
+    updated_at = now()
+WHERE id = @id AND status IN ('active', 'pending_approval', 'paused');
 
 -- name: PauseTaskRow :execrows
 -- The operator pause: an active task stops firing until resumed. Returns rows affected so a
