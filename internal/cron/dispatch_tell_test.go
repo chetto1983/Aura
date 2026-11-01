@@ -116,6 +116,9 @@ func TestAPausingFailureIsReportedThoughItAskedForSilence(t *testing.T) {
 			if len(notif.texts) != tc.notified {
 				t.Fatalf("notifications = %q, want %d", notif.texts, tc.notified)
 			}
+			if len(recorder.appended) != tc.notified {
+				t.Fatalf("records = %+v, want %d", recorder.appended, tc.notified)
+			}
 			if tc.pausedNow && !strings.Contains(notif.texts[0], "paused after 3 failed runs") {
 				t.Fatalf("the report does not say it paused: %q", notif.texts[0])
 			}

@@ -400,8 +400,7 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	if runErr == nil && strings.TrimSpace(summary) == "" {
 		return nil
 	}
-	var suppressor interface{ SuppressSchedulerNotification() bool }
-	if runErr != nil && errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification() {
+	if suppressed(runErr) {
 		return nil
 	}
 	tier := d.taskTier(task)
@@ -456,11 +455,12 @@ func (d *Dispatch) deferred(task Task) bool {
 //
 // A push that failed is said so beside the outcome. Measured 2026-10-05: a WhatsApp
 // reminder that reached nobody appeared here as plain text, which read as delivered.
+// A failure that asked for silence asked it of both, and leaves nothing here either.
 //
 // Best-effort. The work already happened and is already on the run ledger, so a
 // failed write is a WARN and never a run failure.
 func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr, undelivered error) {
-	if task.NotifyRoute == string(RouteNone) || d.deps.ConversationRecorder == nil || task.OriginConversationID == "" {
+	if task.NotifyRoute == string(RouteNone) || d.deps.ConversationRecorder == nil || task.OriginConversationID == "" || suppressed(runErr) {
 		return
 	}
 	text := summary

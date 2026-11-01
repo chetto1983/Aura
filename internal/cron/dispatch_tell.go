@@ -1,6 +1,9 @@
 package cron
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // dispatch_tell.go is the seam that lets one run say different things to different readers
 // (docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md §5.2): the notification, the
@@ -30,9 +33,15 @@ func (t *toldText) texts(task Task, summary string) (notice, record string) {
 	return t.notice, t.record
 }
 
-// pausedRunError reports the failure that paused a task. It always answers false to the
-// suppressor notify asks, and errors.As meets it first, so the run that pauses is reported even
-// when its own error asked for silence (spec §5.6).
+// suppressed reports a failure that asked to stay out of the notification and the record alike.
+func suppressed(runErr error) bool {
+	var suppressor interface{ SuppressSchedulerNotification() bool }
+	return errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification()
+}
+
+// pausedRunError reports the failure that paused a task. It always answers false to suppressed,
+// and errors.As meets it first, so the run that pauses is reported even when its own error asked
+// for silence (spec §5.6).
 type pausedRunError struct {
 	cause    error
 	failures int
