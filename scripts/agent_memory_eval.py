@@ -41,7 +41,7 @@ def default_manifest() -> dict[str, Any]:
     aura_unit_filter = (
         "^(TestMemoryVerbMappingNegativeCases|"
         "TestMemoryNotConfigured|"
-        "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch|"
+        "TestMemoryReadinessCheckRunsAnIsolatedFunctionalRead|"
         "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure)$"
     )
     # fmt: off
@@ -76,7 +76,7 @@ def default_manifest() -> dict[str, Any]:
         # dimension on the resilience property that IS still real -- the memory CLI degrades
         # cleanly with no memory server configured instead of panicking or reporting success.
         ("memory_cli_degrades_without_a_server", "deterministic", "mcp_runtime_resilience", 3, "negative", "aura_memory_unit", "TestMemoryNotConfigured"),
-        ("memory_readiness_accepts_typed_empty_result", "deterministic", "mcp_runtime_resilience", 2, "positive", "aura_memory_unit", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch"),
+        ("memory_readiness_accepts_typed_empty_result", "deterministic", "mcp_runtime_resilience", 2, "positive", "aura_memory_unit", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalRead"),
         ("memory_readiness_rejects_failures", "deterministic", "mcp_runtime_resilience", 2, "negative", "aura_memory_unit", "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure"),
         ("memory_cli_rejects_invalid_operations", "deterministic", "mcp_runtime_resilience", 1, "negative", "aura_memory_unit", "TestMemoryVerbMappingNegativeCases"),
         ("vector_schema_is_embeddinggemma_width", "deterministic", "operability_coverage", 1, "positive", "arcadedb_unit", "TestSchemaIsIdempotentAndCarriesTheVectorIndex"),

@@ -56,7 +56,7 @@ SCENARIOS = (
     Scenario("mcp.remote_trust.blocked", "mcp_contract", "negative", "./internal/mcp", "TestClassify_RemoteWithNoTrustIsRunnable"),
     Scenario("memory.cli.mapping", "memory_contract", "positive", "./cmd/aura", "TestMemoryVerbMapping"),
     Scenario("memory.cli.invalid_rejected", "memory_contract", "negative", "./cmd/aura", "TestMemoryVerbMappingNegativeCases"),
-    Scenario("memory.readiness.functional", "memory_contract", "positive", "./cmd/aura", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch"),
+    Scenario("memory.readiness.functional", "memory_contract", "positive", "./cmd/aura", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalRead"),
     Scenario("memory.readiness.semantic", "memory_contract", "negative", "./cmd/aura", "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure"),
     Scenario("pause.resume.claim_first", "pause_resume_atomicity", "positive", "./internal/runner", "TestSplitResumeCommitter_CommitResume_ClaimsBeforeAppend"),
     Scenario("pause.resume.partial_batch_denied", "pause_resume_atomicity", "negative", "./internal/runner", "TestResumeBatch_PartiallyResolvedAppendsNothing"),
