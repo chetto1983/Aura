@@ -42,6 +42,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { HttpError } from '@/api/json';
 import { useNow } from '@/lib/useNow';
 import { useThemeMode } from '@/theme/useThemeMode';
+import './board.css';
 
 interface BoardWorkspaceProps {
   readonly mobileMenu?: ReactNode;
@@ -326,13 +327,15 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
                   columns={columns}
                   card={CARD_SHAPE}
                   cardContent={BoardCardContent}
+                  render={{ fixedColumnWidth: false }}
                   init={init}
                 />
               </BoardCardContext.Provider>
               {api !== null && (
                 <Editor
                   api={api}
-                  placement="modal"
+                  placement="sidebar"
+                  css="aura-board-editor"
                   autoSave={false}
                   items={EDITOR_ITEMS}
                   topBar={topBar}

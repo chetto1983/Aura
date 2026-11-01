@@ -31,11 +31,11 @@ interface FilterFieldProps {
 function FilterField({ label, active, children }: FilterFieldProps) {
   return (
     <div
-      className={`flex min-w-36 shrink-0 flex-col rounded-md border bg-surface-3 px-1 py-1 transition-colors has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring ${
-        active ? 'border-info/60 bg-info/8' : 'border-border'
+      className={`flex shrink-0 items-center gap-1 rounded-md border pl-2.5 transition-colors has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring ${
+        active ? 'border-info/60 bg-info/8' : 'border-border bg-surface'
       }`}
     >
-      <span className="px-2 text-[11px] font-medium text-text-muted">{label}</span>
+      <span className="text-[11px] font-medium text-text-muted">{label}</span>
       {children}
     </div>
   );
@@ -49,7 +49,6 @@ interface FilterSelectProps {
   readonly onValueChange: (value: string | undefined) => void;
 }
 
-// The filter's label sits inside its box, so the trigger drops its own border and height.
 function FilterSelect({ label, value, active, options, onValueChange }: FilterSelectProps) {
   return (
     <FilterField label={label} active={active}>
@@ -60,7 +59,8 @@ function FilterSelect({ label, value, active, options, onValueChange }: FilterSe
           onValueChange(next === ALL_FILTERS ? undefined : next);
         }}
         options={options}
-        className="min-h-8 border-0 bg-transparent px-2 py-0 font-medium focus-visible:ring-0"
+        size="sm"
+        className="w-auto max-w-44 gap-2 border-0 bg-transparent font-medium focus-visible:ring-0"
       />
     </FilterField>
   );
@@ -83,11 +83,11 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
   }
 
   return (
-    <div className="flex flex-col gap-2 border-b border-border px-3 py-2">
+    <div className="flex min-w-0 flex-col gap-2 border-b border-border px-3 pb-2 md:flex-row md:flex-wrap md:items-center md:gap-x-3">
       <div
         role="group"
         aria-label={t('board.views.label')}
-        className="flex items-center gap-1.5 overflow-x-auto md:flex-wrap"
+        className="flex min-w-0 items-center gap-1.5 overflow-x-auto md:max-w-full md:flex-wrap"
       >
         <Button
           type="button"
@@ -140,7 +140,7 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
           </span>
         ))}
       </div>
-      <div className="flex items-end gap-1.5 overflow-x-auto pb-1 md:flex-wrap">
+      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 md:max-w-full md:flex-wrap md:pb-0">
         <FilterSelect
           label={t('board.filters.source')}
           value={filters.source}

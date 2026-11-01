@@ -1,0 +1,9 @@
+.wx-sidearea:has(.wx-editor-kanban.aura-board-editor) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wx-sidearea .wx-editor-kanban.aura-board-editor {
+  width: min(450px, 100vw);
+  max-width: 100%;
+}

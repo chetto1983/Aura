@@ -38,7 +38,7 @@ describe('BoardCardContent', () => {
     const { container } = renderCard({});
     expect(screen.getByText('Pay the invoice')).toBeTruthy();
     expect(screen.getByText('Aura in chat')).toBeTruthy();
-    expect(screen.getByRole('img', { name: 'High priority' })).toBeTruthy();
+    expect(screen.getByText('High priority')).toBeTruthy();
     // The widget's context menu finds its trigger by this attribute, nothing else.
     expect(container.querySelector('[data-action="menu"]')?.getAttribute('aria-label')).toBe(
       'Card menu',

@@ -4515,6 +4515,17 @@ the board on a phone, the provider's behaviour on a failed write or on a stale c
 whether a model keeps a board tidy over a week of real use; those are the lab-VM acceptance
 in the design.
 
+**Board UI measurement, 2026-11-01.** Playwright compared the demo and the authenticated
+lab API using a locally rebuilt frontend: desktop columns now fill the width (464 px each
+at 1440 px; 12 px right gutter), the board starts at y=177 rather than 253, and the native
+sidebar fits a 390 px viewport with all actions visible. Save/reload, cancel, drag and
+confirmed deletion passed on a disposable card. This does not claim deployment of that
+frontend to the VM. Evidence: `docs/superpowers/verification/2026-11-01-board-ui-live-api.md`.
+The operator also requested persisted progress. A live POST with `progress:0.55` answered
+200 while discarding it; native SVAR uses a ratio in [0,1]. The additive store/API/tool/UI
+contract is in `docs/superpowers/specs/2026-11-01-board-progress-design.md`; the probe does
+not establish the future migration or persistence behavior.
+
 Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
 Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo
 3.1.0 and Grafana 13.2.3:
