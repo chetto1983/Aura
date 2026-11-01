@@ -277,3 +277,42 @@ func TestCommitPageOnAReadOnlyContextReportsTheFailure(t *testing.T) {
 		t.Fatalf("a cancelled write reported success")
 	}
 }
+
+// An invitation decided long ago for a meeting still ahead keeps its row: when the meeting moves,
+// the row is what tells the move from a first sight.
+func TestExpiryKeepsTheRowOfAnEventStillAhead(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	ahead := r.clock.at.Add(45 * 24 * time.Hour)
+	past := r.clock.at.Add(10 * 24 * time.Hour)
+	event := func(id string, start time.Time, allDay bool) VerdictDraft {
+		return VerdictDraft{
+			ItemID: id, CalendarID: "cal", Decision: Decision{Tier: TierToday, By: ByCalendar},
+			Fingerprint: "f", Event: true, Start: EventTime{Time: start, AllDay: allDay},
+		}
+	}
+	_, err := r.store.CommitPage(ctx, r.identity, PageCommit{
+		AccountID: rigAccount, Resource: ResourceCalendar, Cursor: "c1", RunID: uuid.NewString(),
+		Drafts: []VerdictDraft{
+			event("ahead", ahead, false), event("ahead-all-day", ahead.Truncate(24*time.Hour), true), event("past", past, false),
+		},
+		DayStart: r.clock.at, Now: r.clock.at,
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	r.commit(rigAccount, r.draft("old-mail", TierToday, ""))
+
+	removed, err := r.store.ExpireVerdicts(ctx, r.identity, r.clock.at.Add(31*24*time.Hour), 100)
+	if err != nil || removed != 2 {
+		t.Fatalf("removed %d, %v; want the past event and the mail", removed, err)
+	}
+	for _, id := range []string{"ahead", "ahead-all-day"} {
+		if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, id); err != nil {
+			t.Fatalf("the row of %s, still ahead, went: %v", id, err)
+		}
+	}
+	if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "past"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the row of a past event stayed: %v", err)
+	}
+}

@@ -154,7 +154,8 @@ type Querier interface {
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
 	DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error)
 	DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
-	// One bounded batch of what has outlived the identity's retention, for the retention sweep.
+	// One bounded batch of what has outlived the identity's retention, for the retention sweep. An
+	// event still ahead keeps its row: when it moves, the row is what tells a move from a first sight.
 	DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteExpiredPIMWatchVerdictsParams) (int64, error)
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteExpiredVerificationEvents(ctx context.Context, createdAt pgtype.Timestamptz) error

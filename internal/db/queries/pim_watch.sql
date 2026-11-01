@@ -234,7 +234,8 @@ RETURNING *;
 DELETE FROM aura.pim_watch_verdicts WHERE identity_id = $1 AND account_id = $2;
 
 -- name: DeleteExpiredPIMWatchVerdicts :execrows
--- One bounded batch of what has outlived the identity's retention, for the retention sweep.
+-- One bounded batch of what has outlived the identity's retention, for the retention sweep. An
+-- event still ahead keeps its row: when it moves, the row is what tells a move from a first sight.
 DELETE FROM aura.pim_watch_verdicts AS v
 USING (
     SELECT o.identity_id, o.account_id, o.resource, o.item_id
@@ -242,6 +243,7 @@ USING (
     JOIN aura.pim_watch_settings AS s ON s.identity_id = o.identity_id
     WHERE o.identity_id = $1
       AND o.decided_at + s.verdict_retention_days * interval '1 day' < sqlc.arg(now)::timestamptz
+      AND (o.event_start IS NULL OR o.event_start <= sqlc.arg(now)::timestamptz)
     LIMIT @batch
 ) AS expired
 WHERE v.identity_id = expired.identity_id AND v.account_id = expired.account_id

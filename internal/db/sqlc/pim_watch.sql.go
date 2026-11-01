@@ -164,6 +164,7 @@ USING (
     JOIN aura.pim_watch_settings AS s ON s.identity_id = o.identity_id
     WHERE o.identity_id = $1
       AND o.decided_at + s.verdict_retention_days * interval '1 day' < $2::timestamptz
+      AND (o.event_start IS NULL OR o.event_start <= $2::timestamptz)
     LIMIT $3
 ) AS expired
 WHERE v.identity_id = expired.identity_id AND v.account_id = expired.account_id
@@ -176,7 +177,8 @@ type DeleteExpiredPIMWatchVerdictsParams struct {
 	Batch      int32              `json:"batch"`
 }
 
-// One bounded batch of what has outlived the identity's retention, for the retention sweep.
+// One bounded batch of what has outlived the identity's retention, for the retention sweep. An
+// event still ahead keeps its row: when it moves, the row is what tells a move from a first sight.
 func (q *Queries) DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteExpiredPIMWatchVerdictsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredPIMWatchVerdicts, arg.IdentityID, arg.Now, arg.Batch)
 	if err != nil {
