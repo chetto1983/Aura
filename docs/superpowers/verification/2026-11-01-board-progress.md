@@ -113,3 +113,29 @@ The first CI run ultimately completed with 28 successful jobs and only that Play
 job failing. The correction passed focused typecheck, type-aware lint and Prettier;
 independent review found no actionable issues. It changes test input generation only,
 so the already measured backend, migration and embedded bundle remain unchanged.
+
+## Final result
+
+Commit `ab8a4f1f1` is on GitHub and GitLab. [CI run 41324662123](https://github.com/chetto1983/Aura/actions/runs/41324662123)
+completed successfully with all 29 jobs green. CodeQL, Skills, edge image publication and
+the installer verification/publication workflow also passed on that SHA. The earlier
+source-triggered ArcadeDB MCP publication passed on `231134593`.
+
+Playwright's final successful job reported 222 first-attempt passes, two passes on retry
+(the desktop and mobile progress cases), and 112 conditionally skipped cases. Both initial
+progress attempts exceeded the 60-second test budget; cleanup then reported a closed page,
+so those logs do not identify the original pending step. This is a remaining reliability
+limitation of the new E2E scenario, not evidence of a database value mismatch. It is not
+claimed to be fixed by the earlier rapid-key correction.
+
+An additional first-attempt browser run used the production bundle, Chromium mobile
+emulation with CPU throttling rate 4, the new Go handlers and a recreated task-owned
+PostgreSQL database. It saved 0.55, reloaded, then saved 0 and 1; each actual API response
+returned the requested ratio. This shares the static-asset/API-routing and authentication
+boundaries described above. Only the task-owned card was deleted; the temporary API
+processes and database were removed again after the run.
+
+A read-only check of the lab API still did not expose progress consistently in its returned
+cards. This session did not redeploy the VM; repository/image publication and VM installation
+are distinct outcomes. The available-update dialog was closed locally during the diagnostic
+run; no update or postponement action was submitted.
