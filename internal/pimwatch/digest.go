@@ -38,10 +38,31 @@ func (d *Digester) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Run writes one digest. The window moves only when every line could be read, so a digest that
-// names an unreadable account brings back the account's lines tomorrow, and repeats what it did
-// read: nothing is lost, and a repeated line costs less than a missing one. An empty window sends
-// nothing and still moves.
+// unread names the accounts a digest could not read, by what that means for its window.
+type unread struct {
+	// held failed for now, so the window stays and their lines come back tomorrow.
+	held []string
+	// dropped need the person, and tomorrow would fail the same way.
+	dropped []string
+}
+
+func (u *unread) add(account string, err error) {
+	if class, _ := failureClass(err); class == FailureTransient {
+		u.held = append(u.held, account)
+		return
+	}
+	u.dropped = append(u.dropped, account)
+}
+
+func (u unread) none() bool { return len(u.held) == 0 && len(u.dropped) == 0 }
+
+// Run writes one digest. A transient failure holds the window, so the account's lines come back
+// tomorrow beside a repeat of what was read: nothing is lost, and a repeated line costs less than
+// a missing one. A hard failure names the account and does not hold it, because it would fail the
+// same way tomorrow and its old rows would fill the first lines for good, so nobody's new mail
+// would be read again. Its lines leave the digest and stay in the cockpit's day. If any account
+// failed transiently the window holds for all of them. An empty window sends nothing and still
+// moves.
 func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) {
 	settings, err := d.Store.Settings(ctx, identityID)
 	if err != nil {
@@ -66,14 +87,16 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 	}
 	sortDigest(verdicts, labels)
 	shown := verdicts[:min(len(verdicts), maxDigestLines)]
-	lines, unreadable := d.read(ctx, shown)
+	lines, missing := d.read(ctx, shown)
 	out := renderDigest(
 		d.Locale.Language(ctx, identityID), d.Locale.Location(ctx, identityID), book,
-		lines, len(verdicts)-len(shown), unreadable,
+		lines, len(verdicts)-len(shown), missing,
 	)
 	out.Summary = fmt.Sprintf("%d in the window, %d shown", len(verdicts), len(lines))
-	if len(unreadable) > 0 {
-		out.Summary += ", unreadable: " + strings.Join(unreadable, ", ")
+	if !missing.none() {
+		out.Summary += ", unreadable: " + strings.Join(slices.Concat(missing.held, missing.dropped), ", ")
+	}
+	if len(missing.held) > 0 {
 		return out, nil
 	}
 	return out, d.Store.SetLastDigest(ctx, identityID, until)
@@ -100,7 +123,7 @@ func sortDigest(verdicts []Verdict, labels []Label) {
 
 // read reads the shown verdicts live, keeping their order. An account that cannot be read loses
 // only its own lines, and the digest says which.
-func (d *Digester) read(ctx context.Context, verdicts []Verdict) ([]Line, []string) {
+func (d *Digester) read(ctx context.Context, verdicts []Verdict) ([]Line, unread) {
 	byAccount := map[string][]Verdict{}
 	var accounts []string
 	for _, verdict := range verdicts {
@@ -110,11 +133,11 @@ func (d *Digester) read(ctx context.Context, verdicts []Verdict) ([]Line, []stri
 		byAccount[verdict.AccountID] = append(byAccount[verdict.AccountID], verdict)
 	}
 	read := make(map[string]Line, len(verdicts))
-	var unreadable []string
+	var missing unread
 	for _, account := range accounts {
 		lines, err := readLines(ctx, d.PIM, account, byAccount[account])
 		if err != nil {
-			unreadable = append(unreadable, account)
+			missing.add(account, err)
 			continue
 		}
 		for _, line := range lines {
@@ -127,7 +150,7 @@ func (d *Digester) read(ctx context.Context, verdicts []Verdict) ([]Line, []stri
 			out = append(out, line)
 		}
 	}
-	return out, unreadable
+	return out, missing
 }
 
 func verdictKey(accountID, resource, itemID string) string {

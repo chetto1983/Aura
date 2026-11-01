@@ -39,6 +39,7 @@ type phrases struct {
 	unsorted      string
 	digestRest    string // count
 	unreadable    string // accounts
+	droppedLines  string // accounts
 	resourceMail  string
 	resourceCal   string
 	timeLayout    string
@@ -62,6 +63,7 @@ var texts = map[Lang]phrases{
 		unsorted:     "Da smistare",
 		digestRest:   "E altre %d voci.",
 		unreadable:   "Non ho potuto leggere: %s. Le sue voci tornano nel prossimo riepilogo.",
+		droppedLines: "Non ho potuto leggere: %s. Le sue voci restano nella giornata dell'account, nel cockpit.",
 		resourceMail: "la posta",
 		resourceCal:  "il calendario",
 		timeLayout:   "02/01 15:04",
@@ -86,6 +88,7 @@ var texts = map[Lang]phrases{
 		unsorted:     "To sort",
 		digestRest:   "And %d more.",
 		unreadable:   "I could not read: %s. Its items come back in the next digest.",
+		droppedLines: "I could not read: %s. Its items stay in the account's day in the cockpit.",
 		resourceMail: "the mail",
 		resourceCal:  "the calendar",
 		timeLayout:   "Jan 2 15:04",
@@ -304,10 +307,19 @@ func renderAlert(lang Lang, loc *time.Location, accountID string, lines []Line, 
 	}
 }
 
+// accountNames joins the names a person gave these accounts.
+func accountNames(accounts []string) string {
+	names := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		names = append(names, accountName(account))
+	}
+	return strings.Join(names, ", ")
+}
+
 // renderDigest writes the day's digest from lines already in digest order. Each change of heading
 // starts a group, and rest counts what the cap left out.
-func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest int, unreadable []string) Outcome {
-	if len(lines) == 0 && rest == 0 && len(unreadable) == 0 {
+func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest int, missing unread) Outcome {
+	if len(lines) == 0 && rest == 0 && missing.none() {
 		return Outcome{}
 	}
 	p := phrasesFor(lang)
@@ -337,12 +349,11 @@ func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest i
 	if rest > 0 {
 		tail = append(tail, fmt.Sprintf(p.digestRest, rest))
 	}
-	if len(unreadable) > 0 {
-		names := make([]string, 0, len(unreadable))
-		for _, account := range unreadable {
-			names = append(names, accountName(account))
-		}
-		tail = append(tail, fmt.Sprintf(p.unreadable, strings.Join(names, ", ")))
+	if len(missing.held) > 0 {
+		tail = append(tail, fmt.Sprintf(p.unreadable, accountNames(missing.held)))
+	}
+	if len(missing.dropped) > 0 {
+		tail = append(tail, fmt.Sprintf(p.droppedLines, accountNames(missing.dropped)))
 	}
 	refs, quoted := recordParts(lines, body)
 	notice := append(append([]string{p.digestTitle}, body...), tail...)

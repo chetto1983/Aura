@@ -64,6 +64,91 @@ func TestAnUnreadableAccountIsNamedAndTheWindowStays(t *testing.T) {
 	mustContain(t, out.Notice, "h1@acme.it", "w1@acme.it")
 }
 
+// An account that will not come back must not hold everybody's digest: held, its old rows filled
+// the first twenty lines for good and nothing newer was ever read.
+func TestAHardFailingAccountDoesNotFreezeEveryonesDigest(t *testing.T) {
+	for _, code := range []string{"account_not_found", "permission_denied", "provider_auth", "pim_not_authorized"} {
+		t.Run(code, func(t *testing.T) {
+			r := newWatchRig(t)
+			ctx := context.Background()
+			r.clock.advance(time.Minute)
+			old := make([]VerdictDraft, 0, 25)
+			for i := range 25 {
+				old = append(old, r.draft(fmt.Sprintf("x%02d", i), TierToday, ""))
+			}
+			r.commit("gone", old...)
+			r.clock.advance(time.Minute)
+			r.pim.itemsErr["gone"] = &PIMError{Class: FailureHard, Code: code}
+
+			first, err := r.digester(LangEN).Run(ctx, r.identity)
+			if err != nil {
+				t.Fatalf("first digest: %v", err)
+			}
+			mustContain(t, first.Notice, "I could not read: gone.", "stay in the account's day")
+			if strings.Contains(first.Notice, "next digest") {
+				t.Fatalf("promised a line that will not come back:\n%s", first.Notice)
+			}
+			mustContain(t, first.Summary, "unreadable: gone")
+
+			r.clock.advance(24 * time.Hour)
+			r.commit(rigAccount, r.draft("fresh", TierToday, ""))
+			r.clock.advance(time.Minute)
+			second, err := r.digester(LangEN).Run(ctx, r.identity)
+			if err != nil {
+				t.Fatalf("second digest: %v", err)
+			}
+			mustContain(t, second.Notice, "1. [work] fresh@acme.it")
+			if strings.Contains(second.Notice, "gone") {
+				t.Fatalf("the next day named the account again:\n%s", second.Notice)
+			}
+		})
+	}
+}
+
+func TestAnAccountWithNothingToShowIsStillNamed(t *testing.T) {
+	r := newWatchRig(t)
+	r.clock.advance(time.Minute)
+	r.commit("gone", r.draft("x1", TierToday, ""))
+	r.clock.advance(time.Minute)
+	r.pim.itemsErr["gone"] = hard()
+
+	out, err := r.digester(LangIT).Run(context.Background(), r.identity)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	mustContain(t, out.Notice, "Riepilogo di posta e calendario", "Non ho potuto leggere: gone.", "restano nella giornata")
+}
+
+// A transient failure among them keeps the promise that its lines come back, so the window holds
+// for everyone that day, the hard-failing account's lines with it.
+func TestATransientFailureHoldsTheWindowWhateverElseFailed(t *testing.T) {
+	for _, code := range []string{"pim_unreachable", "provider_transient"} {
+		t.Run(code, func(t *testing.T) {
+			r := newWatchRig(t)
+			ctx := context.Background()
+			r.clock.advance(time.Minute)
+			r.commit("down", r.draft("d1", TierToday, ""))
+			r.commit("gone", r.draft("g1", TierToday, ""))
+			r.clock.advance(time.Minute)
+			r.pim.itemsErr["down"] = &PIMError{Class: FailureTransient, Code: code}
+			r.pim.itemsErr["gone"] = hard()
+
+			out, err := r.digester(LangEN).Run(ctx, r.identity)
+			if err != nil {
+				t.Fatalf("digest: %v", err)
+			}
+			mustContain(t, out.Notice, "I could not read: down. Its items come back", "I could not read: gone.")
+			settings, err := r.store.Settings(ctx, r.identity)
+			if err != nil {
+				t.Fatalf("settings: %v", err)
+			}
+			if !settings.LastDigestAt.IsZero() {
+				t.Fatalf("the window moved to %v past a failure that will pass", settings.LastDigestAt)
+			}
+		})
+	}
+}
+
 func TestTheWindowMovesAfterAGoodDigestAndHoldsWhatCameAfter(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
