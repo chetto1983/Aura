@@ -2,8 +2,8 @@
 
 **Status (2026-11-01):** Tasks 1–14 are built and verified on branch `mail-watch`, in the worktree
 `D:\tmp\aura-mail-watch-wt`, off `master` at `feeca6797`. Nothing is pushed or merged: the operator has forbidden
-pushes. Task 15, the React cockpit, is not built. Task 16, the lab-VM run (G3), needs the published PIM image and is
-owed.
+pushes. Task 15, the React cockpit, is built against a mocked API and has not met a live stack. Task 16, the lab-VM run
+(G3), needs the published PIM image and is owed.
 
 > **The planner built this code, RED then GREEN, in a scratch copy, and the verified commits are the implementation.**
 > There is no transcription pass. Each task names the commit that carries it. To land it, merge the branch once the
@@ -388,17 +388,25 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
   cases, `TestMailWatchDecisionsCarryTheNameAndAnAllDayDate`, `TestAWatchRunHasRoomForAPageAtItsWorst`.
 - **Commit:** the commit `fix(pimwatch): read what the finished fork writes`.
 
-### Task 15 — The React cockpit (not built)
+### Task 15 — The React cockpit
 
-- [ ] The switch on the account's card, with `reason` when `configured` is false.
-- [ ] The decisions view: the day's lines from `decisions`, a control for tier and label, and a word when a correction
+- [x] The switch on the account's card, with `reason` when `configured` is false.
+- [x] The decisions view: the day's lines from `decisions`, a control for tier and label, and a word when a correction
   taught a rule.
-- [ ] Rules and labels: list, add, remove, rename.
-- [ ] Digest hour and daily cap.
-- [ ] Each account's state from `resources`, with its fixed codes translated.
-- [ ] A readable name for `pim_watch` and `pim_digest` on the scheduler board, whose payload field stays hidden.
+- [x] Rules and labels: list, add, remove, rename.
+- [x] Digest hour and daily cap.
+- [x] Each account's state from `resources`, with its fixed codes translated.
+- [x] A readable name for `pim_watch` and `pim_digest` on the scheduler board, whose payload field stays hidden.
 - **Consumes:** the API above. Sender and subject render as text. The `i18n` keys go through `react-i18next`, the
   palette stays blue, and vitest and Stryker apply.
+- **Files:** `web/src/governance/mailWatchApi.ts`, `web/src/governance/mailWatch/`,
+  `web/src/i18n/resources.governance.mailWatch.ts`, `web/src/test/mailWatchServer.tsx`, `web/src/test/mailWatchDay.tsx`.
+  The key on a mutation comes from the shared wrapper in `web/src/api/idempotency.ts`, so `mailWatchApi.ts` sets none.
+- **The day opens in a dialog,** not in the MCP detail panel, which is too narrow for a row and its controls and holds no
+  focus scope for the keys. The same dialog holds rules, labels and settings, and fills the screen under `sm`.
+- **Commits:** `e9a19e91e` the select, `20eaaad57` the scheduler board, `bf3c813dd` the cockpit, `d2ea06a74` its tests.
+- **Measured against a mock, never a live stack:** the real day's `start`, `reason`, a real correction and a learned
+  rule are Task 16's. Stryker runs in CI and has not run on these files.
 
 ### Task 16 — Close: the lab VM (G3), owed
 
