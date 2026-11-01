@@ -16,9 +16,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/dbtest"
 )
 
@@ -251,6 +254,25 @@ func mustContain(t *testing.T, text string, wants ...string) {
 			t.Fatalf("missing %q in:\n%s", want, text)
 		}
 	}
+}
+
+// Verdict reads one verdict as the tests check it. A missing row is ErrNotFound.
+func (s *Store) Verdict(ctx context.Context, identityID, accountID, resource, itemID string) (Verdict, error) {
+	var out Verdict
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		row, err := q.GetPIMWatchVerdict(ctx, sqlc.GetPIMWatchVerdictParams{
+			IdentityID: id, AccountID: accountID, Resource: resource, ItemID: itemID,
+		})
+		if err != nil {
+			return err
+		}
+		out = verdictFromRow(row)
+		return nil
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Verdict{}, ErrNotFound
+	}
+	return out, err
 }
 
 func transient() error { return &PIMError{Class: FailureTransient, Code: "provider_transient"} }

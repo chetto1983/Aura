@@ -203,28 +203,6 @@ func (s *Store) PriorEvents(ctx context.Context, identityID, accountID, resource
 	return out, nil
 }
 
-// Verdict reads one verdict. A missing row is ErrNotFound.
-func (s *Store) Verdict(ctx context.Context, identityID, accountID, resource, itemID string) (Verdict, error) {
-	var out Verdict
-	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
-		row, err := q.GetPIMWatchVerdict(ctx, sqlc.GetPIMWatchVerdictParams{
-			IdentityID: id, AccountID: accountID, Resource: resource, ItemID: itemID,
-		})
-		if err != nil {
-			return err
-		}
-		out = verdictFromRow(row)
-		return nil
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Verdict{}, fmt.Errorf("pim watch verdict: %w", ErrNotFound)
-	}
-	if err != nil {
-		return Verdict{}, fmt.Errorf("read pim watch verdict: %w", err)
-	}
-	return out, nil
-}
-
 // AlertsToday counts what an account pushed since a local midnight, the cap's own measure.
 func (s *Store) AlertsToday(ctx context.Context, identityID, accountID string, dayStart time.Time) (int, error) {
 	var n int32
