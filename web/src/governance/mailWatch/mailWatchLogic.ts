@@ -144,21 +144,11 @@ export function ruleInputFrom(row: MailWatchDecision): MailWatchRuleInput {
   };
 }
 
-/** What a rule says, as a rule's own write would say it. */
-export function ruleInput(rule: MailWatchRule): MailWatchRuleInput {
-  return {
-    key: rule.key,
-    ...(rule.tier === undefined ? {} : { tier: rule.tier }),
-    ...(rule.label_id === undefined ? {} : { label_id: rule.label_id }),
-  };
-}
-
 export function sameRule(a: MailWatchRule | undefined, b: MailWatchRule): boolean {
   return a !== undefined && a.tier === b.tier && a.label_id === b.label_id;
 }
 
-/** The rule already on file for the same key: a write merges into it or replaces it, so undoing
- * means putting this back, never deleting the row. */
+/** The rule already on file for the same key, which a write merges into or replaces. */
 export function ruleOnFile(
   rules: readonly MailWatchRule[] | undefined,
   rule: Pick<MailWatchRule, 'key' | 'key_kind'>,

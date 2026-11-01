@@ -279,9 +279,13 @@ func (s *Store) Rules(ctx context.Context, identityID string) ([]Rule, error) {
 }
 
 // PutRule writes the person's rule for a key, replacing what the key said before.
-func (s *Store) PutRule(ctx context.Context, identityID string, rule Rule) (Rule, error) {
-	var out Rule
+func (s *Store) PutRule(ctx context.Context, identityID string, rule Rule) (WrittenRule, error) {
+	var out WrittenRule
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		onFile, err := q.PIMWatchRuleExists(ctx, sqlc.PIMWatchRuleExistsParams{IdentityID: id, KeyKind: string(rule.Kind), Key: rule.Key})
+		if err != nil {
+			return err
+		}
 		row, err := q.UpsertPIMWatchRule(ctx, sqlc.UpsertPIMWatchRuleParams{
 			IdentityID: id, Key: rule.Key, KeyKind: string(rule.Kind), Tier: optionalText(string(rule.Tier)),
 			LabelID: optionalUUID(rule.LabelID), Source: sourcePerson,
@@ -289,11 +293,11 @@ func (s *Store) PutRule(ctx context.Context, identityID string, rule Rule) (Rule
 		if err != nil {
 			return err
 		}
-		out = ruleFromRow(row)
+		out = WrittenRule{Rule: ruleFromRow(row), Created: !onFile}
 		return nil
 	})
 	if err != nil {
-		return Rule{}, fmt.Errorf("put pim watch rule: %w", err)
+		return WrittenRule{}, fmt.Errorf("put pim watch rule: %w", err)
 	}
 	return out, nil
 }

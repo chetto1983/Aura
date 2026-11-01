@@ -21,7 +21,6 @@ import {
   parseRuleKey,
   pausedSentence,
   previewRule,
-  ruleInput,
   ruleInputFrom,
   ruleOnFile,
   rowTime,
@@ -231,16 +230,6 @@ describe('rule inputs', () => {
       label_id: 'l1',
     });
     expect(ruleInputFrom(decision())).toEqual({ key: 'ada@example.com', tier: 'today' });
-  });
-
-  it('ruleInput says only what a rule says', () => {
-    expect(ruleInput(rule({ tier: 'now', label_id: 'l1' }))).toEqual({
-      key: 'ada@example.com',
-      tier: 'now',
-      label_id: 'l1',
-    });
-    const { tier: _tier, ...noTier } = rule();
-    expect(ruleInput(noTier)).toEqual({ key: 'ada@example.com' });
   });
 
   it('sameRule compares what two rules do', () => {

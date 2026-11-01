@@ -383,17 +383,18 @@ func (s *Store) CorrectionsBefore(ctx context.Context, identityID, senderKey str
 	return past, nil
 }
 
-// LearnedRule is what a repeated correction taught. Created says the sender had no rule. One that
-// merged into a rule on file holds the person's earlier words, so nothing can simply remove it.
-type LearnedRule struct {
+// WrittenRule is a rule a write left on file. Created says the key had no rule. One that
+// merged into or replaced a rule on file holds the person's earlier words, so nothing can simply
+// remove it.
+type WrittenRule struct {
 	Rule
 	Created bool
 }
 
 // LearnRule writes what a repeated correction taught, keeping whatever the sender's rule already
 // says about the field this one leaves empty.
-func (s *Store) LearnRule(ctx context.Context, identityID, senderKey string, tier Tier, labelID string) (LearnedRule, error) {
-	var out LearnedRule
+func (s *Store) LearnRule(ctx context.Context, identityID, senderKey string, tier Tier, labelID string) (WrittenRule, error) {
+	var out WrittenRule
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		onFile, err := q.PIMWatchRuleExists(ctx, sqlc.PIMWatchRuleExistsParams{IdentityID: id, KeyKind: string(KeySender), Key: senderKey})
 		if err != nil {
@@ -406,11 +407,11 @@ func (s *Store) LearnRule(ctx context.Context, identityID, senderKey string, tie
 		if err != nil {
 			return err
 		}
-		out = LearnedRule{Rule: ruleFromRow(row), Created: !onFile}
+		out = WrittenRule{Rule: ruleFromRow(row), Created: !onFile}
 		return nil
 	})
 	if err != nil {
-		return LearnedRule{}, fmt.Errorf("learn pim watch rule: %w", err)
+		return WrittenRule{}, fmt.Errorf("learn pim watch rule: %w", err)
 	}
 	return out, nil
 }

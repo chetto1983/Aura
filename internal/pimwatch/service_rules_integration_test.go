@@ -347,3 +347,19 @@ func TestPortFailuresReachTheCaller(t *testing.T) {
 		t.Fatalf("enable with no route: %v", err)
 	}
 }
+
+// The cockpit offers Undo for a saved rule only when the server says the key had none: a rule
+// that replaced one holds the person's earlier words, and the cockpit's cache of the rules may be
+// empty or old.
+func TestARuleSavedOverOneOnFileIsNotCreated(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	first, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "a@b.it", Tier: TierNow})
+	if err != nil || !first.Created {
+		t.Fatalf("first = %+v, %v", first, err)
+	}
+	second, err := r.service.AddRule(ctx, r.identity, RuleInput{Key: "a@b.it", Tier: TierLater})
+	if err != nil || second.Created || second.Tier != TierLater {
+		t.Fatalf("second = %+v, %v", second, err)
+	}
+}

@@ -54,8 +54,8 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
     },
   });
   const inFlight = useCorrectionsInFlight();
-  const addRule = useAddRule((change) => {
-    setNotice({ kind: 'rule', learned: false, undoable: true, change });
+  const addRule = useAddRule((change, created) => {
+    setNotice({ kind: 'rule', learned: false, undoable: created, change });
   });
   const when = useDayPhrase(day);
   const rows = decisions.data?.decisions ?? [];

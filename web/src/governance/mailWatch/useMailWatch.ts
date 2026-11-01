@@ -29,7 +29,7 @@ import {
   type MailWatchStatus,
   type MailWatchTier,
 } from '../mailWatchApi';
-import { decisionKey, ruleInput, ruleOnFile, sameRule, shortDay } from './mailWatchLogic';
+import { decisionKey, ruleOnFile, sameRule, shortDay } from './mailWatchLogic';
 
 // useMailWatch.ts is the watch's query state. The decisions of a day are read live from the PIM by
 // id, so a correction writes its answer into the cache rather than asking for the whole day again,
@@ -208,12 +208,15 @@ export function useCorrectionsInFlight(): ReadonlySet<string> {
   return new Set(rows.map(decisionKey));
 }
 
-export function useAddRule(onAdded?: (change: RuleChange) => void) {
+export function useAddRule(onAdded?: (change: RuleChange, created: boolean) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: MailWatchRuleInput) => ruleChange(queryClient, await addRule(input)),
-    onSuccess: (change) => {
-      onAdded?.(change);
+    mutationFn: async (input: MailWatchRuleInput) => {
+      const saved = await addRule(input);
+      return { change: ruleChange(queryClient, saved), created: saved.rule_created === true };
+    },
+    onSuccess: ({ change, created }) => {
+      onAdded?.(change, created);
       return refreshRules(queryClient);
     },
   });
@@ -230,14 +233,14 @@ export function useRemoveRule(onRemoved: () => void) {
   });
 }
 
-/** Undoes a rule write. A rule that merged into or replaced one on file goes back to that one,
- * because deleting the row would take the person's earlier words with it. */
+/** Undoes the write of a rule the server said was new. One that merged into or replaced a rule on
+ * file is never offered an Undo, because deleting the row would take the person's earlier words
+ * with it. */
 export function useUndoRule(onUndone: () => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ rule, previous }: RuleChange) => {
-      if (previous === undefined) await removeRule(rule.id);
-      else await addRule(ruleInput(previous));
+    mutationFn: async ({ rule }: RuleChange) => {
+      await removeRule(rule.id);
     },
     onSuccess: () => {
       onUndone();

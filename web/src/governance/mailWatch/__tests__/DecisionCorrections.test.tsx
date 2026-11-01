@@ -242,7 +242,7 @@ describe('from now on, always like this', () => {
 
   it('makes a rule from the row in one click, and it can be undone', async () => {
     const saved = rule({ id: 'new', tier: 'today', label_id: 'l1' });
-    server.on('POST /api/mail-watch/rules', () => ({ body: saved }));
+    server.on('POST /api/mail-watch/rules', () => ({ body: { ...saved, rule_created: true } }));
     server.on('DELETE /api/mail-watch/rules/new', () => ({ body: { removed: true } }));
     theDay(server, decision({ subject: 'One', label_id: 'l1' }));
     openDay();
@@ -256,6 +256,16 @@ describe('from now on, always like this', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(await screen.findByText('Rule undone')).toBeTruthy();
+  });
+
+  it('offers no Undo for a rule that replaced one, whatever the cockpit has cached', async () => {
+    server.on('POST /api/mail-watch/rules', () => ({ body: rule({ id: 'kept', tier: 'today' }) }));
+    theDay(server, decision({ subject: 'One' }));
+    openDay();
+    await screen.findByText('One');
+    fireEvent.click(screen.getByRole('button', ALWAYS));
+    expect(await screen.findByText('Rule saved')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
   });
 
   it('appears on the active row only', async () => {

@@ -21,7 +21,8 @@ type fakeWatchService struct {
 	status   pimwatch.Status
 	lines    []pimwatch.DecisionLine
 	got      pimwatch.Correction
-	rule     *pimwatch.LearnedRule
+	rule     *pimwatch.WrittenRule
+	ruleNew  bool
 	rules    []pimwatch.Rule
 	added    pimwatch.RuleInput
 	labels   []pimwatch.Label
@@ -56,7 +57,7 @@ func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string
 	return pimwatch.DayDecisions{Day: "2026-11-02", Lines: f.lines}, f.err
 }
 
-func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error) {
+func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error) {
 	f.got = c
 	return pimwatch.Verdict{Tier: c.Tier}, f.rule, f.err
 }
@@ -65,9 +66,9 @@ func (f *fakeWatchService) Rules(context.Context, string) ([]pimwatch.Rule, erro
 	return f.rules, f.err
 }
 
-func (f *fakeWatchService) AddRule(_ context.Context, _ string, in pimwatch.RuleInput) (pimwatch.Rule, error) {
+func (f *fakeWatchService) AddRule(_ context.Context, _ string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error) {
 	f.added = in
-	return pimwatch.Rule{ID: "r1", Key: in.Key, Kind: pimwatch.KeySender, Tier: in.Tier}, f.err
+	return pimwatch.WrittenRule{ID: "r1", Key: in.Key, Kind: pimwatch.KeySender, Tier: in.Tier, Created: f.ruleNew}, f.err
 }
 
 func (f *fakeWatchService) RemoveRule(_ context.Context, _, ruleID string) error {
@@ -213,7 +214,7 @@ func TestMailWatchDecisionsCarryTheNameAndAnAllDayDate(t *testing.T) {
 }
 
 func TestMailWatchCorrectDefaultsToMailAndReportsARule(t *testing.T) {
-	service := &fakeWatchService{rule: &pimwatch.LearnedRule{
+	service := &fakeWatchService{rule: &pimwatch.WrittenRule{
 		ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater, Created: true,
 	}}
 	out := decodeWatch[mailWatchCorrectedJSON](t, mailWatchCall(t, service, http.MethodPost,
@@ -227,7 +228,7 @@ func TestMailWatchCorrectDefaultsToMailAndReportsARule(t *testing.T) {
 }
 
 func TestMailWatchCorrectSaysARuleMergedIntoOneOnFile(t *testing.T) {
-	service := &fakeWatchService{rule: &pimwatch.LearnedRule{ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender}}
+	service := &fakeWatchService{rule: &pimwatch.WrittenRule{ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender}}
 	rec := mailWatchCall(t, service, http.MethodPost, "/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","tier":"later"}`)
 	if !strings.Contains(rec.Body.String(), `"rule"`) || strings.Contains(rec.Body.String(), "rule_created") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
@@ -396,3 +397,14 @@ func TestAWatchThatCannotBeForgottenDoesNotFailTheRemoval(t *testing.T) {
 type staticPIMToken struct{}
 
 func (staticPIMToken) AccessToken(context.Context, string) (string, error) { return "token", nil }
+
+func TestMailWatchAddRuleSaysWhetherTheKeyHadNone(t *testing.T) {
+	for _, created := range []bool{true, false} {
+		service := &fakeWatchService{ruleNew: created}
+		out := decodeWatch[mailWatchSavedRuleJSON](t, mailWatchCall(t, service, http.MethodPost,
+			"/api/mail-watch/rules", `{"key":"a@b.it","tier":"later"}`))
+		if out.Key != "a@b.it" || out.RuleCreated != created {
+			t.Fatalf("created %v: out = %+v", created, out)
+		}
+	}
+}

@@ -111,6 +111,12 @@ export interface MailWatchCorrected {
   readonly rule_created?: boolean;
 }
 
+/** A rule the person wrote. `rule_created` says its key had none: one that replaced another holds the
+ * person's earlier words, so only a created rule can be undone by removing it. */
+export interface MailWatchRuleSaved extends MailWatchRule {
+  readonly rule_created?: boolean;
+}
+
 export interface MailWatchRuleInput {
   readonly key: string;
   readonly tier?: MailWatchTier;
@@ -167,8 +173,8 @@ export function listRules(): Promise<readonly MailWatchRule[]> {
   return sendJSON<readonly MailWatchRule[]>('GET', `${ROUTE}/rules`);
 }
 
-export function addRule(input: MailWatchRuleInput): Promise<MailWatchRule> {
-  return sendJSON<MailWatchRule>('POST', `${ROUTE}/rules`, input);
+export function addRule(input: MailWatchRuleInput): Promise<MailWatchRuleSaved> {
+  return sendJSON<MailWatchRuleSaved>('POST', `${ROUTE}/rules`, input);
 }
 
 export async function removeRule(id: string): Promise<void> {

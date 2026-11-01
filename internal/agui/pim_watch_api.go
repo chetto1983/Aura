@@ -25,9 +25,9 @@ type mailWatchService interface {
 	Disable(ctx context.Context, identityID, accountID string) error
 	RemoveAccount(ctx context.Context, identityID, accountID string) error
 	Decisions(ctx context.Context, identityID, accountID, day string) (pimwatch.DayDecisions, error)
-	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error)
+	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error)
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)
-	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.Rule, error)
+	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error)
 	RemoveRule(ctx context.Context, identityID, ruleID string) error
 	Labels(ctx context.Context, identityID string) ([]pimwatch.Label, error)
 	AddLabel(ctx context.Context, identityID, name string, tier pimwatch.Tier) (pimwatch.Label, error)
@@ -307,6 +307,14 @@ type mailWatchRuleJSON struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// mailWatchSavedRuleJSON is a rule the person wrote. RuleCreated says its key had none: only then can
+// the cockpit undo it by removing it, because one that replaced another holds the person's earlier
+// words.
+type mailWatchSavedRuleJSON struct {
+	mailWatchRuleJSON
+	RuleCreated bool `json:"rule_created,omitempty"`
+}
+
 func mailWatchRule(rule pimwatch.Rule) mailWatchRuleJSON {
 	return mailWatchRuleJSON{
 		ID: rule.ID, Key: rule.Key, KeyKind: string(rule.Kind), Tier: string(rule.Tier),
@@ -341,7 +349,7 @@ func (s *Server) handleMailWatchAddRule(w http.ResponseWriter, r *http.Request, 
 		writeMailWatchError(w, err)
 		return
 	}
-	writeJSON(w, mailWatchRule(rule))
+	writeJSON(w, mailWatchSavedRuleJSON{mailWatchRuleJSON: mailWatchRule(rule.Rule), RuleCreated: rule.Created})
 }
 
 func (s *Server) handleMailWatchRemoveRule(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {

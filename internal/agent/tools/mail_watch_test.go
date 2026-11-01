@@ -18,7 +18,7 @@ type fakeMailWatch struct {
 	enabled    string
 	disabled   string
 	correction pimwatch.Correction
-	rule       *pimwatch.LearnedRule
+	rule       *pimwatch.WrittenRule
 	added      pimwatch.RuleInput
 	removed    string
 	rules      []pimwatch.Rule
@@ -41,14 +41,14 @@ func (f *fakeMailWatch) Disable(_ context.Context, _, accountID string) error {
 	return f.err
 }
 
-func (f *fakeMailWatch) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error) {
+func (f *fakeMailWatch) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error) {
 	f.correction = c
 	return pimwatch.Verdict{Tier: c.Tier}, f.rule, f.err
 }
 
-func (f *fakeMailWatch) AddRule(_ context.Context, _ string, in pimwatch.RuleInput) (pimwatch.Rule, error) {
+func (f *fakeMailWatch) AddRule(_ context.Context, _ string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error) {
 	f.added = in
-	return pimwatch.Rule{ID: "r1", Key: in.Key, Tier: in.Tier, LabelID: in.LabelID}, f.err
+	return pimwatch.WrittenRule{ID: "r1", Key: in.Key, Tier: in.Tier, LabelID: in.LabelID}, f.err
 }
 
 func (f *fakeMailWatch) RemoveRule(_ context.Context, _, ruleID string) error {
@@ -156,7 +156,7 @@ func TestMailWatchStatusSaysWhyItCannotRun(t *testing.T) {
 }
 
 func TestMailWatchCorrectMapsALabelsNameAndDefaultsToMail(t *testing.T) {
-	service := &fakeMailWatch{labels: []pimwatch.Label{{ID: "l1", Name: "Cliente"}}, rule: &pimwatch.LearnedRule{Key: "a@b.it"}}
+	service := &fakeMailWatch{labels: []pimwatch.Label{{ID: "l1", Name: "Cliente"}}, rule: &pimwatch.WrittenRule{Key: "a@b.it"}}
 	text, err := mailWatchRun(t, &MailWatchTool{Service: service},
 		`{"action":"correct","account_id":"work","item_id":"m1","tier":"later","label":"Cliente"}`)
 	if err != nil {

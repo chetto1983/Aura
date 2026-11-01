@@ -18,7 +18,7 @@ const correctionWindow = 15 * time.Minute
 // teaches nothing. A calendar item teaches nothing: rules do not apply to events. Nor does a mail
 // that failed authentication: a rule beats that rung, so one learned from it would let a forged
 // sender reach `now`.
-func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *LearnedRule, error) {
+func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *WrittenRule, error) {
 	if err := s.checkCorrection(ctx, identityID, c); err != nil {
 		return Verdict{}, nil, err
 	}
@@ -105,20 +105,20 @@ type RuleInput struct {
 }
 
 // AddRule writes a person's rule.
-func (s *Service) AddRule(ctx context.Context, identityID string, in RuleInput) (Rule, error) {
+func (s *Service) AddRule(ctx context.Context, identityID string, in RuleInput) (WrittenRule, error) {
 	key, kind, err := parseRuleKey(in.Key)
 	if err != nil {
-		return Rule{}, err
+		return WrittenRule{}, err
 	}
 	if in.Tier == "" && in.LabelID == "" {
-		return Rule{}, invalid("empty_rule", "a rule gives a tier or a label")
+		return WrittenRule{}, invalid("empty_rule", "a rule gives a tier or a label")
 	}
 	if in.Tier != "" && !in.Tier.Valid() {
-		return Rule{}, invalidTier()
+		return WrittenRule{}, invalidTier()
 	}
 	if in.LabelID != "" {
 		if err := s.checkLabel(ctx, identityID, in.LabelID); err != nil {
-			return Rule{}, err
+			return WrittenRule{}, err
 		}
 	}
 	return s.Store.PutRule(ctx, identityID, Rule{Key: key, Kind: kind, Tier: in.Tier, LabelID: in.LabelID})

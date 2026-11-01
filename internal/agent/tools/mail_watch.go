@@ -31,8 +31,8 @@ type mailWatchService interface {
 	Status(ctx context.Context, identityID string) (pimwatch.Status, error)
 	Enable(ctx context.Context, identityID, accountID string) error
 	Disable(ctx context.Context, identityID, accountID string) error
-	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.LearnedRule, error)
-	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.Rule, error)
+	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error)
+	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error)
 	RemoveRule(ctx context.Context, identityID, ruleID string) error
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)
 	Labels(ctx context.Context, identityID string) ([]pimwatch.Label, error)
@@ -228,7 +228,7 @@ func (t *MailWatchTool) actionAddRule(ctx context.Context, raw json.RawMessage) 
 	if err != nil {
 		return ToolResult{}, err
 	}
-	return NewResult(ctx, "Rule "+rule.ID+": "+describeMailRule(rule, a.Label))
+	return NewResult(ctx, "Rule "+rule.ID+": "+describeMailRule(rule.Rule, a.Label))
 }
 
 func describeMailRule(rule pimwatch.Rule, label *string) string {
