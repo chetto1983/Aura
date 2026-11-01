@@ -29,6 +29,18 @@ func TestAuraWaitsForTheStoresItReachesBeforeListening(t *testing.T) {
 	}
 }
 
+// REGRESSION GUARD, the fourth outage of one kind. `docker compose up` gives up on a dependency
+// once and aura.service does not retry, so a service gated on aura's health turned any slow boot
+// into a dark cockpit, even with aura recovering behind it: a fresh install on 2026-09-10, the
+// boots of 2026-09-24 and 2026-10-28, and on 2026-11-01 a hosted embedding route that went silent.
+// Readiness reports; it must not hold the front door or the telemetry shut.
+func TestNothingWaitsForAuraToBeHealthy(t *testing.T) {
+	compose := strings.ReplaceAll(readProjectFile(t, repoRootForTest(t), "compose.yaml"), "\r\n", "\n")
+	if strings.Contains(compose, "      aura:\n        condition: service_healthy") {
+		t.Error("a service gates on aura's health; use service_started so a slow boot cannot strand it")
+	}
+}
+
 // REGRESSION GUARD, measured on CI 2026-09-27/28. The memory MCP verifies every bearer against
 // aura's JWKS, so it can answer nothing until aura SERVES /oauth/jwks; a started container is
 // not enough. In all three red Agent Memory MRS runs (36359705239, 36373835410, 36405162541)

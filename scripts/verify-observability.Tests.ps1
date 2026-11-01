@@ -178,13 +178,13 @@ try {
         Set-ContractText $root 'compose.yaml' '    restart: unless-stopped
     depends_on:
       aura:
-        condition: service_healthy
+        condition: service_started
     command:
       - --config.file=/etc/prometheus/prometheus.yml' '    restart: unless-stopped
     network_mode: "service:aura"
     depends_on:
       aura:
-        condition: service_healthy
+        condition: service_started
     command:
       - --config.file=/etc/prometheus/prometheus.yml'
     }
