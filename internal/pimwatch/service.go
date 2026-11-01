@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -96,8 +97,8 @@ func (s *Service) Configured() bool { return s.PIM != nil }
 
 // Enable turns an account's watch on, and is safe to repeat. A running watch stays as it is, a
 // paused one resumes, and a new one starts from now: nothing already in the mailbox is read. The
-// watch goes live only when both resources have their cursor, so a call that fails leaves nothing
-// running and can simply be repeated.
+// watch goes live only when every resource is settled, so a call that fails leaves nothing running
+// and can simply be repeated.
 func (s *Service) Enable(ctx context.Context, identityID, accountID string) error {
 	if s.PIM == nil {
 		return ErrUnavailable
@@ -126,10 +127,8 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 	if err := s.Store.SeedLabels(ctx, identityID, DefaultLabels(lang)); err != nil {
 		return err
 	}
-	for _, resource := range Resources {
-		if err := StartResource(ctx, s.PIM, s.Store, identityID, accountID, resource); err != nil {
-			return fmt.Errorf("start the %s cursor: %w", resource, err)
-		}
+	if err := s.startCursors(ctx, identityID, accountID); err != nil {
+		return err
 	}
 	delivery, err := s.Routes.DeliveryFor(ctx, identityID)
 	if err != nil {
@@ -143,6 +142,34 @@ func (s *Service) Enable(ctx context.Context, identityID, accountID string) erro
 		return err
 	}
 	return s.ensureDigest(ctx, identityID, settings)
+}
+
+// startCursors starts what the account lets the watch read. A resource that refuses the permission
+// is left out like one the provider lacks, so an account granted for mail alone is still watched,
+// and the refusal stands when nothing else started. Any other failure stops the enable.
+func (s *Service) startCursors(ctx context.Context, identityID, accountID string) error {
+	var refused error
+	for _, resource := range Resources {
+		err := StartResource(ctx, s.PIM, s.Store, identityID, accountID, resource)
+		if _, code := failureClass(err); code == "permission_denied" {
+			refused = fmt.Errorf("start the %s cursor: %w", resource, err)
+			err = s.Store.StartCursor(ctx, identityID, accountID, resource, "", CursorUnsupported)
+		}
+		if err != nil {
+			return fmt.Errorf("start the %s cursor: %w", resource, err)
+		}
+	}
+	if refused == nil {
+		return nil
+	}
+	cursors, err := s.Store.Cursors(ctx, identityID)
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(cursors, func(c Cursor) bool { return c.AccountID == accountID && c.Status == CursorOK }) {
+		return nil
+	}
+	return refused
 }
 
 func findWatch(watches []WatchTask, accountID string) (WatchTask, bool) {

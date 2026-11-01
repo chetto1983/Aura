@@ -233,6 +233,65 @@ func TestEnablingAnAccountWithNoCalendarStillWatchesItsMail(t *testing.T) {
 	}
 }
 
+func TestAResourceThatRefusesThePermissionIsLeftOutOfTheWatch(t *testing.T) {
+	for refused, other := range map[string]string{ResourceCalendar: ResourceMail, ResourceMail: ResourceCalendar} {
+		t.Run(refused, func(t *testing.T) {
+			r := newServiceRig(t)
+			ctx := context.Background()
+			r.pim.changeErr[refused] = denied()
+			if err := r.service.Enable(ctx, r.identity, "home"); err != nil {
+				t.Fatalf("enable: %v", err)
+			}
+			if r.tasks.created != 2 {
+				t.Fatalf("%d tasks after an enable that could start", r.tasks.created)
+			}
+			left, err := r.store.Cursor(ctx, r.identity, "home", refused)
+			if err != nil || left.Status != CursorUnsupported {
+				t.Fatalf("%s cursor = %+v, %v", refused, left, err)
+			}
+			started, err := r.store.Cursor(ctx, r.identity, "home", other)
+			if err != nil || started.Status != CursorOK {
+				t.Fatalf("%s cursor = %+v, %v", other, started, err)
+			}
+		})
+	}
+}
+
+func TestARefusalStandsWhenNothingElseStarts(t *testing.T) {
+	cases := map[string]struct{ mail, calendar func() error }{
+		"both refuse":              {denied, denied},
+		"the other is not offered": {denied, unsupported},
+		"the other comes second":   {unsupported, denied},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newServiceRig(t)
+			r.pim.changeErr[ResourceMail] = tc.mail()
+			r.pim.changeErr[ResourceCalendar] = tc.calendar()
+			err := r.service.Enable(context.Background(), r.identity, "home")
+			if _, code := failureClass(err); code != "permission_denied" {
+				t.Fatalf("err = %v", err)
+			}
+			if r.tasks.created != 0 {
+				t.Fatalf("%d tasks after a refused enable", r.tasks.created)
+			}
+		})
+	}
+}
+
+func TestAnotherFailureBesideARefusalStopsTheEnable(t *testing.T) {
+	r := newServiceRig(t)
+	r.pim.changeErr[ResourceMail] = denied()
+	r.pim.changeErr[ResourceCalendar] = transient()
+	err := r.service.Enable(context.Background(), r.identity, "home")
+	if _, code := failureClass(err); code != "provider_transient" {
+		t.Fatalf("err = %v", err)
+	}
+	if r.tasks.created != 0 {
+		t.Fatalf("%d tasks after a failed enable", r.tasks.created)
+	}
+}
+
 func TestDisablingTheLastWatchTakesTheDigestAndKeepsTheVerdicts(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

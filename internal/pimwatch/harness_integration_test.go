@@ -259,6 +259,8 @@ func hard() error { return &PIMError{Class: FailureHard, Code: "provider_auth"} 
 
 func unsupported() error { return &PIMError{Class: FailureUnsupported, Code: "unsupported_resource"} }
 
+func denied() error { return &PIMError{Class: FailureHard, Code: "permission_denied"} }
+
 var errBroken = errors.New("broken")
 
 // commit writes verdicts directly, with the labels a ladder would give them.
