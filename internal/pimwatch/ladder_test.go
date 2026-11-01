@@ -204,6 +204,12 @@ func TestDecideEvent(t *testing.T) {
 		{"an event already over", EventFacts{Type: ChangeAdded, Start: now.Add(-time.Hour), Fingerprint: "a"}, TierToday, true},
 		{"the person's own event", EventFacts{Type: ChangeAdded, Start: soon, OrganizerIsSelf: true, Fingerprint: "a"}, TierLater, true},
 		{"an update to an event older than the watch proves no move", EventFacts{Type: ChangeUpdated, Start: soon, Fingerprint: "a"}, TierToday, true},
+		{"a cancellation is a fact with no row", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, Fingerprint: "a"}, TierNow, true},
+		{"a cancellation far off goes to the digest", EventFacts{Type: ChangeUpdated, Start: far, Cancelled: true, Fingerprint: "a"}, TierToday, true},
+		{"the person's own cancellation", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, OrganizerIsSelf: true, Fingerprint: "a"}, TierLater, true},
+		{"a cancellation told once says nothing again", EventFacts{Type: ChangeUpdated, Start: soon, Cancelled: true, Fingerprint: "a", Prior: "a", Seen: true}, "", false},
+		{"a delete nobody can describe", EventFacts{Type: ChangeDeleted}, "", false},
+		{"Google's delete with a time and no row", EventFacts{Type: ChangeDeleted, Start: soon, Cancelled: true, Fingerprint: "a"}, "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -13,8 +13,9 @@ const (
 	failingAlarmAfter = time.Hour
 	// maxPagesPerResource keeps a large backlog of one resource from starving the other.
 	maxPagesPerResource = 20
-	// pageReserve is the time a run must have left to start another page.
-	pageReserve = pimRequestTimeout + 5*time.Second
+	// PageReserve is the time a run must have left to start another page. A scheduler bound below
+	// it would never let a page finish.
+	PageReserve = pimRequestTimeout + 5*time.Second
 )
 
 // TickInput names one account's run.
@@ -297,7 +298,7 @@ func (w *Watcher) settleAlarm(ctx context.Context, t *tick, cursor Cursor) error
 // hasTime reports whether another page fits before the handler's deadline.
 func (w *Watcher) hasTime(ctx context.Context) bool {
 	deadline, ok := ctx.Deadline()
-	return !ok || w.now().Add(pageReserve).Before(deadline)
+	return !ok || w.now().Add(PageReserve).Before(deadline)
 }
 
 // fail keeps a failed read on the cursor row. A transient failure raises one alarm after an hour,
@@ -380,7 +381,7 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 		decision := DecideMail(t.book, change.From, change.Signals)
 		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Decision: decision})
 		lines[change.ID] = Line{
-			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From,
+			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From, FromName: change.FromName,
 			Subject: change.Subject, AuthFailed: decision.AuthFailed, Tier: decision.Tier,
 		}
 	}
@@ -405,9 +406,11 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 	lines := make(map[string]Line, len(order))
 	for _, id := range order {
 		change := latest[id]
-		facts := EventFacts{Type: change.Type}
-		if change.Event != nil {
-			facts.Start, facts.OrganizerIsSelf, facts.Fingerprint = change.Event.Start, change.Event.OrganizerIsSelf, change.Event.Fingerprint
+		facts, start := EventFacts{Type: change.Type}, EventTime{}
+		if event := change.Event; event != nil {
+			start = event.Start
+			facts.Start, facts.OrganizerIsSelf, facts.Fingerprint = start.In(t.loc), event.OrganizerIsSelf, event.Fingerprint
+			facts.Cancelled = event.Status == EventCancelled
 		}
 		facts.Prior, facts.Seen = prior[id]
 		decision, told := DecideEvent(now, facts)
@@ -419,7 +422,7 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 		})
 		lines[id] = Line{
 			AccountID: t.AccountID, Resource: ResourceCalendar, ItemID: id, CalendarID: change.CalendarID,
-			From: change.From, Subject: change.Subject, Start: facts.Start, Tier: decision.Tier,
+			From: change.From, Subject: change.Subject, Start: start.Time, AllDay: start.AllDay, Tier: decision.Tier,
 		}
 	}
 	return drafts, lines, nil
@@ -493,9 +496,9 @@ func lineOf(verdict Verdict, items map[string]Item) Line {
 		line.Gone = true
 		return line
 	}
-	line.From, line.Subject = item.From, item.Subject
-	if verdict.Resource == ResourceCalendar {
-		line.Start = item.OccurredAt
+	line.From, line.FromName, line.Subject = item.From, item.FromName, item.Subject
+	if item.Event != nil {
+		line.Start, line.AllDay = item.Event.Start.Time, item.Event.Start.AllDay
 	}
 	return line
 }

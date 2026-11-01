@@ -83,12 +83,41 @@ Each of these would bite a real person, and each has a test that names it.
   of a failed run. The next tick fails on its own.
 - **Transient failures complete the run.** The next tick is the retry, and `scheduleRetry` would stretch three of them
   into 15 minutes. One alarm after an hour, once per episode, and a success clears it.
-- **Page budget.** A run stops starting pages when `pimRequestTimeout + 5s` no longer fits before the handler's
-  deadline, and a resource gets 20 pages, so a mail backlog does not starve the calendar. `pim_watch` has 2 minutes
-  and does not reschedule on recovery; `pim_digest` has 5 minutes and does.
+- **Page budget.** `pimRequestTimeout` is 60 seconds and `PageLimit` stays 50: the fork says 50 mails stay under half a
+  minute, and at a 30-second timeout a worst-case page would count as transient and be asked again unchanged for ever.
+  A run stops starting pages when `PageReserve`, the timeout plus 5 seconds, no longer fits before the handler's
+  deadline, and a resource gets 20 pages. `pim_watch` has 2 minutes and does not reschedule on recovery; `pim_digest`
+  has 5 minutes and does. So a run always gets its first page, and `TestAWatchRunHasRoomForAPageAtItsWorst` pins the
+  relation. **What that bound does not give** is a second resource after a 60-second page: at 60 + 65 > 120 the calendar
+  waits for the next tick for as long as the mail stays that slow. The mail's alarm tells the person after the hour, and
+  nothing is lost, because the calendar's cursor waits too. A bound of 150 seconds would give each resource its page.
+- **A two-minute run turns `/readyz` to 503 for up to a minute.** `tick` blocks on its runs and `markTick` comes after
+  them, and the window is `max(3 × tick, 90s)`, so 90 seconds by default. This holds for every long run, `agent_job` and
+  the backups included, and compose's healthcheck needs three failures 30 seconds apart.
 - **Only `added` mail is triaged.** Replays are ignored.
 - **Calendar.** Rules do not apply to events. An event the person organized is `later`, because they made the change.
-  An `updated` event with no row is `today`: nothing shows it moved.
+  An `updated` event with no row is `today`: nothing shows it moved. A cancelled one is the exception, because the
+  status is the fact: it is `now` inside 24 hours, as spec §5.3 says, and `organizerIsSelf` still wins. A `deleted`
+  change with no row says nothing and leaves no row: the person may have deleted it themselves. **On Google that also
+  covers an organizer's cancellation the watch never saw,** because the fork writes a cancelled Google event as
+  `deleted`, with its `event` when it has a start, and Graph as `updated`. So the same cancelled meeting with no row is
+  `now` on Microsoft and silent on Google. With a row both are told. `deleted` cannot tell who deleted it, so G3 is what
+  can say whether to read `event.status` there too.
+- **`from` is the address and `fromName` the name beside it,** on `changes` and on mail `items`. Rules, corrections and
+  `SenderKey` read the address. A notice, a digest line and the record show `Name <address>`, inside the same frame,
+  and the name is bounded at 60 runes so a long one cannot push the address out. An event's `from` is the organizer's
+  address, with no name.
+- **An event's time on `/admin/items` is `event.start`.** `occurredAt` there is when it was last modified, and the
+  client read that as the start.
+- **An all-day event's start is a bare date,** which the client refused, so one such event would have failed its page
+  on every tick. `EventTime` reads both forms, and null. The ladder takes the date at the person's midnight, and a line
+  shows the date alone. Any other form still fails the page, and the hour's alarm says so.
+- **Failure classes.** A named code wins: `provider_transient` is transient, `unsupported_resource` is no failure, and
+  `provider_auth`, `permission_denied`, `account_not_found`, `invalid_cursor`, `invalid_account`, `invalid_resource`,
+  `invalid_items` and `too_many_items` are hard. Unnamed, a 5xx is transient and anything else is hard, except 429, which
+  §5.6 makes transient. So a bare 500 from the PIM, a bug or an exception it did not recognise, retries on the next
+  tick and reaches the hour's alarm. An `account_not_found` stays on the cursor row and is named with its account in
+  the pausing run's one report. `invalid_cursor` pauses too, and resuming cannot clear it: disable and enable can.
 - **Unknown stays unknown.** A nil `writtenTo` neither raises nor files, unless the mail is bulk.
 - **A spent cap is silent.** A tick that alerts nobody and only held mail back says nothing. The count appears only
   beside real alerts, because a count on every tick is the notification the cap exists to stop.
@@ -204,12 +233,14 @@ Every route is under `/api/mail-watch`, behind the session and `governance.write
 - `settings`: `{digest_hour, daily_alert_cap, interval_minutes, last_digest_at}`.
 - `account`: `{account_id, paused, paused_reason?, next_run_at, alerts_today, resources: [{resource, status,
   last_error?, failing_since, advanced_at}]}`. `status` is `ok`, `failing` or `unsupported`. `last_error` is a fixed
-  code, such as `provider_auth`, for the UI to translate. `paused_reason` is `operator`, `failures` or
-  `identity_deactivated`.
-- `decision`: `{account_id, resource, item_id, calendar_id?, from, subject, start, gone, auth_failed, tier, label_id?,
-  label?, decided_by, decided_at}`. `from` and `subject` are a stranger's text: render them as text. `gone` means the
-  item no longer exists, and both are empty. `decided_by` is `rule`, `auth_failed`, `people`, `category`, `default`,
-  `calendar` or `person`.
+  code, such as `provider_auth`, for the UI to translate: the named ones are in Decisions, *Failure classes*, and an
+  unnamed one is `pim_http_<status>`. `paused_reason` is `operator`, `failures` or `identity_deactivated`.
+- `decision`: `{account_id, resource, item_id, calendar_id?, from, from_name, subject, start, all_day?, gone,
+  auth_failed, tier, label_id?, label?, decided_by, decided_at}`. `from` is the address and `from_name` the name beside
+  it, empty when the provider gave none. `from`, `from_name` and `subject` are a stranger's text: render them as text.
+  With `all_day`, `start` is the date at midnight UTC: show the date, in no zone. `gone` means the item no longer
+  exists, and all three are empty. `decided_by` is `rule`, `auth_failed`, `people`, `category`, `default`, `calendar`
+  or `person`.
 - `correct`: leaving out `label_id` keeps the label, and `""` clears it. `resource` defaults to `mail`. A `rule` in the
   answer means this correction taught one, which the UI should say.
 - `rule`: `{id, key, key_kind, tier?, label_id?, source, created_at}`. `key_kind` is `sender` or `domain`, `source` is
@@ -342,7 +373,20 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 - **Tests:** `internal/cron/identity_tasks_integration_test.go`, `identity_tasks_test.go`,
   `internal/agui/deprovision_tasks_test.go`, `cmd/aura/serve_deprovision_tasks_integration_test.go`,
   `TestDeprovisionDepsReachTheScheduledTasks`.
-- **Commit:** the commit `fix(deprovision): deactivation pauses an identity's tasks and a purge deletes them`.
+- **Commit:** `66ddc7e5f`.
+
+### Task 14c — Reconciled with the finished fork
+
+- [x] Read on the fork's branch `aura-watch` at `5f182c7`, and no real sidecar answered. **Files:**
+  `internal/pimwatch/client.go`, `watcher.go`, `ladder.go`, `text.go`, `testdata/pim_contract.json`,
+  `internal/agui/pim_watch_api.go`.
+- **Mismatches found beyond the brief:** an all-day `event.start` did not decode, and `Item` read an event's start from
+  `occurredAt`. See Decisions.
+- **Interfaces:** `EventTime`, `EventCancelled`, `PageReserve`, `Change.FromName`, `Item.FromName`, `Item.Event`,
+  `Line.FromName`, `Line.AllDay`, `EventFacts.Cancelled`.
+- **Tests:** `fork_shapes_test.go`, `fork_integration_test.go`, the new rows of `TestDecideEvent`, the new `text_test.go`
+  cases, `TestMailWatchDecisionsCarryTheNameAndAnAllDayDate`, `TestAWatchRunHasRoomForAPageAtItsWorst`.
+- **Commit:** the commit `fix(pimwatch): read what the finished fork writes`.
 
 ### Task 15 — The React cockpit (not built)
 
@@ -387,15 +431,27 @@ All in WSL at `f4636b4cc`, 2026-11-01, on the disposable container for the tagge
 | `go test -count=1 -tags db_integration -p 1 ./internal/cron/` | ok |
 | `go test -count=1 -tags db_integration -p 1 ./internal/db/` | ok, run at the composition's tree before the last two lint fixes, which touch neither the schema nor the package |
 
+Re-run on the tree of Task 14c, the same way, 2026-11-01:
+
+| Command | Result |
+|---|---|
+| `go build ./...`, `go vet ./...`, and `go vet` with each tag | clean |
+| `go test -count=1 -race ./internal/pimwatch/ ./internal/cron/...` | ok |
+| `go test -count=1 ./internal/agui/ ./cmd/aura/` | ok |
+| `go test -count=1 -race -tags db_integration -p 1 -coverpkg=./internal/pimwatch/ ./internal/pimwatch/` | ok, 90.4% of statements |
+| `go test -count=1 -tags db_integration -p 1 ./internal/cron/` | ok |
+| 12 spot mutants on what Task 14c claims, by `sed`, against `db_integration` | 12 killed, one of them only after `TestAnAllDayEventIsReadInThePersonsZone` was added for it |
+
 **What this does not prove.**
-- No real sidecar answered: the contract is the spec's, replayed by a fake.
+- No real sidecar answered: the contract is the fork's at `5f182c7`, read from its code and tests, and replayed by a
+  fake.
 - `aura serve` was not booted. Each join has its own test (dispatcher to handler, handler to watcher, watcher to the
   real store), and no single run crosses them all on a live stack.
 - `make coverage` was not run. The 89.9% is `internal/pimwatch` measured alone, and the gate's aggregate figure and the
   other packages' floors under the full tag matrix are CI's to say.
 - Mutation testing was not run locally. It runs in CI.
-- Timing under a real provider is unmeasured: 20 pages at 30 seconds each is more than the 2-minute bound, and only the
-  budget check, tested with a stepped clock, keeps a run inside it.
+- Timing under a real provider is unmeasured: 20 pages at 60 seconds each is far more than the 2-minute bound, and only
+  the budget check, tested with a stepped clock, keeps a run inside it.
 
 ## Found in existing code
 
@@ -411,4 +467,5 @@ All in WSL at `f4636b4cc`, 2026-11-01, on the disposable container for the tagge
 - **A synchronous swarm worker inherits its turn's responder marker,** though `responderCtxKey`'s comment said a swarm
   context never carries one. `personPresent` closes this for the watch's teaching verbs. On `routeApprove`, a worker in
   a live chat still reaches the approval branch and is not denied, which this plan leaves as it found it.
-- **`/admin/items`'s `gone` shape** (`[{id, calendarId}]`) is read from the spec and has not been seen on a real sidecar.
+- **`/admin/items`'s `gone` shape** (`[{id, calendarId}]`) is read from the fork's code and tests and has not been seen
+  on a running sidecar.

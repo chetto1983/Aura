@@ -31,8 +31,10 @@ func (s *staticToken) AccessToken(_ context.Context, server string) (string, err
 type contract struct {
 	ChangesRequest   json.RawMessage `json:"changesRequest"`
 	ChangesResponse  json.RawMessage `json:"changesResponse"`
+	OtherShapes      json.RawMessage `json:"otherShapesResponse"`
 	ItemsRequest     json.RawMessage `json:"itemsRequest"`
 	ItemsResponse    json.RawMessage `json:"itemsResponse"`
+	CalendarItems    json.RawMessage `json:"calendarItemsResponse"`
 	EmptyCursorAsks  json.RawMessage `json:"emptyCursorRequest"`
 	EmptyCursorGives json.RawMessage `json:"emptyCursorResponse"`
 	Failures         []struct {
@@ -173,7 +175,7 @@ func TestClientNamesEveryContractFailure(t *testing.T) {
 		{422, `{"error":"unsupported_resource"}`, FailureUnsupported, "unsupported_resource"},
 		{500, `boom`, FailureTransient, "pim_http_500"},
 		{429, ``, FailureTransient, "pim_http_429"},
-		{404, `{"error":"account_not_found"}`, FailureHard, "pim_http_404"},
+		{404, `{"error":"account_not_found"}`, FailureHard, "account_not_found"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.code, func(t *testing.T) {

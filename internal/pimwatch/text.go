@@ -42,6 +42,7 @@ type phrases struct {
 	resourceMail  string
 	resourceCal   string
 	timeLayout    string
+	dayLayout     string
 	watchTask     string // account
 	digestTask    string
 	defaultLabels []Label
@@ -64,6 +65,7 @@ var texts = map[Lang]phrases{
 		resourceMail: "la posta",
 		resourceCal:  "il calendario",
 		timeLayout:   "02/01 15:04",
+		dayLayout:    "02/01",
 		watchTask:    "Controllo di posta e calendario: %s",
 		digestTask:   "Riepilogo di posta e calendario",
 		defaultLabels: []Label{
@@ -87,6 +89,7 @@ var texts = map[Lang]phrases{
 		resourceMail: "the mail",
 		resourceCal:  "the calendar",
 		timeLayout:   "Jan 2 15:04",
+		dayLayout:    "Jan 2",
 		watchTask:    "Mail and calendar watch: %s",
 		digestTask:   "Mail and calendar digest",
 		defaultLabels: []Label{
@@ -121,13 +124,20 @@ func (p phrases) resource(resource string) string {
 	return p.resourceMail
 }
 
-// lineRunes bounds one sender or subject in a notification.
-const lineRunes = 200
+const (
+	// lineRunes bounds one address or subject in a notification.
+	lineRunes = 200
+	// nameRunes bounds a sender's display name, so that a long one cannot push the address, which
+	// is what the rules read, out of the line.
+	nameRunes = 60
+)
 
 // plainLine makes attacker text safe to put on one line of a plain-text message: no control
 // character, so a subject cannot forge a line, and no invisible format character, so it cannot
 // reorder what the person reads.
-func plainLine(s string) string {
+func plainLine(s string) string { return boundedLine(s, lineRunes) }
+
+func boundedLine(s string, limit int) string {
 	clean := strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return ' '
@@ -136,25 +146,50 @@ func plainLine(s string) string {
 	}, s)
 	clean = strings.Join(strings.Fields(clean), " ")
 	runes := []rune(clean)
-	if len(runes) > lineRunes {
-		return string(runes[:lineRunes-1]) + "…"
+	if len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
 	}
 	return clean
 }
 
-// Line is one item told to the person. From and Subject are attacker text.
+// Line is one item told to the person. From, FromName and Subject are attacker text. An all-day
+// Start is its date at midnight UTC.
 type Line struct {
 	AccountID  string
 	Resource   string
 	ItemID     string
 	CalendarID string
 	From       string
+	FromName   string
 	Subject    string
 	Start      time.Time
+	AllDay     bool
 	AuthFailed bool
 	Gone       bool
 	Tier       Tier
 	LabelID    string
+}
+
+// sender is who a line comes from: the name beside the address, because the name is whatever the
+// sender typed. The PIM gives a name alone when a header holds no address.
+func (l Line) sender() string {
+	name, address := boundedLine(l.FromName, nameRunes), plainLine(l.From)
+	switch {
+	case name == "" || strings.EqualFold(name, address):
+		return address
+	case address == "":
+		return name
+	default:
+		return name + " <" + address + ">"
+	}
+}
+
+// when is a line's date and time. An all-day date is the same wherever the person is.
+func (l Line) when(p phrases, loc *time.Location) string {
+	if l.AllDay {
+		return l.Start.Format(p.dayLayout)
+	}
+	return l.Start.In(loc).Format(p.timeLayout)
 }
 
 // describe is the sender and subject of a line, what a notification must always carry.
@@ -167,11 +202,11 @@ func (l Line) describe(p phrases, loc *time.Location) string {
 		subject = p.noSubject
 	}
 	text := subject
-	if from := plainLine(l.From); from != "" {
+	if from := l.sender(); from != "" {
 		text = from + ": " + subject
 	}
 	if !l.Start.IsZero() {
-		text += " (" + l.Start.In(loc).Format(p.timeLayout) + ")"
+		text += " (" + l.when(p, loc) + ")"
 	}
 	if l.AuthFailed {
 		text += " [" + p.authFailed + "]"

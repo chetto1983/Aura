@@ -215,6 +215,7 @@ const eventNowWindow = 24 * time.Hour
 type EventFacts struct {
 	Type            ChangeType
 	Start           time.Time
+	Cancelled       bool
 	OrganizerIsSelf bool
 	Fingerprint     string
 	Prior           string
@@ -238,17 +239,22 @@ func (e EventFacts) fingerprintOf() string {
 // told is false when the fingerprint did not move, which is a new description or someone else's
 // reply, and the change says nothing.
 //
-// The person's own events are `later`: they made the change. An `updated` event with no row was
-// there before the watch began, so nothing shows that it moved, and doubt goes to the digest.
+// A `deleted` change with no row says nothing either: a delete names little more than an id, and
+// the person may well have made it. The person's own events are `later`: they made the change.
+// An `updated` event with no row was there before the watch began, so nothing shows that it
+// moved, and doubt goes to the digest. A cancellation is no such doubt: the status is the fact.
 func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Seen && e.Prior == e.fingerprintOf() {
+		return Decision{}, false
+	}
+	if e.Type == ChangeDeleted && !e.Seen {
 		return Decision{}, false
 	}
 	decision = Decision{By: ByCalendar}
 	switch {
 	case e.OrganizerIsSelf:
 		decision.Tier = TierLater
-	case e.Type == ChangeUpdated && !e.Seen:
+	case e.Type == ChangeUpdated && !e.Seen && !e.Cancelled:
 		decision.Tier = TierToday
 	case startsWithin(e.Start, now, eventNowWindow):
 		decision.Tier = TierNow

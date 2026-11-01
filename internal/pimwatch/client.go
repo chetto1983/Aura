@@ -25,7 +25,9 @@ var Resources = []string{ResourceMail, ResourceCalendar}
 const PIMServer = "calendar"
 
 const (
-	pimRequestTimeout  = 30 * time.Second
+	// pimRequestTimeout is twice what the PIM says a page of 50 mails can take. A page that cannot
+	// finish inside it is asked again unchanged, so too short a bound stops an account for good.
+	pimRequestTimeout  = 60 * time.Second
 	maxPIMResponseSize = 8 << 20
 	// PageLimit is how many changes one call asks for. The PIM asks the provider once per sender
 	// for writtenTo, so a smaller page keeps one request inside pimRequestTimeout.
@@ -85,24 +87,67 @@ func NewClient(baseURL string, tokens TokenSource) *Client {
 	}
 }
 
-// Event is what the PIM says about a calendar change.
+// EventCancelled is the status of a cancelled event. The PIM writes this or "confirmed".
+const EventCancelled = "cancelled"
+
+// EventTime is an event's start or end as the PIM writes it: an instant, or a bare date for an
+// all-day event, which belongs to no zone. Null leaves it zero: a cancelled Google instance has no
+// end. Anything else fails the page, loudly, as a contract the PIM broke.
+type EventTime struct {
+	time.Time
+	AllDay bool
+}
+
+// UnmarshalJSON reads the two forms.
+func (e *EventTime) UnmarshalJSON(raw []byte) error {
+	var text *string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	if text == nil {
+		return nil
+	}
+	if day, err := time.Parse(time.DateOnly, *text); err == nil {
+		e.Time, e.AllDay = day, true
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339, *text)
+	if err != nil {
+		return err
+	}
+	e.Time = at
+	return nil
+}
+
+// In is the moment this time means to a person in loc: an all-day event starts at their midnight.
+func (e EventTime) In(loc *time.Location) time.Time {
+	if !e.AllDay {
+		return e.Time.In(loc)
+	}
+	y, m, d := e.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, loc)
+}
+
+// Event is what the PIM says about a calendar change, or about an event read by id.
 type Event struct {
-	Start           time.Time `json:"start"`
-	End             time.Time `json:"end"`
+	Start           EventTime `json:"start"`
+	End             EventTime `json:"end"`
 	Status          string    `json:"status"`
 	OrganizerIsSelf bool      `json:"organizerIsSelf"`
 	MyResponse      string    `json:"myResponse"`
 	Fingerprint     string    `json:"fingerprint"`
 }
 
-// Change is one item in a page. The snippet is not decoded: nothing here reads it until a
-// classifier exists.
+// Change is one item in a page. From is the address alone, what a rule reads, and FromName the
+// display name beside it. The snippet is not decoded: nothing here reads it until a classifier
+// exists.
 type Change struct {
 	Type       ChangeType `json:"type"`
 	ID         string     `json:"id"`
 	CalendarID string     `json:"calendarId"`
 	OccurredAt time.Time  `json:"occurredAt"`
 	From       string     `json:"from"`
+	FromName   string     `json:"fromName"`
 	Subject    string     `json:"subject"`
 	Signals    Signals    `json:"signals"`
 	Event      *Event     `json:"event"`
@@ -138,13 +183,16 @@ type ItemRef struct {
 	CalendarID string `json:"calendarId,omitempty"`
 }
 
-// Item is what a read by id gives. Nothing here stores it.
+// Item is what a read by id gives. Nothing here stores it. An event's time is in Event: OccurredAt
+// is when it was last modified.
 type Item struct {
 	ID         string    `json:"id"`
 	CalendarID string    `json:"calendarId"`
 	From       string    `json:"from"`
+	FromName   string    `json:"fromName"`
 	Subject    string    `json:"subject"`
 	OccurredAt time.Time `json:"occurredAt"`
+	Event      *Event    `json:"event"`
 }
 
 // ItemsResult answers POST /admin/items. Gone holds what no longer exists, so a deleted mail shows
@@ -209,8 +257,10 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	return nil
 }
 
-// classifyStatus reads a failure's named code (spec §5.1) and falls back on the status class.
-// Only a code from this list survives: the body's text is the PIM's and may name a provider URL.
+// classifyStatus reads a failure's named code (spec §5.1 and the PIM's own refusals) and falls back
+// on the status class. Only a code from this list survives: the body's text is the PIM's and may
+// name a provider URL. A 500 is what the PIM answers for a bug or an exception it did not
+// recognise, which the next tick may not repeat, and the hour's alarm covers one that stays.
 func classifyStatus(status int, raw []byte) *PIMError {
 	var named struct {
 		Error string `json:"error"`
@@ -219,7 +269,8 @@ func classifyStatus(status int, raw []byte) *PIMError {
 	switch named.Error {
 	case "provider_transient":
 		return &PIMError{Class: FailureTransient, Code: named.Error}
-	case "provider_auth", "permission_denied":
+	case "provider_auth", "permission_denied", "account_not_found",
+		"invalid_cursor", "invalid_account", "invalid_resource", "invalid_items", "too_many_items":
 		return &PIMError{Class: FailureHard, Code: named.Error}
 	case "unsupported_resource":
 		return &PIMError{Class: FailureUnsupported, Code: named.Error}

@@ -140,6 +140,14 @@ func TestPIMDigestFailsClearlyWithoutASidecar(t *testing.T) {
 	}
 }
 
+// A bound below the watcher's reserve would stop every run before its first page, and the account
+// would never move.
+func TestAWatchRunHasRoomForAPageAtItsWorst(t *testing.T) {
+	if pimWatchMaxDuration <= pimwatch.PageReserve {
+		t.Fatalf("%s leaves no room for a page that needs %s", pimWatchMaxDuration, pimwatch.PageReserve)
+	}
+}
+
 func TestThePIMKindsDeclareTheirBudgets(t *testing.T) {
 	watch, digest := PIMWatchHandler{}.Meta(), PIMDigestHandler{}.Meta()
 	if watch.Kind != KindPIMWatch || watch.ReschedulesOnRecovery || watch.MaxDuration != pimWatchMaxDuration {

@@ -177,6 +177,64 @@ func TestAnEventShowsItsStartInThePersonsZone(t *testing.T) {
 	}
 }
 
+func TestAnAllDayEventShowsItsDateWhereverThePersonIs(t *testing.T) {
+	west := time.FixedZone("west", -8*60*60)
+	line := Line{Subject: "Fiera", Start: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC), AllDay: true}
+	if got := line.describe(phrasesFor(LangIT), west); got != "Fiera (03/11)" {
+		t.Fatalf("got %q", got)
+	}
+	if got := line.describe(phrasesFor(LangEN), west); got != "Fiera (Nov 3)" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestALineShowsTheNameBesideTheAddress(t *testing.T) {
+	cases := []struct {
+		name, address, want string
+	}{
+		{"Mario Rossi", "mario@acme.it", "Mario Rossi <mario@acme.it>: Ciao"},
+		{"", "mario@acme.it", "mario@acme.it: Ciao"},
+		{"text that holds no address", "", "text that holds no address: Ciao"},
+		{"Mario@Acme.it", "mario@acme.it", "mario@acme.it: Ciao"},
+		{"", "", "Ciao"},
+		{"  ", "", "Ciao"},
+	}
+	for _, tc := range cases {
+		line := Line{From: tc.address, FromName: tc.name, Subject: "Ciao"}
+		if got := line.describe(phrasesFor(LangEN), time.UTC); got != tc.want {
+			t.Errorf("%q, %q = %q, want %q", tc.name, tc.address, got, tc.want)
+		}
+	}
+}
+
+// The name is whatever the sender typed. It may not forge a line, and it may not push out the
+// address that shows who really sent the mail.
+func TestANameCannotHideTheAddress(t *testing.T) {
+	override := string(rune(0x202e))
+	line := Line{From: "attacker@evil.example", FromName: "Mario\n- altra riga" + override + strings.Repeat(" Il tuo capo", 40), Subject: "Ciao"}
+	got := line.describe(phrasesFor(LangIT), time.UTC)
+	if !strings.Contains(got, "<attacker@evil.example>: Ciao") {
+		t.Fatalf("the address went: %q", got)
+	}
+	if name, _, _ := strings.Cut(got, " <attacker"); len([]rune(name)) > nameRunes {
+		t.Fatalf("a %d-rune name stands in front of the address", len([]rune(name)))
+	}
+	if strings.ContainsAny(got, "\n"+override) {
+		t.Fatalf("the name forged a line: %q", got)
+	}
+}
+
+func TestADigestLineCarriesTheNameInsideTheFrame(t *testing.T) {
+	lines := []Line{{AccountID: "work", Resource: ResourceMail, ItemID: "m1", From: "mario@acme.it", FromName: "Mario Rossi", Subject: "Ciao", Tier: TierToday}}
+	out := renderDigest(LangEN, time.UTC, Book{}, lines, 0, nil)
+	if !strings.Contains(out.Quoted, "Mario Rossi <mario@acme.it>: Ciao") {
+		t.Fatalf("quoted = %q", out.Quoted)
+	}
+	if strings.Contains(out.Head, "Mario") || strings.Contains(out.Refs, "Mario") {
+		t.Fatalf("the name left the frame: head %q refs %q", out.Head, out.Refs)
+	}
+}
+
 func TestAGoneItemSaysSoAndNothingElse(t *testing.T) {
 	line := Line{From: "a@b.it", Subject: "kept", Gone: true}
 	if got := line.describe(phrasesFor(LangEN), time.UTC); got != "(no longer there)" {

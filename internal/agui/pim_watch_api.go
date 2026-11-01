@@ -207,16 +207,18 @@ func (s *Server) handleMailWatchDisable(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, map[string]bool{"enabled": false})
 }
 
-// mailWatchDecisionJSON is one line of the decisions view. From and Subject are a stranger's text,
-// read live and kept nowhere, for the cockpit to render as text.
+// mailWatchDecisionJSON is one line of the decisions view. From, FromName and Subject are a
+// stranger's text, read live and kept nowhere, for the cockpit to render as text.
 type mailWatchDecisionJSON struct {
 	AccountID  string     `json:"account_id"`
 	Resource   string     `json:"resource"`
 	ItemID     string     `json:"item_id"`
 	CalendarID string     `json:"calendar_id,omitempty"`
 	From       string     `json:"from"`
+	FromName   string     `json:"from_name"`
 	Subject    string     `json:"subject"`
 	Start      *time.Time `json:"start"`
+	AllDay     bool       `json:"all_day,omitempty"`
 	Gone       bool       `json:"gone"`
 	AuthFailed bool       `json:"auth_failed"`
 	Tier       string     `json:"tier"`
@@ -236,7 +238,8 @@ func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request
 	for _, line := range lines {
 		out = append(out, mailWatchDecisionJSON{
 			AccountID: line.AccountID, Resource: line.Resource, ItemID: line.ItemID, CalendarID: line.CalendarID,
-			From: line.From, Subject: line.Subject, Start: mailWatchTime(line.Start), Gone: line.Gone, AuthFailed: line.AuthFailed,
+			From: line.From, FromName: line.FromName, Subject: line.Subject,
+			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,
 			Tier: string(line.Tier), LabelID: line.LabelID, Label: line.Label, DecidedBy: string(line.By), DecidedAt: line.DecidedAt,
 		})
 	}

@@ -1,5 +1,5 @@
 {
-  "_": "spec 2026-10-31-mail-calendar-watch-design.md §5.1 as Aura reads it. client_test.go answers from this file; contract_live_test.go (tag pim_contract) holds a real sidecar to the same shapes.",
+  "_": "What the PIM fork writes on branch aura-watch at 5f182c7 (src/CalendarMcp.Core/Models/Changes.cs and the sources in Changes/), spec 2026-10-31-mail-calendar-watch-design.md §5.1 included. client_test.go answers from this file; contract_live_test.go (tag pim_contract) holds a real sidecar to the same shapes.",
   "emptyCursorRequest": {"accountId": "work", "resource": "mail", "cursor": "", "limit": 50},
   "emptyCursorResponse": {"changes": [], "nextCursor": "cursor-from-now", "hasMore": false, "resetRequired": false},
   "changesRequest": {"accountId": "work", "resource": "mail", "cursor": "cur-1", "limit": 25},
@@ -9,7 +9,8 @@
         "type": "added",
         "id": "m-1",
         "occurredAt": "2026-10-31T14:47:00Z",
-        "from": "Mario Rossi <mario@acme.it>",
+        "from": "mario@acme.it",
+        "fromName": "Mario Rossi",
         "subject": "Fermo linea 3",
         "snippet": "La pompa si è fermata",
         "signals": {
@@ -26,9 +27,8 @@
         "id": "e-1",
         "calendarId": "primary",
         "occurredAt": "2026-10-31T14:50:00Z",
-        "from": "Anna <anna@acme.it>",
+        "from": "anna@acme.it",
         "subject": "Riunione budget",
-        "signals": {"writtenTo": null},
         "event": {
           "start": "2026-11-01T09:00:00Z",
           "end": "2026-11-01T10:00:00Z",
@@ -43,15 +43,105 @@
     "hasMore": true,
     "resetRequired": false
   },
+  "otherShapesResponse": {
+    "changes": [
+      {"type": "deleted", "id": "m-9"},
+      {"type": "updated", "id": "m-8"},
+      {
+        "type": "added",
+        "id": "m-7",
+        "occurredAt": "2026-10-31T14:48:00Z",
+        "fromName": "text that holds no address",
+        "subject": "Nessun indirizzo",
+        "signals": {"providerImportant": false, "providerCategory": null, "bulk": false, "authFailed": false, "threadId": null, "writtenTo": null}
+      },
+      {
+        "type": "deleted",
+        "id": "e-2",
+        "calendarId": "primary",
+        "occurredAt": "2026-10-31T14:51:00Z",
+        "event": {
+          "start": "2026-11-02T09:00:00Z",
+          "end": null,
+          "status": "cancelled",
+          "organizerIsSelf": false,
+          "myResponse": null,
+          "fingerprint": "hash-2"
+        }
+      },
+      {"type": "deleted", "id": "e-3", "calendarId": "primary"},
+      {
+        "type": "updated",
+        "id": "e-4",
+        "calendarId": "primary",
+        "occurredAt": "2026-10-31T14:52:00Z",
+        "from": "anna@acme.it",
+        "subject": "Riunione annullata",
+        "event": {
+          "start": "2026-11-01T11:00:00Z",
+          "end": "2026-11-01T12:00:00Z",
+          "status": "cancelled",
+          "organizerIsSelf": false,
+          "myResponse": "accepted",
+          "fingerprint": "hash-4"
+        }
+      },
+      {
+        "type": "added",
+        "id": "e-5",
+        "calendarId": "primary",
+        "occurredAt": "2026-10-31T14:53:00Z",
+        "from": "anna@acme.it",
+        "subject": "Fiera",
+        "event": {
+          "start": "2026-11-03",
+          "end": "2026-11-04",
+          "status": "confirmed",
+          "organizerIsSelf": false,
+          "myResponse": "needsAction",
+          "fingerprint": "hash-5"
+        }
+      }
+    ],
+    "nextCursor": "cur-3",
+    "hasMore": false,
+    "resetRequired": false
+  },
   "itemsRequest": {"accountId": "work", "resource": "mail", "items": [{"id": "m-1"}, {"id": "m-2"}]},
   "itemsResponse": {
-    "items": [{"id": "m-1", "from": "Mario Rossi <mario@acme.it>", "subject": "Fermo linea 3", "occurredAt": "2026-10-31T14:47:00Z"}],
-    "gone": [{"id": "m-2"}]
+    "items": [{"id": "m-1", "occurredAt": "2026-10-31T14:47:00Z", "from": "mario@acme.it", "fromName": "Mario Rossi", "subject": "Fermo linea 3"}],
+    "gone": [{"id": "m-2", "calendarId": null}]
+  },
+  "calendarItemsResponse": {
+    "items": [
+      {
+        "id": "e-1",
+        "calendarId": "primary",
+        "occurredAt": "2026-10-30T08:00:00Z",
+        "from": "anna@acme.it",
+        "subject": "Riunione budget",
+        "event": {
+          "start": "2026-11-01T09:00:00Z",
+          "end": "2026-11-01T10:00:00Z",
+          "status": "confirmed",
+          "organizerIsSelf": false,
+          "myResponse": "needsAction",
+          "fingerprint": "hash-1"
+        }
+      }
+    ],
+    "gone": [{"id": "e-2", "calendarId": "primary"}]
   },
   "failures": [
     {"status": 503, "body": "{\"error\":\"provider_transient\"}"},
     {"status": 502, "body": "{\"error\":\"provider_auth\"}"},
     {"status": 403, "body": "{\"error\":\"permission_denied\"}"},
-    {"status": 422, "body": "{\"error\":\"unsupported_resource\"}"}
+    {"status": 422, "body": "{\"error\":\"unsupported_resource\"}"},
+    {"status": 404, "body": "{\"error\":\"account_not_found\"}"},
+    {"status": 400, "body": "{\"error\":\"invalid_cursor\"}"},
+    {"status": 400, "body": "{\"error\":\"invalid_account\"}"},
+    {"status": 400, "body": "{\"error\":\"invalid_resource\"}"},
+    {"status": 400, "body": "{\"error\":\"invalid_items\"}"},
+    {"status": 400, "body": "{\"error\":\"too_many_items\"}"}
   ]
 }

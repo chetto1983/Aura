@@ -318,7 +318,7 @@ func TestOnlyAnAddedMailIsTriaged(t *testing.T) {
 func eventChange(id, fingerprint string, start time.Time) Change {
 	return Change{
 		Type: ChangeUpdated, ID: id, CalendarID: "cal", Subject: "Audit", From: "organizer@acme.it",
-		Event: &Event{Start: start, Fingerprint: fingerprint},
+		Event: &Event{Start: EventTime{Time: start}, Fingerprint: fingerprint},
 	}
 }
 
@@ -328,7 +328,7 @@ func TestAnEventInsideADayAlertsOnItsFingerprintAndOnlyThen(t *testing.T) {
 	soon := r.clock.at.Add(3 * time.Hour)
 	moved := r.clock.at.Add(4 * time.Hour)
 	r.pim.page(ResourceCalendar, "start-calendar", ChangesPage{Changes: []Change{
-		{Type: ChangeAdded, ID: "ev1", CalendarID: "cal", Subject: "Audit", From: "organizer@acme.it", Event: &Event{Start: soon, Fingerprint: "f1"}},
+		{Type: ChangeAdded, ID: "ev1", CalendarID: "cal", Subject: "Audit", From: "organizer@acme.it", Event: &Event{Start: EventTime{Time: soon}, Fingerprint: "f1"}},
 	}, NextCursor: "c1"})
 	if err := r.store.StartCursor(ctx, r.identity, rigAccount, ResourceCalendar, "start-calendar", CursorOK); err != nil {
 		t.Fatalf("start: %v", err)
@@ -356,7 +356,7 @@ func TestSeveralChangesOfOneEventInAPageAreOneDecision(t *testing.T) {
 	r := newWatchRig(t)
 	soon := r.clock.at.Add(3 * time.Hour)
 	r.pim.page(ResourceCalendar, "start-calendar", ChangesPage{Changes: []Change{
-		{Type: ChangeAdded, ID: "ev1", CalendarID: "cal", Subject: "Audit", Event: &Event{Start: soon, Fingerprint: "f1"}},
+		{Type: ChangeAdded, ID: "ev1", CalendarID: "cal", Subject: "Audit", Event: &Event{Start: EventTime{Time: soon}, Fingerprint: "f1"}},
 		eventChange("ev1", "f2", soon),
 	}, NextCursor: "c1"})
 
