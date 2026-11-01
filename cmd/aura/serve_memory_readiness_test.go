@@ -20,9 +20,9 @@ import (
 // memoryReadinessClient is a scripted fixture: its mount(t) method builds a real
 // *mcptools.MountedServer over an in-memory SDK session (mcptools.HostClient is
 // gone — MountedServer is the concrete type now, so a hand-rolled double can no
-// longer satisfy anything). Both call sites this package uses ("memory_search",
-// "memory_digest") route to the SAME handler, which always answers with
-// text/err and records the call it observed.
+// longer satisfy anything). Every call site this package uses ("memory_facts_about",
+// "memory_digest", "memory_recall") routes to the SAME handler, which always answers
+// with text/err and records the call it observed.
 type memoryReadinessClient struct {
 	text string
 	err  error
@@ -49,7 +49,7 @@ func (c *memoryReadinessClient) mount(t *testing.T, owner string) *mcptools.Moun
 		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: c.text}}}, nil
 	}
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture-memory", Version: "0.0.1"}, nil)
-	for _, name := range []string{"memory_search", "memory_digest", "memory_recall"} {
+	for _, name := range []string{"memory_facts_about", "memory_digest", "memory_recall"} {
 		server.AddTool(&sdkmcp.Tool{Name: name, Description: "fixture", InputSchema: map[string]any{"type": "object"}}, handler)
 	}
 
@@ -94,15 +94,20 @@ func seedMemoryRecipe(t *testing.T) {
 	}})
 }
 
-// The readiness search uses a synthetic owner whose isolated ArcadeDB database
-// cannot expose or disturb a person's memory.
-func TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch(t *testing.T) {
+// The readiness read uses a synthetic owner whose isolated ArcadeDB database cannot
+// expose or disturb a person's memory, and a tool that reaches no embedding route:
+// memory_search waited on a hosted model, and that model's silence kept a working memory
+// unready for minutes on the lab VM's boot of 2026-11-01.
+func TestMemoryReadinessCheckRunsAnIsolatedFunctionalRead(t *testing.T) {
 	client := &memoryReadinessClient{text: `{"facts":[]}`}
 	if err := checkMemoryReadiness(context.Background(), client.mount(t, memoryReadinessOwner), memoryReadinessOwner); err != nil {
 		t.Fatalf("checkMemoryReadiness: %v", err)
 	}
-	if client.name != "memory_search" {
-		t.Fatalf("tool = %q, want memory_search", client.name)
+	if client.name != "memory_facts_about" {
+		t.Fatalf("tool = %q, want memory_facts_about", client.name)
+	}
+	if entity, _ := client.args["entity"].(string); entity == "" {
+		t.Fatalf("args = %v, want the entity memory_facts_about requires", client.args)
 	}
 	// An EMPTY memory is ready. Requiring a hit would make a fresh install
 	// permanently unready.

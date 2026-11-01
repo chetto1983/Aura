@@ -61,12 +61,11 @@ func memoryReadinessProbe(chat *chatEnv, identities memoryIdentityLister) (agui.
 
 // missingMemoryMount decides what an absent memory mount means. The shipped memory
 // sidecar mounts only under a grant a human identity owns (a05c92cfe), and a fresh
-// install has none until the operator finishes /setup, which caddy serves only once this
-// daemon is healthy. Failing here made that a deadlock: `compose up --wait` never saw
-// aura healthy, caddy never started and /setup stayed unreachable (measured 2026-09-10
-// on a fresh npx install). With no active human there is nobody for memory to serve, so
-// the absence is the setup-pending state; the setup wizard remounts memory once the first
-// identity exists. A nil lister cannot tell the two apart and stays strict.
+// install has none until the operator finishes /setup. Failing here made the install a
+// deadlock: `compose up --wait` never saw aura healthy (measured 2026-09-10 on a fresh npx
+// install). With no active human there is nobody for memory to serve, so the absence is
+// the setup-pending state; the setup wizard remounts memory once the first identity
+// exists. A nil lister cannot tell the two apart and stays strict.
 func missingMemoryMount(ctx context.Context, identities memoryIdentityLister) error {
 	notMounted := errors.New("required memory capability is not mounted")
 	if identities == nil {
@@ -86,6 +85,12 @@ func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer, o
 	if client == nil {
 		return errors.New("memory client is unavailable")
 	}
+	// memory_facts_about, not memory_search: this read walks the graph and reaches no
+	// embedding route. A hosted route is someone else's latency, and dense retrieval is an
+	// improvement, not a dependency. Through memory_search the probe waited on OpenRouter,
+	// which sent nothing back inside the 2 s budget for minutes at a time, so a memory
+	// that worked read as down and the boot gave up on it (lab VM, 2026-11-01).
+	//
 	// The arguments are the mounted tool's. `memory_types` is gone with the
 	// agent-memory MCP that declared it — the ArcadeDB tool rejects unknown
 	// properties, so leaving it in failed every probe, answered /readyz with 503,
@@ -94,12 +99,12 @@ func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer, o
 	// A static mount uses the isolated synthetic owner. An OAuth mount reuses the
 	// subject whose stored grant opened the live session: the functional read remains
 	// tenant-scoped and never creates or borrows a session from another identity.
-	text, err := client.CallToolText(identityctx.WithIdentityID(ctx, owner), "memory_search", map[string]any{
-		"query": "Aura readiness",
-		"limit": 1,
+	text, err := client.CallToolText(identityctx.WithIdentityID(ctx, owner), "memory_facts_about", map[string]any{
+		"entity": "Aura readiness",
+		"limit":  1,
 	})
 	if err != nil {
-		return fmt.Errorf("memory functional search: %w", err)
+		return fmt.Errorf("memory functional read: %w", err)
 	}
 	// What readiness proves is that the tool ANSWERED in its own shape — a `facts`
 	// array, empty or not. An empty memory is ready; an unparseable answer is not.
@@ -115,10 +120,10 @@ func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer, o
 		return err
 	}
 	if strings.TrimSpace(response.Error) != "" {
-		return errors.New("memory functional search reported a domain failure")
+		return errors.New("memory functional read reported a domain failure")
 	}
 	if response.Facts == nil {
-		return errors.New("memory functional search omitted the facts array")
+		return errors.New("memory functional read omitted the facts array")
 	}
 	return nil
 }
