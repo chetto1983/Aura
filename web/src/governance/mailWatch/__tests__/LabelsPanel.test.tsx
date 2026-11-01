@@ -9,6 +9,7 @@ import {
   renderWatch,
   rowHolding,
   rule,
+  settled,
 } from '../../../test/mailWatchServer';
 import { LabelsPanel } from '../LabelsPanel';
 
@@ -94,6 +95,7 @@ describe('adding a label', () => {
     expect(nameField().hasAttribute('aria-invalid')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Add label' }));
     expect(nameField().getAttribute('aria-invalid')).toBe('true');
+    await settled();
     expect(server.writes('POST', LABELS)).toEqual([]);
     fireEvent.change(nameField(), { target: { value: 'Client' } });
     expect(nameField().hasAttribute('aria-invalid')).toBe(false);
@@ -111,6 +113,7 @@ describe('adding a label', () => {
     fireEvent.change(nameField(), { target: { value: 'a'.repeat(61) } });
     fireEvent.click(screen.getByRole('button', { name: 'Add label' }));
     expect(screen.getByText(/1 to 60 characters/)).toBeTruthy();
+    await settled();
     expect(server.writes('POST', LABELS)).toHaveLength(1);
   });
 

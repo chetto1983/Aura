@@ -19,6 +19,7 @@ import {
   labelRule,
   mailWatchServer,
   rule,
+  settled,
 } from '../../../test/mailWatchServer';
 
 // What a correction changes, what it teaches, and the one-click rule a row offers.
@@ -56,6 +57,7 @@ describe('correcting one mail', () => {
       expect(rowOf('One').getAttribute('aria-busy')).toBe('true');
     });
     press('3');
+    await settled();
     expect(server.writes('POST', CORRECT)).toHaveLength(1);
   });
 
@@ -112,6 +114,7 @@ describe('correcting one mail', () => {
     openDay();
     await screen.findByText('One');
     fireEvent.click(within(itemOf('One')).getByRole('radio', { name: 'Today' }));
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
     fireEvent.click(within(itemOf('One')).getByRole('radio', { name: 'Later' }));
     await waitFor(() => {

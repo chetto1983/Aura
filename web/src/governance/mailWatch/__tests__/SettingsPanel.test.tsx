@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import '../../../i18n/i18n';
 import { chooseOption, shownOption } from '../../../test/chooseOption';
-import { hang, mailWatchServer, renderWatch, watchStatus } from '../../../test/mailWatchServer';
+import {
+  hang,
+  mailWatchServer,
+  renderWatch,
+  settled,
+  watchStatus,
+} from '../../../test/mailWatchServer';
 import { dayAndTime } from '../mailWatchLogic';
 import { SettingsPanel } from '../SettingsPanel';
 
@@ -85,6 +91,7 @@ describe('SettingsPanel', () => {
     save();
     expect(capField().getAttribute('aria-invalid')).toBe('true');
     expect(screen.getByText('Write a whole number from 0 to 100.')).toBeTruthy();
+    await settled();
     expect(server.writes('PUT', SETTINGS)).toEqual([]);
   });
 

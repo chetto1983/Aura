@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 import type {
@@ -135,6 +135,14 @@ export function mailWatchServer() {
       return calls.filter((call) => call.method === method && call.path === path);
     },
   };
+}
+
+/** A mutation reaches fetch a few microtasks after the event, so "nothing was sent" read straight
+ * after a click passes whatever the code did. This waits for a write that was on its way. */
+export async function settled() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 /** Queries scoped to the list row that holds this text. */

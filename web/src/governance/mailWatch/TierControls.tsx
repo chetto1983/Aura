@@ -109,7 +109,7 @@ export function TierControl({ value, tabbable, onChange, onFocus, onKeyDown }: T
       value={value}
       aria-label={t('governance.mailWatch.tier.aria')}
       onValueChange={(next: string) => {
-        if (next !== '' && next !== value) onChange(next as MailWatchTier);
+        if (next !== '') onChange(next as MailWatchTier);
       }}
       onFocus={onFocus}
       onKeyDown={onKeyDown}

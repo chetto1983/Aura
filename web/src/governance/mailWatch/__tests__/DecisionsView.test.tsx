@@ -13,7 +13,14 @@ import {
   theDay,
   THREE,
 } from '../../../test/mailWatchDay';
-import { decision, hang, label, mailWatchServer, rule } from '../../../test/mailWatchServer';
+import {
+  decision,
+  hang,
+  label,
+  mailWatchServer,
+  rule,
+  settled,
+} from '../../../test/mailWatchServer';
 
 // The day of one account, through the real dialog, hooks and API module: what a person reads. The
 // keys are in DecisionKeys.test.tsx, and what a correction teaches in DecisionCorrections.test.tsx.
@@ -212,6 +219,7 @@ describe('a gone item', () => {
     await screen.findByText('No longer exists');
     press('1');
     press('l');
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
     expect(screen.queryByRole('listbox')).toBeNull();
   });

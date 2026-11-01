@@ -12,6 +12,7 @@ import {
   renderWatch,
   rowHolding,
   rule,
+  settled,
   watchStatus,
 } from '../../../test/mailWatchServer';
 import { RulesPanel } from '../RulesPanel';
@@ -140,6 +141,7 @@ describe('adding a rule', () => {
     expect(keyField().getAttribute('aria-invalid')).toBe('true');
     const error = screen.getByText(/whole address, or a domain/);
     expect(keyField().getAttribute('aria-describedby')).toBe(error.id);
+    await settled();
     expect(server.writes('POST', RULES)).toEqual([]);
     type('shop.example');
     expect(keyField().hasAttribute('aria-invalid')).toBe(false);
@@ -153,6 +155,7 @@ describe('adding a rule', () => {
     expect(screen.queryByText('Choose a tier, a label or both.')).toBeNull();
     submit();
     expect(screen.getByText('Choose a tier, a label or both.')).toBeTruthy();
+    await settled();
     expect(server.writes('POST', RULES)).toEqual([]);
   });
 

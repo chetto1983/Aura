@@ -14,7 +14,7 @@ import {
   THREE,
   tierOf,
 } from '../../../test/mailWatchDay';
-import { label, mailWatchServer } from '../../../test/mailWatchServer';
+import { label, mailWatchServer, settled } from '../../../test/mailWatchServer';
 
 // What a key does on the day: the roving tabindex, the triage keys, and where the focus lands.
 
@@ -102,6 +102,7 @@ describe('the keys', () => {
     openDay();
     await screen.findByText('First');
     press('1');
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
   });
 
@@ -119,6 +120,7 @@ describe('the keys', () => {
     const field = dateInput();
     fireEvent.keyDown(field, { key: '1' });
     fireEvent.keyDown(field, { key: 'j' });
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
     expect(activeRow()).toBe(rowOf('First'));
   });
@@ -130,6 +132,7 @@ describe('the keys', () => {
     const select = within(itemOf('First')).getByRole('combobox', { name: 'Label' });
     fireEvent.keyDown(select, { key: '2' });
     fireEvent.keyDown(select, { key: 'j' });
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
     expect(activeRow()).toBe(rowOf('First'));
   });
@@ -153,6 +156,7 @@ describe('the keys', () => {
     await screen.findByText('First');
     fireEvent.keyDown(activeRow(), { key: '2', ctrlKey: true });
     fireEvent.keyDown(activeRow(), { key: 'l', metaKey: true });
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
   });
 
@@ -163,6 +167,7 @@ describe('the keys', () => {
     press('l');
     const option = await screen.findByRole('option', { name: 'Client' });
     fireEvent.keyDown(option, { key: '2' });
+    await settled();
     expect(server.writes('POST', CORRECT)).toEqual([]);
   });
 
