@@ -106,6 +106,11 @@ Each of these would bite a real person, and each has a test that names it.
   documents only the id as guaranteed. Graph writes it as `updated`. So the same cancelled meeting is `now` on both. The
   price is one alert when a person deletes their own event inside 24 hours on Google, since `deleted` cannot say who did
   it: a missed meeting costs more, and the daily cap bounds the noise. G3 measures it.
+- **An event with a row is `now` when its new start or its kept start is within 24 hours.** A meeting moved away from
+  tomorrow reaches the person at once, because they may turn up to one that is gone. `EventFacts.KeptStart` is filled
+  from the row's start in `draftEvents`; the upsert overwrites `event_start` on every change, so a second move
+  compares against the latest time. `organizerIsSelf` still wins. It does not cover an event with no row (no old time
+  is known), nor a kept start that already passed. The daily cap bounds it like every other `now`.
 - **A verdict keeps its event's start, all-day flag and change word.** A time is not mail text: "Aura keeps ids and
   verdicts, never a mail index" is about what a stranger wrote, and the start is what lets a delete that carries only an
   id be told at all. `event_start` is the column the review asked for. `event_all_day` and `event_change` come with it
@@ -538,6 +543,8 @@ the API section already read as the code now does.
 | 17 | Every refusal carries a stable code | `b8a55e231` |
 | 18 | Undo is offered only for a rule the correction created | `1f7726331` |
 | 19 | The report of a pause reads in the person's language | `eaadad95c` |
+
+| 20 | A meeting moved away from the next 24 hours is `now` | the commit that adds `EventFacts.KeptStart` |
 
 `67be35319` also moved `TestMigration0149DownKeepsADeactivatedTaskPaused` to 0150, which the rebase had left behind.
 

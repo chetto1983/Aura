@@ -168,3 +168,32 @@ func TestADeleteWithNoRowAndNoStartStaysSilent(t *testing.T) {
 		t.Fatalf("it left a row: %v", err)
 	}
 }
+
+func TestAMeetingMovedAwayIsToldByTheTimeTheWatchKept(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	soon := r.clock.at.Add(3 * time.Hour)
+	nextWeek := r.clock.at.Add(7 * 24 * time.Hour)
+	r.pim.page(ResourceCalendar, "start-calendar", ChangesPage{Changes: []Change{
+		{Type: ChangeAdded, ID: "ev1", CalendarID: "cal", Subject: "Audit", From: "organizer@acme.it", Event: &Event{Start: EventTime{Time: soon}, Fingerprint: "f1"}},
+	}, NextCursor: "c1"})
+	if err := r.store.StartCursor(ctx, r.identity, rigAccount, ResourceCalendar, "start-calendar", CursorOK); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	r.tick()
+
+	r.pim.page(ResourceCalendar, "c1", ChangesPage{Changes: []Change{eventChange("ev1", "f2", nextWeek)}, NextCursor: "c2"})
+	mustContain(t, r.tick().Notice, "Moved: Audit")
+
+	r.pim.page(ResourceCalendar, "c2", ChangesPage{Changes: []Change{eventChange("ev1", "f3", nextWeek.Add(24*time.Hour))}, NextCursor: "c3"})
+	if out := r.tick(); out.Notice != "" {
+		t.Fatalf("a move from a far time to another far time alerted: %q", out.Notice)
+	}
+	verdict, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "ev1")
+	if err != nil {
+		t.Fatalf("verdict: %v", err)
+	}
+	if verdict.Tier != TierToday || !verdict.Start.Time.Equal(nextWeek.Add(24*time.Hour).Truncate(time.Microsecond)) {
+		t.Fatalf("verdict = tier %s, start %s: the second move must replace the kept start", verdict.Tier, verdict.Start.Time)
+	}
+}

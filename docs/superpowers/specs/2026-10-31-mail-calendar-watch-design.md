@@ -250,8 +250,10 @@ mail is `later`. In the pilot that halved the false alarms, 18 to 9, and cost no
 failed CI run, and any automated alert a professional depends on.
 
 **Calendar changes need no classifier.** A new invitation, a moved event and a cancelled event are
-structural facts: `now` if the event starts within 24 hours, otherwise `today`. A new description or
-someone else's reply leaves the fingerprint unchanged and says nothing.
+structural facts: `now` if the event starts within 24 hours, otherwise `today`. For an event the watch
+already knows, "starts" is the new start or the one it kept: a meeting moved away from tomorrow is still `now`,
+because the person may turn up to it. A new description or someone else's reply leaves the fingerprint unchanged
+and says nothing.
 
 ### 5.4 Learning, per identity
 

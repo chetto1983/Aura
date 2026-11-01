@@ -223,10 +223,12 @@ const (
 const eventNowWindow = 24 * time.Hour
 
 // EventFacts are what the calendar's half of the ladder reads. Prior is the fingerprint on the
-// verdict row, and Seen says there is such a row.
+// verdict row, and Seen says there is such a row. KeptStart is the start that row kept, the time
+// the person last knew; it is zero when there is no row.
 type EventFacts struct {
 	Type            ChangeType
 	Start           time.Time
+	KeptStart       time.Time
 	Cancelled       bool
 	OrganizerIsSelf bool
 	Fingerprint     string
@@ -273,6 +275,10 @@ func (e EventFacts) word() ChangeWord {
 // own delete. The person's own events are `later`: they made the change. An `updated` event with
 // no row was there before the watch began, so nothing shows that it moved, and doubt goes to the
 // digest. A cancellation is no such doubt: the status is the fact.
+//
+// An event with a row is `now` when its new start or its kept start is within 24 hours: a
+// meeting moved away from tomorrow is one the person may still turn up to. With no row no old time
+// is known, so only the new start counts. The person's own events stay `later` either way.
 func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 	if e.Seen && e.Prior == e.fingerprintOf() {
 		return Decision{}, false
@@ -286,7 +292,7 @@ func DecideEvent(now time.Time, e EventFacts) (decision Decision, told bool) {
 		decision.Tier = TierLater
 	case e.Type == ChangeUpdated && !e.Seen && !e.Cancelled:
 		decision.Tier = TierToday
-	case startsWithin(e.Start, now, eventNowWindow):
+	case startsWithin(e.Start, now, eventNowWindow), startsWithin(e.KeptStart, now, eventNowWindow):
 		decision.Tier = TierNow
 	default:
 		decision.Tier = TierToday
