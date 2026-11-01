@@ -9,6 +9,7 @@ async function openBoard(page: Page) {
 test('card progress is saved, reloaded, reset and completed through the real API', async ({
   page,
 }, info) => {
+  test.setTimeout(60_000);
   await gotoAuthenticated(page, '/');
   await openBoard(page);
   const added = page.waitForResponse(
@@ -28,7 +29,21 @@ test('card progress is saved, reloaded, reset and completed through the real API
     await editor.getByRole('textbox', { name: /^(Title|Titolo)/ }).fill(label);
     const slider = editor.getByRole('slider', { name: /^(Progress|Avanzamento)$/ });
     await slider.press('Home');
-    for (let step = 0; step < 55; step++) await slider.press('ArrowRight');
+    await expect(slider).toHaveValue('0');
+    // Wait for the native controlled input between keys: a rapid key count can lose an
+    // increment on a busy mobile browser. The contract is its observed value and saved ratio.
+    await expect
+      .poll(
+        async () => {
+          const value = Number(await slider.inputValue());
+          if (value !== 0.55) await slider.press(value < 0.55 ? 'ArrowRight' : 'ArrowLeft');
+          return Number(await slider.inputValue());
+        },
+        { timeout: 15_000, intervals: [100] },
+      )
+      .toBe(0.55);
+    await slider.press('Tab');
+    await expect(slider).toHaveValue('0.55');
     const saved = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/board/cards/${id}`) && response.request().method() === 'PUT',
@@ -48,7 +63,10 @@ test('card progress is saved, reloaded, reset and completed through the real API
       ['End', 1, '100%'],
     ] as const) {
       await page.getByRole('button', { name: label, exact: true }).click();
-      await editor.getByRole('slider', { name: /^(Progress|Avanzamento)$/ }).press(key);
+      const progress = editor.getByRole('slider', { name: /^(Progress|Avanzamento)$/ });
+      await progress.press(key);
+      await expect(progress).toHaveValue(String(ratio));
+      await progress.press('Tab');
       const updated = page.waitForResponse(
         (response) =>
           response.url().endsWith(`/api/board/cards/${id}`) &&

@@ -87,3 +87,29 @@ Authentication, memory and deployment retain the explicit boundaries above.
 Source commit: `119f77078`. All pre-commit checks passed (format, file cap, frontend
 duplication, vet, lint). Task-owned bridge/model processes and the disposable PostgreSQL
 container were removed after collecting the evidence.
+
+## Publication and CI follow-up
+
+Source and embedded frontend (`231134593`) were pushed to GitHub and GitLab with all
+pre-push gates green, including all 27 integration-tier builds. On that SHA, frontend
+unit/coverage, lint, database integration, race tests and publication workflows passed.
+The first full Playwright run passed 223 cases and failed the new mobile progress case:
+55 rapid ArrowRight calls produced an actual native input value of 0.54 on retry.
+
+A minimal harness using the installed Kanban/Editor/Slider reproduced this under Chromium
+mobile emulation with CPU throttling: at rate 4, 2/6 trials saved 0.54; at rate 6, 1/5 did.
+Captured native input and Editor change events both ended at 0.54, so the database did not
+drop the final increment. The dependency's controlled input updates through React effects.
+This does not establish every timing mechanism inside Chromium/React.
+
+The regression now polls the observed slider value while sending keyboard increments,
+then blurs and asserts 0.55 before Save; API, reload, zero and one assertions remain.
+Three throttled mobile trials of that sequence saved 0.55. The multi-lifecycle test has
+a 60-second budget because its first CI attempt exceeded 30 seconds. This intentionally
+corrects an unreliable input-generation assumption; it does not change the expected ratio
+or claim that the dependency accepts arbitrary bursts of keyboard events without loss.
+
+The first CI run ultimately completed with 28 successful jobs and only that Playwright
+job failing. The correction passed focused typecheck, type-aware lint and Prettier;
+independent review found no actionable issues. It changes test input generation only,
+so the already measured backend, migration and embedded bundle remain unchanged.
