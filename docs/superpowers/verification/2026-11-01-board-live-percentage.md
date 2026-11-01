@@ -87,3 +87,18 @@ These changes fix demonstrated input-setup slowness, premature field-readiness c
 failure masking. They do not establish the sole cause of the original CI's 60-second wait.
 Typecheck/lint/format and independent review cover this test-only follow-up. No production
 bundle, API behavior or expected persistence value was changed by it.
+
+## Publication
+
+Source `dd4b4d3cf`, embedded frontend `cd8cfa02e` and test stabilization `532143991` were
+pushed to GitHub and GitLab through the prescribed WSL gates. [CI run 41341930827](https://github.com/chetto1983/Aura/actions/runs/41341930827)
+passed all 29 jobs on `532143991`. All other triggered workflows also succeeded.
+The final Playwright job reported 224 first-attempt passes in 6.1 minutes, no flaky cases,
+and 112 conditionally skipped cases. Its API progress assertions were retained throughout.
+
+The Linux reproductions retained the auth helper's existing completed-profile/readiness
+fixtures; the board API was real. Private session snapshots, their dedicated auth cache,
+temporary reproduction files and traces were removed after verification. No background
+test services remain. This session did not deploy a VM update. A final read-only check of
+the running VM did not reach a visible card editor within its 10-second probe and made no
+board writes; it is not counted as evidence of deployment or as a successful UI acceptance.
