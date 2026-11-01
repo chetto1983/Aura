@@ -5180,6 +5180,35 @@ counts them. Not shown: interactive verbs, the memory verbs live in CI, and the 
 
 ## 19. Evidence, exclusions and remaining limits
 
+### A boot that waits on nothing outside the box — measured 2026-11-01
+
+On the lab VM's boot of 2026-11-01 the cockpit never came up. `aura.service` failed at 13:39:41
+with `dependency failed to start: container aura is unhealthy`, and `aura-caddy` stayed Created
+with nothing to retry it. This was the fourth outage of that kind, after 2026-09-10, 2026-09-24
+and 2026-10-28.
+- The memory readiness probe called `memory_search`, which embeds the query. The stored route is
+  hosted: OpenRouter, `perplexity/pplx-embed-v1-4b`.
+- A packet capture on the memory sidecar showed the same sequence on every failed probe: ArcadeDB
+  answered the three gate counts in 28 ms, the embedding request left, and nothing came back in
+  the remaining 1.97 s of the shared 2 s budget.
+- `/readyz` failed from 13:39 to 13:44, passed for about a minute, and failed again from 13:46 to
+  past 13:50. In the 13:44 passes the route answered in 0.39-0.98 s.
+- The listener opened 60 s after the container started, 15 s past the 45 s `start_period`, which
+  left two real attempts before compose gave up.
+
+Decision (operator, 2026-11-01: "aura deve partire anche con una latenza"):
+- Readiness reads through `memory_facts_about`, which walks the graph and reaches no embedding
+  route. Dense retrieval stays an improvement, not a dependency.
+- No service gates on aura's health. `caddy`, `prometheus` and `tempo` use `service_started`.
+- aura's `start_period` is 300 s, matching `install.sh`'s `--wait-timeout 300`. The first success
+  ends it, so a fast boot pays nothing.
+
+Not shown: why the route went silent, because no uncut embedding request was timed. `/readyz` no
+longer proves that the route answers; `aura doctor` and the retrieval path's `embedding_failed`
+reason still report that. Reads through `memory_search` still wait on the route. The same boot
+also applied revision `bd994a7ef` while the updater held it for an admin: `compose up` uses the
+`:edge` tag the updater had already pulled. That is an open defect, not changed here.
+
 ### Remote access from a phone — measured 2026-10-31
 
 The wizard ran on the lab VM with `chetto1983.it` on a Cloudflare account that had never held a
