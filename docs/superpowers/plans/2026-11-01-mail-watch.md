@@ -193,7 +193,7 @@ Each of these would bite a real person, and each has a test that names it.
 | File | Change |
 |---|---|
 | `prd.md`, `docs/teable-behaviours-2026-10-30.md`, `docs/superpowers/specs/2026-10-09-consolidation-best-of-design.md` | The amendments, with what the measures do not prove. |
-| `internal/db/migrations/0149_pim_watch.{up,down}.sql` | Kinds, the `identity_deactivated` reason, six tables, RLS, the two partial unique indexes. |
+| `internal/db/migrations/0150_pim_watch.{up,down}.sql` | Kinds, the `identity_deactivated` reason, six tables, RLS, the two partial unique indexes. |
 | `internal/db/queries/pim_watch.sql`, `scheduler_tasks.sql`, `internal/db/sqlc/*` | Queries and generated code. |
 | `internal/cron/store.go`, `store_manage.go`, `pause.go` | The two kinds, `ListLiveTasksOfKind`, `PauseIdentityTasks`, `DeleteIdentityTasks`. |
 | `internal/agui/deprovision.go`, `saga_journal.go`, `cmd/aura/serve_deprovision_purgers.go` | `ScheduledTaskPurger`, the `scheduled_tasks` step, `scheduledTaskAdapter`. |
@@ -262,7 +262,7 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 
 ### Task 2 — Kinds, tables and queries
 
-- [x] **Files:** migration 0149, `internal/db/queries/pim_watch.sql`, `scheduler_tasks.sql`, generated code,
+- [x] **Files:** migration 0150, `internal/db/queries/pim_watch.sql`, `scheduler_tasks.sql`, generated code,
   `internal/cron/store.go`, `store_manage.go`, `internal/agent/display/native_lists.go`.
 - **Interfaces:** `cron.KindPIMWatch`, `cron.KindPIMDigest`, `(*Store).ListLiveTasksOfKind`.
 - **Tests:** `TestMigrationHeadMatchesEmbeddedCatalog` (pin moved to 149), the kind lists, `TestReset_DownUpRoundTrip`,
@@ -304,7 +304,7 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 ### Task 7 — State, and the tick
 
 - [x] **Files:** `internal/pimwatch/store.go`, `store_cursor.go`, `store_verdicts.go`, `text.go`, `watcher.go`, their
-  tests, the regenerated queries, migration 0149's additions.
+  tests, the regenerated queries, migration 0150's additions.
 - **Interfaces:** `Store`, `(*Store).CommitPage`, `Watcher.Tick`, `StartResource`, `HardFailure`, `Outcome`, `Line`.
 - **Tests:** Review Focus 1 to 4 on the disposable database with the race detector, RLS with a second identity and with
   no identity (`TestAnotherIdentitySeesNothingOfAWatch`, `TestAConnectionWithNoIdentitySeesNoRowOfAnyTable`).
@@ -366,7 +366,7 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 
 ### Task 14b — De-provisioning stops and removes an identity's tasks
 
-- [x] **Files:** `internal/db/migrations/0149_pim_watch.{up,down}.sql`, `internal/db/queries/scheduler_tasks.sql`,
+- [x] **Files:** `internal/db/migrations/0150_pim_watch.{up,down}.sql`, `internal/db/queries/scheduler_tasks.sql`,
   `internal/cron/pause.go`, `store_manage.go`, `internal/agui/deprovision.go`, `saga_journal.go`,
   `cmd/aura/serve_deprovision_purgers.go`, `serve_provisioning.go`. `pimWatchJobs` and `Service.StopIdentity` are gone.
 - **Interfaces:** `cron.PausedByIdentityDeactivated`, `Store.PauseIdentityTasks`, `Store.DeleteIdentityTasks`,

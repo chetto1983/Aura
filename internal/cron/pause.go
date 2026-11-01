@@ -20,7 +20,7 @@ import (
 const (
 	PausedByOperator = "operator"
 	PausedByFailures = "failures"
-	// PausedByIdentityDeactivated is a task whose owner was deactivated (migration 0149). The
+	// PausedByIdentityDeactivated is a task whose owner was deactivated (migration 0150). The
 	// purge deletes it when the grace window ends.
 	PausedByIdentityDeactivated = "identity_deactivated"
 )

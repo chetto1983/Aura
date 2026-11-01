@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/select';
 // SettingsPanel holds the two numbers a person sets: the digest's hour and the daily cap. The
 // check interval is the task's, set at enable, so it is said and not offered.
 
-/** daily_alert_cap's CHECK in migration 0149. */
+/** daily_alert_cap's CHECK in migration 0150. */
 const CAP_MAX = 100;
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => ({
