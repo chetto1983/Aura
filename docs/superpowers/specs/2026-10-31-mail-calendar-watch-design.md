@@ -364,8 +364,10 @@ text with the same run's tool results, so a calendar never read passes it.
 
 1. `search_emails` uses exact instants on Gmail, with epoch seconds, as Gmail's filtering guide says.
 2. `get_calendar_events` honours "all calendars" on every provider, or says it does not.
-3. A mail body prefers `text/plain`. HTML-only mail goes through readability. Aura already has it in
-   `internal/web/html.go` (`ExtractMarkdown`), so reuse is decided by where the conversion should live.
+3. A mail body prefers `text/plain`. HTML-only mail goes through readability and reaches the agent as Markdown
+   (operator, 2026-11-01), because links, lists and tables are what an order or an invoice carries. The conversion
+   lives in the PIM, which is C#, so Aura's `internal/web/html.go` (`ExtractMarkdown`) gives the behaviour and no
+   code. The `changes` snippet stays plain text.
 
 ## 7. Measurement
 
