@@ -1,10 +1,14 @@
 package agui
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -52,6 +56,39 @@ func TestASubjectCannotEscapeThePlainTextBlock(t *testing.T) {
 		if strings.Contains(inner, "\n"+fence) {
 			t.Fatalf("a line of %q closes the block: %q", subject, got)
 		}
+	}
+}
+
+type watchSearchStore struct {
+	errConvStore
+	content string
+}
+
+func (s *watchSearchStore) SearchConversationTurnsForIdentity(context.Context, string, string, int) ([]conversations.SearchResult, error) {
+	return []conversations.SearchResult{{ConversationID: goodID, Seq: 1, Content: s.content}}, nil
+}
+
+// The search panel cuts a snippet out of the whole turn and prints it as text, so a hit needs no
+// block: only the frame and its escaping go.
+func TestASearchHitShowsAWatchRecordWithoutItsFrame(t *testing.T) {
+	t.Parallel()
+	quoted := `1. Mario <m@x.it>: Fermo linea & pompa`
+	srv := convAPIServer(t, &watchSearchStore{content: framedRecord(quoted)})
+
+	code, body := req(t, srv, http.MethodGet, "/api/conversations/search?q=Fermo", "")
+	if code != http.StatusOK {
+		t.Fatalf("search: status = %d: %s", code, body)
+	}
+	var hits []conversations.SearchResult
+	if err := json.Unmarshal([]byte(body), &hits); err != nil || len(hits) != 1 {
+		t.Fatalf("hits = %q (%v)", body, err)
+	}
+	got := hits[0].Content
+	if strings.Contains(got, "tool_output") || strings.Contains(got, "nonce") {
+		t.Fatalf("the frame is still there: %q", got)
+	}
+	if !strings.Contains(got, quoted) || !strings.Contains(got, "account=work") {
+		t.Fatalf("the hit lost text: %q", got)
 	}
 }
 

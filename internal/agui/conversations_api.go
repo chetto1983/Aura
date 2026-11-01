@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/google/uuid"
 )
@@ -273,6 +274,9 @@ func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
+	}
+	for i := range hits {
+		hits[i].Content = agent.PlainWatchRecord(hits[i].Content)
 	}
 	writeJSON(w, hits)
 }

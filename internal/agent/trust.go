@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"html"
+	"regexp"
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
@@ -67,9 +68,28 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 }
 
 // WatchRecordSource names the frame around a mail's sender and subject in a watch's conversation
-// record. A plain line and the refs stay outside the frame, and the cockpit shows the frame's
-// content as plain text (internal/agui/server_display_watch.go).
+// record. A plain line and the refs stay outside the frame. A path that shows a turn to a person
+// goes through ShowWatchRecord.
 const WatchRecordSource = "mail_watch"
+
+// watchRecordFrame matches the envelope FrameUntrustedPromptContent writes around a record. The
+// content is escaped, so a forged closing tag cannot end the match early.
+var watchRecordFrame = regexp.MustCompile(`(?s)<tool_output source="` + regexp.QuoteMeta(WatchRecordSource) +
+	`" trust="untrusted" nonce="[0-9a-f]+">\n(.*?)\n</tool_output>`)
+
+// ShowWatchRecord rewrites a turn for a person: each record's frame gives way to show(its text,
+// unescaped). That text is attacker text again and never goes back to a model.
+func ShowWatchRecord(content string, show func(text string) string) string {
+	return watchRecordFrame.ReplaceAllStringFunc(content, func(frame string) string {
+		quoted := watchRecordFrame.FindStringSubmatch(frame)[1]
+		return show(unescapePromptText(quoted))
+	})
+}
+
+// PlainWatchRecord is ShowWatchRecord for a path that already prints a turn as text.
+func PlainWatchRecord(content string) string {
+	return ShowWatchRecord(content, func(text string) string { return text })
+}
 
 // FrameUntrustedPromptContent wraps model-facing untrusted data in the shared
 // nonce-bearing envelope used for tool output and delegated input.
@@ -101,9 +121,7 @@ func EscapePromptText(content string) string {
 // as "<". NFKC folding is not undone: a fullwidth bracket stays folded.
 var promptTextUnescaper = strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">")
 
-// UnescapePromptText is the display half of EscapePromptText, for a path that shows framed text
-// to a person. Text it returns is attacker text again and never goes back to a model.
-func UnescapePromptText(content string) string {
+func unescapePromptText(content string) string {
 	return promptTextUnescaper.Replace(content)
 }
 

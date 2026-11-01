@@ -7,8 +7,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+// The public page prints a turn as text, so its reader gets a watch record's lines, not the frame
+// the model reads them in. What a person typed is theirs and stays as it is.
+func TestAShareShowsAWatchRecordWithoutItsFrame(t *testing.T) {
+	quoted := `1. Mario <m@x.it>: Fermo linea & pompa`
+	framed := "Mail alert for work.\n" + agent.FrameUntrustedPromptContent(agent.WatchRecordSource, quoted)
+	msgs := []llm.Message{{Role: llm.RoleAssistant, Content: framed}, {Role: llm.RoleUser, Content: framed}}
+
+	snap, err := BuildSnapshot(ConvMeta{Title: "t", Model: "m"}, msgs, nil, time.Now())
+	if err != nil {
+		t.Fatalf("BuildSnapshot: %v", err)
+	}
+	if got := snap.Turns[0].Text; got != "Mail alert for work.\n"+quoted {
+		t.Fatalf("assistant turn = %q", got)
+	}
+	if got := snap.Turns[1].Text; got != framed {
+		t.Fatalf("user turn = %q", got)
+	}
+}
 
 // TestSnapshotKeepsToolNamesDropsArgs asserts both send_file and shell_exec
 // survive in ToolNames while their Arguments JSON (L-01) never appears

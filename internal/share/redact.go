@@ -27,6 +27,7 @@ package share
 import (
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -45,7 +46,7 @@ func projectTurns(msgs []llm.Message) []SnapshotTurn {
 			turns = append(turns, SnapshotTurn{
 				Seq:       seq,
 				Role:      m.Role,
-				Text:      m.Content,
+				Text:      turnText(m),
 				ToolNames: toolNames(m.ToolCalls),
 			})
 			seq++
@@ -55,6 +56,15 @@ func projectTurns(msgs []llm.Message) []SnapshotTurn {
 		}
 	}
 	return turns
+}
+
+// turnText is the turn a recipient reads. The public page prints it as text, so a mail watch's
+// record only loses the frame the model reads it in.
+func turnText(m llm.Message) string {
+	if m.Role == llm.RoleAssistant {
+		return agent.PlainWatchRecord(m.Content)
+	}
+	return m.Content
 }
 
 // toolNames extracts each call's Function.Name in call order, preserving
