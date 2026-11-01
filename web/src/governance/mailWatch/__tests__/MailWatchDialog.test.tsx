@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axe from 'axe-core';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import '../../../i18n/i18n';
-import { decision, label, mailWatchServer, renderWatch, rule } from '../../../test/mailWatchServer';
+import {
+  decision,
+  label,
+  mailWatchServer,
+  renderWatch,
+  rule,
+  watchDay,
+} from '../../../test/mailWatchServer';
 import { MailWatchDialog } from '../MailWatchDialog';
 
 // The dialog that holds the watch: its tabs, its close, and the two things only a dialog can get
@@ -13,12 +20,12 @@ let server: ReturnType<typeof mailWatchServer>;
 beforeEach(() => {
   server = mailWatchServer();
   server.on('GET /api/mail-watch/accounts/work/decisions', () => ({
-    body: [
+    body: watchDay([
       decision({ item_id: 'a', subject: 'First', tier: 'now', label_id: 'l1' }),
       decision({ item_id: 'b', subject: 'Second', auth_failed: true }),
       decision({ item_id: 'c', gone: true, from: '', from_name: '', subject: '' }),
       decision({ item_id: 'd', resource: 'calendar', from_name: '', subject: 'Meeting' }),
-    ],
+    ]),
   }));
   server.on('GET /api/mail-watch/labels', () => ({ body: [label({ id: 'l1' })] }));
   server.on('GET /api/mail-watch/rules', () => ({ body: [rule()] }));

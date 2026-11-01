@@ -342,32 +342,39 @@ type DecisionLine struct {
 	DecidedAt time.Time
 }
 
+// DayDecisions is one account's day: the day read, in the identity's zone and so not always the
+// caller's, and its lines.
+type DayDecisions struct {
+	Day   string
+	Lines []DecisionLine
+}
+
 // Decisions lists an account's verdicts of one local day, newest first, read live by id. day is
 // YYYY-MM-DD in the identity's zone; empty means today.
-func (s *Service) Decisions(ctx context.Context, identityID, accountID, day string) ([]DecisionLine, error) {
+func (s *Service) Decisions(ctx context.Context, identityID, accountID, day string) (DayDecisions, error) {
 	if s.PIM == nil {
-		return nil, ErrUnavailable
+		return DayDecisions{}, ErrUnavailable
 	}
 	loc := s.Locale.Location(ctx, identityID)
 	start := dayStart(s.now(), loc)
 	if day != "" {
 		parsed, err := time.ParseInLocation(time.DateOnly, day, loc)
 		if err != nil {
-			return nil, fmt.Errorf("%w: the day is YYYY-MM-DD", ErrInvalid)
+			return DayDecisions{}, fmt.Errorf("%w: the day is YYYY-MM-DD", ErrInvalid)
 		}
 		start = parsed
 	}
 	verdicts, err := s.Store.AccountVerdicts(ctx, identityID, accountID, start, start.AddDate(0, 0, 1), decisionsLimit)
 	if err != nil {
-		return nil, err
+		return DayDecisions{}, err
 	}
 	book, err := s.Store.Book(ctx, identityID)
 	if err != nil {
-		return nil, err
+		return DayDecisions{}, err
 	}
 	lines, err := readLines(ctx, s.PIM, accountID, verdicts)
 	if err != nil {
-		return nil, err
+		return DayDecisions{}, err
 	}
 	read := make(map[string]Line, len(lines))
 	for _, line := range lines {
@@ -380,7 +387,7 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 			Label: book.LabelName(verdict.LabelID), By: verdict.By, DecidedAt: verdict.DecidedAt,
 		})
 	}
-	return out, nil
+	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out}, nil
 }
 
 // SaveSettings changes the digest hour and the daily cap, and moves the digest to the new hour. A

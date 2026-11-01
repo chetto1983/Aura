@@ -1,7 +1,7 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import { MailWatchDialog } from '../governance/mailWatch/MailWatchDialog';
-import { decision, renderWatch, type mailWatchServer } from './mailWatchServer';
+import { decision, renderWatch, watchDay, type mailWatchServer } from './mailWatchServer';
 
 // The day of account `work`, opened through the real dialog, and the ways a test finds a row in it.
 
@@ -18,7 +18,7 @@ export function theDay(
   server: ReturnType<typeof mailWatchServer>,
   ...rows: readonly ReturnType<typeof decision>[]
 ) {
-  server.on(DECISIONS, () => ({ body: rows }));
+  server.on(DECISIONS, () => ({ body: watchDay(rows) }));
 }
 
 export function openDay() {

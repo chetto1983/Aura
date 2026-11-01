@@ -6,6 +6,7 @@ import {
   hang,
   mailWatchServer,
   renderWatch,
+  watchDay,
   watchStatus,
 } from '../../../test/mailWatchServer';
 import type { PimAccount } from '../../pimApi';
@@ -132,7 +133,7 @@ describe('a running watch', () => {
 
   it('opens the day in a dialog named for the account', async () => {
     statusWith(account());
-    server.on('GET /api/mail-watch/accounts/work/decisions', () => ({ body: [] }));
+    server.on('GET /api/mail-watch/accounts/work/decisions', () => ({ body: watchDay([]) }));
     renderWatch(<AccountWatch account={PIM} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open the day' }));
     expect(await screen.findByRole('dialog', { name: 'Work' })).toBeTruthy();

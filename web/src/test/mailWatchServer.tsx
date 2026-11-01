@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 import type {
   MailWatchAccount,
+  MailWatchDay,
   MailWatchDecision,
   MailWatchLabel,
   MailWatchRule,
@@ -43,6 +44,11 @@ export function decision(fields: Partial<MailWatchDecision> = {}): MailWatchDeci
     decided_at: '2026-11-01T09:12:00Z',
     ...fields,
   };
+}
+
+/** The answer of the decisions route. */
+export function watchDay(rows: readonly MailWatchDecision[], day = '2026-11-01'): MailWatchDay {
+  return { day, decisions: rows };
 }
 
 export function rule(fields: Partial<MailWatchRule> = {}): MailWatchRule {

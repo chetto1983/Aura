@@ -20,6 +20,7 @@ import {
   mailWatchServer,
   rule,
   settled,
+  watchDay,
 } from '../../../test/mailWatchServer';
 
 // The day of one account, through the real dialog, hooks and API module: what a person reads. The
@@ -51,7 +52,7 @@ describe('the states of a day', () => {
       attempts += 1;
       return attempts === 1
         ? { status: 502, body: { error: 'provider_transient' } }
-        : { body: [decision()] };
+        : { body: watchDay([decision()]) };
     });
     openDay();
     expect((await screen.findByRole('alert')).textContent).toMatch(/provider is having trouble/);
@@ -103,6 +104,21 @@ describe('the states of a day', () => {
     openDay();
     expect(await screen.findByRole('img', { name: '1 now, 2 today, 0 later' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 3 }).textContent).not.toBe('');
+  });
+
+  it('heads the day the server answered, not the browser’s', async () => {
+    server.on(DECISIONS, () => ({ body: watchDay([decision()], '2026-03-15') }));
+    openDay();
+    expect((await screen.findByRole('heading', { level: 3 })).textContent).toBe('Sunday, March 15');
+    expect(dateInput()).toHaveProperty('value', '2026-03-15');
+  });
+
+  it('names no day until the server does', async () => {
+    server.on(DECISIONS, hang);
+    openDay();
+    await screen.findByText('Reading the day from your mail…');
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
+    expect(dateInput()).toHaveProperty('value', '');
   });
 });
 

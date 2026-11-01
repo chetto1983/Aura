@@ -21,6 +21,7 @@ import {
   removeRule,
   saveMailWatchSettings,
   updateLabel,
+  type MailWatchDay,
   type MailWatchDecision,
   type MailWatchLabelInput,
   type MailWatchRule,
@@ -75,7 +76,7 @@ export function useDecisionsOfDay(accountIds: readonly string[], day: string | n
   const results = useQueries({ queries: accountIds.map((id) => decisionsQuery(id, day)) });
   return {
     ready: accountIds.length > 0 && results.every((result) => result.isSuccess),
-    decisions: results.flatMap((result) => result.data ?? []),
+    decisions: results.flatMap((result) => result.data?.decisions ?? []),
   };
 }
 
@@ -156,8 +157,15 @@ export function useCorrection(
   const { queryKey } = decisionsQuery(accountId, day);
 
   function writeRow(row: MailWatchDecision) {
-    queryClient.setQueryData<readonly MailWatchDecision[]>(queryKey, (rows) =>
-      rows?.map((entry) => (decisionKey(entry) === decisionKey(row) ? row : entry)),
+    queryClient.setQueryData<MailWatchDay>(queryKey, (answer) =>
+      answer === undefined
+        ? answer
+        : {
+            ...answer,
+            decisions: answer.decisions.map((entry) =>
+              decisionKey(entry) === decisionKey(row) ? row : entry,
+            ),
+          },
     );
   }
 

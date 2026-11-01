@@ -1,14 +1,16 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MAIL_WATCH_TIERS, type MailWatchDecision, type MailWatchTier } from '../mailWatchApi';
-import { browserDay, longDay, tierCounts } from './mailWatchLogic';
+import { longDay, tierCounts } from './mailWatchLogic';
 import { TierMark } from './TierControls';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 // DayHeader heads the day like a dateline: the day in words, its shape as one strip of tiers, and
 // the date input that moves to another day. The strip re-divides as corrections land, which is
-// the one place motion says something here: the day's balance has changed.
+// the one place motion says something here: the day's balance has changed. The day is the
+// identity's, which the browser cannot work out, so until the server names it the head stays
+// blank rather than show another zone's date.
 
 const STRIP_FILL: Readonly<Record<MailWatchTier, string>> = {
   now: 'bg-warning',
@@ -25,16 +27,16 @@ interface DayHeaderProps {
 export function DayHeader({ day, rows, onDayChange }: DayHeaderProps) {
   const { t, i18n } = useTranslation();
   const inputId = useId();
-  const [today] = useState(() => browserDay(new Date()));
-  const shown = day ?? today;
   const counts = tierCounts(rows);
   return (
     <div className="flex flex-col gap-3 px-4 pb-3 pt-4">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <div className="min-w-0">
-          <h3 className="font-display text-[26px] leading-tight text-text first-letter:uppercase">
-            {longDay(shown, i18n.language)}
-          </h3>
+        <div className="min-h-8 min-w-0">
+          {day === null ? null : (
+            <h3 className="font-display text-[26px] leading-tight text-text first-letter:uppercase">
+              {longDay(day, i18n.language)}
+            </h3>
+          )}
           {rows.length > 0 ? (
             <p className="mt-1 flex flex-wrap gap-x-4 font-mono text-[13px] text-text-muted">
               {MAIL_WATCH_TIERS.map((tier) => (
@@ -52,7 +54,7 @@ export function DayHeader({ day, rows, onDayChange }: DayHeaderProps) {
           <Input
             id={inputId}
             type="date"
-            value={shown}
+            value={day ?? ''}
             onChange={(event) => {
               const next = event.currentTarget.value;
               onDayChange(next === '' ? null : next);

@@ -58,11 +58,15 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
     setNotice({ kind: 'rule', learned: false, change });
   });
   const when = useDayPhrase(day);
-  const rows = decisions.data ?? [];
+  const rows = decisions.data?.decisions ?? [];
 
   return (
     <div className="@container/day flex min-h-full flex-col">
-      <DayHeader day={day} rows={rows} onDayChange={onDayChange} />
+      <DayHeader
+        day={day ?? decisions.data?.day ?? null}
+        rows={rows}
+        onDayChange={onDayChange}
+      />
       <div className="flex-1">
         {decisions.isPending || labels.isPending ? (
           <DayPending />

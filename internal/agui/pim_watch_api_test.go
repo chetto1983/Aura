@@ -51,9 +51,9 @@ func (f *fakeWatchService) RemoveAccount(_ context.Context, _, accountID string)
 	return f.err
 }
 
-func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string) ([]pimwatch.DecisionLine, error) {
+func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string) (pimwatch.DayDecisions, error) {
 	f.account, f.day = accountID, day
-	return f.lines, f.err
+	return pimwatch.DayDecisions{Day: "2026-11-02", Lines: f.lines}, f.err
 }
 
 func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.Rule, error) {
@@ -184,15 +184,16 @@ func TestMailWatchDecisionsCarryTheDayAndTheLiveText(t *testing.T) {
 		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@b.it", Subject: "Linea ferma", Tier: pimwatch.TierNow, LabelID: "l1", Label: "Cliente", By: pimwatch.ByRule, DecidedAt: at},
 		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m2", Gone: true, Tier: pimwatch.TierToday, By: pimwatch.ByDefault, DecidedAt: at},
 	}}
-	out := decodeWatch[[]mailWatchDecisionJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?day=2026-11-01", ""))
-	if service.day != "2026-11-01" || service.account != "work" || len(out) != 2 {
+	out := decodeWatch[mailWatchDayJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?day=2026-11-01", ""))
+	rows := out.Decisions
+	if service.day != "2026-11-01" || service.account != "work" || out.Day != "2026-11-02" || len(rows) != 2 {
 		t.Fatalf("day %q account %q out %+v", service.day, service.account, out)
 	}
-	if out[0].From != "a@b.it" || out[0].Label != "Cliente" || out[0].DecidedBy != "rule" || out[0].Start != nil {
-		t.Fatalf("first = %+v", out[0])
+	if rows[0].From != "a@b.it" || rows[0].Label != "Cliente" || rows[0].DecidedBy != "rule" || rows[0].Start != nil {
+		t.Fatalf("first = %+v", rows[0])
 	}
-	if !out[1].Gone || out[1].From != "" {
-		t.Fatalf("second = %+v", out[1])
+	if !rows[1].Gone || rows[1].From != "" {
+		t.Fatalf("second = %+v", rows[1])
 	}
 }
 

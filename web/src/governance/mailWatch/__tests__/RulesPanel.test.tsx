@@ -13,6 +13,7 @@ import {
   rowHolding,
   rule,
   settled,
+  watchDay,
   watchStatus,
 } from '../../../test/mailWatchServer';
 import { RulesPanel } from '../RulesPanel';
@@ -176,12 +177,12 @@ describe('adding a rule', () => {
 describe('the preview', () => {
   function dayOfMail() {
     server.on('GET /api/mail-watch/accounts/work/decisions', () => ({
-      body: [
+      body: watchDay([
         decision({ item_id: 'a', from: 'one@shop.example' }),
         decision({ item_id: 'b', from: 'two@shop.example' }),
         decision({ item_id: 'c', from: 'three@shop.example', tier: 'later' }),
         decision({ item_id: 'd', from: 'ada@example.com' }),
-      ],
+      ]),
     }));
   }
 
@@ -201,7 +202,7 @@ describe('the preview', () => {
       body: watchStatus({ accounts: [account(), account({ account_id: 'home' })] }),
     }));
     server.on('GET /api/mail-watch/accounts/home/decisions', () => ({
-      body: [decision({ item_id: 'h', account_id: 'home', from: 'x@shop.example' })],
+      body: watchDay([decision({ item_id: 'h', account_id: 'home', from: 'x@shop.example' })]),
     }));
     renderWatch(<RulesPanel day={null} />);
     await screen.findByText(/No rules yet/);

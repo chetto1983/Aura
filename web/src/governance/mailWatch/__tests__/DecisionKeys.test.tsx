@@ -14,7 +14,7 @@ import {
   THREE,
   tierOf,
 } from '../../../test/mailWatchDay';
-import { label, mailWatchServer, settled } from '../../../test/mailWatchServer';
+import { label, mailWatchServer, settled, watchDay } from '../../../test/mailWatchServer';
 
 // What a key does on the day: the roving tabindex, the triage keys, and where the focus lands.
 
@@ -140,7 +140,7 @@ describe('the keys', () => {
   it('leaves the focus in a field the person was typing in', async () => {
     server.on(DECISIONS, async () => {
       await Promise.resolve();
-      return { body: THREE };
+      return { body: watchDay(THREE) };
     });
     openDay();
     const field = await screen.findByLabelText('Day', { selector: 'input' });

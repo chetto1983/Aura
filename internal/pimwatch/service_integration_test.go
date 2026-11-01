@@ -420,15 +420,18 @@ func TestDecisionsReadTheDayLive(t *testing.T) {
 	r.commit(rigAccount, r.draft("m1", TierToday, label.ID), r.draft("gone", TierNow, ""))
 	delete(r.pim.items, "gone")
 
-	lines, err := r.service.Decisions(ctx, r.identity, rigAccount, "")
+	today, err := r.service.Decisions(ctx, r.identity, rigAccount, "")
 	if err != nil {
 		t.Fatalf("decisions: %v", err)
 	}
-	if len(lines) != 2 {
-		t.Fatalf("lines = %+v", lines)
+	if len(today.Lines) != 2 {
+		t.Fatalf("lines = %+v", today.Lines)
+	}
+	if today.Day != r.clock.at.Format(time.DateOnly) {
+		t.Fatalf("day = %q", today.Day)
 	}
 	byID := map[string]DecisionLine{}
-	for _, line := range lines {
+	for _, line := range today.Lines {
 		byID[line.ItemID] = line
 	}
 	if got := byID["m1"]; got.From != "m1@acme.it" || got.Label != "Cliente" || got.By != ByDefault {
@@ -439,8 +442,8 @@ func TestDecisionsReadTheDayLive(t *testing.T) {
 	}
 
 	yesterday := r.clock.at.AddDate(0, 0, -1).Format(time.DateOnly)
-	if lines, err = r.service.Decisions(ctx, r.identity, rigAccount, yesterday); err != nil || len(lines) != 0 {
-		t.Fatalf("yesterday = %+v, %v", lines, err)
+	if past, err := r.service.Decisions(ctx, r.identity, rigAccount, yesterday); err != nil || len(past.Lines) != 0 || past.Day != yesterday {
+		t.Fatalf("yesterday = %+v, %v", past, err)
 	}
 	if _, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a bad day: %v", err)

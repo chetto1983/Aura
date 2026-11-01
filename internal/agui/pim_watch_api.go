@@ -24,7 +24,7 @@ type mailWatchService interface {
 	Enable(ctx context.Context, identityID, accountID string) error
 	Disable(ctx context.Context, identityID, accountID string) error
 	RemoveAccount(ctx context.Context, identityID, accountID string) error
-	Decisions(ctx context.Context, identityID, accountID, day string) ([]pimwatch.DecisionLine, error)
+	Decisions(ctx context.Context, identityID, accountID, day string) (pimwatch.DayDecisions, error)
 	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.Rule, error)
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)
 	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.Rule, error)
@@ -229,15 +229,22 @@ type mailWatchDecisionJSON struct {
 	DecidedAt  time.Time  `json:"decided_at"`
 }
 
+// mailWatchDayJSON is the decisions of the day it names. Today is the identity's today, which the
+// browser may not share, so the cockpit heads the day with this one.
+type mailWatchDayJSON struct {
+	Day       string                  `json:"day"`
+	Decisions []mailWatchDecisionJSON `json:"decisions"`
+}
+
 func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
-	lines, err := service.Decisions(r.Context(), identityID, r.PathValue("id"), r.URL.Query().Get("day"))
+	day, err := service.Decisions(r.Context(), identityID, r.PathValue("id"), r.URL.Query().Get("day"))
 	if err != nil {
 		writeMailWatchError(w, err)
 		return
 	}
-	out := make([]mailWatchDecisionJSON, 0, len(lines))
-	for _, line := range lines {
-		out = append(out, mailWatchDecisionJSON{
+	out := mailWatchDayJSON{Day: day.Day, Decisions: make([]mailWatchDecisionJSON, 0, len(day.Lines))}
+	for _, line := range day.Lines {
+		out.Decisions = append(out.Decisions, mailWatchDecisionJSON{
 			AccountID: line.AccountID, Resource: line.Resource, ItemID: line.ItemID, CalendarID: line.CalendarID,
 			From: line.From, FromName: line.FromName, Subject: line.Subject,
 			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,

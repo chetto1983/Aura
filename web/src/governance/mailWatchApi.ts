@@ -71,6 +71,12 @@ export interface MailWatchDecision {
   readonly decided_at: string;
 }
 
+export interface MailWatchDay {
+  /** YYYY-MM-DD in the identity's zone. */
+  readonly day: string;
+  readonly decisions: readonly MailWatchDecision[];
+}
+
 export interface MailWatchRule {
   readonly id: string;
   readonly key: string;
@@ -138,16 +144,10 @@ export async function disableMailWatch(accountId: string): Promise<void> {
 }
 
 /** A day of decisions, newest first. A null day is today in the identity's zone, which only the
- * server knows, so the browser's date is never sent for it. */
-export function getDecisions(
-  accountId: string,
-  day: string | null,
-): Promise<readonly MailWatchDecision[]> {
+ * server knows, so the browser's date is never sent for it and the answer names the day read. */
+export function getDecisions(accountId: string, day: string | null): Promise<MailWatchDay> {
   const query = day === null ? '' : `?day=${encodeURIComponent(day)}`;
-  return sendJSON<readonly MailWatchDecision[]>(
-    'GET',
-    `${accountPath(accountId)}/decisions${query}`,
-  );
+  return sendJSON<MailWatchDay>('GET', `${accountPath(accountId)}/decisions${query}`);
 }
 
 export function correctDecision(
