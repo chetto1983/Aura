@@ -686,6 +686,7 @@ type AuraPimWatchVerdicts struct {
 	Fingerprint string             `json:"fingerprint"`
 	EventStart  pgtype.Timestamptz `json:"event_start"`
 	EventAllDay bool               `json:"event_all_day"`
+	EventSelf   bool               `json:"event_self"`
 	EventChange pgtype.Text        `json:"event_change"`
 	AlertRunID  pgtype.UUID        `json:"alert_run_id"`
 	AlertedAt   pgtype.Timestamptz `json:"alerted_at"`

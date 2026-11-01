@@ -197,3 +197,21 @@ func TestAMeetingMovedAwayIsToldByTheTimeTheWatchKept(t *testing.T) {
 		t.Fatalf("verdict = tier %s, start %s: the second move must replace the kept start", verdict.Tier, verdict.Start.Time)
 	}
 }
+
+// Microsoft writes a delete with no event, so the row must know the meeting was the person's own.
+func TestThePersonsOwnMeetingDeletedInsideADayAlertsNobody(t *testing.T) {
+	r := newWatchRig(t)
+	soon := r.clock.at.Add(3 * time.Hour)
+	own := addedEvent("ev1", EventTime{Time: soon})
+	own.Event.OrganizerIsSelf = true
+	r.calendarPage("start-calendar", "c1", own)
+	r.tick()
+
+	r.calendarPage("c1", "c2", deletedEvent("ev1"))
+	if out := r.tick(); out.Notice != "" {
+		t.Fatalf("the person's own delete pushed: %q", out.Notice)
+	}
+	if got := r.verdict("ev1"); got.Tier != TierLater || got.Change != WordCancelled {
+		t.Fatalf("verdict = %+v", got)
+	}
+}

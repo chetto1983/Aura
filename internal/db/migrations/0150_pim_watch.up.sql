@@ -75,7 +75,8 @@ CREATE TABLE aura.pim_watch_cursors (
 -- notification, and notified turns true once the ledger shows that run completed, so a run that
 -- died after committing tells it again and a run that finished never does. An event's row keeps
 -- its start and what happened to it: event_all_day says the start is a date in no zone, and
--- event_change stays null when nothing shows what changed.
+-- event_change stays null when nothing shows what changed, and event_self says the person organized
+-- it, which a Microsoft delete (an id and nothing else) no longer names.
 CREATE TABLE aura.pim_watch_verdicts (
     identity_id   uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
     account_id    text        NOT NULL,
@@ -91,6 +92,7 @@ CREATE TABLE aura.pim_watch_verdicts (
     fingerprint   text        NOT NULL DEFAULT '',
     event_start   timestamptz,
     event_all_day boolean     NOT NULL DEFAULT false,
+    event_self    boolean     NOT NULL DEFAULT false,
     event_change  text        CHECK (event_change IN ('new', 'moved', 'cancelled')),
     alert_run_id  uuid,
     alerted_at    timestamptz,

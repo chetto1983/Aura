@@ -411,6 +411,8 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 			start = event.Start
 			facts.OrganizerIsSelf, facts.Fingerprint = event.OrganizerIsSelf, event.Fingerprint
 			facts.Cancelled = event.Status == EventCancelled
+		} else {
+			facts.OrganizerIsSelf = priors[id].OrganizerIsSelf
 		}
 		prior, seen := priors[id]
 		facts.Prior, facts.Seen = prior.Fingerprint, seen
@@ -425,6 +427,7 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 		}
 		drafts = append(drafts, VerdictDraft{
 			ItemID: id, CalendarID: change.CalendarID, Decision: decision, Fingerprint: facts.fingerprintOf(), Event: true, Start: start,
+			OrganizerIsSelf: facts.OrganizerIsSelf,
 		})
 		lines[id] = Line{
 			AccountID: t.AccountID, Resource: ResourceCalendar, ItemID: id, CalendarID: change.CalendarID,

@@ -50,6 +50,8 @@ type VerdictDraft struct {
 	Fingerprint string
 	Event       bool
 	Start       EventTime
+	// OrganizerIsSelf is kept on the event row: a delete no longer names who organized it.
+	OrganizerIsSelf bool
 }
 
 // PageCommit is what one page of changes leaves behind, written in one transaction: "handled"
@@ -141,7 +143,7 @@ func writeVerdict(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageCo
 			IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
 			CalendarID: draft.CalendarID, Tier: string(draft.Decision.Tier), DecidedBy: string(draft.Decision.By),
 			Fingerprint: draft.Fingerprint, DecidedAt: timestamp(decidedAt),
-			EventStart: timestamp(draft.Start.Time), EventAllDay: draft.Start.AllDay,
+			EventStart: timestamp(draft.Start.Time), EventAllDay: draft.Start.AllDay, EventSelf: draft.OrganizerIsSelf,
 			EventChange: optionalText(string(draft.Decision.Change)),
 		})
 	} else {
@@ -176,10 +178,11 @@ func moveCursor(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageComm
 }
 
 // PriorEvent is what a row remembers of an event: the fingerprint that tells a move from a new
-// description, and the start a deleted event no longer names.
+// description, and the start and organizer a deleted event no longer names.
 type PriorEvent struct {
-	Fingerprint string
-	Start       EventTime
+	Fingerprint     string
+	Start           EventTime
+	OrganizerIsSelf bool
 }
 
 // PriorEvents reads what the rows of these items remember. An item with no row has no key.
@@ -193,7 +196,10 @@ func (s *Store) PriorEvents(ctx context.Context, identityID, accountID, resource
 			return err
 		}
 		for _, r := range rows {
-			out[r.ItemID] = PriorEvent{Fingerprint: r.Fingerprint, Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay}}
+			out[r.ItemID] = PriorEvent{
+				Fingerprint: r.Fingerprint, Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay},
+				OrganizerIsSelf: r.EventSelf,
+			}
 		}
 		return nil
 	})
