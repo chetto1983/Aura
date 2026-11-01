@@ -11,6 +11,7 @@ export const mailWatchEn = {
     label: 'Mail and calendar watch',
     labelFor: 'Mail and calendar watch for {{account}}',
     pitch: 'Alerts only for what matters, and everything else in one digest a day.',
+    scope: 'Reads the Inbox: mail a filter moves to other folders is not watched.',
     open: 'Open the day',
   },
   state: {
@@ -202,6 +203,8 @@ export const mailWatchIt = {
     label: 'Controllo di posta e calendario',
     labelFor: 'Controllo di posta e calendario per {{account}}',
     pitch: 'Avvisi solo per ciò che conta, e tutto il resto in un riepilogo al giorno.',
+    scope:
+      'Controlla la Posta in arrivo: la posta che un filtro sposta in altre cartelle non viene guardata.',
     open: 'Apri la giornata',
   },
   state: {

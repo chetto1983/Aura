@@ -84,6 +84,7 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
             }}
           />
         )}
+        <p className="text-[13px] text-text-muted">{t('governance.mailWatch.switch.scope')}</p>
       </div>
       {toggle.isError ? (
         <p role="alert" className="text-[13px] text-danger">

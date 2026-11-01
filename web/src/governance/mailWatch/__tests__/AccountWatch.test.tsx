@@ -45,6 +45,16 @@ describe('an account with no watch', () => {
     expect(screen.queryByRole('button', { name: 'Open the day' })).toBeNull();
   });
 
+  it.each([
+    ['off', []],
+    ['on', [account()]],
+  ])('says it reads the Inbox only with the switch %s', async (_state, accounts) => {
+    statusWith(...accounts);
+    renderWatch(<AccountWatch account={PIM} />);
+    await theSwitch();
+    expect(screen.getByText(/mail a filter moves to other folders is not watched/)).toBeTruthy();
+  });
+
   it('turns on through the enable route', async () => {
     server.on('POST /api/mail-watch/accounts/work/enable', () => {
       statusWith(account());
