@@ -158,6 +158,102 @@ func TestAnAgentJobScheduledOutsideAConversationAnswersInOneOfItsOwn(t *testing.
 	}
 }
 
+// fakeThreadRestorer is the composition root's conversation seam, which can also bring a channel
+// thread back under its own id.
+type fakeThreadRestorer struct {
+	fakeTaskConversations
+	restored   []string
+	restoreErr error
+}
+
+func (f *fakeThreadRestorer) RestoreTaskConversation(_ context.Context, conversationID, _ string) error {
+	f.restored = append(f.restored, conversationID)
+	return f.restoreErr
+}
+
+func watchDispatch(handler *fakeHandler, convs TaskConversations, origins *fakeTaskOrigins) *Dispatch {
+	return NewDispatch(map[TaskKind]Handler{KindPIMWatch: handler, KindPIMDigest: handler}, DispatchDeps{
+		Store: &fakeCompleter{}, ConversationRecorder: &fakeConversationRecorder{},
+		TaskConversations: convs, TaskOrigins: origins,
+	})
+}
+
+// A watch on the cockpit route has no conversation until its first run opens one: the record is
+// how the agent knows which mail "aprila" means.
+func TestAWatchOutsideAConversationAnswersInOneOfItsOwn(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []TaskKind{KindPIMWatch, KindPIMDigest} {
+		handler := &fakeHandler{}
+		convs := &fakeTaskConversations{createID: "conv-own"}
+		origins := &fakeTaskOrigins{}
+		task := Task{ID: "task-1", Kind: kind, NotifyRoute: "stdout", IdentityID: "id-1", Payload: []byte(`{"text":"Mail watch: work"}`)}
+		if err := watchDispatch(handler, convs, origins).Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+			t.Fatalf("Dispatch: %v", err)
+		}
+		if origins.set["task-1"] != "conv-own" || convs.created[0].title != "⏰ Mail watch: work" {
+			t.Fatalf("%s: moved to %v, created %+v", kind, origins.set, convs.created)
+		}
+	}
+}
+
+// /clear hard-deletes the Telegram thread. A new conversation would be one the person's next
+// message never reaches, so the thread comes back under its own id and the task stays on it.
+func TestAWatchOnTelegramKeepsItsThreadWhenClearDeletesIt(t *testing.T) {
+	t.Parallel()
+
+	handler := &fakeHandler{}
+	convs := &fakeThreadRestorer{exists: map[string]bool{}, createID: "conv-other"}
+	origins := &fakeTaskOrigins{}
+	task := Task{ID: "task-1", Kind: KindPIMWatch, NotifyRoute: "telegram", IdentityID: "id-1", OriginConversationID: "thread"}
+	if err := watchDispatch(handler, convs, origins).Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(convs.restored) != 1 || convs.restored[0] != "thread" {
+		t.Fatalf("restored %v", convs.restored)
+	}
+	if len(convs.created) != 0 || len(origins.set) != 0 || handler.gotJob.OriginConversationID != "thread" {
+		t.Fatalf("the task moved: created %+v, set %+v, job %+v", convs.created, origins.set, handler.gotJob)
+	}
+}
+
+func TestAThreadThatCannotComeBackStillRunsTheWatch(t *testing.T) {
+	t.Parallel()
+
+	handler := &fakeHandler{}
+	convs := &fakeThreadRestorer{exists: map[string]bool{}, restoreErr: errors.New("db down")}
+	origins := &fakeTaskOrigins{}
+	task := Task{ID: "task-1", Kind: KindPIMDigest, NotifyRoute: "telegram", IdentityID: "id-1", OriginConversationID: "thread"}
+	if err := watchDispatch(handler, convs, origins).Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if !handler.ran || len(convs.created) != 0 || len(origins.set) != 0 {
+		t.Fatalf("ran %v, created %+v, set %+v", handler.ran, convs.created, origins.set)
+	}
+}
+
+// A watch on the cockpit route has no channel thread to keep, and an agent_job on Telegram was
+// never tied to the thread: both move as before.
+func TestOnlyAWatchOnTelegramKeepsItsDeletedConversation(t *testing.T) {
+	t.Parallel()
+
+	for _, task := range []Task{
+		{ID: "task-1", Kind: KindPIMWatch, NotifyRoute: "stdout", IdentityID: "id-1", OriginConversationID: "gone"},
+		{ID: "task-1", Kind: KindAgentJob, NotifyRoute: "telegram", IdentityID: "id-1", OriginConversationID: "gone"},
+	} {
+		convs := &fakeThreadRestorer{exists: map[string]bool{}, createID: "conv-own"}
+		origins := &fakeTaskOrigins{}
+		handlers := map[TaskKind]Handler{KindPIMWatch: &fakeHandler{}, KindAgentJob: &fakeHandler{}}
+		d := NewDispatch(handlers, DispatchDeps{Store: &fakeCompleter{}, TaskConversations: convs, TaskOrigins: origins})
+		if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+			t.Fatalf("Dispatch: %v", err)
+		}
+		if len(convs.restored) != 0 || origins.set["task-1"] != "conv-own" {
+			t.Fatalf("%s on %s: restored %v, set %v", task.Kind, task.NotifyRoute, convs.restored, origins.set)
+		}
+	}
+}
+
 // TestASystemTaskIsNotGivenAConversation leaves the other kinds alone: none of them calls
 // tools through the gateway, so a conversation would be one nobody asked for.
 func TestASystemTaskIsNotGivenAConversation(t *testing.T) {

@@ -19,10 +19,24 @@ type TaskConversations interface {
 	CreateTaskConversation(ctx context.Context, identityID, title string) (string, error)
 }
 
+// TaskThreadRestorer brings back a conversation under its own id. A channel's thread has one
+// deterministic id per account, so a task reporting there must keep that id: any other
+// conversation is one the person's next message on the channel never reaches.
+type TaskThreadRestorer interface {
+	RestoreTaskConversation(ctx context.Context, conversationID, identityID string) error
+}
+
 // TaskOriginSetter records the conversation a task answers in from now on. *Store
 // satisfies it.
 type TaskOriginSetter interface {
 	SetTaskOrigin(ctx context.Context, taskID, conversationID string) error
+}
+
+// answersInItsOwnConversation is a kind that needs a conversation even when nobody scheduled it
+// from one: agent_job for its ledger key, and the mail watch because its record is how the agent
+// knows which mail "aprila" means.
+func answersInItsOwnConversation(kind TaskKind) bool {
+	return kind == KindAgentJob || kind == KindPIMWatch || kind == KindPIMDigest
 }
 
 // homeTask gives a task a conversation of its own when the one it answers in is gone or was
@@ -32,18 +46,20 @@ type TaskOriginSetter interface {
 // with `aura task add` had no origin at all: its ledger key fell back to the job's non-UUID
 // session, and a strict profile denied every tool it called. Either task moves into a
 // conversation of its own and keeps it. While the origin exists nothing changes, a check that
-// cannot be answered moves nothing, and a kind other than agent_job with no origin is left
-// alone, because none of them calls tools through the gateway.
+// cannot be answered moves nothing, and a kind with no use for a conversation is left alone.
+//
+// A watch reporting on Telegram is the exception to moving: /clear deletes its thread, and the
+// thread comes back under the same id, the only one the person's next message reaches.
 func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 	convs := d.deps.TaskConversations
 	if convs == nil || d.deps.TaskOrigins == nil {
 		return task
 	}
 	if task.OriginConversationID == "" {
-		if task.Kind != KindAgentJob {
+		if !answersInItsOwnConversation(task.Kind) {
 			return task
 		}
-		return d.openTaskConversation(ctx, task, "cron: the agent_job was scheduled outside a conversation; it answers in one of its own")
+		return d.openTaskConversation(ctx, task, "cron: the task was scheduled outside a conversation; it answers in one of its own")
 	}
 	exists, err := convs.ConversationExists(ctx, task.OriginConversationID, task.IdentityID)
 	if err != nil {
@@ -54,7 +70,19 @@ func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 	if exists {
 		return task
 	}
+	if restorer, ok := convs.(TaskThreadRestorer); ok && keepsItsThread(task) {
+		// Best-effort: the push does not need the row, and only this run's record is lost.
+		if err := restorer.RestoreTaskConversation(ctx, task.OriginConversationID, task.IdentityID); err != nil {
+			slog.Warn("cron: the watch's thread could not be restored; this run's record is lost",
+				"task", task.ID, "conversation", task.OriginConversationID, "err", err)
+		}
+		return task
+	}
 	return d.openTaskConversation(ctx, task, "cron: the task's conversation is gone; it answers in a conversation of its own")
+}
+
+func keepsItsThread(task Task) bool {
+	return (task.Kind == KindPIMWatch || task.Kind == KindPIMDigest) && task.NotifyRoute == string(RouteTelegram)
 }
 
 // openTaskConversation opens the task's own conversation, records it as the task's origin for
