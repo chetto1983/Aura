@@ -35,6 +35,28 @@ import (
 // destructive-pattern approval in internal/agent/tools, which this predicate never sees.
 func gated(t scoring.RiskTier) bool { return t == scoring.Destructive }
 
+// personActions are the verbs that never stop a conversation and never run without one. A tier
+// cannot say this: Destructive would prompt the person who just asked, and everything below it
+// runs headless. The check reads only the responder, not the profile, because no approval is
+// being asked for: routeApprove's production clause is about trusting an approver.
+var personActions = map[grantSubject]bool{
+	{Tool: "mail_watch", Action: "add_rule"}: true,
+	{Tool: "mail_watch", Action: "correct"}:  true,
+}
+
+func needsPerson(subject grantSubject) bool { return personActions[subject] }
+
+// personPresent reports whether the person is in the conversation this call belongs to. A swarm
+// worker spawned from a live turn inherits the turn's responder marker and has nobody on it.
+func personPresent(ctx context.Context) bool {
+	return responderPresent(ctx) && !tools.IsDelegatedDispatch(ctx)
+}
+
+// needsPersonReason is what a headless run's model reads, in the shape of policyDenyReason.
+func needsPersonReason(subject grantSubject) string {
+	return "tool \"" + subject.String() + "\" needs a person in the conversation and this run has none: do not retry it, tell the operator what you would change"
+}
+
 // Decide is the policy-enforcement point. It returns a Verdict; on Approve the Verdict
 // carries an ApprovalRequest tool result (the caller returns it as a normal tool result,
 // tool.Execute withheld) — the gateway no longer mints a pause sentinel. A nil *Gateway
@@ -67,6 +89,11 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		return Verdict{Decision: Deny, Tier: tier, Reason: reason, Refusal: true}, nil
 	case PolicyAsk:
 		spec.Mutating = true
+	}
+	if needsPerson(subject) && !personPresent(ctx) {
+		reason := needsPersonReason(subject)
+		g.recordDenyFact(ctx, spec, key, tier, reason, map[string]any{"reason": "needs_person"})
+		return Verdict{Decision: Deny, Tier: tier, Reason: reason, Refusal: true}, nil
 	}
 	if !spec.Mutating {
 		// D-01e: a read-only tool call under a strict profile is a recorded decision-fact

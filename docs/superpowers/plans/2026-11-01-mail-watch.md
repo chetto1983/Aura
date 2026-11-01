@@ -126,6 +126,16 @@ Each of these would bite a real person, and each has a test that names it.
 - **The thread's conversation row is created at enable,** or the first run would read a missing row as a deleted origin.
 - **Deactivating an identity cancels its watch.** `DeprovisionDeps.Jobs` was nil on every path, so `pimWatchJobs` is
   wired there. It cancels only the two watch kinds. See "Found in existing code".
+- **`add_rule` and `correct` need a person in the conversation.** A rule filing a sender to `later` hides that person's
+  mail from the digest, so an instruction injected into a headless job could silence a sender with nobody seeing it.
+  The tier stays Normal, because Destructive would prompt, and "di queste non avvisarmi più" stays one sentence.
+  `personActions` in `internal/gateway/decide.go` refuses the two verbs with guidance and a `needs_person` deny fact
+  when `personPresent` is false. That reads the responder and the delegated-dispatch marker, because a synchronous
+  swarm worker inherits the responder from the turn that spawned it and has nobody on it. It does not read
+  `ProfileServerProduction`, because no approval is asked for, so a live chat works on both strict profiles. Like every
+  gate here it is a no-op on `dev` and `local_trusted`, `disable` and `remove_rule` included.
+- **`enable` stays free:** Normal, no prompt, reserved and recorded, in a live chat and in a headless run alike. It only
+  adds what the person sees, and a wrong account fails at the PIM. `status`, `list_rules` and `list_labels` are Safe.
 - **The `mail_watch` API sits behind `governance.write`,** as the Connect routes around it on the account card do, with
   one subtree mount, so a route added later is gated without anyone remembering.
 - **The tool takes a label's name** and the API takes its id, because each is what its caller holds.
@@ -265,11 +275,13 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 ### Task 10 — The `mail_watch` tool
 
 - [x] **Files:** `internal/agent/tools/mail_watch.go`, `search_keywords.go`, `internal/gateway/classify.go`,
-  `cmd/aura/main.go`, `runtime_tool_handles.go`.
-- **Interfaces:** `tools.MailWatchTool`, `mailWatchFixedTiers`.
+  `decide.go`, `cmd/aura/main.go`, `runtime_tool_handles.go`.
+- **Interfaces:** `tools.MailWatchTool`, `mailWatchFixedTiers`, `personActions`, `personPresent`.
 - **Tests:** `mail_watch_test.go`, `decide_mail_watch_test.go`, including
-  `TestAHeadlessRunCannotTurnTheWatchOffOrRemoveARule`, and the classify table's schema check.
-- **Commit:** `e80bc7346`.
+  `TestAHeadlessRunCannotTurnTheWatchOffOrRemoveARule`, `TestAHeadlessRunCannotTeachTheWatch`,
+  `TestALiveChatTeachesTheWatchWithNoPrompt`, `TestASwarmWorkerInALiveChatCannotTeachTheWatch`, and the classify table's
+  schema check.
+- **Commit:** `e80bc7346`, then the commit `fix(gateway): teaching the mail watch needs a person`.
 
 ### Task 11 — A watch keeps a conversation
 
@@ -361,6 +373,7 @@ All in WSL at `f4636b4cc`, 2026-11-01, on the disposable container for the tagge
   outside this plan and needs its own decision, because cancelling a person's jobs cannot be undone by reactivation.
 - **A push to Telegram also printed its text to the process journal, and a stdout route did too.** Both would have put a
   subject in the journal, and both are closed in Task 3.
-- **`add_rule` and `correct` stay Normal,** as the design asked, so a headless job with injected text could add a
-  silencing rule. A person sees it in the rule list. The operator may want it Destructive.
+- **A synchronous swarm worker inherits its turn's responder marker,** though `responderCtxKey`'s comment said a swarm
+  context never carries one. `personPresent` closes this for the watch's teaching verbs. On `routeApprove`, a worker in
+  a live chat still reaches the approval branch and is not denied, which this plan leaves as it found it.
 - **`/admin/items`'s `gone` shape** (`[{id, calendarId}]`) is read from the spec and has not been seen on a real sidecar.

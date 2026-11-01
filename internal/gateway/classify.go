@@ -137,9 +137,12 @@ var boardFixedTiers = map[string]scoring.RiskTier{
 func classifyBoard(raw json.RawMessage) scoring.RiskTier { return fixedTier(raw, boardFixedTiers) }
 
 // mailWatchFixedTiers grades the watch's verbs. Enabling, correcting and adding a rule are the
-// person's own reversible settings. Turning a watch off and removing a rule take away something
-// that was protecting them, and they stop the turn, which a headless run cannot answer: mail read
-// by a job must not be able to switch the watch off.
+// person's own reversible settings, and a person asking gets no prompt. Turning a watch off and
+// removing a rule take away something that was protecting them, and they stop the turn, which a
+// headless run cannot answer: mail read by a job must not be able to switch the watch off.
+// Correcting and adding a rule are refused there too, by personActions, because a rule filing a
+// sender to later hides that person's mail from the digest. Enable only adds what the person
+// sees, so it stays free.
 var mailWatchFixedTiers = map[string]scoring.RiskTier{
 	"status":      scoring.Safe,
 	"list_rules":  scoring.Safe,

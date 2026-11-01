@@ -28,8 +28,9 @@ import (
 const gatewayApprovalType = "gateway_approval"
 
 // responderCtxKey marks a ctx as an interactive session with a positively-known human
-// responder (a live CLI REPL / cockpit SSE subscriber / live Telegram chat). Headless
-// cron/swarm ctxs never carry it, so responderPresent defaults to false → DENY (D-03a).
+// responder (a live CLI REPL / cockpit SSE subscriber / live Telegram chat). A cron run and a
+// background delegation never carry it, so responderPresent defaults to false → DENY (D-03a).
+// A synchronous swarm worker inherits it from the turn that spawned it: see personPresent.
 type responderCtxKey struct{}
 
 // WithResponder marks ctx as an interactive session with a live human responder. The
@@ -282,10 +283,11 @@ func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, key Reservat
 }
 
 // recordDenyFact durably records a refusal as a TERMINAL `end` row (event_kind='end',
-// status='error') keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01). Three
+// status='error') keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01). Four
 // refusals write it: the headless/production degraded deny (reason=no_approver), an
-// identity's deny policy (reason=policy) and an outbound send no review covers
-// (reason=message_review); marker carries which. This is the only legal
+// identity's deny policy (reason=policy), an outbound send no review covers
+// (reason=message_review) and a person's verb in a run with no person (reason=needs_person);
+// marker carries which. This is the only legal
 // terminal shape (migration 0011 event_kind ∈ {'start','end'}); because the call never
 // executes, a lone `end` row is correct — the 35-05 reconciler's start∧¬end anti-join never
 // flags it, and a denied triple never later executes (a model retry yields a fresh

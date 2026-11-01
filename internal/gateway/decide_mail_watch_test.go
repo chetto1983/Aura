@@ -53,6 +53,130 @@ func TestAHeadlessRunCannotTurnTheWatchOffOrRemoveARule(t *testing.T) {
 	}
 }
 
+var teachingCalls = map[string]string{
+	"add_rule": `{"action":"add_rule","key":"a@b.it","tier":"later"}`,
+	"correct":  `{"action":"correct","account_id":"work","item_id":"m1","tier":"later"}`,
+}
+
+// A rule filing a sender to later hides that person's mail from the digest, so an instruction
+// injected into a job's reading must not be able to write one where nobody would see it.
+func TestAHeadlessRunCannotTeachTheWatch(t *testing.T) {
+	t.Parallel()
+	spec := mailWatchSpec()
+	for name, args := range teachingCalls {
+		raw := json.RawMessage(args)
+		store := &fakeStore{}
+		g := New(config.ProfileSingleUserHardened, store)
+		g.SetOperationRegistry(acquiringOperations())
+
+		v, err := g.Decide(injectionOperationContext(t, spec, raw, name), spec, raw, testKey())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if v.Decision != Deny || v.Tier != scoring.Normal || !v.Refusal || !strings.Contains(v.Reason, "do not retry") {
+			t.Fatalf("%s: verdict = %+v", name, v)
+		}
+		if len(store.reserves()) != 0 {
+			t.Fatalf("%s: a refused action reached the reservation", name)
+		}
+		facts := store.calls()
+		if len(facts) != 1 || facts[0].Meta["reason"] != "needs_person" {
+			t.Fatalf("%s: deny facts = %+v", name, facts)
+		}
+	}
+}
+
+// "Di queste non avvisarmi più" stays one sentence: a person in the conversation gets no prompt,
+// on either strict profile, and the call is reserved like any other write.
+func TestALiveChatTeachesTheWatchWithNoPrompt(t *testing.T) {
+	t.Parallel()
+	spec := mailWatchSpec()
+	for _, profile := range []config.RuntimeProfile{config.ProfileSingleUserHardened, config.ProfileServerProduction} {
+		for name, args := range teachingCalls {
+			raw := json.RawMessage(args)
+			store := &fakeStore{}
+			g := New(profile, store)
+			g.SetOperationRegistry(acquiringOperations())
+
+			ctx := WithResponder(injectionOperationContext(t, spec, raw, name))
+			v, err := g.Decide(ctx, spec, raw, testKey())
+			if err != nil {
+				t.Fatalf("%s %s: %v", profile, name, err)
+			}
+			if v.Decision != Allow || v.ApprovalRequest != nil || v.Tier != scoring.Normal {
+				t.Fatalf("%s %s: verdict = %+v", profile, name, v)
+			}
+			if len(store.reserves()) != 1 {
+				t.Fatalf("%s %s: reservations = %d, want 1", profile, name, len(store.reserves()))
+			}
+		}
+	}
+}
+
+// runChild builds a worker's context from the turn that spawned it, so the worker inherits the
+// responder marker and still has nobody on it: its brief says it cannot see the user.
+func TestASwarmWorkerInALiveChatCannotTeachTheWatch(t *testing.T) {
+	t.Parallel()
+	spec := mailWatchSpec()
+	for name, args := range teachingCalls {
+		raw := json.RawMessage(args)
+		store := &fakeStore{}
+		g := New(config.ProfileSingleUserHardened, store)
+		g.SetOperationRegistry(acquiringOperations())
+
+		ctx := WithDelegatedDispatch(WithResponder(injectionOperationContext(t, spec, raw, name)))
+		v, err := g.Decide(ctx, spec, raw, testKey())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if v.Decision != Deny || !v.Refusal {
+			t.Fatalf("%s: verdict = %+v", name, v)
+		}
+		if len(store.reserves()) != 0 {
+			t.Fatalf("%s: a refused action reached the reservation", name)
+		}
+	}
+}
+
+func TestAHeadlessRunKeepsTheWatchsOtherVerbs(t *testing.T) {
+	t.Parallel()
+	spec := mailWatchSpec()
+	for name, args := range map[string]string{
+		"status":      `{"action":"status"}`,
+		"list_rules":  `{"action":"list_rules"}`,
+		"list_labels": `{"action":"list_labels"}`,
+		"enable":      `{"action":"enable","account_id":"work"}`,
+	} {
+		raw := json.RawMessage(args)
+		g := New(config.ProfileSingleUserHardened, &fakeStore{})
+		g.SetOperationRegistry(acquiringOperations())
+
+		v, err := g.Decide(injectionOperationContext(t, spec, raw, name), spec, raw, testKey())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if v.Decision != Allow {
+			t.Fatalf("%s: verdict = %+v", name, v)
+		}
+	}
+}
+
+func TestOnlyTheWatchsTeachingVerbsNeedAPerson(t *testing.T) {
+	t.Parallel()
+	for subject, want := range map[grantSubject]bool{
+		{Tool: "mail_watch", Action: "add_rule"}: true,
+		{Tool: "mail_watch", Action: "correct"}:  true,
+		{Tool: "mail_watch", Action: "enable"}:   false,
+		{Tool: "mail_watch", Action: "unknown"}:  false,
+		{Tool: "mail_watch"}:                     false,
+		{Tool: "task", Action: "correct"}:        false,
+	} {
+		if got := needsPerson(subject); got != want {
+			t.Errorf("needsPerson(%+v) = %v, want %v", subject, got, want)
+		}
+	}
+}
+
 func TestAHeadlessRunMayReadTheWatch(t *testing.T) {
 	t.Parallel()
 	spec := mailWatchSpec()
