@@ -5204,6 +5204,37 @@ counts them. Not shown: interactive verbs, the memory verbs live in CI, and the 
 
 ## 19. Evidence, exclusions and remaining limits
 
+### Adjacent assistant turns reach the model as one — measured 2026-11-01
+
+A scheduled outcome, a worker's report and a watch record are stored as assistant turns of their
+own. The live-stack run of the mail watch read 9 of 13 messages of one prompt as such turns.
+
+Measured through llama.cpp b11960's own `/apply-template`, with no inference, on the shapes Aura
+sends:
+- Gemma 4 31B answers 200 with a malformed prompt, `<|turn>model\nA<turn|>\nB<turn|>`: its template
+  reads a following assistant turn as the same model turn, so B sits outside any turn. No error is
+  raised anywhere.
+- Gemma 2, the control, answers 400 on every broken shape: "Conversation roles must alternate".
+- DeepSeek V4, V4 Flash and Qwen 3.5 answer 200 with two regular turns. MiniMax M3 and GLM 4.7
+  Flash answer 200 with both texts present; their form was not read.
+- One assistant turn holding both texts answers 200 on all seven, and reads as a regular turn on
+  Gemma 4.
+
+Decision:
+- `openai_compat` joins adjacent assistant turns when it writes the request. The stored turns do
+  not change, and every tool call survives the join.
+- Records stay assistant turns. Hermes mirrors cron deliveries as user turns for this same failure,
+  but here `splitHeadHistoryActive` and `dropOldestRound` read a user turn as the start of a round,
+  and a mail's subject would read as the person's words.
+- No invented first user turn: every template measured accepts a leading assistant turn, and the
+  always-block is already a user turn when it is set.
+
+Not shown: this is the 31B's template, not the one inside the shipped 12B GGUF. A cloud API's own
+checks are not measured, and after this change the route no longer sends them that shape. The
+`chatgpt` route is unchanged and unmeasured. Consecutive user turns stay as they are, because the
+always-block makes them by design, so strict templates such as Gemma 2 and Mistral cannot work with
+Aura regardless. What a real model answers on a joined turn is not measured.
+
 ### A boot that waits on nothing outside the box — measured 2026-11-01
 
 On the lab VM's boot of 2026-11-01 the cockpit never came up. `aura.service` failed at 13:39:41
