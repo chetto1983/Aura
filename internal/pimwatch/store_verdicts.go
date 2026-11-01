@@ -357,7 +357,7 @@ func (s *Store) ApplyCorrection(ctx context.Context, identityID, senderKey strin
 			return err
 		}
 		out = verdictFromRow(row)
-		if senderKey == "" {
+		if senderKey == "" || current.AuthFailed {
 			return nil
 		}
 		correction := sqlc.InsertPIMWatchCorrectionParams{

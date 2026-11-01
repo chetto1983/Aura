@@ -15,7 +15,9 @@ const correctionWindow = 15 * time.Minute
 // Correct changes a verdict's tier or label and learns from it. A sender corrected the same way
 // twice, outside one burst, gets a rule, and tier and label are learned apart. The sender is read
 // live by id, because no verdict keeps one, and a mail that cannot be read changes its verdict and
-// teaches nothing. A calendar item teaches nothing: rules do not apply to events.
+// teaches nothing. A calendar item teaches nothing: rules do not apply to events. Nor does a mail
+// that failed authentication: a rule beats that rung, so one learned from it would let a forged
+// sender reach `now`.
 func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *Rule, error) {
 	if err := s.checkCorrection(ctx, identityID, c); err != nil {
 		return Verdict{}, nil, err
@@ -34,7 +36,7 @@ func (s *Service) Correct(ctx context.Context, identityID string, c Correction) 
 		return Verdict{}, nil, err
 	}
 	tier, label := learned(c, past)
-	if tier == "" && label == "" {
+	if verdict.AuthFailed || (tier == "" && label == "") {
 		return verdict, nil, nil
 	}
 	rule, err := s.Store.LearnRule(ctx, identityID, sender, tier, label)

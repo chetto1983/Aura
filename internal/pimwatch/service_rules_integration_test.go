@@ -104,6 +104,42 @@ func TestACorrectionOfAGoneMailChangesTheVerdictAndTeachesNothing(t *testing.T) 
 	}
 }
 
+// A rule beats the authentication rung, so one learned from a forged mail would let that sender
+// reach `now`.
+func TestACorrectionOfAnUnverifiedMailChangesTheVerdictAndTeachesNothing(t *testing.T) {
+	for name, order := range map[string][2]string{
+		"it does not complete a pair": {"real", "forged"},
+		"it does not start one":       {"forged", "real"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newServiceRig(t)
+			ctx := context.Background()
+			forged := r.draft("forged", TierToday, "")
+			forged.Decision.AuthFailed = true
+			r.commit(rigAccount, r.draft("real", TierToday, ""), forged)
+			for _, id := range order {
+				r.pim.items[id] = Item{ID: id, From: "mario@acme.it"}
+			}
+
+			first, second := correctionOf(order[0], TierNow), correctionOf(order[1], TierNow)
+			if _, rule, err := r.service.Correct(ctx, r.identity, first); err != nil || rule != nil {
+				t.Fatalf("first: %+v, %v", rule, err)
+			}
+			r.clock.at = time.Now().UTC().Add(correctionWindow + time.Minute)
+			verdict, rule, err := r.service.Correct(ctx, r.identity, second)
+			if err != nil || rule != nil {
+				t.Fatalf("second: %+v, %v", rule, err)
+			}
+			if verdict.Tier != TierNow || verdict.By != ByPerson {
+				t.Fatalf("verdict = %+v", verdict)
+			}
+			if rules, err := r.store.Rules(ctx, r.identity); err != nil || len(rules) != 0 {
+				t.Fatalf("rules = %+v, %v", rules, err)
+			}
+		})
+	}
+}
+
 func TestACorrectionOfAnEventTeachesNothing(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()
