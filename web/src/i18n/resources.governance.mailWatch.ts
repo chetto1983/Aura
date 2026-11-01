@@ -45,6 +45,19 @@ export const mailWatchEn = {
     too_many_items: 'Too many items were asked for at once.',
     provider_transient: 'The provider is having trouble. Aura tries again at the next check.',
     unsupported_resource: 'This account does not offer this.',
+    pim_empty_cursor:
+      'The mail and calendar service did not say where to read from. Aura tries again at the next check.',
+    pim_not_authorized: 'Aura has no access to this account any more. Reconnect it.',
+    pim_token_unavailable:
+      'Aura cannot get access to this account right now. It tries again at the next check.',
+    pim_unreachable:
+      'The mail and calendar service cannot be reached. Aura tries again at the next check.',
+    pim_read_failed:
+      'The mail and calendar service stopped answering halfway. Aura tries again at the next check.',
+    pim_bad_response:
+      'The mail and calendar service sent an answer Aura cannot read. It tries again at the next check.',
+    pim_call_failed:
+      'The call to the mail and calendar service did not go through. Aura tries again at the next check.',
     http: 'The mail and calendar service answered with status {{status}}.',
     unknown: 'The mail and calendar service reported a problem.',
   },
@@ -238,6 +251,19 @@ export const mailWatchIt = {
     too_many_items: 'Sono stati chiesti troppi elementi insieme.',
     provider_transient: 'Il provider ha un problema. Aura riprova al prossimo controllo.',
     unsupported_resource: 'Questo account non lo offre.',
+    pim_empty_cursor:
+      'Il servizio di posta e calendario non ha detto da dove leggere. Aura riprova al prossimo controllo.',
+    pim_not_authorized: 'Aura non ha più accesso a questo account. Ricollegalo.',
+    pim_token_unavailable:
+      "Aura non riesce a ottenere l'accesso a questo account in questo momento. Riprova al prossimo controllo.",
+    pim_unreachable:
+      'Il servizio di posta e calendario non è raggiungibile. Aura riprova al prossimo controllo.',
+    pim_read_failed:
+      'Il servizio di posta e calendario si è interrotto a metà risposta. Aura riprova al prossimo controllo.',
+    pim_bad_response:
+      'Il servizio di posta e calendario ha dato una risposta che Aura non sa leggere. Riprova al prossimo controllo.',
+    pim_call_failed:
+      'La chiamata al servizio di posta e calendario non è riuscita. Aura riprova al prossimo controllo.',
     http: 'Il servizio di posta e calendario ha risposto con lo stato {{status}}.',
     unknown: 'Il servizio di posta e calendario ha segnalato un problema.',
   },

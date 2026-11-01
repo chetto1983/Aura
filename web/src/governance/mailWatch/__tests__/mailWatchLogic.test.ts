@@ -373,6 +373,13 @@ describe('sentences from fixed codes', () => {
     ['too_many_items', /Too many items/],
     ['provider_transient', /next check/],
     ['unsupported_resource', /does not offer/],
+    ['pim_empty_cursor', /where to read from/],
+    ['pim_not_authorized', /Reconnect it/],
+    ['pim_token_unavailable', /access to this account/],
+    ['pim_unreachable', /cannot be reached/],
+    ['pim_read_failed', /halfway/],
+    ['pim_bad_response', /cannot read/],
+    ['pim_call_failed', /did not go through/],
     ['pim_http_503', /status 503/],
     ['never_seen_before', /reported a problem/],
     ['', /reported a problem/],
@@ -386,6 +393,20 @@ describe('sentences from fixed codes', () => {
       'Aura ha perso il segno. Spegni e riaccendi il controllo.',
     );
     expect(failureSentence('pim_http_500', t)).toMatch(/stato 500/);
+    expect(failureSentence('pim_not_authorized', t)).toMatch(/Ricollegalo/);
+  });
+
+  it.each([
+    'pim_empty_cursor',
+    'pim_not_authorized',
+    'pim_token_unavailable',
+    'pim_unreachable',
+    'pim_read_failed',
+    'pim_bad_response',
+    'pim_call_failed',
+  ])('%s has its own sentence in Italian too', async (code) => {
+    await i18n.changeLanguage('it');
+    expect(failureSentence(code, t)).not.toBe(failureSentence('never_seen_before', t));
   });
 
   it.each([
