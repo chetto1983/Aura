@@ -39,12 +39,32 @@ func suppressed(runErr error) bool {
 	return errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification()
 }
 
+// failureText is what a failed run reports. A pause its handler wrote words for reads as those
+// alone, because a person reads them: the kind and the cause stay on the ledger.
+func failureText(task Task, runErr error) string {
+	if paused, ok := errors.AsType[pausedRunError](runErr); ok && paused.report != "" {
+		return paused.report
+	}
+	return fmt.Sprintf("%s failed: %s", task.Kind, runErr.Error())
+}
+
 // pausedRunError reports the failure that paused a task. It always answers false to suppressed,
 // and errors.As meets it first, so the run that pauses is reported even when its own error asked
-// for silence (spec §5.6).
+// for silence (spec §5.6). report is the handler's own words for this, when its failure carries
+// them: whether a run pauses is known only after it ends, so they travel on the error.
 type pausedRunError struct {
 	cause    error
 	failures int
+	report   string
+}
+
+func newPausedRunError(cause error, failures int) pausedRunError {
+	paused := pausedRunError{cause: cause, failures: failures}
+	var reporter interface{ PauseReport() string }
+	if errors.As(cause, &reporter) {
+		paused.report = reporter.PauseReport()
+	}
+	return paused
 }
 
 func (e pausedRunError) Error() string {

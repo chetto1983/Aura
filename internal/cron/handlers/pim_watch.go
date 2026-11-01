@@ -28,9 +28,11 @@ type PIMWatcher interface {
 
 // PIMWatchHandler runs one account's watch. It adds no judgment of its own: pimwatch decides, and
 // this file carries the run's text to the dispatcher. A nil Watcher is a deployment that lost its
-// sidecar, which fails the run and so pauses the task with the reason.
+// sidecar, which fails the run and so pauses the task with the reason. Locale picks the language
+// of that report, and a nil one reads as English.
 type PIMWatchHandler struct {
 	Watcher PIMWatcher
+	Locale  pimwatch.Locale
 }
 
 // Meta declares the kind. A missed tick is not worth a catch-up, because the next one reads
@@ -41,18 +43,41 @@ func (PIMWatchHandler) Meta() HandlerMeta {
 
 // Run runs one tick.
 func (h PIMWatchHandler) Run(ctx context.Context, job Job) (string, error) {
+	accountID := watchedAccount(job.Payload)
+	summary, err := h.tick(ctx, job, accountID)
+	if err != nil {
+		return summary, pimwatch.WatchPauseReport(reportLanguage(ctx, h.Locale), accountID, err)
+	}
+	return summary, nil
+}
+
+func (h PIMWatchHandler) tick(ctx context.Context, job Job, accountID string) (string, error) {
 	if h.Watcher == nil {
 		return "", errPIMWatchUnconfigured
 	}
-	var payload pimwatch.TaskPayload
-	if err := json.Unmarshal(job.Payload, &payload); err != nil || payload.AccountID == "" {
+	if accountID == "" {
 		return "", errors.New("the watch task names no account: enable the watch again")
 	}
 	out, err := h.Watcher.Tick(ctx, pimwatch.TickInput{
-		IdentityID: identityctx.IdentityID(ctx), AccountID: payload.AccountID, RunID: job.RunID,
+		IdentityID: identityctx.IdentityID(ctx), AccountID: accountID, RunID: job.RunID,
 	})
 	tellOutcome(job, out)
 	return out.Summary, err
+}
+
+func watchedAccount(raw []byte) string {
+	var payload pimwatch.TaskPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return payload.AccountID
+}
+
+func reportLanguage(ctx context.Context, locale pimwatch.Locale) pimwatch.Lang {
+	if locale == nil {
+		return pimwatch.LangEN
+	}
+	return locale.Language(ctx, identityctx.IdentityID(ctx))
 }
 
 // tellOutcome hands the dispatcher what the person reads. It always tells, even when there is
@@ -81,6 +106,7 @@ type PIMDigester interface {
 // PIMDigestHandler writes the identity's daily digest.
 type PIMDigestHandler struct {
 	Digester PIMDigester
+	Locale   pimwatch.Locale
 }
 
 // Meta declares the kind. A digest missed while the process was down is worth running on recovery:
@@ -91,6 +117,14 @@ func (PIMDigestHandler) Meta() HandlerMeta {
 
 // Run writes one digest.
 func (h PIMDigestHandler) Run(ctx context.Context, job Job) (string, error) {
+	summary, err := h.write(ctx, job)
+	if err != nil {
+		return summary, pimwatch.DigestPauseReport(reportLanguage(ctx, h.Locale), err)
+	}
+	return summary, nil
+}
+
+func (h PIMDigestHandler) write(ctx context.Context, job Job) (string, error) {
 	if h.Digester == nil {
 		return "", errPIMWatchUnconfigured
 	}

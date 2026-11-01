@@ -126,6 +126,34 @@ func TestAPausingFailureIsReportedThoughItAskedForSilence(t *testing.T) {
 	}
 }
 
+type reportingError struct{ suppressedNotificationError }
+
+func (reportingError) PauseReport() string { return "Ho messo in pausa il controllo di work." }
+
+// A handler that writes its own report for a pause is read alone, in the person's language.
+func TestAPausingFailureReadsInItsHandlersWords(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindPIMWatch}, err: reportingError{}}
+	notif := &captureNotifier{}
+	recorder := &fakeConversationRecorder{}
+	rec := &fakeOutcomeRecorder{outcome: RunOutcome{ConsecutiveFailures: 3, PausedNow: true}}
+	d, c := newDispatchFor(t, h, KindPIMWatch, DispatchDeps{
+		Store: &fakeCompleter{}, Notifier: notif, OutcomeRecorder: rec, PauseAfterFailures: new(3), ConversationRecorder: recorder,
+	})
+
+	task := Task{ID: "t", Kind: KindPIMWatch, NotifyRoute: string(RouteWhatsApp), OriginConversationID: "conv-1"}
+	if err := d.Dispatch(context.Background(), task, c); err == nil {
+		t.Fatal("Dispatch returned nil")
+	}
+	want := reportingError{}.PauseReport()
+	if len(notif.texts) != 1 || notif.texts[0] != want {
+		t.Fatalf("notifications = %q", notif.texts)
+	}
+	if len(recorder.appended) != 1 || recorder.appended[0].text != want {
+		t.Fatalf("records = %+v", recorder.appended)
+	}
+}
+
 func TestPausedRunErrorKeepsItsCauseAndItsText(t *testing.T) {
 	t.Parallel()
 	cause := errors.New("provider_auth")

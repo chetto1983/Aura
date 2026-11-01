@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -96,6 +97,56 @@ func TestTheRecordFramesWhatTheMailSaidAndTheNoticeDoesNot(t *testing.T) {
 	}
 	if head, _, _ := strings.Cut(said.record, "<tool_output"); !strings.Contains(head, "id=m1") {
 		t.Fatalf("the mail's address is not outside the frame: %q", said.record)
+	}
+}
+
+type fixedLocale struct{ lang pimwatch.Lang }
+
+func (l fixedLocale) Language(context.Context, string) pimwatch.Lang { return l.lang }
+func (fixedLocale) Location(context.Context, string) *time.Location  { return time.UTC }
+
+func pauseReportOf(t *testing.T, err error) string {
+	t.Helper()
+	var reporter interface{ PauseReport() string }
+	if !errors.As(err, &reporter) {
+		t.Fatalf("%v carries no pause report", err)
+	}
+	return reporter.PauseReport()
+}
+
+func TestAPausingRunReadsInTheIdentitysLanguageWithNoCode(t *testing.T) {
+	ctx := context.Background()
+	failure := &pimwatch.HardFailure{AccountID: "abc123__work", Resource: pimwatch.ResourceCalendar, Code: "provider_auth"}
+	locale := fixedLocale{pimwatch.LangIT}
+	payload := Job{Payload: []byte(`{"account_id":"abc123__work"}`)}
+
+	_, err := PIMWatchHandler{Watcher: &fakeWatcher{err: failure}, Locale: locale}.Run(ctx, payload)
+	report := pauseReportOf(t, err)
+	if !strings.Contains(report, "Ho messo in pausa") || !strings.Contains(report, "work") || !strings.Contains(report, "il calendario") {
+		t.Fatalf("report = %q", report)
+	}
+	if strings.Contains(report, "provider_auth") || strings.Contains(report, "abc123") {
+		t.Fatalf("a code reached the person: %q", report)
+	}
+	if hard, ok := errors.AsType[*pimwatch.HardFailure](err); !ok || !hard.SuppressSchedulerNotification() {
+		t.Fatalf("the failure underneath is lost: %v", err)
+	}
+
+	_, err = PIMWatchHandler{Locale: locale}.Run(ctx, payload)
+	if report := pauseReportOf(t, err); !strings.Contains(report, "work") || !errors.Is(err, errPIMWatchUnconfigured) {
+		t.Fatalf("no sidecar: %q, %v", report, err)
+	}
+
+	_, err = PIMDigestHandler{Digester: &fakeDigester{err: errors.New("pim: boom")}, Locale: locale}.Run(ctx, Job{})
+	if report := pauseReportOf(t, err); !strings.Contains(report, "riepilogo") || strings.Contains(report, "boom") {
+		t.Fatalf("digest = %q", report)
+	}
+}
+
+func TestAPausingRunWithNoLocaleReadsInEnglish(t *testing.T) {
+	_, err := PIMWatchHandler{}.Run(context.Background(), Job{Payload: []byte(`{}`)})
+	if report := pauseReportOf(t, err); !strings.Contains(report, "I paused the watch on an account") {
+		t.Fatalf("report = %q", report)
 	}
 }
 

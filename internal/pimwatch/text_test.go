@@ -368,6 +368,26 @@ func TestAnAccountWithNoTenantPrefixKeepsItsName(t *testing.T) {
 
 // The noun comes with its article, so a sentence cannot put a preposition in front of it: the first
 // real alarm read "alle modifiche di la posta".
+func TestAPausedWatchSaysWhatStoppedWithNoCode(t *testing.T) {
+	failure := &HardFailure{AccountID: "abc123__work", Resource: ResourceMail, Code: "provider_auth"}
+	for lang, want := range map[Lang]string{
+		LangIT: "Ho messo in pausa il controllo di work: non riesco a leggere la posta.",
+		LangEN: "I paused the watch on work: I cannot read the mail.",
+	} {
+		err := WatchPauseReport(lang, failure.AccountID, failure)
+		reported := err.(*pausingError).PauseReport()
+		if !strings.HasPrefix(reported, want) {
+			t.Fatalf("%s: %q", lang, reported)
+		}
+		if strings.Contains(reported, "provider_auth") || strings.Contains(reported, "abc123") {
+			t.Fatalf("%s: a code reached the person: %q", lang, reported)
+		}
+		if err.Error() != failure.Error() {
+			t.Fatalf("the ledger's text changed: %q", err.Error())
+		}
+	}
+}
+
 func TestTheGapAlarmIsItalian(t *testing.T) {
 	p := phrasesFor(LangIT)
 	for resource, want := range map[string]string{

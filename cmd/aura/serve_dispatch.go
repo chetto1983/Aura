@@ -68,8 +68,8 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 	}
 	watch := chat.pimWatch()
 	real := map[cron.TaskKind]handlers.Handler{
-		cron.KindPIMWatch:       handlers.PIMWatchHandler{Watcher: watch.watcher},
-		cron.KindPIMDigest:      handlers.PIMDigestHandler{Digester: watch.digester},
+		cron.KindPIMWatch:       handlers.PIMWatchHandler{Watcher: watch.watcher, Locale: watch.locale},
+		cron.KindPIMDigest:      handlers.PIMDigestHandler{Digester: watch.digester, Locale: watch.locale},
 		cron.KindReminder:       handlers.ReminderHandler{},
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
 		cron.KindBackupPostgres: handlers.BackupHandler{Variant: handlers.BackupPostgres},

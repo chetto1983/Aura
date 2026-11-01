@@ -287,7 +287,7 @@ func (d *Dispatch) recordOutcome(ctx context.Context, task Task, runErr error) e
 	if !outcome.PausedNow {
 		return runErr
 	}
-	return pausedRunError{cause: runErr, failures: outcome.ConsecutiveFailures}
+	return newPausedRunError(runErr, outcome.ConsecutiveFailures)
 }
 
 // scheduledOperationContext derives identity from the durable task row and the
@@ -406,7 +406,7 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	tier := d.taskTier(task)
 	text := summary
 	if runErr != nil {
-		text = fmt.Sprintf("%s failed: %s", task.Kind, runErr.Error())
+		text = failureText(task, runErr)
 	}
 
 	immediate := scoring.RequiresImmediateAlert(tier, d.deps.AlertThreshold)
@@ -465,7 +465,7 @@ func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string
 	}
 	text := summary
 	if runErr != nil {
-		text = string(task.Kind) + " failed: " + runErr.Error()
+		text = failureText(task, runErr)
 	}
 	if text == "" {
 		return

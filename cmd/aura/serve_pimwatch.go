@@ -34,6 +34,7 @@ type pimWatchRuntime struct {
 	watcher  handlers.PIMWatcher
 	digester handlers.PIMDigester
 	sweep    handlers.Sweeper
+	locale   pimwatch.Locale
 }
 
 // mcpAuth is the process's one MCP authorization service, built on first use because the
@@ -68,7 +69,7 @@ func newPIMWatchRuntime(chat *chatEnv) *pimWatchRuntime {
 	store := pimwatch.NewStore(chat.pool)
 	locale := pimWatchLocale{profiles: onboarding.NewProfileStore(chat.pool), deployment: tools.LocationOrUTC(chat.cfg.Timezone)}
 	scheduler := cron.New(chat.pool)
-	runtime := &pimWatchRuntime{service: &pimwatch.Service{
+	runtime := &pimWatchRuntime{locale: locale, service: &pimwatch.Service{
 		Store: store, Tasks: pimWatchTasks{store: scheduler}, Locale: locale,
 		Routes: pimWatchRoutes{accounts: telegram.New(chat.pool), threads: chat},
 	}}
