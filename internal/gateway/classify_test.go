@@ -21,6 +21,7 @@ func skillReadSpec() tools.Spec  { return (&tools.SkillTool{}).Spec() }
 func taskSpec() tools.Spec       { return (&tools.TaskTool{}).Spec() }
 func swarmSpec() tools.Spec      { return (&tools.SwarmSpawn{}).Spec() }
 func boardSpec() tools.Spec      { return (&tools.BoardTool{}).Spec() }
+func mailWatchSpec() tools.Spec  { return (&tools.MailWatchTool{}).Spec() }
 func pluginPackSpec() tools.Spec { return (&tools.PackTool{}).Spec() }
 
 func mustArgs(t *testing.T, v any) json.RawMessage {
@@ -181,6 +182,14 @@ func TestClassifyExhaustive(t *testing.T) {
 			covered[a] = true
 		}
 		assertSameActions(t, "board", schema, covered)
+	})
+	t.Run("mail_watch", func(t *testing.T) {
+		schema := actionEnum(t, mailWatchSpec())
+		covered := map[string]bool{}
+		for a := range mailWatchFixedTiers {
+			covered[a] = true
+		}
+		assertSameActions(t, "mail_watch", schema, covered)
 	})
 	t.Run("plugin_pack", func(t *testing.T) {
 		schema := actionEnum(t, pluginPackSpec())

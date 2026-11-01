@@ -39,6 +39,7 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 	"swarm_spawn":                        classifySwarmSpawn,
 	"board":                              classifyBoard,
 	"plugin_pack":                        classifyPluginPack,
+	"mail_watch":                         classifyMailWatch,
 	mcptools.CalendarMultiplexedToolName: classifyCalendarAction,
 }
 
@@ -134,6 +135,25 @@ var boardFixedTiers = map[string]scoring.RiskTier{
 }
 
 func classifyBoard(raw json.RawMessage) scoring.RiskTier { return fixedTier(raw, boardFixedTiers) }
+
+// mailWatchFixedTiers grades the watch's verbs. Enabling, correcting and adding a rule are the
+// person's own reversible settings. Turning a watch off and removing a rule take away something
+// that was protecting them, and they stop the turn, which a headless run cannot answer: mail read
+// by a job must not be able to switch the watch off.
+var mailWatchFixedTiers = map[string]scoring.RiskTier{
+	"status":      scoring.Safe,
+	"list_rules":  scoring.Safe,
+	"list_labels": scoring.Safe,
+	"enable":      scoring.Normal,
+	"correct":     scoring.Normal,
+	"add_rule":    scoring.Normal,
+	"disable":     scoring.Destructive,
+	"remove_rule": scoring.Destructive,
+}
+
+func classifyMailWatch(raw json.RawMessage) scoring.RiskTier {
+	return fixedTier(raw, mailWatchFixedTiers)
+}
 
 // fixedTier grades an action from its tool's fixed table; a malformed or unknown action
 // saturates to Risky.

@@ -14,7 +14,7 @@ func TestRetrievalKeywordsNameRealTools(t *testing.T) {
 		(&WebSearch{}).Spec().Name, (&WebFetch{}).Spec().Name, (&SwarmSpawn{}).Spec().Name,
 		(&SwarmStatus{}).Spec().Name, (&SkillManageTool{}).Spec().Name, (&PackTool{}).Spec().Name,
 		(&ImageGenerate{}).Spec().Name, (&VideoGenerate{}).Spec().Name, (&ShellPoll{}).Spec().Name,
-		(&ShellKill{}).Spec().Name,
+		(&ShellKill{}).Spec().Name, (&MailWatchTool{}).Spec().Name,
 	}
 	for name := range retrievalKeywords {
 		if strings.HasPrefix(name, "memory"+nsDelimiterStr) {

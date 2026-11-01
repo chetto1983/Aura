@@ -32,6 +32,9 @@ type runtimeToolHandles struct {
 	// (path-only degrade, D-02), and serve.go sets Assets = the asset service once buildAssetService
 	// has run, so an authenticated channel-driven delivery becomes an owned Garage asset.
 	SendFile *tools.SendFile
+	// MailWatch is retained so serve boot can bind its service once the scheduler and the PIM
+	// client exist (serve_pimwatch.go). Every other path leaves it nil, and the tool says so.
+	MailWatch *tools.MailWatchTool
 	// MCPViews is the process-wide MCP Apps document catalog the mounts fill, and
 	// ViewCallers maps ONLY the servers that actually catalogued a document to their
 	// mounted supervisor — so a view's callback can never name a server that never

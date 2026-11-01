@@ -517,6 +517,26 @@ func (s *Service) SaveSettings(ctx context.Context, identityID string, digestHou
 	return settings, s.Tasks.RescheduleDigest(ctx, digests[0].ID, spec)
 }
 
+// Rules lists the identity's rules.
+func (s *Service) Rules(ctx context.Context, identityID string) ([]Rule, error) {
+	return s.Store.Rules(ctx, identityID)
+}
+
+// RemoveRule removes a rule.
+func (s *Service) RemoveRule(ctx context.Context, identityID, ruleID string) error {
+	return s.Store.RemoveRule(ctx, identityID, ruleID)
+}
+
+// Labels lists the identity's labels in order.
+func (s *Service) Labels(ctx context.Context, identityID string) ([]Label, error) {
+	return s.Store.Labels(ctx, identityID)
+}
+
+// RemoveLabel removes a label.
+func (s *Service) RemoveLabel(ctx context.Context, identityID, labelID string) error {
+	return s.Store.RemoveLabel(ctx, identityID, labelID)
+}
+
 // LabelID finds a label by its name, the way a person says it.
 func (s *Service) LabelID(ctx context.Context, identityID, name string) (string, error) {
 	labels, err := s.Store.Labels(ctx, identityID)

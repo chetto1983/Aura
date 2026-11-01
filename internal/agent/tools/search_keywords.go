@@ -35,6 +35,10 @@ var retrievalKeywords = map[string][]string{
 	"swarm_status": {"worker", "helper", "delegated", "progress", "stato", "avanzamento"},
 	"skill_manage": {"install", "capability", "learn", "teach", "extension", "installa", "impara", "insegna", "capacita", "competenza"},
 	"plugin_pack":  {"plugin", "bundle", "connector", "pacchetto"},
+	"mail_watch": {
+		"email", "inbox", "notify", "digest", "triage", "sender", "posta", "avvisami", "avvisarmi", "riepilogo",
+		"mittente", "smista", "urgenti",
+	},
 	"image_generate": {
 		"image", "picture", "photo", "draw", "illustration", "logo", "poster",
 		"immagine", "foto", "disegna", "disegno", "illustrazione", "locandina",

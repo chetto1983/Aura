@@ -202,6 +202,10 @@ func buildBaseRegistryWithHandles(
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
 	reg.Register(newTaskTool(ts, newSchedulerNotifier(cfg, reg, taskStorePool(ts)), cfg.Timezone))
 	reg.Register(newBoardTool(taskStorePool(ts)))
+	// The watch's service needs the scheduler, the PIM client and the auth service, all of which
+	// serve boot builds later: serve_pimwatch.go binds it, and every other path has no watch.
+	handles.MailWatch = &tools.MailWatchTool{}
+	reg.Register(handles.MailWatch)
 	reg.Register(&tools.TodoTool{}) // working-memory scratchpad (Claude Code's TodoWrite), session-scoped
 
 	// ONE non-deferred skill tool; manifest rides in its Description (D-05/D-06). When
