@@ -3,6 +3,7 @@ package pimwatch
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -26,11 +27,14 @@ type DigestStore interface {
 
 var _ DigestStore = (*Store)(nil)
 
-// Digester writes an identity's daily digest, read live: no sender or subject was kept.
+// Digester writes an identity's daily digest, read live: no sender or subject was kept. The one
+// model call of the day is the only place the watch pays for one.
 type Digester struct {
 	Store  DigestStore
 	PIM    PIMReader
 	Locale Locale
+	// Model writes the digest. Nil, or a model that fails, sends the list.
+	Model DigestModel
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
 }
@@ -92,13 +96,11 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 	sortDigest(verdicts, labels)
 	read := verdicts[:min(len(verdicts), maxDigestRead)]
 	lines, missing := d.read(ctx, read)
-	news := newsIn(lines)
-	shown := news[:min(len(news), maxDigestLines)]
-	out := renderDigest(
-		d.Locale.Language(ctx, identityID), d.Locale.Location(ctx, identityID), book,
-		shown, len(news)-len(shown)+untold(verdicts[len(read):]), missing,
-	)
-	out.Summary = fmt.Sprintf("%d in the window, %d shown", len(verdicts), len(shown))
+	out, shown := d.write(ctx, digestDay{
+		identityID: identityID, lang: d.Locale.Language(ctx, identityID), loc: d.Locale.Location(ctx, identityID),
+		book: book, lines: lines, beyond: untold(verdicts[len(read):]), missing: missing,
+	})
+	out.Summary = fmt.Sprintf("%d in the window, %s", len(verdicts), shown)
 	if !missing.none() {
 		out.Summary += ", unreadable: " + strings.Join(slices.Concat(missing.held, missing.dropped), ", ")
 	}
@@ -106,6 +108,56 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 		return out, nil
 	}
 	return out, d.Store.SetLastDigest(ctx, identityID, until)
+}
+
+// digestDay is what a digest has to say.
+type digestDay struct {
+	identityID string
+	lang       Lang
+	loc        *time.Location
+	book       Book
+	lines      []Line
+	// beyond counts the new verdicts past what a digest reads.
+	beyond  int
+	missing unread
+}
+
+// write sends what the model wrote, or the list when it wrote nothing usable, and says which for
+// the ledger. Only something new is worth a call: a day of what the phone said costs nothing.
+func (d *Digester) write(ctx context.Context, day digestDay) (Outcome, string) {
+	news := newsIn(day.lines)
+	note := ""
+	if d.Model != nil && len(news) > 0 {
+		out, written, err := d.written(ctx, day)
+		if err == nil {
+			return out, written
+		}
+		// No err here: it can hold provider text, and this log has no reason to.
+		slog.Warn("pimwatch: the digest model failed, sending the list")
+		note = ", the model failed"
+	}
+	shown := news[:min(len(news), maxDigestLines)]
+	out := renderDigest(day.lang, day.loc, day.book, shown, len(news)-len(shown)+day.beyond, day.missing)
+	return out, fmt.Sprintf("%d shown%s", len(shown), note)
+}
+
+// written asks the model. It reads what was told as well, because a mail may be the end of a
+// meeting the phone announced.
+func (d *Digester) written(ctx context.Context, day digestDay) (Outcome, string, error) {
+	known := slices.DeleteFunc(slices.Clone(day.lines), func(line Line) bool { return line.Gone })
+	reply, err := d.Model.Write(ctx, day.identityID, ModelAsk{
+		System: digestSystem(day.lang),
+		Items:  digestItems(known, day.book, phrasesFor(day.lang), day.loc),
+	})
+	if err != nil {
+		return Outcome{}, "", err
+	}
+	written, err := parseWritten(reply.Text, len(known))
+	if err != nil {
+		return Outcome{}, "", err
+	}
+	out := renderWritten(day.lang, day.loc, known, written, day.beyond, day.missing)
+	return out, fmt.Sprintf("%d written by the model, %d+%d tokens", len(written), reply.PromptTokens, reply.CompletionTokens), nil
 }
 
 // sortDigest puts a window in the digest's order: `now` first, then each label in the person's

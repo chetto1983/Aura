@@ -295,17 +295,29 @@ type Outcome struct {
 	Quoted  string
 }
 
-// recordParts renders numbered lines into what stands outside the frame and what stands inside.
-func recordParts(lines []Line, numbered []string) (refs, quoted string) {
-	outside := make([]string, 0, len(lines))
-	inside := make([]string, 0, len(lines))
-	for i, line := range lines {
-		ref, safe := line.ref()
-		if safe {
-			outside = append(outside, fmt.Sprintf("%d. %s", i+1, ref))
-			continue
+// oneEach gives every line its own number.
+func oneEach(lines []Line) [][]Line {
+	groups := make([][]Line, 0, len(lines))
+	for _, line := range lines {
+		groups = append(groups, []Line{line})
+	}
+	return groups
+}
+
+// recordParts renders numbered text and the items each number stands for into what stands outside
+// the frame and what stands inside.
+func recordParts(groups [][]Line, numbered []string) (refs, quoted string) {
+	outside := make([]string, 0, len(groups))
+	inside := make([]string, 0, len(groups))
+	for i, group := range groups {
+		for _, line := range group {
+			ref, safe := line.ref()
+			if safe {
+				outside = append(outside, fmt.Sprintf("%d. %s", i+1, ref))
+				continue
+			}
+			inside = append(inside, fmt.Sprintf("ref %d: %s", i+1, ref))
 		}
-		inside = append(inside, fmt.Sprintf("ref %d: %s", i+1, ref))
 	}
 	return strings.Join(outside, "\n"), strings.Join(append(numbered, inside...), "\n")
 }
@@ -334,7 +346,7 @@ func renderAlert(lang Lang, loc *time.Location, accountID string, lines []Line, 
 			tail = append(tail, fmt.Sprintf(p.moreInDigest, capped))
 		}
 	}
-	refs, quoted := recordParts(lines, numbered)
+	refs, quoted := recordParts(oneEach(lines), numbered)
 	notice := append(append(append([]string{}, head...), body...), tail...)
 	return Outcome{
 		Notice: strings.Join(notice, "\n"),
@@ -351,6 +363,22 @@ func accountNames(accounts []string) string {
 		names = append(names, accountName(account))
 	}
 	return strings.Join(names, ", ")
+}
+
+// digestTail says what a digest does not show: how many it left out, and which accounts it could
+// not read.
+func digestTail(p phrases, rest int, missing unread) []string {
+	var tail []string
+	if rest > 0 {
+		tail = append(tail, fmt.Sprintf(p.digestRest, rest))
+	}
+	if len(missing.held) > 0 {
+		tail = append(tail, fmt.Sprintf(p.unreadable, accountNames(missing.held)))
+	}
+	if len(missing.dropped) > 0 {
+		tail = append(tail, fmt.Sprintf(p.droppedLines, accountNames(missing.dropped)))
+	}
+	return tail
 }
 
 // renderDigest writes the day's digest from lines already in digest order. Each change of heading
@@ -382,17 +410,8 @@ func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest i
 		}
 		body = append(body, text)
 	}
-	var tail []string
-	if rest > 0 {
-		tail = append(tail, fmt.Sprintf(p.digestRest, rest))
-	}
-	if len(missing.held) > 0 {
-		tail = append(tail, fmt.Sprintf(p.unreadable, accountNames(missing.held)))
-	}
-	if len(missing.dropped) > 0 {
-		tail = append(tail, fmt.Sprintf(p.droppedLines, accountNames(missing.dropped)))
-	}
-	refs, quoted := recordParts(lines, body)
+	tail := digestTail(p, rest, missing)
+	refs, quoted := recordParts(oneEach(lines), body)
 	notice := append(append([]string{p.digestTitle}, body...), tail...)
 	return Outcome{
 		Notice: strings.Join(notice, "\n"),

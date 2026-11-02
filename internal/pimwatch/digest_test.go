@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,15 @@ func TestSortDigestPutsWhatWasToldLast(t *testing.T) {
 	}
 }
 
+func mustContain(t *testing.T, text string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+}
+
 type fakeLocale struct {
 	lang Lang
 	loc  *time.Location
@@ -68,9 +78,10 @@ func (s *windowStore) SetLastDigest(context.Context, string, time.Time) error {
 	return nil
 }
 
-// everyItem reads every ref as a mail and counts what it was asked for.
+// everyItem reads every ref as a mail, but for those in gone, and counts what it was asked for.
 type everyItem struct {
 	read int
+	gone map[string]bool
 }
 
 func (p *everyItem) Changes(context.Context, string, string, string, int) (ChangesPage, error) {
@@ -81,9 +92,94 @@ func (p *everyItem) Items(_ context.Context, _, _ string, refs []ItemRef) (Items
 	p.read += len(refs)
 	items := make([]Item, 0, len(refs))
 	for _, ref := range refs {
-		items = append(items, Item{ID: ref.ID, From: ref.ID + "@acme.it", Subject: "Subject of " + ref.ID})
+		if !p.gone[ref.ID] {
+			items = append(items, Item{ID: ref.ID, From: ref.ID + "@acme.it", Subject: "Subject of " + ref.ID})
+		}
 	}
 	return ItemsResult{Items: items}, nil
+}
+
+// scriptedModel answers one way and remembers what it was asked.
+type scriptedModel struct {
+	reply ModelReply
+	err   error
+	asks  []ModelAsk
+}
+
+func (m *scriptedModel) Write(_ context.Context, _ string, ask ModelAsk) (ModelReply, error) {
+	m.asks = append(m.asks, ask)
+	return m.reply, m.err
+}
+
+func writtenDigester(store DigestStore, pim PIMReader, model DigestModel) *Digester {
+	return &Digester{Store: store, PIM: pim, Model: model, Locale: fakeLocale{LangEN, time.UTC}}
+}
+
+func TestTheModelWritesTheDigest(t *testing.T) {
+	store := &windowStore{verdicts: dayOf("new", 2, false)}
+	model := &scriptedModel{reply: ModelReply{
+		Text:         `{"lines":[{"section":"do","items":[2],"text":"answer the quote"}]}`,
+		PromptTokens: 120, CompletionTokens: 30,
+	}}
+
+	out, err := writtenDigester(store, &everyItem{}, model).Run(context.Background(), "identity")
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	mustContain(t, out.Notice, "To do\n1. new001@acme.it: answer the quote", "1 more asks nothing of you.")
+	mustContain(t, out.Summary, "2 in the window", "1 written by the model", "120+30 tokens")
+	mustContain(t, model.asks[0].Items, "1 | new | today", "Subject of new000")
+	mustContain(t, model.asks[0].System, "in English")
+	if !store.moved {
+		t.Fatal("the window did not move")
+	}
+}
+
+func TestAToldItemIsContextForTheModelAndAGoneOneIsNot(t *testing.T) {
+	store := &windowStore{verdicts: slices.Concat(dayOf("told", 1, true), dayOf("new", 2, false))}
+	sortDigest(store.verdicts, nil)
+	model := &scriptedModel{reply: ModelReply{Text: `{"lines":[]}`}}
+	pim := &everyItem{gone: map[string]bool{"new000": true}}
+
+	if _, err := writtenDigester(store, pim, model).Run(context.Background(), "identity"); err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	mustContain(t, model.asks[0].Items, "| told |", "Subject of new001")
+	if strings.Contains(model.asks[0].Items, "new000") {
+		t.Fatalf("a gone item reached the model:\n%s", model.asks[0].Items)
+	}
+}
+
+func TestAModelThatFailsSendsTheList(t *testing.T) {
+	for name, model := range map[string]*scriptedModel{
+		"a refused call":    {err: errExpire},
+		"an unusable reply": {reply: ModelReply{Text: "Here is your digest."}},
+		"a number it made":  {reply: ModelReply{Text: `{"lines":[{"section":"do","items":[9],"text":"x"}]}`}},
+	} {
+		store := &windowStore{verdicts: dayOf("new", 2, false)}
+		out, err := writtenDigester(store, &everyItem{}, model).Run(context.Background(), "identity")
+		if err != nil {
+			t.Fatalf("%s: digest: %v", name, err)
+		}
+		mustContain(t, out.Notice, "1. [work] new000@acme.it: Subject of new000", "2. [work] new001@acme.it")
+		mustContain(t, out.Summary, "2 in the window, 2 shown", "the model failed")
+		if !store.moved {
+			t.Fatalf("%s: the window did not move", name)
+		}
+	}
+}
+
+func TestNothingNewAsksNoModel(t *testing.T) {
+	store := &windowStore{verdicts: dayOf("told", 3, true)}
+	model := &scriptedModel{}
+
+	out, err := writtenDigester(store, &everyItem{}, model).Run(context.Background(), "identity")
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	if len(model.asks) != 0 || out.Notice != "" || !store.moved {
+		t.Fatalf("asks %d, notice %q, moved %v", len(model.asks), out.Notice, store.moved)
+	}
 }
 
 func dayOf(prefix string, n int, told bool) []Verdict {

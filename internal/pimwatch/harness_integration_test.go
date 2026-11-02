@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -236,15 +235,6 @@ func changesOf(mail func(string) Change, prefix string, n int) []Change {
 		out = append(out, mail(fmt.Sprintf("%s%03d", prefix, i)))
 	}
 	return out
-}
-
-func mustContain(t *testing.T, text string, wants ...string) {
-	t.Helper()
-	for _, want := range wants {
-		if !strings.Contains(text, want) {
-			t.Fatalf("missing %q in:\n%s", want, text)
-		}
-	}
 }
 
 // Verdict reads one verdict as the tests check it. A missing row is ErrNotFound.

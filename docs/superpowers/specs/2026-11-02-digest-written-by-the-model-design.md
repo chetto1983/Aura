@@ -51,8 +51,8 @@ cost is bounded whatever the day was. What lies beyond is counted and said.
 `{"lines":[{"section":"do|look|know","items":[3,7],"text":"..."}]}`, read strictly. Aura prepends the sender it read from
 the PIM to each line, keeps the mark of a sender that failed authentication, numbers the lines, and keeps each line's
 addresses in the record, so "apri la 1" still works and opens both mails. A number that does not exist, a section
-outside the three, an empty `text` or an unparsable reply refuses the whole answer. At most 20 lines stand
-(`maxDigestLines`), and what a cut leaves out is counted with the rest.
+outside the three, an empty `text`, more than 20 lines (`maxDigestLines`) or an unparsable reply refuses the whole
+answer. Cutting a long answer could cut the one line that holds an urgent mail, and the list loses nothing.
 
 **Sender and subject are attacker text, here too.** They reach the model inside the untrusted frame, the call has no
 tools, and the model's text goes in the record's frame like the subjects did. A hostile subject can at worst bend a

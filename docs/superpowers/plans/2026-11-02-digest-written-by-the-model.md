@@ -81,12 +81,12 @@ type ModelReply struct {
 func digestSystem(lang Lang) string
 func digestItems(lines []Line, book Book, p phrases, loc *time.Location) string
 func parseWritten(reply string, items int) ([]writtenLine, error)
-func renderWritten(lang Lang, lines []Line, written []writtenLine, unseen int, missing unread) Outcome
+func renderWritten(lang Lang, loc *time.Location, lines []Line, written []writtenLine, unseen int, missing unread) Outcome
 ```
 
 - [ ] Test the items: numbered from 1, one per line, told marked, control characters gone, nothing longer than the bound.
-- [ ] Test `parseWritten`: a plain reply, a reply in a code fence, and refusal on a number out of range, a section outside `do|look|know`, empty text, no items, no JSON. A number cited twice stands on its first line.
-- [ ] Test `renderWritten`: the mock of the spec, in Italian and in English; sender from the line and never from the text; two senders; `+N` past two; an event with no sender; the mark of a failed authentication; an untold `now` the model left out stands in "Da guardare"; a told item it left out appears nowhere and is not counted; a new item it left out is counted once in "Altre N voci non chiedono nulla."; `unseen` in its own sentence; more than 20 lines cut, and what was cut counted; `Refs` holds every address of a merged line under its one number; `Head` holds no attacker text.
+- [ ] Test `parseWritten`: a plain reply, a reply in a code fence, and refusal on a number out of range, a section outside `do|look|know`, empty text, no items, more than 20 lines, no JSON. A number cited twice stands on its first line.
+- [ ] Test `renderWritten`: the mock of the spec, in Italian and in English; sender from the line and never from the text; two senders; `+N` past two; an event with no sender; the mark of a failed authentication; an untold `now` the model left out stands in "Da guardare"; a told item it left out appears nowhere and is not counted; a new item it left out is counted once in "Altre N voci non chiedono nulla."; `unseen` in its own sentence; `Refs` holds every address of a merged line under its one number; `Head` holds no attacker text.
 - [ ] Red, then implement. New phrases: `digestDo`, `digestLook`, `digestKnow`, `digestQuiet`.
 - [ ] Green. Commit.
 
