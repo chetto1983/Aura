@@ -20,6 +20,22 @@ Scope: the watch on lab VM .158, one person, one Gmail account and one Outlook.c
 | Outlook.com sign-in | Device flow under `consumers` gave `www.microsoft.com/link`, success at 08:55:23, MSAL cache 7,370 bytes |
 | The watch on Outlook.com | Both cursors `ok`, and 2 real mails decided at 09:06 and 09:11, the first verdicts from Graph on a live account |
 
+## The second run, after the update
+
+The VM at Aura `0ac494f82` and the PIM image built at 11:02:35, inside the publish job of `931a385`. A meeting about two hours away, sent to the Gmail account from someone it writes to. Each row is one message on Telegram, as the person pasted it, and the verdict rows read back from the database.
+
+| Step | Telegram | Mail | Event | Alerts told |
+|---|---|---|---|---|
+| Invited | `Nuovo:`, title, 16:30 | `now`, by `people` | `today`, `new`, no alert | mail 3 to 4, calendar stays 2 |
+| Moved | `Spostato:`, title, 19:45 | `now`, by `people` | `today`, `moved`, no alert | mail 4 to 5, calendar stays 2 |
+| Cancelled | `Annullato:`, title, 19:45 | `now`, by `people` | `today`, `cancelled`, no alert | mail 5 to 6, calendar stays 2 |
+
+So one meeting's change is one alert, with the event's line in the mail's place. That also shows Gmail's part headers carry the invitation's Content-Type, which the docs did not say, and a cancelled meeting's line has its title back. Each alert read `notified` on the tick after it and was not repeated.
+
+Both Outlook.com cursors read `failing`, `provider_transient`, from 11:44 until the update, and `ok` on the first tick after it. The VM went down for the update at about that time, so that is the likely cause. The old container's logs went with it, so the cause is not proven.
+
+The same day, on a real turn, the model said it could correct a verdict but not find one, and the code agreed: an id reached it only through an alert's record. `mail_watch list_decisions` lists an account's day through the read the cockpit already had (`cae2112bc`). It has not run on a live turn.
+
 ## What it found, and what changed
 
 | Defect | Measured | Fix |
@@ -37,8 +53,9 @@ An independent review of these changes found two faults before any image was pub
 
 ## What this does not prove
 
-- The last two fixes on a live account. They are in the fork, and the image is not published yet at the time of writing. `invitation` on real mail rests on the docs: Gmail's part headers are not documented as holding Content-Type, and Graph's `@odata.type` is shown only without `$select`. If either is wrong the mail keeps its alert, so the failure is the old double.
-- That an invitation's subject holds the event's title on Outlook.com. Gmail's did on this run. A subject that does not leaves the double.
+- `invitation` on Outlook.com. Gmail's is measured above, and Graph's rests on the docs: `@odata.type` is shown only without `$select`. If it is wrong the mail keeps its alert, so the failure is the old double.
+- That an invitation's subject holds the event's title on Outlook.com. Gmail's did on both runs. A subject that does not leaves the double.
+- A meeting older than the watch, or one whose invitation is not in the mailbox. Each should alert once, on its own, and neither was tried live.
 - A meeting on Outlook.com. No calendar verdict exists on that account yet.
 - IMAP on a real mailbox. It ran against GreenMail only.
 - The digest at 18:00 local, which had not fired when this was written.
