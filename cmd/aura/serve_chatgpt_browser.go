@@ -15,18 +15,21 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
-	"github.com/chetto1983/aura/internal/chatgptplan"
+	"github.com/chetto1983/aura/internal/browserlogin"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 //go:embed chatgpt-browser.mjs
 var chatGPTBrowserScript []byte
 
+//go:embed callback-listener.mjs
+var callbackListenerScript []byte
+
 var chatGPTBrowserSessionPattern = regexp.MustCompile(`^chatgpt-[a-f0-9]{24}$`)
 
 type sandboxChatGPTBrowser struct{ router *usersandbox.SandboxRouter }
 
-func (b sandboxChatGPTBrowser) Open(ctx context.Context, session string) (chatgptplan.BrowserSession, error) {
+func (b sandboxChatGPTBrowser) Open(ctx context.Context, session string, _ browserlogin.LaunchOptions) (browserlogin.Session, error) {
 	if !chatGPTBrowserSessionPattern.MatchString(session) {
 		return nil, errors.New("invalid ChatGPT browser session")
 	}
@@ -41,6 +44,9 @@ func (b sandboxChatGPTBrowser) Open(ctx context.Context, session string) (chatgp
 	digest := sha256.Sum256(chatGPTBrowserScript)
 	path := "/tmp/.aura-chatgpt-browser-" + hex.EncodeToString(digest[:8]) + ".mjs"
 	if err = b.router.WriteFile(ctx, h, path, chatGPTBrowserScript); err != nil {
+		return nil, err
+	}
+	if err = b.router.WriteFile(ctx, h, "/tmp/callback-listener.mjs", callbackListenerScript); err != nil {
 		return nil, err
 	}
 	in, commands := io.Pipe()

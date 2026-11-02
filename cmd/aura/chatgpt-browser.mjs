@@ -1,4 +1,4 @@
-import http from 'node:http';
+import { listen } from './callback-listener.mjs';
 import { execFile } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import readline from 'node:readline';
@@ -9,7 +9,8 @@ const profile = `/tmp/.aura-chatgpt-profile-${session}`;
 const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 let closing;
 let expectedState;
-let consumed = false;
+let server;
+let redirectURI;
 let devtools;
 const children = new Set();
 
@@ -67,37 +68,12 @@ const disablePasskeyDialog = async () => {
   }
 };
 
-const server = http.createServer((request, response) => {
-  response.setHeader('Cache-Control', 'no-store');
-  response.setHeader('Referrer-Policy', 'no-referrer');
-  response.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  response.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
-  let url;
-  try { url = new URL(request.url, redirectURI); }
-  catch { response.writeHead(400).end('Accesso non valido.'); return; }
-  if (request.method !== 'GET' || request.headers.host !== `127.0.0.1:${server.address().port}` ||
-      url.pathname !== '/auth/callback' || request.url.length > 16384 || consumed ||
-      !expectedState || url.searchParams.getAll('state').length !== 1 ||
-      url.searchParams.get('state') !== expectedState) {
-    response.writeHead(400).end('Accesso non valido. Torna ad Aura e riprova.');
-    return;
-  }
-  consumed = true;
-  emit({ type: 'callback', query: url.search.slice(1) });
-  // Returning sign-in can redirect during `open`: its load must complete before Go receives navigated.
-  response.end("Torna ad Aura per vedere l'esito dell'accesso. Puoi chiudere questa finestra.");
-});
-server.requestTimeout = 30000;
-server.headersTimeout = 10000;
-server.maxHeadersCount = 32;
-server.on('error', () => { emit({ type: 'error' }); void close(); });
-
 const close = () => {
   if (closing) return closing;
   closing = (async () => {
     for (const child of children) child.kill('SIGTERM');
-    server.closeAllConnections();
-    server.close();
+    server?.closeAllConnections();
+    server?.close();
     devtools?.close();
     try { await browser('close'); } catch { emit({ type: 'cleanup_error' }); }
     try { await rm(profile, { recursive: true, force: true }); }
@@ -107,8 +83,8 @@ const close = () => {
   return closing;
 };
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { void close(); });
-await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-const redirectURI = `http://127.0.0.1:${server.address().port}/auth/callback`;
+({ server, redirectURI } = await listen({ path: '/auth/callback', expectedState: () => expectedState, emit }));
+server.on('error', () => { emit({ type: 'error' }); void close(); });
 emit({ type: 'listening', redirect_uri: redirectURI });
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on('close', () => { void close(); });

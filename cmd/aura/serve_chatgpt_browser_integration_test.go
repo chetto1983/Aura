@@ -55,10 +55,11 @@ func TestChatGPTLoginSurvivesPasskeyChallenge(t *testing.T) {
 	ctx, router, h := liveBox(t)
 	key, cert, pin := passkeyFixtureCertificate(t)
 	for path, content := range map[string][]byte{
-		"/tmp/passkey-fixture.key": key,
-		"/tmp/passkey-fixture.crt": cert,
-		"/tmp/passkey-fixture.mjs": []byte(passkeyChallengeFixture),
-		"/tmp/chatgpt-browser.mjs": chatGPTBrowserScript,
+		"/tmp/passkey-fixture.key":   key,
+		"/tmp/passkey-fixture.crt":   cert,
+		"/tmp/passkey-fixture.mjs":   []byte(passkeyChallengeFixture),
+		"/tmp/chatgpt-browser.mjs":   chatGPTBrowserScript,
+		"/tmp/callback-listener.mjs": callbackListenerScript,
 	} {
 		if err := router.WriteFile(ctx, h, path, content); err != nil {
 			t.Fatalf("write %s: %v", path, err)

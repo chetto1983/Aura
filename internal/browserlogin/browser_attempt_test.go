@@ -1,4 +1,4 @@
-package chatgptplan
+package browserlogin
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestBrowserLoginDifferentTabAttemptReplacesAndRejectsOldCancellation(t *testing.T) {
-	f := newOIDC(t)
+	f := newAuthorizerFixture(t)
 	s := f.service(t, t.TempDir())
 	l := newBrowserLauncher()
 	b := testBrowserLogin(t, s, l)
@@ -25,11 +25,11 @@ func TestBrowserLoginDifferentTabAttemptReplacesAndRejectsOldCancellation(t *tes
 	oldPending := b.pending["alice"]
 	b.mu.Unlock()
 	fresh, err := b.Start(ownerContext("alice"), "alice", "tab-b-attempt")
-	if err != nil || fresh.AuthURL == old.AuthURL {
+	if err != nil || fresh.Route == old.Route {
 		t.Fatal("a different tab reused the old cancellable browser route")
 	}
 	receiveBrowser(t, oldBrowser.browser.closed)
-	if flow, err := oldPending.startResult(); !errors.Is(err, context.Canceled) || flow.AuthURL != "" {
+	if flow, err := oldPending.startResult(); !errors.Is(err, context.Canceled) || flow.Route != "" {
 		t.Fatal("a delayed old response advertised the replaced browser as live")
 	}
 	freshBrowser := receiveBrowser(t, l.opened)
@@ -40,7 +40,7 @@ func TestBrowserLoginDifferentTabAttemptReplacesAndRejectsOldCancellation(t *tes
 		t.Fatal("replaced tab's callback was still valid")
 	}
 	cancelOldRequest()
-	if err = b.Cancel(ownerContext("alice"), "alice", old.AuthURL); err != nil || !b.Owns(ownerContext("alice"), "alice", freshBrowser.session) {
+	if err = b.Cancel(ownerContext("alice"), "alice", old.Route); err != nil || !b.Owns(ownerContext("alice"), "alice", freshBrowser.session) {
 		t.Fatal("closing the old tab cancelled the replacement")
 	}
 	retry, err := b.Start(ownerContext("alice"), "alice", "tab-b-attempt")
@@ -60,7 +60,7 @@ func TestBrowserLoginDifferentTabAttemptReplacesAndRejectsOldCancellation(t *tes
 }
 
 func TestBrowserLoginReplacementRequestCancellationIsBounded(t *testing.T) {
-	f := newOIDC(t)
+	f := newAuthorizerFixture(t)
 	s := f.service(t, t.TempDir())
 	l := newBrowserLauncher()
 	closing, release := make(chan struct{}), make(chan struct{})
@@ -87,10 +87,10 @@ func TestBrowserLoginReplacementRequestCancellationIsBounded(t *testing.T) {
 }
 
 func TestBrowserLoginRequiresAnAttemptID(t *testing.T) {
-	f := newOIDC(t)
+	f := newAuthorizerFixture(t)
 	l := newBrowserLauncher()
 	b := testBrowserLogin(t, f.service(t, t.TempDir()), l)
-	if flow, err := b.Start(ownerContext("alice"), "alice", ""); err == nil || flow.AuthURL != "" {
+	if flow, err := b.Start(ownerContext("alice"), "alice", ""); err == nil || flow.Route != "" {
 		t.Fatal("a login without a unique attempt was accepted")
 	}
 	select {

@@ -215,11 +215,11 @@ func (l *Login) Close() error
 - `chatgptplan.NewBrowserLogin` keeps its signature and wraps `Login`, so `serve_chatgpt_browser.go`'s callers change only their imports. Its adapter supplies empty `LaunchOptions`; ChatGPT continues choosing its own redirect. MCP and Google supply their loopback redirect and per-attempt cockpit/desktop origins explicitly, not through mutable process-global state.
 - `callback-listener.mjs` exports `listen({ path, port, expectedState, emit })`. The ChatGPT script imports it, and both files are written to the box.
 
-- [ ] **Step 1: Move the tests first.** Move `browser_attempt_test.go`, `browser_cleanup_test.go`, `browser_commit_test.go`, `browser_failures_test.go` to the new package, with a fake `Authorizer` in place of the service. Assertions do not change. Run `go test ./internal/browserlogin/`. Expected: FAIL, no such package.
-- [ ] **Step 2: Move the code.** `go test -race ./internal/browserlogin/ ./internal/chatgptplan/ ./internal/agui/ ./cmd/aura/`. Expected: PASS.
-- [ ] **Step 3: Two prefixes do not collide.** `TestTwoLoginsKeepTheirOwnSessions`: an owner with a `chatgpt-` and a `signin-` flow, where cancelling one leaves the other. `TestAnOwnerHasOneSignInAtATime`: a second `Start` with another attempt cancels the first. `TestStartHandsTheRedirectToTheLauncher`. `TestStartKeepsEachAttemptsOrigins`: each launcher receives only that attempt's two origins after replacement.
-- [ ] **Step 4: Prove ChatGPT still works.** `go test -tags=docker_integration -run ChatGPT ./cmd/aura/`, or the tier that holds its browser test, on the stack.
-- [ ] **Step 5: Coverage entry,** `"github.com/chetto1983/aura/internal/browserlogin": {"mode": "target"}`, and commit. `refactor(signin): lift the browser login out of chatgptplan`, with a body that says the tests moved because they read internals, and that no assertion changed.
+- [x] **Step 1: Move the tests first.** Move `browser_attempt_test.go`, `browser_cleanup_test.go`, `browser_commit_test.go`, `browser_failures_test.go` to the new package, with a fake `Authorizer` in place of the service. Assertions do not change. Run `go test ./internal/browserlogin/`. Expected: FAIL, no such package.
+- [x] **Step 2: Move the code.** `go test -race ./internal/browserlogin/ ./internal/chatgptplan/ ./internal/agui/ ./cmd/aura/`. Expected: PASS.
+- [x] **Step 3: Two prefixes do not collide.** `TestTwoLoginsKeepTheirOwnSessions`: an owner with a `chatgpt-` and a `signin-` flow, where cancelling one leaves the other. `TestAnOwnerHasOneSignInAtATime`: a second `Start` with another attempt cancels the first. `TestStartHandsTheRedirectToTheLauncher`. `TestStartKeepsEachAttemptsOrigins`: each launcher receives only that attempt's two origins after replacement.
+- [x] **Step 4: Prove ChatGPT still works.** `go test -tags=docker_integration -run ChatGPT ./cmd/aura/`, or the tier that holds its browser test, on the stack.
+- [x] **Step 5: Coverage entry,** `"github.com/chetto1983/aura/internal/browserlogin": {"mode": "target"}`, and commit. `refactor(signin): lift the browser login out of chatgptplan`, with a body that says the tests moved because they read internals, and that no assertion changed.
 
 ### Task 5: The sign-in box
 

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/browserlogin"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -27,7 +27,7 @@ func newBrowserLauncher() *browserLauncherFixture {
 	return &browserLauncherFixture{opened: make(chan browserOpening, 20)}
 }
 
-func (l *browserLauncherFixture) Open(ctx context.Context, session string) (BrowserSession, error) {
+func (l *browserLauncherFixture) Open(ctx context.Context, session string, _ browserlogin.LaunchOptions) (browserlogin.Session, error) {
 	b := &browserFixture{redirect: testRedirect, authorization: make(chan string, 1), callback: make(chan url.Values, 1), failed: make(chan error, 1), closed: make(chan struct{})}
 	l.opened <- browserOpening{owner: identityctx.IdentityID(ctx), session: session, browser: b}
 	if l.open != nil {
@@ -85,7 +85,7 @@ func (b *browserFixture) Close() error {
 	return b.closeErr
 }
 
-func testBrowserLogin(t *testing.T, s *Service, l BrowserLauncher) *BrowserLogin {
+func testBrowserLogin(t *testing.T, s *Service, l browserlogin.Launcher) *BrowserLogin {
 	t.Helper()
 	b := NewBrowserLogin(context.Background(), s, l)
 	t.Cleanup(func() { _ = b.Close() })
@@ -281,13 +281,5 @@ func TestDisconnectDuringExchangeCannotResurrectCredentials(t *testing.T) {
 	}
 	if _, err := s.AccessToken(ownerContext("alice")); !errors.Is(err, ErrAuthorizationRequired) {
 		t.Fatal("disconnect was undone by the delayed exchange")
-	}
-}
-
-func assertBrowserError(t *testing.T, s *Service, want string) {
-	t.Helper()
-	status, err := s.Status(ownerContext("alice"), "alice")
-	if err != nil || status.Status != "error" || !strings.Contains(status.Error, want) || strings.Contains(status.Error, "SECRET") {
-		t.Fatalf("browser failure was not safely actionable: %+v %v", status, err)
 	}
 }

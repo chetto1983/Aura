@@ -1,5 +1,19 @@
 package chatgptplan
 
+import "context"
+
+type browserAuthorizer struct{ *Service }
+
+func (a browserAuthorizer) Start(ctx context.Context, owner, redirect string) (string, error) {
+	flow, err := a.Service.Start(ctx, owner, redirect)
+	return flow.AuthURL, err
+}
+
+func (a browserAuthorizer) Cancel(owner, authURL string) { a.cancelBrowser(owner, authURL) }
+func (a browserAuthorizer) Fail(owner, authURL, message string) {
+	a.failBrowser(owner, authURL, message)
+}
+
 func (s *Service) cancelBrowser(owner, authorizationURL string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

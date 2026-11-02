@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/browserlogin"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -117,7 +118,7 @@ func TestChatGPTBrowserReadAndWriteRespectCancellation(t *testing.T) {
 	_ = in.Close()
 	_ = commands.Close()
 	for _, session := range []string{"../escape", "chatgpt-0123456789abcdef01234567"} {
-		if _, err := (sandboxChatGPTBrowser{}).Open(context.Background(), session); err == nil {
+		if _, err := (sandboxChatGPTBrowser{}).Open(context.Background(), session, browserlogin.LaunchOptions{}); err == nil {
 			t.Fatal("missing sandbox accepted")
 		}
 	}
@@ -135,7 +136,7 @@ func (*fullBrowserHost) AdmitBrowser(context.Context, string) error {
 func TestChatGPTLoginBrowserWaitsForRoomOnTheHost(t *testing.T) {
 	host := &fullBrowserHost{}
 	browser := sandboxChatGPTBrowser{router: usersandbox.NewSandboxRouter(host, config.SandboxConfig{})}
-	_, err := browser.Open(identityctx.WithIdentityID(context.Background(), restartTestIdentity), "chatgpt-0123456789abcdef01234567")
+	_, err := browser.Open(identityctx.WithIdentityID(context.Background(), restartTestIdentity), "chatgpt-0123456789abcdef01234567", browserlogin.LaunchOptions{})
 	if err == nil || !strings.Contains(err.Error(), "browser capacity") {
 		t.Fatalf("Open on a full host = %v, want the capacity refusal", err)
 	}
