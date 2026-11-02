@@ -65,13 +65,21 @@ The fixes for the first two and the tests behind them: fork `0663442`, `e2146f2`
 
 An independent review of these changes found two faults before any image was published, and both are the kind a unit suite cannot see. Saving Outlook.com with no tenant failed on the real table's check, with a fake store keeping the tests green; it reached `master` as `73500744c` and was fixed by `701986c37`, with a test that goes through the real table. The first rule for invitations silenced the mail while the calendar was healthy, which left a meeting older than the watch with no alert at all, so that rule was replaced the same day: the ladder is untouched, and the worst case is the old double.
 
+## The digest, and a mail moved on Outlook.com
+
+The digest hour went to 16:00 from the cockpit, so as not to wait for the evening. The digest fired at 15:00:05 UTC, in the person's language, on Telegram, set `last_digest_at` and fixed its next run for the next day. The hour went back to 18:00 with no restart, and the task moved with it.
+
+It did not serve its purpose. Of 29 lines decided that day, 20 shown: 10 of the 12 "Urgenti" had already reached the phone, 8 of the 20 were three meetings already cancelled, and 2 read only "(non più disponibile)". The operator ruled that a model should write it, once a day: `2026-11-02-digest-written-by-the-model-design.md`.
+
+The fork's `d18b8de` reached the VM through the updater at 15:10:45 UTC. It asks for lasting ids on mail only: a first version, `c450f04`, asked on events too, and an independent review showed that a deleted event is told by its default id going 404 and that an event's earlier start is found by that id, so moves and deletes would have been lost. A mail decided at 15:53:09 UTC holds an id of 68 characters against the 140 of every earlier one, so Outlook.com honours the header. The person moved it to the bin, and the cockpit's day still read it: 13 lines, the same 10 gone as before the move.
+
 ## What this does not prove
 
+- That the PIM still reads a mail decided before the update and left in place. All ten that read gone were decided before it, the person had just deleted many, and nobody counted which. Those rows hold default ids, so one that moved stays gone until the row expires.
 - A crash after Telegram took the message and before the run closed. The alert would be told twice: the run above died before the send. The window is what a send takes.
 - A meeting older than the watch, or one whose invitation is not in the mailbox. Each should alert once, on its own, and neither was tried live.
-- The fix for a mail moved on Outlook.com. Two mails the person moved to the bin read gone while still in the mailbox, because Graph's id changes on a move unless the request asks for `Prefer: IdType="ImmutableId"` (learn.microsoft.com/graph/outlook-immutable-id). The fork's `c450f04` asks for it, and has not run on a live account.
 - IMAP on a real mailbox. It ran against GreenMail only.
-- The digest at 18:00 local, which had not fired when this was written.
+- The digest the model writes: it gets its own file when it has run.
 - A revoked grant, `enable` on a real turn, and `pim_contract_live`.
 - G3: zero missed and zero duplicates over five working days per adapter.
 - Delivery beyond what the person saw: Telegram was read in their browser and on their word.

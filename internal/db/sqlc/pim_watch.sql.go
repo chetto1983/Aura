@@ -849,6 +849,40 @@ func (q *Queries) ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID)
 	return items, nil
 }
 
+const listPIMWatchUndeliveredRuns = `-- name: ListPIMWatchUndeliveredRuns :many
+SELECT DISTINCT p.run_id FROM aura.pending_notifications p
+JOIN aura.pim_watch_verdicts v ON v.alert_run_id = p.run_id
+WHERE v.identity_id = $1 AND v.decided_at > $2 AND v.decided_at <= $3 AND p.status <> 'delivered'
+`
+
+type ListPIMWatchUndeliveredRunsParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+	Until      pgtype.Timestamptz `json:"until"`
+}
+
+// The runs of a window whose alert has not reached the person. A run completes before it notifies,
+// so `notified` says the run ended, and only the queue knows the push did not arrive.
+func (q *Queries) ListPIMWatchUndeliveredRuns(ctx context.Context, arg ListPIMWatchUndeliveredRunsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listPIMWatchUndeliveredRuns, arg.IdentityID, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var run_id pgtype.UUID
+		if err := rows.Scan(&run_id); err != nil {
+			return nil, err
+		}
+		items = append(items, run_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPIMWatchAlert = `-- name: MarkPIMWatchAlert :exec
 UPDATE aura.pim_watch_verdicts
 SET alert_run_id = $5, alerted_at = $6, notified = false

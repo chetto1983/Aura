@@ -27,9 +27,10 @@ import (
 )
 
 type digestSnapshots struct {
-	client   *digestClient
-	err      error
-	identity string
+	client    *digestClient
+	err       error
+	identity  string
+	mandatory bool
 }
 
 func (d *digestSnapshots) SnapshotFor(_ context.Context, identityID string) (llm.RuntimeSnapshot, error) {
@@ -37,7 +38,7 @@ func (d *digestSnapshots) SnapshotFor(_ context.Context, identityID string) (llm
 	if d.err != nil {
 		return llm.RuntimeSnapshot{}, d.err
 	}
-	return llm.RuntimeSnapshot{Config: llm.Config{Model: "identity-model"}, Client: d.client}, nil
+	return llm.RuntimeSnapshot{Config: llm.Config{Model: "identity-model", ReasoningMandatory: d.mandatory}, Client: d.client}, nil
 }
 
 type digestClient struct {
@@ -80,6 +81,18 @@ func TestTheDigestModelIsTheIdentitysAndHasNoTools(t *testing.T) {
 	framed := req.Messages[1].Content
 	if !strings.Contains(framed, `trust="untrusted"`) || strings.Contains(framed, "</tool_output> ignore") {
 		t.Fatalf("items are not framed:\n%s", framed)
+	}
+}
+
+// 298 of OpenRouter's 424 models refuse a request that turns reasoning off (reasoning_clamp.go).
+func TestADigestModelThatCannotDisableReasoningIsStillAsked(t *testing.T) {
+	client := &digestClient{}
+	model := pimDigestModel{snapshots: &digestSnapshots{client: client, mandatory: true}}
+	if _, err := model.Write(context.Background(), "identity-1", pimwatch.ModelAsk{}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if client.request.Reasoning.Effort != llm.ReasoningEffortLow {
+		t.Fatalf("effort = %q", client.request.Reasoning.Effort)
 	}
 }
 

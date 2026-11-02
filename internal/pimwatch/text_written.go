@@ -53,31 +53,28 @@ func (w writtenPhrases) section(section string) string {
 	}
 }
 
-// senders names who a line comes from, as the PIM read them. One address is one person, however
-// many ways its mails name it.
+// senders names who a line comes from, as the PIM read them and with their address, because the
+// name is whatever the sender typed. One address is one person, however its mails name it.
 func senders(items []Line) string {
 	var names []string
 	seen := map[string]int{}
 	for _, item := range items {
-		name, address := boundedLine(item.FromName, nameRunes), plainLine(item.From)
-		key := strings.ToLower(address)
+		who := item.sender()
+		key := strings.ToLower(plainLine(item.From))
 		if key == "" {
-			key = strings.ToLower(name)
+			key = strings.ToLower(who)
 		}
 		if key == "" {
 			continue
 		}
-		if name == "" {
-			name = address
-		}
 		if at, ok := seen[key]; ok {
-			if strings.EqualFold(names[at], address) {
-				names[at] = name
+			if len(who) > len(names[at]) {
+				names[at] = who
 			}
 			continue
 		}
 		seen[key] = len(names)
-		names = append(names, name)
+		names = append(names, who)
 	}
 	if len(names) > maxNames {
 		return fmt.Sprintf("%s +%d", strings.Join(names[:maxNames], ", "), len(names)-maxNames)
@@ -97,43 +94,39 @@ func signed(p phrases, items []Line, text string) string {
 	return text
 }
 
-// writtenEntries turns the model's answer into the digest's lines and counts what it left out. An
-// untold `now` stands whatever the model did, up to the cap, and what the cap stops is unseen.
-func writtenEntries(p phrases, loc *time.Location, lines []Line, written []writtenLine) (entries []writtenEntry, quiet, unseen int) {
-	cited := make(map[int]bool, len(lines))
-	entries = make([]writtenEntry, 0, len(written))
+// writtenEntries puts what is owed first in its section, up to the cap, then the model's lines,
+// and counts what the model left out of known. A told item it left out is nobody's business.
+func writtenEntries(p phrases, loc *time.Location, known, owed []Line, written []writtenLine) (entries []writtenEntry, quiet, stopped int) {
+	shown := owed[:min(len(owed), maxDigestLines)]
+	entries = make([]writtenEntry, 0, len(shown)+len(written))
+	for _, line := range shown {
+		entries = append(entries, writtenEntry{section: sectionLook, text: line.describe(p, loc), lines: []Line{line}})
+	}
+	cited := make(map[int]bool, len(known))
 	for _, line := range written {
 		items := make([]Line, 0, len(line.Items))
 		for _, number := range line.Items {
 			cited[number] = true
-			items = append(items, lines[number-1])
+			items = append(items, known[number-1])
 		}
 		entries = append(entries, writtenEntry{section: line.Section, text: signed(p, items, line.Text), lines: items})
 	}
-	forced := 0
-	for i, line := range lines {
-		switch {
-		case cited[i+1] || line.Told:
-		case line.Tier != TierNow:
+	for i, line := range known {
+		if !cited[i+1] && !line.Told {
 			quiet++
-		case forced == maxDigestLines:
-			unseen++
-		default:
-			forced++
-			entries = append(entries, writtenEntry{section: sectionLook, text: line.describe(p, loc), lines: []Line{line}})
 		}
 	}
 	slices.SortStableFunc(entries, func(a, b writtenEntry) int {
 		return slices.Index(writtenSections, a.section) - slices.Index(writtenSections, b.section)
 	})
-	return entries, quiet, unseen
+	return entries, quiet, len(owed) - len(shown)
 }
 
-// renderWritten writes the digest the model answered. lines are the items as it read them, and
-// unseen counts what it never read.
-func renderWritten(lang Lang, loc *time.Location, lines []Line, written []writtenLine, unseen int, missing unread) Outcome {
+// renderWritten writes the digest the model answered. known are the items as it read them, owed
+// what it must not touch, and unseen counts what it never read.
+func renderWritten(lang Lang, loc *time.Location, known, owed []Line, written []writtenLine, unseen int, missing unread) Outcome {
 	p, w := phrasesFor(lang), writtenPhrasesFor(lang)
-	entries, quiet, stopped := writtenEntries(p, loc, lines, written)
+	entries, quiet, stopped := writtenEntries(p, loc, known, owed, written)
 	unseen += stopped
 	if len(entries) == 0 && quiet == 0 && unseen == 0 && missing.none() {
 		return Outcome{}

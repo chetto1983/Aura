@@ -169,6 +169,43 @@ func TestAModelThatFailsSendsTheList(t *testing.T) {
 	}
 }
 
+func urgentOf(prefix string, n int) []Verdict {
+	out := dayOf(prefix, n, false)
+	for i := range out {
+		out[i].Tier = TierNow
+	}
+	return out
+}
+
+// A subject that reached the model could talk an urgent mail out of the digest.
+func TestTheModelNeverReadsWhatIsOwed(t *testing.T) {
+	store := &windowStore{verdicts: slices.Concat(urgentOf("owed", 1), dayOf("new", 1, false))}
+	model := &scriptedModel{reply: ModelReply{Text: `{"lines":[]}`}}
+
+	out, err := writtenDigester(store, &everyItem{}, model).Run(context.Background(), "identity")
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	if strings.Contains(model.asks[0].Items, "owed000") {
+		t.Fatalf("the model read it:\n%s", model.asks[0].Items)
+	}
+	mustContain(t, out.Notice, "Worth a look\n1. owed000@acme.it: Subject of owed000", "1 more asks nothing of you.")
+}
+
+func TestADayOfWhatIsOwedAsksNoModel(t *testing.T) {
+	store := &windowStore{verdicts: urgentOf("owed", 2)}
+	model := &scriptedModel{}
+
+	out, err := writtenDigester(store, &everyItem{}, model).Run(context.Background(), "identity")
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	if len(model.asks) != 0 {
+		t.Fatalf("asked %d times", len(model.asks))
+	}
+	mustContain(t, out.Notice, "Urgent\n1. [work] owed000@acme.it", "2. [work] owed001@acme.it")
+}
+
 func TestNothingNewAsksNoModel(t *testing.T) {
 	store := &windowStore{verdicts: dayOf("told", 3, true)}
 	model := &scriptedModel{}

@@ -263,13 +263,36 @@ func (s *Store) RetellAlerts(ctx context.Context, identityID, accountID, oldRun,
 	return nil
 }
 
-// DigestVerdicts lists every `now` and `today` decided in (since, until], oldest first.
+// DigestVerdicts lists every `now` and `today` decided in (since, until], oldest first. An alert
+// whose push has not arrived reads as not notified: the digest is its second chance, and a line
+// repeated after a late delivery costs less than one nobody saw.
 func (s *Store) DigestVerdicts(ctx context.Context, identityID string, since, until time.Time) ([]Verdict, error) {
-	verdicts, err := list(ctx, s, identityID, func(q *sqlc.Queries, id pgtype.UUID) ([]sqlc.AuraPimWatchVerdicts, error) {
-		return q.ListPIMWatchDigestVerdicts(ctx, sqlc.ListPIMWatchDigestVerdictsParams{
+	var verdicts []Verdict
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		rows, err := q.ListPIMWatchDigestVerdicts(ctx, sqlc.ListPIMWatchDigestVerdictsParams{
 			IdentityID: id, Since: timestamp(since), Until: timestamp(until),
 		})
-	}, verdictFromRow)
+		if err != nil {
+			return err
+		}
+		runs, err := q.ListPIMWatchUndeliveredRuns(ctx, sqlc.ListPIMWatchUndeliveredRunsParams{
+			IdentityID: id, Since: timestamp(since), Until: timestamp(until),
+		})
+		if err != nil {
+			return err
+		}
+		undelivered := make(map[string]bool, len(runs))
+		for _, run := range runs {
+			undelivered[run.String()] = true
+		}
+		verdicts = make([]Verdict, 0, len(rows))
+		for _, row := range rows {
+			verdict := verdictFromRow(row)
+			verdict.Notified = verdict.Notified && !undelivered[verdict.AlertRunID]
+			verdicts = append(verdicts, verdict)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list pim watch digest verdicts: %w", err)
 	}

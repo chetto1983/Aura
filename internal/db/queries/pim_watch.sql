@@ -219,6 +219,13 @@ SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND decided_at > @since AND decided_at <= @until AND tier IN ('now', 'today')
 ORDER BY decided_at, item_id;
 
+-- name: ListPIMWatchUndeliveredRuns :many
+-- The runs of a window whose alert has not reached the person. A run completes before it notifies,
+-- so `notified` says the run ended, and only the queue knows the push did not arrive.
+SELECT DISTINCT p.run_id FROM aura.pending_notifications p
+JOIN aura.pim_watch_verdicts v ON v.alert_run_id = p.run_id
+WHERE v.identity_id = $1 AND v.decided_at > @since AND v.decided_at <= @until AND p.status <> 'delivered';
+
 -- name: ListPIMWatchAccountVerdicts :many
 SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND decided_at >= @since AND decided_at < @until

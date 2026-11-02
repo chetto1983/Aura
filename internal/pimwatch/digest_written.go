@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"slices"
 	"strconv"
 	"strings"
@@ -115,8 +116,9 @@ type writtenLine struct {
 }
 
 // parseWritten reads an answer about items numbered from 1. Anything it cannot vouch for refuses
-// the whole answer, because the list loses nothing and a guess could. A number cited twice stands
-// on its first line, and a line left with no number goes.
+// the whole answer, because the list loses nothing and a guess could: JSON of the wrong shape is
+// not the empty answer it would decode to. A number cited twice stands on its first line, and a
+// line left with no number goes.
 func parseWritten(reply string, items int) ([]writtenLine, error) {
 	start, end := strings.IndexByte(reply, '{'), strings.LastIndexByte(reply, '}')
 	if start < 0 || end < start {
@@ -128,13 +130,14 @@ func parseWritten(reply string, items int) ([]writtenLine, error) {
 	if err := json.Unmarshal([]byte(reply[start:end+1]), &draft); err != nil {
 		return nil, errDraftRefused
 	}
-	if len(draft.Lines) > maxDigestLines {
+	if draft.Lines == nil || len(draft.Lines) > maxDigestLines {
 		return nil, errDraftRefused
 	}
 	cited := make(map[int]bool, items)
 	out := make([]writtenLine, 0, len(draft.Lines))
 	for _, line := range draft.Lines {
-		text := boundedLine(line.Text, writtenRunes)
+		// The frame escaped what the model read, and it may copy an entity back.
+		text := boundedLine(html.UnescapeString(line.Text), writtenRunes)
 		if text == "" || len(line.Items) == 0 || !slices.Contains(writtenSections, line.Section) {
 			return nil, errDraftRefused
 		}

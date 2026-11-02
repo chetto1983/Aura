@@ -19,20 +19,23 @@ A list cannot fix the second and the fourth without reading natural language, an
 this project refuses. So this is the one place the watch pays for a model, once a day. The ladder stays as it is: it
 decides alone, with no model on the path, every five minutes.
 
-§5.2 repeated `now` deliberately, "with no delivery state to keep". That state exists now: `notified` has been on every
-verdict since the alert recovery landed, so the reason is gone.
+§5.2 repeated `now` deliberately, "with no delivery state to keep", so that a push lost after the dispatcher's retries
+still reached the person that day. That state exists: not in `notified`, which says only that the run ended (a run
+completes before it notifies), but in `aura.pending_notifications`, which holds a row for each push that has not arrived.
+The digest reads a verdict as told when `notified` is set and its run has no such row. A crash between the two steps
+leaves no row, and that alert is lost: the window is what a send takes.
 
 ## What the person reads
 
 ```
 Riepilogo di posta e calendario
 Da fare
-1. Martina SNC: risposta sul tagliando Corolla, 2 mail
-2. PierMarSync: richiesta preventivo
+1. Un cliente <indirizzo>: risposta su un'offerta, 2 mail
+2. Un fornitore <indirizzo>: richiesta di conferma
 Da guardare
-3. GitHub: CI Skills fallita su master
+3. Un servizio <indirizzo>: build fallita su master
 Da sapere
-4. PierMarSync: tre riunioni annullate, niente in agenda
+4. Un collega <indirizzo>: tre riunioni annullate, niente in agenda
 Altre 10 voci non chiedono nulla.
 ```
 
@@ -55,14 +58,19 @@ outside the three, an empty `text`, more than 20 lines (`maxDigestLines`) or an 
 answer. Cutting a long answer could cut the one line that holds an urgent mail, and the list loses nothing.
 
 **Sender and subject are attacker text, here too.** They reach the model inside the untrusted frame, the call has no
-tools, and the model's text goes in the record's frame like the subjects did. A hostile subject can at worst bend a
-sentence. It cannot invent a mail, change who a line says it comes from, or hide what the next rule protects.
+tools, and the model's text goes in the record's frame like the subjects did. A line carries the address as well as the
+name, as an alert does, because the name is whatever the sender typed: the operator's mock showed names alone, and a
+review showed that a familiar name from any domain would pass. A hostile subject can at worst bend a sentence, or
+persuade the model that nothing below `now` matters, which leaves those items counted and in the account's day. It
+cannot invent a mail, change who a line comes from, or reach what the next rule protects.
 
-**The model cannot lose what nobody was told.** An item at `now` with `notified = false`, held back by the daily cap or
-raised by a correction, stands in "Da guardare" in the fixed form if the model left it out.
+**The model never touches what is owed.** An item at `now` that has not reached the person, held back by the daily cap,
+raised by a correction or lost in the push, is kept out of the model's input and stands first in "Da guardare" in the
+fixed form. A day of nothing else makes no call.
 
 **A told item is context, not a line.** It goes to the model marked as told, because a mail decided `today` may be the
 cancellation of a meeting the phone announced. Unless the model cites it, it appears nowhere and is not counted.
+Reasoning is off where the model allows it: `ClampReasoningEffort` keeps the request legal on one that refuses.
 
 **A gone item leaves the digest,** from the model's input and from the list: the line said nothing a person could use.
 
@@ -91,3 +99,8 @@ have shown counts against it. If it hides more than it saves, the wiring comes o
 
 The token figure in the design is an estimate until a live run writes it in the ledger. A mock written by hand from the
 operator's own paste shows the shape of the text, not what any model writes. Quality on a small local model is unmeasured.
+
+Known and left as they are, from the independent review of 2026-11-02: one account failing transiently holds everyone's
+window with no limit, and each day's call then reads much the same text; the window moves before the digest's push is
+confirmed, so a digest the queue gives up on is lost; a correction made after a window closed reaches no digest. All
+three were there before the model.

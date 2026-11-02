@@ -125,10 +125,10 @@ type digestDay struct {
 // write sends what the model wrote, or the list when it wrote nothing usable, and says which for
 // the ledger. Only something new is worth a call: a day of what the phone said costs nothing.
 func (d *Digester) write(ctx context.Context, day digestDay) (Outcome, string) {
-	news := newsIn(day.lines)
+	known := slices.DeleteFunc(slices.Clone(day.lines), func(line Line) bool { return line.Gone || line.owed() })
 	note := ""
-	if d.Model != nil && len(news) > 0 {
-		out, written, err := d.written(ctx, day)
+	if d.Model != nil && len(newsIn(known)) > 0 {
+		out, written, err := d.written(ctx, day, known)
 		if err == nil {
 			return out, written
 		}
@@ -136,15 +136,15 @@ func (d *Digester) write(ctx context.Context, day digestDay) (Outcome, string) {
 		slog.Warn("pimwatch: the digest model failed, sending the list")
 		note = ", the model failed"
 	}
+	news := newsIn(day.lines)
 	shown := news[:min(len(news), maxDigestLines)]
 	out := renderDigest(day.lang, day.loc, day.book, shown, len(news)-len(shown)+day.beyond, day.missing)
 	return out, fmt.Sprintf("%d shown%s", len(shown), note)
 }
 
-// written asks the model. It reads what was told as well, because a mail may be the end of a
-// meeting the phone announced.
-func (d *Digester) written(ctx context.Context, day digestDay) (Outcome, string, error) {
-	known := slices.DeleteFunc(slices.Clone(day.lines), func(line Line) bool { return line.Gone })
+// written asks the model about known. That holds what was told as well, because a mail may be the
+// end of a meeting the phone announced, and never what is owed.
+func (d *Digester) written(ctx context.Context, day digestDay, known []Line) (Outcome, string, error) {
 	reply, err := d.Model.Write(ctx, day.identityID, ModelAsk{
 		System: digestSystem(day.lang),
 		Items:  digestItems(known, day.book, phrasesFor(day.lang), day.loc),
@@ -156,7 +156,8 @@ func (d *Digester) written(ctx context.Context, day digestDay) (Outcome, string,
 	if err != nil {
 		return Outcome{}, "", err
 	}
-	out := renderWritten(day.lang, day.loc, known, written, day.beyond, day.missing)
+	owed := slices.DeleteFunc(slices.Clone(day.lines), func(line Line) bool { return !line.owed() })
+	out := renderWritten(day.lang, day.loc, known, owed, written, day.beyond, day.missing)
 	return out, fmt.Sprintf("%d written by the model, %d+%d tokens", len(written), reply.PromptTokens, reply.CompletionTokens), nil
 }
 
@@ -182,6 +183,10 @@ func sortDigest(verdicts []Verdict, labels []Label) {
 	}
 	slices.SortStableFunc(verdicts, func(a, b Verdict) int { return rank(a) - rank(b) })
 }
+
+// owed is an urgent line that has not reached the person. It stands as the PIM read it: the model
+// neither reads it nor words it, so no subject can talk it out of the digest.
+func (l Line) owed() bool { return l.Tier == TierNow && !l.Told && !l.Gone }
 
 // newsIn keeps the lines worth a person's time: the phone already said a told one, and a gone one
 // has nothing to say.

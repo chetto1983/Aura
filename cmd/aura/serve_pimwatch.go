@@ -141,7 +141,7 @@ func (m pimDigestModel) Write(ctx context.Context, identityID string, ask pimwat
 		},
 		Temperature: digestTemperature,
 		MaxTokens:   digestMaxTokens,
-		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
+		Reasoning:   llm.ReasoningConfig{Effort: snapshot.Config.ClampReasoningEffort(llm.ReasoningEffortNone)},
 		ToolChoice:  "none",
 	})
 	if err != nil {

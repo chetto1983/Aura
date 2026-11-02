@@ -72,6 +72,9 @@ func TestAnAnswerThatCannotBeTrustedIsRefused(t *testing.T) {
 	for name, reply := range map[string]string{
 		"no json":        "Ecco il riepilogo di oggi.",
 		"broken json":    `{"lines":[{"section":"do"`,
+		"no lines":       `{}`,
+		"another shape":  `{"digest":"tutto bene"}`,
+		"null lines":     `{"lines":null}`,
 		"zero":           `{"lines":[{"section":"do","items":[0],"text":"x"}]}`,
 		"past the end":   `{"lines":[{"section":"do","items":[4],"text":"x"}]}`,
 		"unknown part":   `{"lines":[{"section":"urgent","items":[1],"text":"x"}]}`,
@@ -82,6 +85,16 @@ func TestAnAnswerThatCannotBeTrustedIsRefused(t *testing.T) {
 		if _, err := parseWritten(reply, 3); !errors.Is(err, errDraftRefused) {
 			t.Fatalf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func TestAnEntityTheFrameMadeIsReadBack(t *testing.T) {
+	written, err := parseWritten(`{"lines":[{"section":"do","items":[1],"text":"R&amp;D: offerta &lt;urgente&gt;"}]}`, 1)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if written[0].Text != "R&D: offerta <urgente>" {
+		t.Fatalf("text = %q", written[0].Text)
 	}
 }
 

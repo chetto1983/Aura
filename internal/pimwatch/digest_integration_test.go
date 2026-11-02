@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func (r *watchRig) digester(lang Lang) *Digester {
@@ -208,6 +210,48 @@ func TestWhatThePhoneAlreadySaidLeavesTheDigest(t *testing.T) {
 		t.Fatalf("told again:\n%s", out.Notice)
 	}
 	mustContain(t, out.Summary, "2 in the window, 1 shown")
+}
+
+// A run completes before it notifies, so `notified` says the run ended. Only the queue knows the
+// push never arrived, and the digest is that alert's second chance.
+func TestAnAlertThatNeverArrivedStandsInTheDigest(t *testing.T) {
+	for status, shown := range map[string]bool{"failed": true, "undeliverable": true, "pending": true, "delivered": false} {
+		r := newWatchRig(t)
+		ctx := context.Background()
+		r.clock.advance(time.Minute)
+		r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{r.urgentMail("lost"), r.todayMail("fresh")}, NextCursor: "c1"})
+		run, _, err := r.run()
+		if err != nil {
+			t.Fatalf("tick: %v", err)
+		}
+		r.ledger.completed[run] = true
+		r.tick()
+		task := uuid.NewString()
+		for _, step := range []struct {
+			sql  string
+			args []any
+		}{
+			{`INSERT INTO aura.scheduler_tasks (id, kind, schedule_kind, every_minutes, tz, payload, status, next_run_at, notify_route, identity_id)
+				VALUES ($1, 'pim_watch', 'every', 5, 'UTC', '{}'::jsonb, 'active', now(), 'none', $2)`, []any{task, r.identity}},
+			{`INSERT INTO aura.agent_job_runs (id, task_id, status) VALUES ($1, $2, 'completed')`, []any{run, task}},
+			{`INSERT INTO aura.pending_notifications (id, run_id, notify_route, body, notify_after, status, identity_id)
+				VALUES ($1, $2, 'telegram', 'alert', now(), $3, $4)`, []any{uuid.NewString(), run, status, r.identity}},
+		} {
+			if _, err := r.store.pool.Exec(ctx, step.sql, step.args...); err != nil {
+				t.Fatalf("%s: seed: %v", status, err)
+			}
+		}
+		t.Cleanup(func() { _, _ = r.store.pool.Exec(ctx, `DELETE FROM aura.scheduler_tasks WHERE id = $1`, task) })
+		r.clock.advance(time.Minute)
+
+		out, err := r.digester(LangEN).Run(ctx, r.identity)
+		if err != nil {
+			t.Fatalf("%s: digest: %v", status, err)
+		}
+		if got := strings.Contains(out.Notice, "lost@acme.it"); got != shown {
+			t.Fatalf("%s: shown %v:\n%s", status, got, out.Notice)
+		}
+	}
 }
 
 func TestADigestShowsTwentyLinesAndReadsTheWindow(t *testing.T) {

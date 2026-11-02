@@ -530,6 +530,9 @@ type Querier interface {
 	ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOwedAlertsParams) ([]AuraPimWatchVerdicts, error)
 	ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error)
 	ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchRules, error)
+	// The runs of a window whose alert has not reached the person. A run completes before it notifies,
+	// so `notified` says the run ended, and only the queue knows the push did not arrive.
+	ListPIMWatchUndeliveredRuns(ctx context.Context, arg ListPIMWatchUndeliveredRunsParams) ([]pgtype.UUID, error)
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingMessageDrafts(ctx context.Context, arg ListPendingMessageDraftsParams) ([]AuraMessageDrafts, error)
