@@ -35,6 +35,7 @@ type MCPAuthorization struct {
 	// button.
 	Supported  bool      `json:"supported"`
 	Authorized bool      `json:"authorized"`
+	Expired    bool      `json:"expired,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt,omitzero"`
 	// Reason explains an unsupported server in the operator's terms, so the cockpit can
 	// say why instead of rendering a disabled control with no explanation.

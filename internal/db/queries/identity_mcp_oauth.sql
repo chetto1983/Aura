@@ -5,7 +5,7 @@
 
 -- name: GetIdentityMCPOAuth :one
 SELECT identity_id, server_name, resource_url, access_token_enc, refresh_token_enc,
-       client_info_enc, token_type, scopes, expires_at, created_at, updated_at
+       client_info_enc, token_type, scopes, expires_at, created_at, updated_at, refused_at
 FROM aura.identity_mcp_oauth
 WHERE identity_id = $1 AND server_name = $2;
 
@@ -26,7 +26,12 @@ ON CONFLICT (identity_id, server_name) DO UPDATE SET
     token_type        = EXCLUDED.token_type,
     scopes            = EXCLUDED.scopes,
     expires_at        = EXCLUDED.expires_at,
+    refused_at        = NULL,
     updated_at        = now();
+
+-- name: MarkIdentityMCPOAuthRefused :exec
+UPDATE aura.identity_mcp_oauth SET refused_at = now(), updated_at = now()
+WHERE identity_id = $1 AND server_name = $2;
 
 -- name: DeleteIdentityMCPOAuth :execrows
 -- Revoking locally. execrows, not exec: a caller that reports "revoked" without knowing

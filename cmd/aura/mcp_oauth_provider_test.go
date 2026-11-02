@@ -5,9 +5,36 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/mcpoauth"
 )
+
+type authorizationStateStore struct{ grant mcpoauth.Grant }
+
+func (s *authorizationStateStore) Load(context.Context, string) (mcpoauth.Grant, error) {
+	return s.grant, nil
+}
+func (*authorizationStateStore) Save(context.Context, mcpoauth.Grant) error   { return nil }
+func (*authorizationStateStore) MarkRefused(context.Context, string) error    { return nil }
+func (*authorizationStateStore) Delete(context.Context, string) (bool, error) { return false, nil }
+
+func TestAuthorizationStateSaysARefusedGrantExpired(t *testing.T) {
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"canva": {Type: mcp.ServerTypeStreamableHTTP, URL: "https://mcp.canva.com/mcp"},
+	}})
+	store := &authorizationStateStore{grant: mcpoauth.Grant{RefusedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}}
+	state, err := (&mcpAuthService{store: store}).AuthorizationState(t.Context(), "canva")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Supported || state.Authorized || !state.Expired {
+		t.Fatalf("state = %+v, want supported and expired, not authorized", state)
+	}
+}
 
 // Aura signs its own sidecars' credentials (mcp_first_party_grants.go), so the cockpit's
 // authorization panel has nothing to ask a person for there. On the lab VM, 2026-10-14,

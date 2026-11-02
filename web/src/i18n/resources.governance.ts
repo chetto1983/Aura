@@ -164,6 +164,7 @@ export const governanceEn = {
         authorization: {
           title: 'Your authorization',
           authorized: 'Authorized for your identity',
+          expired: 'Access expired: authorize again',
           notAuthorized:
             'This server authorizes each person separately. Connect to authorize it for you.',
           unsupported: 'This server takes no authorization flow.',
@@ -428,6 +429,7 @@ export const governanceIt = {
         authorization: {
           title: 'La tua autorizzazione',
           authorized: 'Autorizzato per la tua identità',
+          expired: 'Accesso scaduto: autorizza di nuovo',
           notAuthorized:
             'Questo server autorizza ogni persona separatamente. Collegalo per autorizzarlo a tuo nome.',
           unsupported: 'Questo server non prevede un flusso di autorizzazione.',

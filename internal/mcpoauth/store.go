@@ -65,6 +65,7 @@ type Grant struct {
 	// lets a restart reconstruct the remaining TTL instead of believing a dead token is
 	// still valid until the first 401.
 	ExpiresAt time.Time
+	RefusedAt time.Time
 }
 
 // Expired reports whether the grant's access token is past its expiry, with a leeway so a
@@ -190,6 +191,25 @@ func (s *Store) Save(ctx context.Context, g Grant) error {
 	return nil
 }
 
+// MarkRefused keeps the grant so expired consent remains visible until a new consent replaces it.
+func (s *Store) MarkRefused(ctx context.Context, serverName string) error {
+	identity, err := requireIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	id, err := parseUUID(identity)
+	if err != nil {
+		return err
+	}
+	err = db.WithIdentityTx(ctx, s.pool, identity, func(q *sqlc.Queries) error {
+		return q.MarkIdentityMCPOAuthRefused(ctx, sqlc.MarkIdentityMCPOAuthRefusedParams{IdentityID: id, ServerName: serverName})
+	})
+	if err != nil {
+		return fmt.Errorf("mcpoauth: mark %q refused: %w", serverName, err)
+	}
+	return nil
+}
+
 // Delete revokes the local grant and reports whether a row actually went. The bool is the
 // point: without it a caller cannot tell a real revocation from a no-op on a row RLS
 // filtered away, and would report success for a token that is still live.
@@ -280,6 +300,7 @@ func (s *Store) decodeRow(row sqlc.AuraIdentityMcpOauth) (Grant, error) {
 		TokenType:    row.TokenType,
 		Scopes:       row.Scopes,
 		ExpiresAt:    row.ExpiresAt.Time,
+		RefusedAt:    row.RefusedAt.Time,
 	}, nil
 }
 

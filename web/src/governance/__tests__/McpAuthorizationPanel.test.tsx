@@ -43,6 +43,17 @@ afterEach(() => {
 });
 
 describe('McpAuthorizationPanel', () => {
+  it('offers to authorize again when the access expired', async () => {
+    vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({
+      supported: true,
+      authorized: false,
+      expired: true,
+    });
+    renderPanel();
+    expect(await screen.findByText('Access expired: authorize again')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+  });
+
   it('re-probes the server once the authorization is approved', async () => {
     vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({ supported: true, authorized: false });
     vi.mocked(api.startMcpAuthorization).mockResolvedValue({

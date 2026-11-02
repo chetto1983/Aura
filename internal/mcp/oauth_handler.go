@@ -76,6 +76,7 @@ var ErrOAuthAuthorizationURLNotPinned = errors.New("mcp oauth: refusing to open 
 type GrantStore interface {
 	Load(ctx context.Context, serverName string) (mcpoauth.Grant, error)
 	Save(ctx context.Context, grant mcpoauth.Grant) error
+	MarkRefused(ctx context.Context, serverName string) error
 }
 
 // OAuthOptions carries the per-mount authorization wiring. The zero value is usable and

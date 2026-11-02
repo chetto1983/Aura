@@ -615,6 +615,7 @@ type Querier interface {
 	// and marks that late row, so the renderer must use this atomic result set rather than
 	// its stale pre-claim snapshot or the late report is permanently omitted.
 	MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error)
+	MarkIdentityMCPOAuthRefused(ctx context.Context, arg MarkIdentityMCPOAuthRefusedParams) error
 	MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error)
 	MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDraftOutcomeParams) (AuraMessageDrafts, error)
 	// A row outlives its push as a trail, but its text does not: a body can name a mail's sender and

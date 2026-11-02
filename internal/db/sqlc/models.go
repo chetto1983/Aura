@@ -346,6 +346,7 @@ type AuraIdentityMcpOauth struct {
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	RefusedAt       pgtype.Timestamptz `json:"refused_at"`
 }
 
 // Per-identity Garage/S3 credential store (Phase 36, D-08/OQ4). secret_key_enc is the S3 secret as encrypted-at-rest bytea ciphertext (wrapping key derived from AURA_AUTHULA_SECRET, same trust boundary as .env); the AEAD is implemented by the plan-06 persistence layer. Deleting the identity cascades its key.

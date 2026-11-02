@@ -220,6 +220,11 @@ func (p *persistingTokenSource) token() (*oauth2.Token, error) {
 	}
 	tok, err := p.inner.Token()
 	if err != nil {
+		if refusal, ok := errors.AsType[*oauth2.RetrieveError](err); ok && refusal.ErrorCode == "invalid_grant" {
+			if markErr := p.store.MarkRefused(p.ctx, p.name); markErr != nil {
+				p.logger.Warn("mcp oauth: could not mark refused grant", "server", p.name, "error", markErr)
+			}
+		}
 		p.logger.Warn("mcp oauth: token refresh failed",
 			"server", p.name, "error", err)
 		return nil, err

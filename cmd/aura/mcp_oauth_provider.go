@@ -33,8 +33,13 @@ const selfIssuedReason = "Aura issues this sidecar's credential itself and renew
 
 var errSelfIssued = fmt.Errorf("%w: %s", agui.ErrNoAuthorizationFlow, selfIssuedReason)
 
+type mcpAuthorizationStore interface {
+	mcp.GrantStore
+	Delete(context.Context, string) (bool, error)
+}
+
 type mcpAuthService struct {
-	store *mcpoauth.Store
+	store mcpAuthorizationStore
 	flows *mcp.Flows
 	// configuredCallback is the AURA_WEB_PUBLIC_URL override, empty when unset. It is
 	// an override and NOT a requirement: see callbackFor.
@@ -158,7 +163,7 @@ func (m *mcpAuthService) AuthorizationState(ctx context.Context, name string) (a
 	if err != nil {
 		return agui.MCPAuthorization{}, err
 	}
-	return agui.MCPAuthorization{Supported: true, Authorized: true, ExpiresAt: grant.ExpiresAt}, nil
+	return agui.MCPAuthorization{Supported: true, Authorized: grant.RefusedAt.IsZero(), Expired: !grant.RefusedAt.IsZero(), ExpiresAt: grant.ExpiresAt}, nil
 }
 
 func (m *mcpAuthService) StartAuthorization(ctx context.Context, owner, name, origin string) (mcp.Flow, error) {

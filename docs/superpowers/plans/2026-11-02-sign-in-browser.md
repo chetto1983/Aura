@@ -106,7 +106,7 @@ A bug today, and independent of the rest.
 **Interfaces:**
 - Produces: `mcpoauth.Grant.RefusedAt time.Time`; `(*mcpoauth.Store).MarkRefused(ctx, serverName string) error`; `GrantStore.MarkRefused`; `agui.MCPAuthorization.Expired bool` as JSON `expired,omitempty`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```go
 func TestARefreshAnsweredInvalidGrantMarksTheGrantRefused(t *testing.T)
@@ -123,10 +123,10 @@ it('offers to authorize again when the access expired', ...);
 // state {supported: true, authorized: false, expired: true}: the expired text and the authorize button show.
 ```
 
-- [ ] **Step 2: Run them.** `go test ./internal/mcp/ ./cmd/aura/`. Expected: FAIL, `MarkRefused` undefined.
-- [ ] **Step 3: Implement.** Migration: `ALTER TABLE aura.identity_mcp_oauth ADD COLUMN refused_at timestamptz`. Query `MarkIdentityMCPOAuthRefused :exec`, and `refused_at = NULL` in the upsert's `DO UPDATE`. Run `make sqlc`. In `persistingTokenSource.Token`, match with `errors.AsType[*oauth2.RetrieveError]`, as `cmd/aura/serve_pimwatch.go` does. A failed `MarkRefused` is logged and the token error stays what is returned. Texts, en and it: `governance.mcp.detail.authorization.expired`, "Access expired: authorize again" and "Accesso scaduto: autorizza di nuovo".
-- [ ] **Step 4: Run all tiers.** `go test -race ./internal/mcp/ ./internal/mcpoauth/ ./cmd/aura/`, then `-tags=db_integration ./internal/mcpoauth/` on a throwaway server, then Vitest on the panel. Expected: PASS, and the integration run over a second.
-- [ ] **Step 5: Commit.** `fix(mcp): say so when a stored grant was refused`.
+- [x] **Step 2: Run them.** `go test ./internal/mcp/ ./cmd/aura/`. Expected: FAIL, `MarkRefused` undefined.
+- [x] **Step 3: Implement.** Migration: `ALTER TABLE aura.identity_mcp_oauth ADD COLUMN refused_at timestamptz`. Query `MarkIdentityMCPOAuthRefused :exec`, and `refused_at = NULL` in the upsert's `DO UPDATE`. Run `make sqlc`. In `persistingTokenSource.Token`, match with `errors.AsType[*oauth2.RetrieveError]`, as `cmd/aura/serve_pimwatch.go` does. A failed `MarkRefused` is logged and the token error stays what is returned. Texts, en and it: `governance.mcp.detail.authorization.expired`, "Access expired: authorize again" and "Accesso scaduto: autorizza di nuovo".
+- [x] **Step 4: Run all tiers.** `go test -race ./internal/mcp/ ./internal/mcpoauth/ ./cmd/aura/`, then `-tags=db_integration ./internal/mcpoauth/` on a throwaway server, then Vitest on the panel. Expected: PASS, and the integration run over a second.
+- [x] **Step 5: Commit.** `fix(mcp): say so when a stored grant was refused`.
 
 ### Task 3: Paste the return address
 

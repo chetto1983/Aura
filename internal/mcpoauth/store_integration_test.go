@@ -108,6 +108,60 @@ func oauthStore(t *testing.T, pool *pgxpool.Pool) *Store {
 	return s
 }
 
+func TestAStoredConsentClearsARefusal(t *testing.T) {
+	pool := migratedOAuthPool(t)
+	store := oauthStore(t, pool)
+	ctx := identityctx.WithIdentityID(t.Context(), seedOAuthIdentity(t, pool))
+	grant := Grant{ServerName: "canva", ResourceURL: "https://mcp.canva.com/mcp", AccessToken: "old-access", RefreshToken: "old-refresh"}
+	if err := store.Save(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRefused(ctx, "canva"); err != nil {
+		t.Fatal(err)
+	}
+	refused, err := store.Load(ctx, "canva")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused.RefusedAt.IsZero() || refused.AccessToken != "old-access" {
+		t.Fatalf("refused grant was lost or not marked: %+v", refused)
+	}
+	grant.AccessToken = "new-consent-access"
+	if err := store.Save(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := store.Load(ctx, "canva")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fresh.RefusedAt.IsZero() || fresh.AccessToken != "new-consent-access" {
+		t.Fatalf("new consent did not clear refusal: %+v", fresh)
+	}
+}
+
+func TestMarkRefusedCannotChangeAnotherIdentitysGrant(t *testing.T) {
+	pool := migratedOAuthPool(t)
+	store := oauthStore(t, pool)
+	owner := identityctx.WithIdentityID(t.Context(), seedOAuthIdentity(t, pool))
+	other := identityctx.WithIdentityID(t.Context(), seedOAuthIdentity(t, pool))
+	if err := store.Save(owner, Grant{ServerName: "canva", AccessToken: "owner-access"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRefused(other, "canva"); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := store.Load(owner, "canva")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !grant.RefusedAt.IsZero() {
+		t.Fatal("another identity marked the owner's grant refused")
+	}
+	if err := store.MarkRefused(t.Context(), "canva"); err == nil {
+		t.Fatal("MarkRefused accepted a missing principal")
+	}
+}
+
 func TestGrantStoreRoundTripAndColumnHoldsNoPlaintext(t *testing.T) {
 	pool := migratedOAuthPool(t)
 	store := oauthStore(t, pool)

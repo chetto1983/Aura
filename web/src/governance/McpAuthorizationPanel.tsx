@@ -180,7 +180,11 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
       {!state.authorized && !waitingURL ? (
         <>
           <p className="text-[14px] text-text-muted">
-            {t('governance.mcp.detail.authorization.notAuthorized')}
+            {t(
+              state.expired
+                ? 'governance.mcp.detail.authorization.expired'
+                : 'governance.mcp.detail.authorization.notAuthorized',
+            )}
           </p>
           <div>
             <Button

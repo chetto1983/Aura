@@ -16,6 +16,7 @@ export interface McpAuthorizationState {
   /** False for a stdio server, one carrying a static bearer token, or one opted out. */
   readonly supported: boolean;
   readonly authorized: boolean;
+  readonly expired?: boolean;
   readonly expiresAt?: string;
   /** Why an unsupported server is unsupported, in the operator's terms. */
   readonly reason?: string;

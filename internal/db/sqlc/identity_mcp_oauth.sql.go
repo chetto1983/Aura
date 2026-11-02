@@ -35,7 +35,7 @@ func (q *Queries) DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentity
 const getIdentityMCPOAuth = `-- name: GetIdentityMCPOAuth :one
 
 SELECT identity_id, server_name, resource_url, access_token_enc, refresh_token_enc,
-       client_info_enc, token_type, scopes, expires_at, created_at, updated_at
+       client_info_enc, token_type, scopes, expires_at, created_at, updated_at, refused_at
 FROM aura.identity_mcp_oauth
 WHERE identity_id = $1 AND server_name = $2
 `
@@ -64,6 +64,7 @@ func (q *Queries) GetIdentityMCPOAuth(ctx context.Context, arg GetIdentityMCPOAu
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefusedAt,
 	)
 	return i, err
 }
@@ -110,6 +111,21 @@ func (q *Queries) ListIdentityMCPOAuthServers(ctx context.Context, identityID pg
 	return items, nil
 }
 
+const markIdentityMCPOAuthRefused = `-- name: MarkIdentityMCPOAuthRefused :exec
+UPDATE aura.identity_mcp_oauth SET refused_at = now(), updated_at = now()
+WHERE identity_id = $1 AND server_name = $2
+`
+
+type MarkIdentityMCPOAuthRefusedParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ServerName string      `json:"server_name"`
+}
+
+func (q *Queries) MarkIdentityMCPOAuthRefused(ctx context.Context, arg MarkIdentityMCPOAuthRefusedParams) error {
+	_, err := q.db.Exec(ctx, markIdentityMCPOAuthRefused, arg.IdentityID, arg.ServerName)
+	return err
+}
+
 const upsertIdentityMCPOAuth = `-- name: UpsertIdentityMCPOAuth :exec
 INSERT INTO aura.identity_mcp_oauth (
     identity_id, server_name, resource_url, access_token_enc, refresh_token_enc,
@@ -123,6 +139,7 @@ ON CONFLICT (identity_id, server_name) DO UPDATE SET
     token_type        = EXCLUDED.token_type,
     scopes            = EXCLUDED.scopes,
     expires_at        = EXCLUDED.expires_at,
+    refused_at        = NULL,
     updated_at        = now()
 `
 

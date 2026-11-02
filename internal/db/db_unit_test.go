@@ -394,8 +394,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0148 lets the row name a refusal at the tunnel or Access step.
 	// 0149 adds the board card's bounded progress ratio.
 	// 0150 adds the mail and calendar watch: two scheduler kinds and six owner-isolated tables.
-	if head != 150 {
-		t.Fatalf("MigrationHead=%d, want embedded head 150", head)
+	// 0151 records a refused MCP OAuth grant until a new consent replaces it.
+	if head != 151 {
+		t.Fatalf("MigrationHead=%d, want embedded head 151", head)
 	}
 }
 
