@@ -1,0 +1,20 @@
+tickets, subcategory (180 test, 712 in the pool):
+  d1 alone: 172/180
+  k= 1: centroid 74.1%, fused with d1 95.6% (w=0.17, 5 draws)
+  k= 3: centroid 90.2%, fused with d1 95.9% (w=0.38, 5 draws)
+  k= 5: centroid 91.0%, fused with d1 95.9% (w=0.50, 5 draws)
+  k=10: centroid 94.2%, fused with d1 95.6% (w=0.67, 5 draws)
+  k=20: centroid 94.1%, fused with d1 95.9% (w=0.80, 5 draws)
+spam (200 test, 2000 in the pool):
+  d1 alone: 192/200
+  k= 1: centroid 71.6%, fused with d1 96.4% (w=0.17, 5 draws)
+  k= 3: centroid 78.8%, fused with d1 96.6% (w=0.38, 5 draws)
+  k= 5: centroid 87.1%, fused with d1 97.5% (w=0.50, 5 draws)
+  k=10: centroid 92.0%, fused with d1 97.0% (w=0.67, 5 draws)
+  k=20: centroid 96.2%, fused with d1 96.8% (w=0.80, 5 draws)
+
+real	30m28.379s
+user	0m5.813s
+sys	0m0.204s
+
+[exited with code 0]
