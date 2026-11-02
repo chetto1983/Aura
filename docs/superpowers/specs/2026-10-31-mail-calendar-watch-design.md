@@ -177,11 +177,13 @@ which avoids bug 2 for the watch. Read-only subscribed calendars are left out of
 - **`pim_watch`, one task per watched account,** `every` 5 minutes by default. One account failing
   cannot lose another account's `now`, and a pause stops that account alone.
 - **`pim_digest`, one task per identity,** daily at the identity's digest hour. It reads the day's
-  verdicts across accounts, fetches sender and subject live from the PIM by id, and lists `now` first,
-  capped at 20 numbered lines with a count of the rest. Listing `now` again is deliberate: a notification
-  lost after the dispatcher's retries (8, about an hour) still reaches the person that day, with no delivery
-  state to keep. The window runs from the last digest, not from midnight, so mail decided after the digest
-  hour is not lost. The record keeps each number's account and id, so "apri la 3" needs no search.
+  verdicts across accounts, fetches sender and subject live from the PIM by id, and the identity's model
+  writes it, capped at 20 numbered lines with a count of the rest. The fixed list it replaced is the fallback.
+  What the phone already said and what is gone leave it: the first live digest was read as useless on
+  2026-11-02, and listing `now` again was never needed once `notified` was on the verdict
+  (`2026-11-02-digest-written-by-the-model-design.md`). The window runs from the last digest, not from midnight,
+  so mail decided after the digest hour is not lost. The record keeps each number's account and id, so
+  "apri la 3" needs no search.
 - **At most 5 alerts a day per account,** which the person can change. The rest go in the digest with their
   `now` mark, so a noisy sender or a wrong model cannot teach the person to mute Aura.
 - **Opt-in per account,** with a switch on the account's card in the cockpit and through the deferred
@@ -196,7 +198,7 @@ which avoids bug 2 for the watch. Read-only subscribed calendars are left out of
   person connected. No switch hides them, because the person and the agent must both know which mail is meant.
 - **The agent sees what the person sees.** A watch task has an origin conversation, the one of the route the
   person connected, so the existing `recordToOrigin` writes each notification and digest there with the account
-  and the mail id. "Aprila" or "rispondi" then works on the next turn. No LLM runs until the person writes. A
+  and the mail id. "Aprila" or "rispondi" then works on the next turn. Beyond the digest's one call a day, no LLM runs until the person writes. A
   linked Telegram account has one deterministic thread, which is the origin. Otherwise the route is the cockpit
   and the task opens a conversation of its own, as `homeTask` already does for an `agent_job`.
 - **The decisions view** on the account card lists the day's verdicts, read live by id, with a control
@@ -221,7 +223,7 @@ Three tiers, the shape `mail-triage` proved useful:
 | Tier | What happens |
 |---|---|
 | `now` | fixed-text notification; quiet hours hold it |
-| `today` | one digest, fixed text, no model, at the identity's digest hour |
+| `today` | one digest at the identity's digest hour, written by its model, with no tools (§5.2) |
 | `later` | nothing; the mailbox is untouched |
 
 The ladder stops at the first decision, except at rung 3:
@@ -356,6 +358,9 @@ model on the person's next turn. They enter the conversation as untrusted data u
 (`2026-10-31-mcp-result-trust-design.md`), so that part of F1 lands before the record does. That part is only
 `agent.FrameUntrustedPromptContent`, which exists, so the record does not wait for F1's decision on MCP results.
 The cockpit shows the line without its frame.
+
+The digest's one call a day (2026-11-02) is the other exception: headers reach the identity's model under the same
+frame, with no tools, and Aura writes the result from numbers it checks. The ladder itself still reads no model.
 
 An opted-in decision model changes privacy, not this. It generates no text and calls no tools, so an
 injected mail can at worst change a tier, and the people floor still holds.
