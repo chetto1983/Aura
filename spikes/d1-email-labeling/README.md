@@ -92,7 +92,7 @@ At a maximum-option-probability threshold of 0.9, the Italian run accepts 7/200 
 and gets those 7 right. The English run accepts 42/200 and gets 38 right (90.48%).
 These thresholds were summarized at fixed values, not optimized for this dataset.
 Neither establishes a reliable unattended classifier. Option probabilities are not
-guaranteed calibrated; they are distinct from the server's entropy-based `confidence`.
+guaranteed calibrated; they are distinct from the server's `confidence` field.
 
 Each prompt variant mislabels one of the two email-embedded instruction probes, in
 different cases. This small test cannot establish resistance to prompt injection.
