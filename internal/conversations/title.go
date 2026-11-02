@@ -29,9 +29,6 @@ const titleMaxChars = 80
 // It takes the message, never the history: the history's first user-role turn can be
 // the injected always-on skills and profile block (injectAlwaysBlock), which named a
 // member's conversation "Active skill instructions" (measured 2026-09-11).
-//
-// It drains the llm.Client.Stream channel: the interface contract says a consumer that
-// stops early leaks the implementation's goroutine.
 func GenerateTitle(ctx context.Context, client llm.Client, model, userMessage string) (string, error) {
 	if client == nil {
 		return "", fmt.Errorf("generate title: nil client")
@@ -50,25 +47,11 @@ func GenerateTitle(ctx context.Context, client llm.Client, model, userMessage st
 		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
 		ToolChoice:  "none",
 	}
-	ch, err := client.Stream(ctx, req)
+	text, _, err := llm.Collect(ctx, client, req)
 	if err != nil {
-		return "", fmt.Errorf("generate title: stream: %w", err)
+		return "", fmt.Errorf("generate title: %w", err)
 	}
-	var b strings.Builder
-	var finishReason string
-	for chunk := range ch { // drain fully (interface contract)
-		if chunk.Err != nil {
-			return "", fmt.Errorf("generate title: stream: %w", chunk.Err)
-		}
-		b.WriteString(chunk.Text)
-		if chunk.FinishReason != "" {
-			finishReason = chunk.FinishReason
-		}
-	}
-	if finishReason != "stop" {
-		return "", fmt.Errorf("generate title: incomplete stream (finish_reason=%q)", finishReason)
-	}
-	title := sanitizeTitle(b.String())
+	title := sanitizeTitle(text)
 	if title == "" {
 		return "", fmt.Errorf("generate title: empty result")
 	}

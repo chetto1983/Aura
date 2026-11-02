@@ -134,8 +134,7 @@ func NewLLMSummarizer(client llm.Client, model string, contextWindow int, totalT
 	}
 }
 
-// Summarize renders the rounds to a bounded transcript and asks the model for a
-// summary. It drains the stream fully (interface contract) and requires a clean stop.
+// Summarize renders the rounds to a bounded transcript and asks the model for a summary.
 func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (string, error) {
 	if s == nil || s.client == nil {
 		return "", fmt.Errorf("summarize: nil client")
@@ -168,23 +167,9 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
 		ToolChoice:  "none",
 	}
-	ch, err := s.client.Stream(ctx, req)
+	text, _, err := llm.Collect(ctx, s.client, req)
 	if err != nil {
-		return "", fmt.Errorf("summarize: stream: %w", err)
+		return "", fmt.Errorf("summarize: %w", err)
 	}
-	var b strings.Builder
-	var finishReason string
-	for chunk := range ch { // drain fully (interface contract)
-		if chunk.Err != nil {
-			return "", fmt.Errorf("summarize: stream: %w", chunk.Err)
-		}
-		b.WriteString(chunk.Text)
-		if chunk.FinishReason != "" {
-			finishReason = chunk.FinishReason
-		}
-	}
-	if finishReason != "stop" {
-		return "", fmt.Errorf("summarize: incomplete stream (finish_reason=%q)", finishReason)
-	}
-	return strings.TrimSpace(b.String()), nil
+	return strings.TrimSpace(text), nil
 }
