@@ -178,11 +178,17 @@ func TestPIMProviderPutSecretRules(t *testing.T) {
 	if apps.apps["google"].ClientSecret != "g-secret" {
 		t.Fatal("the stored secret was not kept")
 	}
-	if code, _ := putProvider(t, srv, "outlook.com", `{"clientId":"m","tenantId":"consumers","clientSecret":"x"}`); code != http.StatusBadRequest {
+	if code, _ := putProvider(t, srv, "outlook.com", `{"clientId":"m","clientSecret":"x"}`); code != http.StatusBadRequest {
 		t.Fatalf("microsoft with secret = %d, want 400", code)
+	}
+	if code, raw := putProvider(t, srv, "outlook.com", `{"clientId":"m","tenantId":"common"}`); code != http.StatusBadRequest || !strings.Contains(raw, "tenantId") {
+		t.Fatalf("outlook.com with a tenant = %d %s, want 400 naming tenantId", code, raw)
 	}
 	if code, _ := putProvider(t, srv, "microsoft365", `{"clientId":"m"}`); code != http.StatusBadRequest {
 		t.Fatalf("microsoft without tenant = %d, want 400", code)
+	}
+	if code, raw := putProvider(t, srv, "microsoft365", `{"clientId":"m","tenantId":"consumer"}`); code != http.StatusBadRequest || !strings.Contains(raw, "tenantId") {
+		t.Fatalf("microsoft365 with a misspelt tenant = %d %s, want 400 naming tenantId", code, raw)
 	}
 	if code, _ := putProvider(t, srv, "google", `{`); code != http.StatusBadRequest {
 		t.Fatalf("malformed JSON = %d, want 400", code)

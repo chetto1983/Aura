@@ -155,21 +155,32 @@ describe('PimProviderAppsPanel', () => {
     expect(await screen.findByText('Saved.')).toBeTruthy();
   });
 
-  it('sends the tenant for Outlook.com and shows the server reason on a 400', async () => {
-    savePimProviderApp.mockRejectedValueOnce(
-      new HttpError(400, 'tenantId is required for outlook.com'),
-    );
+  it('sends the tenant for Microsoft 365 and shows the server reason on a 400', async () => {
+    savePimProviderApp.mockRejectedValueOnce(new HttpError(400, 'tenantId must be a directory ID'));
+    renderPanel();
+    await choose(/^Microsoft 365/);
+    fireEvent.change(screen.getByLabelText(/client id/i), { target: { value: 'ms-cid' } });
+    fireEvent.change(screen.getByLabelText(/tenant id/i), { target: { value: 'consumer' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => {
+      expect(savePimProviderApp).toHaveBeenCalledWith('microsoft365', {
+        clientId: 'ms-cid',
+        tenantId: 'consumer',
+      });
+    });
+    expect((await screen.findByRole('alert')).textContent).toMatch(/tenantId must be/);
+  });
+
+  it('asks Outlook.com for its client alone', async () => {
+    savePimProviderApp.mockResolvedValueOnce({ ...configured('outlook.com'), clientId: 'ms-cid' });
     renderPanel();
     await choose(/^Outlook\.com/);
+    expect(screen.queryByLabelText(/tenant id/i)).toBeNull();
     fireEvent.change(screen.getByLabelText(/client id/i), { target: { value: 'ms-cid' } });
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => {
-      expect(savePimProviderApp).toHaveBeenCalledWith('outlook.com', {
-        clientId: 'ms-cid',
-        tenantId: '',
-      });
+      expect(savePimProviderApp).toHaveBeenCalledWith('outlook.com', { clientId: 'ms-cid' });
     });
-    expect((await screen.findByRole('alert')).textContent).toMatch(/tenantId is required/);
   });
 
   it('sends a typed secret for Google', async () => {

@@ -11,7 +11,8 @@
 //     authAccountId). The sidecar folds providerConfig keys case-insensitively, and Aura drops any
 //     case variant of clientId/clientSecret/tenantId before injecting the admin-set app;
 //   - `appFields` are the OAuth client of the three managed providers (google, microsoft365,
-//     outlook.com): an admin sets them once, the account wizard never shows them;
+//     outlook.com): an admin sets them once, the account wizard never shows them. Outlook.com asks
+//     for no tenant because Aura always sends `consumers`, the only one a personal account can use;
 //   - `authFlow` routes the post-create connect step: 'google' = web-redirect (pimGoogleStart),
 //     'device' = Microsoft/Outlook device-code (pimDeviceStart + poll), 'none' = credentials/URL ARE
 //     the connection (imap/ics/json), nothing more to do;
@@ -79,7 +80,7 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
         labelKey: `${F}.tenantId`,
         type: 'text',
         required: true,
-        hintKey: `${F}.tenantIdHintM365`,
+        hintKey: `${F}.tenantIdHint`,
       },
       { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
     ],
@@ -89,16 +90,7 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     labelKey: `${P}.outlookCom`,
     authFlow: 'device',
     fields: [],
-    appFields: [
-      {
-        key: 'tenantId',
-        labelKey: `${F}.tenantId`,
-        type: 'text',
-        required: true,
-        hintKey: `${F}.tenantIdHint`,
-      },
-      { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
-    ],
+    appFields: [{ key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true }],
   },
   {
     id: 'imap',

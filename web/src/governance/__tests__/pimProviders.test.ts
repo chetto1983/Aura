@@ -45,7 +45,7 @@ describe('schema keys mirror the sidecar', () => {
     expect(keys('google')).toEqual([]);
     expect(appKeys('google')).toEqual(['clientId', 'clientSecret']);
     expect(appKeys('microsoft365')).toEqual(['tenantId', 'clientId']);
-    expect(appKeys('outlook.com')).toEqual(['tenantId', 'clientId']);
+    expect(appKeys('outlook.com')).toEqual(['clientId']);
     expect(appKeys('imap')).toEqual([]);
     expect(keys('imap')).toEqual([
       'imapHost',

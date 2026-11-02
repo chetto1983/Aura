@@ -244,7 +244,10 @@ providers with nothing to sign in to. The cockpit shows an account with `linked:
 
 - The Entra app registration needs the delegated Microsoft Graph permissions `Mail.Read`,
   `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite` and `Contacts.ReadWrite`, and
-  **Allow public client flows: Yes**. The admin enters its tenant and client ID; there is no secret.
+  **Allow public client flows: Yes**. The admin enters its client ID, and for Microsoft 365 its
+  tenant, which Aura checks is a directory ID, one of its domains, `organizations`, `common` or
+  `consumers`. Outlook.com asks for no tenant: Aura always sends `consumers`, the only one a
+  personal account can use, so the app must also accept personal accounts. There is no secret.
 - `POST /admin/auth/{accountId}/start` returns a user code and the sign-in page Microsoft chose for
   that tenant: `www.microsoft.com/link` for `consumers`, `login.microsoft.com/device` for `common`
   and `organizations`.

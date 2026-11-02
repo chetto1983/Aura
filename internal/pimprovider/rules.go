@@ -7,6 +7,7 @@ package pimprovider
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -37,6 +38,16 @@ var managed = []string{Google, Microsoft365, OutlookCom}
 
 var ownedKeys = []string{"clientId", "clientSecret", "tenantId"}
 
+// personalTenant is the one audience a personal account can use. Under `common` the device code
+// page is login.microsoft.com/device, where such an account ends on http://localhost with an
+// invalid_request (measured 2026-11-02), so Outlook.com is not offered the choice.
+const personalTenant = "consumers"
+
+// tenantPattern is a directory's GUID, one of its domains, or one of Microsoft's three audiences
+// (https://learn.microsoft.com/en-us/entra/identity-platform/msal-client-application-configuration).
+// Anything else fails only at the first sign-in, with AADSTS900023, where the admin is not looking.
+var tenantPattern = regexp.MustCompile(`(?i)^(common|organizations|consumers|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}|([a-z0-9-]+\.)+[a-z]{2,})$`)
+
 // App is one provider's OAuth client. ClientSecret is plaintext and lives only in memory; on a
 // save, an empty ClientSecret for Google means "keep the stored one".
 type App struct {
@@ -66,10 +77,14 @@ func IsOwnedKey(key string) bool {
 
 // ProviderConfig is exactly the providerConfig the sidecar reads for this provider.
 func (a App) ProviderConfig() map[string]string {
-	if a.Provider == Google {
+	switch a.Provider {
+	case Google:
 		return map[string]string{"clientId": a.ClientID, "clientSecret": a.ClientSecret}
+	case OutlookCom:
+		return map[string]string{"clientId": a.ClientID, "tenantId": personalTenant}
+	default:
+		return map[string]string{"clientId": a.ClientID, "tenantId": a.TenantID}
 	}
-	return map[string]string{"clientId": a.ClientID, "tenantId": a.TenantID}
 }
 
 // Validate checks a save against the stored app (nil when there is none). A Google save without
@@ -82,17 +97,17 @@ func Validate(next App, stored *App) error {
 	if next.ClientID == "" {
 		return fmt.Errorf("%w: clientId is required", ErrInvalid)
 	}
+	if next.Provider == Microsoft365 && !tenantPattern.MatchString(next.TenantID) {
+		return fmt.Errorf("%w: tenantId must be a directory ID, one of its domains, or organizations", ErrInvalid)
+	}
+	if next.Provider != Microsoft365 && next.TenantID != "" {
+		return fmt.Errorf("%w: %s takes no tenantId", ErrInvalid, next.Provider)
+	}
 	if next.Provider != Google {
-		if next.TenantID == "" {
-			return fmt.Errorf("%w: tenantId is required for %s", ErrInvalid, next.Provider)
-		}
 		if next.ClientSecret != "" {
 			return fmt.Errorf("%w: %s uses a public client and takes no clientSecret", ErrInvalid, next.Provider)
 		}
 		return nil
-	}
-	if next.TenantID != "" {
-		return fmt.Errorf("%w: google takes no tenantId", ErrInvalid)
 	}
 	if next.ClientSecret == "" && (stored == nil || !stored.SecretSet || stored.ClientID != next.ClientID) {
 		return fmt.Errorf("%w: clientSecret is required for a new Google client", ErrInvalid)

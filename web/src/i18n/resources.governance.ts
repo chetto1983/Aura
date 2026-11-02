@@ -95,9 +95,7 @@ export const governanceEn = {
           clientSecret: 'Client secret',
           tenantId: 'Tenant ID',
           tenantIdHint:
-            'Personal accounts: "consumers" when the app accepts only personal accounts, "common" when it also accepts work accounts.',
-          tenantIdHintM365:
-            'The directory (tenant) ID of your organization, or "organizations" for any work account.',
+            'The directory (tenant) ID of your organization, one of its domains, or "organizations" for any work account.',
           icsUrl: 'ICS URL',
           icsUrlHint: 'A public http(s) link to an .ics calendar feed.',
           imapHost: 'IMAP host',
@@ -356,9 +354,7 @@ export const governanceIt = {
           clientSecret: 'Client secret',
           tenantId: 'Tenant ID',
           tenantIdHint:
-            'Account personali: "consumers" se l\'app accetta solo account personali, "common" se accetta anche quelli di lavoro.',
-          tenantIdHintM365:
-            'Il Directory (tenant) ID della tua organizzazione, oppure "organizations" per qualsiasi account di lavoro.',
+            'Il Directory (tenant) ID della tua organizzazione, un suo dominio, oppure "organizations" per qualsiasi account di lavoro.',
           icsUrl: 'URL ICS',
           icsUrlHint: 'Un link http(s) pubblico a un feed calendario .ics.',
           imapHost: 'Host IMAP',

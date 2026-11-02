@@ -49,9 +49,19 @@ func TestProviderConfigCarriesOnlyTheProvidersKeys(t *testing.T) {
 	if want := map[string]string{"clientId": "cid", "clientSecret": "sec"}; !maps.Equal(g.ProviderConfig(), want) {
 		t.Fatalf("google config = %v, want %v", g.ProviderConfig(), want)
 	}
-	m := App{Provider: OutlookCom, ClientID: "cid", TenantID: "consumers", ClientSecret: "never"}
-	if want := map[string]string{"clientId": "cid", "tenantId": "consumers"}; !maps.Equal(m.ProviderConfig(), want) {
-		t.Fatalf("outlook config = %v, want %v", m.ProviderConfig(), want)
+	m := App{Provider: Microsoft365, ClientID: "cid", TenantID: "contoso.onmicrosoft.com", ClientSecret: "never"}
+	if want := map[string]string{"clientId": "cid", "tenantId": "contoso.onmicrosoft.com"}; !maps.Equal(m.ProviderConfig(), want) {
+		t.Fatalf("microsoft365 config = %v, want %v", m.ProviderConfig(), want)
+	}
+}
+
+func TestOutlookComAlwaysSignsInAsAPersonalAccount(t *testing.T) {
+	want := map[string]string{"clientId": "cid", "tenantId": "consumers"}
+	for _, saved := range []string{"", "common", "consumer", "consumers"} {
+		a := App{Provider: OutlookCom, ClientID: "cid", TenantID: saved}
+		if got := a.ProviderConfig(); !maps.Equal(got, want) {
+			t.Errorf("a row saved with tenant %q gives %v, want %v", saved, got, want)
+		}
 	}
 }
 
@@ -70,10 +80,22 @@ func TestValidate(t *testing.T) {
 		{"google new client with secret", App{Provider: Google, ClientID: "other", ClientSecret: "s2"}, storedGoogle, true},
 		{"google with tenant", App{Provider: Google, ClientID: "cid", ClientSecret: "sec", TenantID: "t"}, nil, false},
 		{"google empty client", App{Provider: Google, ClientSecret: "sec"}, nil, false},
-		{"outlook ok", App{Provider: OutlookCom, ClientID: "cid", TenantID: "consumers"}, nil, true},
-		{"m365 ok", App{Provider: Microsoft365, ClientID: "cid", TenantID: "t"}, nil, true},
-		{"microsoft without tenant", App{Provider: Microsoft365, ClientID: "cid"}, nil, false},
-		{"microsoft with secret", App{Provider: OutlookCom, ClientID: "cid", TenantID: "consumers", ClientSecret: "x"}, nil, false},
+		{"outlook ok", App{Provider: OutlookCom, ClientID: "cid"}, nil, true},
+		{"outlook with tenant", App{Provider: OutlookCom, ClientID: "cid", TenantID: "consumers"}, nil, false},
+		{"outlook with secret", App{Provider: OutlookCom, ClientID: "cid", ClientSecret: "x"}, nil, false},
+		{"m365 directory id", App{Provider: Microsoft365, ClientID: "cid", TenantID: "aaaabbbb-0000-cccc-1111-dddd2222eeee"}, nil, true},
+		{"m365 domain", App{Provider: Microsoft365, ClientID: "cid", TenantID: "contoso.onmicrosoft.com"}, nil, true},
+		{"m365 any work account", App{Provider: Microsoft365, ClientID: "cid", TenantID: "organizations"}, nil, true},
+		{"m365 any account", App{Provider: Microsoft365, ClientID: "cid", TenantID: "common"}, nil, true},
+		{"m365 personal accounts", App{Provider: Microsoft365, ClientID: "cid", TenantID: "consumers"}, nil, true},
+		{"m365 ignores case", App{Provider: Microsoft365, ClientID: "cid", TenantID: "Organizations"}, nil, true},
+		{"m365 misspelt, measured as AADSTS900023", App{Provider: Microsoft365, ClientID: "cid", TenantID: "consumer"}, nil, false},
+		{"m365 a bare word", App{Provider: Microsoft365, ClientID: "cid", TenantID: "contoso"}, nil, false},
+		{"m365 a short id", App{Provider: Microsoft365, ClientID: "cid", TenantID: "aaaabbbb-0000-cccc-1111"}, nil, false},
+		{"m365 a url", App{Provider: Microsoft365, ClientID: "cid", TenantID: "https://login.microsoftonline.com/contoso.com"}, nil, false},
+		{"m365 a dot alone", App{Provider: Microsoft365, ClientID: "cid", TenantID: "."}, nil, false},
+		{"m365 without tenant", App{Provider: Microsoft365, ClientID: "cid"}, nil, false},
+		{"m365 with secret", App{Provider: Microsoft365, ClientID: "cid", TenantID: "organizations", ClientSecret: "x"}, nil, false},
 		{"unmanaged", App{Provider: "imap", ClientID: "cid"}, nil, false},
 	} {
 		err := Validate(tc.next, tc.stored)
