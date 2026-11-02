@@ -13,7 +13,7 @@ serve() {
 }
 run() {
   python3 "$HERE/throughput.py" --passages "$S/passages.jsonl" --gate "$S/gate.jsonl" --cases "$S/cases.json" \
-    --out "$S/throughput.jsonl" "$@"
+    --out "$S/throughput.jsonl" --limit "${LIMIT:-80}" "$@" || echo "run failed: $*" >&2
 }
 serve;                   run --workers 1 --label "no cache, 1 in flight"
 serve;                   run --workers 4 --label "no cache, 4 in flight"
