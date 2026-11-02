@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - **Gates before code:** Task 1's S1 to S3 end in a dated file in `docs/superpowers/verification/`. A failed gate comes back to the spec before Tasks 5 to 7 start.
+- **S2 amendment, 2026-11-02:** the operator approved the dedicated-origin fallback after the opaque sandbox failed. Native Selkies 2.1.0 requires client storage. S1–S3 passed in the combined Edge run. Tasks 5–7 below use that other origin with ownership checks and cross-origin write protection. Evidence: `docs/superpowers/verification/2026-11-02-sign-in-browser-spike.md`.
 - **Migration number:** `ls internal/db/migrations/ | tail -1` at landing, then the next integer. 0150 was the last on 2026-11-02.
 - **One new env var:** `AURA_SIGNIN_BROWSER_IMAGE`, pinned by digest, in `.env.example` and `compose.yaml`. The image is not in the appliance payload.
 - **Payload:** a change to `compose.yaml` is committed first, then `make payload-manifest` in WSL, then the manifest in its own commit. The gate refuses a dirty payload file.
@@ -40,8 +41,9 @@ Each has its test in the task that owns the code.
 ## Decisions taken while writing this plan
 
 - **The loopback redirect is `http://127.0.0.1:43121/aura/mcp/oauth/callback`,** not the `/callback` that was measured. The deployed `mcp/callback/relay.js` forwards only two exact paths, read 2026-11-02, and this is the one `aura mcp login` already uses. So a server with no registration keeps working through the relay, into the container's listener, with no change to the published site. `/callback` would have shown "Link not valid". Nothing else cares about the path: DCR registers what it is given.
-- **A sandboxed page may not get the cockpit's cookie.** Under `sandbox allow-scripts` its origin is opaque, so its subresources and its websocket are cross-site, and the `__Host-` SameSite cookie may not be sent. The websocket's `Origin` is `null` too. S2 measures this. If the cookie does not arrive, the spec's other branch applies: the dedicated origin, or the session's 96 random bits in the path as the credential, and the choice comes back to the operator before Task 6.
-- **The desktop page sits in an `<iframe sandbox>` on a cockpit page,** `/signing-in/:session`, because a third party's page cannot close itself. The cockpit page polls the flow and closes the tab. It cannot be `/sign-in/:session`: `ServeMux` answers that path by redirecting it into the proxy's subtree.
+- **The desktop uses the dedicated origin, approved after S2 on 2026-11-02.** Opaque subresources had no Strict cookie, and even diagnostic resource access exposed a fatal localStorage read in stock Selkies 2.1.0. A path credential cannot fix storage. Reuse Caddy's `:8444` keyhole and the existing sandbox-origin/port/bind configuration, on the cockpit's hostname so the cookie arrives. A different-hostname origin, plain LAN HTTP or a tunnel without the port takes the paste-back. The Caddy listener admits the stream only; the cockpit origin refuses its raw desktop path.
+- **The desktop page sits in an `<iframe sandbox="allow-scripts allow-same-origin">` on a cockpit page,** `/signing-in/:session`, pointing to the dedicated origin, with `allow="clipboard-read; clipboard-write; autoplay"`. The cockpit page polls the flow and closes the tab. It cannot be `/sign-in/:session`: `ServeMux` answers that path by redirecting it into the proxy's subtree. Never grant this sandbox combination to third-party HTML on the cockpit origin.
+- **A second port still receives same-site cookies.** The cockpit uses `http.CrossOriginProtection` on browser writes; no mutating handler may run for a simple POST or form submission from the desktop origin. Native frame-ancestor/WebSocket-origin settings are used as well, and the proxy strips cockpit credentials and enforces the final response CSP, including for Nginx-served static HTML.
 - **The sidecar owns the netns, and starts first.** The floor comes up on it, and only then the desktop joins with the consent URL in `CHROME_CLI`, so Chromium never runs without the floor. The existing boxes start before their floor, which is harmless there because nothing runs in them yet.
 - **A sign-in refuses to start with no floor.** `launchEgress` is a no-op when no egress image is configured, which is fine for a box and wrong here.
 - **`Navigate` creates the containers.** `CHROME_CLI` needs the consent URL when the desktop is created, and the redirect is known before anything exists. So `Open` takes the redirect and allocates the session, and `Navigate` starts the three containers.
@@ -80,12 +82,12 @@ Needs the operator at the mouse. No product code, nothing merged but the verific
 - Create in the scratchpad, not the repo: `signin-spike/main.go`, `signin-spike/run-vm.sh`
 - Create: `docs/superpowers/verification/<date>-sign-in-browser-spike.md`
 
-- [ ] **Step 1: Build the rig.** On the VM, in this order: a sandbox-image sidecar that owns the netns; `aura-egress` on it, applying the real floor from `buildFloorRuleset`; then `lscr.io/linuxserver/chromium` by digest on the same netns, with both harden switches, `SELKIES_FILE_TRANSFERS=none`, `SELKIES_ENABLE_SHARING=false`, `SUBFOLDER=/sign-in/spike/`. Note the host config it needed: the earlier run used Docker's defaults with `--shm-size=1gb`. The Go program serves HTTPS with a self-signed certificate on the VM's loopback, tunnelled to the PC. It reverse-proxies `/sign-in/spike/` over `docker exec -i <sidecar> node relay.mjs`, and serves one outer page with `<iframe sandbox="allow-scripts" src="/sign-in/spike/">`.
-- [ ] **Step 2: S1.** Run Canva's DCR and `/authorize` with `http://127.0.0.1:43121/aura/mcp/oauth/callback`, from a listener in the sidecar. Expected: token 200 and `tools/list` answering, under the floor.
-- [ ] **Step 3: S2.** The operator signs in through the proxy. Record picture, mouse, keyboard, paste, five minutes with no drop, and the page's load time, since each connection is one exec. From the iframe's console, `fetch('/api/governance/mcp')` must fail. Record whether the session cookie reached subresources and the websocket, and what `Origin` the upgrade carried.
-- [ ] **Step 4: S3.** With both switches on, try sudo, a terminal, a file transfer and right-click. Expected: all gone, and the sign-in of Step 3 still passes.
-- [ ] **Step 5: Write the file and remove the rig.** Say what passed, what it does not prove, and which branch of §4.3 stands. Containers, volumes and the image leave the VM. Pin the digest used.
-- [ ] **Step 6: Amend what the measure contradicts,** in the spec with date and evidence, and in this plan's Tasks 5 to 7. Commit.
+- [x] **Step 1: Build the rig.** On the VM, in this order: a sandbox-image sidecar that owns the netns; `aura-egress` on it, applying the real floor from `buildFloorRuleset`; then `lscr.io/linuxserver/chromium` by digest on the same netns, with both harden switches, `SELKIES_FILE_TRANSFERS=none`, `SELKIES_ENABLE_SHARING=false`, `SUBFOLDER=/sign-in/spike/`. Note the host config it needed: the earlier run used Docker's defaults with `--shm-size=1gb`. The Go program serves HTTPS with a self-signed certificate on the VM's loopback, tunnelled to the PC. It reverse-proxies `/sign-in/spike/` over `docker exec -i <sidecar> node relay.mjs`. The initial opaque iframe failed; the approved combined run framed the dedicated origin with `sandbox="allow-scripts allow-same-origin"` and explicit clipboard permissions.
+- [x] **Step 2: S1.** Run Canva's DCR and `/authorize` with `http://127.0.0.1:43121/aura/mcp/oauth/callback`, from a listener in the sidecar. Expected: token 200 and `tools/list` answering, under the floor.
+- [x] **Step 3: S2.** The operator signs in through the proxy. Record picture, mouse, keyboard, paste, five minutes with no drop, and the page's load time, since each connection is one exec. From the iframe's console, `fetch('/api/governance/mcp')` must fail. Record whether the session cookie reached subresources and the websocket, and what `Origin` the upgrade carried.
+- [x] **Step 4: S3.** With both switches on, try sudo, a terminal, a file transfer and right-click. Expected: sudo, terminals, file transfers and window-manager launch menus unavailable, with the sign-in of Step 3 still passing. Ordinary Chromium page menus are outside the native window-manager hardening.
+- [x] **Step 5: Write the file and remove the rig.** Say what passed, what it does not prove, and which branch of §4.3 stands. Containers, volumes and the image leave the VM. Pin the digest used.
+- [x] **Step 6: Amend what the measure contradicts,** in the spec with date and evidence, and in this plan's Tasks 5 to 7. Commit.
 
 ```bash
 git add docs/superpowers/verification docs/superpowers/specs docs/superpowers/plans
@@ -188,7 +190,8 @@ type Session interface {
 	Close() error
 }
 // redirect is "" when the session picks its own, as ChatGPT's script does.
-type Launcher interface{ Open(ctx context.Context, session, redirect string) (Session, error) }
+type LaunchOptions struct { Redirect, CockpitOrigin, StreamOrigin string }
+type Launcher interface{ Open(ctx context.Context, session string, opts LaunchOptions) (Session, error) }
 type Authorizer interface {
 	Start(ctx context.Context, owner, redirectURI string) (authURL string, err error)
 	Callback(ctx context.Context, query url.Values) error
@@ -203,18 +206,18 @@ type Options struct {
 	Messages       Messages
 }
 func New(root context.Context, launcher Launcher, opts Options) *Login
-func (l *Login) Start(ctx context.Context, owner, attempt, redirect string, a Authorizer) (Flow, error)
+func (l *Login) Start(ctx context.Context, owner, attempt string, opts LaunchOptions, a Authorizer) (Flow, error)
 func (l *Login) Owns(ctx context.Context, owner, session string) bool
 func (l *Login) Cancel(ctx context.Context, owner, route string) error
 func (l *Login) Close() error
 ```
 
-- `chatgptplan.NewBrowserLogin` keeps its signature and wraps `Login`, so `serve_chatgpt_browser.go`'s callers change only their imports.
+- `chatgptplan.NewBrowserLogin` keeps its signature and wraps `Login`, so `serve_chatgpt_browser.go`'s callers change only their imports. Its adapter supplies empty `LaunchOptions`; ChatGPT continues choosing its own redirect. MCP and Google supply their loopback redirect and per-attempt cockpit/desktop origins explicitly, not through mutable process-global state.
 - `callback-listener.mjs` exports `listen({ path, port, expectedState, emit })`. The ChatGPT script imports it, and both files are written to the box.
 
 - [ ] **Step 1: Move the tests first.** Move `browser_attempt_test.go`, `browser_cleanup_test.go`, `browser_commit_test.go`, `browser_failures_test.go` to the new package, with a fake `Authorizer` in place of the service. Assertions do not change. Run `go test ./internal/browserlogin/`. Expected: FAIL, no such package.
 - [ ] **Step 2: Move the code.** `go test -race ./internal/browserlogin/ ./internal/chatgptplan/ ./internal/agui/ ./cmd/aura/`. Expected: PASS.
-- [ ] **Step 3: Two prefixes do not collide.** `TestTwoLoginsKeepTheirOwnSessions`: an owner with a `chatgpt-` and a `signin-` flow, where cancelling one leaves the other. `TestAnOwnerHasOneSignInAtATime`: a second `Start` with another attempt cancels the first. `TestStartHandsTheRedirectToTheLauncher`.
+- [ ] **Step 3: Two prefixes do not collide.** `TestTwoLoginsKeepTheirOwnSessions`: an owner with a `chatgpt-` and a `signin-` flow, where cancelling one leaves the other. `TestAnOwnerHasOneSignInAtATime`: a second `Start` with another attempt cancels the first. `TestStartHandsTheRedirectToTheLauncher`. `TestStartKeepsEachAttemptsOrigins`: each launcher receives only that attempt's two origins after replacement.
 - [ ] **Step 4: Prove ChatGPT still works.** `go test -tags=docker_integration -run ChatGPT ./cmd/aura/`, or the tier that holds its browser test, on the stack.
 - [ ] **Step 5: Coverage entry,** `"github.com/chetto1983/aura/internal/browserlogin": {"mode": "target"}`, and commit. `refactor(signin): lift the browser login out of chatgptplan`, with a body that says the tests moved because they read internals, and that no assertion changed.
 
@@ -231,9 +234,10 @@ func (l *Login) Close() error
 ```go
 type SignInSpec struct { // like SandboxSpec, it has no field for host network, binds, caps or the socket
 	Session, IdentityID, DesktopImage, SidecarImage, AuthURL string
+	CockpitOrigin, StreamOrigin string
 	Egress EgressPolicy
 }
-func signInEnv(session, authURL string) []string
+func signInEnv(s SignInSpec) []string
 func signInHostConfig(netnsOwner string) *container.HostConfig
 func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, policy EgressPolicy) error // launchEgress's body
 func (b *DockerBackend) StartSignIn(ctx context.Context, s SignInSpec) (SignInBox, error)
@@ -248,12 +252,18 @@ var ErrSignInNeedsTheFloor = errors.New("sandbox: a sign-in needs the egress flo
 
 Names: `aura-signin-<24 hex>`, with `-egress` and `-desktop`. Constants: `signInMemoryBytes = 1536 << 20`, `signInPidsLimit = 2048`, `signInShmBytes = 1 << 30`, `signInMinFreeBytes = 8 << 30`. The memory cap and the floor are guesses until S6. The rest of the host config is what Task 1's file records.
 
+Measured correction from Task 1: Chromium declares `/config` as a volume. Stop, sweep and rollback must remove
+anonymous volumes with the containers (`client.ContainerRemoveOptions{RemoveVolumes: true}`), including partial-start
+failures. Task 5's `TestStopSignInLeavesNothing` must exercise the image-created volume, not just an empty mount request.
+
 - [ ] **Step 1: Write the failing daemon-free tests.**
 
 ```go
 func TestSignInEnvHardensTheDesktop(t *testing.T)
 // holds HARDEN_DESKTOP=true, HARDEN_OPENBOX=true, SELKIES_FILE_TRANSFERS=none, SELKIES_ENABLE_SHARING=false,
-// SUBFOLDER=/sign-in/signin-abc/, CHROME_CLI=<url>, and no PELORUS, no PASSWORD, no CUSTOM_USER.
+// SUBFOLDER=/sign-in/signin-abc/, CHROME_CLI=<url>, SELKIES_FRAME_ANCESTORS=<cockpit origin>,
+// SELKIES_ALLOWED_ORIGINS=<desktop origin>, and no PELORUS, no PASSWORD, no CUSTOM_USER.
+// Reject invalid/non-bare origins rather than passing arbitrary config syntax into the image.
 func TestSignInHostConfigPublishesNothing(t *testing.T)
 // no PortBindings, no Binds, no Privileged, no CapAdd, ShmSize signInShmBytes, Memory and PidsLimit set,
 // NetworkMode "container:<owner>", and Init unset, because s6 must be PID 1 in this image.
@@ -273,7 +283,7 @@ func TestStopSignInLeavesNothing(t *testing.T) // no container with the label re
 func TestSweepRemovesEverySignInContainerLeftBehind(t *testing.T) // a box whose Aura died is gone after SweepSignIns; shell and browser boxes are untouched.
 ```
 
-- [ ] **Step 5: Implement the session in `cmd/aura/serve_signin_browser.go`.** `Open` checks the pattern, `AdmitBrowser`, the image, then the disk when the image is absent, and takes the identity from the context as `sandboxChatGPTBrowser.Open` does. `RedirectURI` returns the redirect it was given. `Navigate` calls `StartSignIn`, writes `callback-listener.mjs` to the sidecar and starts it on the redirect's port and path, with the state read from the consent URL. `Callback` reads `{type: "callback"}`, as `chatGPTBrowserSession` does. `Close` calls `StopSignIn`. `SweepSignIns` runs at boot.
+- [ ] **Step 5: Implement the session in `cmd/aura/serve_signin_browser.go`.** `Open` checks the pattern, `AdmitBrowser`, the image, then the disk when the image is absent, and takes the identity from the context as `sandboxChatGPTBrowser.Open` does. It retains the immutable `LaunchOptions` for that session. `RedirectURI` returns the redirect it was given. `Navigate` calls `StartSignIn` with both origins, writes `callback-listener.mjs` to the sidecar and starts it on the redirect's port and path, with the state read from the consent URL. `Callback` reads `{type: "callback"}`, as `chatGPTBrowserSession` does. `Close` calls `StopSignIn`. `SweepSignIns` runs at boot.
 - [ ] **Step 6: Run the tiers.** `go test -race ./internal/sandbox/usersandbox/ ./cmd/aura/`, then `go test -tags=docker_integration ./internal/sandbox/usersandbox/` with Docker up.
 - [ ] **Step 7: Commit,** then the manifest apart. `feat(sandbox): run a sign-in in a desktop container of its own`, `chore(payload): regenerate the manifest`.
 
@@ -281,7 +291,7 @@ func TestSweepRemovesEverySignInContainerLeftBehind(t *testing.T) // a box whose
 
 **Files:**
 - Create: `internal/agui/signin_proxy.go`, `internal/agui/signin_proxy_test.go`, `internal/sandbox/usersandbox/exec_conn.go`, `internal/sandbox/usersandbox/exec_conn_test.go`, `cmd/aura/signin-relay.mjs`, `web/src/routes/SignInPage.tsx`, `web/src/routes/SignInPage.test.tsx`
-- Modify: `internal/agui/server.go` wiring, `cmd/aura/serve_webui.go`, `web/src/main.tsx`, `web/src/i18n/resources.governance.ts`
+- Modify: `internal/agui/server.go` wiring, `cmd/aura/serve_webui.go`, `caddy/Caddyfile`, `compose.yaml`, `.env.example`, `scripts/payload_manifest.txt`, `internal/config`, `web/src/main.tsx`, `web/src/i18n/resources.governance.ts`
 
 **Interfaces:**
 - Consumes: `SignInBox` from Task 5.
@@ -291,18 +301,20 @@ func TestSweepRemovesEverySignInContainerLeftBehind(t *testing.T) // a box whose
 // in agui
 type SignInBrowser interface {
 	Owns(ctx context.Context, owner, session string) bool
+	Origins(session string) (cockpit, stream string, ok bool)
 	Dial(ctx context.Context, session string) (net.Conn, error)
 }
 func (s *Server) SetSignInBrowser(b SignInBrowser)
-// mounted on the parent mux behind the cockpit session, every method:
+// mounted on the parent mux behind the cockpit session, every method,
+// admitted only when the request matches that session's dedicated stream origin:
 //   /sign-in/{session}/
 // in usersandbox
 func (r *SandboxRouter) DialExec(ctx context.Context, h BoxHandle, command string) (net.Conn, error)
 ```
 
-- Cockpit route `/signing-in/:session`, with the `<iframe>` of Task 1 on `/sign-in/<session>/` and the flow's id in `?flow=`.
+- Cockpit route `/signing-in/:session`, with an iframe on `<streamOrigin>/sign-in/<session>/` and the flow's id in `?flow=`. The immutable stream/cockpit origins are available only after ownership verification. Caddy's existing `:8444` listener forwards `/sign-in/*` while retaining its unrelated-path 404; cockpit-origin requests for the desktop get 404 before any dial. Reuse existing `AURA_MCP_SANDBOX_ORIGIN`, `AURA_MCP_SANDBOX_PORT` and `AURA_MCP_SANDBOX_BIND`; forward the existing port setting to Aura when deriving a same-host origin. Enable the authenticated dedicated port for LAN installs as part of the approved fallback, documenting the bind change. A separate-host origin or tunnel access uses paste-back.
 
-The tests below hold for the cookie branch of §4.3. If Task 1 chose the other, its file names what changes here.
+The tests below implement the operator's dedicated-origin choice of §4.3; no opaque-origin relaxation is made on the cockpit.
 
 - [ ] **Step 1: Write the failing tests.**
 
@@ -311,8 +323,13 @@ func TestSignInProxyRefusesBeforeItDials(t *testing.T)
 // no identity, another identity, an ended session, a malformed one: 404, and the fake's Dial count stays 0.
 func TestSignInProxyNeverForwardsTheCockpitCookie(t *testing.T)
 // a request with Cookie and Authorization: the fake container sees neither, nor X-Forwarded-For.
-func TestSignInProxySandboxesEveryResponse(t *testing.T)
-// Content-Security-Policy holds "sandbox allow-scripts" on a page, a script and an error answer; a CSP from upstream is replaced.
+func TestSignInProxyIsolatesEveryResponse(t *testing.T)
+// On the dedicated origin, CSP holds "sandbox allow-scripts allow-same-origin" and the exact cockpit frame-ancestor,
+// including on static HTML/scripts and errors. Upstream CSP cannot widen it.
+func TestSignInProxyRefusesTheCockpitOrigin(t *testing.T) // 404 and zero dials, including assets and upgrades.
+func TestTheDesktopCannotWriteToTheCockpit(t *testing.T)
+// Credentialed simple POST, form submission and same-site/different-port requests: 403 before handler side effect.
+// Same-origin SPA writes and legitimate non-browser callers still work; desktop is never a trusted write origin.
 func TestSignInProxyKeepsThePath(t *testing.T) // SUBFOLDER expects /sign-in/<session>/x, unchanged.
 func TestSignInProxyCarriesAWebsocket(t *testing.T) // an upgrade round-trips frames both ways through the fake dialer.
 func TestSignInProxyRefusesAnUpgradeFromAnotherOrigin(t *testing.T) // Origin https://evil.example: 403, Dial count 0.
@@ -320,10 +337,11 @@ func TestExecConnCarriesBytesBothWaysAndEndsWithTheProcess(t *testing.T) // Read
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL, undefined.
-- [ ] **Step 3: Implement.** `httputil.ReverseProxy` with `Rewrite`, `FlushInterval: -1`, `Transport{DialContext: dial, DisableKeepAlives: true}`, and `ModifyResponse` setting the CSP. `DialExec` is `ExecStream` with one `io.Pipe` each way, and `Kill` on `Close`. `signin-relay.mjs` pipes stdin and stdout to `127.0.0.1:3000`. Refuse first, then dial.
+- [ ] **Step 3: Implement.** `httputil.ReverseProxy` with `Rewrite`, `FlushInterval: -1`, `Transport{DialContext: dial, DisableKeepAlives: true}`, and `ModifyResponse` enforcing the dedicated-origin CSP. Check ownership, exact stream request origin and WebSocket Origin before any dial. Wrap cockpit browser writes with `http.NewCrossOriginProtection().Handler`, preserving provider callbacks and non-browser callers; do not trust the desktop origin. `DialExec` is `ExecStream` with one `io.Pipe` each way, and `Kill` on `Close`. `signin-relay.mjs` pipes stdin and stdout to `127.0.0.1:3000`. Refuse first, then dial.
 - [ ] **Step 4: Cockpit page.** `SignInPage` polls the flow every 2 s, closes the tab on `approved` or `failed`, cancels the flow on `pagehide`, and offers the paste-back of Task 3 from a link. Vitest: `it('closes itself when the flow ends')`, `it('cancels the flow when the tab goes')`, `it('offers the paste-back when the stream fails')`, `it('says try again when the time ran out')`.
+- [ ] **Step 4a: Certificate onboarding.** Add an acceptance case with ordinary browser TLS validation for both origins. An untrusted dedicated-origin certificate must offer an explicit way to open/trust that origin or use paste-back; a grey failed iframe must not be presented as a ready stream. Do not use unconditional `ignoreHTTPSErrors` as evidence for this case. Expected: trusted two-origin framing works; the untrusted case gives a usable next step.
 - [ ] **Step 5: Run and gate** as in Task 3.
-- [ ] **Step 6: Commit,** then the bundle apart. `feat(signin): stream the sign-in through the cockpit`.
+- [ ] **Step 6: Commit,** then the bundle apart. `feat(signin): stream the sign-in through the cockpit`. Commit payload edits first, regenerate the manifest in WSL and commit it separately, as in Task 5.
 
 ### Task 7: Every MCP server on it
 
@@ -344,7 +362,10 @@ func TestAPreRegisteredClientKeepsItsRedirect(t *testing.T) // MCP_OAUTH_REDIREC
 func TestAServerWithNoRegistrationReachesTheContainerThroughTheRelay(t *testing.T)
 // the fallback: redirect_uri is auraOAuthRelayURL, and the state's suffix decodes to LoopbackCallback, a path the deployed relay accepts.
 func TestAnHTTPSRedirectGoesToThePasteBack(t *testing.T) // a non-loopback registered redirect: via paste, no container.
-func TestANonSecureCockpitGoesToThePasteBack(t *testing.T) // Origin http://192.168.1.5: paste; http://127.0.0.1:8080: container.
+func TestANonSecureCockpitGoesToThePasteBack(t *testing.T) // Origin http://192.168.1.5: paste.
+func TestACrossSchemeDesktopOriginGoesToThePasteBack(t *testing.T)
+// Even http://127.0.0.1 is a secure context, its HTTPS desktop iframe gets no Strict cookie: paste.
+// A configured HTTP-loopback desktop matching the HTTP-loopback cockpit's scheme may use the container.
 func TestAShortDiskAnswersWithTheReasonAndThePasteBack(t *testing.T) // nothing created, and the answer names the size needed.
 func TestTheCockpitCallbackIsGone(t *testing.T) // GET /api/governance/mcp/authorization/callback answers 404.
 func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) // docker_integration: Cancel: flow failed, no labelled container.
@@ -352,7 +373,7 @@ func TestAFailedReauthorizationKeepsTheStoredGrant(t *testing.T) // a cancelled 
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement,** then remove `StartAuthorization`, `callbackFor`, `cockpitOrigin`'s MCP use, `configuredCallbackURL`, `handleMCPAuthorizationCallback` and the route, and shrink `isPublicOAuthCallbackRoute`. `AURA_WEB_PUBLIC_URL` stays while `pimReturnOrigin` reads it. `relayedFetcher` stays: it is how a server with no registration reaches the listener.
+- [ ] **Step 3: Implement,** then remove the old callback-based `StartAuthorization`, `callbackFor`, `configuredCallbackURL`, `handleMCPAuthorizationCallback` and the route, and shrink `isPublicOAuthCallbackRoute`. Retain request-origin derivation for the dedicated stream: starting a sign-in needs the cockpit origin, separately from the OAuth redirect, and supplies both origins in `LaunchOptions`. `AURA_WEB_PUBLIC_URL` stays while `pimReturnOrigin` reads it. `relayedFetcher` stays: it is how a server with no registration reaches the listener.
 - [ ] **Step 4: Cockpit.** `SignInImageGate` shows the size, 1.17 GB, and the pull's progress on first use, then opens the sign-in page. Vitest: `it('asks before the first download and shows its progress')`, `it('opens the sign-in page once the image is there')`, `it('offers the paste-back when the image cannot be had')`.
 - [ ] **Step 5: S7, on the VM.** With the operator: Linear and Notion through the container, and a pre-registered GitHub client on the loopback redirect. Read Slack's rules on redirect URIs and write them down. Append to the verification file.
 - [ ] **Step 6: Run all tiers,** update `docs/mcp-manager.md`, commit, then the bundle apart. `feat(mcp): sign every OAuth server in through the container`.

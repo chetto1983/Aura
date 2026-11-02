@@ -59,8 +59,13 @@ agent stays on the current browser and has no path to the sign-in one.
 ### 4.1 One container for one sign-in
 
 Pressing the button creates a container for that flow, on the identity's own egress floor, and it is removed when the
-flow ends or at the flow's 10-minute expiry. There is no volume, so the profile goes with it and nothing is left on disk
-to wipe.
+flow ends or at the flow's 10-minute expiry. No profile survives the flow: teardown removes its container and the
+image-created anonymous profile volume together.
+
+**Measured correction, 2026-11-02:** the image declares `VOLUME /config`, so Docker creates an anonymous profile volume
+even when Aura requests no mount. Teardown must remove associated anonymous volumes together with each sign-in
+container. The profile remains ephemeral; omitting a volume from the create request alone does not ensure that.
+Evidence: [sign-in browser spike](../verification/2026-11-02-sign-in-browser-spike.md).
 
 - **Image:** `lscr.io/linuxserver/chromium`, pinned by digest in `AURA_SIGNIN_BROWSER_IMAGE`, and not in the appliance
   payload. It is pulled on first use, the cockpit says so with its size and progress, and the attempt is refused
@@ -87,7 +92,7 @@ package of its own, with the session prefix as a parameter, and ChatGPT keeps it
 
 ### 4.3 The stream
 
-The cockpit serves `/sign-in/<session>/` as a reverse proxy to port 3000 of that container, behind the cockpit session,
+The dedicated sign-in origin serves `/sign-in/<session>/` as a reverse proxy to port 3000 of that container, behind the cockpit session,
 with the same ownership check as a `chatgpt-` session and an `Origin` check on the upgrade. The connection runs over an
 exec stream in the sidecar, a `net.Conn` on a small Node pipe to `127.0.0.1:3000` given to `httputil.ReverseProxy` as its
 dialer, because the floor leaves no network path in. Nothing is published, and the proxy is the only authentication, so it must refuse before
@@ -95,16 +100,45 @@ it dials. Whether an exec stream carries the video well enough is gate S2, and t
 dedicated bridge with one rule for port 3000.
 
 **The page must not act as the person.** It is a third party's HTML and JavaScript, and whoever takes over the container
-controls what port 3000 serves, while the cockpit's origin holds a session that may be an admin's. So every proxied
-response carries `Content-Security-Policy: sandbox allow-scripts`, which gives the page an opaque origin with no cookies
-and no reach into the cockpit's API. If Selkies cannot run that way, the page moves to a dedicated port with its own
-origin, as the MCP views have on `:8444`. That port does not pass through the Cloudflare tunnel, so such an install would
-fall back to §4.7 when reached through it. S2 decides. It must also show whether the session cookie reaches the page's
-subresources and websocket at all, because an opaque origin is cross-site to it (found writing the plan, 2026-11-02). If
-it does not, the page cannot be authenticated by the cockpit session, and this choice comes back to the operator.
+controls what port 3000 serves, while the cockpit's origin holds a session that may be an admin's. The operator selected
+the **dedicated-origin fallback** on 2026-11-02 after S2 failed. The desktop keeps a real origin so its unmodified client
+can use storage. The cockpit page frames that other origin with `sandbox="allow-scripts allow-same-origin"` and explicit
+clipboard permissions; the stream must never be served on the cockpit's own origin with those privileges. The proxy
+enforces the same isolation in its response CSP and restricts the allowed embedding parent. Native
+`SELKIES_FRAME_ANCESTORS` and `SELKIES_ALLOWED_ORIGINS` name the cockpit parent and desktop client origins respectively;
+the proxy also verifies the WebSocket Origin before dialing. Native token mode exists, but it does not replace Aura's
+ownership check before an exec or repair the opaque-origin storage failure.
+
+Use the existing Caddy `:8444` keyhole for the authenticated stream, retaining its refusal of unrelated routes. The
+desktop origin must use the cockpit's hostname and another HTTPS port, so its Strict session cookie arrives without
+cross-host credential handoff. A configured origin on another hostname, a tunnel without that port, or an unreachable
+desktop origin takes §4.7. Reuse the existing sandbox-origin/port/bind settings; do not add another image or broker.
+The stream's HTML, scripts and errors must never forward Cookie, Authorization or forwarded-client credentials into
+the desktop. The host page alone polls the flow, cancels on close, and closes its tab.
+
+A second port is another origin but remains the same site, so SameSite=Strict alone is insufficient for write isolation.
+Wrap cockpit browser writes in the standard library's `http.CrossOriginProtection`, with regressions proving that a
+credentialed form/simple POST from the desktop cannot reach a mutating handler. The desktop origin is not a trusted
+write origin. No opaque-sandbox or arbitrary-origin relaxation is made on the cockpit origin.
+
+**S2 measurement, 2026-11-02:** the opaque iframe's initial navigation carried the synthetic Strict
+cookie, but its module/CSS requests did not and were refused. Allowing the resources in the throwaway rig exposed a
+second failure: the unmodified Selkies 2.1.0 client unconditionally reads `localStorage` and crashes with `SecurityError`.
+The same image initialized its stream on a separate TLS origin over the same exec transport. That is partial evidence
+for the dedicated-origin fallback. The subsequent combined operator run in Edge passed Canva consent, mouse, keyboard,
+paste, hardening and more than five minutes without freezes/drops; token and `tools/list` returned 200 with 49 tools.
+A credentialed request across two ports on the same hostname still carried the Strict cookie, so write isolation also
+needs a measured origin boundary. Native embedding/token controls and the exact source inventory are recorded in the
+[spike file](../verification/2026-11-02-sign-in-browser-spike.md). The operator approved the dedicated-origin choice;
+S1–S3 are now accepted for this branch. Self-signed certificate trust for the second origin failed in Chrome until
+trusted, while Edge worked; acceptance must cover trust onboarding for both origins instead of ignoring certificate
+errors unconditionally.
 
 A cockpit on plain `http://` at a LAN address has no secure context, so the card goes straight to §4.7 instead of showing a
-dead page. `http://127.0.0.1` is a secure context and works.
+dead page. `http://127.0.0.1` is a secure context, but cookie-authenticated framing also requires the same scheme as the
+desktop origin: measured HTTP-loopback parent → HTTPS frame withheld the Strict cookie and returned 401. With the
+default HTTPS Caddy desktop listener, HTTP-loopback cockpits therefore also take §4.7; a configured same-scheme secure
+loopback origin may use the container. Secure context alone is insufficient.
 
 ### 4.4 MCP
 
