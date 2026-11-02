@@ -410,6 +410,25 @@ func TestStatusShowsEachWatchAndHowItFares(t *testing.T) {
 	}
 }
 
+func TestDecisionsTextIsTheDayAToolReads(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	r.commit(rigAccount, r.draft("m1", TierToday, ""))
+
+	text, err := r.service.DecisionsText(ctx, r.identity, rigAccount, "")
+	if err != nil {
+		t.Fatalf("decisions: %v", err)
+	}
+	for _, want := range []string{"today by default", "account=" + rigAccount, "id=m1", "m1@acme.it"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text = %q, want %q", text, want)
+		}
+	}
+	if _, err := r.service.DecisionsText(ctx, r.identity, rigAccount, "01/11/2026"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a bad day: %v", err)
+	}
+}
+
 func TestDecisionsReadTheDayLive(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

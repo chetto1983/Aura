@@ -23,7 +23,14 @@ type fakeMailWatch struct {
 	removed    string
 	rules      []pimwatch.Rule
 	labels     []pimwatch.Label
+	decisions  string
+	asked      []string
 	err        error
+}
+
+func (f *fakeMailWatch) DecisionsText(_ context.Context, identityID, accountID, day string) (string, error) {
+	f.asked = []string{identityID, accountID, day}
+	return f.decisions, f.err
 }
 
 func (f *fakeMailWatch) Status(_ context.Context, identityID string) (pimwatch.Status, error) {
@@ -105,6 +112,44 @@ func TestMailWatchEnableRunsAsTheCallersIdentity(t *testing.T) {
 	}
 	if service.identity != "id-1" || service.enabled != "work" || !strings.Contains(text, "work") {
 		t.Fatalf("identity %q, enabled %q, text %q", service.identity, service.enabled, text)
+	}
+}
+
+func TestMailWatchListDecisionsReadsOneAccountsDay(t *testing.T) {
+	service := &fakeMailWatch{decisions: "1. later by default | account=home resource=mail id=m1 | a@b.it: hi"}
+	text, err := mailWatchRun(t, &MailWatchTool{Service: service}, `{"action":"list_decisions","account_id":"home","day":"2026-11-01"}`)
+	if err != nil || text != service.decisions {
+		t.Fatalf("text = %q, err = %v", text, err)
+	}
+	if strings.Join(service.asked, " ") != "id-1 home 2026-11-01" {
+		t.Fatalf("asked = %v", service.asked)
+	}
+}
+
+func TestMailWatchListDecisionsDefaultsToToday(t *testing.T) {
+	service := &fakeMailWatch{}
+	if _, err := mailWatchRun(t, &MailWatchTool{Service: service}, `{"action":"list_decisions","account_id":"home"}`); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if service.asked[2] != "" {
+		t.Fatalf("day = %q", service.asked[2])
+	}
+}
+
+func TestMailWatchListDecisionsNeedsAnAccount(t *testing.T) {
+	service := &fakeMailWatch{}
+	if _, err := mailWatchRun(t, &MailWatchTool{Service: service}, `{"action":"list_decisions"}`); err == nil {
+		t.Fatalf("a list with no account was accepted")
+	}
+	if service.asked != nil {
+		t.Fatalf("asked = %v", service.asked)
+	}
+}
+
+func TestMailWatchListDecisionsPassesAFailureOn(t *testing.T) {
+	service := &fakeMailWatch{err: pimwatch.ErrUnavailable}
+	if _, err := mailWatchRun(t, &MailWatchTool{Service: service}, `{"action":"list_decisions","account_id":"home"}`); !errors.Is(err, pimwatch.ErrUnavailable) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

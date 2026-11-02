@@ -396,6 +396,15 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out}, nil
 }
 
+// DecisionsText is Decisions as a tool reads it, in the identity's language and zone.
+func (s *Service) DecisionsText(ctx context.Context, identityID, accountID, day string) (string, error) {
+	decisions, err := s.Decisions(ctx, identityID, accountID, day)
+	if err != nil {
+		return "", err
+	}
+	return renderDecisions(s.Locale.Language(ctx, identityID), s.Locale.Location(ctx, identityID), decisions), nil
+}
+
 // SaveSettings changes the digest hour and the daily cap, and moves the digest to the new hour. A
 // paused digest cannot be rescheduled, so it stays paused and takes the hour from the next enable.
 func (s *Service) SaveSettings(ctx context.Context, identityID string, digestHour, dailyCap int) (Settings, error) {

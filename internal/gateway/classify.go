@@ -144,14 +144,15 @@ func classifyBoard(raw json.RawMessage) scoring.RiskTier { return fixedTier(raw,
 // sender to later hides that person's mail from the digest. Enable only adds what the person
 // sees, so it stays free.
 var mailWatchFixedTiers = map[string]scoring.RiskTier{
-	"status":      scoring.Safe,
-	"list_rules":  scoring.Safe,
-	"list_labels": scoring.Safe,
-	"enable":      scoring.Normal,
-	"correct":     scoring.Normal,
-	"add_rule":    scoring.Normal,
-	"disable":     scoring.Destructive,
-	"remove_rule": scoring.Destructive,
+	"status":         scoring.Safe,
+	"list_rules":     scoring.Safe,
+	"list_labels":    scoring.Safe,
+	"list_decisions": scoring.Safe,
+	"enable":         scoring.Normal,
+	"correct":        scoring.Normal,
+	"add_rule":       scoring.Normal,
+	"disable":        scoring.Destructive,
+	"remove_rule":    scoring.Destructive,
 }
 
 func classifyMailWatch(raw json.RawMessage) scoring.RiskTier {

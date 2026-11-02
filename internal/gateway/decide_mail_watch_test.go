@@ -12,7 +12,7 @@ import (
 func TestMailWatchActionsCarryTheirTiers(t *testing.T) {
 	t.Parallel()
 	for action, want := range map[string]scoring.RiskTier{
-		"status": scoring.Safe, "list_rules": scoring.Safe, "list_labels": scoring.Safe,
+		"status": scoring.Safe, "list_rules": scoring.Safe, "list_labels": scoring.Safe, "list_decisions": scoring.Safe,
 		"enable": scoring.Normal, "correct": scoring.Normal, "add_rule": scoring.Normal,
 		"disable": scoring.Destructive, "remove_rule": scoring.Destructive,
 		"forget_everything": scoring.Risky,
@@ -142,10 +142,11 @@ func TestAHeadlessRunKeepsTheWatchsOtherVerbs(t *testing.T) {
 	t.Parallel()
 	spec := mailWatchSpec()
 	for name, args := range map[string]string{
-		"status":      `{"action":"status"}`,
-		"list_rules":  `{"action":"list_rules"}`,
-		"list_labels": `{"action":"list_labels"}`,
-		"enable":      `{"action":"enable","account_id":"work"}`,
+		"status":         `{"action":"status"}`,
+		"list_rules":     `{"action":"list_rules"}`,
+		"list_labels":    `{"action":"list_labels"}`,
+		"list_decisions": `{"action":"list_decisions","account_id":"work"}`,
+		"enable":         `{"action":"enable","account_id":"work"}`,
 	} {
 		raw := json.RawMessage(args)
 		g := New(config.ProfileSingleUserHardened, &fakeStore{})

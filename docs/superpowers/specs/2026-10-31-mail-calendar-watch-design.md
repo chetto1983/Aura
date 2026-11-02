@@ -185,7 +185,9 @@ which avoids bug 2 for the watch. Read-only subscribed calendars are left out of
 - **At most 5 alerts a day per account,** which the person can change. The rest go in the digest with their
   `now` mark, so a noisy sender or a wrong model cannot teach the person to mute Aura.
 - **Opt-in per account,** with a switch on the account's card in the cockpit and through the deferred
-  `mail_watch` tool, which also takes corrections and rules in chat. The `task` tool stays what it is: it can
+  `mail_watch` tool, which also takes corrections and rules in chat, and lists an account's day with
+  `list_decisions` (2026-11-02). Only an alert's record carried an id, so on a real turn the model could not
+  reach a mail told nowhere, and could not use `correct` on it. The `task` tool stays what it is: it can
   list and resume these tasks, but enabling a watch needs two tasks and a home it does not know about, and it
   cannot pause or cancel one (2026-11-01): a job that read a hostile mail can call it, so `mail_watch disable`,
   which asks the person, is the model's only way to stop a watch.
