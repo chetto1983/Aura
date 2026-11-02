@@ -522,7 +522,7 @@ func lineOf(verdict Verdict, items map[string]Item) Line {
 	line := Line{
 		AccountID: verdict.AccountID, Resource: verdict.Resource, ItemID: verdict.ItemID,
 		CalendarID: verdict.CalendarID, AuthFailed: verdict.AuthFailed, Tier: verdict.Tier, LabelID: verdict.LabelID,
-		Start: verdict.Start.Time, AllDay: verdict.Start.AllDay, Change: verdict.Change,
+		Start: verdict.Start.Time, AllDay: verdict.Start.AllDay, Change: verdict.Change, Told: verdict.Notified,
 	}
 	item, ok := items[verdict.ItemID]
 	if !ok {

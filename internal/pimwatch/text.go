@@ -205,6 +205,7 @@ type Line struct {
 	AllDay     bool
 	AuthFailed bool
 	Gone       bool
+	Told       bool
 	Tier       Tier
 	LabelID    string
 	Change     ChangeWord

@@ -8,8 +8,12 @@ import (
 	"time"
 )
 
-// maxDigestLines caps a digest (spec §5.2).
-const maxDigestLines = 20
+const (
+	// maxDigestLines caps what a digest shows (spec §5.2).
+	maxDigestLines = 20
+	// maxDigestRead caps what a digest reads, so a day's cost has a ceiling whatever the day was.
+	maxDigestRead = 100
+)
 
 // DigestStore is what a digest reads and writes. *Store satisfies it.
 type DigestStore interface {
@@ -86,13 +90,15 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 		return Outcome{}, err
 	}
 	sortDigest(verdicts, labels)
-	shown := verdicts[:min(len(verdicts), maxDigestLines)]
-	lines, missing := d.read(ctx, shown)
+	read := verdicts[:min(len(verdicts), maxDigestRead)]
+	lines, missing := d.read(ctx, read)
+	news := newsIn(lines)
+	shown := news[:min(len(news), maxDigestLines)]
 	out := renderDigest(
 		d.Locale.Language(ctx, identityID), d.Locale.Location(ctx, identityID), book,
-		lines, len(verdicts)-len(shown), missing,
+		shown, len(news)-len(shown)+untold(verdicts[len(read):]), missing,
 	)
-	out.Summary = fmt.Sprintf("%d in the window, %d shown", len(verdicts), len(lines))
+	out.Summary = fmt.Sprintf("%d in the window, %d shown", len(verdicts), len(shown))
 	if !missing.none() {
 		out.Summary += ", unreadable: " + strings.Join(slices.Concat(missing.held, missing.dropped), ", ")
 	}
@@ -103,13 +109,17 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 }
 
 // sortDigest puts a window in the digest's order: `now` first, then each label in the person's
-// order, then what has none. The order among equals stays the store's, oldest first.
+// order, then what has none, and last what the person was already told, so it never takes the
+// place of something new. The order among equals stays the store's, oldest first.
 func sortDigest(verdicts []Verdict, labels []Label) {
 	position := make(map[string]int, len(labels))
 	for i, label := range labels {
 		position[label.ID] = i
 	}
 	rank := func(v Verdict) int {
+		if v.Notified {
+			return len(labels) + 1
+		}
 		if v.Tier == TierNow {
 			return -1
 		}
@@ -119,6 +129,23 @@ func sortDigest(verdicts []Verdict, labels []Label) {
 		return len(labels)
 	}
 	slices.SortStableFunc(verdicts, func(a, b Verdict) int { return rank(a) - rank(b) })
+}
+
+// newsIn keeps the lines worth a person's time: the phone already said a told one, and a gone one
+// has nothing to say.
+func newsIn(lines []Line) []Line {
+	return slices.DeleteFunc(slices.Clone(lines), func(line Line) bool { return line.Told || line.Gone })
+}
+
+// untold counts the verdicts the person has not heard about.
+func untold(verdicts []Verdict) int {
+	n := 0
+	for _, verdict := range verdicts {
+		if !verdict.Notified {
+			n++
+		}
+	}
+	return n
 }
 
 // read reads the shown verdicts live, keeping their order. An account that cannot be read loses

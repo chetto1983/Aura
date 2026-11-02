@@ -191,7 +191,26 @@ func TestAnEmptyWindowSendsNothingAndStillMoves(t *testing.T) {
 	}
 }
 
-func TestADigestIsCappedAtTwentyLinesAndReadsNoMore(t *testing.T) {
+func TestWhatThePhoneAlreadySaidLeavesTheDigest(t *testing.T) {
+	r := newWatchRig(t)
+	r.clock.advance(time.Minute)
+	r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{r.urgentMail("told"), r.todayMail("fresh")}, NextCursor: "c1"})
+	r.tick()
+	r.tick()
+	r.clock.advance(time.Minute)
+
+	out, err := r.digester(LangEN).Run(context.Background(), r.identity)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	mustContain(t, out.Notice, "fresh@acme.it")
+	if strings.Contains(out.Notice, "told@acme.it") {
+		t.Fatalf("told again:\n%s", out.Notice)
+	}
+	mustContain(t, out.Summary, "2 in the window, 1 shown")
+}
+
+func TestADigestShowsTwentyLinesAndReadsTheWindow(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
 	drafts := make([]VerdictDraft, 0, 30)
@@ -214,12 +233,12 @@ func TestADigestIsCappedAtTwentyLinesAndReadsNoMore(t *testing.T) {
 	for _, refs := range r.pim.reads {
 		read += len(refs)
 	}
-	if read != 20 {
-		t.Fatalf("read %d items for a digest of 20", read)
+	if read != 30 {
+		t.Fatalf("read %d items of a window of 30", read)
 	}
 }
 
-func TestADigestShowsAGoneMailAsGone(t *testing.T) {
+func TestAGoneMailLeavesTheDigest(t *testing.T) {
 	r := newWatchRig(t)
 	r.clock.advance(time.Minute)
 	r.commit(rigAccount, r.draft("kept", TierToday, ""), r.draft("gone", TierToday, ""))
@@ -230,7 +249,10 @@ func TestADigestShowsAGoneMailAsGone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("digest: %v", err)
 	}
-	mustContain(t, out.Notice, "kept@acme.it", "(no longer there)")
+	mustContain(t, out.Notice, "kept@acme.it")
+	if strings.Contains(out.Notice, "(no longer there)") {
+		t.Fatalf("a line with nothing in it:\n%s", out.Notice)
+	}
 }
 
 func TestARemovedLabelsMailsReadAsUnsorted(t *testing.T) {

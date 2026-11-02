@@ -141,15 +141,6 @@ func (f *fakeLedger) RunCompleted(_ context.Context, runID string) (bool, error)
 	return f.completed[runID], f.err
 }
 
-type fakeLocale struct {
-	lang Lang
-	loc  *time.Location
-}
-
-func (f fakeLocale) Language(context.Context, string) Lang { return f.lang }
-
-func (f fakeLocale) Location(context.Context, string) *time.Location { return f.loc }
-
 // clock is a settable clock.
 type clock struct{ at time.Time }
 
