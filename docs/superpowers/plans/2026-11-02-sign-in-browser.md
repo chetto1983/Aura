@@ -168,7 +168,7 @@ func TestMCPPasteRoute(t *testing.T) // 200 flow; 409 on ErrPasteMismatch; 404 o
 - [x] **Step 3: Implement.** Compare `state` with `subtle.ConstantTimeCompare`. Cap the address at 16 KiB. Then call the existing `Complete` and `Fail`. `Paste` never logs the address.
 - [x] **Step 4: Cockpit.** The panel gets a secondary action, "Use your own browser": it starts with `via: "paste"`, opens `authorizationUrl`, and shows one field with text "When the page fails to load, copy its address here". A refused paste shows the reason. Vitest: `it('completes a flow from a pasted address')`, `it('shows why a pasted address was refused')`.
 - [x] **Step 5: Run and gate.** `go test -race ./internal/mcp/ ./internal/agui/ ./cmd/aura/`, Vitest on the panel, `tsc --noEmit`, oxlint, knip.
-- [ ] **Step 6: Commit,** then the bundle apart. `feat(mcp): finish an authorization from a pasted address`, `build(web): embed the paste-back`.
+- [x] **Step 6: Commit,** then the bundle apart. `feat(mcp): finish an authorization from a pasted address`, `build(web): embed the paste-back`.
 
 ### Task 4: The sign-in state machine, in its own package
 
