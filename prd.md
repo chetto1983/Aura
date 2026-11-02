@@ -4499,7 +4499,18 @@ operator's.
 | P3's gate (consolidation) | McNemar on an operator-labelled week | a corpus Claude writes from public datasets, ten personas, four held out. The never-contacted rule stays in the ladder | a default tuned to one inbox fails a user Aura has never seen; operator, 2026-10-31 (spec §7.1) |
 
 Two kinds, `pim_watch` per watched account and `pim_digest` per identity, on the existing
-scheduler. Neither calls a model. Tokens are spent only when the person writes back.
+scheduler. `pim_watch` never calls a model, and an alert never waits for one. Tokens are spent only
+when the person writes back, and on the digest below.
+
+**The digest is written by the identity's model (2026-11-02).** The first live digest was the fixed
+list, 29 items, and the operator judged it useless. `pim_digest` now makes one call a day on the
+identity's own model, and only when something new is there. Aura keeps what must not be the model's:
+which items exist, who a line comes from, and every urgent mail that did not reach the person, which
+stands as the PIM read it and never goes through the model. A failed or refused answer sends the list.
+First live run: 2 items, 503+38 tokens, 5 seconds
+(`docs/superpowers/verification/2026-11-02-digest-written-live.md`). That run does not establish a
+full day's cost or quality. The operator's reading over five working days against the fixed list
+decides whether it stays (spec `2026-11-02-digest-written-by-the-model-design.md`, Baseline).
 
 The ladder's pilot numbers (spec §7, 200 invented Italian mails, four personas, labels frozen first):
 - the ladder finds 1 of 23 `now`, and files nothing to `later` that should not be there;

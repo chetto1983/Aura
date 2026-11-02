@@ -56,13 +56,13 @@
 
 **Files:** `digest.go`, `text.go`, `watcher.go`, `digest_integration_test.go`, `digest_test.go`
 
-- [ ] Test `TestWhatThePhoneAlreadySaidLeavesTheDigest`: one `now` marked notified and one `today` give a digest with the `today` alone, and `"2 in the window, 1 shown"`.
-- [ ] Test `TestSortDigestPutsWhatWasToldLast` in `digest_test.go`.
-- [ ] Test `TestToldLinesDoNotEatTheReadBudget`: 150 told and 10 new read every new one.
-- [ ] Rewrite `TestADigestShowsAGoneMailAsGone` as `TestAGoneMailLeavesTheDigest`, and `TestADigestIsCappedAtTwentyLinesAndReadsNoMore` as `TestADigestShowsTwentyLinesAndReadsTheWindow`: the operator changed both behaviours; say so in the commit.
-- [ ] Run them, red.
-- [ ] Implement: `Line.Told`, set by `lineOf`; `maxDigestRead = 100`; `rank` puts `v.Notified` after everything; `Run` reads up to the budget, keeps `fresh := lines not Told and not Gone`, shows the first 20, and counts the rest plus the new verdicts past the budget.
-- [ ] Run `go vet`, test, race and `t-db.sh` on `./internal/pimwatch/`, green. Commit.
+- [x] Test `TestWhatThePhoneAlreadySaidLeavesTheDigest`: one `now` marked notified and one `today` give a digest with the `today` alone, and `"2 in the window, 1 shown"`.
+- [x] Test `TestSortDigestPutsWhatWasToldLast` in `digest_test.go`.
+- [x] Test `TestToldLinesDoNotEatTheReadBudget`: 150 told and 10 new read every new one.
+- [x] Rewrite `TestADigestShowsAGoneMailAsGone` as `TestAGoneMailLeavesTheDigest`, and `TestADigestIsCappedAtTwentyLinesAndReadsNoMore` as `TestADigestShowsTwentyLinesAndReadsTheWindow`: the operator changed both behaviours; say so in the commit.
+- [x] Run them, red.
+- [x] Implement: `Line.Told`, set by `lineOf`; `maxDigestRead = 100`; `rank` puts `v.Notified` after everything; `Run` reads up to the budget, keeps `fresh := lines not Told and not Gone`, shows the first 20, and counts the rest plus the new verdicts past the budget.
+- [x] Run `go vet`, test, race and `t-db.sh` on `./internal/pimwatch/`, green. Commit.
 
 ### Task 2: Reading the model's answer
 
@@ -84,19 +84,19 @@ func parseWritten(reply string, items int) ([]writtenLine, error)
 func renderWritten(lang Lang, loc *time.Location, lines []Line, written []writtenLine, unseen int, missing unread) Outcome
 ```
 
-- [ ] Test the items: numbered from 1, one per line, told marked, control characters gone, nothing longer than the bound.
-- [ ] Test `parseWritten`: a plain reply, a reply in a code fence, and refusal on a number out of range, a section outside `do|look|know`, empty text, no items, more than 20 lines, no JSON. A number cited twice stands on its first line.
-- [ ] Test `renderWritten`: the mock of the spec, in Italian and in English; sender from the line and never from the text; two senders; `+N` past two; an event with no sender; the mark of a failed authentication; an untold `now` the model left out stands in "Da guardare"; a told item it left out appears nowhere and is not counted; a new item it left out is counted once in "Altre N voci non chiedono nulla."; `unseen` in its own sentence; `Refs` holds every address of a merged line under its one number; `Head` holds no attacker text.
-- [ ] Red, then implement. New phrases: `digestDo`, `digestLook`, `digestKnow`, `digestQuiet`.
-- [ ] Green. Commit.
+- [x] Test the items: numbered from 1, one per line, told marked, control characters gone, nothing longer than the bound.
+- [x] Test `parseWritten`: a plain reply, a reply in a code fence, and refusal on a number out of range, a section outside `do|look|know`, empty text, no items, more than 20 lines, no JSON. A number cited twice stands on its first line.
+- [x] Test `renderWritten`: the mock of the spec, in Italian and in English; sender from the line and never from the text; two senders; `+N` past two; an event with no sender; the mark of a failed authentication; an untold `now` the model left out stands in "Da guardare"; a told item it left out appears nowhere and is not counted; a new item it left out is counted once in "Altre N voci non chiedono nulla."; `unseen` in its own sentence; `Refs` holds every address of a merged line under its one number; `Head` holds no attacker text.
+- [x] Red, then implement. New phrases: `digestDo`, `digestLook`, `digestKnow`, `digestQuiet`.
+- [x] Green. Commit.
 
 ### Task 3: The digest asks the model
 
 **Files:** `digest.go`, `digest_integration_test.go`
 
-- [ ] Tests: `TestTheModelWritesTheDigest`; `TestAFailingModelSendsTheList`; `TestARefusedAnswerSendsTheList`; `TestNothingNewAsksNoModel`; the last three also prove the window moved. The summary reads `written by the model, N+M tokens` or `the list, the model failed`.
-- [ ] Red, then add `Model DigestModel` to `Digester`. A nil one sends the list. A failure logs a fixed line, with no provider text in it.
-- [ ] Green, with race. Commit.
+- [x] Tests: `TestTheModelWritesTheDigest`; `TestAFailingModelSendsTheList`; `TestARefusedAnswerSendsTheList`; `TestNothingNewAsksNoModel`; the last three also prove the window moved. The summary reads `written by the model, N+M tokens` or `the list, the model failed`.
+- [x] Red, then add `Model DigestModel` to `Digester`. A nil one sends the list. A failure logs a fixed line, with no provider text in it.
+- [x] Green, with race. Commit.
 
 ### Task 4: The identity's model behind the port
 
@@ -104,14 +104,14 @@ func renderWritten(lang Lang, loc *time.Location, lines []Line, written []writte
 
 **Produces:** `func Collect(ctx context.Context, client Client, req Request) (text string, usage Usage, err error)`: drains the stream, wants a clean stop, keeps the last usage.
 
-- [ ] Test `Collect`: text, usage, an error mid-stream, an incomplete stop. Fold `GenerateTitle` and `Summarize` onto it, their tests unchanged and green.
-- [ ] Test `pimDigestModel`: identity resolved, no tools, no reasoning, items inside the untrusted frame, system outside it; a refused snapshot is an error.
-- [ ] Implement and wire: `runtime.digester = &pimwatch.Digester{..., Model: pimDigestModel{...}}`, resolver from `identityLLMResolver(chat)`.
-- [ ] `go vet ./...`, `go build ./...`, tests and race on the packages touched. Commit.
+- [x] Test `Collect`: text, usage, an error mid-stream, an incomplete stop. Fold `GenerateTitle` and `Summarize` onto it, their tests unchanged and green.
+- [x] Test `pimDigestModel`: identity resolved, no tools, no reasoning, items inside the untrusted frame, system outside it; a refused snapshot is an error.
+- [x] Implement and wire: `runtime.digester = &pimwatch.Digester{..., Model: pimDigestModel{...}}`, resolver from `identityLLMResolver(chat)`.
+- [x] `go vet ./...`, `go build ./...`, tests and race on the packages touched. Commit.
 
 ### Task 5: Live, on the VM
 
-- [ ] Correct the watch spec §5.2, §5.3, §5.7, and commit with the plan and the spec.
-- [ ] Push with the recipe, every workflow green on the SHA, the operator updates from the cockpit.
-- [ ] Read the first real digest with the operator. Write `docs/superpowers/verification/2026-11-03-digest-written-live.md`: tokens from the ledger, lines in, lines out, what it hid, what it does not prove.
-- [ ] Only then the PRD amendment, citing that file.
+- [x] Correct the watch spec §5.2, §5.3, §5.7, and commit with the plan and the spec.
+- [x] Push with the recipe, every workflow green on the SHA, the operator updates from the cockpit.
+- [x] Read the first real digest with the operator. Write `docs/superpowers/verification/2026-11-02-digest-written-live.md`: tokens from the ledger, lines in, lines out, what it hid, what it does not prove. Closed on the operator's word the same evening, on a two-item window; the five-working-day gate stays open.
+- [x] Only then the PRD amendment, citing that file.
