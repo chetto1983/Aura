@@ -52,6 +52,9 @@ def handler(model: str, key: str):
                     self._send(200, response.read())
             except urllib.error.HTTPError as err:
                 self._send(err.code, err.read())
+            except (urllib.error.URLError, OSError) as err:
+                # A dropped TLS stream is the upstream's failure, not the shim's: answer as a gateway.
+                self._send(502, json.dumps({"error": {"code": 502, "message": type(err).__name__}}).encode())
 
         def log_message(self, *args) -> None:
             pass
