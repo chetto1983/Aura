@@ -73,13 +73,16 @@ It did not serve its purpose. Of 29 lines decided that day, 20 shown: 10 of the 
 
 The fork's `d18b8de` reached the VM through the updater at 15:10:45 UTC. It asks for lasting ids on mail only: a first version, `c450f04`, asked on events too, and an independent review showed that a deleted event is told by its default id going 404 and that an event's earlier start is found by that id, so moves and deletes would have been lost. A mail decided at 15:53:09 UTC holds an id of 68 characters against the 140 of every earlier one, so Outlook.com honours the header. The person moved it to the bin, and the cockpit's day still read it: 13 lines, the same 10 gone as before the move.
 
+The person then removed Aura's app from their Microsoft account. The tick that followed failed and the task counted 1 at 15:59:48 UTC, so the provider refuses at once rather than when the access token runs out. They linked the account again a minute later, and the watch came back as a new active task with no failures. The operator closed the run there.
+
 ## What this does not prove
 
+- The pause after three failures, its one message on Telegram, and the watch resuming with `enable`. The run ended at the first failure, so none of the three happened.
 - That the PIM still reads a mail decided before the update and left in place. All ten that read gone were decided before it, the person had just deleted many, and nobody counted which. Those rows hold default ids, so one that moved stays gone until the row expires.
 - A crash after Telegram took the message and before the run closed. The alert would be told twice: the run above died before the send. The window is what a send takes.
 - A meeting older than the watch, or one whose invitation is not in the mailbox. Each should alert once, on its own, and neither was tried live.
 - IMAP on a real mailbox. It ran against GreenMail only.
 - The digest the model writes: it gets its own file when it has run.
-- A revoked grant, `enable` on a real turn, and `pim_contract_live`.
+- `pim_contract_live`.
 - G3: zero missed and zero duplicates over five working days per adapter.
 - Delivery beyond what the person saw: Telegram was read in their browser and on their word.
