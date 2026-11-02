@@ -4526,7 +4526,7 @@ Gmail and an Outlook.com account.
 
 | Measured | Decided |
 |---|---|
-| One invitation alerted twice, as a mail and as its event | The PIM states `invitation`. While the account's calendar is read healthy such a mail stays `today` and the event alone alerts |
+| One meeting alerted twice on every change, as a mail and as its event, in one tick | The PIM states `invitation`. An event at `now` whose title an invitation alert of that tick holds takes the mail's place, its row stays `today`, and one alert of the cap is spent |
 | A cancelled meeting's row had no title, because the read threw the event away | The read returns a cancelled event that still has its title |
 | A personal Microsoft account signs in only under `consumers`; under `common` it ends on `http://localhost` with `invalid_request` | Outlook.com asks for no tenant and Aura always sends `consumers`. Microsoft 365's tenant is checked on save |
 | An unfinished sign-in showed as connected | The PIM states `linked`, read from the stored token, and the cockpit offers to finish or remove |
@@ -4534,8 +4534,8 @@ Gmail and an Outlook.com account.
 What this does not establish:
 - that `invitation` is read on real Gmail and Graph mail. Gmail's part headers and Graph's
   `@odata.type` under `$select` are assumed from the docs until the published image runs;
-- that a calendar takes every invitation. A Gmail account set to add one only when answered gets
-  no alert for it, only a digest line, and that case was not run;
+- that every invitation's subject holds the event's title. Gmail's did on the live run; Outlook's
+  was not seen. A subject that does not leaves the double, and no alert is lost;
 - G3: zero missed and zero duplicates over five working days stays owed.
 
 ## 16. Observability and operator experience

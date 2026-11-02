@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -373,36 +374,20 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 	if resource == ResourceCalendar {
 		return w.draftEvents(ctx, t, changes)
 	}
-	calendarTells, err := w.calendarTells(ctx, t)
-	if err != nil {
-		return nil, nil, err
-	}
 	drafts := make([]VerdictDraft, 0, len(changes))
 	for _, change := range changes {
 		if change.Type != ChangeAdded {
 			continue
 		}
-		decision := DecideMail(t.book, change.From, change.Signals, calendarTells)
+		decision := DecideMail(t.book, change.From, change.Signals)
 		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Decision: decision})
 		lines[change.ID] = Line{
 			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From, FromName: change.FromName,
 			Subject: change.Subject, AuthFailed: decision.AuthFailed, Tier: decision.Tier,
+			invitation: change.Signals.Invitation,
 		}
 	}
 	return drafts, lines, nil
-}
-
-// calendarTells reports whether this account's calendar is being read, so that an event landing
-// on it will be told. A resource with no cursor yet, or one that is failing, tells nothing.
-func (w *Watcher) calendarTells(ctx context.Context, t *tick) (bool, error) {
-	cursor, err := w.Store.Cursor(ctx, t.IdentityID, t.AccountID, ResourceCalendar)
-	if errors.Is(err, ErrNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return cursor.Status == CursorOK, nil
 }
 
 func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([]VerdictDraft, map[string]Line, error) {
@@ -442,17 +427,37 @@ func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([
 		if !told {
 			continue
 		}
-		drafts = append(drafts, VerdictDraft{
-			ItemID: id, CalendarID: change.CalendarID, Decision: decision, Fingerprint: facts.fingerprintOf(), Event: true, Start: start,
-			OrganizerIsSelf: facts.OrganizerIsSelf,
-		})
-		lines[id] = Line{
+		line := Line{
 			AccountID: t.AccountID, Resource: ResourceCalendar, ItemID: id, CalendarID: change.CalendarID,
 			From: change.From, Subject: change.Subject, Start: start.Time, AllDay: start.AllDay, Tier: decision.Tier,
 			Change: decision.Change,
 		}
+		if i := t.invitationTo(change.Subject); decision.Tier == TierNow && i >= 0 {
+			t.lines[i] = line
+			decision.Tier = TierToday
+		}
+		drafts = append(drafts, VerdictDraft{
+			ItemID: id, CalendarID: change.CalendarID, Decision: decision, Fingerprint: facts.fingerprintOf(), Event: true, Start: start,
+			OrganizerIsSelf: facts.OrganizerIsSelf,
+		})
+		lines[id] = line
 	}
 	return drafts, lines, nil
+}
+
+// invitationTo finds this tick's alert for an invitation to the event with this title, or -1. On
+// the live run of 2026-11-02 every change to a meeting alerted twice, the mail and the event in
+// one tick. So the event's line, which carries the time, takes the mail's place and its row stays
+// `today`: one alert of the cap, and neither is lost. A title the subject does not hold leaves the
+// two apart, because a double costs less than a meeting nobody was told about.
+func (t *tick) invitationTo(title string) int {
+	if title == "" {
+		return -1
+	}
+	title = strings.ToLower(title)
+	return slices.IndexFunc(t.lines, func(line Line) bool {
+		return line.invitation && strings.Contains(strings.ToLower(line.Subject), title)
+	})
 }
 
 // outcome closes the run. A hard failure with something to tell tells it and completes: the
@@ -528,6 +533,9 @@ func lineOf(verdict Verdict, items map[string]Item) Line {
 	line.From, line.FromName, line.Subject = item.From, item.FromName, item.Subject
 	if item.Event != nil {
 		line.Start, line.AllDay = item.Event.Start.Time, item.Event.Start.AllDay
+		if item.Event.Status == EventCancelled {
+			line.Change = WordCancelled
+		}
 	}
 	return line
 }

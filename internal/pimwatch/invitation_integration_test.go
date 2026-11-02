@@ -4,40 +4,70 @@ package pimwatch
 
 import (
 	"context"
+	"strings"
 	"testing"
-
-	"github.com/google/uuid"
+	"time"
 )
 
-// The page holding one invitation from someone the account writes to, marked important.
-func (r *watchRig) invitationPage() {
+// invitationPage holds one mail the ladder sends to `now`, with this subject.
+func (r *watchRig) invitationPage(subject string) {
 	r.t.Helper()
 	invitation := r.urgentMail("m1")
+	invitation.Subject = subject
 	invitation.Signals.Invitation = true
 	r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{invitation}, NextCursor: "c1"})
 }
 
-// The live run of 2026-11-02 told one invitation twice: as a mail and as the event it put on the
-// calendar.
-func TestAnInvitationLeavesTheAlertToAHealthyCalendar(t *testing.T) {
-	r := newWatchRig(t)
-	r.invitationPage()
+func newMeeting(id string, start time.Time) Change {
+	change := eventChange(id, "fp-"+id, start)
+	change.Type = ChangeAdded
+	return change
+}
 
-	if out := r.tick(); out.Notice != "" {
-		t.Fatalf("the mail told what the calendar tells: %q", out.Notice)
+// The live run of 2026-11-02 told every change to one meeting twice: as a mail and as the event,
+// the two in the same tick.
+func TestAnInvitationAndItsEventAreToldOnce(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	r.invitationPage("Invito: AUDIT - lun 2 nov")
+	r.calendarPage("start-calendar", "cal-1", newMeeting("e1", r.clock.now().Add(2*time.Hour)))
+
+	out := r.tick()
+	mustContain(t, out.Notice, "New: Audit")
+	if strings.Contains(out.Notice, "Invito") {
+		t.Fatalf("the meeting was told twice: %q", out.Notice)
 	}
-	verdict, err := r.store.Verdict(context.Background(), r.identity, rigAccount, ResourceMail, "m1")
-	if err != nil || verdict.Tier != TierToday {
-		t.Fatalf("verdict = %+v, %v; the mail must stay in the digest", verdict, err)
+	mustContain(t, out.Summary, "2 decided, 1 alerted")
+	mail, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceMail, "m1")
+	if err != nil || mail.Tier != TierNow {
+		t.Fatalf("mail = %+v, %v", mail, err)
+	}
+	event, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "e1")
+	if err != nil || event.Tier != TierToday {
+		t.Fatalf("event = %+v, %v; it must stay in the digest and spend no second alert", event, err)
 	}
 }
 
-func TestAnInvitationAlertsWhenNoCalendarWillTellIt(t *testing.T) {
+// Each of these is a calendar that says nothing about the meeting, so the mail is the only alert.
+func TestAnInvitationKeepsItsAlertWhenTheCalendarSaysNothing(t *testing.T) {
 	ctx := context.Background()
-	for name, spoil := range map[string]func(r *watchRig) error{
+	for name, arrange := range map[string]func(r *watchRig) error{
+		"nothing on the calendar": func(*watchRig) error { return nil },
+		"a meeting days away": func(r *watchRig) error {
+			r.calendarPage("start-calendar", "cal-1", newMeeting("e1", r.clock.now().Add(72*time.Hour)))
+			return nil
+		},
+		"a meeting older than the watch": func(r *watchRig) error {
+			r.calendarPage("start-calendar", "cal-1", eventChange("e1", "fp", r.clock.now().Add(2*time.Hour)))
+			return nil
+		},
+		"a meeting already begun": func(r *watchRig) error {
+			r.calendarPage("start-calendar", "cal-1", newMeeting("e1", r.clock.now().Add(-3*time.Minute)))
+			return nil
+		},
 		"a failing calendar": func(r *watchRig) error {
-			_, err := r.store.MarkFailing(ctx, r.identity, rigAccount, ResourceCalendar, "provider_transient", r.clock.now())
-			return err
+			r.pim.changeErr[ResourceCalendar] = transient()
+			return nil
 		},
 		"a provider with no calendar": func(r *watchRig) error {
 			return r.store.MarkUnsupported(ctx, r.identity, rigAccount, ResourceCalendar)
@@ -45,27 +75,33 @@ func TestAnInvitationAlertsWhenNoCalendarWillTellIt(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newWatchRig(t)
-			if err := spoil(r); err != nil {
-				t.Fatalf("spoil: %v", err)
+			if err := arrange(r); err != nil {
+				t.Fatalf("arrange: %v", err)
 			}
-			r.invitationPage()
+			r.invitationPage("Invito: Audit")
 
-			mustContain(t, r.tick().Notice, "m1@acme.it: Subject of m1")
+			mustContain(t, r.tick().Notice, "m1@acme.it: Invito: Audit")
 		})
 	}
 }
 
-func TestAnInvitationAlertsBeforeTheCalendarHasACursor(t *testing.T) {
-	r := newWatchRig(t)
-	ctx := context.Background()
-	if err := StartResource(ctx, r.pim, r.store, r.identity, "other", ResourceMail); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	r.invitationPage()
+func TestTwoAlertsStayApartUnlessTheyAreOneMeeting(t *testing.T) {
+	soon := func(r *watchRig) Change { return newMeeting("e1", r.clock.now().Add(2*time.Hour)) }
 
-	out, err := r.watcher.Tick(ctx, TickInput{IdentityID: r.identity, AccountID: "other", RunID: uuid.NewString()})
-	if err != nil {
-		t.Fatalf("tick: %v", err)
-	}
-	mustContain(t, out.Notice, "m1@acme.it: Subject of m1")
+	t.Run("an invitation to another meeting", func(t *testing.T) {
+		r := newWatchRig(t)
+		r.invitationPage("Invito: Budget")
+		r.calendarPage("start-calendar", "cal-1", soon(r))
+
+		mustContain(t, r.tick().Notice, "m1@acme.it: Invito: Budget", "New: Audit")
+	})
+	t.Run("a mail that only names the meeting", func(t *testing.T) {
+		r := newWatchRig(t)
+		mail := r.urgentMail("m1")
+		mail.Subject = "Note per Audit"
+		r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{mail}, NextCursor: "c1"})
+		r.calendarPage("start-calendar", "cal-1", soon(r))
+
+		mustContain(t, r.tick().Notice, "m1@acme.it: Note per Audit", "New: Audit")
+	})
 }

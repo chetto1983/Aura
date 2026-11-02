@@ -241,6 +241,10 @@ func TestALineSaysWhatHappenedToTheEvent(t *testing.T) {
 	event := func(word ChangeWord) Line {
 		return Line{From: "anna@acme.it", Subject: "Audit", Start: start, Change: word}
 	}
+	// A meeting told as new and cancelled before the calendar's next read says so from the item.
+	read := lineOf(Verdict{ItemID: "e1", Change: WordNew}, map[string]Item{
+		"e1": {ID: "e1", From: "anna@acme.it", Subject: "Audit", Event: &Event{Start: EventTime{Time: start}, Status: EventCancelled}},
+	})
 	cases := []struct {
 		name string
 		lang Lang
@@ -250,6 +254,7 @@ func TestALineSaysWhatHappenedToTheEvent(t *testing.T) {
 		{"new", LangIT, event(WordNew), "anna@acme.it: Nuovo: Audit (02/11 13:00)"},
 		{"moved", LangIT, event(WordMoved), "anna@acme.it: Spostato: Audit (02/11 13:00)"},
 		{"cancelled", LangIT, event(WordCancelled), "anna@acme.it: Annullato: Audit (02/11 13:00)"},
+		{"cancelled, read after the row was written", LangIT, read, "anna@acme.it: Annullato: Audit (02/11 13:00)"},
 		{"new in English", LangEN, event(WordNew), "anna@acme.it: New: Audit (Nov 2 13:00)"},
 		{"moved in English", LangEN, event(WordMoved), "anna@acme.it: Moved: Audit (Nov 2 13:00)"},
 		{"cancelled in English", LangEN, event(WordCancelled), "anna@acme.it: Cancelled: Audit (Nov 2 13:00)"},

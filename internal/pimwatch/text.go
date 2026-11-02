@@ -208,6 +208,7 @@ type Line struct {
 	Tier       Tier
 	LabelID    string
 	Change     ChangeWord
+	invitation bool
 }
 
 // sender is who a line comes from: the name beside the address, because the name is whatever the

@@ -142,8 +142,8 @@ logs. It is not an MCP action: the model never sees it, and the `calendar` tool 
   sent. The PIM asks the provider once per sender within a request, skips it for `bulk` mail, and answers
   `null` where it cannot tell, such as an IMAP account with no Sent folder. Aura keeps no address table.
 - `invitation` says the mail is a scheduling message: an `eventMessage` on Graph, and on Gmail and IMAP a
-  `text/calendar` part whose `method` is anything but `PUBLISH` (RFC 6047 section 2.4). A calendar file attached to
-  a mail is not one, and neither is a forwarded invitation. Added 2026-11-02, read from the provider docs: the
+  `text/calendar` part whose `method` is anything but `PUBLISH` (RFC 6047 section 2.4). A calendar file with no
+  `method` is not one, and neither is a forwarded invitation. Added 2026-11-02, read from the provider docs: the
   live run proves the Gmail and Graph shapes (§5.3).
 - `POST /admin/items` with `{accountId, resource, items: [{id, calendarId}]}` (at most 50) reads sender, subject
   and time by id, for the digest and the decisions view. An item that no longer exists comes back in `gone`, so a
@@ -262,12 +262,15 @@ and says nothing. The person's own events are `later`, and
 so is the delete of one: the row keeps who organized the event, because a delete may arrive with only an id. A delete of
 an event already told as cancelled says nothing.
 
-**An invitation is told once.** On the live run of 2026-11-02 one invitation alerted twice, as a mail from a person
-and as its event. While the account's calendar is being read, with its cursor `ok`, an `invitation` mail cannot reach
-`now` at rung 3, so the event alone alerts. The mail keeps `today` and goes no lower, because a calendar can be set
-to take an invitation only once it is answered, and then the mail is the only trace of it. A failing or unsupported
-calendar leaves the mail as it was. A rule still raises it, since that is the person's word. For an event more than
-24 hours away both lines reach the digest, and nothing alerts.
+**An invitation is told once.** On the live run of 2026-11-02 every change to one meeting alerted twice, as a mail
+from a person and as its event, in the same tick each time. The ladder stays as it is, so no mail loses its alert.
+When the calendar then says `now` about an event whose title the subject of an `invitation` alert of that tick
+holds, the event's line, which carries the time, takes the mail's place in the notification, and the event's row
+stays `today`. One alert of the cap is spent, and the meeting still reaches the digest. Anything else leaves the
+two apart: a title that does not match, or a mail and its event a tick apart. A double costs less than a meeting
+nobody was told about, so the first design, which silenced the mail while the calendar was healthy, was dropped the
+day it was written: an independent review showed events that say nothing, such as a meeting older than the watch,
+or one already begun, and a reply, which moves nothing on the calendar, would then alert nobody.
 
 ### 5.4 Learning, per identity
 

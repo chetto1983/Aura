@@ -172,12 +172,7 @@ type Decision struct {
 // sender sets it, and in the pilot 23 of the 25 mails it marked were `later`. Bulk mail is not
 // people, because a list you once replied to must not reach `now`. An unknown writtenTo cannot
 // raise a mail, and cannot file it either: doubt goes to the digest.
-//
-// An invitation stays out of `now` while calendarTells says the account's calendar will tell it:
-// the live run of 2026-11-02 alerted twice for one meeting. It keeps the digest and goes no lower,
-// because a calendar can be set to take an invitation only once it is answered. A rule still
-// raises it, since that is the person's word.
-func DecideMail(book Book, from string, s Signals, calendarTells bool) Decision {
+func DecideMail(book Book, from string, s Signals) Decision {
 	decision := Decision{AuthFailed: s.AuthFailed}
 	if rule, ok := book.match(from); ok {
 		decision.LabelID = rule.LabelID
@@ -187,11 +182,10 @@ func DecideMail(book Book, from string, s Signals, calendarTells bool) Decision 
 		}
 	}
 	written := s.WrittenTo != nil && *s.WrittenTo
-	toldByCalendar := s.Invitation && calendarTells
 	switch {
 	case s.AuthFailed:
 		decision.Tier, decision.By = TierToday, ByAuthFailed
-	case written && !s.Bulk && s.ProviderImportant && !toldByCalendar:
+	case written && !s.Bulk && s.ProviderImportant:
 		decision.Tier, decision.By = TierNow, ByPeople
 	case written && !s.Bulk:
 		decision.Tier, decision.By = TierToday, ByPeople
