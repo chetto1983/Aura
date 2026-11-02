@@ -50,7 +50,7 @@ def main(gate_path: str) -> None:
           f"BM25 {auroc([r['bm25'] for r in pos], [r['bm25'] for r in neg]):.3f}")
     print(f"d1 on answering passages: min {min(r['d1'] for r in pos):.2f}, median {statistics.median(r['d1'] for r in pos):.2f}; "
           f"on the rest: median {statistics.median(r['d1'] for r in neg):.2f}, max {max(r['d1'] for r in neg):.2f}")
-    print(f"d1 latency per decision on CPU: median {statistics.median(r['d1_seconds'] for r in rows):.1f}s, "
+    print(f"d1 latency per decision: median {statistics.median(r['d1_seconds'] for r in rows):.1f}s, "
           f"max {max(r['d1_seconds'] for r in rows):.1f}s; input tokens median {statistics.median(r['d1_input_tokens'] for r in rows)}")
 
     print("\nthreshold  token_delta  answer_kept  lost  false_accepts  unreachable_abstained")

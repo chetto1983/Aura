@@ -1,0 +1,537 @@
+{
+ "cases": [
+  {
+   "qid": "q03",
+   "category": "EXACT",
+   "query": "fattura di febbraio emessa a Bianchi",
+   "answer": "2026_003, 10004",
+   "gold_docs": [
+    "fattura_2026_003.xlsx",
+    "contabilita_2026.xlsx"
+   ],
+   "doc": "fattura_2026_003.xlsx",
+   "ordinal": 0,
+   "tokens": 123
+  },
+  {
+   "qid": "q04",
+   "category": "AGG",
+   "query": "quanto abbiamo fatturato in totale ad ACME nel 2026",
+   "answer": "71187",
+   "gold_docs": [
+    "contabilita_2026.xlsx"
+   ],
+   "doc": "contabilita_2026.xlsx",
+   "ordinal": 1,
+   "tokens": 428
+  },
+  {
+   "qid": "q05",
+   "category": "AGG",
+   "query": "totale IVA del secondo trimestre",
+   "answer": "19481",
+   "gold_docs": [
+    "contabilita_2026.xlsx"
+   ],
+   "doc": "contabilita_2026.xlsx",
+   "ordinal": 1,
+   "tokens": 428
+  },
+  {
+   "qid": "q07",
+   "category": "AGG",
+   "query": "qual e' la fattura piu alta emessa a Verdi Costruzioni",
+   "answer": "2026_009, 38064",
+   "gold_docs": [
+    "contabilita_2026.xlsx",
+    "fattura_2026_009.xlsx"
+   ],
+   "doc": "fattura_2026_009.xlsx",
+   "ordinal": 0,
+   "tokens": 126
+  },
+  {
+   "qid": "q08",
+   "category": "FILTER",
+   "query": "quali fatture non sono state pagate",
+   "answer": "2026_005, 2026_009, 2026_011, 2026_013; 2026_006 contestata",
+   "gold_docs": [
+    "contabilita_2026.xlsx",
+    "scadenzario.xlsx"
+   ],
+   "doc": "contabilita_2026.xlsx",
+   "ordinal": 0,
+   "tokens": 1027
+  },
+  {
+   "qid": "q09",
+   "category": "FILTER",
+   "query": "tutte le fatture del cliente Gialli Import",
+   "answer": "2026_007, 2026_011",
+   "gold_docs": [
+    "contabilita_2026.xlsx",
+    "fattura_2026_007.xlsx",
+    "fattura_2026_011.xlsx"
+   ],
+   "doc": "contabilita_2026.xlsx",
+   "ordinal": 0,
+   "tokens": 1027
+  },
+  {
+   "qid": "q10",
+   "category": "AGING",
+   "query": "quali clienti sono in ritardo con i pagamenti",
+   "answer": "Verdi Costruzioni, Gialli Import",
+   "gold_docs": [
+    "scadenzario.xlsx",
+    "note_pagamenti.txt"
+   ],
+   "doc": "note_pagamenti.txt",
+   "ordinal": 0,
+   "tokens": 176
+  },
+  {
+   "qid": "q11",
+   "category": "AGING",
+   "query": "quanti giorni di ritardo ha Verdi Costruzioni",
+   "answer": "45",
+   "gold_docs": [
+    "scadenzario.xlsx",
+    "note_pagamenti.txt"
+   ],
+   "doc": "note_pagamenti.txt",
+   "ordinal": 0,
+   "tokens": 176
+  },
+  {
+   "qid": "q12",
+   "category": "PROSE",
+   "query": "perche Bianchi ha contestato una fattura",
+   "answer": "errore di quantita",
+   "gold_docs": [
+    "note_pagamenti.txt"
+   ],
+   "doc": "note_pagamenti.txt",
+   "ordinal": 0,
+   "tokens": 176
+  },
+  {
+   "qid": "q14",
+   "category": "CROSSREF",
+   "query": "quali sono i termini di pagamento di Verdi Costruzioni",
+   "answer": "90",
+   "gold_docs": [
+    "anagrafica_clienti.xlsx"
+   ],
+   "doc": "anagrafica_clienti.xlsx",
+   "ordinal": 0,
+   "tokens": 320
+  },
+  {
+   "qid": "q16",
+   "category": "PROSE",
+   "query": "cosa prevede il contratto con ACME",
+   "answer": "consulenza continuativa",
+   "gold_docs": [
+    "contratto_ACME_2026.txt"
+   ],
+   "doc": "contratto_ACME_2026.txt",
+   "ordinal": 0,
+   "tokens": 121
+  },
+  {
+   "qid": "q17",
+   "category": "PROSE",
+   "query": "qual e' il foro competente del contratto ACME",
+   "answer": "Milano",
+   "gold_docs": [
+    "contratto_ACME_2026.txt"
+   ],
+   "doc": "contratto_ACME_2026.txt",
+   "ordinal": 0,
+   "tokens": 121
+  },
+  {
+   "qid": "q18",
+   "category": "TEMPORAL",
+   "query": "fatture emesse a marzo 2026",
+   "answer": "2026_005, 2026_006, 2026_007",
+   "gold_docs": [
+    "contabilita_2026.xlsx",
+    "fattura_2026_005.xlsx",
+    "fattura_2026_006.xlsx",
+    "fattura_2026_007.xlsx"
+   ],
+   "doc": "contabilita_2026.xlsx",
+   "ordinal": 0,
+   "tokens": 1027
+  },
+  {
+   "qid": "q20",
+   "category": "PROSE",
+   "query": "come sono archiviati i documenti amministrativi",
+   "answer": "una fattura per file, fattura_2026_NNN",
+   "gold_docs": [
+    "istruzioni_archivio.txt"
+   ],
+   "doc": "istruzioni_archivio.txt",
+   "ordinal": 0,
+   "tokens": 98
+  },
+  {
+   "qid": "fx300-alarm-A006",
+   "category": "TABLE_DEEP",
+   "query": "sulla confezionatrice FX300 è comparso l'allarme A006: qual è la causa probabile?",
+   "answer": "encoder non allineato",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 0,
+   "tokens": 1924
+  },
+  {
+   "qid": "fx300-alarm-A023",
+   "category": "TABLE_DEEP",
+   "query": "sulla confezionatrice FX300 è comparso l'allarme A023: qual è la causa probabile?",
+   "answer": "temperatura saldatura fuori soglia",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 0,
+   "tokens": 1924
+  },
+  {
+   "qid": "fx300-alarm-A119",
+   "category": "TABLE_DEEP",
+   "query": "sulla confezionatrice FX300 è comparso l'allarme A119: qual è la causa probabile?",
+   "answer": "riparo aperto",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 2,
+   "tokens": 1780
+  },
+  {
+   "qid": "fx200-alarm-A012",
+   "category": "LOOKALIKE",
+   "query": "allarme A012 sulla FX200, come si risolve?",
+   "answer": "verificare il regolatore di pressione",
+   "gold_docs": [
+    "manuale_confezionatrice_FX200.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX200.pdf",
+   "ordinal": 0,
+   "tokens": 1941
+  },
+  {
+   "qid": "fx300-speed",
+   "category": "PROSE",
+   "query": "quanti pezzi al minuto può confezionare la FX300",
+   "answer": "62",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 4,
+   "tokens": 1804
+  },
+  {
+   "qid": "fx300-chains",
+   "category": "TABLE",
+   "query": "ogni quante ore vanno lubrificate le catene della confezionatrice FX300",
+   "answer": "160",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 2,
+   "tokens": 1780
+  },
+  {
+   "qid": "fx300-blade-part",
+   "category": "CROSS_DOC",
+   "query": "codice ricambio della lama di taglio seghettata della FX300",
+   "answer": "RIC-14956",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf",
+    "magazzino_ricambi_2026.xlsx"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 3,
+   "tokens": 399
+  },
+  {
+   "qid": "fx300-parameter",
+   "category": "TABLE_DEEP",
+   "query": "valore di fabbrica del parametro P067 sul pannello della FX300",
+   "answer": "683",
+   "gold_docs": [
+    "manuale_confezionatrice_FX300.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX300.pdf",
+   "ordinal": 6,
+   "tokens": 1896
+  },
+  {
+   "qid": "fx200-torque-m10",
+   "category": "LOOKALIKE",
+   "query": "coppia di serraggio delle viti M10 sulla FX200",
+   "answer": "24.1",
+   "gold_docs": [
+    "manuale_confezionatrice_FX200.pdf"
+   ],
+   "doc": "manuale_confezionatrice_FX200.pdf",
+   "ordinal": 2,
+   "tokens": 353
+  },
+  {
+   "qid": "contract-penalty",
+   "category": "PROSE",
+   "query": "penale giornaliera per ritardo nella consegna della Linea 3",
+   "answer": "0.3%",
+   "gold_docs": [
+    "capitolato_fornitura_linea3.pdf"
+   ],
+   "doc": "capitolato_fornitura_linea3.pdf",
+   "ordinal": 0,
+   "tokens": 1794
+  },
+  {
+   "qid": "contract-penalty-paraphrase",
+   "category": "PARAPHRASE",
+   "query": "quanto ci deve il fornitore per ogni giorno in cui arriva tardi con la nuova linea",
+   "answer": "0.3%",
+   "gold_docs": [
+    "capitolato_fornitura_linea3.pdf"
+   ],
+   "doc": "capitolato_fornitura_linea3.pdf",
+   "ordinal": 0,
+   "tokens": 1794
+  },
+  {
+   "qid": "contract-warranty",
+   "category": "PROSE",
+   "query": "quanti mesi di garanzia dopo il collaudo in sito",
+   "answer": "36",
+   "gold_docs": [
+    "capitolato_fornitura_linea3.pdf"
+   ],
+   "doc": "capitolato_fornitura_linea3.pdf",
+   "ordinal": 0,
+   "tokens": 1794
+  },
+  {
+   "qid": "contract-advance",
+   "category": "PROSE",
+   "query": "che percentuale si paga all'ordine della linea di confezionamento",
+   "answer": "30%",
+   "gold_docs": [
+    "capitolato_fornitura_linea3.pdf"
+   ],
+   "doc": "capitolato_fornitura_linea3.pdf",
+   "ordinal": 0,
+   "tokens": 1794
+  },
+  {
+   "qid": "report-oee",
+   "category": "TABLE",
+   "query": "OEE della Linea 2 nel mese di agosto",
+   "answer": "78.9%",
+   "gold_docs": [
+    "report_qualita_Q3_2026.pdf"
+   ],
+   "doc": "report_qualita_Q3_2026.pdf",
+   "ordinal": 0,
+   "tokens": 865
+  },
+  {
+   "qid": "report-complaint",
+   "category": "EXACT",
+   "query": "che difetto riguardava il reclamo RC-2026-040",
+   "answer": "etichetta illeggibile",
+   "gold_docs": [
+    "report_qualita_Q3_2026.pdf"
+   ],
+   "doc": "report_qualita_Q3_2026.pdf",
+   "ordinal": 0,
+   "tokens": 865
+  },
+  {
+   "qid": "audit-nc",
+   "category": "EXACT",
+   "query": "a quale requisito della norma si riferisce la non conformità NC-03",
+   "answer": "9.1.2",
+   "gold_docs": [
+    "verbale_audit_ISO9001_2026.pdf"
+   ],
+   "doc": "verbale_audit_ISO9001_2026.pdf",
+   "ordinal": 0,
+   "tokens": 1035
+  },
+  {
+   "qid": "audit-auditor",
+   "category": "PROSE",
+   "query": "chi era l'auditor responsabile della verifica ISO 9001",
+   "answer": "ing. Paola Ferrero",
+   "gold_docs": [
+    "verbale_audit_ISO9001_2026.pdf"
+   ],
+   "doc": "verbale_audit_ISO9001_2026.pdf",
+   "ordinal": 0,
+   "tokens": 1035
+  },
+  {
+   "qid": "sds-gloves",
+   "category": "PARAPHRASE",
+   "query": "che protezioni mettere alle mani quando si usa il detergente alcalino",
+   "answer": "guanti in nitrile",
+   "gold_docs": [
+    "scheda_sicurezza_detergente_DX45.pdf"
+   ],
+   "doc": "scheda_sicurezza_detergente_DX45.pdf",
+   "ordinal": 0,
+   "tokens": 481
+  },
+  {
+   "qid": "sds-un",
+   "category": "EXACT",
+   "query": "numero ONU per spedire il DX45",
+   "answer": "UN 1719",
+   "gold_docs": [
+    "scheda_sicurezza_detergente_DX45.pdf"
+   ],
+   "doc": "scheda_sicurezza_detergente_DX45.pdf",
+   "ordinal": 0,
+   "tokens": 481
+  },
+  {
+   "qid": "budget-centro-2026",
+   "category": "LOOKALIKE",
+   "query": "ricavi 2026 dell'area Centro",
+   "answer": "8714",
+   "gold_docs": [
+    "budget_consolidato_2026.xlsx"
+   ],
+   "doc": "budget_consolidato_2026.xlsx",
+   "ordinal": 1,
+   "tokens": 299
+  },
+  {
+   "qid": "budget-inflation-2025",
+   "category": "LOOKALIKE",
+   "query": "ipotesi di inflazione sui costi usata nel budget 2025",
+   "answer": "0.025",
+   "gold_docs": [
+    "budget_consolidato_2025.xlsx"
+   ],
+   "doc": "budget_consolidato_2025.xlsx",
+   "ordinal": 0,
+   "tokens": 97
+  },
+  {
+   "qid": "parts-supplier",
+   "category": "EXACT",
+   "query": "chi fornisce l'articolo RIC-16377",
+   "answer": "Rulmeca Italia",
+   "gold_docs": [
+    "magazzino_ricambi_2026.xlsx"
+   ],
+   "doc": "magazzino_ricambi_2026.xlsx",
+   "ordinal": 69,
+   "tokens": 1251
+  },
+  {
+   "qid": "plan-legend",
+   "category": "MATRIX",
+   "query": "cosa vuol dire la lettera T nel piano di manutenzione",
+   "answer": "Taratura sensori",
+   "gold_docs": [
+    "piano_manutenzione_2026.xlsx"
+   ],
+   "doc": "piano_manutenzione_2026.xlsx",
+   "ordinal": 1,
+   "tokens": 95
+  },
+  {
+   "qid": "rota-legend",
+   "category": "MATRIX",
+   "query": "a che ora inizia il turno di notte secondo il foglio turni",
+   "answer": "22",
+   "gold_docs": [
+    "turni_reparto_ottobre_2026.xlsx"
+   ],
+   "doc": "turni_reparto_ottobre_2026.xlsx",
+   "ordinal": 0,
+   "tokens": 1373
+  }
+ ],
+ "excluded": [
+  [
+   "q01",
+   "answer not stated in one passage"
+  ],
+  [
+   "q02",
+   "answer not stated in one passage"
+  ],
+  [
+   "q06",
+   "answer not stated in one passage"
+  ],
+  [
+   "q13",
+   "answer not stated in one passage"
+  ],
+  [
+   "q15",
+   "weak oracle"
+  ],
+  [
+   "q19",
+   "weak oracle"
+  ],
+  [
+   "report-best-line",
+   "weak oracle"
+  ],
+  [
+   "audit-majors",
+   "weak oracle"
+  ],
+  [
+   "sds-flash",
+   "weak oracle"
+  ],
+  [
+   "budget-top-centre",
+   "weak oracle"
+  ],
+  [
+   "budget-ebitda",
+   "answer not stated in one passage"
+  ],
+  [
+   "parts-location",
+   "weak oracle"
+  ],
+  [
+   "parts-lead-time",
+   "weak oracle"
+  ],
+  [
+   "parts-below-min",
+   "count over 5,000 rows; 376 matches a row number"
+  ],
+  [
+   "plan-pz8",
+   "weak oracle"
+  ],
+  [
+   "rota-nights",
+   "argmax over the rota matrix; the name is present regardless"
+  ]
+ ]
+}

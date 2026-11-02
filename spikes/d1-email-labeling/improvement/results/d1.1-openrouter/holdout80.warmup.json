@@ -1,0 +1,27 @@
+{
+  "model": "liquid/d1.1-20261027",
+  "answers": {
+    "label": {
+      "type": "choice",
+      "choice": "Personale",
+      "probabilities": {
+        "Cliente": 0.0015230926289687772,
+        "Lavoro": 0.003754540738977158,
+        "Personale": 0.9878395411187305,
+        "Opportunità": 0.0027306353095371836,
+        "Amministrazione": 0.0013697099477850902,
+        "Spedizioni": 0.001606109568973044,
+        "Pubblicità": 0.0008495499740725931,
+        "Notifiche": 0.0003268207129557073
+      },
+      "confidence": 0.9861023327071206
+    }
+  },
+  "usage": {
+    "input_tokens": 327,
+    "output_tokens": 0,
+    "cost": 6.54e-06
+  },
+  "id": "gen-dec-1793651634-cm226qdbyMopjk2W3Esv",
+  "provider": "Liquid"
+}
