@@ -458,10 +458,11 @@ before it runs.
 - [ ] `go test -tags pim_contract_live` against the real sidecar. Any difference from `pim_contract.json` goes to the spec
   first.
 - [x] Enable a watch on a real account through the cockpit.
-- [ ] Enable a watch through `mail_watch` on a real turn. The turn of 2026-11-02 only called `status`.
+- [ ] Enable a watch through `mail_watch` on a real turn. On 2026-11-02 `status`, `list_decisions`, `correct` and `add_rule`
+  ran on real turns, and `enable` has not.
 - [x] A `now` mail reaches Telegram within a tick, plain, with no preview, and "aprila" works on the next turn.
 - [ ] A digest fires at its hour, in the identity's language.
-- [ ] Kill the process mid-tick, and see the alert told once.
+- [x] Kill the process mid-tick, and see the alert told once.
 - [ ] Revoke the grant, and see the pause reported once.
 - [x] A dated file in `docs/superpowers/verification/`, saying what it measured and what it does not prove:
   `2026-11-02-mail-watch-live.md`, which goes on as the rest of this list runs.

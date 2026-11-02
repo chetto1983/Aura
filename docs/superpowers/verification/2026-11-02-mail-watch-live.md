@@ -32,9 +32,23 @@ The VM at Aura `0ac494f82` and the PIM image built at 11:02:35, inside the publi
 
 So one meeting's change is one alert, with the event's line in the mail's place. That also shows Gmail's part headers carry the invitation's Content-Type, which the docs did not say, and a cancelled meeting's line has its title back. Each alert read `notified` on the tick after it and was not repeated.
 
-Both Outlook.com cursors read `failing`, `provider_transient`, from 11:44 until the update, and `ok` on the first tick after it. The VM went down for the update at about that time, so that is the likely cause. The old container's logs went with it, so the cause is not proven.
+The same on Outlook.com, the first meeting measured on that account. The account has never written to this sender, so the mail stays at `today` by `default` and the event alerts by itself. That is why it is one alert, so this does not exercise `invitation` on Graph.
 
-The same day, on a real turn, the model said it could correct a verdict but not find one, and the code agreed: an id reached it only through an alert's record. `mail_watch list_decisions` lists an account's day through the read the cockpit already had (`cae2112bc`). It has not run on a live turn.
+| Step | Telegram | Mail | Event | Alerts told |
+|---|---|---|---|---|
+| Invited | `Nuovo:`, title, 17:30 | `today`, `default` | `now`, `new` | calendar 0 to 1 |
+| Moved | `Spostato:`, title, 19:00 | `today`, `default` | `now`, `moved` | calendar 1 to 2 |
+| Cancelled | `Annullato:`, 19:00 | `today`, `default` | `now`, `cancelled` | calendar 2 to 3 |
+
+Outlook.com does not delete a cancelled event: it keeps it, and renames it after the cancellation mail. So the line had a title, and read `Annullato: Evento annullato: <title> - <date and hours> (<address>)`. It is long and says it twice, and it is the provider's text.
+
+With a rule from a real turn (`add_rule`, tier `now`) on that sender, a new invitation to Outlook.com put the mail at `now` by `rule` and the event at `today`, `new`, with no alert of its own, mail 0 to 1 and calendar still 3. So `invitation` holds on Graph under `$select` too, and the subject held the event's title.
+
+A crash in the worst place: a script waited for a committed alert not yet confirmed and killed Aura's process at 14:25:22.382, the same second, with the calendar of that tick not yet read. Aura was back at 14:25:22.9. Nothing had reached Telegram. The tick at 14:30:37 took the alert over under its own run and told it once, with a mail that had come since, and counted only the new one, 7 to 8. It read `notified` on the tick after, and Telegram shows one message.
+
+Both Outlook.com cursors read `failing`, `provider_transient`, from 11:44 until 13:09, and `ok` on the first tick after it. The person says the VM had no internet in that time.
+
+On a real turn the model said it could correct a verdict but not find one, and the code agreed: an id reached it only through an alert's record. `mail_watch list_decisions` lists an account's day through the read the cockpit already had (`cae2112bc`). The next turn, on Aura `712ec0f0c`, listed both accounts, called `correct` on a mail no alert had named, and read the label back. That is the first change `mail_watch` made on a real turn, and the first live read of items the provider no longer has: two Outlook.com mails read gone, the invitation and its update, both replaced by Outlook when the next one came.
 
 ## What it found, and what changed
 
@@ -53,12 +67,11 @@ An independent review of these changes found two faults before any image was pub
 
 ## What this does not prove
 
-- `invitation` on Outlook.com. Gmail's is measured above, and Graph's rests on the docs: `@odata.type` is shown only without `$select`. If it is wrong the mail keeps its alert, so the failure is the old double.
-- That an invitation's subject holds the event's title on Outlook.com. Gmail's did on both runs. A subject that does not leaves the double.
+- A crash after Telegram took the message and before the run closed. The alert would be told twice: the run above died before the send. The window is what a send takes.
 - A meeting older than the watch, or one whose invitation is not in the mailbox. Each should alert once, on its own, and neither was tried live.
-- A meeting on Outlook.com. No calendar verdict exists on that account yet.
+- The fix for a mail moved on Outlook.com. Two mails the person moved to the bin read gone while still in the mailbox, because Graph's id changes on a move unless the request asks for `Prefer: IdType="ImmutableId"` (learn.microsoft.com/graph/outlook-immutable-id). The fork's `c450f04` asks for it, and has not run on a live account.
 - IMAP on a real mailbox. It ran against GreenMail only.
 - The digest at 18:00 local, which had not fired when this was written.
-- Kill mid-tick, a revoked grant, `mail_watch` changing anything on a real turn, and `pim_contract_live`.
+- A revoked grant, `enable` on a real turn, and `pim_contract_live`.
 - G3: zero missed and zero duplicates over five working days per adapter.
 - Delivery beyond what the person saw: Telegram was read in their browser and on their word.
