@@ -1,0 +1,16 @@
+{
+ "note": "Types for complex_corpus, assigned by the spike author on 2026-11-02 BEFORE any prediction, from the file contents. The office corpus's gold is document_filter_questions.json's library, written earlier by someone else.",
+ "library": {
+  "budget_consolidato_2025.xlsx": {"type": "budget"},
+  "budget_consolidato_2026.xlsx": {"type": "budget"},
+  "capitolato_fornitura_linea3.pdf": {"type": "capitolato"},
+  "magazzino_ricambi_2026.xlsx": {"type": "inventario magazzino"},
+  "manuale_confezionatrice_FX200.pdf": {"type": "manuale"},
+  "manuale_confezionatrice_FX300.pdf": {"type": "manuale"},
+  "piano_manutenzione_2026.xlsx": {"type": "piano manutenzione"},
+  "report_qualita_Q3_2026.pdf": {"type": "report"},
+  "scheda_sicurezza_detergente_DX45.pdf": {"type": "scheda di sicurezza"},
+  "turni_reparto_ottobre_2026.xlsx": {"type": "turni"},
+  "verbale_audit_ISO9001_2026.pdf": {"type": "verbale"}
+ }
+}
