@@ -102,7 +102,7 @@ func (s *Store) Upsert(ctx context.Context, app App, updatedBy string) error {
 		return fmt.Errorf("pimprovider: seal the %s secret: %w", app.Provider, err)
 	}
 	if err := s.q.UpsertPIMProviderApp(ctx, sqlc.UpsertPIMProviderAppParams{
-		Provider: app.Provider, ClientID: app.ClientID, TenantID: app.TenantID,
+		Provider: app.Provider, ClientID: app.ClientID, TenantID: app.Tenant(),
 		ClientSecretCiphertext: ciphertext, UpdatedBy: updatedBy,
 	}); err != nil {
 		return fmt.Errorf("pimprovider: upsert %s: %w", app.Provider, err)

@@ -124,6 +124,24 @@ func TestStoreKeepSecretNeverPairsAnotherClientsSecret(t *testing.T) {
 	}
 }
 
+// The cockpit sends Outlook.com no tenant, and the table refuses a row of any non-Google provider
+// without one.
+func TestStoreSavesOutlookComWithTheTenantItAlwaysUses(t *testing.T) {
+	store, _ := liveStore(t)
+	ctx := context.Background()
+	app := App{Provider: OutlookCom, ClientID: "ms-cid"}
+	if err := Validate(app, nil); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if err := store.Upsert(ctx, app, "admin"); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	got, err := store.Get(ctx, OutlookCom)
+	if err != nil || got.TenantID != "consumers" {
+		t.Fatalf("Get = %+v, %v", got, err)
+	}
+}
+
 func TestStoreListsWithoutDecrypting(t *testing.T) {
 	store, _ := liveStore(t)
 	ctx := context.Background()

@@ -77,14 +77,19 @@ func IsOwnedKey(key string) bool {
 
 // ProviderConfig is exactly the providerConfig the sidecar reads for this provider.
 func (a App) ProviderConfig() map[string]string {
-	switch a.Provider {
-	case Google:
+	if a.Provider == Google {
 		return map[string]string{"clientId": a.ClientID, "clientSecret": a.ClientSecret}
-	case OutlookCom:
-		return map[string]string{"clientId": a.ClientID, "tenantId": personalTenant}
-	default:
-		return map[string]string{"clientId": a.ClientID, "tenantId": a.TenantID}
 	}
+	return map[string]string{"clientId": a.ClientID, "tenantId": a.Tenant()}
+}
+
+// Tenant is what the row holds and the sidecar reads. The table wants one on every row that is not
+// Google's, and Outlook.com's never varies, whatever an older row says.
+func (a App) Tenant() string {
+	if a.Provider == OutlookCom {
+		return personalTenant
+	}
+	return a.TenantID
 }
 
 // Validate checks a save against the stored app (nil when there is none). A Google save without

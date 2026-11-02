@@ -140,7 +140,7 @@ func pimProviderView(provider string, app pimprovider.App, configured, admin boo
 	view := pimProviderAdminStatus{
 		pimProviderStatus: status,
 		ClientID:          app.ClientID,
-		TenantID:          app.TenantID,
+		TenantID:          app.Tenant(),
 		SecretSet:         app.SecretSet,
 	}
 	if provider == pimprovider.Google {
