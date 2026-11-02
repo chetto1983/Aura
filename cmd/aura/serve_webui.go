@@ -200,6 +200,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	}
 	mux.Handle(governanceMCPAuthStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(governanceMCPAuthPasteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPAuthRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-29 SKW-01/02/03 governance SKILLS WRITE routes — same governance.write gate.
 	// The install mints the operator-origin /api/approvals pause (D-13); the gate is what keeps

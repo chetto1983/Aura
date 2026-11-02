@@ -171,17 +171,41 @@ func (m *mcpAuthService) StartAuthorization(ctx context.Context, owner, name, or
 	if err != nil {
 		return mcp.Flow{}, err
 	}
-	server, ok, err := effectiveManagedMCPServer(name)
+	server, err := authorizationServer(name)
 	if err != nil {
 		return mcp.Flow{}, err
 	}
+	return m.flows.Start(ctx, owner, name, server, callback)
+}
+
+func authorizationServer(name string) (mcp.ManagedServer, error) {
+	server, ok, err := effectiveManagedMCPServer(name)
+	if err != nil {
+		return mcp.ManagedServer{}, err
+	}
 	if !ok {
-		return mcp.Flow{}, fmt.Errorf("MCP server %q is not configured or is disabled", name)
+		return mcp.ManagedServer{}, fmt.Errorf("MCP server %q is not configured or is disabled", name)
 	}
 	if selfIssuable(server) {
-		return mcp.Flow{}, errSelfIssued
+		return mcp.ManagedServer{}, errSelfIssued
 	}
-	return m.flows.Start(ctx, owner, name, server, callback)
+	return server, nil
+}
+
+func (m *mcpAuthService) StartLoopbackAuthorization(ctx context.Context, owner, name string) (mcp.Flow, error) {
+	server, err := authorizationServer(name)
+	if err != nil {
+		return mcp.Flow{}, err
+	}
+	settings, err := mcp.OAuthSettingsFromEnv(server.Env)
+	if err != nil {
+		return mcp.Flow{}, err
+	}
+	return m.flows.Start(ctx, owner, name, server, settings.SignInRedirect())
+}
+
+func (m *mcpAuthService) PasteAuthorization(owner, id, address string) (mcp.Flow, error) {
+	return m.flows.Paste(owner, id, address)
 }
 
 func (m *mcpAuthService) AuthorizationFlow(owner, id string) (mcp.Flow, error) {

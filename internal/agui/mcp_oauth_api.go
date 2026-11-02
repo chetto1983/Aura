@@ -57,6 +57,8 @@ type MCPAuthorizationProvider interface {
 	// public address: the redirect is followed by the browser, never fetched by the
 	// provider, so http://localhost:8080 is a perfectly valid destination.
 	StartAuthorization(ctx context.Context, owner, server, origin string) (mcp.Flow, error)
+	StartLoopbackAuthorization(ctx context.Context, owner, server string) (mcp.Flow, error)
+	PasteAuthorization(owner, id, address string) (mcp.Flow, error)
 	AuthorizationFlow(owner, id string) (mcp.Flow, error)
 	CompleteAuthorization(state, code, iss string) (mcp.Flow, error)
 	FailAuthorization(state string, reason error) (mcp.Flow, error)
@@ -75,6 +77,7 @@ func (s *Server) registerMCPAuthorizationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/governance/mcp/{name}/authorization", s.handleMCPAuthorizationStart)
 	mux.HandleFunc("DELETE /api/governance/mcp/{name}/authorization", s.handleMCPAuthorizationRevoke)
 	mux.HandleFunc("GET /api/governance/mcp/authorization/flow/{id}", s.handleMCPAuthorizationFlow)
+	mux.HandleFunc("POST /api/governance/mcp/authorization/flow/{id}/paste", s.handleMCPAuthorizationPaste)
 	mux.HandleFunc("GET /api/governance/mcp/authorization/callback", s.handleMCPAuthorizationCallback)
 }
 
@@ -146,9 +149,58 @@ func (s *Server) handleMCPAuthorizationStart(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "no identity on this request", http.StatusUnauthorized)
 		return
 	}
-	flow, err := provider.StartAuthorization(r.Context(), id, r.PathValue("name"), cockpitOrigin(r))
+	var body struct {
+		Via string `json:"via"`
+	}
+	if !decodeMCPBody(w, r, &body) {
+		return
+	}
+	var flow mcp.Flow
+	var err error
+	switch body.Via {
+	case "paste":
+		flow, err = provider.StartLoopbackAuthorization(r.Context(), id, r.PathValue("name"))
+	case "":
+		flow, err = provider.StartAuthorization(r.Context(), id, r.PathValue("name"), cockpitOrigin(r))
+	default:
+		http.Error(w, "unknown authorization method", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, mcp.RedactSecrets(err.Error()), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, flowResponse(flow))
+}
+
+func (s *Server) handleMCPAuthorizationPaste(w http.ResponseWriter, r *http.Request) {
+	provider, ok := s.mcpAuthProvider(w)
+	if !ok {
+		return
+	}
+	id, ok := owner(r)
+	if !ok {
+		http.Error(w, "no identity on this request", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Address string `json:"address"`
+	}
+	if !decodeMCPBody(w, r, &body) {
+		return
+	}
+	flow, err := provider.PasteAuthorization(id, r.PathValue("id"), body.Address)
+	if err != nil {
+		switch {
+		case errors.Is(err, mcp.ErrNoSuchFlow):
+			http.Error(w, "no such authorization flow", http.StatusNotFound)
+		case errors.Is(err, mcp.ErrPasteMismatch):
+			http.Error(w, mcp.ErrPasteMismatch.Error(), http.StatusConflict)
+		case errors.Is(err, mcp.ErrFlowNotWaiting):
+			http.Error(w, mcp.ErrFlowNotWaiting.Error(), http.StatusConflict)
+		default:
+			http.Error(w, "could not complete the sign-in", http.StatusInternalServerError)
+		}
 		return
 	}
 	writeJSON(w, flowResponse(flow))

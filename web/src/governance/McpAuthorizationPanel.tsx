@@ -6,6 +6,7 @@ import {
   MCP_FLOW_MAX_POLL_FAILURES,
   MCP_FLOW_POLL_MS,
   fetchMcpAuthorization,
+  pasteMcpAuthorization,
   pollMcpAuthorizationFlow,
   revokeMcpAuthorization,
   startMcpAuthorization,
@@ -34,6 +35,8 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   const queryClient = useQueryClient();
   const [flowId, setFlowId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [ownBrowser, setOwnBrowser] = useState(false);
+  const [address, setAddress] = useState('');
 
   const authorization = useQuery({
     queryKey: ['mcp-authorization', serverName],
@@ -64,9 +67,20 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     [queryClient, serverName],
   );
 
+  const paste = useMutation({
+    mutationFn: (returnAddress: string) => pasteMcpAuthorization(flowId ?? '', returnAddress),
+    onSuccess: (completed) => {
+      queryClient.setQueryData(['mcp-authorization-flow', completed.flowId], completed);
+      setAddress('');
+    },
+  });
+
   const start = useMutation({
-    mutationFn: () => startMcpAuthorization(serverName),
-    onSuccess: (started) => {
+    mutationFn: (via: 'paste' | undefined) => startMcpAuthorization(serverName, via),
+    onSuccess: (started, via) => {
+      setOwnBrowser(via === 'paste');
+      setAddress('');
+      paste.reset();
       setFlowId(started.flowId);
       // Opened here, in the mutation's own callback, so the browser still counts it as
       // the user gesture that began the click. The copyable link below is what covers
@@ -135,7 +149,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   const failure =
     live?.status === 'error'
       ? (live.error ?? t('governance.mcp.detail.authorization.failed'))
-      : (start.error?.message ?? revoke.error?.message ?? '');
+      : (paste.error?.message ?? start.error?.message ?? revoke.error?.message ?? '');
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
@@ -168,7 +182,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               size="sm"
               disabled={start.isPending}
               onClick={() => {
-                start.mutate();
+                start.mutate(undefined);
               }}
             >
               {t('governance.mcp.detail.authorization.reconnect')}
@@ -193,7 +207,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               size="sm"
               disabled={start.isPending}
               onClick={() => {
-                start.mutate();
+                start.mutate(undefined);
               }}
             >
               <Link2 data-icon aria-hidden="true" className="size-4" />
@@ -203,6 +217,22 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
             </Button>
           </div>
         </>
+      ) : null}
+
+      {!waitingURL ? (
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={start.isPending}
+            onClick={() => {
+              start.mutate('paste');
+            }}
+          >
+            {t('governance.mcp.detail.authorization.ownBrowser')}
+          </Button>
+        </div>
       ) : null}
 
       {waitingURL ? (
@@ -251,6 +281,38 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
               {t('governance.mcp.detail.authorization.copyLink')}
             </Button>
           </div>
+          {ownBrowser ? (
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                paste.mutate(address);
+              }}
+            >
+              <p className="text-[14px] text-text-muted">
+                {t('governance.mcp.detail.authorization.pasteHint')}
+              </p>
+              <label className="flex flex-col gap-1 text-[13px] text-text-muted">
+                {t('governance.mcp.detail.authorization.returnAddress')}
+                <input
+                  value={address}
+                  onChange={(event) => {
+                    setAddress(event.target.value);
+                  }}
+                  dir="ltr"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={16 * 1024}
+                  className="w-full rounded-md border border-border bg-surface-2 px-2 py-1 font-mono text-[12.5px] text-text"
+                />
+              </label>
+              <div>
+                <Button type="submit" size="sm" disabled={paste.isPending || !address.trim()}>
+                  {t('governance.mcp.detail.authorization.completeSignIn')}
+                </Button>
+              </div>
+            </form>
+          ) : null}
         </div>
       ) : null}
 

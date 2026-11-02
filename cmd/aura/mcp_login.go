@@ -32,11 +32,6 @@ import (
 // in isolation can only prove that an authorization server said yes.
 
 const (
-	// mcpOAuthCallbackPath is where the redirect lands when Aura chooses the address
-	// itself. The one-shot listener accepts any path, so this is a label for the human
-	// reading the URL rather than a route.
-	mcpOAuthCallbackPath = "/aura/mcp/oauth/callback"
-
 	// mcpLoginTimeout bounds the whole flow, including the time a human spends in a
 	// browser. Long enough to find a password manager, short enough that a forgotten
 	// terminal does not hold a listener open forever.
@@ -233,7 +228,7 @@ func newLoopbackFlow(out io.Writer, configured string) (*loopbackFlow, error) {
 	}
 	redirect := strings.TrimSpace(configured)
 	if redirect == "" {
-		redirect = "http://" + listener.Addr().String() + mcpOAuthCallbackPath
+		redirect = "http://" + listener.Addr().String() + mcp.LoopbackCallbackPath
 	}
 	return &loopbackFlow{listener: listener, redirect: redirect, out: out}, nil
 }

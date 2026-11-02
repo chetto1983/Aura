@@ -3,6 +3,7 @@ package mcp
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
@@ -81,6 +82,30 @@ type OAuthSettings struct {
 	// Disabled is the operator's explicit opt-out, for a server that speaks static tokens
 	// only and would otherwise have an authorization flow attempted against it.
 	Disabled bool
+}
+
+// LoopbackCallbackPath and LoopbackCallback keep registrations stable across sign-in boxes.
+const (
+	LoopbackCallbackPath = "/aura/mcp/oauth/callback"
+	LoopbackCallback     = "http://127.0.0.1:43121" + LoopbackCallbackPath
+)
+
+// SignInRedirect preserves an operator's registered redirect byte for byte.
+func (o OAuthSettings) SignInRedirect() string {
+	if o.RedirectURL != "" {
+		return o.RedirectURL
+	}
+	return LoopbackCallback
+}
+
+// RedirectIsLoopback decides whether an address belongs to the sign-in box's listener.
+func (o OAuthSettings) RedirectIsLoopback() bool {
+	u, err := url.Parse(o.SignInRedirect())
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || net.ParseIP(host).IsLoopback()
 }
 
 // Confidential reports whether these settings describe a confidential client, which is the

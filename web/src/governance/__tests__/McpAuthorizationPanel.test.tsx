@@ -10,6 +10,7 @@ vi.mock('../mcpAuthApi', async (importOriginal) => ({
   startMcpAuthorization: vi.fn(),
   pollMcpAuthorizationFlow: vi.fn(),
   revokeMcpAuthorization: vi.fn(),
+  pasteMcpAuthorization: vi.fn(),
 }));
 
 const api = await import('../mcpAuthApi');
@@ -43,6 +44,66 @@ afterEach(() => {
 });
 
 describe('McpAuthorizationPanel', () => {
+  for (const refused of [false, true]) {
+    it(
+      refused ? 'shows why a pasted address was refused' : 'completes a flow from a pasted address',
+      async () => {
+        vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({
+          supported: true,
+          authorized: false,
+        });
+        const pending = {
+          flowId: 'f1',
+          server: 'linear',
+          status: 'authorization_required' as const,
+          authorizationUrl: 'https://linear.app/oauth/authorize?state=s',
+        };
+        vi.mocked(api.startMcpAuthorization).mockResolvedValue(pending);
+        vi.mocked(api.pollMcpAuthorizationFlow).mockResolvedValue(pending);
+        if (refused) {
+          vi.mocked(api.pasteMcpAuthorization).mockRejectedValue(
+            new Error('This address does not match the pending sign-in.'),
+          );
+        } else {
+          vi.mocked(api.pasteMcpAuthorization).mockResolvedValue({
+            ...pending,
+            status: 'approved',
+          });
+        }
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        const client = renderPanel();
+        fireEvent.click(await screen.findByRole('button', { name: 'Use your own browser' }));
+        await waitFor(() => {
+          expect(api.startMcpAuthorization).toHaveBeenCalledWith('linear', 'paste');
+        });
+        expect(open).toHaveBeenCalledWith(
+          pending.authorizationUrl,
+          '_blank',
+          'noopener,noreferrer',
+        );
+        const address = 'http://127.0.0.1:43121/aura/mcp/oauth/callback?state=s&code=c';
+        fireEvent.change(await screen.findByLabelText('Return address'), {
+          target: { value: address },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Complete sign-in' }));
+        await waitFor(() => {
+          expect(api.pasteMcpAuthorization).toHaveBeenCalledWith('f1', address);
+        });
+        if (refused) {
+          expect((await screen.findByRole('alert')).textContent).toContain(
+            'This address does not match the pending sign-in.',
+          );
+          expect(probeInvalidated(client)).toBe(false);
+        } else {
+          await waitFor(() => {
+            expect(probeInvalidated(client)).toBe(true);
+          });
+          expect(screen.queryByLabelText('Return address')).toBeNull();
+        }
+      },
+    );
+  }
+
   it('offers to authorize again when the access expired', async () => {
     vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({
       supported: true,

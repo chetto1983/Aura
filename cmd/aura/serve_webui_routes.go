@@ -228,6 +228,7 @@ const (
 	governanceMCPEnvRoute        = "PATCH /api/governance/mcp/{name}/env"
 	governanceMCPTrustRoute      = "POST /api/governance/mcp/{name}/trust"
 	governanceMCPAuthStartRoute  = "POST /api/governance/mcp/{name}/authorization"
+	governanceMCPAuthPasteRoute  = "POST /api/governance/mcp/authorization/flow/{id}/paste"
 	governanceMCPAuthRevokeRoute = "DELETE /api/governance/mcp/{name}/authorization"
 	governanceMCPEnableRoute     = "POST /api/governance/mcp/{name}/enable"
 	governanceMCPDisableRoute    = "POST /api/governance/mcp/{name}/disable"

@@ -26,10 +26,10 @@ func TestLoopbackFlowBindsAnEphemeralPortByDefault(t *testing.T) {
 	if !strings.HasPrefix(flow.redirect, "http://127.0.0.1:") {
 		t.Fatalf("redirect = %q, want a loopback address", flow.redirect)
 	}
-	if strings.HasSuffix(flow.redirect, ":0"+mcpOAuthCallbackPath) {
+	if strings.HasSuffix(flow.redirect, ":0"+mcp.LoopbackCallbackPath) {
 		t.Fatalf("redirect kept the placeholder port: %q", flow.redirect)
 	}
-	if !strings.HasSuffix(flow.redirect, mcpOAuthCallbackPath) {
+	if !strings.HasSuffix(flow.redirect, mcp.LoopbackCallbackPath) {
 		t.Fatalf("redirect = %q, want it to end in the callback path", flow.redirect)
 	}
 }

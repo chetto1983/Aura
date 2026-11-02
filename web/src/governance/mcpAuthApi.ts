@@ -45,8 +45,15 @@ export function fetchMcpAuthorization(name: string): Promise<McpAuthorizationSta
  * safe by design — the server replays the pending flow rather than opening a second,
  * which is what keeps a cockpit reload from stranding a consent URL.
  */
-export function startMcpAuthorization(name: string): Promise<McpFlow> {
-  return postJSON<McpFlow>(serverPath(name));
+export function startMcpAuthorization(name: string, via?: 'paste'): Promise<McpFlow> {
+  return postJSON<McpFlow>(serverPath(name), via ? { via } : undefined);
+}
+
+export function pasteMcpAuthorization(flowId: string, address: string): Promise<McpFlow> {
+  return postJSON<McpFlow>(
+    `/api/governance/mcp/authorization/flow/${encodeURIComponent(flowId)}/paste`,
+    { address },
+  );
 }
 
 export function pollMcpAuthorizationFlow(flowId: string): Promise<McpFlow> {

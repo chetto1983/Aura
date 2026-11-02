@@ -147,7 +147,7 @@ Works with no container, and is Canva's first way in.
   - Route `POST /api/governance/mcp/authorization/flow/{id}/paste`, body `{"address": "..."}`, under `governance.write`
   - `POST /api/governance/mcp/{name}/authorization` takes `{"via": "paste"}`
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ```go
 func TestPasteAddress(t *testing.T) // table on a flow waiting with state "s1":
@@ -164,10 +164,10 @@ func TestSignInRedirect(t *testing.T) // "" -> LoopbackCallback; "http://localho
 func TestMCPPasteRoute(t *testing.T) // 200 flow; 409 on ErrPasteMismatch; 404 on ErrNoSuchFlow; 401 with no identity; the body never echoes the address.
 ```
 
-- [ ] **Step 2: Run it.** `go test ./internal/mcp/ ./internal/agui/`. Expected: FAIL, undefined.
-- [ ] **Step 3: Implement.** Compare `state` with `subtle.ConstantTimeCompare`. Cap the address at 16 KiB. Then call the existing `Complete` and `Fail`. `Paste` never logs the address.
-- [ ] **Step 4: Cockpit.** The panel gets a secondary action, "Use your own browser": it starts with `via: "paste"`, opens `authorizationUrl`, and shows one field with text "When the page fails to load, copy its address here". A refused paste shows the reason. Vitest: `it('completes a flow from a pasted address')`, `it('shows why a pasted address was refused')`.
-- [ ] **Step 5: Run and gate.** `go test -race ./internal/mcp/ ./internal/agui/ ./cmd/aura/`, Vitest on the panel, `tsc --noEmit`, oxlint, knip.
+- [x] **Step 2: Run it.** `go test ./internal/mcp/ ./internal/agui/`. Expected: FAIL, undefined.
+- [x] **Step 3: Implement.** Compare `state` with `subtle.ConstantTimeCompare`. Cap the address at 16 KiB. Then call the existing `Complete` and `Fail`. `Paste` never logs the address.
+- [x] **Step 4: Cockpit.** The panel gets a secondary action, "Use your own browser": it starts with `via: "paste"`, opens `authorizationUrl`, and shows one field with text "When the page fails to load, copy its address here". A refused paste shows the reason. Vitest: `it('completes a flow from a pasted address')`, `it('shows why a pasted address was refused')`.
+- [x] **Step 5: Run and gate.** `go test -race ./internal/mcp/ ./internal/agui/ ./cmd/aura/`, Vitest on the panel, `tsc --noEmit`, oxlint, knip.
 - [ ] **Step 6: Commit,** then the bundle apart. `feat(mcp): finish an authorization from a pasted address`, `build(web): embed the paste-back`.
 
 ### Task 4: The sign-in state machine, in its own package
