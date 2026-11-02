@@ -373,12 +373,16 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 	if resource == ResourceCalendar {
 		return w.draftEvents(ctx, t, changes)
 	}
+	calendarTells, err := w.calendarTells(ctx, t)
+	if err != nil {
+		return nil, nil, err
+	}
 	drafts := make([]VerdictDraft, 0, len(changes))
 	for _, change := range changes {
 		if change.Type != ChangeAdded {
 			continue
 		}
-		decision := DecideMail(t.book, change.From, change.Signals)
+		decision := DecideMail(t.book, change.From, change.Signals, calendarTells)
 		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Decision: decision})
 		lines[change.ID] = Line{
 			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From, FromName: change.FromName,
@@ -386,6 +390,19 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 		}
 	}
 	return drafts, lines, nil
+}
+
+// calendarTells reports whether this account's calendar is being read, so that an event landing
+// on it will be told. A resource with no cursor yet, or one that is failing, tells nothing.
+func (w *Watcher) calendarTells(ctx context.Context, t *tick) (bool, error) {
+	cursor, err := w.Store.Cursor(ctx, t.IdentityID, t.AccountID, ResourceCalendar)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return cursor.Status == CursorOK, nil
 }
 
 func (w *Watcher) draftEvents(ctx context.Context, t *tick, changes []Change) ([]VerdictDraft, map[string]Line, error) {

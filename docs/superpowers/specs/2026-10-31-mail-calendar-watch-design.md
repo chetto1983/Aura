@@ -116,7 +116,7 @@ logs. It is not an MCP action: the model never sees it, and the `calendar` tool 
     "snippet": "first text, plain, capped",
     "signals": {
       "providerImportant": true, "providerCategory": "promotions",
-      "bulk": false, "authFailed": false, "threadId": "…", "writtenTo": true
+      "bulk": false, "authFailed": false, "threadId": "…", "writtenTo": true, "invitation": false
     },
     "event": {
       "start": "…", "end": "…", "status": "confirmed|cancelled",
@@ -141,9 +141,14 @@ logs. It is not an MCP action: the model never sees it, and the `calendar` tool 
 - `writtenTo` is rung 3's fact (§5.3): the account has sent mail to this sender, or the thread holds a mail it
   sent. The PIM asks the provider once per sender within a request, skips it for `bulk` mail, and answers
   `null` where it cannot tell, such as an IMAP account with no Sent folder. Aura keeps no address table.
+- `invitation` says the mail is a scheduling message: an `eventMessage` on Graph, and on Gmail and IMAP a
+  `text/calendar` part whose `method` is anything but `PUBLISH` (RFC 6047 section 2.4). A calendar file attached to
+  a mail is not one, and neither is a forwarded invitation. Added 2026-11-02, read from the provider docs: the
+  live run proves the Gmail and Graph shapes (§5.3).
 - `POST /admin/items` with `{accountId, resource, items: [{id, calendarId}]}` (at most 50) reads sender, subject
   and time by id, for the digest and the decisions view. An item that no longer exists comes back in `gone`, so a
-  deleted mail shows as gone instead of failing the digest.
+  deleted mail shows as gone instead of failing the digest. A cancelled event that still has its title is an item
+  with `status: cancelled`, because the title is how a person knows which meeting went.
 - A failure names itself, because Aura treats the two kinds differently (§5.6). `503 {"error":"provider_transient"}`
   covers a provider timeout, 429 or 5xx. `502 {"error":"provider_auth"}` is a revoked or expired grant,
   `403 {"error":"permission_denied"}` a lost permission, and `422 {"error":"unsupported_resource"}` a resource the
@@ -256,6 +261,13 @@ because the person may turn up to it. A new description or someone else's reply 
 and says nothing. The person's own events are `later`, and
 so is the delete of one: the row keeps who organized the event, because a delete may arrive with only an id. A delete of
 an event already told as cancelled says nothing.
+
+**An invitation is told once.** On the live run of 2026-11-02 one invitation alerted twice, as a mail from a person
+and as its event. While the account's calendar is being read, with its cursor `ok`, an `invitation` mail cannot reach
+`now` at rung 3, so the event alone alerts. The mail keeps `today` and goes no lower, because a calendar can be set
+to take an invitation only once it is answered, and then the mail is the only trace of it. A failing or unsupported
+calendar leaves the mail as it was. A rule still raises it, since that is the person's word. For an event more than
+24 hours away both lines reach the digest, and nothing alerts.
 
 ### 5.4 Learning, per identity
 

@@ -90,7 +90,8 @@ func TestClientReadsTheContractsChanges(t *testing.T) {
 		t.Fatalf("page = %+v", page)
 	}
 	mail := page.Changes[0]
-	if mail.Type != ChangeAdded || mail.From == "" || mail.Subject == "" || mail.Signals.WrittenTo == nil || !mail.Signals.ProviderImportant {
+	if mail.Type != ChangeAdded || mail.From == "" || mail.Subject == "" || mail.Signals.WrittenTo == nil ||
+		!mail.Signals.ProviderImportant || !mail.Signals.Invitation {
 		t.Fatalf("mail change = %+v", mail)
 	}
 	event := page.Changes[1]

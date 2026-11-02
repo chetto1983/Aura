@@ -4519,6 +4519,25 @@ What this does not establish:
 - that people correct enough for rules to form (spec §5.4);
 - provider rate limits at 5 minutes across many accounts.
 
+### Mail and calendar watch: the first live run (2026-11-02)
+
+`docs/superpowers/verification/2026-11-02-mail-watch-live.md`, one person on the lab VM with a
+Gmail and an Outlook.com account.
+
+| Measured | Decided |
+|---|---|
+| One invitation alerted twice, as a mail and as its event | The PIM states `invitation`. While the account's calendar is read healthy such a mail stays `today` and the event alone alerts |
+| A cancelled meeting's row had no title, because the read threw the event away | The read returns a cancelled event that still has its title |
+| A personal Microsoft account signs in only under `consumers`; under `common` it ends on `http://localhost` with `invalid_request` | Outlook.com asks for no tenant and Aura always sends `consumers`. Microsoft 365's tenant is checked on save |
+| An unfinished sign-in showed as connected | The PIM states `linked`, read from the stored token, and the cockpit offers to finish or remove |
+
+What this does not establish:
+- that `invitation` is read on real Gmail and Graph mail. Gmail's part headers and Graph's
+  `@odata.type` under `$select` are assumed from the docs until the published image runs;
+- that a calendar takes every invitation. A Gmail account set to add one only when answered gets
+  no alert for it, only a digest line, and that case was not run;
+- G3: zero missed and zero duplicates over five working days stays owed.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not

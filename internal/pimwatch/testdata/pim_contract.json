@@ -1,5 +1,5 @@
 {
-  "_": "What the PIM fork writes on main at 204a7fd (src/CalendarMcp.Core/Models/Changes.cs and the sources in Changes/), spec 2026-10-31-mail-calendar-watch-design.md §5.1 included. client_test.go answers from this file; contract_live_test.go (tag pim_contract_live) holds a real sidecar to the same shapes.",
+  "_": "What the PIM fork writes on main at e2146f2 (src/CalendarMcp.Core/Models/Changes.cs and the sources in Changes/), spec 2026-10-31-mail-calendar-watch-design.md §5.1 included. client_test.go answers from this file; contract_live_test.go (tag pim_contract_live) holds a real sidecar to the same shapes.",
   "emptyCursorRequest": {"accountId": "work", "resource": "mail", "cursor": "", "limit": 50},
   "emptyCursorResponse": {"changes": [], "nextCursor": "cursor-from-now", "hasMore": false, "resetRequired": false},
   "changesRequest": {"accountId": "work", "resource": "mail", "cursor": "cur-1", "limit": 25},
@@ -19,7 +19,8 @@
           "bulk": false,
           "authFailed": false,
           "threadId": "t-1",
-          "writtenTo": true
+          "writtenTo": true,
+          "invitation": true
         }
       },
       {
@@ -53,7 +54,7 @@
         "occurredAt": "2026-10-31T14:48:00Z",
         "fromName": "text that holds no address",
         "subject": "Nessun indirizzo",
-        "signals": {"providerImportant": false, "providerCategory": null, "bulk": false, "authFailed": false, "threadId": null, "writtenTo": null}
+        "signals": {"providerImportant": false, "providerCategory": null, "bulk": false, "authFailed": false, "threadId": null, "writtenTo": null, "invitation": false}
       },
       {
         "type": "deleted",

@@ -59,9 +59,36 @@ func TestDecideMailLadder(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := DecideMail(book, tc.from, tc.s)
+			got := DecideMail(book, tc.from, tc.s, false)
 			if got.Tier != tc.want || got.By != tc.by || got.LabelID != tc.label || got.AuthFailed != tc.failed {
 				t.Fatalf("DecideMail = %+v, want tier %s by %s label %q failed %v", got, tc.want, tc.by, tc.label, tc.failed)
+			}
+		})
+	}
+}
+
+func TestAnInvitationLeavesTheAlertToTheCalendar(t *testing.T) {
+	t.Parallel()
+	book := NewBook([]Rule{{Key: "boss@acme.it", Kind: KeySender, Tier: TierNow}}, nil)
+	invitation := Signals{WrittenTo: yes(), ProviderImportant: true, Invitation: true}
+	cases := []struct {
+		name          string
+		from          string
+		s             Signals
+		calendarTells bool
+		want          Tier
+		by            DecidedBy
+	}{
+		{"the calendar tells it, and the mail stays in the digest", "x@y.it", invitation, true, TierToday, ByPeople},
+		{"no calendar tells it, so the mail does", "x@y.it", invitation, false, TierNow, ByPeople},
+		{"a plain mail is not held back", "x@y.it", Signals{WrittenTo: yes(), ProviderImportant: true}, true, TierNow, ByPeople},
+		{"a rule is the person's word", "boss@acme.it", invitation, true, TierNow, ByRule},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := DecideMail(book, tc.from, tc.s, tc.calendarTells); got.Tier != tc.want || got.By != tc.by {
+				t.Fatalf("DecideMail = %+v, want tier %s by %s", got, tc.want, tc.by)
 			}
 		})
 	}
@@ -93,7 +120,7 @@ func TestLadderProperties(t *testing.T) {
 	book := NewBook(nil, nil)
 	decide := func(b uint8) (Signals, Decision) {
 		s := signalsFrom(b)
-		return s, DecideMail(book, "someone@somewhere.it", s)
+		return s, DecideMail(book, "someone@somewhere.it", s, false)
 	}
 	checks := map[string]func(uint8) bool{
 		"a stranger never reaches now": func(b uint8) bool {
@@ -133,7 +160,7 @@ func TestARuleWinsWhateverTheSignalsSay(t *testing.T) {
 	t.Parallel()
 	book := NewBook([]Rule{{Key: "boss@acme.it", Kind: KeySender, Tier: TierLater}}, nil)
 	check := func(b uint8) bool {
-		d := DecideMail(book, "boss@acme.it", signalsFrom(b))
+		d := DecideMail(book, "boss@acme.it", signalsFrom(b), false)
 		return d.Tier == TierLater && d.By == ByRule
 	}
 	if err := quick.Check(check, nil); err != nil {
