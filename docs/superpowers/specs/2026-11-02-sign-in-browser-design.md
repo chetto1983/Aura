@@ -1,7 +1,7 @@
 # Sign-in in a real browser (Slice 1) — design
 
 Date: 2026-11-02
-Status: draft, for the operator's approval. No product code before that. A read-only builder check ran on this document,
+Status: approved by the operator on 2026-11-02, with §8's two exceptions. A read-only builder check ran on this document,
 and its five questions are settled in §4.3 to §4.7 and §10. Each claim is marked **measured**, **read** or **assumed**,
 and the assumed ones are the gates of §6.
 
@@ -73,8 +73,11 @@ to wipe.
 
 ### 4.2 The callback
 
-A listener in a small sidecar on the container's netns, from the sandbox image, takes `http://127.0.0.1:43121/callback`.
-The port can be fixed because the netns belongs to this flow, which also keeps the DCR client's redirect stable. It
+A listener in a small sidecar on the container's netns, from the sandbox image, takes
+`http://127.0.0.1:43121/aura/mcp/oauth/callback`. That path is `aura mcp login`'s, one of the two the deployed
+`mcp/callback/relay.js` forwards (read 2026-11-02), so a server with no registration still works, through the relay into
+this listener. The port can be fixed because the netns belongs to this flow, which also keeps the DCR client's redirect
+stable. The sidecar owns the netns and starts first, so the floor is up before Chromium is given the consent URL. It
 answers the page with a plain "you can close this", hands query values to Aura over its exec stream, and exits. This is
 `chatgpt-browser.mjs`'s listener, so the code is moved and shared rather than copied.
 
@@ -86,8 +89,8 @@ package of its own, with the session prefix as a parameter, and ChatGPT keeps it
 
 The cockpit serves `/sign-in/<session>/` as a reverse proxy to port 3000 of that container, behind the cockpit session,
 with the same ownership check as a `chatgpt-` session and an `Origin` check on the upgrade. The connection runs over an
-exec stream, a `net.Conn` on `socat - TCP:127.0.0.1:3000` given to `httputil.ReverseProxy` as its dialer, because the
-floor leaves no network path in. Nothing is published, and the proxy is the only authentication, so it must refuse before
+exec stream in the sidecar, a `net.Conn` on a small Node pipe to `127.0.0.1:3000` given to `httputil.ReverseProxy` as its
+dialer, because the floor leaves no network path in. Nothing is published, and the proxy is the only authentication, so it must refuse before
 it dials. Whether an exec stream carries the video well enough is gate S2, and the fallback is the same proxy over a
 dedicated bridge with one rule for port 3000.
 
@@ -96,7 +99,9 @@ controls what port 3000 serves, while the cockpit's origin holds a session that 
 response carries `Content-Security-Policy: sandbox allow-scripts`, which gives the page an opaque origin with no cookies
 and no reach into the cockpit's API. If Selkies cannot run that way, the page moves to a dedicated port with its own
 origin, as the MCP views have on `:8444`. That port does not pass through the Cloudflare tunnel, so such an install would
-fall back to §4.7 when reached through it. S2 decides.
+fall back to §4.7 when reached through it. S2 decides. It must also show whether the session cookie reaches the page's
+subresources and websocket at all, because an opaque origin is cross-site to it (found writing the plan, 2026-11-02). If
+it does not, the page cannot be authenticated by the cockpit session, and this choice comes back to the operator.
 
 A cockpit on plain `http://` at a LAN address has no secure context, so the card goes straight to §4.7 instead of showing a
 dead page. `http://127.0.0.1` is a secure context and works.
@@ -109,7 +114,7 @@ fresh login like the rest. `Flows.Start`, DCR, PKCE, `CompleteAuthorization` and
 the only change is where the redirect lands. The page closes itself when the flow ends, and the card re-reads its state.
 
 **Pre-registered clients** follow the same scheme. A provider wants the redirect exactly as registered
-(`cmd/aura/mcp_login.go`), so the admin registers `http://127.0.0.1:43121/callback`. `MCP_OAUTH_REDIRECT_URL` stays for a
+(`cmd/aura/mcp_login.go`), so the admin registers `http://127.0.0.1:43121/aura/mcp/oauth/callback`. `MCP_OAUTH_REDIRECT_URL` stays for a
 client registered on another loopback address, and the listener binds the port and path it names. A provider that
 refuses every loopback redirect takes an https address the admin chooses and §4.7, since the person only has to copy
 the address they land on. Which providers those are is gate S7.
@@ -127,16 +132,17 @@ card offers to authorize again.
 ### 4.5 Google
 
 The admin panel asks for a client of type Desktop app. The PIM's `StartGoogleOAuth` takes the loopback `redirectUri` per
-request and uses it for the consent and for the exchange, and Aura forwards the code to the PIM's existing callback.
+request and uses it for the consent and for the exchange, and Aura hands the code to a new admin route, because the
+existing callback answers a browser with an HTML page.
 
 Accounts already connected keep refreshing with the client they were created with, as Microsoft's do, so nothing breaks
 when the admin swaps the app. A sign-in with a Web client left in place fails at Google with `redirect_uri_mismatch`, and
 the panel's text says which type to create.
 
 An account that must sign in again, after a logout or a dead refresh token, would stay on its old Web client, because
-`StartGoogleOAuth` reads the client from the account. So finishing a sign-in first rewrites the account's client with the
-admin's current app, through the same rewrite `injectPIMProviderApp` does on create. The account keeps its id, and so
-its watch.
+`StartGoogleOAuth` reads the client from the account. So the sign-in carries the admin's current app, and when the
+exchange succeeds Aura rewrites the account's client with it, through the same rewrite `injectPIMProviderApp` does on
+create. A sign-in abandoned halfway leaves a healthy account as it was. The account keeps its id, and so its watch.
 
 Then `GoogleOAuthRelay.cs`, `GoogleOAuthRelayUrl`, `PIMGoogleRelayRedirectURI`, `returnBase`, `pimReturnOrigin` and the
 public `/admin/auth/google/callback` route go from the code, in this slice. Leaving them would be dark code.
@@ -154,7 +160,7 @@ The operator's fallback, 2026-11-02, for when the image cannot run: a low disk, 
 at a LAN address, a site that stops a person in the container.
 
 The card opens the consent page in the person's own browser, with the same loopback redirect. That browser lands on
-`http://127.0.0.1:43121/callback?...`, which does not load. They copy the address into a field on the card, and Aura
+`http://127.0.0.1:43121/aura/mcp/oauth/callback?...`, which does not load. They copy the address into a field on the card, and Aura
 reads `code` and `state` from it, checks `state` against the flow, and goes on exactly as if the listener had taken it. It
 covers MCP and Google, needs no relay and no image, and is what keeps Google reachable once the relay is gone. A person's
 own browser is the most ordinary browser there is.
@@ -190,7 +196,8 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 1. S1 to S3, as a throwaway spike with no product code. If S2 fails, §4.3 takes its fallback before anything else.
 2. The dead-grant state, on its own, because it is a bug today with or without this slice.
 3. The paste-back of §4.7, which works with no container and is Canva's first way in.
-4. The login state machine moved, with ChatGPT's tests unchanged.
+4. The login state machine moved, with ChatGPT's tests moved beside it because they read its internals, and their
+   assertions unchanged.
 5. The container, the callback sidecar and the proxy.
 6. MCP on it, S7, and the cockpit's own callback removed.
 7. S4, then Google, in the fork and in Aura, with the relay code removed once the VM has run a full sign-in.
