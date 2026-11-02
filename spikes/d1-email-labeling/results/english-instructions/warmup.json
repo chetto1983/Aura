@@ -1,0 +1,24 @@
+{
+  "model": "d1-omni-600M-Q8_0",
+  "answers": {
+    "label": {
+      "type": "choice",
+      "choice": "Personale",
+      "probabilities": {
+        "Cliente": 0.0014824960584659704,
+        "Lavoro": 0.0015676196458997585,
+        "Personale": 0.9935138028091736,
+        "Opportunità": 0.00020818182818292777,
+        "Amministrazione": 0.00034441468459308006,
+        "Spedizioni": 0.002530916333057462,
+        "Pubblicità": 0.0003318044269073986,
+        "Notifiche": 2.0764213720222312e-05
+      },
+      "confidence": 0.9925872032104841
+    }
+  },
+  "usage": {
+    "input_tokens": 300,
+    "output_tokens": 0
+  }
+}

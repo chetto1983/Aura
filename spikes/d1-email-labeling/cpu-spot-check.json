@@ -1,0 +1,266 @@
+[
+  {
+    "id": "IT001",
+    "gold": "Cliente",
+    "cpu": "Cliente",
+    "cuda": "Cliente",
+    "same_choice": true,
+    "max_probability_difference": 0.018013647862413218,
+    "cpu_latency_ms": 1455.545863000225,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Cliente",
+          "probabilities": {
+            "Cliente": 0.4518814109856356,
+            "Lavoro": 0.1250983630024538,
+            "Personale": 0.03278352636358214,
+            "Opportunità": 0.043028090856353784,
+            "Amministrazione": 0.27850392070484126,
+            "Spedizioni": 0.012773336424049124,
+            "Pubblicità": 0.039908994931700026,
+            "Notifiche": 0.016022356731384156
+          },
+          "confidence": 0.37357875541215496
+        }
+      },
+      "usage": {
+        "input_tokens": 358,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT026",
+    "gold": "Lavoro",
+    "cpu": "Lavoro",
+    "cuda": "Lavoro",
+    "same_choice": true,
+    "max_probability_difference": 0.008284599785322255,
+    "cpu_latency_ms": 1439.4887339999514,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Lavoro",
+          "probabilities": {
+            "Cliente": 0.07281080510763348,
+            "Lavoro": 0.435158783880898,
+            "Personale": 0.09220811588950471,
+            "Opportunità": 0.17934811630327394,
+            "Amministrazione": 0.11860792376748987,
+            "Spedizioni": 0.013570801446873051,
+            "Pubblicità": 0.0659661168917765,
+            "Notifiche": 0.022329336712550475
+          },
+          "confidence": 0.35446718157816914
+        }
+      },
+      "usage": {
+        "input_tokens": 356,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT051",
+    "gold": "Personale",
+    "cpu": "Personale",
+    "cuda": "Personale",
+    "same_choice": true,
+    "max_probability_difference": 0.007824011512672646,
+    "cpu_latency_ms": 1410.8125760003531,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Personale",
+          "probabilities": {
+            "Cliente": 0.210938022492624,
+            "Lavoro": 0.11396349396014911,
+            "Personale": 0.2529114327000459,
+            "Opportunità": 0.0533375477426542,
+            "Amministrazione": 0.15602813533881776,
+            "Spedizioni": 0.06050110276174524,
+            "Pubblicità": 0.11665070585806088,
+            "Notifiche": 0.03566955914590288
+          },
+          "confidence": 0.14618449451433818
+        }
+      },
+      "usage": {
+        "input_tokens": 357,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT076",
+    "gold": "Opportunità",
+    "cpu": "Lavoro",
+    "cuda": "Lavoro",
+    "same_choice": true,
+    "max_probability_difference": 0.0033680395348043984,
+    "cpu_latency_ms": 1434.8378869999578,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Lavoro",
+          "probabilities": {
+            "Cliente": 0.07419770377855575,
+            "Lavoro": 0.5345988473773152,
+            "Personale": 0.029294615371595587,
+            "Opportunità": 0.098631429720711,
+            "Amministrazione": 0.01774638643561989,
+            "Spedizioni": 0.01663168754176405,
+            "Pubblicità": 0.22537137651244668,
+            "Notifiche": 0.0035279532619919263
+          },
+          "confidence": 0.4681129684312174
+        }
+      },
+      "usage": {
+        "input_tokens": 363,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT101",
+    "gold": "Amministrazione",
+    "cpu": "Amministrazione",
+    "cuda": "Amministrazione",
+    "same_choice": true,
+    "max_probability_difference": 0.0021705313253582714,
+    "cpu_latency_ms": 1491.2927929999569,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Amministrazione",
+          "probabilities": {
+            "Cliente": 0.009386469330060635,
+            "Lavoro": 0.007922404729125743,
+            "Personale": 0.01031386743907984,
+            "Opportunità": 0.0026470949589270172,
+            "Amministrazione": 0.952221964252619,
+            "Spedizioni": 0.007655628381103196,
+            "Pubblicità": 0.006649350258849134,
+            "Notifiche": 0.0032032206502353765
+          },
+          "confidence": 0.9453965305744216
+        }
+      },
+      "usage": {
+        "input_tokens": 361,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT126",
+    "gold": "Spedizioni",
+    "cpu": "Cliente",
+    "cuda": "Cliente",
+    "same_choice": true,
+    "max_probability_difference": 0.007300931512522757,
+    "cpu_latency_ms": 1733.3391649999612,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Cliente",
+          "probabilities": {
+            "Cliente": 0.5335795778550873,
+            "Lavoro": 0.07308826395772856,
+            "Personale": 0.09959945587418628,
+            "Opportunità": 0.06575187071140604,
+            "Amministrazione": 0.07436484987432104,
+            "Spedizioni": 0.056971471090236966,
+            "Pubblicità": 0.06817687462791981,
+            "Notifiche": 0.028467636009113922
+          },
+          "confidence": 0.46694808897724255
+        }
+      },
+      "usage": {
+        "input_tokens": 360,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT151",
+    "gold": "Pubblicità",
+    "cpu": "Pubblicità",
+    "cuda": "Pubblicità",
+    "same_choice": true,
+    "max_probability_difference": 0.004299442655324906,
+    "cpu_latency_ms": 2242.778018000081,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Pubblicità",
+          "probabilities": {
+            "Cliente": 0.15287968096053825,
+            "Lavoro": 0.10673608413629615,
+            "Personale": 0.05526727902179522,
+            "Opportunità": 0.04615632267487493,
+            "Amministrazione": 0.05739321296111727,
+            "Spedizioni": 0.03270506589136196,
+            "Pubblicità": 0.5303554228434512,
+            "Notifiche": 0.01850693151056506
+          },
+          "confidence": 0.4632633403925156
+        }
+      },
+      "usage": {
+        "input_tokens": 363,
+        "output_tokens": 0
+      }
+    }
+  },
+  {
+    "id": "IT176",
+    "gold": "Notifiche",
+    "cpu": "Notifiche",
+    "cuda": "Notifiche",
+    "same_choice": true,
+    "max_probability_difference": 0.003271978873248052,
+    "cpu_latency_ms": 2414.1611189998002,
+    "cpu_response": {
+      "model": "d1-omni-600M-Q8_0-cpu",
+      "answers": {
+        "label": {
+          "type": "choice",
+          "choice": "Notifiche",
+          "probabilities": {
+            "Cliente": 0.06426425650818121,
+            "Lavoro": 0.03189847277037986,
+            "Personale": 0.030372945399299623,
+            "Opportunità": 0.090630439738297,
+            "Amministrazione": 0.038067734048900584,
+            "Spedizioni": 0.01688512598134232,
+            "Pubblicità": 0.05285898827798593,
+            "Notifiche": 0.6750220372756135
+          },
+          "confidence": 0.6285966140292726
+        }
+      },
+      "usage": {
+        "input_tokens": 360,
+        "output_tokens": 0
+      }
+    }
+  }
+]

@@ -1,0 +1,90 @@
+{
+  "containers": [
+    {
+      "Name": "/aura-d1-email-benchmark",
+      "Image": "sha256:4ccae195bf542f7844301ae06891baa32a7551cb16de8428af6e929403d4292c",
+      "Created": "2026-11-02T10:08:13.56931733Z",
+      "args": [
+        "-m",
+        "/models/d1-omni-600M-Q8_0.gguf",
+        "--alias",
+        "d1-omni-600M-Q8_0",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "-ngl",
+        "99",
+        "-np",
+        "1",
+        "-c",
+        "4096",
+        "-b",
+        "4096",
+        "-ub",
+        "4096",
+        "-t",
+        "4"
+      ],
+      "ports": {
+        "8080/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "18086"
+          }
+        ]
+      },
+      "device_requests": [
+        {
+          "Driver": "",
+          "Count": -1,
+          "DeviceIDs": null,
+          "Capabilities": [
+            [
+              "gpu"
+            ]
+          ],
+          "Options": {}
+        }
+      ]
+    },
+    {
+      "Name": "/aura-d1-email-cpu-check",
+      "Image": "sha256:4ccae195bf542f7844301ae06891baa32a7551cb16de8428af6e929403d4292c",
+      "Created": "2026-11-02T10:21:18.357572607Z",
+      "args": [
+        "-m",
+        "/models/d1-omni-600M-Q8_0.gguf",
+        "--alias",
+        "d1-omni-600M-Q8_0-cpu",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "-ngl",
+        "0",
+        "-np",
+        "1",
+        "-c",
+        "4096",
+        "-b",
+        "4096",
+        "-ub",
+        "4096",
+        "-t",
+        "4"
+      ],
+      "ports": {
+        "8080/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "18087"
+          }
+        ]
+      },
+      "device_requests": null
+    }
+  ],
+  "gpu": "NVIDIA RTX A2000 Laptop GPU, 4096 MiB, 2694 MiB",
+  "model_sha256": "cd94463f4cac9c700ec6750df8df005bb6846de410e159d1f5e985e1171693d3"
+}

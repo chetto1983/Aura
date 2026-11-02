@@ -1,0 +1,199 @@
+{
+  "total": 200,
+  "correct": 99,
+  "accuracy": 0.495,
+  "accuracy_wilson_95": [
+    0.4264572195415849,
+    0.5637312405175983
+  ],
+  "macro_f1": 0.5035550134985898,
+  "errors": 0,
+  "majority_baseline_accuracy": 0.125,
+  "per_label": {
+    "Cliente": {
+      "support": 25,
+      "predicted": 34,
+      "correct": 10,
+      "precision": 0.29411764705882354,
+      "recall": 0.4,
+      "f1": 0.33898305084745767
+    },
+    "Lavoro": {
+      "support": 25,
+      "predicted": 35,
+      "correct": 12,
+      "precision": 0.34285714285714286,
+      "recall": 0.48,
+      "f1": 0.39999999999999997
+    },
+    "Personale": {
+      "support": 25,
+      "predicted": 10,
+      "correct": 9,
+      "precision": 0.9,
+      "recall": 0.36,
+      "f1": 0.5142857142857143
+    },
+    "Opportunità": {
+      "support": 25,
+      "predicted": 22,
+      "correct": 11,
+      "precision": 0.5,
+      "recall": 0.44,
+      "f1": 0.46808510638297873
+    },
+    "Amministrazione": {
+      "support": 25,
+      "predicted": 46,
+      "correct": 20,
+      "precision": 0.43478260869565216,
+      "recall": 0.8,
+      "f1": 0.5633802816901409
+    },
+    "Spedizioni": {
+      "support": 25,
+      "predicted": 13,
+      "correct": 11,
+      "precision": 0.8461538461538461,
+      "recall": 0.44,
+      "f1": 0.5789473684210525
+    },
+    "Pubblicità": {
+      "support": 25,
+      "predicted": 24,
+      "correct": 13,
+      "precision": 0.5416666666666666,
+      "recall": 0.52,
+      "f1": 0.5306122448979592
+    },
+    "Notifiche": {
+      "support": 25,
+      "predicted": 16,
+      "correct": 13,
+      "precision": 0.8125,
+      "recall": 0.52,
+      "f1": 0.6341463414634146
+    }
+  },
+  "confusion_matrix": {
+    "Cliente": {
+      "Cliente": 10,
+      "Lavoro": 3,
+      "Personale": 0,
+      "Opportunità": 4,
+      "Amministrazione": 5,
+      "Spedizioni": 1,
+      "Pubblicità": 2,
+      "Notifiche": 0
+    },
+    "Lavoro": {
+      "Cliente": 4,
+      "Lavoro": 12,
+      "Personale": 0,
+      "Opportunità": 1,
+      "Amministrazione": 3,
+      "Spedizioni": 1,
+      "Pubblicità": 4,
+      "Notifiche": 0
+    },
+    "Personale": {
+      "Cliente": 3,
+      "Lavoro": 6,
+      "Personale": 9,
+      "Opportunità": 1,
+      "Amministrazione": 3,
+      "Spedizioni": 0,
+      "Pubblicità": 3,
+      "Notifiche": 0
+    },
+    "Opportunità": {
+      "Cliente": 1,
+      "Lavoro": 12,
+      "Personale": 0,
+      "Opportunità": 11,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 1,
+      "Notifiche": 0
+    },
+    "Amministrazione": {
+      "Cliente": 4,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 20,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 1
+    },
+    "Spedizioni": {
+      "Cliente": 5,
+      "Lavoro": 0,
+      "Personale": 1,
+      "Opportunità": 1,
+      "Amministrazione": 5,
+      "Spedizioni": 11,
+      "Pubblicità": 0,
+      "Notifiche": 2
+    },
+    "Pubblicità": {
+      "Cliente": 4,
+      "Lavoro": 2,
+      "Personale": 0,
+      "Opportunità": 3,
+      "Amministrazione": 3,
+      "Spedizioni": 0,
+      "Pubblicità": 13,
+      "Notifiche": 0
+    },
+    "Notifiche": {
+      "Cliente": 3,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 1,
+      "Amministrazione": 7,
+      "Spedizioni": 0,
+      "Pubblicità": 1,
+      "Notifiche": 13
+    }
+  },
+  "by_difficulty": {
+    "standard": {
+      "correct": 83,
+      "total": 160
+    },
+    "challenge": {
+      "correct": 16,
+      "total": 40
+    }
+  },
+  "selective_top_probability": {
+    "0.8": {
+      "accepted": 16,
+      "correct": 12,
+      "coverage": 0.08,
+      "accuracy": 0.75
+    },
+    "0.9": {
+      "accepted": 7,
+      "correct": 7,
+      "coverage": 0.035,
+      "accuracy": 1.0
+    },
+    "0.95": {
+      "accepted": 3,
+      "correct": 3,
+      "coverage": 0.015,
+      "accuracy": 1.0
+    }
+  },
+  "latency_ms": {
+    "p50": 38.27148950017545,
+    "p95_nearest_rank": 43.243644000085624,
+    "min": 33.80918900029428,
+    "max": 53.38407399995049,
+    "mean": 38.56219423500306
+  },
+  "elapsed_s": 7.899969881000288,
+  "completed_utc": "2026-11-02T10:19:49.724392+00:00"
+}
