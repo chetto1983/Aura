@@ -1,9 +1,9 @@
 # Sign-in in a real browser (Slice 1) — design
 
 Date: 2026-11-02
-Status: draft, for the operator's approval, one question open in §10. No product code before that. A read-only builder
-check ran on this document, and its five questions are settled in §4.3 to §4.7 and §10. Each claim is marked **measured**,
-**read** or **assumed**, and the assumed ones are the gates of §6.
+Status: draft, for the operator's approval. No product code before that. A read-only builder check ran on this document,
+and its five questions are settled in §4.3 to §4.7 and §10. Each claim is marked **measured**, **read** or **assumed**,
+and the assumed ones are the gates of §6.
 
 ## 1. Why and what
 
@@ -103,14 +103,23 @@ dead page. `http://127.0.0.1` is a secure context and works.
 
 ### 4.4 MCP
 
-**Which servers:** the operator's to decide, see §10. Until then this spec assumes the narrow answer. A server uses the
-container when its configuration says `MCP_OAUTH_BROWSER=aura`, which Canva's recipe sets. Every other server keeps the
-person's own browser, including those with a pre-registered client, whose provider wants the redirect exactly as
-registered (`cmd/aura/mcp_login.go`), and Linear and Notion, which work today.
+**Every OAuth server, one scheme** (operator, 2026-11-02, "per tutti, stesso schema ovunque"). The cockpit starts every
+flow on the loopback redirect, in the container or through §4.7. Linear and Notion move too, and pay the download and a
+fresh login like the rest. `Flows.Start`, DCR, PKCE, `CompleteAuthorization` and the grant store stay as they are, since
+the only change is where the redirect lands. The page closes itself when the flow ends, and the card re-reads its state.
 
-For those that use it, `Flows.Start`, DCR, PKCE, `CompleteAuthorization` and the grant store stay as they are, since the
-only change is where the redirect lands. The page closes itself when the flow ends, and the card re-reads its state.
-`callbackFor(origin)` stays for everything else and for `aura mcp login`.
+**Pre-registered clients** follow the same scheme. A provider wants the redirect exactly as registered
+(`cmd/aura/mcp_login.go`), so the admin registers `http://127.0.0.1:43121/callback`. `MCP_OAUTH_REDIRECT_URL` stays for a
+client registered on another loopback address, and the listener binds the port and path it names. A provider that
+refuses every loopback redirect takes an https address the admin chooses and §4.7, since the person only has to copy
+the address they land on. Which providers those are is gate S7.
+
+**What goes.** The cockpit's own callback goes with its last caller: `callbackFor`, `cockpitOrigin`,
+`configuredCallbackURL`, and the public route `GET /api/governance/mcp/authorization/callback`. That also removes one
+route that carries no capability. `AURA_WEB_PUBLIC_URL` goes if nothing else reads it. `aura mcp login` stays: it is
+the same scheme with a person at their own terminal.
+
+**Grants already stored keep working:** a refresh carries no redirect. Only a new consent takes the new path.
 
 **A dead grant reads as dead.** `MCPAuthorization` gains `Expired`, set when a refresh answers `invalid_grant`, and the
 card offers to authorize again.
@@ -174,6 +183,7 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 | **S4** | A new Google Desktop client: consent in the container, loopback redirect, exchange through the PIM, and a refresh a day later |
 | **S5** | ElevenLabs with the client-metadata document naming a loopback redirect, if an account is available. If not, `mcp/callback` stays and the verification file says why |
 | **S6** | Pull time and peak memory on a small install. The 8 GB floor and the memory cap are guesses until then |
+| **S7** | Linear and Notion through the container on the VM, and a pre-registered GitHub client on the loopback redirect. Slack's rules are read before anything is promised for it |
 
 ## 7. Order of landing
 
@@ -182,7 +192,7 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 3. The paste-back of §4.7, which works with no container and is Canva's first way in.
 4. The login state machine moved, with ChatGPT's tests unchanged.
 5. The container, the callback sidecar and the proxy.
-6. MCP on it.
+6. MCP on it, S7, and the cockpit's own callback removed.
 7. S4, then Google, in the fork and in Aura, with the relay code removed once the VM has run a full sign-in.
 
 The Cloudflare pages are a later job (§4.6). Plan: `superpowers:writing-plans` after approval. Risk tier high: this adds an
@@ -192,24 +202,26 @@ authenticated path to a privileged GUI.
 
 - **No profile kept.** Connecting Canva and then Google means signing in to Google twice, once per connection. A kept
   profile would make a stored live session Aura's to guard.
-- **Pulled on first use,** so an install that never connects Canva or Google never pays the 4.7 GB.
+- **Pulled on first use,** so an install that never connects an OAuth server or Google never pays the 4.7 GB.
 - **Same image for everyone,** with no slimmer build, because this is the image that was measured.
 - **Fixed port 43121,** since one netns holds one flow.
-- **ChatGPT stays on its box.** It works today, and moving it would add risk with no gain.
+- **ChatGPT stays on its box until Slice 2.** It already has this shape, a browser in the person's own container and a
+  loopback redirect, only on the older image. It moves when the box's browser does.
+- **Microsoft stays on device code.** It needs no browser in Aura and was measured working, so "one scheme" covers what
+  has a redirect.
 - **Exec stream first,** because it keeps the floor untouched.
 
 ## 9. What this does not establish
 
 - That Cloudflare or Google will keep treating this browser as they did on 2026-11-02. Nothing here controls that, and
-  a site that stops admitting it stops this path. The fallback is `callbackFor` on a loopback cockpit.
+  a site that stops admitting it stops this path. The fallback is §4.7.
 - That it works from an appliance on a residential or a data-centre address. Only the Sacchi network and this PC ran.
 - Any site other than Canva and Google.
 - That a person on a phone can drive it. Selkies has a touch mode, and nobody has tried it.
 - Licence: the image is GPL-3.0 and runs as a separate, unmodified container, which is an engineer's reading, not advice.
 
-## 10. Open for the operator
+## 10. Decided by the operator
 
-**Which servers go through the container?** The narrow answer, §4.4: Canva and Google, and any server set to it. The
-others keep the person's own browser, which works and costs nothing. The wide answer is every OAuth server, which is one
-way of doing things and the closest to "come una app desktop", but it means a 1.17 GB download and a fresh login for
-Linear and Notion, and it needs an exception for pre-registered clients anyway. This spec recommends the narrow one.
+**Every OAuth server goes through the container,** 2026-11-02: "per tutti, stesso schema ovunque". The spec had
+recommended Canva and Google alone. The operator took the wider answer knowing its price, a 1.17 GB download and a fresh
+login for Linear and Notion, in exchange for one way of signing in. §4.4 carries it.
