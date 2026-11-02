@@ -1,0 +1,197 @@
+{
+  "total": 40,
+  "correct": 29,
+  "accuracy": 0.725,
+  "accuracy_wilson_95": [
+    0.5716474916687543,
+    0.8389214656685692
+  ],
+  "macro_f1": 0.7205447330447331,
+  "errors": 0,
+  "majority_baseline_accuracy": 0.125,
+  "per_label": {
+    "Cliente": {
+      "support": 5,
+      "predicted": 5,
+      "correct": 2,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4000000000000001
+    },
+    "Lavoro": {
+      "support": 5,
+      "predicted": 4,
+      "correct": 4,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.888888888888889
+    },
+    "Personale": {
+      "support": 5,
+      "predicted": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 1.0,
+      "f1": 0.8333333333333333
+    },
+    "Opportunità": {
+      "support": 5,
+      "predicted": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "f1": 0.7272727272727272
+    },
+    "Amministrazione": {
+      "support": 5,
+      "predicted": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 1.0,
+      "f1": 0.9090909090909091
+    },
+    "Spedizioni": {
+      "support": 5,
+      "predicted": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.6,
+      "f1": 0.5454545454545454
+    },
+    "Pubblicità": {
+      "support": 5,
+      "predicted": 2,
+      "correct": 2,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714285714285715
+    },
+    "Notifiche": {
+      "support": 5,
+      "predicted": 4,
+      "correct": 4,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.888888888888889
+    }
+  },
+  "confusion_matrix": {
+    "Cliente": {
+      "Cliente": 2,
+      "Lavoro": 0,
+      "Personale": 1,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 2,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Lavoro": {
+      "Cliente": 0,
+      "Lavoro": 4,
+      "Personale": 1,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Personale": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 5,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Opportunità": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 4,
+      "Amministrazione": 1,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Amministrazione": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 5,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Spedizioni": {
+      "Cliente": 2,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 3,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Pubblicità": {
+      "Cliente": 1,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 2,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 2,
+      "Notifiche": 0
+    },
+    "Notifiche": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 1,
+      "Pubblicità": 0,
+      "Notifiche": 4
+    }
+  },
+  "by_difficulty": {
+    "standard": {
+      "correct": 23,
+      "total": 32
+    },
+    "challenge": {
+      "correct": 6,
+      "total": 8
+    }
+  },
+  "selective_top_probability": {
+    "0.8": {
+      "accepted": 15,
+      "correct": 15,
+      "coverage": 0.375,
+      "accuracy": 1.0
+    },
+    "0.9": {
+      "accepted": 10,
+      "correct": 10,
+      "coverage": 0.25,
+      "accuracy": 1.0
+    },
+    "0.95": {
+      "accepted": 6,
+      "correct": 6,
+      "coverage": 0.15,
+      "accuracy": 1.0
+    }
+  },
+  "latency_ms": {
+    "p50": 52.15162800004691,
+    "p95_nearest_rank": 56.917106999208045,
+    "min": 45.494093999877805,
+    "max": 59.01969100068527,
+    "mean": 52.20271689997844
+  }
+}

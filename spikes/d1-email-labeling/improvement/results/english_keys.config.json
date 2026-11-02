@@ -1,0 +1,26 @@
+{
+  "question": {
+    "type": "choice",
+    "instructions": "Which category best describes the main purpose of this email?",
+    "criteria": {
+      "customer_service": "A customer's product question, quote request, reservation, complaint or technical support request.",
+      "internal_work": "Colleagues coordinating internal tasks, meetings, projects or work schedules.",
+      "personal": "Private messages about family, friends, school, health, hobbies or leisure.",
+      "professional_opportunity": "A personalized offer of a new job, paid assignment, partnership, investment or project collaboration.",
+      "billing_paperwork": "Invoices, receipts, taxes, payroll, payments, reimbursements or official paperwork.",
+      "parcel_delivery": "Delivery, tracking, pickup, return or customs clearance of an actual parcel.",
+      "marketing": "Mass advertising, promotional offers, public newsletters or selling a course or subscription.",
+      "system_notification": "Automated account-security, password, backup, monitoring or service-status messages."
+    }
+  },
+  "label_map": {
+    "customer_service": "Cliente",
+    "internal_work": "Lavoro",
+    "personal": "Personale",
+    "professional_opportunity": "Opportunità",
+    "billing_paperwork": "Amministrazione",
+    "parcel_delivery": "Spedizioni",
+    "marketing": "Pubblicità",
+    "system_notification": "Notifiche"
+  }
+}

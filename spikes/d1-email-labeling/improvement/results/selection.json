@@ -1,0 +1,68 @@
+{
+  "chosen_on_development_only": "short_english",
+  "config": {
+    "question": {
+      "type": "choice",
+      "instructions": "Which category best describes the main purpose of this email?",
+      "criteria": {
+        "Cliente": "A customer's product question, quote request, reservation, complaint or technical support request.",
+        "Lavoro": "Colleagues coordinating internal tasks, meetings, projects or work schedules.",
+        "Personale": "Private messages about family, friends, school, health, hobbies or leisure.",
+        "Opportunità": "A personalized offer of a new job, paid assignment, partnership, investment or project collaboration.",
+        "Amministrazione": "Invoices, receipts, taxes, payroll, payments, reimbursements or official paperwork.",
+        "Spedizioni": "Delivery, tracking, pickup, return or customs clearance of an actual parcel.",
+        "Pubblicità": "Mass advertising, promotional offers, public newsletters or selling a course or subscription.",
+        "Notifiche": "Automated account-security, password, backup, monitoring or service-status messages."
+      }
+    },
+    "label_map": {
+      "Cliente": "Cliente",
+      "Lavoro": "Lavoro",
+      "Personale": "Personale",
+      "Opportunità": "Opportunità",
+      "Amministrazione": "Amministrazione",
+      "Spedizioni": "Spedizioni",
+      "Pubblicità": "Pubblicità",
+      "Notifiche": "Notifiche"
+    }
+  },
+  "development_scores": {
+    "baseline_english": {
+      "correct": 38,
+      "total": 64,
+      "accuracy": 0.59375,
+      "macro_f1": 0.5938549582512431
+    },
+    "short_english": {
+      "correct": 43,
+      "total": 64,
+      "accuracy": 0.671875,
+      "macro_f1": 0.6624591503267974
+    },
+    "english_keys": {
+      "correct": 36,
+      "total": 64,
+      "accuracy": 0.5625,
+      "macro_f1": 0.5917220936957779
+    },
+    "short_italian": {
+      "correct": 20,
+      "total": 64,
+      "accuracy": 0.3125,
+      "macro_f1": 0.33058249082958385
+    },
+    "examples_italian_keys": {
+      "correct": 21,
+      "total": 64,
+      "accuracy": 0.328125,
+      "macro_f1": 0.278640873015873
+    },
+    "examples_english_keys": {
+      "correct": 18,
+      "total": 64,
+      "accuracy": 0.28125,
+      "macro_f1": 0.270159170894465
+    }
+  },
+  "frozen_utc": "2026-11-02T10:50:15.928332+00:00"
+}

@@ -1,0 +1,51 @@
+{
+  "name": "/aura-d1-3b-email-benchmark",
+  "image": "sha256:4ccae195bf542f7844301ae06891baa32a7551cb16de8428af6e929403d4292c",
+  "args": [
+    "-m",
+    "/models/d1-3B-Q4_K_M.gguf",
+    "--alias",
+    "d1-3B-Q4_K_M",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "-np",
+    "1",
+    "-c",
+    "2048",
+    "-b",
+    "512",
+    "-ub",
+    "512",
+    "-t",
+    "8",
+    "--fit",
+    "on",
+    "--fit-target",
+    "256"
+  ],
+  "ports": {
+    "8080/tcp": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "18088"
+      }
+    ]
+  },
+  "devices": [
+    {
+      "Driver": "",
+      "Count": -1,
+      "DeviceIDs": null,
+      "Capabilities": [
+        [
+          "gpu"
+        ]
+      ],
+      "Options": {}
+    }
+  ],
+  "model_sha256": "16aff27ea2eefdc32b9897f43854a5d3170c1dc8dccb9c756905af30a4e22402",
+  "gpu": "NVIDIA RTX A2000 Laptop GPU, 4096 MiB, 3531 MiB"
+}

@@ -1,0 +1,26 @@
+{
+  "question": {
+    "type": "choice",
+    "instructions": "Quale categoria descrive meglio lo scopo principale di questa email?",
+    "criteria": {
+      "Cliente": "Un cliente chiede informazioni, un preventivo, una prenotazione o assistenza per un prodotto.",
+      "Lavoro": "Colleghi che organizzano attività interne, progetti, riunioni o turni.",
+      "Personale": "Vita privata: famiglia, amici, scuola, salute, hobby e tempo libero.",
+      "Opportunità": "Una proposta personale di nuovo lavoro, incarico, collaborazione, investimento o partnership.",
+      "Amministrazione": "Fatture, ricevute, imposte, stipendi, pagamenti, rimborsi e pratiche documentali.",
+      "Spedizioni": "Consegna, tracciamento, ritiro, reso o sdoganamento di un pacco reale.",
+      "Pubblicità": "Pubblicità generica, sconti, newsletter pubbliche e vendita di corsi o abbonamenti.",
+      "Notifiche": "Avvisi automatici su account, password, sicurezza, backup e stato dei servizi."
+    }
+  },
+  "label_map": {
+    "Cliente": "Cliente",
+    "Lavoro": "Lavoro",
+    "Personale": "Personale",
+    "Opportunità": "Opportunità",
+    "Amministrazione": "Amministrazione",
+    "Spedizioni": "Spedizioni",
+    "Pubblicità": "Pubblicità",
+    "Notifiche": "Notifiche"
+  }
+}

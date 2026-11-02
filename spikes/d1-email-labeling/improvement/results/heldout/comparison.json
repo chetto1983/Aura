@@ -1,0 +1,70 @@
+{
+  "baseline": {
+    "correct": 54,
+    "total": 80,
+    "accuracy": 0.675,
+    "macro_f1": 0.6708055833055833,
+    "latency_ms": {
+      "p50": 45.99415749999025,
+      "p95_nearest_rank": 51.402435000454716,
+      "min": 41.42994700032432,
+      "max": 63.735493999956816,
+      "mean": 46.64045668746439
+    },
+    "selective_top_probability": {
+      "0.8": {
+        "accepted": 30,
+        "correct": 26,
+        "coverage": 0.375,
+        "accuracy": 0.8666666666666667
+      },
+      "0.9": {
+        "accepted": 21,
+        "correct": 19,
+        "coverage": 0.2625,
+        "accuracy": 0.9047619047619048
+      },
+      "0.95": {
+        "accepted": 8,
+        "correct": 8,
+        "coverage": 0.1,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "selected": {
+    "correct": 51,
+    "total": 80,
+    "accuracy": 0.6375,
+    "macro_f1": 0.6356654783125372,
+    "latency_ms": {
+      "p50": 37.05353550003565,
+      "p95_nearest_rank": 39.7735050000847,
+      "min": 34.86560700002883,
+      "max": 41.95924599935097,
+      "mean": 37.48532677501544
+    },
+    "selective_top_probability": {
+      "0.8": {
+        "accepted": 13,
+        "correct": 13,
+        "coverage": 0.1625,
+        "accuracy": 1.0
+      },
+      "0.9": {
+        "accepted": 9,
+        "correct": 9,
+        "coverage": 0.1125,
+        "accuracy": 1.0
+      },
+      "0.95": {
+        "accepted": 2,
+        "correct": 2,
+        "coverage": 0.025,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "accuracy_difference": -0.03750000000000009,
+  "completed_utc": "2026-11-02T10:50:34.878052+00:00"
+}

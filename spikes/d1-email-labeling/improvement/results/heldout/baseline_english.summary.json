@@ -1,0 +1,197 @@
+{
+  "total": 80,
+  "correct": 54,
+  "accuracy": 0.675,
+  "accuracy_wilson_95": [
+    0.5664032172496735,
+    0.7675598750577254
+  ],
+  "macro_f1": 0.6708055833055833,
+  "errors": 0,
+  "majority_baseline_accuracy": 0.125,
+  "per_label": {
+    "Cliente": {
+      "support": 10,
+      "predicted": 12,
+      "correct": 4,
+      "precision": 0.3333333333333333,
+      "recall": 0.4,
+      "f1": 0.3636363636363636
+    },
+    "Lavoro": {
+      "support": 10,
+      "predicted": 10,
+      "correct": 7,
+      "precision": 0.7,
+      "recall": 0.7,
+      "f1": 0.7
+    },
+    "Personale": {
+      "support": 10,
+      "predicted": 11,
+      "correct": 8,
+      "precision": 0.7272727272727273,
+      "recall": 0.8,
+      "f1": 0.761904761904762
+    },
+    "Opportunità": {
+      "support": 10,
+      "predicted": 8,
+      "correct": 7,
+      "precision": 0.875,
+      "recall": 0.7,
+      "f1": 0.7777777777777777
+    },
+    "Amministrazione": {
+      "support": 10,
+      "predicted": 17,
+      "correct": 9,
+      "precision": 0.5294117647058824,
+      "recall": 0.9,
+      "f1": 0.6666666666666667
+    },
+    "Spedizioni": {
+      "support": 10,
+      "predicted": 8,
+      "correct": 7,
+      "precision": 0.875,
+      "recall": 0.7,
+      "f1": 0.7777777777777777
+    },
+    "Pubblicità": {
+      "support": 10,
+      "predicted": 3,
+      "correct": 3,
+      "precision": 1.0,
+      "recall": 0.3,
+      "f1": 0.4615384615384615
+    },
+    "Notifiche": {
+      "support": 10,
+      "predicted": 11,
+      "correct": 9,
+      "precision": 0.8181818181818182,
+      "recall": 0.9,
+      "f1": 0.8571428571428572
+    }
+  },
+  "confusion_matrix": {
+    "Cliente": {
+      "Cliente": 4,
+      "Lavoro": 1,
+      "Personale": 1,
+      "Opportunità": 0,
+      "Amministrazione": 1,
+      "Spedizioni": 1,
+      "Pubblicità": 0,
+      "Notifiche": 2
+    },
+    "Lavoro": {
+      "Cliente": 0,
+      "Lavoro": 7,
+      "Personale": 1,
+      "Opportunità": 0,
+      "Amministrazione": 2,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Personale": {
+      "Cliente": 1,
+      "Lavoro": 1,
+      "Personale": 8,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Opportunità": {
+      "Cliente": 2,
+      "Lavoro": 1,
+      "Personale": 0,
+      "Opportunità": 7,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Amministrazione": {
+      "Cliente": 1,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 9,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Spedizioni": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 0,
+      "Amministrazione": 3,
+      "Spedizioni": 7,
+      "Pubblicità": 0,
+      "Notifiche": 0
+    },
+    "Pubblicità": {
+      "Cliente": 4,
+      "Lavoro": 0,
+      "Personale": 0,
+      "Opportunità": 1,
+      "Amministrazione": 2,
+      "Spedizioni": 0,
+      "Pubblicità": 3,
+      "Notifiche": 0
+    },
+    "Notifiche": {
+      "Cliente": 0,
+      "Lavoro": 0,
+      "Personale": 1,
+      "Opportunità": 0,
+      "Amministrazione": 0,
+      "Spedizioni": 0,
+      "Pubblicità": 0,
+      "Notifiche": 9
+    }
+  },
+  "by_difficulty": {
+    "standard": {
+      "correct": 43,
+      "total": 64
+    },
+    "challenge": {
+      "correct": 11,
+      "total": 16
+    }
+  },
+  "selective_top_probability": {
+    "0.8": {
+      "accepted": 30,
+      "correct": 26,
+      "coverage": 0.375,
+      "accuracy": 0.8666666666666667
+    },
+    "0.9": {
+      "accepted": 21,
+      "correct": 19,
+      "coverage": 0.2625,
+      "accuracy": 0.9047619047619048
+    },
+    "0.95": {
+      "accepted": 8,
+      "correct": 8,
+      "coverage": 0.1,
+      "accuracy": 1.0
+    }
+  },
+  "latency_ms": {
+    "p50": 45.99415749999025,
+    "p95_nearest_rank": 51.402435000454716,
+    "min": 41.42994700032432,
+    "max": 63.735493999956816,
+    "mean": 46.64045668746439
+  }
+}

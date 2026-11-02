@@ -1,0 +1,37 @@
+{
+  "questions": {
+    "Cliente": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? A customer's product question, quote request, reservation, complaint or technical support request."
+    },
+    "Lavoro": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Colleagues coordinating internal tasks, meetings, projects or work schedules."
+    },
+    "Personale": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Private messages about family, friends, school, health, hobbies or leisure."
+    },
+    "Opportunità": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? A personalized offer of a new job, paid assignment, partnership, investment or project collaboration."
+    },
+    "Amministrazione": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Invoices, receipts, taxes, payroll, payments, reimbursements or official paperwork."
+    },
+    "Spedizioni": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Delivery, tracking, pickup, return or customs clearance of an actual parcel."
+    },
+    "Pubblicità": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Mass advertising, promotional offers, public newsletters or selling a course or subscription."
+    },
+    "Notifiche": {
+      "type": "noul",
+      "instructions": "Is the main purpose of this email described by this category? Automated account-security, password, backup, monitoring or service-status messages."
+    }
+  },
+  "decision_rule": "argmax of the eight independent yes probabilities; not a normalized class distribution"
+}

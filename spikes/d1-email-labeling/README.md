@@ -1,5 +1,8 @@
 # d1-omni-600M: labeling 200 synthetic Italian emails
 
+The [follow-up accuracy experiment](improvement/README.md) tested prompt changes and
+d1-3B Q4_K_M, which reached 191/200 on the same corpus. This page preserves the original 600M result.
+
 Measured on 2026-11-02. The emails are all Italian in both runs. The first run also
 uses Italian instructions; the second translates only the instructions and option
 descriptions into English. It is a diagnostic run on the same data, performed after

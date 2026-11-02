@@ -1,0 +1,32 @@
+{
+  "selection_sha256": "fd36c119deee8eac48a1cfc587035ea09ff82c346a5560e6abf87d489035063f",
+  "heldout_sha256": "38b4c38b284f01f4cae56a584d1ed609c43b3385810d43ed0f2bfba0627e233a",
+  "started_utc": "2026-11-02T10:50:27.769090+00:00",
+  "chosen": "short_english",
+  "config": {
+    "question": {
+      "type": "choice",
+      "instructions": "Which category best describes the main purpose of this email?",
+      "criteria": {
+        "Cliente": "A customer's product question, quote request, reservation, complaint or technical support request.",
+        "Lavoro": "Colleagues coordinating internal tasks, meetings, projects or work schedules.",
+        "Personale": "Private messages about family, friends, school, health, hobbies or leisure.",
+        "Opportunità": "A personalized offer of a new job, paid assignment, partnership, investment or project collaboration.",
+        "Amministrazione": "Invoices, receipts, taxes, payroll, payments, reimbursements or official paperwork.",
+        "Spedizioni": "Delivery, tracking, pickup, return or customs clearance of an actual parcel.",
+        "Pubblicità": "Mass advertising, promotional offers, public newsletters or selling a course or subscription.",
+        "Notifiche": "Automated account-security, password, backup, monitoring or service-status messages."
+      }
+    },
+    "label_map": {
+      "Cliente": "Cliente",
+      "Lavoro": "Lavoro",
+      "Personale": "Personale",
+      "Opportunità": "Opportunità",
+      "Amministrazione": "Amministrazione",
+      "Spedizioni": "Spedizioni",
+      "Pubblicità": "Pubblicità",
+      "Notifiche": "Notifiche"
+    }
+  }
+}

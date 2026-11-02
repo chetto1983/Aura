@@ -1,0 +1,153 @@
+{
+  "created_utc": "2026-11-02T10:49:59.144441+00:00",
+  "source_sha256": "175bc6780be32ca98b7ea5484060d7be56d7b31975c1530b3949cdc35152fcf2",
+  "heldout_sha256": "38b4c38b284f01f4cae56a584d1ed609c43b3385810d43ed0f2bfba0627e233a",
+  "driver_sha256": "3fe7af03f56a6b11c3216a6933d1b8924f9ce5baa70f072982fe5fbd4b8c646f",
+  "variants_sha256": "c5170345622595f23ec38a0beed854d6e6daf743f53ee0961923542afe5f31cc",
+  "selection_rule": "maximum development accuracy, then macro F1, then shorter question text",
+  "development_ids": [
+    "IT020",
+    "IT004",
+    "IT014",
+    "IT007",
+    "IT003",
+    "IT008",
+    "IT021",
+    "IT022",
+    "IT039",
+    "IT043",
+    "IT041",
+    "IT033",
+    "IT045",
+    "IT036",
+    "IT047",
+    "IT049",
+    "IT070",
+    "IT066",
+    "IT062",
+    "IT058",
+    "IT060",
+    "IT068",
+    "IT075",
+    "IT071",
+    "IT079",
+    "IT080",
+    "IT095",
+    "IT077",
+    "IT092",
+    "IT084",
+    "IT098",
+    "IT096",
+    "IT115",
+    "IT105",
+    "IT109",
+    "IT119",
+    "IT106",
+    "IT111",
+    "IT125",
+    "IT124",
+    "IT130",
+    "IT136",
+    "IT132",
+    "IT135",
+    "IT143",
+    "IT140",
+    "IT146",
+    "IT149",
+    "IT152",
+    "IT167",
+    "IT157",
+    "IT163",
+    "IT168",
+    "IT160",
+    "IT174",
+    "IT172",
+    "IT189",
+    "IT179",
+    "IT184",
+    "IT191",
+    "IT183",
+    "IT181",
+    "IT198",
+    "IT196"
+  ],
+  "example_ids": [
+    "IT001",
+    "IT026",
+    "IT051",
+    "IT076",
+    "IT101",
+    "IT126",
+    "IT151",
+    "IT176"
+  ],
+  "candidate_names": [
+    "baseline_english",
+    "short_english",
+    "english_keys",
+    "short_italian",
+    "examples_italian_keys",
+    "examples_english_keys"
+  ],
+  "server_models": {
+    "models": [
+      {
+        "name": "d1-omni-600M-Q8_0",
+        "model": "d1-omni-600M-Q8_0",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "d1-omni-600M-Q8_0",
+        "aliases": [
+          "d1-omni-600M-Q8_0"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "decisions"
+          ]
+        },
+        "created": 1793616599,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 65536,
+          "n_ctx": 4096,
+          "n_ctx_train": 128000,
+          "n_embd": 1024,
+          "n_params": 380732161,
+          "size": 404818948,
+          "ftype": "Q8_0"
+        }
+      }
+    ]
+  }
+}

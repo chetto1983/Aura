@@ -1,0 +1,6 @@
+{
+  "confirmation_sha256": "1012449e0b31300ec2ddd45ccdcdc23eb46aa90ad58c5bfe17a721f0d0721350",
+  "frozen_model": "LiquidAI/d1-3B-GGUF Q4_K_M bb1e436ea78eb96a3f1acb6da865f70c2fbeb563",
+  "prompt": "original baseline English, not changed after earlier heldout results",
+  "design": "40 additional emails authored before d1-3B inference; model comparison, no further tuning on these outcomes"
+}

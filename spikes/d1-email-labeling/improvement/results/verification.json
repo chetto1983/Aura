@@ -1,0 +1,74 @@
+{
+  "verified_scored_predictions": 968,
+  "runs": [
+    {
+      "path": "baseline_english.predictions.jsonl",
+      "correct": 38,
+      "total": 64
+    },
+    {
+      "path": "binary.predictions.jsonl",
+      "correct": 33,
+      "total": 64
+    },
+    {
+      "path": "english_keys.predictions.jsonl",
+      "correct": 36,
+      "total": 64
+    },
+    {
+      "path": "examples_english_keys.predictions.jsonl",
+      "correct": 18,
+      "total": 64
+    },
+    {
+      "path": "examples_italian_keys.predictions.jsonl",
+      "correct": 21,
+      "total": 64
+    },
+    {
+      "path": "short_english.predictions.jsonl",
+      "correct": 43,
+      "total": 64
+    },
+    {
+      "path": "short_italian.predictions.jsonl",
+      "correct": 20,
+      "total": 64
+    },
+    {
+      "path": "confirmation/600m_baseline.predictions.jsonl",
+      "correct": 29,
+      "total": 40
+    },
+    {
+      "path": "d1-3b/confirmation40.predictions.jsonl",
+      "correct": 40,
+      "total": 40
+    },
+    {
+      "path": "d1-3b/holdout80.predictions.jsonl",
+      "correct": 80,
+      "total": 80
+    },
+    {
+      "path": "d1-3b/original200.predictions.jsonl",
+      "correct": 191,
+      "total": 200
+    },
+    {
+      "path": "heldout/baseline_english.predictions.jsonl",
+      "correct": 54,
+      "total": 80
+    },
+    {
+      "path": "heldout/selected.predictions.jsonl",
+      "correct": 51,
+      "total": 80
+    }
+  ],
+  "unique_corpus_rows": 320,
+  "all_labels_matched_input": true,
+  "development_examples_disjoint": true,
+  "driver_and_variants_hashes_match": true
+}

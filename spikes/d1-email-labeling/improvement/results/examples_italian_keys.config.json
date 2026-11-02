@@ -1,0 +1,26 @@
+{
+  "question": {
+    "type": "choice",
+    "instructions": "Which category best describes the main purpose of this email?\n\nLabeled examples (Italian email => category):\nSubject: Preventivo per le postazioni\nBuongiorno, vorremmo acquistare dodici postazioni per il nostro studio. Potete indicarci quali configurazioni proponete e il costo complessivo? Grazie, Elena.\nCategory: Cliente\n\nSubject: Bozza della presentazione\nCiao gruppo, ho completato le slide per la riunione di reparto. Potete controllare le parti di vostra competenza e lasciare i commenti entro mercoledì?\nCategory: Lavoro\n\nSubject: Cena sabato sera\nCiao Davide, sabato prepariamo la pizza a casa nostra. Vi va di venire con i bambini verso le sette? Dimmi se devo considerare qualche intolleranza.\nCategory: Personale\n\nSubject: Proposta di collaborazione editoriale\nBuongiorno Chiara, abbiamo letto i suoi articoli sul restauro e vorremmo proporle una rubrica retribuita nella nostra rivista. Possiamo parlarne in una breve chiamata?\nCategory: Opportunità\n\nSubject: Fattura di ottobre\nBuongiorno, in allegato trova la fattura relativa ai servizi di ottobre. Chiediamo di verificarne i dati e procedere al pagamento entro la scadenza indicata nel documento.\nCategory: Amministrazione\n\nSubject: Consegna prevista domani\nIl suo collo è arrivato alla filiale di zona e verrà consegnato domani. Se l'indirizzo non è corretto può aggiornare le indicazioni prima che il mezzo parta.\nCategory: Spedizioni\n\nSubject: Sconti di metà stagione\nSolo questa settimana tutti i cappotti della nuova collezione sono scontati del trenta per cento. Scopra le proposte del nostro catalogo e approfitti della promozione prima di domenica.\nCategory: Pubblicità\n\nSubject: Nuovo accesso al profilo\nIl sistema ha rilevato un accesso al suo account da un dispositivo mai utilizzato prima. Se riconosce l'attività non deve fare nulla; altrimenti verifichi le sessioni attive.\nCategory: Notifiche\n\n",
+    "criteria": {
+      "Cliente": "A customer's product question, quote request, reservation, complaint or technical support request.",
+      "Lavoro": "Colleagues coordinating internal tasks, meetings, projects or work schedules.",
+      "Personale": "Private messages about family, friends, school, health, hobbies or leisure.",
+      "Opportunità": "A personalized offer of a new job, paid assignment, partnership, investment or project collaboration.",
+      "Amministrazione": "Invoices, receipts, taxes, payroll, payments, reimbursements or official paperwork.",
+      "Spedizioni": "Delivery, tracking, pickup, return or customs clearance of an actual parcel.",
+      "Pubblicità": "Mass advertising, promotional offers, public newsletters or selling a course or subscription.",
+      "Notifiche": "Automated account-security, password, backup, monitoring or service-status messages."
+    }
+  },
+  "label_map": {
+    "Cliente": "Cliente",
+    "Lavoro": "Lavoro",
+    "Personale": "Personale",
+    "Opportunità": "Opportunità",
+    "Amministrazione": "Amministrazione",
+    "Spedizioni": "Spedizioni",
+    "Pubblicità": "Pubblicità",
+    "Notifiche": "Notifiche"
+  }
+}
