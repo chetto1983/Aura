@@ -15,7 +15,13 @@ import { clockTime } from '../mailWatchLogic';
 
 // The switch on an account's row: what it says for each state, and what flipping it sends.
 
-const PIM: PimAccount = { id: 'work', displayName: 'Work', provider: 'google', enabled: true };
+const PIM: PimAccount = {
+  id: 'work',
+  displayName: 'Work',
+  provider: 'google',
+  enabled: true,
+  linked: true,
+};
 const STATUS = '/api/mail-watch';
 
 let server: ReturnType<typeof mailWatchServer>;
@@ -33,6 +39,28 @@ function statusWith(...accounts: readonly ReturnType<typeof account>[]) {
 async function theSwitch() {
   return screen.findByRole('switch', { name: 'Mail and calendar watch for Work' });
 }
+
+describe('an account that never finished signing in', () => {
+  const unfinished: PimAccount = { ...PIM, linked: false };
+
+  it('offers no watch, which could read nothing', async () => {
+    statusWith();
+    renderWatch(
+      <>
+        <AccountWatch account={{ ...unfinished, displayName: 'Unfinished' }} />
+        <AccountWatch account={PIM} />
+      </>,
+    );
+    await theSwitch();
+    expect(screen.queryByRole('switch', { name: /Unfinished/ })).toBeNull();
+  });
+
+  it('keeps the switch of a watch it already has, because turning off still works', async () => {
+    statusWith(account());
+    renderWatch(<AccountWatch account={unfinished} />);
+    expect((await theSwitch()).getAttribute('aria-checked')).toBe('true');
+  });
+});
 
 describe('an account with no watch', () => {
   beforeEach(() => {

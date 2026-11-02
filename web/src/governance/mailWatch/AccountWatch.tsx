@@ -21,7 +21,8 @@ import { Switch } from '@/components/ui/switch';
 // AccountWatch is the watch on an account's row: the switch, then what the watch is doing in a
 // sentence. An account the status does not list has no watch. With the deployment unable to watch
 // mail (`configured: false`) a new watch cannot start, so the row draws nothing and the overview
-// says why, once; a watch that already exists keeps its switch, because turning off still works.
+// says why, once. Nor can one start on an account that never finished signing in, which has nothing
+// to read. A watch that already exists keeps its switch, because turning off still works.
 
 export function AccountWatch({ account }: { readonly account: PimAccount }) {
   const { t } = useTranslation();
@@ -34,7 +35,7 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
   if (status.data === undefined) return null;
   const { configured, settings, accounts } = status.data;
   const watch = accounts.find((entry) => entry.account_id === account.id);
-  if (!configured && watch === undefined) return null;
+  if ((!configured || account.linked === false) && watch === undefined) return null;
   const name = account.displayName || account.id;
   const checked = toggle.isPending ? toggle.variables : watch !== undefined;
 

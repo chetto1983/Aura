@@ -234,12 +234,20 @@ stored sealed in `aura.pim_provider_app`). A member then adds an account with on
 ID and a display name, and Aura injects the admin-set client when it forwards the create.
 Accounts linked before a change keep the client they were linked with.
 
+**Whether an account is connected.** An account exists from the moment it is added, before anyone
+signs in. Every row of `GET /admin/accounts` carries `linked`: true or false for Google and
+Microsoft, read from the stored token or the MSAL cache without calling the provider, and null for
+providers with nothing to sign in to. The cockpit shows an account with `linked: false` as
+*Sign-in not finished*, offers to finish or remove it, and starts no watch on it.
+
 **Microsoft / Outlook (device code)** — no redirect, works everywhere:
 
 - The Entra app registration needs the delegated Microsoft Graph permissions `Mail.Read`,
   `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite` and `Contacts.ReadWrite`, and
   **Allow public client flows: Yes**. The admin enters its tenant and client ID; there is no secret.
-- `POST /admin/auth/{accountId}/start` returns a user code + the `microsoft.com/devicelogin` URL.
+- `POST /admin/auth/{accountId}/start` returns a user code and the sign-in page Microsoft chose for
+  that tenant: `www.microsoft.com/link` for `consumers`, `login.microsoft.com/device` for `common`
+  and `organizations`.
 - The member enters the code there; the cockpit polls
   `GET /api/connect/pim/accounts/{id}/auth/status`, which Aura forwards to the sidecar.
 

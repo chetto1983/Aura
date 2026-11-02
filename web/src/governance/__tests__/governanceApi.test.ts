@@ -297,7 +297,7 @@ describe('governanceApi same-origin throwing fetch', () => {
       'fetch',
       okJSON({
         accounts: [
-          { id: 'work', displayName: 'Work', provider: 'google', enabled: true },
+          { id: 'work', displayName: 'Work', provider: 'google', enabled: true, linked: true },
           { displayName: 'no-id' }, // dropped — missing id
           'garbage', // dropped — not an object
         ],
@@ -305,8 +305,20 @@ describe('governanceApi same-origin throwing fetch', () => {
     );
     const { accounts } = await listPimAccounts();
     expect(accounts).toEqual([
-      { id: 'work', displayName: 'Work', provider: 'google', enabled: true },
+      { id: 'work', displayName: 'Work', provider: 'google', enabled: true, linked: true },
     ]);
+  });
+
+  it.each([
+    ['a finished sign-in', true, true],
+    ['one that never finished', false, false],
+    ['a provider with nothing to sign in to', null, null],
+    ['a sidecar too old to say', undefined, null],
+    ['anything else', 'yes', null],
+  ])('listPimAccounts reads linked for %s', async (_case, linked, expected) => {
+    vi.stubGlobal('fetch', okJSON({ accounts: [{ id: 'work', linked }] }));
+    const { accounts } = await listPimAccounts();
+    expect(accounts[0]?.linked).toBe(expected);
   });
 
   it('listPimAccounts returns [] when the body omits accounts and throws on 503', async () => {

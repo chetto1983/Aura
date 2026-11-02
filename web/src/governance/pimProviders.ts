@@ -176,6 +176,12 @@ export function pimIsManaged(def: PimProviderDef): boolean {
   return def.appFields.length > 0;
 }
 
+/** The connect step of a listed account. Unlike pimProviderById it has no default: a provider this
+ * cockpit does not know must not be sent to Google's sign-in. */
+export function pimAccountFlow(provider: string): PimAuthFlow {
+  return PIM_PROVIDERS.find((p) => p.id === provider)?.authFlow ?? 'none';
+}
+
 /** Look up a provider definition by id; defaults to Google (the first/most-common provider). */
 export function pimProviderById(id: string): PimProviderDef {
   const found = PIM_PROVIDERS.find((p) => p.id === id);

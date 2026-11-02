@@ -70,7 +70,10 @@ export const governanceEn = {
         empty: 'No calendar accounts yet. Add one below.',
         accountsHeading: 'Accounts',
         disconnect: 'Disconnect',
+        remove: 'Remove',
         disconnectError: "Couldn't disconnect. Try again.",
+        notLinked: "Sign-in not finished: Aura can't read this account yet.",
+        finishSignIn: 'Finish sign-in',
         addHeading: 'Add account',
         providerLabel: 'Provider',
         providers: {
@@ -328,7 +331,10 @@ export const governanceIt = {
         empty: 'Ancora nessun account calendario. Aggiungine uno qui sotto.',
         accountsHeading: 'Account',
         disconnect: 'Disconnetti',
+        remove: 'Rimuovi',
         disconnectError: 'Impossibile disconnettere. Riprova.',
+        notLinked: 'Accesso non completato: Aura non può ancora leggere questo account.',
+        finishSignIn: "Completa l'accesso",
         addHeading: 'Aggiungi account',
         providerLabel: 'Provider',
         providers: {

@@ -4,18 +4,17 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { HttpError } from '../api/json';
 import { useCapabilities } from '../admin/useAdmin';
-import { AccountWatch } from './mailWatch/AccountWatch';
 import { MailWatchOverview } from './mailWatch/MailWatchOverview';
-import { PimDeviceCodePanel } from './PimDeviceCodePanel';
-import { PimGoogleConnectPanel } from './PimGoogleConnectPanel';
+import { PimAccountRow } from './PimAccountRow';
+import { PimConnectPanel } from './PimConnectPanel';
 import { PimProviderAppsPanel } from './PimProviderAppsPanel';
 import {
   AdvancedSection,
   Field,
   ProviderConfigFields,
   ProviderSelect,
-  StartFailedPanel,
 } from './CalendarConnectFields';
+import { startConnect, type PimConnectResult } from './pimConnect';
 import {
   normalizePimAccountId,
   pimAccountIdError,
@@ -33,12 +32,8 @@ import {
   listPimProviderApps,
   PIM_PROVIDER_NOT_CONFIGURED,
   PIM_PROVIDERS_KEY,
-  pimDeviceStart,
-  pimGoogleStart,
   type PimAccount,
   type PimCreateAccountRequest,
-  type PimDeviceStart,
-  type PimGoogleStart,
   type PimProviderId,
 } from './pimApi';
 import { Button } from '@/components/ui/button';
@@ -52,7 +47,8 @@ import { Button } from '@/components/ui/button';
 // web-redirect consent (PimGoogleConnectPanel), Microsoft/Outlook render the device-code grant
 // (PimDeviceCodePanel), and credential/URL providers (IMAP/ICS/JSON) are ready immediately. All copy
 // via governance.mcp.calendar.* (en + it); a 503 (sidecar unconfigured) → a calm offline note. Each
-// account row also carries the mail and calendar watch's switch (mailWatch/).
+// account row says whether its sign-in finished and carries the mail and calendar watch's switch
+// (PimAccountRow).
 
 const ACCOUNTS_POLL_MS = 10000;
 
@@ -124,35 +120,14 @@ function AccountList({
       </p>
       <ul className="flex flex-col gap-2">
         {accounts.map((acct) => (
-          <li
+          <PimAccountRow
             key={acct.id}
-            className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex min-w-0 flex-col">
-                <span className="break-words text-[15.5px] text-text">
-                  {acct.displayName || acct.id}
-                </span>
-                <span className="break-all font-mono text-[13px] text-text-muted">
-                  {acct.provider ? `${acct.provider} · ${acct.id}` : acct.id}
-                </span>
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={remove.isPending}
-                aria-busy={remove.isPending}
-                onClick={() => {
-                  remove.mutate(acct.id);
-                }}
-                className="shrink-0 px-3 text-[13px]"
-              >
-                {remove.isPending ? <Spinner /> : null}
-                {t('governance.mcp.calendar.disconnect')}
-              </Button>
-            </div>
-            <AccountWatch account={acct} />
-          </li>
+            account={acct}
+            removing={remove.isPending}
+            onRemove={() => {
+              remove.mutate(acct.id);
+            }}
+          />
         ))}
       </ul>
       {remove.isError ? (
@@ -164,16 +139,6 @@ function AccountList({
     </div>
   );
 }
-
-// CreateResult carries the connect outcome. `device` snapshots the submitted `id` so the poll
-// target never tracks the live Account ID field, and `startFailed` keeps the (already-created)
-// account's id + flow so the operator can retry sign-in WITHOUT re-creating the account (which
-// would hit the sidecar's 409-duplicate).
-type CreateResult =
-  | { readonly kind: 'google'; readonly id: string; readonly start: PimGoogleStart }
-  | { readonly kind: 'device'; readonly id: string; readonly start: PimDeviceStart }
-  | { readonly kind: 'none' }
-  | { readonly kind: 'startFailed'; readonly id: string; readonly authFlow: PimAuthFlow };
 
 function parseDomains(raw: string): readonly string[] {
   return raw
@@ -187,19 +152,6 @@ function parsePriority(raw: string): number | undefined {
   if (trimmed === '') return undefined;
   const n = Number.parseInt(trimmed, 10);
   return Number.isNaN(n) ? undefined : n;
-}
-
-// startConnect runs ONLY the post-create connect step for an already-created account, mapping a
-// failure to a `startFailed` result (NOT a thrown error) so a created account whose sign-in didn't
-// start is reported as a recoverable state, not as a total create failure.
-async function startConnect(id: string, flow: PimAuthFlow): Promise<CreateResult> {
-  if (flow === 'none') return { kind: 'none' };
-  try {
-    if (flow === 'google') return { kind: 'google', id, start: await pimGoogleStart(id) };
-    return { kind: 'device', id, start: await pimDeviceStart(id) };
-  } catch {
-    return { kind: 'startFailed', id, authFlow: flow };
-  }
 }
 
 /** serverReason pulls the sidecar's own sentence out of a failed mutation. A validation refusal
@@ -233,7 +185,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const [priority, setPriority] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [result, setResult] = useState<CreateResult | null>(null);
+  const [result, setResult] = useState<PimConnectResult | null>(null);
 
   const accountIdError = pimAccountIdError(accountId);
   const displayNameEmpty = displayName.trim() === '';
@@ -249,7 +201,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   }
 
   const create = useMutation({
-    mutationFn: async (): Promise<CreateResult> => {
+    mutationFn: async (): Promise<PimConnectResult> => {
       const id = accountId.trim();
       const domainList = parseDomains(domains);
       const prio = parsePriority(priority);
@@ -369,25 +321,17 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         </p>
       ) : null}
 
-      {result?.kind === 'google' ? (
-        <PimGoogleConnectPanel accountId={result.id} start={result.start} />
-      ) : null}
-      {result?.kind === 'device' ? (
-        <PimDeviceCodePanel accountId={result.id} start={result.start} />
-      ) : null}
-      {result?.kind === 'startFailed' ? (
-        <StartFailedPanel
-          pending={retryStart.isPending}
+      {result === null ? null : (
+        <PimConnectPanel
+          result={result}
+          retrying={retryStart.isPending}
           onRetry={() => {
-            retryStart.mutate({ id: result.id, flow: result.authFlow });
+            if (result.kind === 'startFailed') {
+              retryStart.mutate({ id: result.id, flow: result.authFlow });
+            }
           }}
         />
-      ) : null}
-      {result?.kind === 'none' ? (
-        <p role="status" className="text-[13px] text-success">
-          {t('governance.mcp.calendar.noAuthCreated')}
-        </p>
-      ) : null}
+      )}
     </form>
   );
 }

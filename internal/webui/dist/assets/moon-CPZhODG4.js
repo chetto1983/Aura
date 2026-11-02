@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-CK5xzyS1.js";import{n as t,t as n}from"./createLucideIcon-CVHeUtCx.js";var r,i;function a(){return(a=e((()=>{t(),r={name:`moon`,size:24,node:[[`path`,{d:`M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401`,key:`kfwtm`}]]},r.node,i=n(r)})))()}export{a as n,i as t};

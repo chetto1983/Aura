@@ -5,6 +5,7 @@ import {
   pimAccountIdError,
   pimInitialValues,
   pimMissingRequired,
+  pimAccountFlow,
   pimProviderById,
   pimIsManaged,
   pimSubmitConfig,
@@ -21,6 +22,19 @@ describe('pimProviderById', () => {
   });
   it('defaults to Google for an unknown id', () => {
     expect(pimProviderById('nope').id).toBe('google');
+  });
+});
+
+describe('pimAccountFlow', () => {
+  it.each([
+    ['google', 'google'],
+    ['microsoft365', 'device'],
+    ['outlook.com', 'device'],
+    ['imap', 'none'],
+    ['ics', 'none'],
+    ['a provider this cockpit has never heard of', 'none'],
+  ])('routes %s to the %s step', (provider, flow) => {
+    expect(pimAccountFlow(provider)).toBe(flow);
   });
 });
 

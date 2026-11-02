@@ -32,6 +32,10 @@ export interface PimAccount {
   readonly displayName: string;
   readonly provider: string;
   readonly enabled: boolean;
+  /** Whether the account finished signing in. An account is listed from the moment it is added, so
+   * only this says it is connected. Null for a provider with nothing to sign in to, or a sidecar
+   * too old to say. */
+  readonly linked: boolean | null;
 }
 
 /** GET /api/connect/pim/accounts response. */
@@ -95,6 +99,7 @@ function pimAccount(value: unknown): PimAccount | null {
     displayName: stringValue(raw.displayName),
     provider: stringValue(raw.provider),
     enabled: isTrue(raw.enabled),
+    linked: typeof raw.linked === 'boolean' ? raw.linked : null,
   };
 }
 
@@ -130,9 +135,9 @@ export function pimGoogleStart(id: string): Promise<PimGoogleStart> {
   return getJSON<PimGoogleStart>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/google/start`);
 }
 
-/** GET …/{id}/status — whether the account is linked: true/false for a Google account (its OAuth
- * token is stored or not), null for providers whose state comes through the device-code flow or
- * that have nothing to link. A file check on the sidecar, so polling it never calls Google. */
+/** GET …/{id}/status — whether the account is linked: true/false for a Google or Microsoft account
+ * (its token is stored or not), null for providers that have nothing to link. The sidecar reads
+ * what the sign-in stored, so polling it never calls the provider. */
 export async function pimAccountLinked(id: string): Promise<boolean | null> {
   const raw = await getJSON<Record<string, unknown>>(
     `${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/status`,
