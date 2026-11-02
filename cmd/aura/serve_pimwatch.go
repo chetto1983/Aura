@@ -16,12 +16,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/pimwatch"
@@ -82,7 +84,11 @@ func newPIMWatchRuntime(chat *chatEnv) *pimWatchRuntime {
 	}
 	runtime.service.PIM = reader
 	runtime.watcher = &pimwatch.Watcher{Store: store, PIM: reader, Ledger: pimWatchLedger{store: scheduler}, Locale: locale}
-	runtime.digester = &pimwatch.Digester{Store: store, PIM: reader, Locale: locale}
+	digester := &pimwatch.Digester{Store: store, PIM: reader, Locale: locale}
+	if resolver := identityLLMResolver(chat); resolver != nil {
+		digester.Model = pimDigestModel{snapshots: resolver}
+	}
+	runtime.digester = digester
 	return runtime
 }
 
@@ -98,6 +104,50 @@ func newPIMWatchClient(chat *chatEnv) pimwatch.PIMReader {
 		return nil
 	}
 	return client
+}
+
+const (
+	// digestModelTimeout bounds the digest's model call inside the handler's five minutes. A local
+	// model on a small machine needs most of it, and what it misses goes out as the list.
+	digestModelTimeout = 3 * time.Minute
+	// digestMaxTokens leaves room for twenty lines of twelve words.
+	digestMaxTokens   = 2000
+	digestTemperature = 0.2
+)
+
+// pimLLMSnapshots is the seam over *runner.IdentityLLMResolver.
+type pimLLMSnapshots interface {
+	SnapshotFor(ctx context.Context, identityID string) (llm.RuntimeSnapshot, error)
+}
+
+// pimDigestModel is the digest's one call of the day, on the model its identity chats with and
+// paid by that identity. The items are attacker text, and the call has no tools.
+type pimDigestModel struct {
+	snapshots pimLLMSnapshots
+}
+
+func (m pimDigestModel) Write(ctx context.Context, identityID string, ask pimwatch.ModelAsk) (pimwatch.ModelReply, error) {
+	snapshot, err := m.snapshots.SnapshotFor(ctx, identityID)
+	if err != nil {
+		return pimwatch.ModelReply{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, digestModelTimeout)
+	defer cancel()
+	text, usage, err := llm.Collect(ctx, snapshot.Client, llm.Request{
+		Model: snapshot.Config.Model,
+		Messages: []llm.Message{
+			{Role: llm.RoleSystem, Content: ask.System},
+			{Role: llm.RoleUser, Content: agent.FrameUntrustedPromptContent(agent.WatchRecordSource, ask.Items)},
+		},
+		Temperature: digestTemperature,
+		MaxTokens:   digestMaxTokens,
+		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
+		ToolChoice:  "none",
+	})
+	if err != nil {
+		return pimwatch.ModelReply{}, err
+	}
+	return pimwatch.ModelReply{Text: text, PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens}, nil
 }
 
 // bindPIMWatch hands the service to the agent's tool, once it exists.
