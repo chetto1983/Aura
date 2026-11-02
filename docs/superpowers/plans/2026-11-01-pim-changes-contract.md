@@ -134,7 +134,11 @@ Also worth a reviewer's eye:
   again at once, so there it is a Sent folder holding no mail, and `writtenTo` is false. A NO on EXAMINE
   proves nothing by itself, because RFC 5530's UNAVAILABLE and INUSE are NOs too, and a page that read a blip
   as gone would answer 200 and move its cursor past those mails. So a NO is confirmed with a fresh LIST, and
-  a folder still listed fails the page.
+  a folder still listed fails the page. The kinds no waiting changes are the exception: `\Noselect` on the
+  folder, and `NO [NOPERM]` or `NO [CANNOT]` on the EXAMINE. A page that failed for those would fail for good, since
+  its cursor never moves and the first ordinary mail would stop the watch, so they leave `writtenTo` null too.
+  MailKit takes the code out of the exception's text, so `ImapNoCodes`, a protocol logger that scans server lines
+  and keeps nothing, reads it.
 - **A mail's body is chosen by what its parts mean.** `text/plain` wins only inside `multipart/alternative`,
   anywhere else the first part with words in it does, and a blank part is no part.
 - **One mail never blocks a page.** A page is all or nothing, and a page that fails is replayed from the
@@ -360,6 +364,7 @@ intact, and an empty snippet.
 |---|---|---|---|
 | `MarkupShape`, start tags × tokens, read from the raw text | End tags and text walking the open elements, where no element is created and no budget is read: 100,000 `<x>` and 185,000 `</y>` ran past 90 s | 2×10⁹, about 10 s of one thread | 1 MiB report 1.4×10⁹, 1 MiB of paragraphs 1.9×10⁹, newsletter ×16 1.1×10⁸ |
 | `MarkupShape`, units the tokenizer recurses on (`</>`, `--!`) | Stack overflow on cold code, which kills the process: 43,288 units survive 8 MiB and 43,597 do not | 1,024, a forty-second of that | A mail has a handful |
+| `MarkupShape`, attributes of one start tag, read from the raw text | `EmitTag` removes duplicates one at a time from a list, so one tag is quadratic: 100 KB took 0.36 s, 520 KB 8 s and 1 MiB 33 s of a full core | 16,384, counted by the tokenizer's attribute states so a `>` inside a value does not end the tag | A large inline style, a long `href` and a `data:` URI are one attribute each; a real tag has a dozen |
 | Parse allocation | `<p><b a{i}>x</p>`, which copies formatting: 33 KB allocated 1.2 GB | 1 KiB per character, floor 64 MiB | 240 at worst on ordinary mail |
 | `SelectorCost`, on the mail's real depth, longest sibling run and each rule's combinators, through `:has()`, `:is()`, `:not()`, `:where()` | Matching that tries every path with no memo: the review's mail estimates 4×10²⁵ steps | 2.5×10⁸ on one element, 1.3 s warm, 6 s on columns | Newsletter 10, ×16 160, a chain of 7 on 51 levels 1.4×10⁸ |
 
@@ -390,7 +395,10 @@ runs on what it is given.
   recursion rest on layer one's bounds alone.
 - **Layer one's numbers are measurements of one engine.** AngleSharp 1.9.0 and AngleSharp.Css 1.3.0, both
   pinned. `SelectorCost` models the matcher as read in their source and is calibrated, not proven. A pseudo-class
-  it does not know costs infinity, so what is new is refused and does not get through. Upgrading either reopens every figure.
+  it does not know costs infinity, so what is new is refused and does not get through; that holds for a name
+  without brackets as well, where only a short list is cheap and `:focus-within`, `:empty` and the states of a
+  control are priced by the largest walk the document allows. The estimate is an upper bound, not a copy of the
+  engine. Upgrading either reopens every figure.
 - **Long parser paths were searched, not proved absent.** About 29,700 shapes, every short unit in 18 contexts at
   200 KB, ran on forced-cold code in the image with no crash, and 69 were slow, the ones printed stopping at
   their 2 s budget. That is a search. `<a>` in a table can overrun its budget by seconds, which is layer two's job.
@@ -399,9 +407,9 @@ runs on what it is given.
   flood: 1 MiB of it would take 1.7 s and is refused. A styled table is under the bound at the cap.
 - **Memory under the limit was measured for one conversion.** A bomb under `--memory 512m` became a caught
   `OutOfMemoryException` at a peak of 465 MB, and the server lived. Three at once were not measured at their worst.
-- **A warm-up that fails fails every conversion after it.** `MailBody.WarmedUp` is a `Lazy` that caches its
-  exception, and `WarmUp` runs outside the `try` in `SnippetPage` and `MailSnippet`. It has not happened, and
-  the 64 MiB floor is there so it does not. It stays latent.
+- **A warm-up that fails costs one snippet.** `MailBody.WarmedUp` keeps no exception (`PublicationOnly`), and
+  `SnippetPage` and `MailSnippet` go without a snippet for the mail at hand and try again on the next. It has not
+  happened in practice; the 64 MiB floor is there so it does not.
 - **Neither layer says the filter is complete.** They bound what a mail costs, not what it hides. *Hidden text*
   above lists what passes.
 
@@ -444,6 +452,7 @@ Outlook.com account: G3 is owed and is not claimed.**
 | `M365AuthenticationService` | MSAL's own exceptions | **not run against MSAL**: that needs a cached real account. The decision (`NullWhenGrantIsGoneAsync`: only `MsalUiRequiredException` is a revoked grant) is tested with the real method and a thrown exception; `ProviderFailures` and the provider above them are tested |
 | The `GetCredentialAsync` filter | Google.Apis.Auth 1.76.0 | **run in process**: Google's own `UserCredential` and `GoogleAuthorizationCodeFlow` on a scripted token endpoint, with the library raising the exception. Six mutants of the filter killed. Not run against Google |
 | A deleted Sent folder | RFC 9051 (a refused EXAMINE is a NO) | **run: GreenMail 2.1.15** (null) and **Dovecot 2.4.5** (recreated empty, so false) |
+| A permanent NO on a Sent folder still listed (`NOPERM`, `CANNOT`, `\Noselect`) | RFC 5530, RFC 9051 | **run: GreenMail 2.1.15** (all three) and **Dovecot 2.4.5** (`NOPERM`), through the same proxy. `\Noselect` on Dovecot not run: the proxy's rewrite of the listing did not take effect there |
 | A temporary NO on a Sent folder still listed | RFC 5530 UNAVAILABLE, INUSE | **run: GreenMail 2.1.15 and Dovecot 2.4.5**, with a proxy answering the NO, since neither server gives one on its own |
 | SEARCH TO as a substring, and more near misses than are compared | RFC 9051 section 6.4.4 | **run: Dovecot 2.4.5.** GreenMail 2.1.15 takes the whole address, so a near miss is never a hit there. HEADER is a substring on both |
 | A body nested past what is walked | MIME, RFC 2046 | **run: GreenMail and Dovecot** at 1, 32, 33, 50 and 1,100 levels, **Dovecot** at 5,000. Gmail: fake |
@@ -647,7 +656,8 @@ The review read the code without running it, so each finding was a claim, and ea
   the review. `</>` and `--!` floods overflow 8 MiB on cold code and kill the process (`14c1423`). `<p><b a{i}>x</p>`
   allocated 1.2 GB from 33 KB (`7ff6bba`). `ReconstructFormatting` on text took 27 s, and `MarkupShape` holds it.
 - [x] **Important 3, a long number passes hidden text.** Reproduced, 12 of 15 forms. Any length is read now, and
-  the regular expression is linear. `7e60f98`.
+  the regular expression was said to be linear. It was not: with the number allowed to be empty, whitespace
+  loops met, and `<img width="` + 100,000 spaces cost n³/6. Fixed in `fcd684b`.
 - [x] **Important 4, any refused EXAMINE reads as gone.** Reproduced: 200 instead of 503 on both servers.
   `8911a1f`. Both branches tested and both mutants killed.
 - [x] **Important 5, two bodies outside the pipeline.** Reproduced, 9 tool tests red, and the upstream preview
@@ -669,6 +679,13 @@ The review read the code without running it, so each finding was a claim, and ea
   paths, with the server up and the next ordinary mail converted after each, and no leak. 20 fresh servers, one
   mail each, forced-cold, with `ulimit -s unlimited`, and with both: none died. Layer two driven by mails just under the
   bound: thread left behind, refused past two, warnings with no mail content, recovered unaided.
+- [x] **The second review, six findings** (all branch `aura-watch`, after `89a1c9b`). 1. The number regex was
+  cubic on whitespace: reproduced, `fcd684b`. 2. A NaN passed the selector check: reproduced on both paths,
+  `1e877b9`. 3. Bare pseudo-classes that walk: `:focus-within` reproduced; `:first-of-type`, `:last-of-type` and
+  `:only-of-type` did not, because the engine hands them to the visitor as `Child()`, already priced by siblings
+  (`f70ca70`). 4. One enormous start tag: reproduced and measured, 33 s for 1 MiB, not the 2 to 4 minutes the
+  review estimated (`f630b15`). 5. A permanent NO on a listed Sent: reproduced, `fdb59e3`. 6. A leaked place:
+  reproduced with a stack size the runtime refuses, `302b839`. The latent warm-up item is closed in `9f2a4b2`.
 - [ ] **G3, owed:** a real Gmail, Microsoft 365 and Outlook.com account through the running sidecar, on
   the lab VM, with its dated file under `docs/superpowers/verification/`. It decides the two unproven
   rows above before anything rests on them. It also owes, from the review:

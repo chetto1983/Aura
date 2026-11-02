@@ -1,5 +1,5 @@
 {
-  "_": "What the PIM fork writes on branch aura-watch at 89a1c9b (src/CalendarMcp.Core/Models/Changes.cs and the sources in Changes/), spec 2026-10-31-mail-calendar-watch-design.md §5.1 included. client_test.go answers from this file; contract_live_test.go (tag pim_contract_live) holds a real sidecar to the same shapes.",
+  "_": "What the PIM fork writes on main at 204a7fd (src/CalendarMcp.Core/Models/Changes.cs and the sources in Changes/), spec 2026-10-31-mail-calendar-watch-design.md §5.1 included. client_test.go answers from this file; contract_live_test.go (tag pim_contract_live) holds a real sidecar to the same shapes.",
   "emptyCursorRequest": {"accountId": "work", "resource": "mail", "cursor": "", "limit": 50},
   "emptyCursorResponse": {"changes": [], "nextCursor": "cursor-from-now", "hasMore": false, "resetRequired": false},
   "changesRequest": {"accountId": "work", "resource": "mail", "cursor": "cur-1", "limit": 25},
