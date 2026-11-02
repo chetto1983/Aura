@@ -36,7 +36,7 @@ and no learned model here: rung 5 of the ladder does not exist in code, and noth
 and Jev are out of scope.
 
 **Contract:** spec §5.1, as fixed in `internal/pimwatch/testdata/pim_contract.json`. The fork that implements it was
-built in parallel and not read. The tag `pim_contract` holds a real sidecar to that file.
+built in parallel and not read. The tag `pim_contract_live` holds a real sidecar to that file.
 
 ## Global Constraints
 
@@ -338,7 +338,7 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 - [x] **Files:** `internal/pimwatch/client.go`, `client_test.go`, `contract_live_test.go`,
   `testdata/pim_contract.json`.
 - **Interfaces:** `NewClient`, `(*Client).Changes`, `(*Client).Items`, `TokenSource`, `PIMError`, `ErrNotAuthorized`.
-- **Tests:** the fake PIM replays the contract file over `httptest`. The `pim_contract` tag replays it against a real
+- **Tests:** the fake PIM replays the contract file over `httptest`. The `pim_contract_live` tag replays it against a real
   sidecar, given `AURA_PIM_CONTRACT_URL`, `_TOKEN` and `_ACCOUNT`.
 - **Commit:** `d429c4b8c`.
 
@@ -455,7 +455,7 @@ The switch sits on the account's card, and the list of accounts stays `GET /api/
 This needs the published PIM image with `POST /admin/changes` and `POST /admin/items`, and it must not be claimed
 before it runs.
 
-- [ ] `go test -tags pim_contract` against the real sidecar. Any difference from `pim_contract.json` goes to the spec
+- [ ] `go test -tags pim_contract_live` against the real sidecar. Any difference from `pim_contract.json` goes to the spec
   first.
 - [ ] Enable a watch on a real account through the cockpit, and through `mail_watch` on a real turn.
 - [ ] A `now` mail reaches Telegram within a tick, plain, with no preview, and "aprila" works on the next turn.
@@ -463,7 +463,7 @@ before it runs.
 - [ ] Kill the process mid-tick, and see the alert told once.
 - [ ] Revoke the grant, and see the pause reported once.
 - [ ] A dated file in `docs/superpowers/verification/`, saying what it measured and what it does not prove.
-- [ ] Merge into `master` and push, when the operator lifts the ban.
+- [ ] Merge into `master` and push.
 
 ## Verification at the branch's close
 
@@ -474,7 +474,7 @@ All in WSL at `f4636b4cc`, 2026-11-01, on the disposable container for the tagge
 | `go build ./...` | clean |
 | `go vet ./...` | clean |
 | `go vet -tags db_integration ./internal/pimwatch/ ./internal/cron/... ./cmd/aura/` | clean |
-| `go vet -tags pim_contract ./internal/pimwatch/` | clean |
+| `go vet -tags pim_contract_live ./internal/pimwatch/` | clean |
 | `go test -count=1 -race ./internal/cron/... ./internal/gateway/ ./internal/agent/tools/ ./internal/agent/display/ ./internal/channels/telegram/ ./internal/pimwatch/` | ok |
 | `go test -count=1 ./internal/agui/ ./internal/agent/ ./cmd/aura/` | ok |
 | `go test -count=1 -race -tags db_integration -p 1 -coverpkg=./internal/pimwatch/ ./internal/pimwatch/` | ok, 89.9% of statements |

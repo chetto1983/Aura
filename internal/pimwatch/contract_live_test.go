@@ -1,10 +1,10 @@
-//go:build pim_contract
+//go:build pim_contract_live
 
 // Holds a real PIM sidecar to testdata/pim_contract.json. It reads a real account, so it runs only
 // when asked:
 //
 //	AURA_PIM_CONTRACT_URL=http://127.0.0.1:8090 AURA_PIM_CONTRACT_TOKEN=... \
-//	AURA_PIM_CONTRACT_ACCOUNT=work go test -tags pim_contract -run TestLiveContract ./internal/pimwatch/
+//	AURA_PIM_CONTRACT_ACCOUNT=work go test -tags pim_contract_live -run TestLiveContract ./internal/pimwatch/
 package pimwatch
 
 import (
@@ -22,7 +22,7 @@ func liveClient(t *testing.T) (*Client, string) {
 	url, token, account := os.Getenv("AURA_PIM_CONTRACT_URL"), os.Getenv("AURA_PIM_CONTRACT_TOKEN"), os.Getenv("AURA_PIM_CONTRACT_ACCOUNT")
 	if url == "" || token == "" || account == "" {
 		if os.Getenv("CI") != "" {
-			t.Fatal("the pim_contract tier needs AURA_PIM_CONTRACT_URL, _TOKEN and _ACCOUNT")
+			t.Fatal("the pim_contract_live tier needs AURA_PIM_CONTRACT_URL, _TOKEN and _ACCOUNT")
 		}
 		t.Skip("set AURA_PIM_CONTRACT_URL, _TOKEN and _ACCOUNT to run against a sidecar")
 	}
