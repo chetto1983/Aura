@@ -144,6 +144,9 @@ func (p *identitySessionPool) open(ctx context.Context, owner string) (*MountedS
 
 	var child *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		// Reconnect starts another process in the resumed box, with the same init budget.
+		hctx, cancel := p.withFirstStart(hctx)
+		defer cancel()
 		o.ToolListChanged = child.onToolListChanged
 		return p.connect(pctx, hctx, o)
 	}
