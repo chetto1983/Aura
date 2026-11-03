@@ -84,6 +84,8 @@ type Service struct {
 	Tasks  Tasks
 	Routes Routes
 	Locale Locale
+	// Centroid learns from corrections and forgets removed accounts; nil switches it off.
+	Centroid Centroid
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
 }
@@ -235,8 +237,10 @@ func (s *Service) Disable(ctx context.Context, identityID, accountID string) err
 	return s.stopDigestIfIdle(ctx, identityID)
 }
 
-// RemoveAccount forgets everything the watch holds for an account that left. The sender rules stay:
-// they are the person's words about senders, not about this account.
+// RemoveAccount forgets everything the watch holds for an account that left, the centroid's
+// examples of it included. The sender rules stay: they are the person's words about senders, not
+// about this account. An example the forget leaves behind belongs to an owner with no correction
+// left, so the centroid leaves it out and forgets it on its next build.
 func (s *Service) RemoveAccount(ctx context.Context, identityID, accountID string) error {
 	if err := s.stopWatch(ctx, identityID, accountID); err != nil {
 		return err
@@ -244,7 +248,11 @@ func (s *Service) RemoveAccount(ctx context.Context, identityID, accountID strin
 	if err := s.Store.DeleteAccount(ctx, identityID, accountID); err != nil {
 		return err
 	}
-	return s.stopDigestIfIdle(ctx, identityID)
+	var forgot error
+	if s.Centroid != nil {
+		forgot = s.Centroid.Forget(ctx, identityID, accountID)
+	}
+	return errors.Join(forgot, s.stopDigestIfIdle(ctx, identityID))
 }
 
 func (s *Service) stopWatch(ctx context.Context, identityID, accountID string) error {

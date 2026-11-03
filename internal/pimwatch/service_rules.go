@@ -2,7 +2,9 @@ package pimwatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -22,7 +24,8 @@ func (s *Service) Correct(ctx context.Context, identityID string, c Correction) 
 	if err := s.checkCorrection(ctx, identityID, c); err != nil {
 		return Verdict{}, nil, err
 	}
-	sender := s.senderOf(ctx, c)
+	item := s.itemOf(ctx, c)
+	sender, _ := SenderKey(item.From)
 	var past []PastCorrection
 	if sender != "" {
 		var err error
@@ -34,6 +37,9 @@ func (s *Service) Correct(ctx context.Context, identityID string, c Correction) 
 	verdict, err := s.Store.ApplyCorrection(ctx, identityID, sender, c)
 	if err != nil {
 		return Verdict{}, nil, err
+	}
+	if sender != "" {
+		s.teach(ctx, identityID, c, item, verdict)
 	}
 	tier, label := learned(c, past)
 	if verdict.AuthFailed || (tier == "" && label == "") {
@@ -70,17 +76,31 @@ func (s *Service) checkLabel(ctx context.Context, identityID, labelID string) er
 	return nil
 }
 
-// senderOf reads a mail's sender and returns its key, or "" when it cannot.
-func (s *Service) senderOf(ctx context.Context, c Correction) string {
+// itemOf reads a mail live by id, and gives an empty item when it cannot.
+func (s *Service) itemOf(ctx context.Context, c Correction) Item {
 	if s.PIM == nil || c.Resource != ResourceMail {
-		return ""
+		return Item{}
 	}
 	result, err := s.PIM.Items(ctx, c.AccountID, c.Resource, []ItemRef{{ID: c.ItemID}})
 	if err != nil || len(result.Items) == 0 {
-		return ""
+		return Item{}
 	}
-	address, _ := SenderKey(result.Items[0].From)
-	return address
+	return result.Items[0]
+}
+
+// teach gives the centroid a mail whose sender was read and whose tier the person changed, when
+// its row has the facts (it was written after 0152) and it passed authentication: the mails that
+// write a correction row. A failure leaves the correction standing and logs no sender.
+func (s *Service) teach(ctx context.Context, identityID string, c Correction, item Item, verdict Verdict) {
+	if s.Centroid == nil || c.Tier == "" || verdict.AuthFailed || verdict.LadderTier == "" {
+		return
+	}
+	err := s.Centroid.Learn(ctx, identityID, Lesson{
+		AccountID: c.AccountID, ItemID: c.ItemID, From: item.From, Subject: item.Subject, Facts: verdict.Facts, Tier: c.Tier,
+	})
+	if err != nil {
+		slog.Warn("mail watch: a correction taught the centroid nothing", "timeout", errors.Is(err, context.DeadlineExceeded))
+	}
 }
 
 // learned picks what an earlier correction agrees with. A correction clearing a label teaches

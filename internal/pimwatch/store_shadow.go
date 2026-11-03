@@ -87,10 +87,13 @@ type ShadowRow struct {
 }
 
 // ShadowRows reads the mail decided since then that carries a ladder answer, so written after 0152.
+// A zero since reads them all: timestamp would make it NULL, and nothing compares to NULL.
 func (s *Store) ShadowRows(ctx context.Context, identityID string, since time.Time) ([]ShadowRow, error) {
 	var out []ShadowRow
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
-		rows, err := q.ListPIMWatchShadowRows(ctx, sqlc.ListPIMWatchShadowRowsParams{IdentityID: id, Since: timestamp(since)})
+		rows, err := q.ListPIMWatchShadowRows(ctx, sqlc.ListPIMWatchShadowRowsParams{
+			IdentityID: id, Since: pgtype.Timestamptz{Time: since.UTC(), Valid: true},
+		})
 		if err != nil {
 			return err
 		}

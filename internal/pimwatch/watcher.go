@@ -57,6 +57,7 @@ type WatchStore interface {
 	RaiseFailingAlarm(ctx context.Context, identityID, accountID, resource, runID string) error
 	RetellAlarm(ctx context.Context, identityID, accountID, resource, runID string) error
 	ConfirmAlarm(ctx context.Context, identityID, accountID, resource string) error
+	SenderMemory(ctx context.Context, identityID string, senderKeys []string) (map[string]Tier, error)
 	OwedAlerts(ctx context.Context, identityID, accountID string) ([]Verdict, error)
 	ConfirmAlerts(ctx context.Context, identityID, accountID, runID string) error
 	RetellAlerts(ctx context.Context, identityID, accountID, oldRun, newRun string) error
@@ -89,6 +90,8 @@ type Watcher struct {
 	PIM    PIMReader
 	Ledger RunLedger
 	Locale Locale
+	// Centroid answers in shadow beside the ladder; nil switches it off.
+	Centroid Centroid
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
 }
@@ -114,6 +117,7 @@ type tick struct {
 	failing  []string
 	backlog  bool
 	hard     *HardFailure
+	shadow   shadowCount
 }
 
 func (t *tick) carry(p phrases, kind, resource string, since time.Time) {
@@ -162,6 +166,7 @@ func (w *Watcher) open(ctx context.Context, in TickInput) (*tick, error) {
 	return &tick{
 		TickInput: in, settings: settings, book: book,
 		lang: w.Locale.Language(ctx, in.IdentityID), loc: w.Locale.Location(ctx, in.IdentityID),
+		shadow: shadowCount{on: w.Centroid != nil},
 	}, nil
 }
 
@@ -375,18 +380,21 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 		return w.draftEvents(ctx, t, changes)
 	}
 	drafts := make([]VerdictDraft, 0, len(changes))
+	mails := make([]Change, 0, len(changes))
 	for _, change := range changes {
 		if change.Type != ChangeAdded {
 			continue
 		}
 		decision := DecideMail(t.book, change.From, change.Signals)
 		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Decision: decision})
+		mails = append(mails, change)
 		lines[change.ID] = Line{
 			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From, FromName: change.FromName,
 			Subject: change.Subject, AuthFailed: decision.AuthFailed, Tier: decision.Tier,
 			invitation: change.Signals.Invitation,
 		}
 	}
+	w.shadow(ctx, t, mails, drafts)
 	return drafts, lines, nil
 }
 
@@ -483,6 +491,9 @@ func (t *tick) summary() string {
 	}
 	if t.backlog {
 		parts = append(parts, "backlog continues on the next tick")
+	}
+	if t.shadow.on {
+		parts = append(parts, fmt.Sprintf("shadow: %d answered, %d agreed, %d empty", t.shadow.answered, t.shadow.agreed, t.shadow.empty))
 	}
 	return strings.Join(parts, "; ")
 }
