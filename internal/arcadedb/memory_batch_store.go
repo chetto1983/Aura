@@ -85,8 +85,16 @@ func (c *Client) storedStatementVectors(
 // rowVector returns the row's vector only when it has the index width; anything else is
 // treated as absent so the statement is embedded afresh.
 func rowVector(row map[string]any, key string) []float64 {
+	if vector := rowFloats(row, key); len(vector) == vectorDimensions {
+		return vector
+	}
+	return nil
+}
+
+// rowFloats reads a stored array of numbers, nil when the value is anything else.
+func rowFloats(row map[string]any, key string) []float64 {
 	items, ok := row[key].([]any)
-	if !ok || len(items) != vectorDimensions {
+	if !ok {
 		return nil
 	}
 	vector := make([]float64, len(items))

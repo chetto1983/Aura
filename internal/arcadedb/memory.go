@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ func memorySchemaStatements() []string {
 		// Standard and 1 under English, with `lives`/`living` likewise.
 		"CREATE INDEX IF NOT EXISTS ON " + factEdgeType + " (statement) FULL_TEXT " +
 			"METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
-	}, append(poleSchemaStatements(), mentionSchemaStatements()...)...)
+	}, slices.Concat(poleSchemaStatements(), mentionSchemaStatements(), exampleSchemaStatements())...)
 }
 
 // EnsureMemorySchema creates the memory model if it is not already there.
