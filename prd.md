@@ -4549,6 +4549,33 @@ What this does not establish:
   was not seen. A subject that does not leaves the double, and no alert is lost;
 - G3: zero missed and zero duplicates over five working days stays owed.
 
+### Mail watch: the urgency centroid in shadow (2026-11-03)
+
+`docs/superpowers/specs/2026-11-03-urgency-centroid-design.md`, approved by the operator on
+2026-11-03 after the 2026-11-02 spike. On the pilot's 87 mails decided after a shadow half-month,
+a class centroid over sender and subject vectors scored 56.7 macro F1. The per-sender memory
+scored 28.4 and the ladder alone found 2 of 23 `now`. First live run:
+`docs/superpowers/verification/2026-11-03-urgency-centroid-shadow-live.md`.
+
+| Decided | Measured |
+|---|---|
+| Every mail the watch decides is also judged by the centroid. The answer, the per-sender memory's tier and the ladder's own answer (`ladder_tier`, `ladder_by`) are kept on the verdict row (migration 0152). Nothing the person sees changes except a line in the decisions view where the centroid disagrees | On the VM: from the first tick after the update every summary has a `shadow:` part; one mail answered at margin 0.015, its tier left as the rule decided it |
+| A tier correction is stored as a `ConfirmedExample` in the identity's ArcadeDB database, through `internal/examplebank`, which knows no domain. A label-only correction teaches nothing | One correction, exactly one example, domain `mail_tier`, label `later` |
+| Seeds embed in the background once per process and space, and a cold mail's shadow is empty and counted | 200 seeds in 6.54 s on the VM; the two cold mails were empty and their verdicts unchanged |
+| The shadow follows the documents' embedding route whatever it is (operator, 2026-11-03, after the final review asked) | The VM's route is OpenRouter `perplexity/pplx-embed-v1-4b`, not the EmbeddingGemma the spike measured |
+| A hung embedder holds a tick one `shadowTimeout` (5 s), not one per page, and a page starts only with room for the PIM's read, the shadow and the commit | Tests only |
+| `aura mail-watch shadow` prints the three arms against strong truth (a changed tier), weak truth (a kept tier, or settled mail the person was told) and both | Printed on the VM |
+
+Forgetting by domain is not built: no domain is retired yet. An account's examples go with the
+account, and the bank's next build forgets any left behind.
+
+What this does not establish:
+- that the centroid beats the ladder or the memory on real mail. The promotion spec reads the
+  report, and BASELINE OR DROP applies;
+- that the spike's 56.7 holds on pplx-embed: a paid re-run of the 87 mails would answer it;
+- mutation at 70% on the centroid's files: CI's critical-mutation gate does not scope them;
+- the token cost on a cloud route over a day.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
