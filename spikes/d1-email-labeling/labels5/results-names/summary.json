@@ -1,0 +1,183 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/models/d1-3B-Q4_K_M.gguf",
+        "model": "/models/d1-3B-Q4_K_M.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/models/d1-3B-Q4_K_M.gguf",
+        "aliases": [
+          "/models/d1-3B-Q4_K_M.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "decisions"
+          ]
+        },
+        "created": 1793713804,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 128000,
+          "n_ctx": 2048,
+          "n_ctx_train": 32768,
+          "n_embd": 2048,
+          "n_params": 2697198592,
+          "size": 1666215936,
+          "ftype": "Q4_K - Medium"
+        }
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "emails.tsv"
+  ],
+  "arms": {
+    "names": {
+      "total": 200,
+      "correct": 106,
+      "macro_f1": 0.4227,
+      "latency_ms_p50": 108,
+      "thresholds": {
+        "0.0": {
+          "applied": 74,
+          "right": 47,
+          "coverage_of_labelable": 0.376,
+          "label_on_none": 16,
+          "false_pubblicita": 2
+        },
+        "0.4": {
+          "applied": 66,
+          "right": 42,
+          "coverage_of_labelable": 0.336,
+          "label_on_none": 16,
+          "false_pubblicita": 1
+        },
+        "0.5": {
+          "applied": 47,
+          "right": 31,
+          "coverage_of_labelable": 0.248,
+          "label_on_none": 12,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 29,
+          "right": 23,
+          "coverage_of_labelable": 0.184,
+          "label_on_none": 5,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 19,
+          "right": 16,
+          "coverage_of_labelable": 0.128,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 11,
+          "right": 9,
+          "coverage_of_labelable": 0.072,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 2,
+          "right": 0,
+          "coverage_of_labelable": 0.0,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "it": {
+      "total": 200,
+      "correct": 170,
+      "macro_f1": 0.8456,
+      "latency_ms_p50": 148,
+      "thresholds": {
+        "0.0": {
+          "applied": 103,
+          "right": 97,
+          "coverage_of_labelable": 0.776,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 102,
+          "right": 97,
+          "coverage_of_labelable": 0.776,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 94,
+          "right": 91,
+          "coverage_of_labelable": 0.728,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 83,
+          "right": 80,
+          "coverage_of_labelable": 0.64,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 68,
+          "right": 67,
+          "coverage_of_labelable": 0.536,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 45,
+          "right": 45,
+          "coverage_of_labelable": 0.36,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 10,
+          "right": 10,
+          "coverage_of_labelable": 0.08,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    }
+  }
+}

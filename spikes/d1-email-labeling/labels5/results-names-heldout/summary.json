@@ -1,0 +1,184 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/models/d1-3B-Q4_K_M.gguf",
+        "model": "/models/d1-3B-Q4_K_M.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/models/d1-3B-Q4_K_M.gguf",
+        "aliases": [
+          "/models/d1-3B-Q4_K_M.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "decisions"
+          ]
+        },
+        "created": 1793713855,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 128000,
+          "n_ctx": 2048,
+          "n_ctx_train": 32768,
+          "n_embd": 2048,
+          "n_params": 2697198592,
+          "size": 1666215936,
+          "ftype": "Q4_K - Medium"
+        }
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "improvement/confirmation.tsv",
+    "improvement/holdout.tsv"
+  ],
+  "arms": {
+    "names": {
+      "total": 120,
+      "correct": 66,
+      "macro_f1": 0.4365,
+      "latency_ms_p50": 110,
+      "thresholds": {
+        "0.0": {
+          "applied": 50,
+          "right": 29,
+          "coverage_of_labelable": 0.3867,
+          "label_on_none": 8,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 44,
+          "right": 28,
+          "coverage_of_labelable": 0.3733,
+          "label_on_none": 7,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 29,
+          "right": 23,
+          "coverage_of_labelable": 0.3067,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 19,
+          "right": 17,
+          "coverage_of_labelable": 0.2267,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 14,
+          "right": 12,
+          "coverage_of_labelable": 0.16,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 4,
+          "right": 4,
+          "coverage_of_labelable": 0.0533,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 1,
+          "right": 1,
+          "coverage_of_labelable": 0.0133,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "it": {
+      "total": 120,
+      "correct": 104,
+      "macro_f1": 0.8716,
+      "latency_ms_p50": 151,
+      "thresholds": {
+        "0.0": {
+          "applied": 61,
+          "right": 60,
+          "coverage_of_labelable": 0.8,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 61,
+          "right": 60,
+          "coverage_of_labelable": 0.8,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 58,
+          "right": 58,
+          "coverage_of_labelable": 0.7733,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 54,
+          "right": 54,
+          "coverage_of_labelable": 0.72,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 42,
+          "right": 42,
+          "coverage_of_labelable": 0.56,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 28,
+          "right": 28,
+          "coverage_of_labelable": 0.3733,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 12,
+          "right": 12,
+          "coverage_of_labelable": 0.16,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    }
+  }
+}

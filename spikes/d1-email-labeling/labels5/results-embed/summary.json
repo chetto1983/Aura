@@ -1,0 +1,114 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf",
+        "model": "/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf",
+        "aliases": [
+          "/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "created": 1793714647,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 1,
+          "n_vocab": 262144,
+          "n_ctx": 2048,
+          "n_ctx_train": 2048,
+          "n_embd": 768,
+          "n_params": 307581696,
+          "size": 327060480,
+          "ftype": "Q8_0"
+        }
+      }
+    ]
+  },
+  "cost": 5,
+  "prompts": {
+    "retrieval": {
+      "temperature": 0.1,
+      "threshold": 0.8,
+      "200": {
+        "argmax_right": 127,
+        "total": 200,
+        "at_chosen": {
+          "applied": 0,
+          "right": 0,
+          "coverage_of_labelable": 0.0,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "latency_ms_p50": 39.2
+      },
+      "held-out": {
+        "argmax_right": 73,
+        "total": 120,
+        "at_chosen": {
+          "applied": 0,
+          "right": 0,
+          "coverage_of_labelable": 0.0,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "latency_ms_p50": 27.1
+      }
+    },
+    "classification": {
+      "temperature": 0.1,
+      "threshold": 0.5,
+      "200": {
+        "argmax_right": 113,
+        "total": 200,
+        "at_chosen": {
+          "applied": 6,
+          "right": 6,
+          "coverage_of_labelable": 0.048,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "latency_ms_p50": 22.6
+      },
+      "held-out": {
+        "argmax_right": 71,
+        "total": 120,
+        "at_chosen": {
+          "applied": 2,
+          "right": 2,
+          "coverage_of_labelable": 0.0267,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "latency_ms_p50": 24.6
+      }
+    }
+  }
+}
