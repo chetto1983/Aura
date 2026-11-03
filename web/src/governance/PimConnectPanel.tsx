@@ -10,16 +10,24 @@ import { PimGoogleConnectPanel } from './PimGoogleConnectPanel';
 export function PimConnectPanel({
   result,
   retrying,
+  signingInAgain = false,
   onRetry,
 }: {
   readonly result: PimConnectResult;
   readonly retrying: boolean;
+  readonly signingInAgain?: boolean;
   readonly onRetry: () => void;
 }) {
   const { t } = useTranslation();
   switch (result.kind) {
     case 'google':
-      return <PimGoogleConnectPanel accountId={result.id} start={result.start} />;
+      return (
+        <PimGoogleConnectPanel
+          accountId={result.id}
+          start={result.start}
+          signingInAgain={signingInAgain}
+        />
+      );
     case 'device':
       return <PimDeviceCodePanel accountId={result.id} start={result.start} />;
     case 'startFailed':

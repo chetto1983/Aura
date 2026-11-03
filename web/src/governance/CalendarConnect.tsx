@@ -132,7 +132,7 @@ function AccountList({
       </ul>
       {remove.isError ? (
         <p role="alert" className="text-[13px] text-danger">
-          {t('governance.mcp.calendar.disconnectError')}
+          {t('governance.mcp.calendar.removeError')}
         </p>
       ) : null}
       <MailWatchOverview />

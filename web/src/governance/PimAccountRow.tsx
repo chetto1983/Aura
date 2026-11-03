@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AccountWatch } from './mailWatch/AccountWatch';
 import { startConnect } from './pimConnect';
@@ -11,8 +12,10 @@ import { Button } from '@/components/ui/button';
 
 // PimAccountRow is one configured account. An account is listed from the moment it is added, before
 // anyone signs in, so the row reads `linked` before it says anything: one whose sign-in never
-// finished offers to finish it or to remove it, and draws no "Disconnect" for a connection that does
-// not exist.
+// finished offers to finish it, a connected one to sign in again, both on the same account. Removing
+// is the only way to forget the account, so it says what the mail watch loses and asks first: a
+// "Disconnect" that removed the account wiped its watch history on every re-link (2026-11-02 and
+// 2026-11-03, lab VM).
 
 export function PimAccountRow({
   account,
@@ -26,6 +29,7 @@ export function PimAccountRow({
   const { t } = useTranslation();
   const flow = pimAccountFlow(account.provider);
   const connect = useMutation({ mutationFn: () => startConnect(account.id, flow) });
+  const [confirming, setConfirming] = useState(false);
   const unfinished = account.linked === false;
 
   return (
@@ -40,9 +44,10 @@ export function PimAccountRow({
           </span>
         </span>
         <span className="flex shrink-0 flex-wrap justify-end gap-2">
-          {unfinished && flow !== 'none' ? (
+          {flow !== 'none' ? (
             <Button
               type="button"
+              variant={unfinished ? 'default' : 'outline'}
               disabled={connect.isPending}
               aria-busy={connect.isPending}
               onClick={() => {
@@ -51,34 +56,73 @@ export function PimAccountRow({
               className="px-3 text-[13px]"
             >
               {connect.isPending ? <Spinner /> : null}
-              {t('governance.mcp.calendar.finishSignIn')}
+              {t(
+                unfinished
+                  ? 'governance.mcp.calendar.finishSignIn'
+                  : 'governance.mcp.calendar.signInAgain',
+              )}
             </Button>
           ) : null}
           <Button
             type="button"
             variant="outline"
-            disabled={removing}
-            aria-busy={removing}
-            onClick={onRemove}
+            disabled={removing || confirming}
+            onClick={() => {
+              setConfirming(true);
+            }}
             className="px-3 text-[13px]"
           >
-            {removing ? <Spinner /> : null}
-            {t(
-              unfinished ? 'governance.mcp.calendar.remove' : 'governance.mcp.calendar.disconnect',
-            )}
+            {t('governance.mcp.calendar.remove')}
           </Button>
         </span>
       </div>
+      {confirming ? (
+        <div
+          role="group"
+          aria-label={t('governance.mcp.calendar.remove')}
+          className="flex flex-col gap-2 rounded-md border border-danger px-3 py-2"
+        >
+          <p className="flex items-start gap-1.5 text-[13px] text-danger">
+            <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            <span>{t('governance.mcp.calendar.removeConfirm')}</span>
+          </p>
+          <span className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={removing}
+              aria-busy={removing}
+              onClick={onRemove}
+              className="border border-danger px-3 text-[13px] text-danger hover:bg-danger/10 hover:text-danger"
+            >
+              {removing ? <Spinner /> : null}
+              {t('governance.mcp.calendar.removeForGood')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={removing}
+              onClick={() => {
+                setConfirming(false);
+              }}
+              className="px-3 text-[13px]"
+            >
+              {t('governance.mcp.calendar.cancel')}
+            </Button>
+          </span>
+        </div>
+      ) : null}
       {unfinished ? (
         <p role="status" className="flex items-start gap-1.5 text-[13px] text-warning">
           <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
           <span>{t('governance.mcp.calendar.notLinked')}</span>
         </p>
       ) : null}
-      {unfinished && connect.data !== undefined ? (
+      {connect.data !== undefined ? (
         <PimConnectPanel
           result={connect.data}
           retrying={connect.isPending}
+          signingInAgain={!unfinished}
           onRetry={() => {
             connect.mutate();
           }}

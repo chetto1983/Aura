@@ -9,10 +9,11 @@ import { chooseOption, optionNames } from '../../test/chooseOption';
 import { mailWatchServer } from '../../test/mailWatchServer';
 
 // CalendarConnect test — the cockpit calendar/PIM connect section. It mocks the connect API to drive:
-// the accounts list (render + disconnect), the empty/offline states, and the provider-driven add
+// the accounts list and its watch, the empty/offline states, and the provider-driven add
 // flow across every connect shape — Google web-redirect, Microsoft device-code (with status poll),
 // and a no-auth credential provider (IMAP). It also covers provider-switching field visibility and
-// the isCalendarServer recipe/source/name heuristic.
+// the isCalendarServer recipe/source/name heuristic. One row's sign-in and removal are in
+// CalendarConnectRow.test.tsx.
 
 const listPimAccounts = vi.fn();
 const createPimAccount = vi.fn();
@@ -71,7 +72,6 @@ const ACCOUNT: PimAccount = {
   linked: true,
 };
 
-const UNFINISHED: PimAccount = { ...ACCOUNT, provider: 'outlook.com', linked: false };
 
 const GOOGLE_START: PimGoogleStart = {
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x',
@@ -147,98 +147,6 @@ describe('CalendarConnect', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the configured accounts list with provider · id', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    renderConnect();
-
-    expect(await screen.findByText('Work calendar')).toBeTruthy();
-    expect(screen.getByText('google · work')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeTruthy();
-  });
-
-  it('says nothing about sign-in on a connected account', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    renderConnect();
-
-    await screen.findByText('Work calendar');
-    expect(screen.queryByText(/Sign-in not finished/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Finish sign-in' })).toBeNull();
-  });
-
-  it('does not show an account whose sign-in never finished as connected', async () => {
-    mailWatchServer();
-    listPimAccounts.mockResolvedValue({ accounts: [{ ...UNFINISHED, id: 'home' }] });
-    renderConnect();
-
-    expect(await screen.findByText(/Sign-in not finished/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
-    await screen.findByText(/Digest at 18:00/);
-    expect(screen.queryByRole('switch', { name: /Mail and calendar watch for/ })).toBeNull();
-    vi.unstubAllGlobals();
-  });
-
-  it('Remove on an unfinished account fires the delete mutation', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [UNFINISHED] });
-    deletePimAccount.mockResolvedValue(undefined);
-    renderConnect();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    await waitFor(() => {
-      expect(deletePimAccount).toHaveBeenCalledWith('work');
-    });
-  });
-
-  it('finishes a Microsoft sign-in on the same account, with a new code', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [UNFINISHED] });
-    pimDeviceStart.mockResolvedValue(DEVICE_START);
-    pimAuthStatus.mockResolvedValue({ status: 'awaiting_user', message: '' });
-    renderConnect();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
-
-    expect(await screen.findByText('ABCD-EFGH')).toBeTruthy();
-    expect(pimDeviceStart).toHaveBeenCalledWith('work');
-    expect(createPimAccount).not.toHaveBeenCalled();
-  });
-
-  it('finishes a Google sign-in on the same account', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [{ ...UNFINISHED, provider: 'google' }] });
-    pimGoogleStart.mockResolvedValue(GOOGLE_START);
-    renderConnect();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
-
-    await waitFor(() => {
-      expect(pimGoogleStart).toHaveBeenCalledWith('work');
-    });
-    expect(createPimAccount).not.toHaveBeenCalled();
-  });
-
-  it('lets a failed sign-in start be tried again from the row', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [UNFINISHED] });
-    pimDeviceStart.mockRejectedValueOnce(new Error('HTTP 502'));
-    pimDeviceStart.mockResolvedValue(DEVICE_START);
-    pimAuthStatus.mockResolvedValue({ status: 'awaiting_user', message: '' });
-    renderConnect();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Retry sign-in' }));
-
-    expect(await screen.findByText('ABCD-EFGH')).toBeTruthy();
-  });
-
-  it('offers no sign-in on a provider with nothing to sign in to', async () => {
-    listPimAccounts.mockResolvedValue({
-      accounts: [{ ...ACCOUNT, provider: 'imap', linked: null }],
-    });
-    renderConnect();
-
-    await screen.findByText('Work calendar');
-    expect(screen.queryByRole('button', { name: 'Finish sign-in' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeTruthy();
-  });
-
   it('carries the mail watch on each row, and its terms under the list', async () => {
     mailWatchServer();
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT, { ...ACCOUNT, id: 'home' }] });
@@ -263,17 +171,6 @@ describe('CalendarConnect', () => {
     listPimAccounts.mockRejectedValue(new Error('HTTP 503'));
     renderConnect();
     expect(await screen.findByText(/not configured on this deployment/i)).toBeTruthy();
-  });
-
-  it('Disconnect fires the delete mutation', async () => {
-    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    deletePimAccount.mockResolvedValue(undefined);
-    renderConnect();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    await waitFor(() => {
-      expect(deletePimAccount).toHaveBeenCalledWith('work');
-    });
   });
 
   it('validates empty Google fields and does not submit', async () => {
