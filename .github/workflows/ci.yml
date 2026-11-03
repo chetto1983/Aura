@@ -2249,6 +2249,7 @@ jobs:
       # GitHub sets CI=true already; stated explicitly because the tier's no-skip-as-green
       # guards key off it and the coupling should be visible at the job, not inferred.
       CI: "true"
+      AURA_SIGNIN_BROWSER_IMAGE: lscr.io/linuxserver/chromium@sha256:b147169cc5ff21c62df977f314598537eecf566591c13ad0726b1e5cbd0d01ca
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -2301,6 +2302,7 @@ jobs:
         run: |
           docker pull busybox:stable
           docker pull python:3-slim
+          docker pull "$AURA_SIGNIN_BROWSER_IMAGE"
 
       - name: docker_integration tier (box lifecycle + egress floor + routed host tools)
         # -p 1: the three packages share ONE daemon and each creates and destroys containers,

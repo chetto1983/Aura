@@ -7,10 +7,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"os"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/config"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -25,17 +25,12 @@ func signInDocker(t *testing.T) (context.Context, *DockerBackend, SignInSpec) {
 	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
 		t.Fatalf("Docker required: %v", err)
 	}
-	image := strings.TrimSpace(os.Getenv("AURA_SIGNIN_BROWSER_IMAGE"))
-	if image == "" {
-		t.Fatal("set AURA_SIGNIN_BROWSER_IMAGE to the measured desktop digest")
-	}
+	sandbox := config.LoadDB().Sandbox
+	image := sandbox.SignInBrowserImage
 	if _, err := cli.ImageInspect(ctx, image); err != nil {
 		t.Fatalf("pull the desktop image before this tier: %v", err)
 	}
-	sidecar := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE"))
-	if sidecar == "" {
-		sidecar = "aura-sandbox:latest"
-	}
+	sidecar := sandbox.Image
 	var id [12]byte
 	_, _ = rand.Read(id[:])
 	session := "signin-" + hex.EncodeToString(id[:])
