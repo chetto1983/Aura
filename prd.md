@@ -3390,6 +3390,71 @@ revocation use protected storage and the existing native flow, also for Aura-own
 sidecars. A JWKS outage is infrastructure failure, not an invalid token. Log the cause
 without flooding each turn with the same error.
 
+### Private MCP sign-in browser — measured 2026-11-02/03
+
+Evidence: [spike and provider acceptance](docs/superpowers/verification/2026-11-02-sign-in-browser-spike.md),
+[live TLS/resources/cleanup](docs/superpowers/verification/2026-11-03-sign-in-browser-live.md).
+The operator accepted Canva, Linear and Notion; Linear/Notion saved fresh grants
+and listed 38/72 tools on appliance revision `dd0537997`. GitHub was excluded.
+Google keeps the working Web-client relay described below, confirmed by the
+operator on 2026-11-03; no Desktop-client migration was performed.
+
+An OAuth MCP card opens a private Chromium desktop for one identity and flow.
+The assistant has no browser/tool route to it. The existing SDK and Flows own
+OAuth; `internal/browserlogin` supplies the shared lifecycle, while ChatGPT keeps
+its existing launcher. A callback sidecar owns the netns, the real egress floor
+comes up first, and then the desktop starts. The loopback callback is
+`http://127.0.0.1:43121/aura/mcp/oauth/callback`; a registered loopback redirect
+is retained byte for byte. Closing/expiry removes all three containers and the
+anonymous profile volume. Boot sweep removes orphans. A failed reauthorization
+preserves a stored grant. Refresh `invalid_grant` marks `refused_at`; transient
+failures do not, and a successful save clears it.
+
+The dedicated desktop origin reuses the cockpit's hostname and scheme on port
+8444 by default. Ownership and WebSocket Origin are checked before an exec dial;
+the proxy strips cockpit credentials and enforces CSP. The cockpit frames it
+with `sandbox="allow-scripts allow-same-origin"`, native frame/WebSocket origin
+controls and explicit clipboard permissions. The ordinary opaque-origin sandbox
+failed because stock Selkies needs storage. Whole-cockpit CrossOriginProtection
+refuses writes from the desktop's different origin despite same-site cookies.
+Owner-bound session metadata/readiness exposes no consent URL and lets the page
+offer certificate onboarding before showing a frame. Ordinary Edge framing was
+accepted; an isolated actual-bundle Edge run with a genuinely untrusted desktop
+certificate displayed trust/retry/own-browser actions and no ready iframe. That
+negative fixture used an HTTP-loopback parent, not a new trusted-parent install.
+
+The 2026-11-03 shared-origin fixture also measured that a native MCP Apps view can
+read a sibling desktop sharing its origin through the frame tree. The proxy must
+therefore refuse a stream on the configured MCP Apps origin before exec, and a
+start using that origin must select own-browser paste-back before preflight or
+admission. Co-hosting these GUIs is unsupported; no additional listener, origin
+setting or image is introduced. Default inline sign-in remains available while
+the MCP Apps origin is unset. This restriction follows from a synthetic DOM read,
+not a measured exposure of a user's browser.
+
+`AURA_SIGNIN_BROWSER_IMAGE` pins the separate, first-use desktop image; it is not
+in the appliance payload. The card asks before its 1.17 GB download and reports
+shared progress. The measured image is 4,661,934,168 bytes and its earlier cold
+pull took 225 seconds. Retain an 8 GiB disk preflight and 1.5 GiB desktop cap: the
+five-minute public Canva probe peaked at 663.56 MiB with zero OOM kills. Native
+SIGKILL/orphan sweep removed all three containers and the anonymous profile volume.
+These measurements cover the available 15.1 GiB/eight-CPU VM, not smaller hosts,
+every authenticated page or the appliance daemon's full restart sequence.
+
+Insecure LAN HTTP, tunnel access, incompatible dedicated origins, an unavailable
+image or insufficient disk uses the explicit own-browser paste-back. A complete
+return address is limited to 16 KiB and accepted only for the owner, active flow
+and matching constant-time state; refusal, replay and expiry remain explicit.
+The old public MCP callback now returns 404. Google retains its public callback
+and `AURA_WEB_PUBLIC_URL` remains while its return-origin reader is live.
+
+The published client-metadata document still names the MCP relay, which forwards
+to the private loopback listener as well as supporting explicit paste-back.
+Direct ElevenLabs loopback registration remains unmeasured. Removing the MCP
+relay is a separate job only after that optional measurement and updates to all
+known installs; the Google relay stays. No Cloudflare-site change is part of
+this implementation.
+
 Google account linking in the PIM sidecar uses a Web OAuth client that the operator
 creates, and one shared relay page
 (`https://chetto1983-aura-connect.pages.dev/google/callback/`) as its only redirect URI,
@@ -3443,8 +3508,9 @@ with Aura's Client ID Metadata Document, published beside the Google relay at
 `chetto1983.github.io/aura-connect/…`, the address the 2026-09-23 measurements below used). The
 document's only
 redirect URI is a relay page next to it (`.../mcp/callback/`). The relay works like the
-Google one and forwards only to the cockpit's `/api/governance/mcp/authorization/callback` and
-to the loopback listener of `aura mcp login`. The document is a fallback: a mount presents the
+Google one and forwards only to its allowlisted destinations. The older cockpit
+`/api/governance/mcp/authorization/callback` destination is retired in current Aura;
+the container and `aura mcp login` use the loopback listener. The document is a fallback: a mount presents the
 operator's pre-registered client, else registers dynamically, and signs in with the document
 only when the SDK reports no registration method. Linear and Notion advertise metadata
 documents too (measured 2026-09-23); they keep signing in through dynamic registration on the

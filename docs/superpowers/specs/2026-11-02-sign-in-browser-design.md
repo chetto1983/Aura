@@ -113,6 +113,16 @@ enforces the same isolation in its response CSP and restricts the allowed embedd
 the proxy also verifies the WebSocket Origin before dialing. Native token mode exists, but it does not replace Aura's
 ownership check before an exec or repair the opaque-origin storage failure.
 
+**Measured correction, 2026-11-03:** the native MCP Apps proxy also grants a real
+origin to its view. In isolated Edge, an app framed by that unmodified proxy read
+a synthetic marker from a sibling desktop sharing its origin, despite the
+cockpit's different origin and the desktop sandbox. Therefore the sign-in stream
+must refuse an origin reserved by `MCPSandboxOrigin` before dialing. A start that
+would use that configured MCP Apps origin must use the existing explicit
+own-browser flow before image preflight or admission. The default inline desktop
+remains available while the MCP Apps origin is unset. This introduces no extra
+listener or origin setting; co-hosting both GUIs on one origin is unsupported.
+
 Use the existing Caddy `:8444` keyhole for the authenticated stream, retaining its refusal of unrelated routes. The
 desktop origin must use the cockpit's hostname and another HTTPS port, so its Strict session cookie arrives without
 cross-host credential handoff. A configured origin on another hostname, a tunnel without that port, or an unreachable
@@ -217,7 +227,7 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 | **S3** | With both harden switches on, the same sign-in passes, and sudo, terminals and file transfer are gone when tried |
 | **S4** | Withdrawn on 2026-11-03: the operator keeps the working Google Web-client relay; Desktop consent and next-day refresh remain unmeasured |
 | **S5** | ElevenLabs with the client-metadata document naming a loopback redirect, if an account is available. If not, `mcp/callback` stays and the verification file says why |
-| **S6** | Pull time and peak memory on a small install. The 8 GB floor and the memory cap are guesses until then |
+| **S6** | Available-VM measurement recorded 2026-11-03: 225 s earlier cold pull, 663.56 MiB public-page desktop peak, zero OOM kills and 14.66 GB free after cleanup. Retain 1.5 GiB memory/8 GiB free disk conservatively; smaller hosts and authenticated-page peaks remain unmeasured |
 | **S7** | Linear and Notion through the container on the VM. Slack's rules are read before anything is promised for it. The operator excluded the GitHub live trial on 2026-11-03 (“github non mi interessa”); no GitHub acceptance is claimed |
 
 ## 7. Order of landing
@@ -252,7 +262,7 @@ authenticated path to a privileged GUI.
 - That Cloudflare or Google will keep treating this browser as they did on 2026-11-02. Nothing here controls that, and
   a site that stops admitting it stops this path. The fallback is §4.7.
 - That it works from an appliance on a residential or a data-centre address. Only the Sacchi network and this PC ran.
-- Any site other than Canva and Google.
+- Additional MCP providers beyond the accepted Canva, Linear and Notion trials.
 - That a person on a phone can drive it. Selkies has a touch mode, and nobody has tried it.
 - Licence: the image is GPL-3.0 and runs as a separate, unmodified container, which is an engineer's reading, not advice.
 

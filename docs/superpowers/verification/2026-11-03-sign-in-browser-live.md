@@ -41,5 +41,55 @@ The configured Chromium digest remains
 Docker reports 4,661,934,168 image bytes. Its earlier cold pull took 225 seconds;
 this already-cached image has not been deleted merely to repeat that pull.
 Compressed layer size is 1,166,237,615 bytes, measured from its amd64 manifest.
-The ongoing native-backend resource probe will add peak cgroup usage and disk
-after cleanup here. No minimum-host capacity claim follows from this baseline.
+No minimum-host capacity claim follows from this baseline.
+
+## S6 — native backend and cgroup peaks
+
+The temporary probe called the product's existing `StartSignIn` and `StopSignIn`
+APIs with the configured images and limits, real egress floor and the public Canva
+landing page. No consent, screenshot or page-content inspection was performed.
+The desktop became ready in 3.610 seconds and remained open for five minutes.
+An external observer sampled cgroup-v2 `memory.peak`/`memory.current` and
+`memory.events` about once per second, retaining each role's high-water mark.
+
+| Role | Peak bytes | Samples | OOM kills |
+|---|---:|---:|---:|
+| Desktop | 695,791,616 | 285 | 0 |
+| Callback sidecar | 20,705,280 | 286 | 0 |
+| Egress floor | 5,844,992 | 285 | 0 |
+
+The desktop peak is 663.56 MiB, 43.20% of its 1.5 GiB cap; shared memory was capped
+at 1 GiB. Retain the cap for consent-page headroom. Retain the 8 GiB disk preflight:
+the measured image plus compressed download totals 5.83 GB before extraction and
+runtime headroom. This is a conservative budget, not a measured minimum capable
+host or a bound for every provider. Smaller hosts and authenticated-page peak
+memory remain unmeasured by this probe; the earlier consent trials are separate.
+
+All three containers disappeared after normal teardown. At 12:08:01 UTC Docker's
+filesystem had 14,662,205,440 bytes free (75% used); Aura and Caddy were healthy.
+
+## Native process interruption and sweep
+
+A second temporary process called the same native backend and reached ready in
+3.767 seconds. With its three containers running, sent SIGKILL to that probe
+process and observed exit 137. A fresh backend invocation called `SweepSignIns`
+after checking that no other sign-in session was present. It removed all three
+orphan containers and the desktop's anonymous profile volume. Aura and Caddy
+remained healthy. This measures the exact cleanup API used at daemon boot, without
+killing the appliance daemon or measuring its full restart sequence.
+
+## Shared-origin privacy measurement
+
+An isolated Edge fixture used the unmodified `internal/agui/mcp_sandbox.html`,
+its nested `allow-scripts allow-same-origin` view and a synthetic desktop with
+the product's sandbox CSP. With both on one origin, the view read a synthetic
+private marker from the sibling desktop through the frame tree. The cockpit
+was on a different origin. The corrected fixture reproduced this in 2.040 seconds;
+its first two attempts had only a parent-script HTML escaping error.
+
+This measures browser same-origin access, not exposure of a person's credentials
+or content. It establishes a privacy gap when an enabled MCP Apps origin is also
+used for sign-in. The required mitigation is to use the existing own-browser
+fallback for that configuration and refuse shared-origin stream requests before
+any exec. The default case with no MCP Apps origin remains separate. Verification
+of the mitigation follows in this record.
