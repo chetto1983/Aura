@@ -165,21 +165,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceMCPListRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPProbeRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPAuthStateRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle("GET /api/governance/sign-in/image", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceMCPAuthFlowRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
-	// The OAuth callback is the ONE route here that carries no capability, because it
-	// cannot: it is a cross-site top-level navigation from the provider's consent screen,
-	// and the session cookie is `__Host-` + SameSite, so the browser does not send it on
-	// that hop. Mounted behind a capability it did exactly what a missing session always
-	// does — bounced the human to the login page, discarding a consent they had already
-	// given (measured against Slack, 2026-08-24).
-	//
-	// What authenticates it instead is `state`: 128 bits of SDK-generated randomness,
-	// single-use, TTL-bounded, and matched against a flow THIS deployment started. The
-	// handler reads nothing else — no identity from context — and an unknown state gets a
-	// 409, so the route grants nothing to anyone who cannot already produce the secret.
-	// This is what LibreChat does too (api/server/routes/mcp.js: the callback carries no
-	// auth middleware and resolves state → flow).
-	mux.Handle(governanceMCPAuthCbRoute, aguiHandler)
 	mux.Handle(governanceSkillsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSkillsBodyRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
@@ -200,6 +187,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	}
 	mux.Handle(governanceMCPAuthStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle("POST /api/governance/sign-in/image", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPAuthPasteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPAuthRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-29 SKW-01/02/03 governance SKILLS WRITE routes — same governance.write gate.

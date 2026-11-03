@@ -182,18 +182,23 @@ func (s *Server) handlePIMGoogleStart(w http.ResponseWriter, r *http.Request) {
 	s.forwardPIMJSON(w, r, http.MethodGet, path, nil)
 }
 
-// pimReturnOrigin applies the MCP OAuth callback's rule (mcpAuthService.callbackFor): a pinned
-// AURA_WEB_PUBLIC_URL wins, otherwise the origin this cockpit request arrived on. Only the origin
-// is kept, because the sidecar refuses a returnBase that carries a path.
+// pimReturnOrigin keeps the live relay on the browser's configured return origin.
 func (s *Server) pimReturnOrigin(r *http.Request) string {
 	if s.calendarPublicURL == "" {
-		return cockpitOrigin(r)
+		return pimRequestOrigin(r)
 	}
 	pinned, err := url.Parse(strings.TrimSpace(s.calendarPublicURL))
 	if err != nil || pinned.Scheme == "" || pinned.Host == "" {
-		return cockpitOrigin(r)
+		return pimRequestOrigin(r)
 	}
 	return pinned.Scheme + "://" + pinned.Host
+}
+
+func pimRequestOrigin(r *http.Request) string {
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && origin != "null" {
+		return origin
+	}
+	return requestOrigin(r)
 }
 
 // PIMGoogleCallbackPath is where the aura-connect relay sends the browser after Google's consent.

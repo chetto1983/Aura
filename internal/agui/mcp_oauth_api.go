@@ -3,9 +3,9 @@ package agui
 import (
 	"context"
 	"errors"
-	"io"
+
 	"net/http"
-	"strings"
+
 	"time"
 
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -21,11 +21,8 @@ import (
 // error, tolerating a few consecutive poll failures), and the status vocabulary here is
 // its own so the two can be read side by side.
 //
-// The redirect lands on a route of ours rather than on the browser: the authorization
-// server posts nothing, it redirects the human back, and the code arrives as a query
-// parameter on a plain GET. That GET is matched to its flow by the OAuth `state`, which
-// is the only value a redirect is guaranteed to carry — LibreChat keys its callback the
-// same way for the same reason.
+// The callback listener lives beside the private desktop. Its matched state completes
+// the same owner-scoped flow that the cockpit polls; the cockpit has no public callback.
 
 // MCPAuthorization is the stored, per-identity authorization state a row renders.
 type MCPAuthorization struct {
@@ -47,22 +44,30 @@ type MCPAuthorization struct {
 var ErrNoAuthorizationFlow = errors.New("this MCP server takes no authorization flow")
 
 // MCPAuthorizationProvider is the narrow seam the handlers depend on. The concrete
-// implementation — grant store, flow registry, session opener, configured callback URL —
+// implementation — grant store, flow registry, session opener and private desktop —
 // is assembled at the composition root, where the pool and the runtime egress policy
 // already live.
 type MCPAuthorizationProvider interface {
 	AuthorizationState(ctx context.Context, server string) (MCPAuthorization, error)
-	// StartAuthorization takes the origin the browser reaches this cockpit on, because
-	// that is where the authorization server has to send the human back. It is NOT a
-	// public address: the redirect is followed by the browser, never fetched by the
-	// provider, so http://localhost:8080 is a perfectly valid destination.
-	StartAuthorization(ctx context.Context, owner, server, origin string) (mcp.Flow, error)
+	StartSignIn(ctx context.Context, owner, server string, request SignInRequest) (MCPSignInResult, error)
 	StartLoopbackAuthorization(ctx context.Context, owner, server string) (mcp.Flow, error)
 	PasteAuthorization(owner, id, address string) (mcp.Flow, error)
 	AuthorizationFlow(owner, id string) (mcp.Flow, error)
-	CompleteAuthorization(state, code, iss string) (mcp.Flow, error)
-	FailAuthorization(state string, reason error) (mcp.Flow, error)
 	RevokeAuthorization(ctx context.Context, server string) (bool, error)
+}
+
+// SignInRequest separates the browser's address from the OAuth loopback redirect.
+type SignInRequest struct {
+	Origin string
+	Remote bool
+}
+
+// MCPSignInResult adds cockpit preparation and navigation to the OAuth flow snapshot.
+type MCPSignInResult struct {
+	mcp.Flow
+	SignInURL   string
+	Preparing   bool
+	Via, Reason string
 }
 
 // SetMCPAuthorizations wires the provider. A Server without one answers every route here
@@ -78,7 +83,6 @@ func (s *Server) registerMCPAuthorizationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/governance/mcp/{name}/authorization", s.handleMCPAuthorizationRevoke)
 	mux.HandleFunc("GET /api/governance/mcp/authorization/flow/{id}", s.handleMCPAuthorizationFlow)
 	mux.HandleFunc("POST /api/governance/mcp/authorization/flow/{id}/paste", s.handleMCPAuthorizationPaste)
-	mux.HandleFunc("GET /api/governance/mcp/authorization/callback", s.handleMCPAuthorizationCallback)
 }
 
 func (s *Server) mcpAuthProvider(w http.ResponseWriter) (MCPAuthorizationProvider, bool) {
@@ -95,35 +99,6 @@ func (s *Server) mcpAuthProvider(w http.ResponseWriter) (MCPAuthorizationProvide
 func owner(r *http.Request) (string, bool) {
 	id := identityctx.IdentityID(r.Context())
 	return id, id != ""
-}
-
-// cockpitOrigin reports the address the browser reaches this cockpit on, which is where
-// the authorization server must send the human back.
-//
-// The Origin header first, because it is the browser's own statement of where it is —
-// correct through a TLS-terminating proxy, where r.TLS is nil and a scheme guessed from
-// the connection would produce an http:// redirect that a provider rejects. It is present
-// on the fetch POST that starts a flow.
-//
-// This is not a trust decision the security of the flow rests on: a redirect URI only
-// matters once a human completes a consent screen in that same browser, the route is
-// behind session auth, and an operator who needs the address pinned regardless sets
-// AURA_WEB_PUBLIC_URL, which takes precedence over anything read here.
-func cockpitOrigin(r *http.Request) string {
-	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && origin != "null" {
-		return origin
-	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
-		scheme = forwarded
-	}
-	if r.Host == "" {
-		return ""
-	}
-	return scheme + "://" + r.Host
 }
 
 func (s *Server) handleMCPAuthorizationState(w http.ResponseWriter, r *http.Request) {
@@ -155,13 +130,14 @@ func (s *Server) handleMCPAuthorizationStart(w http.ResponseWriter, r *http.Requ
 	if !decodeMCPBody(w, r, &body) {
 		return
 	}
-	var flow mcp.Flow
+	var started MCPSignInResult
 	var err error
 	switch body.Via {
 	case "paste":
-		flow, err = provider.StartLoopbackAuthorization(r.Context(), id, r.PathValue("name"))
+		started.Flow, err = provider.StartLoopbackAuthorization(r.Context(), id, r.PathValue("name"))
+		started.Via = "paste"
 	case "":
-		flow, err = provider.StartAuthorization(r.Context(), id, r.PathValue("name"), cockpitOrigin(r))
+		started, err = provider.StartSignIn(r.Context(), id, r.PathValue("name"), SignInRequest{Origin: requestOrigin(r), Remote: r.Header.Get("X-Aura-Remote-Ingress") == "tunnel"})
 	default:
 		http.Error(w, "unknown authorization method", http.StatusBadRequest)
 		return
@@ -170,7 +146,21 @@ func (s *Server) handleMCPAuthorizationStart(w http.ResponseWriter, r *http.Requ
 		http.Error(w, mcp.RedactSecrets(err.Error()), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, flowResponse(flow))
+	if started.Preparing {
+		writeJSON(w, map[string]any{"preparing": true, "reason": started.Reason})
+		return
+	}
+	out := flowResponse(started.Flow)
+	if started.SignInURL != "" {
+		out["signInUrl"] = started.SignInURL
+	}
+	if started.Via != "" {
+		out["via"] = started.Via
+	}
+	if started.Reason != "" {
+		out["reason"] = started.Reason
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) handleMCPAuthorizationPaste(w http.ResponseWriter, r *http.Request) {
@@ -239,48 +229,6 @@ func (s *Server) handleMCPAuthorizationRevoke(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, map[string]any{"removed": removed})
-}
-
-// handleMCPAuthorizationCallback receives the human coming back from the provider.
-//
-// It answers text/plain deliberately. The only values available to render are ones the
-// authorization server chose, and the cheapest way to be certain none of them can become
-// markup in the operator's own origin is to serve no markup at all.
-func (s *Server) handleMCPAuthorizationCallback(w http.ResponseWriter, r *http.Request) {
-	provider, ok := s.mcpAuthProvider(w)
-	if !ok {
-		return
-	}
-	query := r.URL.Query()
-	state := query.Get("state")
-	if state == "" {
-		plain(w, http.StatusBadRequest, "This redirect carries no state, so it cannot be matched to an authorization.")
-		return
-	}
-	if refused := query.Get("error"); refused != "" {
-		// Reported through the flow so the cockpit's poll surfaces it, instead of
-		// leaving a spinner running until the flow expires.
-		_, _ = provider.FailAuthorization(state, errors.New(refused+": "+query.Get("error_description")))
-		plain(w, http.StatusOK, "Authorization was refused. You can close this tab; the cockpit has the details.")
-		return
-	}
-	code := query.Get("code")
-	if code == "" {
-		plain(w, http.StatusBadRequest, "This redirect carries no authorization code.")
-		return
-	}
-	if _, err := provider.CompleteAuthorization(state, code, query.Get("iss")); err != nil {
-		plain(w, http.StatusConflict, "This authorization was already completed or has expired. You can close this tab.")
-		return
-	}
-	plain(w, http.StatusOK, "Aura is authorized. You can close this tab.")
-}
-
-func plain(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(status)
-	_, _ = io.WriteString(w, message+"\n")
 }
 
 // flowResponse projects a flow onto the wire. The state never leaves the process: it is

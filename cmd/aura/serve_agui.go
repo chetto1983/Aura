@@ -181,6 +181,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	live := newLiveMCPMount(ctx, chat)
 	chat.liveMCP = live
 	if authService := chat.mcpAuth(); authService != nil {
+		wireSignInRuntime(ctx, chat, aguiServer, authService)
 		// Mount the server as soon as the human authorizes it. Boot could not: it has no
 		// browser and no identity, so an OAuth server is always dropped there. Without
 		// this the consent screen completed, the grant was stored, and the agent still had

@@ -1,4 +1,8 @@
 export const signInEn = {
+  imageSize: 'The sign-in browser needs a one-time download of 1.17 GB.',
+  imageDownload: 'Download the sign-in browser',
+  imageProgress: 'Sign-in browser download',
+  imageFailed: 'The sign-in browser could not be downloaded. Retry or use your own browser.',
   title: 'Sign in',
   private: 'This browser is yours. Aura’s assistant cannot see or control it.',
   ownBrowser: 'Use your own browser from the connector card',
@@ -14,6 +18,10 @@ export const signInEn = {
 };
 
 export const signInIt = {
+  imageSize: 'Il browser di accesso richiede un download iniziale di 1.17 GB.',
+  imageDownload: 'Scarica il browser di accesso',
+  imageProgress: 'Download del browser di accesso',
+  imageFailed: 'Impossibile scaricare il browser di accesso. Riprova o usa il tuo browser.',
   title: 'Accedi',
   private: 'Questo browser è tuo. L’assistente di Aura non può vederlo o controllarlo.',
   ownBrowser: 'Usa il tuo browser dalla scheda del connettore',

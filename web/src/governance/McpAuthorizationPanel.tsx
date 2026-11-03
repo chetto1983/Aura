@@ -11,6 +11,8 @@ import {
   revokeMcpAuthorization,
   startMcpAuthorization,
 } from './mcpAuthApi';
+import { SignInImageGate } from './SignInImageGate';
+import { HttpError } from '@/api/json';
 import { Button } from '@/components/ui/button';
 
 // McpAuthorizationPanel — the cockpit's Connect control for a remote MCP server that
@@ -50,8 +52,11 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     // Polling stops the moment the flow resolves either way. A spinner that never ends
     // is worse than an error: it never tells anyone what to do next.
     refetchInterval: (query) =>
-      query.state.data?.status === 'authorization_required' ? MCP_FLOW_POLL_MS : false,
-    retry: MCP_FLOW_MAX_POLL_FAILURES,
+      query.state.status !== 'error' && query.state.data?.status === 'authorization_required'
+        ? MCP_FLOW_POLL_MS
+        : false,
+    retry: (count, error) =>
+      !(error instanceof HttpError && error.status === 404) && count < MCP_FLOW_MAX_POLL_FAILURES,
   });
 
   // A change of authorization changes what the probe finds, and the board's tool count,
@@ -78,15 +83,13 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   const start = useMutation({
     mutationFn: (via: 'paste' | undefined) => startMcpAuthorization(serverName, via),
     onSuccess: (started, via) => {
-      setOwnBrowser(via === 'paste');
+      setOwnBrowser(via === 'paste' || (!started.preparing && started.via === 'paste'));
       setAddress('');
       paste.reset();
-      setFlowId(started.flowId);
-      // Opened here, in the mutation's own callback, so the browser still counts it as
-      // the user gesture that began the click. The copyable link below is what covers
-      // the case where a blocker swallows it anyway.
-      if (started.authorizationUrl) {
-        window.open(started.authorizationUrl, '_blank', 'noopener,noreferrer');
+      setFlowId(started.preparing ? null : started.flowId);
+      if (!started.preparing) {
+        const destination = started.signInUrl ?? started.authorizationUrl;
+        if (destination) window.open(destination, '_blank', 'noopener,noreferrer');
       }
     },
   });
@@ -102,8 +105,23 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     },
   });
 
-  const live = flow.data ?? start.data;
+  const started = start.data?.preparing ? undefined : start.data;
+  const live = flow.data ?? started;
+  const preparing = start.data?.preparing === true;
+  const waitingURL =
+    !flow.isError && live?.status === 'authorization_required'
+      ? ((started?.flowId === live.flowId ? started.signInUrl : undefined) ??
+        live.authorizationUrl ??
+        '')
+      : '';
   const approved = live?.status === 'approved';
+  const runStart = start.mutate;
+  const startPrepared = useCallback(() => {
+    runStart(undefined);
+  }, [runStart]);
+  const startPaste = useCallback(() => {
+    runStart('paste');
+  }, [runStart]);
 
   // The one thing the poll cannot express by itself: once the redirect has landed, the
   // STORED state is what the panel must render, so it has to be re-read. Only an
@@ -115,9 +133,9 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   }, [approved, refreshAuthorizationViews]);
 
   const copyLink = async () => {
-    if (!live?.authorizationUrl) return;
+    if (!waitingURL) return;
     try {
-      await navigator.clipboard.writeText(live.authorizationUrl);
+      await navigator.clipboard.writeText(waitingURL);
       setCopied(true);
       setTimeout(() => {
         setCopied(false);
@@ -145,11 +163,12 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     );
   }
 
-  const waitingURL = live?.status === 'authorization_required' ? (live.authorizationUrl ?? '') : '';
   const failure =
     live?.status === 'error'
       ? (live.error ?? t('governance.mcp.detail.authorization.failed'))
-      : (paste.error?.message ?? start.error?.message ?? revoke.error?.message ?? '');
+      : flow.isError
+        ? t('signIn.failed')
+        : (paste.error?.message ?? start.error?.message ?? revoke.error?.message ?? '');
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
@@ -157,7 +176,9 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
         {t('governance.mcp.detail.authorization.title')}
       </h4>
 
-      {state.authorized && !waitingURL ? (
+      {preparing ? <SignInImageGate onReady={startPrepared} onPaste={startPaste} /> : null}
+      {started?.reason ? <p className="text-[14px] text-text-muted">{started.reason}</p> : null}
+      {state.authorized && !waitingURL && !preparing ? (
         <>
           <p className="text-[14px] text-text">
             {t('governance.mcp.detail.authorization.authorized')}
@@ -191,7 +212,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
         </>
       ) : null}
 
-      {!state.authorized && !waitingURL ? (
+      {!state.authorized && !waitingURL && !preparing ? (
         <>
           <p className="text-[14px] text-text-muted">
             {t(
@@ -219,7 +240,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
         </>
       ) : null}
 
-      {!waitingURL ? (
+      {!waitingURL && !preparing ? (
         <div>
           <Button
             type="button"

@@ -32,6 +32,15 @@ export interface McpFlow {
   readonly expiresAt?: string;
 }
 
+interface McpStartedFlow extends McpFlow {
+  readonly preparing?: false;
+  readonly signInUrl?: string;
+  readonly via?: 'paste';
+  readonly reason?: string;
+}
+
+type McpStartResult = McpStartedFlow | { readonly preparing: true; readonly reason: string };
+
 function serverPath(name: string): string {
   return `/api/governance/mcp/${encodeURIComponent(name)}/authorization`;
 }
@@ -45,8 +54,8 @@ export function fetchMcpAuthorization(name: string): Promise<McpAuthorizationSta
  * safe by design — the server replays the pending flow rather than opening a second,
  * which is what keeps a cockpit reload from stranding a consent URL.
  */
-export function startMcpAuthorization(name: string, via?: 'paste'): Promise<McpFlow> {
-  return postJSON<McpFlow>(serverPath(name), via ? { via } : undefined);
+export function startMcpAuthorization(name: string, via?: 'paste'): Promise<McpStartResult> {
+  return postJSON<McpStartResult>(serverPath(name), via ? { via } : undefined);
 }
 
 export function pasteMcpAuthorization(flowId: string, address: string): Promise<McpFlow> {

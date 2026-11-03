@@ -229,3 +229,32 @@ No native token broker or modified Selkies client is introduced by that choice.
 - [Selkies reverse proxy](https://docs.linuxserver.io/selkies/user-guide/reverse-proxy/).
 - [Go ReverseProxy](https://pkg.go.dev/net/http/httputil#ReverseProxy).
 - [Go CrossOriginProtection](https://pkg.go.dev/net/http#CrossOriginProtection).
+
+## 2026-11-03 — MCP integration checkpoints (S7 remains open)
+
+Measured locally in WSL with real Docker and CI=1:
+
+- The actual owner-bound DELETE route cancelled the MCP attempt and removed all three
+  labelled containers: `TestClosingTheSignInPageEndsTheFlowAndItsContainers`, 6.662 s.
+  Flows.Cancel removes the flow; the card now handles its 404 as an ended sign-in.
+- Race suites: agui 56.181 s, browserlogin 1.230 s, mcp 31.942 s, usersandbox 1.917 s,
+  cmd/aura 113.681 s. Image download ownership, shared progress, request/root cancellation,
+  retry and low disk passed. Native SDK CIMD fallback still packs the container's loopback
+  callback into relay state; tools/list succeeds.
+- UI: card/image gate 14/14, sign-in page 6/6. Typecheck, type-aware lint and knip passed;
+  web build completed in 46.02 s, with the existing chunk-size advisory.
+- CI fix `97b3409ef` exports AURA_SIGNIN_BROWSER_IMAGE in the Docker job and pulls it
+  before the tier. All five sign-in Docker lifecycle cases also passed with the shell
+  override unset (20.742 s), using production config defaults. Published to both remotes
+  with all pre-push gates passing; this does not assert remote CI completion.
+
+These checkpoints do **not** close S7's operator sign-ins for Linear, Notion and a
+pre-registered GitHub client, or Task 6's certificate onboarding. The earlier Edge/Canva
+acceptance remains evidence for the spike only.
+
+Slack's [ordinary OAuth flow](https://docs.slack.dev/authentication/installing-with-oauth/)
+requires HTTPS redirect URIs. Its [PKCE documentation](https://docs.slack.dev/authentication/using-pkce/)
+describes localhost desktop redirects for apps opted into PKCE and prohibits bot scopes
+for them. Opting in changes the app to a public client and requires Slack support to undo.
+This does not establish literal 127.0.0.1 support for a particular app. No live Slack
+sign-in or app-setting change was performed.

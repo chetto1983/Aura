@@ -37,6 +37,7 @@ type mutationRouteMeta struct {
 // that are explicitly read/transform-only (graph query, TTS, STT, availability
 // probes) are excluded because HTTP method alone is not mutation classification.
 var httpMutationRoutes = map[string]mutationRouteMeta{
+	"POST /api/governance/sign-in/image":                 httpMutationMeta("sign_in_image_download"),
 	"DELETE /api/sign-in/{session}":                      httpMutationMeta("sign_in_cancel"),
 	"PUT /api/settings/remote-access":                    httpMutationMeta("remote_access_configure"),
 	"DELETE /api/settings/remote-access":                 httpMutationMeta("remote_access_delete"),

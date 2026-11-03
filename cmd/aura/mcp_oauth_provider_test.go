@@ -65,7 +65,7 @@ func TestAuraSidecarAuthorizationCannotBeStartedOrRevoked(t *testing.T) {
 	seedMCPRegistry(t, shippedSidecars(t))
 	service := &mcpAuthService{}
 
-	_, err := service.StartAuthorization(context.Background(), "owner-1", "whatsapp", "https://aura.lan")
+	_, err := service.StartLoopbackAuthorization(context.Background(), "owner-1", "whatsapp")
 	if !errors.Is(err, agui.ErrNoAuthorizationFlow) {
 		t.Fatalf("start = %v, want ErrNoAuthorizationFlow", err)
 	}

@@ -24,6 +24,7 @@ var signInProxySessionPattern = regexp.MustCompile(`^signin-[a-f0-9]{24}$`)
 func (s *Server) SetSignInBrowser(b SignInBrowser) { s.signInBrowser = b }
 
 func (s *Server) registerSignInRoutes(mux *http.ServeMux) {
+	s.registerSignInImageRoutes(mux)
 	mux.HandleFunc("/sign-in/{session}/", s.handleSignInProxy)
 	mux.HandleFunc("GET /api/sign-in/{session}", s.handleSignInInfo)
 	mux.HandleFunc("DELETE /api/sign-in/{session}", s.handleSignInCancel)

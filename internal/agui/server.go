@@ -311,6 +311,7 @@ type Server struct {
 	mcpViews         *mcp.ViewCatalog
 	mcpSandboxOrigin string
 	signInBrowser    SignInBrowser
+	signInImages     SignInImages
 	// mcpViewCaller runs the tools/call a rendered view asks for. Nil until wired;
 	// the call route then answers 503, so a host that renders views but wired no
 	// caller refuses the request instead of half-answering it.

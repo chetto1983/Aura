@@ -4,14 +4,79 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/browserlogin"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/moby/moby/client"
 )
+
+func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) {
+	egressITDockerdOrGate(t)
+	ctx, service, _, _, _ := mcpSignInFixture(t, "")
+	if err := service.signIn.login.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.LoadDB()
+	cfg.Profile = config.ProfileSingleUserHardened
+	cfg.AuthulaSecret = strings.Repeat("a", 64)
+	cfg.Sandbox.BrowserMaxActive = 2
+	router := buildSandboxRouter(cfg, nil)
+	browser := &sandboxSignInBrowser{router: router, image: cfg.Sandbox.SignInBrowserImage, sidecarImage: cfg.Sandbox.Image, policy: usersandbox.EgressPolicy{Floor: true}}
+	login := browserlogin.New(t.Context(), browser, browserlogin.Options{})
+	browser.owns, browser.cancel = login.Owns, login.Cancel
+	service.signIn = &signInRuntime{login: login, browser: browser, port: 8444}
+	t.Cleanup(service.Close)
+	started, err := service.StartSignIn(ctx, "alice", "canva", agui.SignInRequest{Origin: "https://aura.test:8443"})
+	if err != nil || started.SignInURL == "" {
+		t.Fatalf("desktop start=%+v err=%v", started, err)
+	}
+	u, err := url.Parse(started.SignInURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := strings.TrimPrefix(u.Path, "/signing-in/")
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	list := func() int {
+		items, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: make(client.Filters).Add("label", "aura.signin="+session)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(items.Items)
+	}
+	if count := list(); count != 3 {
+		t.Fatalf("sign-in containers=%d", count)
+	}
+	s := agui.NewServer(nil, nil, agui.ServerConfig{})
+	s.SetSignInBrowser(browser)
+	r := httptest.NewRequest("DELETE", "https://aura.test:8443/api/sign-in/"+session, nil)
+	r = r.WithContext(identityctx.WithIdentityID(r.Context(), "alice"))
+	r.Header.Set("Idempotency-Key", "close-fixture")
+	w := httptest.NewRecorder()
+	s.Mux().ServeHTTP(w, r)
+	if w.Code != 204 {
+		t.Fatalf("close=%d %s", w.Code, w.Body)
+	}
+	if _, err = service.AuthorizationFlow("alice", started.ID); !errors.Is(err, mcp.ErrNoSuchFlow) {
+		t.Fatalf("flow survived=%v", err)
+	}
+	if count := list(); count != 0 {
+		t.Fatalf("sign-in containers survived=%d", count)
+	}
+}
 
 func TestSignInCallbackListenerAcceptsOnlyItsBoundState(t *testing.T) {
 	ctx, router, handle := liveBox(t)
