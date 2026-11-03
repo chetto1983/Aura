@@ -345,7 +345,7 @@ func TestExecConnCarriesBytesBothWaysAndEndsWithTheProcess(t *testing.T) // Read
 - [x] **Step 4: Cockpit page.** `SignInPage` polls the flow every 2 s, closes the tab on `approved` or `failed`, cancels the flow on `pagehide`, and offers the paste-back of Task 3 from a link. Vitest: `it('closes itself when the flow ends')`, `it('cancels the flow when the tab goes')`, `it('offers the paste-back when the stream fails')`, `it('says try again when the time ran out')`.
 - [ ] **Step 4a: Certificate onboarding (pending the joint Task 7 Edge session).** Add an acceptance case with ordinary browser TLS validation for both origins. An untrusted dedicated-origin certificate must offer an explicit way to open/trust that origin or use paste-back; a grey failed iframe must not be presented as a ready stream. Do not use unconditional `ignoreHTTPSErrors` as evidence for this case. Expected: trusted two-origin framing works; the untrusted case gives a usable next step.
 - [x] **Step 5: Run and gate** as in Task 3.
-- [ ] **Step 6: Commit,** then the bundle apart. `feat(signin): stream the sign-in through the cockpit`. Commit payload edits first, regenerate the manifest in WSL and commit it separately, as in Task 5.
+- [x] **Step 6: Commit,** then the bundle apart. `feat(signin): stream the sign-in through the cockpit`. Commit payload edits first, regenerate the manifest in WSL and commit it separately, as in Task 5. Implementation `f89680c9f`, manifest `f8c1f2897`, bundle `3704edfb9`; Step 4a remains open.
 
 ### Task 7: Every MCP server on it
 
@@ -379,7 +379,7 @@ func TestAFailedReauthorizationKeepsTheStoredGrant(t *testing.T) // a cancelled 
 - [x] **Step 2: Run them.** Expected: FAIL.
 - [x] **Step 3: Implement,** then remove the old callback-based `StartAuthorization`, `callbackFor`, `configuredCallbackURL`, `handleMCPAuthorizationCallback` and the route, and shrink `isPublicOAuthCallbackRoute`. Retain request-origin derivation for the dedicated stream: starting a sign-in needs the cockpit origin, separately from the OAuth redirect, and supplies both origins in `LaunchOptions`. `AURA_WEB_PUBLIC_URL` stays while `pimReturnOrigin` reads it. `relayedFetcher` stays: it is how a server with no registration reaches the listener.
 - [x] **Step 4: Cockpit.** `SignInImageGate` shows the size, 1.17 GB, and the pull's progress on first use, then opens the sign-in page. Vitest: `it('asks before the first download and shows its progress')`, `it('opens the sign-in page once the image is there')`, `it('offers the paste-back when the image cannot be had')`.
-- [ ] **Step 5: S7, on the VM.** With the operator: Linear and Notion through the container, and a pre-registered GitHub client on the loopback redirect. Read Slack's rules on redirect URIs and write them down. Append to the verification file.
+- [ ] **Step 5: S7, on the VM.** With the operator: Linear and Notion through the container, and a pre-registered GitHub client on the loopback redirect. Read Slack's rules on redirect URIs and write them down. Append to the verification file. Linear and Notion accepted on 2026-11-03 (38/72 tools, saved grants, temporary containers removed); Slack rules recorded. GitHub remains pending.
 - [ ] **Step 6: Run all tiers,** update `docs/mcp-manager.md`, commit, then the bundle apart. `feat(mcp): sign every OAuth server in through the container`.
 
 ### Task 8: S4, and the fork takes a loopback redirect

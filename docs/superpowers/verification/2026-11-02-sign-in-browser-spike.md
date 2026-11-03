@@ -258,3 +258,31 @@ describes localhost desktop redirects for apps opted into PKCE and prohibits bot
 for them. Opting in changes the app to a public client and requires Slack support to undo.
 This does not establish literal 127.0.0.1 support for a particular app. No live Slack
 sign-in or app-setting change was performed.
+
+## 2026-11-03 — Linear and Notion live acceptance
+
+The appliance ran `dd053799714beb60515e9976cd110a2d89ad877a`. Its
+[CI run](https://github.com/chetto1983/Aura/actions/runs/41615149472) and the
+[edge publisher](https://github.com/chetto1983/Aura/actions/runs/41615149513)
+were green. The operator performed the private-browser sign-ins in Edge and
+reported “linear ok” and “anche notion OK”. The assistant did not inspect or
+control the private browser.
+
+Backend metadata and native `aura mcp tools <name> --json` established:
+
+| Connector | Endpoint | Grant saved (UTC) | Access expiry (UTC) | Tools listed |
+|---|---|---|---|---|
+| `signin-linear` | `https://mcp.linear.app/mcp` | 2026-11-03 11:15:36 | 2026-11-04 11:10:36 | 38 |
+| `signin-notion` | `https://mcp.notion.com/mcp` | 2026-11-03 11:16:40 | 2026-11-03 19:16:40 | 72 |
+
+Linear used the explicit `read` OAuth scope. Only tool discovery was performed;
+no provider tool was called. At 11:21:22 UTC, no running or stopped container
+carried the `aura.signin` label, and both Aura and Caddy were healthy. The saved
+grant metadata was rechecked at 11:21:34 UTC. Existing connectors were preserved.
+
+These results close the Linear and Notion portions of S7. GitHub with a
+pre-registered client remains unmeasured. The specific untrusted-certificate
+onboarding case in Task 6 remains pending operator clarification: successful
+sign-ins alone do not show whether the dedicated origin was already trusted.
+No claim is made here about Google Desktop consent, next-day refresh, minimum-host
+resource limits or the plan's final whole-range gates.
