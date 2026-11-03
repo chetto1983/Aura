@@ -1,0 +1,185 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/models/laya-multilingual-Q8_0.gguf",
+        "model": "/models/laya-multilingual-Q8_0.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/models/laya-multilingual-Q8_0.gguf",
+        "aliases": [
+          "/models/laya-multilingual-Q8_0.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "decisions"
+          ]
+        },
+        "created": 1793717761,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 256000,
+          "n_ctx": 4096,
+          "n_ctx_train": 8192,
+          "n_embd": 768,
+          "n_params": 321710593,
+          "size": 341991940,
+          "ftype": "Q8_0"
+        }
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "emails.tsv"
+  ],
+  "arms": {
+    "it": {
+      "total": 200,
+      "correct": 108,
+      "macro_f1": 0.5136,
+      "latency_ms_p50": 29,
+      "input_tokens": 42455,
+      "thresholds": {
+        "0.0": {
+          "applied": 108,
+          "right": 58,
+          "coverage_of_labelable": 0.464,
+          "label_on_none": 25,
+          "false_pubblicita": 7
+        },
+        "0.4": {
+          "applied": 88,
+          "right": 52,
+          "coverage_of_labelable": 0.416,
+          "label_on_none": 13,
+          "false_pubblicita": 7
+        },
+        "0.5": {
+          "applied": 73,
+          "right": 46,
+          "coverage_of_labelable": 0.368,
+          "label_on_none": 11,
+          "false_pubblicita": 6
+        },
+        "0.6": {
+          "applied": 58,
+          "right": 38,
+          "coverage_of_labelable": 0.304,
+          "label_on_none": 6,
+          "false_pubblicita": 6
+        },
+        "0.7": {
+          "applied": 43,
+          "right": 28,
+          "coverage_of_labelable": 0.224,
+          "label_on_none": 5,
+          "false_pubblicita": 5
+        },
+        "0.8": {
+          "applied": 35,
+          "right": 25,
+          "coverage_of_labelable": 0.2,
+          "label_on_none": 3,
+          "false_pubblicita": 4
+        },
+        "0.9": {
+          "applied": 29,
+          "right": 21,
+          "coverage_of_labelable": 0.168,
+          "label_on_none": 3,
+          "false_pubblicita": 3
+        }
+      }
+    },
+    "en": {
+      "total": 200,
+      "correct": 108,
+      "macro_f1": 0.4989,
+      "latency_ms_p50": 29,
+      "input_tokens": 38455,
+      "thresholds": {
+        "0.0": {
+          "applied": 118,
+          "right": 60,
+          "coverage_of_labelable": 0.48,
+          "label_on_none": 27,
+          "false_pubblicita": 10
+        },
+        "0.4": {
+          "applied": 101,
+          "right": 58,
+          "coverage_of_labelable": 0.464,
+          "label_on_none": 15,
+          "false_pubblicita": 10
+        },
+        "0.5": {
+          "applied": 82,
+          "right": 52,
+          "coverage_of_labelable": 0.416,
+          "label_on_none": 11,
+          "false_pubblicita": 8
+        },
+        "0.6": {
+          "applied": 68,
+          "right": 46,
+          "coverage_of_labelable": 0.368,
+          "label_on_none": 7,
+          "false_pubblicita": 5
+        },
+        "0.7": {
+          "applied": 61,
+          "right": 43,
+          "coverage_of_labelable": 0.344,
+          "label_on_none": 5,
+          "false_pubblicita": 5
+        },
+        "0.8": {
+          "applied": 48,
+          "right": 37,
+          "coverage_of_labelable": 0.296,
+          "label_on_none": 2,
+          "false_pubblicita": 4
+        },
+        "0.9": {
+          "applied": 34,
+          "right": 26,
+          "coverage_of_labelable": 0.208,
+          "label_on_none": 2,
+          "false_pubblicita": 4
+        }
+      }
+    }
+  }
+}
