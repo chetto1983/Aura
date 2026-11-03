@@ -26,6 +26,9 @@ GO_SCOPES = {
     "elicitation_route": "internal/agent/mcptools/elicitation_route.go",
     "turn_reading": "internal/agent/llm_agent_turn_reading.go",
     "ssrf": "internal/netguard/netguard.go",
+    "signin_flow": "internal/browserlogin/login.go",
+    "signin_options": "internal/browserlogin/login_types.go",
+    "signin_proxy": "internal/agui/signin_proxy.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -58,6 +61,9 @@ REQUIRED_SCOPE_IDS = frozenset(
         "elicitation_route",
         "turn_reading",
         "ssrf",
+        "signin_flow",
+        "signin_options",
+        "signin_proxy",
         "frontend",
         "media_frontend",
     }

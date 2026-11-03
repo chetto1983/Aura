@@ -96,6 +96,17 @@ class GoMutationParserTest(unittest.TestCase):
             "internal/netguard/netguard.go",
         )
 
+    def test_signin_state_machine_and_proxy_are_scoped(self) -> None:
+        expected = {
+            "signin_flow": "internal/browserlogin/login.go",
+            "signin_options": "internal/browserlogin/login_types.go",
+            "signin_proxy": "internal/agui/signin_proxy.go",
+        }
+        for scope, relative in expected.items():
+            with self.subTest(scope=scope):
+                self.assertEqual(critical_mutation_gate.GO_SCOPES[scope], relative)
+                self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
+
     def test_required_ids_and_go_scopes_cannot_drift(self) -> None:
         # REQUIRED_SCOPE_IDS is written out by hand on purpose. Deleting a boundary from
         # GO_SCOPES must fail the suite here rather than quietly delete its own requirement.
