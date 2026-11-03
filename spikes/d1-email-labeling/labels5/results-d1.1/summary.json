@@ -1,0 +1,74 @@
+{
+  "models": {
+    "data": [
+      {
+        "id": "liquid/d1.1",
+        "route": "openrouter"
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "emails.tsv"
+  ],
+  "arms": {
+    "it": {
+      "total": 200,
+      "correct": 195,
+      "macro_f1": 0.9779,
+      "latency_ms_p50": 352,
+      "input_tokens": 46661,
+      "thresholds": {
+        "0.0": {
+          "applied": 126,
+          "right": 123,
+          "coverage_of_labelable": 0.984,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 126,
+          "right": 123,
+          "coverage_of_labelable": 0.984,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 124,
+          "right": 121,
+          "coverage_of_labelable": 0.968,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 117,
+          "right": 115,
+          "coverage_of_labelable": 0.92,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 110,
+          "right": 109,
+          "coverage_of_labelable": 0.872,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 105,
+          "right": 104,
+          "coverage_of_labelable": 0.832,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 77,
+          "right": 76,
+          "coverage_of_labelable": 0.608,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        }
+      }
+    }
+  }
+}

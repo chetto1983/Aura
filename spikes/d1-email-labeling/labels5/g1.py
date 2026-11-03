@@ -111,6 +111,7 @@ def score(rows):
         "correct": sum(r["gold"] == r["predicted"] for r in rows),
         "macro_f1": round(statistics.mean(f1s), 4),
         "latency_ms_p50": round(statistics.median(r["latency_ms"] for r in rows)),
+        "input_tokens": sum(r["input_tokens"] or 0 for r in rows),
         "thresholds": {str(t): at_threshold(rows, t) for t in THRESHOLDS},
     }
 
@@ -125,15 +126,17 @@ def run_arm(name, arm, cases, base_url, out):
         elif arm["hint"] == "wrong":
             hint = wrong_hint(case["gold5"])
         t0 = time.perf_counter()
-        answer = request_json(base_url + "/v1/systemone", {
+        response = request_json(base_url + "/v1/systemone", {
             "state": state_for(case, hint), "questions": {"label": question},
-        })["answers"]["label"]
+        })
+        answer = response["answers"]["label"]
         probs = answer["probabilities"]
         assert set(probs) == set(arm["criteria"]), probs
         rows.append({
             "id": case["id"], "gold": case["gold5"], "difficulty": case["difficulty"],
             "predicted": answer["choice"], "top": max(probs.values()), "probabilities": probs,
             "latency_ms": (time.perf_counter() - t0) * 1000,
+            "input_tokens": response.get("usage", {}).get("input_tokens"),
         })
     (out / f"{name}.predictions.jsonl").write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")

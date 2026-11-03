@@ -1,0 +1,75 @@
+{
+  "models": {
+    "data": [
+      {
+        "id": "liquid/d1.1",
+        "route": "openrouter"
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "improvement/confirmation.tsv",
+    "improvement/holdout.tsv"
+  ],
+  "arms": {
+    "it": {
+      "total": 120,
+      "correct": 116,
+      "macro_f1": 0.9709,
+      "latency_ms_p50": 345,
+      "input_tokens": 28358,
+      "thresholds": {
+        "0.0": {
+          "applied": 77,
+          "right": 74,
+          "coverage_of_labelable": 0.9867,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 77,
+          "right": 74,
+          "coverage_of_labelable": 0.9867,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 75,
+          "right": 72,
+          "coverage_of_labelable": 0.96,
+          "label_on_none": 3,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 71,
+          "right": 71,
+          "coverage_of_labelable": 0.9467,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 68,
+          "right": 68,
+          "coverage_of_labelable": 0.9067,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 63,
+          "right": 63,
+          "coverage_of_labelable": 0.84,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 51,
+          "right": 51,
+          "coverage_of_labelable": 0.68,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    }
+  }
+}
