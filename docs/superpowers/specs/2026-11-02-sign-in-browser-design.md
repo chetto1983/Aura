@@ -223,7 +223,7 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 | **S4** | A new Google Desktop client: consent in the container, loopback redirect, exchange through the PIM, and a refresh a day later |
 | **S5** | ElevenLabs with the client-metadata document naming a loopback redirect, if an account is available. If not, `mcp/callback` stays and the verification file says why |
 | **S6** | Pull time and peak memory on a small install. The 8 GB floor and the memory cap are guesses until then |
-| **S7** | Linear and Notion through the container on the VM, and a pre-registered GitHub client on the loopback redirect. Slack's rules are read before anything is promised for it |
+| **S7** | Linear and Notion through the container on the VM. Slack's rules are read before anything is promised for it. The operator excluded the GitHub live trial on 2026-11-03 (“github non mi interessa”); no GitHub acceptance is claimed |
 
 ## 7. Order of landing
 

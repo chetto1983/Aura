@@ -280,8 +280,9 @@ no provider tool was called. At 11:21:22 UTC, no running or stopped container
 carried the `aura.signin` label, and both Aura and Caddy were healthy. The saved
 grant metadata was rechecked at 11:21:34 UTC. Existing connectors were preserved.
 
-These results close the Linear and Notion portions of S7. GitHub with a
-pre-registered client remains unmeasured. The specific untrusted-certificate
+These results close S7 after the operator explicitly excluded the GitHub trial
+on 2026-11-03 (“github non mi interessa”). GitHub remains unmeasured; no GitHub
+connector or app was created. The specific untrusted-certificate
 onboarding case in Task 6 remains pending operator clarification: successful
 sign-ins alone do not show whether the dedicated origin was already trusted.
 No claim is made here about Google Desktop consent, next-day refresh, minimum-host
