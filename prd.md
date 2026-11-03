@@ -2873,6 +2873,28 @@ since 10.95 s exceeds both the 10 s first-call redial budget and the 10 s defaul
 What it does not: runtime downloads beyond the package, unpinned packages, a registry outage, or
 concurrent identities.
 
+**Cached box restart and broker startup, measured 2026-11-03.** The lab VM retains 1.5 GiB
+of uv packages/environments under the identity's `/root/.cache/uv` volume and 112 MiB of
+managed Python under `/root/.local/share/uv`. A cached broker `v0.3.0` tag still resolves its
+Git ref over the network: launching an empty Python takes 3.700 s, versus 0.476 s using its
+full commit. The tag fails offline despite populated caches; the full commit initializes
+offline successfully. Cached scientific dependencies still have to be imported by each new
+process: one server import measured 12.457 s (11.639 s attributed by Python importtime),
+including analysis 8.432 s and workbench/charts 1.435 s. Later warm initialize samples were
+8.820 s through the tag, 2.708 s through the commit, and 2.689 s offline through the commit.
+These are sequential samples on one loaded VM, not latency percentiles or an empty-cache test.
+
+The live conversation recorded three 10-second reconnect failures followed by a 30-second
+breaker cooldown, although its box registry declares `initTimeoutSec=120`. A real SDK-session
+regression reproduces the lost budget at reconnect. Every box process opening, including
+reconnect after suspend/recreation, must retain its configured initialization budget through
+the existing identity-session boundary. The SDK process lifetime, bounded normal HTTP
+reconnect, identity/worker isolation and prohibition on replaying a sent mutation remain.
+The broker loads calculation/provider/chart modules only when the corresponding tool needs
+them, using Python's native module cache. Its launch source is an immutable full commit so
+uv can reuse the existing environment without resolving a mutable Git ref. No second cache
+or protocol implementation is introduced. Dated verification records the resulting measurements.
+
 **Self-installing box servers replace the install line, 2026-09-26.** Following that
 measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
 declares a pinned command that fetches itself, as LibreChat's do, and gets
