@@ -32,30 +32,30 @@ metadata, validation and lifecycle propagation at their existing ownership bound
 **Files:** Existing broker server, analysis/fundamentals/model helpers and tests in the broker repo.
 **Interfaces:** Existing public tools and result fields remain; additive diagnostics/metadata.
 
-- [ ] Add/run failing tests for local-write annotations, invalid parameters, insufficient data,
+- [x] Add/run failing tests for local-write annotations, invalid parameters, insufficient data,
   missing-metric explanations and consistent metadata.
-- [ ] Implement with existing MCP/Pydantic/catalog APIs; run full offline Python suite and lint.
-- [ ] Commit scoped broker changes; prepare release metadata using existing packaging pattern.
+- [x] Implement with existing MCP/Pydantic/catalog APIs; run full offline Python suite and lint.
+- [x] Commit scoped broker changes; prepare release metadata using existing packaging pattern.
 
 ### Task 2: Worker invocation evidence
 
 **Files:** `internal/gateway/decide.go`, `delegated_reservation.go`, reservation context and tests.
 **Interfaces:** Existing ledger rows preserve actual args, start/end and duration; no new schema.
 
-- [ ] Reproduce absent read args and zero delegated duration in failing tests.
-- [ ] Preserve existing context metadata through gateway start/end; test errors and cancellations.
-- [ ] Run scoped race/integration plus repository-required vet/build checks; commit only owned paths.
+- [x] Reproduce absent read args and zero delegated duration in failing tests.
+- [x] Preserve existing context metadata through gateway start/end; test errors and cancellations.
+- [x] Run scoped race/integration plus repository-required vet/build checks; commit only owned paths.
 
 ### Task 3: Cached startup and reconnect
 
 **Files:** Existing MCP mount/supervisor and box launcher code/tests, only as measurement requires.
 **Interfaces:** Existing session-open seam honors configured box init budget and cache lifecycle.
 
-- [ ] Measure uv cache directories/volume mounts, cached launch and Python imports on the VM.
-- [ ] Add/run failing regression tests for the measured cause and slow reconnect budget.
-- [ ] Apply minimal existing-runtime fixes; run WSL unit/race/vet/build and scope gates.
+- [x] Measure uv cache directories/volume mounts, cached launch and Python imports on the VM.
+- [x] Add/run failing regression tests for the measured cause and slow reconnect budget.
+- [x] Apply minimal existing-runtime fixes; run WSL unit/race/vet/build and scope gates.
 - [ ] Review combined changes, commit, push and check CI; validate real agent calls on VM.
-- [ ] Record before/after measurements in dated verification and amend PRD from evidence.
+- [x] Record before/after measurements in dated verification and amend PRD from evidence.
 
 ## Execution decisions
 
@@ -69,3 +69,12 @@ metadata, validation and lifecycle propagation at their existing ownership bound
 - Cache measurement: existing uv/Python volumes are present. Tag resolution adds network cost;
   immutable commit works offline. Eager numerical/chart imports account for initial server time.
   Use native lazy imports in broker tool functions and full-commit packaging pins.
+- Review fix: background promotion is an interim notice; record the actual terminal result
+  through the existing BackgroundCalls completion seam, including cancellation and dropped calls.
+- Shipped broker v0.3.1: server `edbb031`, packaging/tag `0525e82`; 258 offline tests,
+  Ruff/build/CI pass. Installed manifest startup 3.44 s, 2.10 s offline, 1.61 s warm.
+- Aura code `047d0f092` and `e7663740a` passed clean pre-push build, deadcode and every
+  tagged-tier compile; published to GitHub and GitLab. The authenticated updater applied
+  `e7663740a`; readiness and the real two-worker acceptance passed. Both workers retain
+  identical actual args and positive start/end durations (2,350 and 4,053 ms). Main CI's
+  long media mutation job remains pending; all other completed jobs passed.
