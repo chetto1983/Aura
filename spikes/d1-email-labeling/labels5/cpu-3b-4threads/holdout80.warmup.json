@@ -1,0 +1,24 @@
+{
+  "model": "/models/d1-3B-Q4_K_M.gguf",
+  "answers": {
+    "label": {
+      "type": "choice",
+      "choice": "Personale",
+      "probabilities": {
+        "Cliente": 0.0047303175996677846,
+        "Lavoro": 0.005526484426802836,
+        "Personale": 0.9740932073490985,
+        "Opportunità": 0.0036135406116436174,
+        "Amministrazione": 0.0024511023334676503,
+        "Spedizioni": 0.0030942816432152943,
+        "Pubblicità": 0.0041831944232628895,
+        "Notifiche": 0.0023078716128416017
+      },
+      "confidence": 0.9703922369703983
+    }
+  },
+  "usage": {
+    "input_tokens": 323,
+    "output_tokens": 0
+  }
+}

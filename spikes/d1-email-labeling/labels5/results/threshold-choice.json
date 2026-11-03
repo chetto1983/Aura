@@ -1,0 +1,11 @@
+{
+  "written": "2026-11-03T13:36:35+00:00",
+  "rule": "On the 200 mails of ../emails.tsv, 'it' arm, 0.1 grid: the threshold that maximises right labels minus c times wrong labels, for a wrong label costing c = 3, 5 or 10 missing ones. Written before ../improvement/confirmation.tsv and holdout.tsv were run with these labels.",
+  "best_threshold_by_cost": {
+    "3": 0.4,
+    "5": 0.5,
+    "10": 0.5
+  },
+  "chosen": 0.5,
+  "why": "0.5 is best for c = 5 and 10 and ties 0.4 at c = 3; at 0.5 the label is more likely than all the others together."
+}

@@ -1,0 +1,411 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/models/d1-3B-Q4_K_M.gguf",
+        "model": "/models/d1-3B-Q4_K_M.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/models/d1-3B-Q4_K_M.gguf",
+        "aliases": [
+          "/models/d1-3B-Q4_K_M.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "decisions"
+          ]
+        },
+        "created": 1793713003,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 128000,
+          "n_ctx": 2048,
+          "n_ctx_train": 32768,
+          "n_embd": 2048,
+          "n_params": 2697198592,
+          "size": 1666215936,
+          "ftype": "Q4_K - Medium"
+        }
+      }
+    ]
+  },
+  "preview": 255,
+  "cases": [
+    "emails.tsv"
+  ],
+  "arms": {
+    "it": {
+      "total": 200,
+      "correct": 170,
+      "macro_f1": 0.8456,
+      "latency_ms_p50": 141,
+      "thresholds": {
+        "0.0": {
+          "applied": 103,
+          "right": 97,
+          "coverage_of_labelable": 0.776,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 102,
+          "right": 97,
+          "coverage_of_labelable": 0.776,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 94,
+          "right": 91,
+          "coverage_of_labelable": 0.728,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 83,
+          "right": 80,
+          "coverage_of_labelable": 0.64,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 68,
+          "right": 67,
+          "coverage_of_labelable": 0.536,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 45,
+          "right": 45,
+          "coverage_of_labelable": 0.36,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 10,
+          "right": 10,
+          "coverage_of_labelable": 0.08,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "en": {
+      "total": 200,
+      "correct": 176,
+      "macro_f1": 0.8784,
+      "latency_ms_p50": 133,
+      "thresholds": {
+        "0.0": {
+          "applied": 108,
+          "right": 103,
+          "coverage_of_labelable": 0.824,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 108,
+          "right": 103,
+          "coverage_of_labelable": 0.824,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 101,
+          "right": 96,
+          "coverage_of_labelable": 0.768,
+          "label_on_none": 2,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 88,
+          "right": 86,
+          "coverage_of_labelable": 0.688,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 70,
+          "right": 68,
+          "coverage_of_labelable": 0.544,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 53,
+          "right": 52,
+          "coverage_of_labelable": 0.416,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 20,
+          "right": 20,
+          "coverage_of_labelable": 0.16,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "it-hint-right": {
+      "total": 200,
+      "correct": 176,
+      "macro_f1": 0.8762,
+      "latency_ms_p50": 147,
+      "thresholds": {
+        "0.0": {
+          "applied": 105,
+          "right": 102,
+          "coverage_of_labelable": 0.816,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 102,
+          "right": 99,
+          "coverage_of_labelable": 0.792,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 93,
+          "right": 90,
+          "coverage_of_labelable": 0.72,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 73,
+          "right": 73,
+          "coverage_of_labelable": 0.584,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 50,
+          "right": 50,
+          "coverage_of_labelable": 0.4,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 26,
+          "right": 26,
+          "coverage_of_labelable": 0.208,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 11,
+          "right": 11,
+          "coverage_of_labelable": 0.088,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "it-hint-wrong": {
+      "total": 200,
+      "correct": 149,
+      "macro_f1": 0.7224,
+      "latency_ms_p50": 147,
+      "thresholds": {
+        "0.0": {
+          "applied": 92,
+          "right": 81,
+          "coverage_of_labelable": 0.648,
+          "label_on_none": 7,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 89,
+          "right": 80,
+          "coverage_of_labelable": 0.64,
+          "label_on_none": 7,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 72,
+          "right": 67,
+          "coverage_of_labelable": 0.536,
+          "label_on_none": 5,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 56,
+          "right": 55,
+          "coverage_of_labelable": 0.44,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 32,
+          "right": 32,
+          "coverage_of_labelable": 0.256,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 11,
+          "right": 11,
+          "coverage_of_labelable": 0.088,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 0,
+          "right": 0,
+          "coverage_of_labelable": 0.0,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "en-hint-right": {
+      "total": 200,
+      "correct": 176,
+      "macro_f1": 0.8805,
+      "latency_ms_p50": 132,
+      "thresholds": {
+        "0.0": {
+          "applied": 102,
+          "right": 101,
+          "coverage_of_labelable": 0.808,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 102,
+          "right": 101,
+          "coverage_of_labelable": 0.808,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 93,
+          "right": 92,
+          "coverage_of_labelable": 0.736,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 78,
+          "right": 77,
+          "coverage_of_labelable": 0.616,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 49,
+          "right": 49,
+          "coverage_of_labelable": 0.392,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 28,
+          "right": 28,
+          "coverage_of_labelable": 0.224,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 16,
+          "right": 16,
+          "coverage_of_labelable": 0.128,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    },
+    "en-hint-wrong": {
+      "total": 200,
+      "correct": 154,
+      "macro_f1": 0.7631,
+      "latency_ms_p50": 134,
+      "thresholds": {
+        "0.0": {
+          "applied": 98,
+          "right": 87,
+          "coverage_of_labelable": 0.696,
+          "label_on_none": 8,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 98,
+          "right": 87,
+          "coverage_of_labelable": 0.696,
+          "label_on_none": 8,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 85,
+          "right": 74,
+          "coverage_of_labelable": 0.592,
+          "label_on_none": 8,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 53,
+          "right": 52,
+          "coverage_of_labelable": 0.416,
+          "label_on_none": 1,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 34,
+          "right": 34,
+          "coverage_of_labelable": 0.272,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 9,
+          "right": 9,
+          "coverage_of_labelable": 0.072,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 0,
+          "right": 0,
+          "coverage_of_labelable": 0.0,
+          "label_on_none": 0,
+          "false_pubblicita": 0
+        }
+      }
+    }
+  }
+}
