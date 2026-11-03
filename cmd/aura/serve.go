@@ -247,6 +247,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		return nil, err
 	}
 	sweepLegacyBrowserHomes(ctx, chat)
+	sweepSignInBrowsers(ctx, chat)
 	startBrowserBoxes(ctx, chat)
 	logMultiUserAvailability(chat.cfg)
 	memoryProvisioner := buildArcadeMemoryProvisioner(chat.cfg)

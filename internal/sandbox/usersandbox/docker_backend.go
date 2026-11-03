@@ -1,10 +1,10 @@
-// docker_backend.go is the FIRST moby/moby/client v0.4.1 caller in the repo: DockerBackend
+// docker_backend.go implements DockerBackend over the pinned moby/moby/client API. It
 // implements the Backend E2B seam (backend.go) over the Docker Engine API. It owns the
 // moby client handle, the fat box image ref, the cgroup caps, and the egress-sidecar image
 // ref + launch/teardown (SBX-04, D-07); the per-verb lifecycle (Resolve/Suspend/Resume/Stop)
 // lives in docker_backend_lifecycle.go and Exec in docker_backend_exec.go. The dangerous
-// HostConfig fields are pinned safe in translate.go (SBX-02) — this file never sets them
-// directly, and the sidecar it launches is the ONLY container that carries CAP_NET_ADMIN.
+// Box HostConfigs are pinned in translate.go and desktop configs in signin_box_spec.go.
+// The egress sidecar is the only container that carries CAP_NET_ADMIN.
 
 package usersandbox
 
@@ -251,7 +251,11 @@ func (b *DockerBackend) launchEgress(ctx context.Context, spec SandboxSpec, h Bo
 		return b.ensureEgressRunning(ctx, existing)
 	}
 
-	sc, err := buildEgressSidecar(spec.Egress, h.ContainerID)
+	return b.startEgress(ctx, name, h.ContainerID, spec.Egress, nil)
+}
+
+func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, policy EgressPolicy, labels map[string]string) error {
+	sc, err := buildEgressSidecar(policy, netnsOwner)
 	if err != nil {
 		return fmt.Errorf("build egress sidecar: %w", err)
 	}
@@ -261,7 +265,7 @@ func (b *DockerBackend) launchEgress(ctx context.Context, spec SandboxSpec, h Bo
 	}
 	res, err := b.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name:   name,
-		Config: &container.Config{Image: sc.Image, Env: sc.Env},
+		Config: &container.Config{Image: sc.Image, Env: sc.Env, Labels: labels},
 		HostConfig: &container.HostConfig{
 			NetworkMode: container.NetworkMode(sc.NetworkMode),
 			CapAdd:      sc.CapAdd,

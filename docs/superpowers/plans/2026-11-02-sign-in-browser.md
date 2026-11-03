@@ -239,13 +239,14 @@ type SignInSpec struct { // like SandboxSpec, it has no field for host network, 
 }
 func signInEnv(s SignInSpec) []string
 func signInHostConfig(netnsOwner string) *container.HostConfig
-func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, policy EgressPolicy) error // launchEgress's body
-func (b *DockerBackend) StartSignIn(ctx context.Context, s SignInSpec) (SignInBox, error)
+func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, policy EgressPolicy, labels map[string]string) error // launchEgress's body
+func (b *DockerBackend) StartSignIn(ctx context.Context, s SignInSpec, prepare SignInPrepare) (SignInBox, error)
 func (b *DockerBackend) StopSignIn(ctx context.Context, session string) error
 func (b *DockerBackend) SweepSignIns(ctx context.Context) error
 func (b *DockerBackend) SignInImageState(ctx context.Context, image string) (present bool, err error)
 func (b *DockerBackend) PullSignInImage(ctx context.Context, image string, progress func(done, total int64)) error
 type SignInBox struct{ Session string; Sidecar BoxHandle }
+type SignInPrepare func(context.Context, SignInBox) error
 const signInLabel = "aura.signin"
 var ErrSignInNeedsTheFloor = errors.New("sandbox: a sign-in needs the egress floor")
 ```
@@ -256,7 +257,7 @@ Measured correction from Task 1: Chromium declares `/config` as a volume. Stop, 
 anonymous volumes with the containers (`client.ContainerRemoveOptions{RemoveVolumes: true}`), including partial-start
 failures. Task 5's `TestStopSignInLeavesNothing` must exercise the image-created volume, not just an empty mount request.
 
-- [ ] **Step 1: Write the failing daemon-free tests.**
+- [x] **Step 1: Write the failing daemon-free tests.**
 
 ```go
 func TestSignInEnvHardensTheDesktop(t *testing.T)
@@ -273,9 +274,9 @@ func TestFreeBytesReadsDfOutput(t *testing.T) // parses `df -B1 --output=avail /
 func TestListenerAddressComesFromTheRedirect(t *testing.T) // LoopbackCallback -> 43121 and its path; http://127.0.0.1:9100/cb -> 9100 and /cb.
 ```
 
-- [ ] **Step 2: Run them.** Expected: FAIL, undefined.
-- [ ] **Step 3: Implement.** Extract `startEgress` so `launchEgress` calls it, with `waitEgressFloor` inside. `StartSignIn` refuses without `b.egressImage`, then creates the sidecar with the label and `sleep` on the default network, as a box, starts it, runs `startEgress` on it, and only then creates the desktop on `container:<sidecar>`. On any failure it removes what it made. The sweep lists by `signInLabel`.
-- [ ] **Step 4: Write the failing Docker tests.**
+- [x] **Step 2: Run them.** Expected: FAIL, undefined.
+- [x] **Step 3: Implement.** Extract `startEgress` so `launchEgress` calls it, with `waitEgressFloor` inside. `StartSignIn` refuses without `b.egressImage`, then creates the sidecar with the label and `sleep` on the default network, as a box, starts it, runs `startEgress` on it, calls the preparation hook to install and await the callback listener, then creates the desktop on `container:<sidecar>` and waits for :3000. On any failure it removes what it made. The sweep lists by `signInLabel`.
+- [x] **Step 4: Write the failing Docker tests.**
 
 ```go
 func TestSignInBoxStartsBehindTheFloor(t *testing.T) // from the sidecar, a TCP dial to the shared bridge fails and :3000 answers.
@@ -283,9 +284,9 @@ func TestStopSignInLeavesNothing(t *testing.T) // no container with the label re
 func TestSweepRemovesEverySignInContainerLeftBehind(t *testing.T) // a box whose Aura died is gone after SweepSignIns; shell and browser boxes are untouched.
 ```
 
-- [ ] **Step 5: Implement the session in `cmd/aura/serve_signin_browser.go`.** `Open` checks the pattern, `AdmitBrowser`, the image, then the disk when the image is absent, and takes the identity from the context as `sandboxChatGPTBrowser.Open` does. It retains the immutable `LaunchOptions` for that session. `RedirectURI` returns the redirect it was given. `Navigate` calls `StartSignIn` with both origins, writes `callback-listener.mjs` to the sidecar and starts it on the redirect's port and path, with the state read from the consent URL. `Callback` reads `{type: "callback"}`, as `chatGPTBrowserSession` does. `Close` calls `StopSignIn`. `SweepSignIns` runs at boot.
-- [ ] **Step 6: Run the tiers.** `go test -race ./internal/sandbox/usersandbox/ ./cmd/aura/`, then `go test -tags=docker_integration ./internal/sandbox/usersandbox/` with Docker up.
-- [ ] **Step 7: Commit,** then the manifest apart. `feat(sandbox): run a sign-in in a desktop container of its own`, `chore(payload): regenerate the manifest`.
+- [x] **Step 5: Implement the session in `cmd/aura/serve_signin_browser.go`.** `Open` checks the pattern, `AdmitBrowser`, the image, then the disk when the image is absent, and takes the identity from the context as `sandboxChatGPTBrowser.Open` does. It retains the immutable `LaunchOptions` for that session. `RedirectURI` returns the redirect it was given. `Navigate` calls `StartSignIn` with both origins and a preparation hook that writes `callback-listener.mjs`, starts it on the redirect's port and path with the state from the consent URL, and awaits listener readiness before desktop creation. `Callback` reads `{type: "callback"}`, as `chatGPTBrowserSession` does. `Close` calls `StopSignIn`. `SweepSignIns` runs at boot.
+- [x] **Step 6: Run the tiers.** `go test -race ./internal/sandbox/usersandbox/ ./cmd/aura/`, then `go test -tags=docker_integration -skip 'TestSoak_ConcurrentIdentities|TestEgress_FQDNAllowlist' ./internal/sandbox/usersandbox/` with Docker up and CI=1. The 32GB soak and optional OpenSandbox FQDN binary require another host/build and remain unmeasured; the executed matrix must contain no skips.
+- [x] **Step 7: Commit,** then the manifest apart. `feat(sandbox): run a sign-in in a desktop container of its own`, `chore(payload): regenerate the manifest`.
 
 ### Task 6: The stream through the cockpit
 

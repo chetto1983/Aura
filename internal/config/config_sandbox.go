@@ -24,6 +24,8 @@ import (
 // (docker/aura-sandbox/Dockerfile builds `aura-sandbox`) is the dev default.
 const defaultSandboxImage = "aura-sandbox:latest"
 
+const defaultSignInBrowserImage = "lscr.io/linuxserver/chromium@sha256:b147169cc5ff21c62df977f314598537eecf566591c13ad0726b1e5cbd0d01ca"
+
 // defaultSandboxEgressImage is the aura-egress sidecar image ref default (SBX-04, D-06). It is
 // deliberately NON-EMPTY so the always-on tenancy floor is ON BY DEFAULT under the strict
 // profiles (ROADMAP Success Criterion #4): buildSandboxRouter passes it to usersandbox.WithEgress,
@@ -79,6 +81,8 @@ type SandboxConfig struct {
 	// Image is the box image ref (D-13). Default is the local build tag; production SHOULD
 	// override with a digest-pinned registry ref.
 	Image string // AURA_SANDBOX_IMAGE — box image reference, default aura-sandbox:latest
+	// SignInBrowserImage is pulled explicitly by the card, never by the box boot preflight.
+	SignInBrowserImage string
 
 	// EgressImage is the aura-egress sidecar image ref buildSandboxRouter passes to
 	// usersandbox.WithEgress (SBX-04, D-06). An EMPTY value disables the sidecar (WithEgress("")
@@ -104,6 +108,7 @@ func loadSandboxConfig() SandboxConfig {
 		PidsLimit:          int64Default("AURA_SANDBOX_PIDS_LIMIT", defaultSandboxPidsLimit),
 		EgressAllowlist:    envSliceDefault("AURA_SANDBOX_EGRESS_ALLOWLIST", nil),
 		Image:              envDefault("AURA_SANDBOX_IMAGE", defaultSandboxImage),
+		SignInBrowserImage: envDefault("AURA_SIGNIN_BROWSER_IMAGE", defaultSignInBrowserImage),
 		EgressImage:        envDefault("AURA_SANDBOX_EGRESS_IMAGE", defaultSandboxEgressImage),
 	}
 }

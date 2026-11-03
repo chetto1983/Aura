@@ -133,6 +133,17 @@ func (b *DockerBackend) openBrowsers(ctx context.Context, now time.Time) (map[st
 			open[h.IdentityID] = true
 		}
 	}
+	// A human's desktop can outlive the idle-call window and is a separate Chrome.
+	desktops, err := b.cli.ContainerList(ctx, client.ContainerListOptions{Filters: make(client.Filters).
+		Add("label", signInLabel).Add("label", signInRoleLabel+"=desktop")})
+	if err != nil {
+		return nil, fmt.Errorf("sign-in browser inventory: %w", err)
+	}
+	for _, desktop := range desktops.Items {
+		if session := desktop.Labels[signInLabel]; session != "" {
+			open[session] = true
+		}
+	}
 	return open, nil
 }
 

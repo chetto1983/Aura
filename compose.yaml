@@ -299,6 +299,8 @@ services:
       # Fail-CLOSED consequence: a host WITHOUT this egress image built/available refuses box
       # creation (ensureImage pull-fail -> Resolve error -> the tool denies) rather than running un-floored.
       AURA_SANDBOX_IMAGE: ${AURA_SANDBOX_IMAGE:-aura-sandbox:latest}
+      # Downloaded on demand by the sign-in card; excluded from the appliance payload.
+      AURA_SIGNIN_BROWSER_IMAGE: ${AURA_SIGNIN_BROWSER_IMAGE:-lscr.io/linuxserver/chromium@sha256:b147169cc5ff21c62df977f314598537eecf566591c13ad0726b1e5cbd0d01ca}
       AURA_SANDBOX_EGRESS_IMAGE: ${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest}
       # The runtime profile. It no longer selects the box, which every profile uses; it sets
       # the strict configuration checks and the approval gateway (internal/gateway/decide.go).
