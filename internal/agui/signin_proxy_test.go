@@ -72,6 +72,36 @@ func TestSignInProxyRefusesBeforeItDials(t *testing.T) {
 	}
 }
 
+func TestSignInProxyRefusesAnMCPAppsOriginBeforeItDials(t *testing.T) {
+	for _, origin := range []string{"https://aura.test:8444", "https://AURA.TEST:8444/"} {
+		t.Run(origin, func(t *testing.T) {
+			b := &proxySignInBrowser{}
+			s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+			s.SetSignInBrowser(b)
+			s.SetMCPViews(nil, origin, nil)
+			h := s.Mux()
+			for _, suffix := range []string{"", ".aura-ready"} {
+				b.dials.Store(0)
+				r := signInProxyRequest("https://aura.test:8444"+proxySignInPath+suffix, "alice")
+				r.Header.Set("Origin", "https://aura.test")
+				rr := httptest.NewRecorder()
+				h.ServeHTTP(rr, r)
+				if rr.Code != 404 || b.dials.Load() != 0 {
+					t.Errorf("shared-origin stream status=%d dials=%d", rr.Code, b.dials.Load())
+				}
+			}
+			r := signInProxyRequest("https://aura.test/api/sign-in/"+proxySignInSession, "alice")
+			r.Method = http.MethodDelete
+			r.Header.Set("Idempotency-Key", "shared-origin-cancel")
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, r)
+			if rr.Code != 204 || b.cancels.Load() != 1 {
+				t.Fatalf("owner cleanup status=%d calls=%d", rr.Code, b.cancels.Load())
+			}
+		})
+	}
+}
+
 func TestSignInProxyNeverForwardsTheCockpitCookie(t *testing.T) {
 	seen := make(chan http.Header, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

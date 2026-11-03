@@ -84,7 +84,7 @@ func (s *Server) handleSignInProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	session, cockpit, stream, ok := s.ownedSignIn(r)
-	if !ok || !sameOrigin(requestOrigin(r), stream) {
+	if !ok || sameOrigin(stream, s.mcpSandboxOrigin) || !sameOrigin(requestOrigin(r), stream) {
 		http.NotFound(w, r)
 		return
 	}

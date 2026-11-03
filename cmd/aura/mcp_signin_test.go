@@ -112,22 +112,35 @@ func TestANonSecureCockpitGoesToThePasteBack(t *testing.T) {
 	}
 }
 
-func TestACrossSchemeDesktopOriginGoesToThePasteBack(t *testing.T) {
-	for _, tc := range []struct {
-		desktop string
-		paste   bool
-	}{{"", true}, {"http://127.0.0.1:8444", false}} {
-		t.Run(tc.desktop, func(t *testing.T) {
-			ctx, service, launcher, _, _ := mcpSignInFixture(t, "")
-			service.signIn.origin = tc.desktop
-			result, err := service.StartSignIn(ctx, "alice", "canva", agui.SignInRequest{Origin: "http://127.0.0.1:8080"})
-			if err != nil || (result.Via == "paste") != tc.paste || (launcher.opens.Load() == 0) != tc.paste {
-				t.Fatalf("result=%+v err=%v", result, err)
+func TestAnMCPAppsOriginUsesThePasteBack(t *testing.T) {
+	for _, origin := range []string{"https://aura.test", "http://127.0.0.1:8080"} {
+		t.Run(origin, func(t *testing.T) {
+			ctx, service, launcher, backend, seen := mcpSignInFixture(t, "")
+			if strings.HasPrefix(origin, "https") {
+				service.signIn.origin = "https://aura.test:8444"
+			} else {
+				service.signIn.origin = "http://127.0.0.1:8444"
+			}
+			backend.present = false
+			result, err := service.StartSignIn(ctx, "alice", "canva", agui.SignInRequest{Origin: origin})
+			if err != nil || result.Via != "paste" || result.Preparing || result.SignInURL != "" ||
+				!strings.Contains(result.Reason, "MCP Apps") || launcher.opens.Load() != 0 || len(backend.admitted) != 0 {
+				t.Fatalf("shared-origin start=%+v err=%v", result, err)
+			}
+			if <-seen != mcp.LoopbackCallback {
+				t.Fatal("own-browser redirect changed")
 			}
 		})
 	}
 }
 
+func TestACrossSchemeDesktopOriginGoesToThePasteBack(t *testing.T) {
+	ctx, service, launcher, _, _ := mcpSignInFixture(t, "")
+	result, err := service.StartSignIn(ctx, "alice", "canva", agui.SignInRequest{Origin: "http://127.0.0.1:8080"})
+	if err != nil || result.Via != "paste" || launcher.opens.Load() != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
 func TestASeparateHostOrTunnelGoesToThePasteBack(t *testing.T) {
 	for _, tc := range []struct {
 		desktop string

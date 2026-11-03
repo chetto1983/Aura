@@ -299,9 +299,14 @@ an insecure LAN address, a different desktop hostname or an unavailable image of
 your browser's address bar into the connector card; a loopback connection error there is
 expected because the callback listener belongs to the temporary desktop.
 
+A configured `AURA_MCP_SANDBOX_ORIGIN` belongs to MCP Apps. Sign-in uses the
+own-browser flow when it would share that origin: same-origin app frames can read
+each other despite their sandbox. The programmable MCP sandbox page is served only
+on its configured origin. Leave the origin unset for the default inline desktop;
+MCP Apps views require their configured origin and use own-browser sign-in.
+
 A pre-registered client's loopback `MCP_OAUTH_REDIRECT_URL` is retained. A registered
-HTTPS redirect uses the own-browser flow. An HTTP loopback cockpit can embed a desktop
-only when its configured origin also uses HTTP on the same hostname and another port.
+HTTPS redirect uses the own-browser flow.
 
 A remote MCP server authorizes through the cockpit's **Connect** control. Aura presents the
 client in `MCP_OAUTH_CLIENT_ID` when one is configured, else registers itself dynamically

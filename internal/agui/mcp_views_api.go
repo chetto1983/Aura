@@ -75,14 +75,10 @@ func (s *Server) SetMCPViews(catalog *mcp.ViewCatalog, sandboxOrigin string, cal
 
 // handleMCPSandbox serves the relay document (mcp_sandbox.html).
 //
-// Two headers carry the whole security posture of this route. The CSP allows the
-// page's own inline script, images that are already in hand as `data:`, and
-// NOTHING else — no network of any kind; and frame-ancestors narrows the embedders
-// to the single origin the caller named. That origin is the CALLER's claim, not a
-// configured one — the cockpit passes its own, and a page that passes a different
-// one only ever gets a relay framed on an origin with no session, no data and
-// nothing it may fetch. What it must never become is a way to write the header
-// itself, which is why only a bare scheme://authority is accepted.
+// The programmable relay belongs only on the configured MCP Apps origin: srcdoc
+// views retain its DOM origin, so CSP's network refusal cannot isolate another
+// private page on that origin. The caller's bare host claim narrows frame-ancestors
+// without granting it a different origin on which to mount scripts.
 //
 // This policy governs the VIEW too, which the comment here previously denied: the
 // view is mounted as `srcdoc` (mcp_sandbox.html), and a srcdoc frame inherits the
@@ -95,6 +91,14 @@ func (s *Server) handleMCPSandbox(w http.ResponseWriter, r *http.Request) {
 	ancestor := frameAncestor(r.URL.Query().Get("host"))
 	if ancestor == "" {
 		http.Error(w, "a scheme://host origin is required", http.StatusBadRequest)
+		return
+	}
+	if s.mcpSandboxOrigin == "" {
+		http.Error(w, "mcp views unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !sameOrigin(requestOrigin(r), s.mcpSandboxOrigin) {
+		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

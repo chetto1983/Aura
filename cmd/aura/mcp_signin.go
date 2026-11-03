@@ -34,6 +34,9 @@ func (m *mcpAuthService) StartSignIn(ctx context.Context, owner, name string, re
 		stream, err = signInStreamOrigin(request, m.signIn.origin, m.signIn.port)
 		if err != nil {
 			reason = err.Error()
+		} else if m.signIn.origin != "" {
+			// This configured origin belongs to MCP Apps, whose views retain DOM access.
+			reason = "The desktop origin is reserved for MCP Apps; use your own browser"
 		}
 	}
 	if reason == "" {

@@ -51,12 +51,41 @@ func newViewServer(t *testing.T, origin string, caller MCPViewToolCaller) http.H
 // the browser's authority in Host, the scheme in X-Forwarded-Proto.
 func get(t *testing.T, handler http.Handler, target string) *httptest.ResponseRecorder {
 	t.Helper()
+	return getAtHost(t, handler, target, cockpitHost)
+}
+
+func getAtHost(t *testing.T, handler http.Handler, target, host string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
-	req.Host = cockpitHost
+	req.Host = host
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec
+}
+
+func TestMCPSandboxServedOnlyOnItsConfiguredOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		configured, host string
+		status           int
+	}{
+		{"", "aura.test:8444", http.StatusServiceUnavailable},
+		{sandboxOK, cockpitHost, http.StatusNotFound},
+		{sandboxOK, "other.test:8444", http.StatusNotFound},
+		{sandboxOK, "aura.test:8444", http.StatusOK},
+		{" https://AURA.TEST:8444/ ", "aura.test:8444", http.StatusOK},
+	} {
+		t.Run(tc.configured+"/"+tc.host, func(t *testing.T) {
+			handler := newViewServer(t, tc.configured, nil)
+			rec := getAtHost(t, handler, "/mcp-sandbox?host=https%3A%2F%2Faura.test", tc.host)
+			if rec.Code != tc.status {
+				t.Fatalf("status=%d want=%d", rec.Code, tc.status)
+			}
+			if tc.status != http.StatusOK && strings.Contains(rec.Body.String(), "from_view") {
+				t.Fatal("programmable view proxy escaped its reserved origin")
+			}
+		})
+	}
 }
 
 func TestHandleMCPView_ServesTheArmedDocument(t *testing.T) {
@@ -153,11 +182,11 @@ func TestHandleMCPView_UnwiredAnswers503(t *testing.T) {
 func TestHandleMCPSandbox(t *testing.T) {
 	handler := newViewServer(t, sandboxOK, nil)
 
-	if rec := get(t, handler, "/mcp-sandbox"); rec.Code != http.StatusBadRequest {
+	if rec := getAtHost(t, handler, "/mcp-sandbox", "aura.test:8444"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("a relay nobody claimed must be refused, got %d", rec.Code)
 	}
 
-	rec := get(t, handler, "/mcp-sandbox?host=https%3A%2F%2Faura.test")
+	rec := getAtHost(t, handler, "/mcp-sandbox?host=https%3A%2F%2Faura.test", "aura.test:8444")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %q", rec.Code, rec.Body.String())
 	}
@@ -201,7 +230,7 @@ func TestHandleMCPSandbox_TakesOnlyABareOrigin(t *testing.T) {
 		"aura.test",
 		"   ",
 	} {
-		rec := get(t, handler, "/mcp-sandbox?host="+url.QueryEscape(claimed))
+		rec := getAtHost(t, handler, "/mcp-sandbox?host="+url.QueryEscape(claimed), "aura.test:8444")
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%q must be refused, got %d (CSP %q)",
 				claimed, rec.Code, rec.Header().Get("Content-Security-Policy"))
@@ -209,7 +238,7 @@ func TestHandleMCPSandbox_TakesOnlyABareOrigin(t *testing.T) {
 	}
 
 	// A port is part of an origin, and the sandbox is reached by one.
-	rec := get(t, handler, "/mcp-sandbox?host="+url.QueryEscape("https://aura.test:8444"))
+	rec := getAtHost(t, handler, "/mcp-sandbox?host="+url.QueryEscape("https://aura.test:8444"), "aura.test:8444")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %q", rec.Code, rec.Body.String())
 	}
