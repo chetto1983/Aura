@@ -69,6 +69,8 @@ export interface MailWatchDecision {
   readonly label?: string;
   readonly decided_by: string;
   readonly decided_at: string;
+  /** The tier the urgency centroid would have given, in shadow, only where it differs from the rules. */
+  readonly centroid_tier?: MailWatchTier;
 }
 
 export interface MailWatchDay {

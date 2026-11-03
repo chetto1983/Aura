@@ -241,6 +241,26 @@ describe('why', () => {
     openDay();
     expect(await screen.findByText('Unverified sender')).toBeTruthy();
   });
+
+  it('shows the tier the centroid would have given where it disagrees with the rules', async () => {
+    theDay(server, decision({ tier: 'today', centroid_tier: 'now' }));
+    openDay();
+    expect(await screen.findByText('From similar mail it would have said Now')).toBeTruthy();
+  });
+
+  it('says it in the identity’s language', async () => {
+    await i18n.changeLanguage('it');
+    theDay(server, decision({ tier: 'today', centroid_tier: 'later' }));
+    openDay();
+    expect(await screen.findByText('Da mail simili avrebbe detto Dopo')).toBeTruthy();
+  });
+
+  it('says nothing of the centroid where it agrees', async () => {
+    theDay(server, decision({ decided_by: 'people' }));
+    openDay();
+    expect(await screen.findByText('You have written to this person before')).toBeTruthy();
+    expect(screen.queryByText(/similar mail/)).toBeNull();
+  });
 });
 
 describe('a gone item', () => {

@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
-import { CalendarDays, Sparkles, TriangleAlert } from 'lucide-react';
+import { CalendarDays, FlaskConical, Sparkles, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { MailWatchDecision, MailWatchLabel, MailWatchTier } from '../mailWatchApi';
 import { dayAndTime, rowTime, triageAction, whySentence } from './mailWatchLogic';
@@ -241,6 +241,14 @@ function RowReason({
         </time>
         {whySentence(row.decided_by, t)}
       </span>
+      {row.centroid_tier === undefined ? null : (
+        <span className="mt-0.5 flex items-center gap-1.5 text-[13px] text-text-muted">
+          <FlaskConical aria-hidden="true" className="size-3.5 shrink-0" />
+          {t('governance.mailWatch.row.centroid', {
+            tier: t(`governance.mailWatch.tier.${row.centroid_tier}`),
+          })}
+        </span>
+      )}
       {row.auth_failed ? (
         <Badge variant="warning" className="mt-1">
           <TriangleAlert aria-hidden="true" />

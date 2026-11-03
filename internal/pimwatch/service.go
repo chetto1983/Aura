@@ -354,6 +354,8 @@ type DecisionLine struct {
 	Label     string
 	By        DecidedBy
 	DecidedAt time.Time
+	// Centroid is the tier the centroid would have given, set only where it differs from the ladder's.
+	Centroid Tier
 }
 
 // DayDecisions is one account's day: the day read, in the identity's zone and so not always the
@@ -399,6 +401,7 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 		out = append(out, DecisionLine{
 			Line:  read[verdictKey(verdict.AccountID, verdict.Resource, verdict.ItemID)],
 			Label: book.LabelName(verdict.LabelID), By: verdict.By, DecidedAt: verdict.DecidedAt,
+			Centroid: verdict.centroidDisagrees(),
 		})
 	}
 	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out}, nil

@@ -25,6 +25,16 @@ type Shadow struct {
 	Margin   float64
 }
 
+// centroidDisagrees is the centroid's tier where it differs from the ladder's, else "". It compares
+// with the ladder, never with a correction: the mark says where the centroid would have decided
+// otherwise than the rules did.
+func (v Verdict) centroidDisagrees() Tier {
+	if v.Centroid != "" && v.Centroid != v.LadderTier {
+		return v.Centroid
+	}
+	return ""
+}
+
 // mailVerdictParams writes a mail's ladder answer from its decision and the rest from its shadow.
 func mailVerdictParams(id pgtype.UUID, p PageCommit, draft VerdictDraft, decidedAt time.Time) sqlc.InsertPIMWatchVerdictParams {
 	params := sqlc.InsertPIMWatchVerdictParams{

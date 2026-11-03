@@ -255,3 +255,33 @@ func TestRemovingAnAccountForgetsItsExamples(t *testing.T) {
 		t.Fatalf("the idle digest stayed: %d", len(r.tasks.digests))
 	}
 }
+
+func TestDecisionsMarkWhereTheCentroidDisagrees(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	for _, c := range []struct {
+		id       string
+		centroid Tier
+	}{{"m1", TierNow}, {"m2", TierToday}, {"m3", TierToday}} {
+		r.pim.items[c.id] = Item{ID: c.id, From: c.id + "@one.example", Subject: "Subject of " + c.id}
+		r.commit(rigAccount, VerdictDraft{
+			ItemID: c.id, Decision: Decision{Tier: TierToday, By: ByPeople},
+			Shadow: &Shadow{SenderMemory: TierToday, Centroid: c.centroid, Margin: 0.03},
+		})
+	}
+	if _, _, err := r.service.Correct(ctx, r.identity, correctionOf("m3", TierLater)); err != nil {
+		t.Fatal(err)
+	}
+
+	day, err := r.service.Decisions(ctx, r.identity, rigAccount, r.clock.at.Format(time.DateOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	marks := map[string]Tier{}
+	for _, line := range day.Lines {
+		marks[line.ItemID] = line.Centroid
+	}
+	if len(marks) != 3 || marks["m1"] != TierNow || marks["m2"] != "" || marks["m3"] != "" {
+		t.Fatalf("marks = %v, want m1 alone, as now", marks)
+	}
+}
