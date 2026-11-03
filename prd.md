@@ -2895,6 +2895,20 @@ them, using Python's native module cache. Its launch source is an immutable full
 uv can reuse the existing environment without resolving a mutable Git ref. No second cache
 or protocol implementation is introduced. Dated verification records the resulting measurements.
 
+**Broker daily-session consistency, measured 2026-11-03.** At 15:46 UTC on the lab VM,
+one real Yahoo frame per ticker was frozen and reused across the existing reports. Risk,
+technical and custom retained November 3 for AAPL, ENI.MI and BTC-USD while portfolio
+retained November 2. The first two sessions were open; crypto's daily bar had not reached
+its next UTC midnight. Tokyo's latest bar was November 2 while metadata named November 4,
+so metadata need not describe the latest observed bar. This proves inconsistent selection,
+not a correct future calendar or snapshot implementation. The
+[follow-up design](docs/superpowers/specs/2026-11-03-broker-complete-sessions-snapshots-design.md)
+requires one completed-session default, explicit uncertainty for unmatched latest bars, and
+one immutable full-OHLCV acquisition reused by reports without further provider access.
+Reuse the existing broker audit store and Aura's identity-scoped `PLUGIN_DATA`; the current
+broker home selector ignores that variable, leaving its default home ephemeral. Preserve
+existing home files with collision checks before upgrading. Do not add another cache engine.
+
 **Self-installing box servers replace the install line, 2026-09-26.** Following that
 measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
 declares a pinned command that fetches itself, as LibreChat's do, and gets
