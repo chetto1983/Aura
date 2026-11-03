@@ -68,9 +68,10 @@ func fallbackExcludedPrefixes() []string {
 		"/readyz",
 		"/debug/vars",
 		"/metrics",
-		"/agent/",          // whole AG-UI agent namespace (mux registers /agent/run + the /agent/runs/ subtree)
-		"/threads/",        // AG-UI threads subtree
-		"/api/",            // forward-compat carve-out; exclusion-only, never a mux registration
+		"/agent/",   // whole AG-UI agent namespace (mux registers /agent/run + the /agent/runs/ subtree)
+		"/threads/", // AG-UI threads subtree
+		"/api/",     // forward-compat carve-out; exclusion-only, never a mux registration
+		"/sign-in/",
 		authBasePath + "/", // Authula credential subtree — a backend route, never the SPA shell
 	}
 }

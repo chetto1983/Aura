@@ -10,10 +10,8 @@
 // client is the golang-security client-header anti-pattern; the trust-proxy posture
 // means "Aura stays hands-off", not "Aura reads a proxy-injected identity header").
 //
-// CSRF posture (T-24-19, RESEARCH §Discretion Resolution): SameSite=Strict is the only
-// CSRF control this phase. For a same-origin SPA with no cross-origin write path that
-// covers the classic vector; a double-submit token is NOT added in Phase 24. Re-evaluate
-// if Phase 28/29 introduces a cross-origin write surface.
+// The daemon host also wraps browser writes in http.CrossOriginProtection: a login
+// desktop on another port remains same-site and receives this Strict host cookie.
 package agui
 
 import (

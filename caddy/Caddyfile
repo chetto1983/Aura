@@ -4,7 +4,7 @@
 # `:443` + on-demand internal-CA TLS so a LAN client reaches the cockpit by any
 # IP/hostname (a `localhost:443` site only served the localhost SNI). On-demand has no
 # rate limit (Caddy removed `rate_limit`; only `ask`/`permission` remain), but the abuse
-# surface is low and accepted for this appliance: Caddy is the sole LAN-published port,
+# surface is low and accepted for this appliance: Caddy fronts the LAN-published ports,
 # all data ports are loopback-only, and the issuer is a local internal CA (no external
 # ACME). An attacker must already be on the LAN; worst case is local internal-cert churn.
 #
@@ -60,9 +60,8 @@ http://:8080 {
 # origin to a browser, which is what the sandbox check in
 # internal/agui/mcp_views_api.go requires, and it needs no second DNS name.
 #
-# It is deliberately a keyhole: exactly one path, the relay document, which holds
-# no data of its own. Everything else 404s here so this port can never become a
-# second door to the cockpit.
+# It is a keyhole: the relay document and the owner-authenticated sign-in stream.
+# Unrelated paths remain unavailable on this origin.
 #
 # A separate HOSTNAME would be stronger still, because cookies are scoped by host
 # and IGNORE the port: the session cookie for https://<host> IS sent to
@@ -78,6 +77,12 @@ http://:8080 {
 
 	handle /mcp-sandbox {
 		reverse_proxy aura:9080
+	}
+	handle /sign-in/* {
+		reverse_proxy aura:9080 {
+			header_up X-Forwarded-Proto https
+			flush_interval -1
+		}
 	}
 
 	handle {

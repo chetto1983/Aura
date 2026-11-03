@@ -69,6 +69,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_GARAGE_ADMIN_ENDPOINT", Kind: KindString},
 		{Name: "AURA_AUTHULA_SECRET", Kind: KindString},
 		{Name: "AURA_WEB_PUBLIC_URL", Kind: KindString},
+		{Name: "AURA_MCP_SANDBOX_PORT", Kind: KindInt},
 		{Name: "AURA_OBJECTSTORE_BUCKET", Kind: KindString},
 		{Name: "AURA_OBJECTSTORE_ENDPOINT", Kind: KindString},
 		{Name: "AURA_AGUI_BIND", Kind: KindString},

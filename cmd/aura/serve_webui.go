@@ -305,6 +305,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// RequireAuth-only (a SELF-scoped presence probe, like meRoute).
 	registerVoiceRoutes(mux, aguiHandler, auth)
 	registerBrowserLiveRoutes(mux, aguiHandler, auth)
+	registerSignInWebRoutes(mux, aguiHandler)
 	// The cockpit Studio's six routes live in serve_webui_studio.go for the same reason: the
 	// three reads bare, the two generations and the reference finalize capability-gated.
 	registerStudioWebRoutes(mux, aguiHandler, auth)
@@ -357,7 +358,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// Wrap the WHOLE parent mux in the WEB-03 whole-origin gate (D-03). The public-path
 	// exceptions are handled inside RequireAuth; a no-op pass-through when no secret is
 	// configured keeps loopback dev unauthenticated.
-	return agui.RequireAuth(mux, auth), nil
+	return http.NewCrossOriginProtection().Handler(agui.RequireAuth(mux, auth)), nil
 }
 
 func isPublicBootstrapRoute(r *http.Request) bool {

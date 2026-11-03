@@ -304,6 +304,7 @@ type SignInBrowser interface {
 	Owns(ctx context.Context, owner, session string) bool
 	Origins(session string) (cockpit, stream string, ok bool)
 	Dial(ctx context.Context, session string) (net.Conn, error)
+	Cancel(ctx context.Context, owner, session string) error
 }
 func (s *Server) SetSignInBrowser(b SignInBrowser)
 // mounted on the parent mux behind the cockpit session, every method,
@@ -313,11 +314,13 @@ func (s *Server) SetSignInBrowser(b SignInBrowser)
 func (r *SandboxRouter) DialExec(ctx context.Context, h BoxHandle, command string) (net.Conn, error)
 ```
 
+- Owner-scoped `GET /api/sign-in/{session}` returns immutable origins; `DELETE` cancels the exact route. The dedicated `/.aura-ready` read answers only the cockpit Origin, after ownership, with credentialed CORS and no upstream dial. The page checks it before framing, and links back to the connector card for paste-back.
+
 - Cockpit route `/signing-in/:session`, with an iframe on `<streamOrigin>/sign-in/<session>/` and the flow's id in `?flow=`. The immutable stream/cockpit origins are available only after ownership verification. Caddy's existing `:8444` listener forwards `/sign-in/*` while retaining its unrelated-path 404; cockpit-origin requests for the desktop get 404 before any dial. Reuse existing `AURA_MCP_SANDBOX_ORIGIN`, `AURA_MCP_SANDBOX_PORT` and `AURA_MCP_SANDBOX_BIND`; forward the existing port setting to Aura when deriving a same-host origin. Enable the authenticated dedicated port for LAN installs as part of the approved fallback, documenting the bind change. A separate-host origin or tunnel access uses paste-back.
 
 The tests below implement the operator's dedicated-origin choice of §4.3; no opaque-origin relaxation is made on the cockpit.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```go
 func TestSignInProxyRefusesBeforeItDials(t *testing.T)
@@ -337,11 +340,11 @@ func TestSignInProxyRefusesAnUpgradeFromAnotherOrigin(t *testing.T) // Origin ht
 func TestExecConnCarriesBytesBothWaysAndEndsWithTheProcess(t *testing.T) // Read gets EOF when the exec ends; Close kills it.
 ```
 
-- [ ] **Step 2: Run them.** Expected: FAIL, undefined.
-- [ ] **Step 3: Implement.** `httputil.ReverseProxy` with `Rewrite`, `FlushInterval: -1`, `Transport{DialContext: dial, DisableKeepAlives: true}`, and `ModifyResponse` enforcing the dedicated-origin CSP. Check ownership, exact stream request origin and WebSocket Origin before any dial. Wrap cockpit browser writes with `http.NewCrossOriginProtection().Handler`, preserving provider callbacks and non-browser callers; do not trust the desktop origin. `DialExec` is `ExecStream` with one `io.Pipe` each way, and `Kill` on `Close`. `signin-relay.mjs` pipes stdin and stdout to `127.0.0.1:3000`. Refuse first, then dial.
-- [ ] **Step 4: Cockpit page.** `SignInPage` polls the flow every 2 s, closes the tab on `approved` or `failed`, cancels the flow on `pagehide`, and offers the paste-back of Task 3 from a link. Vitest: `it('closes itself when the flow ends')`, `it('cancels the flow when the tab goes')`, `it('offers the paste-back when the stream fails')`, `it('says try again when the time ran out')`.
-- [ ] **Step 4a: Certificate onboarding.** Add an acceptance case with ordinary browser TLS validation for both origins. An untrusted dedicated-origin certificate must offer an explicit way to open/trust that origin or use paste-back; a grey failed iframe must not be presented as a ready stream. Do not use unconditional `ignoreHTTPSErrors` as evidence for this case. Expected: trusted two-origin framing works; the untrusted case gives a usable next step.
-- [ ] **Step 5: Run and gate** as in Task 3.
+- [x] **Step 2: Run them.** Expected: FAIL, undefined.
+- [x] **Step 3: Implement.** `httputil.ReverseProxy` with `Rewrite`, `FlushInterval: -1`, `Transport{DialContext: dial, DisableKeepAlives: true}`, and `ModifyResponse` enforcing the dedicated-origin CSP. Check ownership, exact stream request origin and WebSocket Origin before any dial. Wrap cockpit browser writes with `http.NewCrossOriginProtection().Handler`, preserving provider callbacks and non-browser callers; do not trust the desktop origin. `DialExec` is `ExecStream` over a `net.Pipe` pair (native deadlines), and `Kill` on `Close`; process exit closes the peer to yield EOF. `signin-relay.mjs` pipes stdin and stdout to `127.0.0.1:3000`. Refuse first, then dial.
+- [x] **Step 4: Cockpit page.** `SignInPage` polls the flow every 2 s, closes the tab on `approved` or `failed`, cancels the flow on `pagehide`, and offers the paste-back of Task 3 from a link. Vitest: `it('closes itself when the flow ends')`, `it('cancels the flow when the tab goes')`, `it('offers the paste-back when the stream fails')`, `it('says try again when the time ran out')`.
+- [ ] **Step 4a: Certificate onboarding (pending the joint Task 7 Edge session).** Add an acceptance case with ordinary browser TLS validation for both origins. An untrusted dedicated-origin certificate must offer an explicit way to open/trust that origin or use paste-back; a grey failed iframe must not be presented as a ready stream. Do not use unconditional `ignoreHTTPSErrors` as evidence for this case. Expected: trusted two-origin framing works; the untrusted case gives a usable next step.
+- [x] **Step 5: Run and gate** as in Task 3.
 - [ ] **Step 6: Commit,** then the bundle apart. `feat(signin): stream the sign-in through the cockpit`. Commit payload edits first, regenerate the manifest in WSL and commit it separately, as in Task 5.
 
 ### Task 7: Every MCP server on it

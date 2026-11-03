@@ -310,6 +310,7 @@ type Server struct {
 	// origin is a refusal rather than a degraded render.
 	mcpViews         *mcp.ViewCatalog
 	mcpSandboxOrigin string
+	signInBrowser    SignInBrowser
 	// mcpViewCaller runs the tools/call a rendered view asks for. Nil until wired;
 	// the call route then answers 503, so a host that renders views but wired no
 	// caller refuses the request instead of half-answering it.
@@ -449,6 +450,7 @@ func (s *Server) Mux() http.Handler {
 	// Live view of an agent-browser session (browser_live.go); parent mounts in
 	// cmd/aura/serve_webui_browser.go, both behind agentRunCapability.
 	s.registerBrowserLiveRoutes(mux)
+	s.registerSignInRoutes(mux)
 	// WEBSKILL-01 composer skill-picker read route (37D-02): GET /api/composer/skills, the
 	// global active-skills snapshot behind plain RequireAuth (D-03/D-04). Colocated with its
 	// handler (composer_api.go); the parent-mux mount (bare aguiHandler, RequireAuth-only —

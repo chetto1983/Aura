@@ -28,6 +28,9 @@ const SharePage = lazy(() =>
 const BrowserLivePage = lazy(() =>
   import('./routes/BrowserLivePage').then((mod) => ({ default: mod.BrowserLivePage })),
 );
+const SignInPage = lazy(() =>
+  import('./routes/SignInPage').then((mod) => ({ default: mod.SignInPage })),
+);
 
 // D-08: theme + density are already on <html> from the index.html pre-paint script.
 // Re-assert them from localStorage BEFORE React mounts so there is no theme flash.
@@ -42,6 +45,7 @@ const router = createBrowserRouter([
   { path: '/s/:token', element: <SharePage tier="public" /> },
   { path: '/shared/:id', element: <SharePage tier="internal" /> },
   { path: '/browser/:session', element: <BrowserLivePage /> },
+  { path: '/signing-in/:session', element: <SignInPage /> },
   { path: '*', element: <NotFoundView /> },
 ]);
 

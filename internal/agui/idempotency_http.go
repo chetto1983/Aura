@@ -37,6 +37,7 @@ type mutationRouteMeta struct {
 // that are explicitly read/transform-only (graph query, TTS, STT, availability
 // probes) are excluded because HTTP method alone is not mutation classification.
 var httpMutationRoutes = map[string]mutationRouteMeta{
+	"DELETE /api/sign-in/{session}":                      httpMutationMeta("sign_in_cancel"),
 	"PUT /api/settings/remote-access":                    httpMutationMeta("remote_access_configure"),
 	"DELETE /api/settings/remote-access":                 httpMutationMeta("remote_access_delete"),
 	"POST /api/settings/remote-access/reconcile":         httpMutationMeta("remote_access_reconcile"),
@@ -44,7 +45,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/settings/remote-access/token/refresh":     httpMutationMeta("remote_access_token_refresh"),
 	"POST /api/settings/remote-access/disable":           httpMutationMeta("remote_access_disable"),
 	"POST /api/settings/remote-access/accept-external":   httpMutationMeta("remote_access_accept_external"),
-	"POST /agent/run": httpMutationMeta("agent_run"),
+	"POST /agent/run":                                    httpMutationMeta("agent_run"),
 	// The sibling GET /agent/runs/{runID}/events resume route is deliberately NOT
 	// inventoried: it is read-only by construction (zero write seams — no
 	// SubmitAnswers, no lock, no turn start; server_run_resume.go), the same

@@ -186,6 +186,7 @@ services:
       # Unset leaves the view routes at 503 and the cockpit renders the tool's text,
       # which is the extension's own progressive-enhancement contract.
       AURA_MCP_SANDBOX_ORIGIN: ${AURA_MCP_SANDBOX_ORIGIN:-}
+      AURA_MCP_SANDBOX_PORT: ${AURA_MCP_SANDBOX_PORT:-8444}
       # Defect D (51-09 live-check/d03/RESULTS.md, measured 2026-08-29): unmapped here,
       # .env's AURA_LOOP_MAX_WALLCLOCK_SEC/AURA_LOOP_MAX_STEPS were silently ignored --
       # the container ran on internal/agent/budget.go's compiled defaults (300s/25 steps)
@@ -530,20 +531,10 @@ services:
       AURA_VIEWS_HOST: ${AURA_VIEWS_HOST:-}
     ports:
       - "0.0.0.0:${AURA_HTTPS_PORT:-443}:443"
-      # The MCP Apps sandbox origin. A second port IS a second origin to a browser,
-      # which is what a view needs to run without inheriting the cockpit's. Only
-      # /mcp-sandbox answers here (see caddy/Caddyfile); everything else 404s.
-      #
-      # LOOPBACK by default, like every other service in this file — Caddy's :443 is
-      # the ONE port this appliance publishes, and a keyhole is still a second door.
-      # Measured 2026-08-22: on a deployment reachable from outside, this had been
-      # published on 0.0.0.0 without that being anyone's decision.
-      #
-      # An operator serving views to a browser that is not on this host must widen it
-      # DELIBERATELY (AURA_MCP_SANDBOX_BIND=0.0.0.0) — and should prefer a second
-      # HOSTNAME on :443 instead, which needs no extra port and is stronger isolation
-      # besides, because cookies are scoped by host and ignore the port.
-      - "${AURA_MCP_SANDBOX_BIND:-127.0.0.1}:${AURA_MCP_SANDBOX_PORT:-8444}:8444"
+      # Approved sign-in dedicated origin: LAN browsers need the second port.
+      # Only the authenticated /sign-in/* stream and public MCP relay are served;
+      # every unrelated route returns 404. Set the bind to 127.0.0.1 to restrict it.
+      - "${AURA_MCP_SANDBOX_BIND:-0.0.0.0}:${AURA_MCP_SANDBOX_PORT:-8444}:8444"
     volumes:
       # Which front door: the default IP/localhost one on an internal CA, or
       # Caddyfile.domain, which serves two real hostnames off one wildcard.

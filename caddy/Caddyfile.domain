@@ -134,3 +134,28 @@ http://:8080 {
 	}
 	import aura_frontdoor
 }
+
+(aura_signin_stream) {
+	request_header -X-Aura-Remote-Ingress
+	handle /sign-in/* {
+		reverse_proxy aura:9080 {
+			header_up X-Forwarded-Proto https
+			flush_interval -1
+		}
+	}
+	handle {
+		respond 404
+	}
+}
+
+{$AURA_PUBLIC_HOST}:8444 {
+	import desec_tls
+	import aura_signin_stream
+}
+
+:8444 {
+	tls internal {
+		on_demand
+	}
+	import aura_signin_stream
+}

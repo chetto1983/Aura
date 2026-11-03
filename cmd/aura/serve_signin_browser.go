@@ -27,6 +27,8 @@ type sandboxSignInBrowser struct {
 	policy              usersandbox.EgressPolicy
 	mu                  sync.RWMutex
 	sessions            map[string]*signInBrowserSession
+	owns                func(context.Context, string, string) bool
+	cancel              func(context.Context, string, string) error
 }
 
 func (b *sandboxSignInBrowser) Open(ctx context.Context, session string, opts browserlogin.LaunchOptions) (browserlogin.Session, error) {
@@ -111,6 +113,9 @@ func (s *signInBrowserSession) startCallback(ctx context.Context, box usersandbo
 		return err
 	}
 	if err = s.browser.router.WriteFile(ctx, box.Sidecar, "/tmp/callback-listener.mjs", callbackListenerScript); err != nil {
+		return err
+	}
+	if err = s.browser.router.WriteFile(ctx, box.Sidecar, "/tmp/signin-relay.mjs", signInRelayScript); err != nil {
 		return err
 	}
 	in, commands := io.Pipe()

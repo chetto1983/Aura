@@ -265,6 +265,7 @@ type Config struct {
 	// boot-fatal: the view routes answer 503 and the cockpit renders the tool's text,
 	// which is the extension's own progressive-enhancement contract.
 	MCPSandboxOrigin string // AURA_MCP_SANDBOX_ORIGIN — origin serving /mcp-sandbox, no default
+	MCPSandboxPort   int    // AURA_MCP_SANDBOX_PORT — authenticated sign-in origin on the cockpit hostname
 
 	// Cockpit "Connect Google Calendar" endpoint. Authentication comes from the
 	// identity-scoped OAuth grant used by the generic remote MCP transport.
@@ -522,6 +523,7 @@ func loadBase() *Config {
 		// No default: an origin guessed by Aura would be wrong for every deployment
 		// but one, and a wrong sandbox origin is a refusal, not a degradation.
 		MCPSandboxOrigin: os.Getenv("AURA_MCP_SANDBOX_ORIGIN"),
+		MCPSandboxPort:   envutil.IntDefault("AURA_MCP_SANDBOX_PORT", 8444),
 
 		CalendarMCPURL: envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 		UpdateStateDir: envDefault("AURA_UPDATE_STATE_DIR", DefaultUpdateStateDir),

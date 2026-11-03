@@ -9,8 +9,10 @@ import { mailWatchEn, mailWatchIt } from './resources.governance.mailWatch';
 import { pluginsEn, pluginsIt } from './resources.governance.plugins';
 import { schedulerEn, schedulerIt } from './resources.governance.scheduler';
 import { skillsEn, skillsIt } from './resources.governance.skills';
+import { signInEn, signInIt } from './resources.signIn';
 
 export const governanceEn = {
+  signIn: signInEn,
   governance: {
     title: 'Governance',
     readOnlyBanner: 'Read-only — viewing only. Changes arrive in a later phase.',
@@ -273,6 +275,7 @@ export const governanceEn = {
 } as const;
 
 export const governanceIt = {
+  signIn: signInIt,
   governance: {
     title: 'Governance',
     readOnlyBanner:
