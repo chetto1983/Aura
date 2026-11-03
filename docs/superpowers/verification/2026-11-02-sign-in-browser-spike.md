@@ -287,3 +287,17 @@ onboarding case in Task 6 remains pending operator clarification: successful
 sign-ins alone do not show whether the dedicated origin was already trusted.
 No claim is made here about Google Desktop consent, next-day refresh, minimum-host
 resource limits or the plan's final whole-range gates.
+
+## 2026-11-03 — Google flow retained by the operator
+
+The operator stated that Google remains with
+`https://chetto1983-aura-connect.pages.dev/google/callback/` and clarified that
+access currently works. Google keeps its existing Web-client relay and PIM
+callback. Tasks 8–10 and S4 are withdrawn from this plan; no Desktop-client trial,
+new Google endpoints, account-client migration or relay removal was performed.
+
+A cookie-free PC request to the static callback page returned HTTP 200. Native
+Aura source still sends `returnBase` on Google start and forwards the public
+callback to PIM. Reachability and the operator's successful-access report do not
+measure Desktop consent, token exchange or next-day refresh. The remaining MCP
+acceptance and release gates are independent of that withdrawn migration.

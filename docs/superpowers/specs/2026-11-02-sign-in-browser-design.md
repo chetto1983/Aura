@@ -11,7 +11,11 @@ Aura runs on a server, and an OAuth sign-in assumes a browser on the same machin
 connected from a LAN address, and Google passes through a page on Cloudflare. The operator asked on 2026-11-02 that
 logins work "come una app desktop", for mail and for MCPs, Canva included, and that the Cloudflare page goes.
 
-**The slice:** when a person connects Canva, another OAuth MCP, or a Google account, the cockpit shows a real desktop
+**Scope correction, 2026-11-03:** the operator confirmed that Google access through
+`https://chetto1983-aura-connect.pages.dev/google/callback/` currently works and keeps that flow.
+Google Desktop migration and relay removal are withdrawn; the existing Google path remains in use.
+
+**The slice:** when a person connects Canva or another OAuth MCP, the cockpit shows a real desktop
 Chromium that runs in that person's own container. They sign in there as on a laptop, the redirect lands on `127.0.0.1`
 inside that container, and Aura finishes the flow.
 
@@ -42,9 +46,9 @@ agent stays on the current browser and has no path to the sign-in one.
 ## 3. Goals and anti-goals
 
 - A person connects Canva from any address the cockpit is served on, with no tunnel and no second machine.
-- A person connects Google with no third-party page in the path.
+- Google keeps its working Web-client flow through the existing Cloudflare callback, per the 2026-11-03 scope correction.
 - One button on the card, and the card tells the truth afterwards, a dead grant included.
-- The Cloudflare `google/callback` and `mcp/callback` pages go.
+- Removal of `mcp/callback` is a later job gated by S5 and installed releases; `google/callback` stays.
 
 **Anti-goals:**
 - Nothing here gets a check passed. It is a plain browser with a person at the mouse. No stealth flags, no solver, and
@@ -165,28 +169,19 @@ card offers to authorize again.
 
 ### 4.5 Google
 
-The admin panel asks for a client of type Desktop app. The PIM's `StartGoogleOAuth` takes the loopback `redirectUri` per
-request and uses it for the consent and for the exchange, and Aura hands the code to a new admin route, because the
-existing callback answers a browser with an HTML page.
-
-Accounts already connected keep refreshing with the client they were created with, as Microsoft's do, so nothing breaks
-when the admin swaps the app. A sign-in with a Web client left in place fails at Google with `redirect_uri_mismatch`, and
-the panel's text says which type to create.
-
-An account that must sign in again, after a logout or a dead refresh token, would stay on its old Web client, because
-`StartGoogleOAuth` reads the client from the account. So the sign-in carries the admin's current app, and when the
-exchange succeeds Aura rewrites the account's client with it, through the same rewrite `injectPIMProviderApp` does on
-create. A sign-in abandoned halfway leaves a healthy account as it was. The account keeps its id, and so its watch.
-
-Then `GoogleOAuthRelay.cs`, `GoogleOAuthRelayUrl`, `PIMGoogleRelayRedirectURI`, `returnBase`, `pimReturnOrigin` and the
-public `/admin/auth/google/callback` route go from the code, in this slice. Leaving them would be dark code.
+The operator retained the current Google flow on 2026-11-03 and confirmed that access works.
+The provider app remains a Web application, with the existing Cloudflare callback and PIM exchange.
+No Desktop client, new start/exchange endpoint, account-client rewrite or Google paste-back is introduced here.
+The relay helpers, public callback and their configuration remain live code with real callers.
+The operator's report establishes current access only; it does not measure the withdrawn Desktop/next-day-refresh trial.
 
 ### 4.6 The Cloudflare site
 
-The relay's address is compiled into released binaries, so the pages cannot go when this ships. They go in a job of their
-own, once every known install runs a release with this slice. Until then `mcp/client-metadata.json` names both redirects.
+The Google relay stays under §4.5. The MCP relay's address is compiled into released binaries, so its page cannot go
+when this ships. Its removal is a later job, once every known install runs a release with this slice and S5 allows it.
+Until then `mcp/client-metadata.json` names both redirects.
 That document must stay on a public https address for as long as a server with no DCR is supported, because the client id
-is that URL. So the pages go and the site stays as one file, unless gate S5 says otherwise.
+is that URL. The site continues serving the Google relay and that metadata document, plus the MCP relay while required.
 
 ### 4.7 Without the container
 
@@ -196,7 +191,7 @@ at a LAN address, a site that stops a person in the container.
 The card opens the consent page in the person's own browser, with the same loopback redirect. That browser lands on
 `http://127.0.0.1:43121/aura/mcp/oauth/callback?...`, which does not load. They copy the address into a field on the card, and Aura
 reads `code` and `state` from it, checks `state` against the flow, and goes on exactly as if the listener had taken it. It
-covers MCP and Google, needs no relay and no image, and is what keeps Google reachable once the relay is gone. A person's
+covers MCP and needs no image. Google retains §4.5. A person's
 own browser is the most ordinary browser there is.
 
 ## 5. Failure
@@ -220,7 +215,7 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
 | **S1** | On the lab VM, with Aura's egress floor attached, Canva from `/authorize` to a 200 token and `tools/list` |
 | **S2** | Through the Aura proxy on `https://`, over an exec stream: picture, mouse, keyboard and paste, five minutes with no drop, and a sign-in completed by a person, with the page under `sandbox allow-scripts` and refused when it calls the cockpit's API |
 | **S3** | With both harden switches on, the same sign-in passes, and sudo, terminals and file transfer are gone when tried |
-| **S4** | A new Google Desktop client: consent in the container, loopback redirect, exchange through the PIM, and a refresh a day later |
+| **S4** | Withdrawn on 2026-11-03: the operator keeps the working Google Web-client relay; Desktop consent and next-day refresh remain unmeasured |
 | **S5** | ElevenLabs with the client-metadata document naming a loopback redirect, if an account is available. If not, `mcp/callback` stays and the verification file says why |
 | **S6** | Pull time and peak memory on a small install. The 8 GB floor and the memory cap are guesses until then |
 | **S7** | Linear and Notion through the container on the VM. Slack's rules are read before anything is promised for it. The operator excluded the GitHub live trial on 2026-11-03 (“github non mi interessa”); no GitHub acceptance is claimed |
@@ -234,16 +229,16 @@ Each one ends in a line of a dated file in `docs/superpowers/verification/`, and
    assertions unchanged.
 5. The container, the callback sidecar and the proxy.
 6. MCP on it, S7, and the cockpit's own callback removed.
-7. S4, then Google, in the fork and in Aura, with the relay code removed once the VM has run a full sign-in.
+7. Final MCP resource, lifecycle and release gates. Google migration and relay removal were withdrawn on 2026-11-03.
 
 The Cloudflare pages are a later job (§4.6). Plan: `superpowers:writing-plans` after approval. Risk tier high: this adds an
 authenticated path to a privileged GUI.
 
 ## 8. The engineer's calls, for the operator to overturn
 
-- **No profile kept.** Connecting Canva and then Google means signing in to Google twice, once per connection. A kept
+- **No profile kept.** Connecting Canva and then another MCP means signing in again, once per connection. A kept
   profile would make a stored live session Aura's to guard.
-- **Pulled on first use,** so an install that never connects an OAuth server or Google never pays the 4.7 GB.
+- **Pulled on first use,** so an install that never connects an OAuth MCP server never pays the 4.7 GB.
 - **Same image for everyone,** with no slimmer build, because this is the image that was measured.
 - **Fixed port 43121,** since one netns holds one flow.
 - **ChatGPT stays on its box until Slice 2.** It already has this shape, a browser in the person's own container and a

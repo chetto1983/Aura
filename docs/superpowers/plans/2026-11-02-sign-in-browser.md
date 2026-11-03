@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A person connects any OAuth MCP server or a Google account from the cockpit, signing in inside a real desktop Chromium that runs in their own container, with no relay page in the path of a server that can register a loopback redirect.
+**Goal:** A person connects any OAuth MCP server from the cockpit, signing in inside a real desktop Chromium that runs in their own container, with no relay page in the path of a server that can register a loopback redirect. The operator retained the working Google Web-client callback flow on 2026-11-03; Tasks 8–10 are withdrawn.
 
 **Architecture:** One container per sign-in, on the identity's egress floor, removed when the flow ends. A sidecar owns the netns, takes the loopback redirect and hands the query to Aura over an exec stream. The cockpit reaches the desktop through a reverse proxy that dials over a second exec stream, so nothing is published and the floor stays as it is. Every flow has one fallback, pasting the return address from the person's own browser.
 
-**Tech Stack:** Go 1.27, moby client, sqlc and golang-migrate, React with tanstack query and react-i18next, `lscr.io/linuxserver/chromium`, C# for the PIM fork.
+**Tech Stack:** Go 1.27, moby client, sqlc and golang-migrate, React with tanstack query and react-i18next, `lscr.io/linuxserver/chromium`.
 
 **Spec:** `docs/superpowers/specs/2026-11-02-sign-in-browser-design.md`, approved 2026-11-02. Executors read both.
 
@@ -53,9 +53,7 @@ Each has its test in the task that owns the code.
 - **The state machine's tests move with it.** They read `b.pending` and `b.timeToLive`, so they cannot stay in `chatgptplan`. Their assertions do not change, only their setup, and the commit body says so. `internal/chatgptplan`'s service tests stay where they are.
 - **`StartLoopbackAuthorization` is a new method.** The old `StartAuthorization` keeps Linear and Notion working until Task 7 removes it, so `master` is never without a way in.
 - **A dead grant is a column,** `refused_at`, not a deleted row: the card says the access expired instead of looking never connected.
-- **The Google client travels with the sign-in.** `StartGoogleOAuth` takes the client in its body and keeps it with the pending state, and Aura rewrites the account after the exchange succeeds. Rewriting before the consent would break a healthy account when the person then cancels.
-- **The PIM gets a new exchange route.** Its callback answers a browser with an HTML page, and Aura needs a typed result. The spec's "existing callback" is corrected.
-- **The relay goes last,** as spec §7 says, once the VM has run a full Google sign-in. That is its own task, and a second «pubblica».
+- **Google scope correction, 2026-11-03:** the operator retains the existing Web-client callback flow and confirms that access works. Tasks 8–10, the Desktop-client prerequisite and PIM fork changes are withdrawn. Google relay code/configuration and the Cloudflare page retain live callers.
 
 ## File structure
 
@@ -70,7 +68,7 @@ Each has its test in the task that owns the code.
 | `internal/agui/signin_proxy.go` | Refuses, then proxies `/sign-in/<session>/` |
 | `internal/mcp/oauth_paste.go` | Finishes a flow from a pasted address |
 | `web/src/routes/SignInPage.tsx` | Hosts the sandboxed desktop, polls the flow, closes the tab |
-| `web/src/governance/SignInImageGate.tsx` | First-use download, shared by the MCP and PIM cards |
+| `web/src/governance/SignInImageGate.tsx` | First-use download for MCP sign-in |
 
 ---
 
@@ -382,70 +380,17 @@ func TestAFailedReauthorizationKeepsTheStoredGrant(t *testing.T) // a cancelled 
 - [x] **Step 5: S7, on the VM.** With the operator: Linear and Notion through the container. Read Slack's rules on redirect URIs and write them down. Append to the verification file. Linear and Notion accepted on 2026-11-03 (38/72 tools, saved grants, temporary containers removed); Slack rules recorded. The operator excluded the GitHub trial on 2026-11-03 (“github non mi interessa”); it is unmeasured and no longer a gate.
 - [x] **Step 6: Run all tiers,** update `docs/mcp-manager.md`, commit, then the bundle apart. `feat(mcp): sign every OAuth server in through the container`. Source `e09e31370`, clean release source `9d20a9d54`, bundle `5446a68d1`, published acceptance revision `dd0537997`; race, native Docker, frontend and CI checkpoints are recorded in the verification file. Task 6's specific certificate-onboarding case remains open.
 
-### Task 8: S4, and the fork takes a loopback redirect
+### Task 8: Google Desktop trial and fork routes — withdrawn
 
-The relay stays here. Everything is additive, so an older Aura keeps working beside the new image.
+Withdrawn on 2026-11-03: the operator keeps the existing Google callback flow and confirms access currently works. No Desktop client, S4 next-day-refresh trial, new fork routes or fork publication is required. This is a scope change, not a passed trial.
 
-**Files (fork, `D:\tmp\pim-plan\fork`):**
-- Modify: `src/CalendarMcp.HttpServer/Admin/AdminEndpoints.cs`, `src/CalendarMcp.HttpServer/Admin/GoogleOAuthManager.cs`
-- Test: `src/CalendarMcp.Tests/Admin/` beside the existing admin tests
+### Task 9: Google in the temporary browser — withdrawn
 
-**Interfaces:**
-- Produces, beside the existing `GET /admin/auth/{accountId}/google/start`:
-  - `POST /admin/auth/{accountId}/google/start` with `{"redirectUri": "...", "clientId": "...", "clientSecret": "..."}`, answering `{authUrl, redirectUri}`. The client is kept with the pending state. The account's stored client is not touched.
-  - `POST /admin/auth/google/exchange` with `{state, code}`, answering `{accountId}`, or 400 with `{error}`.
+Withdrawn with Task 8. Preserve the working Web-client flow, provider app and account configuration.
 
-- [ ] **Step 1: S4 by hand.** The operator creates a Desktop client. With a throwaway container: consent, loopback redirect, exchange, and a refresh the next day. Write the result in the verification file. A failure comes back to the spec.
-- [ ] **Step 2: Write the failing tests.**
+### Task 10: Google relay removal — withdrawn
 
-```csharp
-[TestMethod] public async Task GoogleStart_TakesALoopbackRedirect()      // authUrl holds the redirect_uri given, and a state with no relay suffix
-[TestMethod] public async Task GoogleStart_RefusesAnyOtherRedirect()     // https://evil.example/cb and http://10.0.0.1/cb: 400
-[TestMethod] public async Task GoogleStart_UsesTheClientItIsGiven()      // authUrl holds that client_id; the account's ProviderConfig is unchanged
-[TestMethod] public async Task GoogleExchange_UsesTheRedirectAndClientOfItsState() // the token request carries both
-[TestMethod] public async Task GoogleExchange_RefusesAStateItDidNotIssue() // 400, nothing stored
-```
-
-- [ ] **Step 3: Implement, and run the suite beside GreenMail and Dovecot.** Expected: 0 failed.
-- [ ] **Step 4: Commit on `aura-watch`, then ask the operator to write «pubblica».** Wait for `CI Build` and `aura-publish-image` green on that SHA.
-
-### Task 9: Google on it
-
-**Files:**
-- Modify: `internal/agui/connect_pim_api.go`, `internal/agui/connect_pim_inject.go`, `web/src/governance/PimProviderAppsPanel.tsx`, `web/src/governance/PimConnectPanel.tsx`, `web/src/governance/pimConnect.ts`, `web/src/i18n/resources.governance.ts`, `docs/mcp-manager.md`, `cmd/aura/serve_signin_browser.go`
-- Test: `internal/agui/connect_pim_api_test.go`, `internal/agui/connect_pim_inject_test.go`, `web/src/governance/__tests__/CalendarConnect.test.tsx`
-
-**Interfaces:**
-- Consumes: `browserlogin.Login.Start`, Task 3's paste shape, Task 7's `SignInImageGate`, Task 8's routes.
-- Produces: `pimGoogleSignIn`, a `browserlogin.Authorizer` over the PIM; `POST /api/connect/pim/accounts/{id}/auth/google/paste`.
-
-- [ ] **Step 1: Write the failing tests.**
-
-```go
-func TestGoogleSignInGoesThroughTheContainer(t *testing.T) // start posts LoopbackCallback and the admin's app; the query reaches /admin/auth/google/exchange.
-func TestSigningInAgainRewritesTheAccountsClient(t *testing.T) // after the exchange, clientId and clientSecret are the admin's current app; the id stays.
-func TestACancelledSignInLeavesTheAccountsClient(t *testing.T) // no rewrite, and an account still refreshes.
-func TestAWatchSurvivesSigningInAgain(t *testing.T) // db_integration: the pim_watch task is still there.
-func TestGooglePasteRefusesAnotherFlowsState(t *testing.T)
-```
-
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** The panel asks for a client of type Desktop app. A Web client left in place fails at Google with `redirect_uri_mismatch`, and the panel's text says which type to create.
-- [ ] **Step 4: Run all tiers, commit, then the bundle apart.** `feat(pim): sign Google in through the container`.
-- [ ] **Step 5: Live on the VM, through the updater.** Push per the rule, every workflow green on that SHA. The operator updates Aura and the PIM from the cockpit and connects Google with a Desktop client. Read back the account's state and a calendar read. Append to the verification file.
-
-### Task 10: The relay goes
-
-Only after Task 9's full sign-in on the VM (spec §7).
-
-**Files:**
-- Fork: remove `src/CalendarMcp.HttpServer/Admin/GoogleOAuthRelay.cs` and `src/CalendarMcp.Tests/Admin/GoogleOAuthRelayTests.cs`; modify `Admin/AdminEndpoints.cs`, `Admin/GoogleOAuthManager.cs`, `src/CalendarMcp.Core/Configuration/CalendarMcpConfiguration.cs`
-- Aura: remove `cmd/aura/pim_relay_artifacts_test.go`; modify `internal/agui/connect_pim_api.go`, `internal/agui/connect_pim_providers_api.go`, `cmd/aura/serve_webui.go`, `compose.yaml`, `scripts/payload_manifest.txt`, `.env.example`
-
-- [ ] **Step 1: Aura first.** Remove `PIMGoogleRelayRedirectURI`, `redirectUri` from the admin view, `returnBase`, `pimReturnOrigin`, `connectPIMGoogleCallbackRoute`, `CALENDAR_MCP_CalendarMcp__GoogleOAuthRelayUrl`, and `AURA_WEB_PUBLIC_URL` if `git grep` shows no reader. `TestPIMSidecarIsToldTheGoogleRelay` goes with what it pinned, and the commit body says so. Add `TestTheGoogleCallbackRouteIsGone`: the route answers 404.
-- [ ] **Step 2: Run all tiers, commit, then the manifest apart.** `refactor(pim): drop the Google relay`.
-- [ ] **Step 3: The fork.** Remove the `GET` start, `GoogleOAuthCallback`, `OAuthResultPage`, `GoogleOAuthRelay`, `GoogleOAuthRelayUrl` and `installCallbackUrl`. Run the suite. Expected: 0 failed.
-- [ ] **Step 4: Commit on `aura-watch`.** Do not publish until the release carrying Step 1 has reached every known install, since an older Aura still calls the `GET` start. Say so to the operator, who writes «pubblica» then.
+Withdrawn with Task 8. The Cloudflare Google callback and its Aura/PIM callers remain in use.
 
 ### Task 11: Close
 
@@ -456,7 +401,7 @@ Only after Task 9's full sign-in on the VM (spec §7).
 
 - [ ] **Step 1: S5.** Nothing above depends on it, since ElevenLabs goes through the relay into the container. It decides how much of the site a later job can remove. If an ElevenLabs account is available, name `mcp.LoopbackCallback` in the document beside the relay and sign in with it. If not, the relay stays and the file says why.
 - [ ] **Step 2: S6.** On the smallest install available: pull time, peak memory, free disk after. Fix `signInMemoryBytes` and `signInMinFreeBytes` from the measure, in their own commit.
-- [ ] **Step 3: Live on the VM, through the updater.** The operator connects Canva, Linear and Google from `https://192.168.101.158`. Read back: grants saved, tools mounted, no labelled container left, nothing in the logs but ids. Close the tab mid-flow once. Kill the process mid-flow once, and see the sweep. Then the same with the cockpit on plain `http://`, where the paste-back must appear.
+- [ ] **Step 3: Live on the VM, through the updater.** The operator connects Canva and Linear from `https://192.168.101.158`; Notion's accepted S7 trial is additional evidence. Read back: grants saved, tools mounted, no labelled container left, nothing in the logs but ids. Close the tab mid-flow once. Kill the process mid-flow once, and see the sweep. Then the same with the cockpit on plain `http://`, where the MCP paste-back must appear. Google keeps its working flow, confirmed by the operator on 2026-11-03; no new Google trial is required.
 - [ ] **Step 4: Amend the PRD** after these measures, with date, evidence and what they do not prove.
 - [ ] **Step 5: Gates.** `make quality-full` in WSL, `bash scripts/coverage_docker.sh`, mutation in CI on `internal/browserlogin` and `signin_proxy.go`, ≥70% killed. Push, and every workflow green on that SHA.
-- [ ] **Step 6: The Cloudflare pages are not this plan.** They go in a job of their own once every known install runs this release (spec §4.6). Record that as an open item in the PRD amendment.
+- [ ] **Step 6: The Cloudflare site is not changed by this plan.** Google keeps its callback. MCP relay removal is a later job only if S5 permits it and every known install runs this release (spec §4.6). Record that narrower open item in the PRD amendment.
