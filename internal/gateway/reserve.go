@@ -145,7 +145,6 @@ func (g *Gateway) CompleteOperation(ctx context.Context, result tools.ToolResult
 	}); err != nil {
 		return err
 	}
-	g.closeUnobservedReservation(ctx, "ok", "", result)
 	return nil
 }
 
@@ -159,16 +158,9 @@ func (g *Gateway) MarkOperationIndeterminate(ctx context.Context) error {
 	if !ok {
 		return errors.New("mark operation indeterminate: trusted operation context missing")
 	}
-	if err := g.operations.MarkIndeterminate(
+	return g.operations.MarkIndeterminate(
 		ctx, operation.Key, operation.Fingerprint, operation.ClaimToken,
-	); err != nil {
-		return err
-	}
-	// The ledger's CHECK is status IN ('ok','error'), so an indeterminate outcome rides
-	// the error text rather than a third status value — the same shape syntheticEnd uses.
-	g.closeUnobservedReservation(ctx, "error",
-		"delegated dispatch ended with an indeterminate outcome", tools.ToolResult{})
-	return nil
+	)
 }
 
 // RejectOperation records a deterministic no-effect tool failure. Registries
@@ -253,7 +245,7 @@ func (g *Gateway) reserve(
 		// a reservation. The dev/local_trusted no-op already short-circuits before here.
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}
 	}
-	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID, scope, policy))
+	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(ctx, spec, rawArgs, key, tier, operatorID, scope, policy))
 	if err != nil {
 		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}
 	}
@@ -283,7 +275,7 @@ func (g *Gateway) reserve(
 // rides Meta (D-01 zero-migration); RedactForLedger runs for free inside the store's
 // toParams, so any secret on the tool command line is redacted before the durable column.
 func (g *Gateway) reservationStart(
-	spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
+	ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
 	tier scoring.RiskTier, operatorID string, scope ApprovalScope, policy Policy,
 ) toolinvocations.Event {
 	meta := map[string]any{
@@ -313,7 +305,7 @@ func (g *Gateway) reservationStart(
 		ToolCallID:     key.ToolCallID,
 		ToolName:       spec.Name,
 		Event:          toolinvocations.EventStart,
-		StartedAt:      time.Now().UTC(),
+		StartedAt:      dispatchStartedAt(ctx),
 		Arguments:      string(rawArgs),
 		ArgsBytes:      len(rawArgs),
 		Meta:           meta,

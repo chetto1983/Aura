@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -22,7 +23,7 @@ func delegatedLifecycleContext(t *testing.T, delegated bool) context.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = WithReservationKey(ctx, testKey(), "shell_exec")
+	ctx = WithReservationKey(ctx, testKey(), "shell_exec", json.RawMessage(`{"command":"ls"}`), time.Now())
 	if delegated {
 		ctx = WithDelegatedDispatch(ctx)
 	}
@@ -39,7 +40,7 @@ func endRows(events []toolinvocations.Event) []toolinvocations.Event {
 	return out
 }
 
-// TestCompleteOperationClosesADelegatedReservation pins the fix for the defect
+// TestFinishCallClosesADelegatedMutation pins the fix for the defect
 // spike 099 caught live: the gateway opens a `start` row wherever it reserves, but
 // the `end` is written by the Runner from the turn's event frames — and a swarm
 // worker's frames never reach a Runner, because runChild consumes worker.Run(ic)
@@ -50,7 +51,7 @@ func endRows(events []toolinvocations.Event) []toolinvocations.Event {
 //
 // The rule taken from LibreChat (D-00): whoever opens a record closes it, so no
 // component ever has to find and close a row another one opened.
-func TestCompleteOperationClosesADelegatedReservation(t *testing.T) {
+func TestFinishCallClosesADelegatedMutation(t *testing.T) {
 	t.Parallel()
 
 	ledger := &fakeStore{}
@@ -59,7 +60,11 @@ func TestCompleteOperationClosesADelegatedReservation(t *testing.T) {
 	g.SetOperationRegistry(registry)
 
 	result := tools.ToolResult{Preview: "total 4\n", Bytes: 8}
-	if err := g.CompleteOperation(delegatedLifecycleContext(t, true), result); err != nil {
+	ctx := delegatedLifecycleContext(t, true)
+	// Execution owns the audit outcome; operation transitions must not preempt it
+	// with an incomplete first-writer row or write the same terminal event twice.
+	g.FinishCall(ctx, result, nil)
+	if err := g.CompleteOperation(ctx, result); err != nil {
 		t.Fatalf("CompleteOperation: %v", err)
 	}
 
@@ -76,12 +81,12 @@ func TestCompleteOperationClosesADelegatedReservation(t *testing.T) {
 	}
 }
 
-// TestCompleteOperationLeavesAnObservedDispatchToTheRunner is the other half of the
+// TestFinishCallLeavesAnObservedDispatchToTheRunner is the other half of the
 // rule: a parent's dispatch IS observed by the Runner, which writes a richer end
 // (exit code, duration, sidecar path). A second writer there would win the
 // ON CONFLICT DO NOTHING race and replace that row with a poorer one, so the
 // gateway must stay out of it. Parent calls measured clean at 3 starts / 3 ends.
-func TestCompleteOperationLeavesAnObservedDispatchToTheRunner(t *testing.T) {
+func TestFinishCallLeavesAnObservedDispatchToTheRunner(t *testing.T) {
 	t.Parallel()
 
 	ledger := &fakeStore{}
@@ -89,7 +94,9 @@ func TestCompleteOperationLeavesAnObservedDispatchToTheRunner(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, ledger)
 	g.SetOperationRegistry(registry)
 
-	if err := g.CompleteOperation(delegatedLifecycleContext(t, false), tools.ToolResult{Preview: "x"}); err != nil {
+	ctx := delegatedLifecycleContext(t, false)
+	g.FinishCall(ctx, tools.ToolResult{Preview: "x"}, nil)
+	if err := g.CompleteOperation(ctx, tools.ToolResult{Preview: "x"}); err != nil {
 		t.Fatalf("CompleteOperation: %v", err)
 	}
 	if got := len(endRows(ledger.calls())); got != 0 {
@@ -97,10 +104,10 @@ func TestCompleteOperationLeavesAnObservedDispatchToTheRunner(t *testing.T) {
 	}
 }
 
-// TestMarkOperationIndeterminateClosesADelegatedReservation covers the failure leg:
+// TestFinishCallClosesAnIndeterminateDelegatedMutation covers the failure leg:
 // a worker call that ends ambiguously must still close its own row, or it orphans
 // exactly like the success leg did.
-func TestMarkOperationIndeterminateClosesADelegatedReservation(t *testing.T) {
+func TestFinishCallClosesAnIndeterminateDelegatedMutation(t *testing.T) {
 	t.Parallel()
 
 	ledger := &fakeStore{}
@@ -108,7 +115,9 @@ func TestMarkOperationIndeterminateClosesADelegatedReservation(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, ledger)
 	g.SetOperationRegistry(registry)
 
-	if err := g.MarkOperationIndeterminate(delegatedLifecycleContext(t, true)); err != nil {
+	ctx := delegatedLifecycleContext(t, true)
+	g.FinishCall(ctx, tools.ToolResult{}, errors.New("transport interrupted"))
+	if err := g.MarkOperationIndeterminate(ctx); err != nil {
 		t.Fatalf("MarkOperationIndeterminate: %v", err)
 	}
 	ends := endRows(ledger.calls())
@@ -129,6 +138,7 @@ func TestDelegatedCloseIsInertWithoutALedger(t *testing.T) {
 	registry := &fakeOperationRegistry{}
 	g := New(config.ProfileSingleUserHardened, nil)
 	g.SetOperationRegistry(registry)
+	g.FinishCall(delegatedLifecycleContext(t, true), tools.ToolResult{Preview: "x"}, nil)
 
 	if err := g.CompleteOperation(delegatedLifecycleContext(t, true), tools.ToolResult{Preview: "x"}); err != nil {
 		t.Fatalf("CompleteOperation without a ledger: %v", err)
@@ -156,7 +166,9 @@ func TestDelegatedCloseWithoutAReservationKeyDoesNotInventOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.CompleteOperation(WithDelegatedDispatch(ctx), tools.ToolResult{Preview: "x"}); err != nil {
+	ctx = WithDelegatedDispatch(ctx)
+	g.FinishCall(ctx, tools.ToolResult{Preview: "x"}, nil)
+	if err := g.CompleteOperation(ctx, tools.ToolResult{Preview: "x"}); err != nil {
 		t.Fatalf("CompleteOperation: %v", err)
 	}
 	if got := len(endRows(ledger.calls())); got != 0 {
@@ -175,6 +187,7 @@ func TestDelegatedCloseSurvivesALedgerFailure(t *testing.T) {
 	registry := &fakeOperationRegistry{}
 	g := New(config.ProfileSingleUserHardened, ledger)
 	g.SetOperationRegistry(registry)
+	g.FinishCall(delegatedLifecycleContext(t, true), tools.ToolResult{Preview: "x"}, nil)
 
 	if err := g.CompleteOperation(delegatedLifecycleContext(t, true), tools.ToolResult{Preview: "x"}); err != nil {
 		t.Fatalf("a failed audit row must not fail the completed mutation: %v", err)
@@ -185,7 +198,7 @@ func TestDelegatedCloseSurvivesALedgerFailure(t *testing.T) {
 // decision fact: the reservation key, no operation claim, and the delegated marker when no
 // Runner observes the stream.
 func readOnlyCallContext(delegated bool) context.Context {
-	ctx := WithReservationKey(context.Background(), testKey(), "web_search")
+	ctx := WithReservationKey(context.Background(), testKey(), "web_search", json.RawMessage(`{"query":"AAPL"}`), time.Now())
 	if delegated {
 		ctx = WithDelegatedDispatch(ctx)
 	}
@@ -230,6 +243,17 @@ func TestFinishCallRecordsAFailedDelegatedCall(t *testing.T) {
 	}
 }
 
+func TestFinishCallRecordsCancellationMetadataAsALedgerError(t *testing.T) {
+	t.Parallel()
+	ledger := &fakeStore{}
+	meta := tools.ToolResultMeta{"cancelled": true}
+	New(config.ProfileSingleUserHardened, ledger).FinishCall(readOnlyCallContext(true), tools.ToolResult{Meta: &meta}, nil)
+	ends := endRows(ledger.calls())
+	if len(ends) != 1 || ends[0].Status != "error" || ends[0].Error != "context canceled" {
+		t.Fatalf("ends = %+v, want a canceled tool result represented by the ledger's accepted error status", ends)
+	}
+}
+
 // TestFinishCallLeavesWhatItDidNotOpen covers the two calls the hook must not touch: a
 // parent's, whose richer end the Runner writes, and any call under a profile where Decide
 // wrote no start at all.
@@ -255,7 +279,7 @@ func TestFinishCallClosesAnUnobservedDecisionFact(t *testing.T) {
 	t.Parallel()
 
 	ledger := &fakeStore{}
-	ctx := tools.WithUnobservedDispatch(WithReservationKey(context.Background(), testKey(), "web_search"))
+	ctx := tools.WithUnobservedDispatch(WithReservationKey(context.Background(), testKey(), "web_search", nil, time.Now()))
 	New(config.ProfileSingleUserHardened, ledger).FinishCall(ctx, tools.ToolResult{Preview: "x"}, nil)
 
 	ends := endRows(ledger.calls())

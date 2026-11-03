@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"syscall"
 	"time"
@@ -124,7 +126,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		// they need to close the row they opened. Inert unless the dispatch is also
 		// marked delegated (a swarm worker, a scheduled job): a Runner-observed call keeps
 		// the Runner's richer end.
-		ctx = gateway.WithReservationKey(ctx, key, spec.Name)
+		ctx = gateway.WithReservationKey(ctx, key, spec.Name, args, time.Now())
 		describer, _ := tool.(tools.ApprovalDescriber)
 		ctx = gateway.WithApprovalDescriber(ctx, describer)
 		verdict, derr := a.gateway.Decide(ctx, spec, args, key)
@@ -190,36 +192,61 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		}
 	}
 
-	var res tools.ToolResult
-	var err error
+	return a.executeToolWithRetries(ctx, tool, mutating, args, consulted, operationAcquired)
+}
+
+func (a *LlmAgent) finishToolCall(ctx context.Context, res tools.ToolResult, err error, operationAcquired bool) error {
+	a.gateway.FinishCall(ctx, res, err)
+	if !operationAcquired {
+		return err
+	}
+	// Closing the claim records an effect that already happened and cannot inherit
+	// the cancellation that stopped Execute. FinishCall has recorded its actual
+	// result before this independent operation-state transition can fail.
+	bctx, cancel := bookkeepingCtx(ctx)
+	defer cancel()
+	if err != nil {
+		var toolCallErr *mcp.ToolCallError
+		if errors.As(err, &toolCallErr) && toolCallErr.DeterministicNoEffect() {
+			return errors.Join(err, a.gateway.RejectOperation(bctx, toolCallErr))
+		}
+		return errors.Join(err, a.gateway.MarkOperationIndeterminate(bctx))
+	}
+	if completeErr := a.gateway.CompleteOperation(bctx, res); completeErr != nil {
+		return errors.Join(completeErr, a.gateway.MarkOperationIndeterminate(bctx))
+	}
+	return nil
+}
+
+func (a *LlmAgent) executeToolWithRetries(ctx context.Context, tool tools.Tool, mutating bool, args json.RawMessage, consulted, operationAcquired bool) (res tools.ToolResult, err error) {
+	var promoted bool
+	var complete tools.BackgroundCallResultHook
+	if consulted {
+		complete = func(callCtx context.Context, result tools.ToolResult, callErr error) {
+			if finalErr := a.finishToolCall(callCtx, result, callErr, operationAcquired); finalErr != nil {
+				slog.Warn("background tool call finalization", "tool", tool.Spec().Name, "err", finalErr)
+			}
+		}
+		// One ledger lifecycle spans all read retries/backoff, independently of whether
+		// an operation claim exists. Never install this hook before Allow/no-replay.
+		defer func() {
+			if value := recover(); value != nil {
+				a.gateway.FinishCall(ctx, res, fmt.Errorf("tool panic: %v", value))
+				panic(value)
+			}
+			if !promoted {
+				err = a.finishToolCall(ctx, res, err, operationAcquired)
+			}
+		}()
+	}
 	for attempt := 0; ; attempt++ {
-		res, err = a.executeTool(ctx, tool, args)
-		if err == nil || mutating || attempt >= maxToolRetries || ctx.Err() != nil || !isTransientToolErr(err) {
-			if !operationAcquired {
-				if consulted {
-					a.gateway.FinishCall(ctx, res, err)
-				}
-				return res, err
-			}
-			// Detached from ctx on purpose: the most common way to get here is the caller's
-			// context expiring, which is exactly when the claim MUST still be closed.
-			bctx, cancel := bookkeepingCtx(ctx)
-			defer cancel()
-			if err != nil {
-				var toolCallErr *mcp.ToolCallError
-				if errors.As(err, &toolCallErr) && toolCallErr.DeterministicNoEffect() {
-					return res, errors.Join(err, a.gateway.RejectOperation(bctx, toolCallErr))
-				}
-				return res, errors.Join(err, a.gateway.MarkOperationIndeterminate(bctx))
-			}
-			if completeErr := a.gateway.CompleteOperation(bctx, res); completeErr != nil {
-				return res, errors.Join(completeErr, a.gateway.MarkOperationIndeterminate(bctx))
-			}
-			return res, nil
+		res, err, promoted = a.executeTool(ctx, tool, args, complete)
+		if promoted || err == nil || mutating || attempt >= maxToolRetries || ctx.Err() != nil || !isTransientToolErr(err) {
+			return res, err
 		}
 		select {
 		case <-ctx.Done():
-			return res, err
+			return res, ctx.Err()
 		case <-time.After(time.Duration(attempt+1) * toolRetryBaseDelay):
 		}
 	}

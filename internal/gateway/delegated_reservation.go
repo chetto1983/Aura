@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -23,8 +25,8 @@ import (
 //
 // The rule is LibreChat's (D-00): whoever opens a record closes it, so no component
 // ever has to find and close a row another one opened. These two carriers give the
-// gateway what it needs to honour that at its own terminal hooks — the key it
-// reserved under, and whether anyone else is watching this stream.
+// gateway what it needs at FinishCall: dispatch evidence and whether anyone else
+// is watching this stream. Operation transitions do not own the execution outcome.
 
 type reservationKeyContextKey struct{}
 
@@ -32,21 +34,36 @@ type reservationKeyContextKey struct{}
 // reserved under plus the tool it reserved for — everything the `end` row needs
 // that the terminal hooks do not otherwise receive.
 type reservedDispatch struct {
-	key  ReservationKey
-	tool string
+	key       ReservationKey
+	tool      string
+	arguments string
+	startedAt time.Time
 }
 
 // WithReservationKey carries what the gateway reserved under, so its terminal hooks
 // can close the same row they opened without the key being threaded through every
 // signature between them. Set by the agent's dispatch, which is the one place that
-// holds both the key and the spec.
-func WithReservationKey(ctx context.Context, key ReservationKey, toolName string) context.Context {
-	return context.WithValue(ctx, reservationKeyContextKey{}, reservedDispatch{key: key, tool: toolName})
+// holds the key, spec and actual arguments. The immutable copy survives cancellation
+// and operation-bookkeeping contexts without sharing writable state across calls.
+func WithReservationKey(ctx context.Context, key ReservationKey, toolName string, args json.RawMessage, startedAt time.Time) context.Context {
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	return context.WithValue(ctx, reservationKeyContextKey{}, reservedDispatch{
+		key: key, tool: toolName, arguments: string(args), startedAt: startedAt.UTC(),
+	})
 }
 
 func reservedDispatchFromContext(ctx context.Context) (reservedDispatch, bool) {
 	d, ok := ctx.Value(reservationKeyContextKey{}).(reservedDispatch)
 	return d, ok
+}
+
+func dispatchStartedAt(ctx context.Context) time.Time {
+	if dispatch, ok := reservedDispatchFromContext(ctx); ok {
+		return dispatch.startedAt
+	}
+	return time.Now().UTC()
 }
 
 // WithDelegatedDispatch marks a dispatch whose events no Runner observes, which is
@@ -65,13 +82,21 @@ func WithDelegatedDispatch(ctx context.Context) context.Context {
 	return tools.WithDelegatedDispatch(ctx)
 }
 
-// FinishCall is the terminal hook of a call that ran without an operation claim: a read-only
-// call, whose `start` Decide records as a decision fact, or a reservation under a gateway with
-// no operation registry. Only a strict profile opened such a row, and only an unobserved
-// dispatch (a swarm worker, a scheduled job) has nobody else to close it.
+// FinishCall records the actual execution outcome once, before operation bookkeeping.
+// Only a strict profile opened such a row, and only an unobserved dispatch (a swarm
+// worker, a scheduled job) has nobody else to close it. It must not run for a replay
+// or a call stopped before Execute.
 func (g *Gateway) FinishCall(ctx context.Context, result tools.ToolResult, callErr error) {
 	if g == nil || !g.profile.Strict() {
 		return
+	}
+	if callErr == nil && result.Meta != nil {
+		if inline, ok := (*result.Meta)[tools.MetaToolError].(string); ok && inline != "" {
+			callErr = errors.New(inline)
+		} else if (*result.Meta)["cancelled"] == true {
+			// The durable ledger accepts only ok/error, including cancellation.
+			callErr = context.Canceled
+		}
 	}
 	if callErr != nil {
 		g.closeUnobservedReservation(ctx, "error", callErr.Error(), result)
@@ -108,7 +133,9 @@ func (g *Gateway) closeUnobservedReservation(ctx context.Context, status, errTex
 		ToolCallID:        dispatch.key.ToolCallID,
 		ToolName:          dispatch.tool,
 		Event:             toolinvocations.EventEnd,
-		EndedAt:           time.Now().UTC(),
+		StartedAt:         dispatch.startedAt,
+		Arguments:         dispatch.arguments,
+		ArgsBytes:         len(dispatch.arguments),
 		Status:            status,
 		Error:             errText,
 		ResultPreview:     result.Preview,
@@ -118,6 +145,9 @@ func (g *Gateway) closeUnobservedReservation(ctx context.Context, status, errTex
 		ResultSidecarPath: result.FullPath,
 		Meta:              map[string]any{"unobserved": true},
 	}
+	end.EndedAt = time.Now().UTC()
+	end.Timestamp = end.EndedAt
+	end.DurationMS = end.EndedAt.Sub(end.StartedAt).Milliseconds()
 	// Detached for the same reason the Runner detaches its own end: this row closes a
 	// reservation, and the most common way to reach it is a context that has just
 	// expired. Recording that an effect happened must not be cancellable by whatever

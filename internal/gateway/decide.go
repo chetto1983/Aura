@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -99,7 +98,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		// D-01e: a read-only tool call under a strict profile is a recorded decision-fact
 		// ONLY — no reserve→execute→append machinery. The fact is a start row (see
 		// recordDecisionFact), never an end row.
-		g.recordDecisionFact(ctx, spec, key, tier)
+		g.recordDecisionFact(ctx, spec, rawArgs, key, tier)
 		return Verdict{Decision: Allow, Tier: tier}, nil
 	}
 	// Mutating funnel. A GateRecommended call is routed to approve FIRST; a non-Allow
@@ -135,7 +134,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 // observer's own `start` (whichever lands first wins; the other is a rows==0 no-op) and
 // never blocks the real `end` (D-01e). A store or key failure is a WARN, never a hard
 // error — the Allow still stands; the fact is observability, and the call is safe to run.
-func (g *Gateway) recordDecisionFact(ctx context.Context, spec tools.Spec, key ReservationKey, tier scoring.RiskTier) {
+func (g *Gateway) recordDecisionFact(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey, tier scoring.RiskTier) {
 	if g.store == nil {
 		return
 	}
@@ -145,7 +144,9 @@ func (g *Gateway) recordDecisionFact(ctx context.Context, spec tools.Spec, key R
 		ToolCallID:     key.ToolCallID,
 		ToolName:       spec.Name,
 		Event:          toolinvocations.EventStart,
-		StartedAt:      time.Now().UTC(),
+		StartedAt:      dispatchStartedAt(ctx),
+		Arguments:      string(rawArgs),
+		ArgsBytes:      len(rawArgs),
 		Meta: map[string]any{
 			"gateway_verdict": string(Allow),
 			"gateway_tier":    string(tier),

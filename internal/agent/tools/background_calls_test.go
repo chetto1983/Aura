@@ -109,7 +109,7 @@ type promotedNotice struct {
 
 func promote(t *testing.T, calls *BackgroundCalls, turn context.Context, tool *gateTool) promotedNotice {
 	t.Helper()
-	res, err := calls.Execute(turn, tool, nil, testWindow, testCeiling)
+	res, err, _ := calls.Execute(turn, tool, nil, testWindow, testCeiling, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBackgroundCallsReturnsACallThatSettlesInItsWindowUnchanged(t *testing.T
 	tool.result = ToolResult{Preview: "done", Bytes: 4}
 	close(tool.release)
 
-	res, err := calls.Execute(turn, tool, nil, time.Second, testCeiling)
+	res, err, _ := calls.Execute(turn, tool, nil, time.Second, testCeiling, nil)
 	if err != nil || res.Preview != "done" || res.Bytes != 4 {
 		t.Fatalf("Execute = %+v, %v; want the tool's own result", res, err)
 	}
@@ -224,7 +224,7 @@ func TestBackgroundCallsCancelsACallWhoseTurnEndsInsideTheWindow(t *testing.T) {
 		endTurn()
 	}()
 
-	_, err := calls.Execute(turn, tool, nil, time.Second, testCeiling)
+	_, err, _ := calls.Execute(turn, tool, nil, time.Second, testCeiling, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Execute err = %v, want the turn's cancellation", err)
 	}
@@ -250,7 +250,7 @@ func TestBackgroundCallsNeverMoveACallTheirTurnAlreadyCancelled(t *testing.T) {
 		close(tool.release)
 	}()
 
-	res, err := calls.Execute(turn, tool, nil, testWindow, testCeiling)
+	res, err, _ := calls.Execute(turn, tool, nil, testWindow, testCeiling, nil)
 	if err != nil || res.Preview != "stopped late" {
 		t.Fatalf("Execute = %q, %v; want the call kept in its turn", res.Preview, err)
 	}
@@ -266,7 +266,7 @@ func TestBackgroundCallsStopsACallAtItsCeiling(t *testing.T) {
 	turn, _ := backgroundTurn(t, "id-1", "sess-1")
 	tool := newGateTool("never")
 
-	res, err := calls.Execute(turn, tool, nil, testWindow, 80*time.Millisecond)
+	res, err, _ := calls.Execute(turn, tool, nil, testWindow, 80*time.Millisecond, nil)
 	if err != nil || !strings.Contains(res.Preview, `"in_progress"`) {
 		t.Fatalf("Execute = %q, %v", res.Preview, err)
 	}

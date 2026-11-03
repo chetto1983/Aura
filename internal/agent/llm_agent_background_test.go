@@ -104,7 +104,7 @@ func TestExecuteToolNeedsTheRunsLimitsToMoveACall(t *testing.T) {
 	tool := &heldTool{release: make(chan struct{})}
 	close(tool.release)
 
-	res, err := (&LlmAgent{background: calls}).executeTool(context.Background(), tool, nil)
+	res, err, _ := (&LlmAgent{background: calls}).executeTool(context.Background(), tool, nil, nil)
 	if err != nil || res.Preview != "late answer" {
 		t.Fatalf("executeTool = %+v, %v", res, err)
 	}

@@ -38,7 +38,7 @@ func TestBackgroundCallsKeepACallInItsTurnPastTheOwnersCap(t *testing.T) {
 		time.Sleep(3 * testWindow)
 		close(extra.release)
 	}()
-	res, err := calls.Execute(turn, extra, nil, testWindow, testCeiling)
+	res, err, _ := calls.Execute(turn, extra, nil, testWindow, testCeiling, nil)
 	if err != nil || res.Preview != "waited for" {
 		t.Fatalf("a call past the cap = %+v, %v; want it kept in its turn to the end", res, err)
 	}
@@ -74,7 +74,7 @@ func TestBackgroundCallsRaiseAnInlinePanicAndRecordABackgroundOne(t *testing.T) 
 				t.Fatalf("recovered %v, want the tool's own panic raised for runToolRecovering", recovered)
 			}
 		}()
-		_, _ = calls.Execute(turn, inline, nil, time.Second, testCeiling)
+		_, _, _ = calls.Execute(turn, inline, nil, time.Second, testCeiling, nil)
 	}()
 
 	background := newGateTool("boom")
@@ -276,7 +276,7 @@ func TestBackgroundCallsStopCancelsRunningCallsAndRefusesNewOnes(t *testing.T) {
 		time.Sleep(3 * testWindow)
 		close(late.release)
 	}()
-	if res, err := calls.Execute(turn, late, nil, testWindow, testCeiling); err != nil || res.Preview != "inline" {
+	if res, err, _ := calls.Execute(turn, late, nil, testWindow, testCeiling, nil); err != nil || res.Preview != "inline" {
 		t.Fatalf("a call after Stop = %+v, %v; want it kept in its turn", res, err)
 	}
 	var nilCalls *BackgroundCalls
@@ -382,7 +382,7 @@ func TestBackgroundCallsKeepEveryResultsTrustWhereItBelongs(t *testing.T) {
 
 	bare := newGateTool("web_fetch")
 	bare.result = ToolResult{Preview: "page"}
-	res, err := calls.Execute(turn, bare, nil, testWindow, testCeiling)
+	res, err, _ := calls.Execute(turn, bare, nil, testWindow, testCeiling, nil)
 	if err != nil || res.Provenance == nil || res.Provenance.Trust != TrustTrusted || res.Provenance.Source != "aura:background" {
 		t.Fatalf("notice provenance = %+v (err %v), want Aura's own, trusted", res.Provenance, err)
 	}

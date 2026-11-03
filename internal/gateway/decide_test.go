@@ -171,8 +171,9 @@ func TestDecideOrdinaryWriteIsNotGated(t *testing.T) {
 func TestDecideReadOnlyDecisionFact(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
+	args := json.RawMessage(`{"path":"/workspace/report.txt"}`)
 
-	v, err := g.Decide(context.Background(), readOnlySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), readOnlySpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -195,6 +196,9 @@ func TestDecideReadOnlyDecisionFact(t *testing.T) {
 	}
 	if fact.Meta["decision_fact"] != true || fact.Meta["gateway_verdict"] != string(Allow) {
 		t.Fatalf("decision-fact meta = %v, want allow decision_fact", fact.Meta)
+	}
+	if fact.Arguments != string(args) || fact.ArgsBytes != len(args) {
+		t.Fatalf("decision-fact arguments = %q/%d, want %q/%d", fact.Arguments, fact.ArgsBytes, args, len(args))
 	}
 }
 

@@ -35,6 +35,10 @@ type BackgroundCallCompletion struct {
 // without being cancelled. It must return promptly.
 type BackgroundCallCompletionHook func(BackgroundCallCompletion)
 
+// BackgroundCallResultHook finalizes the real outcome of a promoted call once,
+// including canceled or dropped calls. Inline outcomes remain the caller's responsibility.
+type BackgroundCallResultHook func(context.Context, ToolResult, error)
+
 // The states a promoted call reports through tool_poll and its completion.
 const (
 	BackgroundCallRunning   = "running"
@@ -93,6 +97,7 @@ type backgroundCall struct {
 	tool      string
 	startedAt time.Time
 	call      detachedCall
+	complete  BackgroundCallResultHook
 
 	settled   bool
 	discarded bool
@@ -112,7 +117,7 @@ type callOutcome struct {
 // Execute runs tool for the turn ctx belongs to. A call that settles within window is
 // returned exactly as Execute would return it; one still running is moved to the
 // background, bounded by ceiling, and the model gets its task id instead.
-func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawMessage, window, ceiling time.Duration) (ToolResult, error) {
+func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawMessage, window, ceiling time.Duration, complete BackgroundCallResultHook) (ToolResult, error, bool) {
 	call := detachCall(ctx, ceiling)
 	// Unbuffered: whichever way the call goes, this turn or settle receives its outcome.
 	done := make(chan callOutcome)
@@ -132,7 +137,7 @@ func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawM
 	default:
 	}
 	name := tool.Spec().Name
-	task, err := b.promote(ctx, name, call)
+	task, err := b.promote(ctx, name, call, complete)
 	if err != nil {
 		if !errors.Is(err, errBackgroundTurnEnded) {
 			slog.Warn("tool call outlived its window and stays in its turn", "tool", name, "reason", err)
@@ -140,7 +145,8 @@ func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawM
 		return call.finishInline(ctx, <-done)
 	}
 	go b.settle(task, done)
-	return promotedResult(ctx, task.id, name, window)
+	result, err := promotedResult(ctx, task.id, name, window)
+	return result, err, true
 }
 
 // detachedCall is a call's own context: the turn's values without its cancellation,
@@ -189,13 +195,13 @@ func runCall(ctx context.Context, tool Tool, args json.RawMessage, done chan<- c
 
 // finishInline hands a call that settled in its turn back as if it had run there: its
 // cleanup joins the turn's, and a panic is raised again for runToolRecovering.
-func (c detachedCall) finishInline(turn context.Context, out callOutcome) (ToolResult, error) {
+func (c detachedCall) finishInline(turn context.Context, out callOutcome) (ToolResult, error, bool) {
 	c.cancel()
 	c.handOverCleanup(turn)
 	if out.panicked != nil {
 		panic(out.panicked)
 	}
-	return out.result, out.err
+	return out.result, out.err, false
 }
 
 // handOverCleanup makes the turn ctx belongs to run this call's cleanup when it ends.
@@ -224,7 +230,7 @@ var (
 // promote registers a call that is still running. It refuses when the registry is shut
 // down or full, and when the turn's cancellation has already reached the call: that call
 // is ending, not outliving anything.
-func (b *BackgroundCalls) promote(turn context.Context, tool string, call detachedCall) (*backgroundCall, error) {
+func (b *BackgroundCalls) promote(turn context.Context, tool string, call detachedCall, complete BackgroundCallResultHook) (*backgroundCall, error) {
 	id, err := newBackgroundJobID()
 	if err != nil {
 		return nil, err
@@ -242,7 +248,7 @@ func (b *BackgroundCalls) promote(turn context.Context, tool string, call detach
 	}
 	task := &backgroundCall{
 		id: id, ownerID: owner, sessionID: SessionIDFromContext(turn), tool: tool,
-		startedAt: time.Now(), call: call, status: BackgroundCallRunning,
+		startedAt: time.Now(), call: call, status: BackgroundCallRunning, complete: complete,
 	}
 	b.calls[id] = task
 	b.running.Add(1)
@@ -271,6 +277,7 @@ func (b *BackgroundCalls) settle(task *backgroundCall, done <-chan callOutcome) 
 	if out.panicked != nil {
 		out.err = fmt.Errorf("panic: %v", out.panicked)
 	}
+	notifyBackgroundResult(task.complete, task.call.ctx, out)
 
 	b.mu.Lock()
 	task.settled, task.status, task.result, task.err = true, status, out.result, out.err
@@ -294,6 +301,18 @@ func (b *BackgroundCalls) settle(task *backgroundCall, done <-chan callOutcome) 
 		TaskID: task.id, OwnerID: task.ownerID, SessionID: task.sessionID,
 		Tool: task.tool, Status: status, Duration: time.Since(task.startedAt),
 	})
+}
+
+func notifyBackgroundResult(hook BackgroundCallResultHook, ctx context.Context, out callOutcome) {
+	if hook == nil {
+		return
+	}
+	defer func() {
+		if value := recover(); value != nil {
+			slog.Error("background tool result hook panicked", "panic", value)
+		}
+	}()
+	hook(ctx, out.result, out.err)
 }
 
 // outcomeStatus reads how a call ended. It runs before the call's context is released,

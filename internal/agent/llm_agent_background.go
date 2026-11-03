@@ -30,10 +30,11 @@ func withBackgroundLimits(ctx context.Context, budget *Budget) context.Context {
 // executeTool runs one attempt of tool: through the background registry when the agent
 // has one, the dispatch carries the run's limits and the tool may leave its turn; in the
 // turn otherwise.
-func (a *LlmAgent) executeTool(ctx context.Context, tool tools.Tool, args json.RawMessage) (tools.ToolResult, error) {
+func (a *LlmAgent) executeTool(ctx context.Context, tool tools.Tool, args json.RawMessage, complete tools.BackgroundCallResultHook) (tools.ToolResult, error, bool) {
 	limits, ok := ctx.Value(backgroundLimitsKey{}).(backgroundLimits)
 	if !ok || a.background == nil || tool.Spec().Foreground {
-		return tool.Execute(ctx, args)
+		result, err := tool.Execute(ctx, args)
+		return result, err, false
 	}
-	return a.background.Execute(ctx, tool, args, limits.window, limits.ceiling)
+	return a.background.Execute(ctx, tool, args, limits.window, limits.ceiling, complete)
 }
