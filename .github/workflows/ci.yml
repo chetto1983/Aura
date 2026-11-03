@@ -1780,7 +1780,7 @@ jobs:
             timeout: 34
           - group: media
             scopes: media_clamp media_watcher signin_flow signin_options signin_proxy
-            timeout: 34
+            timeout: 150
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

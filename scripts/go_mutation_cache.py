@@ -5,6 +5,7 @@ go-mutesting has no cache of its own. A scope's result is a function of the muta
 test binary of its package and the toolchain, so it is reused when the sha256 over those inputs
 matches an earlier measurement. Anything unreadable in the cache means "run", never an error.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -54,6 +55,8 @@ INPUT_FIELDS = (
 TOOLCHAIN_ENV = ("GOFLAGS", "GOVERSION", "GOOS", "GOARCH", "GOEXPERIMENT", "CGO_ENABLED")
 MODULE_FILES = ("go.mod", "go.sum")
 GO_MUTESTING_TIMEOUT_SECONDS = 1800
+SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS = 90
+SIGNIN_PROXY_MUTATION_TIMEOUT_SECONDS = 7200
 HARD = "hard gate"
 ADVISORY = "advisory"
 
@@ -74,9 +77,7 @@ def parse_go_mutation_output(output: str) -> dict[str, Any]:
         raise ValueError("go-mutesting summary has no scored mutants")
     calculated = killed_count / scored
     if abs(float(reported) - calculated) > 0.000001:
-        raise ValueError(
-            f"go-mutesting score {reported} differs from counts {killed_count}/{scored}"
-        )
+        raise ValueError(f"go-mutesting score {reported} differs from counts {killed_count}/{scored}")
     return {
         "killed": killed_count,
         "survived": survived_count,
@@ -219,9 +220,7 @@ def measure(
 
 
 def go_output(repo: pathlib.Path, *args: str) -> str:
-    completed = subprocess.run(
-        ["go", *args], cwd=repo, text=True, capture_output=True, check=False
-    )
+    completed = subprocess.run(["go", *args], cwd=repo, text=True, capture_output=True, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"go {' '.join(args)} failed: {completed.stderr.strip()}")
     return completed.stdout
@@ -253,9 +252,7 @@ def scope_measurer(
     fingerprints = {path: fingerprint_of(path) for path in relative_paths}
 
     def measure_scope(scope_id: str, relative_path: str) -> dict[str, Any]:
-        return measure(
-            scope_id, relative_path, fingerprints[relative_path], mutate, cache_dir, log_dir, commit
-        )
+        return measure(scope_id, relative_path, fingerprints[relative_path], mutate, cache_dir, log_dir, commit)
 
     return measure_scope
 
@@ -273,17 +270,40 @@ def measurer(
     def fingerprint_of(relative_path: str) -> str:
         package = "./" + pathlib.PurePosixPath(relative_path).parent.as_posix()
         packages = decode_packages(go_output(repo, "list", "-deps", "-test", "-json", package))
-        return fingerprint(repo, relative_path, toolchain, packages)
+        scope_toolchain = toolchain
+        if relative_path == "internal/agui/signin_proxy.go":
+            scope_toolchain = {
+                **toolchain,
+                "mutation_exec_timeout_seconds": str(SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS),
+            }
+        return fingerprint(repo, relative_path, scope_toolchain, packages)
 
     def mutate(relative_path: str) -> tuple[int, str]:
+        args = [executable, relative_path]
+        timeout = GO_MUTESTING_TIMEOUT_SECONDS
+        if relative_path == "internal/agui/signin_proxy.go":
+            # The measured full-package baseline takes 27s; the runner defaults to 10s.
+            baseline = subprocess.run(
+                ["go", "test", "-count=1", f"-timeout={SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS}s", "./internal/agui"],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+                timeout=GO_MUTESTING_TIMEOUT_SECONDS,
+            )
+            if baseline.returncode != 0:
+                raise RuntimeError("unmutated sign-in proxy baseline failed: " + baseline.stdout[-4000:])
+            args = [executable, f"--exec-timeout={SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS}", relative_path]
+            timeout = SIGNIN_PROXY_MUTATION_TIMEOUT_SECONDS
         completed = subprocess.run(
-            [executable, relative_path],
+            args,
             cwd=repo,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
-            timeout=GO_MUTESTING_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
         return completed.returncode, completed.stdout
 
@@ -314,9 +334,7 @@ def shortfall_label(gate: str) -> str:
     return "FAIL" if gate == HARD else "advisory"
 
 
-def verdict(
-    relative_path: str, measured: dict[str, Any], minimum: float, gate: str
-) -> tuple[bool, str]:
+def verdict(relative_path: str, measured: dict[str, Any], minimum: float, gate: str) -> tuple[bool, str]:
     score = measured["score_percent"]
     detail = f"for {relative_path} ({gate}; {provenance(measured)})"
     if score >= minimum:

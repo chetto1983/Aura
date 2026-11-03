@@ -4,9 +4,11 @@ import contextlib
 import io
 import json
 import pathlib
+import subprocess
 import tempfile
 import unittest
 from typing import ClassVar
+from unittest import mock
 
 import critical_mutation_gate
 import go_mutation_cache
@@ -20,7 +22,7 @@ TOOLCHAIN = {
     "runner": "mod\tgithub.com/avito-tech/go-mutesting\tv0.0.0-20251226130216-48d0401f00fb",
 }
 SUMMARY = (
-    "PASS \"/tmp/x.go.0\" with checksum a\n"
+    'PASS "/tmp/x.go.0" with checksum a\n'
     "The mutation score is {score:.6f} "
     "({killed} passed, {survived} failed, 0 duplicated, 0 skipped, total is {total})\n"
 )
@@ -29,6 +31,38 @@ SUMMARY = (
 def mutesting_log(killed: int = 8, survived: int = 2) -> str:
     total = killed + survived
     return SUMMARY.format(score=killed / total, killed=killed, survived=survived, total=total)
+
+
+class SignInMutationExecutionTest(unittest.TestCase):
+    def run_measurement(self, outputs: list[subprocess.CompletedProcess[str]]):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
+            repo = pathlib.Path(tmp)
+            stack.enter_context(mock.patch.object(go_mutation_cache, "go_toolchain", return_value=TOOLCHAIN))
+            stack.enter_context(mock.patch.object(go_mutation_cache, "go_output", return_value=""))
+            fingerprint = stack.enter_context(
+                mock.patch.object(go_mutation_cache, "fingerprint", return_value="f" * 64)
+            )
+            stack.enter_context(mock.patch.object(go_mutation_cache, "candidate_commit", return_value="1" * 40))
+            run = stack.enter_context(mock.patch.object(go_mutation_cache.subprocess, "run", side_effect=outputs))
+            path = "internal/agui/signin_proxy.go"
+            measure = go_mutation_cache.measurer("go-mutesting", repo, repo / "logs", repo / "cache", [path])
+            measure("signin_proxy", path)
+            return run.call_args_list, fingerprint.call_args
+
+    def test_proxy_baseline_passes_before_native_mutations_and_timeout_is_keyed(self):
+        calls, fingerprint = self.run_measurement(
+            [
+                subprocess.CompletedProcess([], 0, "ok\n"),
+                subprocess.CompletedProcess([], 0, mutesting_log()),
+            ]
+        )
+        self.assertEqual(calls[0].args[0], ["go", "test", "-count=1", "-timeout=90s", "./internal/agui"])
+        self.assertEqual(calls[1].args[0], ["go-mutesting", "--exec-timeout=90", "internal/agui/signin_proxy.go"])
+        self.assertEqual(fingerprint.args[2]["mutation_exec_timeout_seconds"], "90")
+
+    def test_a_failed_unmutated_proxy_suite_never_starts_mutations(self):
+        with self.assertRaisesRegex(RuntimeError, "unmutated.*baseline"):
+            self.run_measurement([subprocess.CompletedProcess([], 1, "baseline failure\n")])
 
 
 class FakeModule:
@@ -98,9 +132,7 @@ class FakeModule:
 
     def fingerprint(self, toolchain: dict[str, str] | None = None, **kwargs: object) -> str:
         packages = kwargs.pop("packages", None) or self.packages()
-        return go_mutation_cache.fingerprint(
-            self.root, "internal/a/a.go", toolchain or TOOLCHAIN, packages, **kwargs
-        )
+        return go_mutation_cache.fingerprint(self.root, "internal/a/a.go", toolchain or TOOLCHAIN, packages, **kwargs)
 
 
 class FingerprintTest(unittest.TestCase):
@@ -147,14 +179,10 @@ class FingerprintTest(unittest.TestCase):
             ("runner", "mod\tgithub.com/avito-tech/go-mutesting\tv0.0.1"),
         ):
             with self.subTest(changed=key):
-                self.assertNotEqual(
-                    self.module.fingerprint({**TOOLCHAIN, key: value}), self.baseline
-                )
+                self.assertNotEqual(self.module.fingerprint({**TOOLCHAIN, key: value}), self.baseline)
 
     def test_the_scope_file_is_part_of_the_identity(self) -> None:
-        other = go_mutation_cache.fingerprint(
-            self.module.root, "internal/b/b.go", TOOLCHAIN, self.module.packages()
-        )
+        other = go_mutation_cache.fingerprint(self.module.root, "internal/b/b.go", TOOLCHAIN, self.module.packages())
         self.assertNotEqual(other, self.baseline)
 
     def test_a_file_outside_the_closure_does_not_change_it(self) -> None:
@@ -208,9 +236,7 @@ class MeasureTest(unittest.TestCase):
         self.calls.append(relative_path)
         return self.output
 
-    def measure(
-        self, fingerprint: str = "f" * 64, commit: str = "1" * 40, required: bool = False
-    ) -> dict[str, object]:
+    def measure(self, fingerprint: str = "f" * 64, commit: str = "1" * 40, required: bool = False) -> dict[str, object]:
         return go_mutation_cache.measure(
             "gateway",
             "internal/gateway/classify.go",
@@ -229,9 +255,7 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
         self.assertNotIn("reused_from", again)
         self.assertEqual(again["duration_seconds"], first["duration_seconds"])
-        self.assertEqual(
-            (self.log_dir / "gateway.log").read_text(encoding="utf-8"), mutesting_log()
-        )
+        self.assertEqual((self.log_dir / "gateway.log").read_text(encoding="utf-8"), mutesting_log())
 
     def test_a_required_measurement_that_is_missing_or_stale_fails_closed(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "gateway: no measurement .*missing"):
@@ -269,9 +293,7 @@ class MeasureTest(unittest.TestCase):
         self.assertNotIn("reused_from", measured)
         self.assertIsInstance(measured["duration_seconds"], float)
         self.assertTrue((self.cache_dir / "gateway.json").is_file())
-        self.assertEqual(
-            (self.log_dir / "gateway.log").read_text(encoding="utf-8"), mutesting_log()
-        )
+        self.assertEqual((self.log_dir / "gateway.log").read_text(encoding="utf-8"), mutesting_log())
 
     def test_an_identical_fingerprint_reuses_without_running(self) -> None:
         self.measure(commit="1" * 40)
@@ -321,9 +343,7 @@ class MeasureTest(unittest.TestCase):
         self.output = (2, "panic: boom\n")
         with self.assertRaisesRegex(RuntimeError, "gateway: go-mutesting exited 2"):
             self.measure()
-        self.assertEqual(
-            (self.log_dir / "gateway.log").read_text(encoding="utf-8"), "panic: boom\n"
-        )
+        self.assertEqual((self.log_dir / "gateway.log").read_text(encoding="utf-8"), "panic: boom\n")
         self.assertFalse((self.cache_dir / "gateway.json").exists())
 
     def test_an_unparseable_run_is_never_cached(self) -> None:
