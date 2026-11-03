@@ -127,7 +127,10 @@ night spikes of 2026-11-02), is a second shared piece with no Go client yet. It 
     the tier it would have given. No toggle exists yet, because going live is not built.
 11. **The scoring.** A read-only report on the appliance prints the gate's counts from the verdict rows, and nothing
     else: no sender, no subject, no id. A CLI subcommand is enough.
-12. **Cost.** One embedding call per tick, batching that tick's mail, on the local route. No model call and no tokens.
+12. **Cost.** One embedding call per page, batching that page's mail. No model call. **Changed on 2026-11-03** by the
+    operator, after the final review asked: the shadow runs on the documents' embedding route whatever it is, as the plan's
+    decision 8 says. On the local route it costs no tokens. On a cloud route each mail's sender and subject go to that
+    route, about 4,000 tokens for the seeds once per process and space, then one short text per mail.
 
 ## What is out
 

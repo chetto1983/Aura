@@ -301,6 +301,14 @@ whichever classifier G2 ships, so this does not depend on which one wins. A corr
 mail close to the corrected one: on the reasoning tier, the 2026-10-06 probe kept its gate at 42 of 45
 with a distance bound of 0.30, and fell to 39 with no bound. The value is re-measured in G2b.
 
+**Changed on 2026-11-03** (`2026-11-03-urgency-centroid-design.md`, plan
+`2026-11-03-urgency-centroid-shadow.md`). The 2026-11-02 spike chose a class centroid over group seeds
+and corrections, with no distance bound: 56.7 macro F1 against 28.4 for the per-sender memory, on
+the 87 of the pilot's 200 invented mails decided after a shadow half-month. A correction's vector lives in the identity's ArcadeDB database as a
+`ConfirmedExample`, the store every learning domain shares (`internal/examplebank`), never in
+Postgres and never with text. It goes when the account goes, and its answer runs in shadow (§5.5)
+until a promotion spec says otherwise.
+
 Paperless's discipline, as behaviour (GPL, so no code): learn only from what the person reviewed, only
 for what they opted into, abstain when unsure, recompute only when labels change.
 
