@@ -23,7 +23,7 @@
 # Landlock (internal/mcp/manager/catalog_craft.go). It is built from its module, which the Go checksum
 # database verifies, and statically: the release binary needs glibc 2.38 and bookworm has 2.36. The
 # fetch is retried for the reason docker/aura/Dockerfile gives at its `go mod download`.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS landrun
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS landrun
 ARG TARGETARCH
 RUN set -e; \
     for attempt in 1 2 3; do \
@@ -34,7 +34,7 @@ RUN set -e; \
     done; \
     cp "$(go env GOMODCACHE)/github.com/zouuup/landrun@v0.1.17/LICENSE" /out/LICENSE
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 # A cached RUN keeps the packages it installed: on 2026-10-26 aura-sandbox:edge still had the
 # libssl3 of 2026-10-24, deb12u1, while bookworm had deb12u2 (CVE-2026-84782, issue #189). The
