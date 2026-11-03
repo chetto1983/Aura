@@ -213,6 +213,17 @@ func TestMailWatchDecisionsCarryTheNameAndAnAllDayDate(t *testing.T) {
 	}
 }
 
+func TestMailWatchDecisionsCarryTheCentroidWhereItDisagrees(t *testing.T) {
+	service := &fakeWatchService{lines: []pimwatch.DecisionLine{
+		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", Tier: pimwatch.TierToday, Centroid: pimwatch.TierNow},
+		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m2", Tier: pimwatch.TierToday},
+	}}
+	body := mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions", "").Body.String()
+	if strings.Count(body, `"centroid_tier"`) != 1 || !strings.Contains(body, `"centroid_tier":"now"`) {
+		t.Fatalf("body = %s, want one centroid_tier, now", body)
+	}
+}
+
 func TestMailWatchCorrectDefaultsToMailAndReportsARule(t *testing.T) {
 	service := &fakeWatchService{rule: &pimwatch.WrittenRule{
 		ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater, Created: true,

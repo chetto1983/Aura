@@ -229,6 +229,8 @@ type mailWatchDecisionJSON struct {
 	Label      string     `json:"label,omitempty"`
 	DecidedBy  string     `json:"decided_by"`
 	DecidedAt  time.Time  `json:"decided_at"`
+	// CentroidTier is the urgency centroid's tier where it differs from the ladder's, in shadow.
+	CentroidTier string `json:"centroid_tier,omitempty"`
 }
 
 // mailWatchDayJSON is the decisions of the day it names. Today is the identity's today, which the
@@ -251,7 +253,7 @@ func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request
 			From: line.From, FromName: line.FromName, Subject: line.Subject,
 			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,
 			Tier: string(line.Tier), Change: string(line.Change), LabelID: line.LabelID, Label: line.Label,
-			DecidedBy: string(line.By), DecidedAt: line.DecidedAt,
+			DecidedBy: string(line.By), DecidedAt: line.DecidedAt, CentroidTier: string(line.Centroid),
 		})
 	}
 	writeJSON(w, out)
