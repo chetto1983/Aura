@@ -1,6 +1,8 @@
 # A label for every mail the person's rules leave unsorted: the decision model, picked like the embeddings
 
-**Status:** draft, 2026-11-03, for the operator's approval. Gate G1 was measured the same day.
+**Status:** approved by the operator on 2026-11-03 ("va bene"). Gates G1 to G3 were measured the same day. The plan is
+`docs/superpowers/plans/2026-11-03-decision-model-labels.md`, and its three reviews changed decisions 1 and 2 (marked
+there).
 
 **Asked** the same day, after the urgency centroid shipped in shadow: "se devo fare tutto manualmente tanto vale che apro
 le mail e me le leggo".
@@ -14,7 +16,9 @@ le mail e me le leggo".
 - the picker ("io metterei la scelta come per gli embedding"; "l'utente sceglie se usare openrouter o locale");
 - descriptions in the person's own words ("le descrizioni le scrive l'utente");
 - default labels that arrive described, in Italian and English ("la a ma con le traduzioni inglese e italiano");
-- discard as out of sight and counted, and the paid gate G3 ("ok va bene", with the key to use).
+- discard as out of sight and counted, and the paid gate G3 ("ok va bene", with the key to use);
+- the local model stays d1-3B under its LFM Open License 1.0, after Laya multilingual failed G1 ("lascia il D1 va bene
+  aura è opensource").
 
 **Where it fits.** It is the local model of step 5 of `2026-10-31-mail-calendar-watch-design.md` §8, for labels. That
 spec's §4 already foresaw it: "A local decision model reads mail on the appliance, and a cloud one is an opt-in per
@@ -31,7 +35,9 @@ PMSync, which the operator says worked well enough, did this with a model. Its b
 `chetto1983/PMSync` (`backend/src/modules/ai/services/email-analysis.service.ts`; behaviour only, no code comes over):
 - Every label the person defines carries an instruction in their own words (`aiPrompt`). The model gets the list of
   labels and those instructions.
-- The model reads the sender, the subject and the start of the body.
+- The model reads the sender, the recipients, the subject and up to 6,000 characters of the body, all passed through
+  PII redaction first (`truncate`, `sanitizeForLLM`, `redactPii`; read in a local copy on 2026-11-03). Aura reads
+  less (decision 2), and redaction is the next spec's.
 - The person's rules decide first. For the sender in front of it, the model also gets the person's last few corrections
   as short lines, and a hint such as "past corrections suggest this label".
 - The answer is normalised to the person's labels. An answer outside them is dropped.
@@ -96,6 +102,12 @@ wrong ones. That value is 0.5 for c = 5 and c = 10, and 0.4 and 0.5 tie for c = 
   The only published models with trained heads are `Contrastive-LM/CLM-v0.1-8B` and `jayavibhav/clm-qwen3.5-2b`. Both
   cards say English only. The 2B card gives 33.9% zero-shot on typed decisions, below the 47.0% of always answering the
   commonest label. The 8B lost to seeds and BM25 in Aura on 2026-10-07 (`spikes/clm-decision/`).
+- **The licence, and a permissive alternative.** d1's LFM Open License 1.0 grants commercial use only below $10M of
+  annual revenue (§5), to whoever ships it and to whoever uses it. §4(a) requires a copy of the licence with every copy
+  of the model. The Apache-2.0 alternative that runs on the same llama.cpp endpoint, Laya multilingual (a third-party
+  Q8_0 GGUF of `convaiinnovations/laya-multilingual`), was run through G1 on 2026-11-03 (`results-laya*/`). It got 108
+  of 200 right and 72 of 120 held out. At 0.5, 46 of its 73 labels were right, and 6 mails were wrongly labelled
+  Pubblicità. The operator kept d1.
 - **Latency of d1-3B on the GPU:** p50 133 to 152 ms per mail.
 - No body in either set is longer than 255 characters, so the preview cut was never exercised.
 
@@ -138,9 +150,10 @@ wrong ones. That value is 0.5 for c = 5 and c = 10, and 0.4 and 0.5 tie for c = 
    - A rule that gives only a tier keeps its tier. The model fills the label, but the label's tier and its discard do not
      apply.
    - **Failed authentication.** The model fills the label. The tier stays `today`, and the mail is never discarded.
-   - **Someone the account has written to, or a sender the provider cannot place.** This is `writtenTo` true and not
-     bulk, or `writtenTo` unknown. The model fills the label. The label's tier may raise the mail but never lower it,
-     and the mail is never discarded.
+   - **Someone the account has written to, or a sender the provider cannot place.** This is `writtenTo` true or
+     unknown, and not bulk: the ladder's own reading of people (`ladder.go:172-173`), amended by the plan on 2026-11-03
+     from "or `writtenTo` unknown" without the bulk condition. The model fills the label. The label's tier may raise
+     the mail but never lower it, and the mail is never discarded.
    - **Every other mail** (not written to, or bulk) takes the label's tier when the label has one, and its discard.
    - When the model is not sure, the mail keeps the ladder's verdict and stays «Da smistare».
 
@@ -152,6 +165,12 @@ wrong ones. That value is 0.5 for c = 5 and c = 10, and 0.4 and 0.5 tie for c = 
    - The fork does not use the providers' own previews, because those keep hidden text.
    - Aura's `Change` does not decode it yet (`internal/pimwatch/client.go`). No fork change is needed.
    - The state is `Oggetto: <subject>`, a blank line, then the snippet: the shape G1 measured.
+   - **An empty snippet is not asked about** (amended by the plan, 2026-11-03). The fork leaves it empty when a page
+     runs out of time, the body is too large, or the mail has no text. The subject alone measured 102 of 200 and 69 of
+     120, with 2 mails wrongly labelled Pubblicità (`spikes/d1-email-labeling/labels5/probes-2026-11-03.md`). Such
+     mail keeps the ladder's verdict and is counted.
+   - Every `<` directly followed by a character is broken with a space before it reaches the model. All 124 special
+     tokens of d1's vocabulary start with `<`, and llama.cpp parses them inside the state (same file).
    - *Engineer's call:* not the sender's address or name. No measurement included them, and the sender already acts
      through the rules and the people step.
    - The model also reads the person's described labels.
@@ -205,7 +224,9 @@ wrong ones. That value is 0.5 for c = 5 and c = 10, and 0.4 and 0.5 tie for c = 
    - Two routes, the ones the operator named: the local sidecar and OpenRouter. *Engineer's call:* no manual endpoint.
      The two request shapes differ (decision 10), and nobody asked for a third.
    - One knob, like `config.ResolveEmbedRoute`. An empty model means the local sidecar at `AURA_DECIDE_BASE_URL`, with
-     no key. A model id in `AURA_DECIDE_MODEL` means OpenRouter.
+     no key. A model id in `AURA_DECIDE_MODEL` means OpenRouter, and `off` switches the step off.
+   - `AURA_DECIDE_BASE_URL` is the installer's, never a cockpit setting (amended by the plan, 2026-11-03). The local
+     route asks no consent, so an address an administrator could type would carry another identity's mail off the box.
    - **Read live.** The watch reads the route on every tick, and a change in the cockpit applies with no restart. A
      decision model leaves nothing stored that a change would invalidate. The embeddings do leave something, so
      `EmbeddingBackendControl` restarts the daemon. This control copies its look, not its restart.
@@ -307,6 +328,9 @@ does not replace them.
 - The speed on any appliance but the one measured, or with G1's question on a CPU.
 - What `liquid/d1.1` is. OpenRouter does not say its size, and it is not the local d1-3B, so the two routes do not
   label alike.
+- The threshold with 11 or more options. llama.cpp scales probabilities by option count (2, 3–5, 6–10, 11+). G1
+  measured 6 options, and 4 options on 2026-11-03 (62 of 68 and 39 of 40 right at 0.5). The verdict keeps the count
+  offered, so G4 can count by bucket.
 - That the threshold holds on real mail. The held-out sets show it was not fitted to the 200 mails, but they come from
   the same author.
 - Real snippets. No G1 body was longer than 255 characters, while the fork's snippet runs to 400 and real mail carries

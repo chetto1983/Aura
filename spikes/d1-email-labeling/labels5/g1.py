@@ -63,8 +63,10 @@ def request_json(url, payload=None):
         return json.load(response)
 
 
-def state_for(case, hint):
-    state = f"Oggetto: {case['subject']}\n\n{case['body'][:PREVIEW]}"
+def state_for(case, hint, body=True):
+    state = f"Oggetto: {case['subject']}"
+    if body:
+        state += f"\n\n{case['body'][:PREVIEW]}"
     if hint:
         state = HINT_LINE.format(label=hint) + "\n\n" + state
     return state
@@ -79,6 +81,10 @@ ARMS = {
     "it": dict(criteria=ITALIAN, hint=None),
     "en": dict(criteria=ENGLISH, hint=None),
     "names": dict(criteria=NAMES, hint=None),
+    # A mail whose snippet the PIM could not read: the subject alone.
+    "it-subject": dict(criteria=ITALIAN, hint=None, body=False),
+    # Three described labels plus Nessuna: four options, llama.cpp's 3_5 temperature bucket, not the 6_10 one.
+    "it-3labels": dict(criteria={k: ITALIAN[k] for k in ("Cliente", "Lavoro", "Pubblicità", NONE)}, hint=None),
     "it-hint-right": dict(criteria=ITALIAN, hint="right"),
     "it-hint-wrong": dict(criteria=ITALIAN, hint="wrong"),
     "en-hint-right": dict(criteria=ENGLISH, hint="right"),
@@ -99,9 +105,9 @@ def at_threshold(rows, threshold):
     }
 
 
-def score(rows):
+def score(rows, labels):
     f1s = []
-    for label in (*KEPT, NONE):
+    for label in labels:
         tp = sum(r["gold"] == label and r["predicted"] == label for r in rows)
         fp = sum(r["gold"] != label and r["predicted"] == label for r in rows)
         fn = sum(r["gold"] == label and r["predicted"] != label for r in rows)
@@ -127,20 +133,21 @@ def run_arm(name, arm, cases, base_url, out):
             hint = wrong_hint(case["gold5"])
         t0 = time.perf_counter()
         response = request_json(base_url + "/v1/systemone", {
-            "state": state_for(case, hint), "questions": {"label": question},
+            "state": state_for(case, hint, arm.get("body", True)), "questions": {"label": question},
         })
         answer = response["answers"]["label"]
         probs = answer["probabilities"]
         assert set(probs) == set(arm["criteria"]), probs
         rows.append({
-            "id": case["id"], "gold": case["gold5"], "difficulty": case["difficulty"],
+            "id": case["id"], "gold": case["gold5"] if case["gold5"] in arm["criteria"] else NONE,
+            "difficulty": case["difficulty"],
             "predicted": answer["choice"], "top": max(probs.values()), "probabilities": probs,
             "latency_ms": (time.perf_counter() - t0) * 1000,
             "input_tokens": response.get("usage", {}).get("input_tokens"),
         })
     (out / f"{name}.predictions.jsonl").write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
-    return score(rows)
+    return score(rows, list(arm["criteria"]))
 
 
 TRAIN = [HERE.parent / "emails.tsv"]
