@@ -92,4 +92,56 @@ or content. It establishes a privacy gap when an enabled MCP Apps origin is also
 used for sign-in. The required mitigation is to use the existing own-browser
 fallback for that configuration and refuse shared-origin stream requests before
 any exec. The default case with no MCP Apps origin remains separate. Verification
-of the mitigation follows in this record.
+of the mitigation is recorded below.
+
+## Privacy mitigation and final review
+
+The reserved Apps origin now selects the existing own-browser flow before image
+preparation or admission. Shared-origin stream requests are refused before exec;
+owner cancellation remains available. The raw programmable sandbox is served only
+on its configured origin. The three regressions were observed RED then GREEN;
+scoped vet/build and full race suites passed (`cmd/aura` 68.949 seconds,
+`internal/agui` 37.564 seconds), followed by passing post-merge regressions.
+
+The single independent final review found two additional Important cases, both
+reproduced before fixing. Both supported Caddy configurations now refuse
+`/mcp-sandbox` on the full cockpit frontdoors even when an operator collapses the
+configured Apps origin onto the cockpit. A native Caddy routing fixture returned
+404 on all six named/LAN/tunnel cockpit cases and 200 on both dedicated Apps
+routes. It used the adapted production routes with synthetic upstream content;
+TLS and listening ports were replaced only in the test transport.
+
+The callback listener now accepts its exact authority and the native URL-canonical
+authority, including omitted default HTTP port 80. The real Docker test covers
+IPv4, localhost and IPv6 with nondefault, omitted and explicit default ports,
+retaining wrong-state and duplicate-state rejection. All nine variants and the
+ChatGPT passkey regression passed in 11.072 seconds. The focused frontend suite
+passed 20/20 tests. No image digest changed.
+
+## Local gates and remaining scope
+
+`make quality-full` passed in WSL with the native migrated disposable database,
+including race, lint, vet, build, dead-code and vulnerability gates. The owned
+internal coverage aggregate was 52,646/59,937 statements (87.8% displayed), above
+85%; package-local policy passed. The separate native `coverage_docker.sh` gate
+also passed with its own migrated disposable database: 52,638/59,937 statements
+(87.8% displayed), package-local policy green. Both disposable databases were
+cleaned up. The full affected-package post-fix race suites passed (`cmd/aura`
+110.904 seconds, `internal/agui` cached). The final callback/Caddy changes add no
+production Go statements; their own Docker and routing tests are recorded above.
+Fresh post-merge regressions also passed on shared master: Docker callback,
+ChatGPT and frontdoor/start-policy tests in 11.520 seconds, plus the AG-UI privacy
+race regressions in 1.207 seconds. The payload gate verified all 35 hashes.
+Actual mutants run in CI, as requested by the operator; no local mutation score
+or all-green final CI result is claimed before publication.
+
+ElevenLabs retains the existing relay. Its optional direct-loopback trial is
+unmeasured, and the Cloudflare site is unchanged. The lab cockpit currently has
+no plain-HTTP listener; automated adapter/UI tests cover paste-back policy, which
+does not establish a separate human plain-HTTP appliance trial.
+
+A count-only scan of the current Aura container's logs for the S7 interval
+11:09–11:22 UTC returned zero retained lines. It cannot certify historical log
+contents; the zero secret-pattern counts are not evidence of that acceptance.
+No raw log lines were returned to the agent. The three temporary resource-probe
+JSON files were removed after the resource observation had been copied locally.
