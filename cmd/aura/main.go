@@ -103,6 +103,8 @@ func main() {
 		runChat(os.Args[2:])
 	case "cache-stats":
 		runCacheStats(os.Args[2:])
+	case "mail-watch":
+		runMailWatch(os.Args[2:])
 	case "cache-audit": // hidden — runtime KV-prefix invariant gate (D-06); not in usage()
 		runCacheAudit(os.Args[2:])
 	case "config":
@@ -149,7 +151,7 @@ func runMCPDispatch(args []string) {
 	runMCP(ctx, pool, args)
 }
 
-const topLevelUsage = "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}"
+const topLevelUsage = "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|mail-watch shadow|version}"
 
 func usage() {
 	fmt.Fprintln(os.Stderr, topLevelUsage)
