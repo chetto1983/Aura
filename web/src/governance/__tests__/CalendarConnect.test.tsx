@@ -72,7 +72,6 @@ const ACCOUNT: PimAccount = {
   linked: true,
 };
 
-
 const GOOGLE_START: PimGoogleStart = {
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x',
   redirectUri: 'https://chetto1983-aura-connect.pages.dev/google/callback/',
