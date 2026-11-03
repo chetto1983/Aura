@@ -1,0 +1,9 @@
+ALTER TABLE aura.pim_watch_verdicts
+    DROP COLUMN ladder_tier,
+    DROP COLUMN ladder_by,
+    DROP COLUMN centroid_tier,
+    DROP COLUMN centroid_margin,
+    DROP COLUMN sender_memory_tier,
+    DROP COLUMN written_to,
+    DROP COLUMN provider_important,
+    DROP COLUMN bulk;

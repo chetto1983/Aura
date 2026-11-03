@@ -674,24 +674,32 @@ type AuraPimWatchSettings struct {
 }
 
 type AuraPimWatchVerdicts struct {
-	IdentityID  pgtype.UUID        `json:"identity_id"`
-	AccountID   string             `json:"account_id"`
-	Resource    string             `json:"resource"`
-	ItemID      string             `json:"item_id"`
-	CalendarID  string             `json:"calendar_id"`
-	Tier        string             `json:"tier"`
-	LabelID     pgtype.UUID        `json:"label_id"`
-	DecidedBy   string             `json:"decided_by"`
-	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
-	AuthFailed  bool               `json:"auth_failed"`
-	Fingerprint string             `json:"fingerprint"`
-	EventStart  pgtype.Timestamptz `json:"event_start"`
-	EventAllDay bool               `json:"event_all_day"`
-	EventSelf   bool               `json:"event_self"`
-	EventChange pgtype.Text        `json:"event_change"`
-	AlertRunID  pgtype.UUID        `json:"alert_run_id"`
-	AlertedAt   pgtype.Timestamptz `json:"alerted_at"`
-	Notified    bool               `json:"notified"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	AccountID         string             `json:"account_id"`
+	Resource          string             `json:"resource"`
+	ItemID            string             `json:"item_id"`
+	CalendarID        string             `json:"calendar_id"`
+	Tier              string             `json:"tier"`
+	LabelID           pgtype.UUID        `json:"label_id"`
+	DecidedBy         string             `json:"decided_by"`
+	DecidedAt         pgtype.Timestamptz `json:"decided_at"`
+	AuthFailed        bool               `json:"auth_failed"`
+	Fingerprint       string             `json:"fingerprint"`
+	EventStart        pgtype.Timestamptz `json:"event_start"`
+	EventAllDay       bool               `json:"event_all_day"`
+	EventSelf         bool               `json:"event_self"`
+	EventChange       pgtype.Text        `json:"event_change"`
+	AlertRunID        pgtype.UUID        `json:"alert_run_id"`
+	AlertedAt         pgtype.Timestamptz `json:"alerted_at"`
+	Notified          bool               `json:"notified"`
+	LadderTier        pgtype.Text        `json:"ladder_tier"`
+	LadderBy          pgtype.Text        `json:"ladder_by"`
+	CentroidTier      pgtype.Text        `json:"centroid_tier"`
+	CentroidMargin    pgtype.Float8      `json:"centroid_margin"`
+	SenderMemoryTier  pgtype.Text        `json:"sender_memory_tier"`
+	WrittenTo         bool               `json:"written_to"`
+	ProviderImportant bool               `json:"provider_important"`
+	Bulk              bool               `json:"bulk"`
 }
 
 // Resumable provisioning/de-provisioning saga journal (Phase 36, D-14/D-27). MUTABLE: step status transitions pending -> done/failed for forward recovery. identity_id has NO FK so a de-provision saga survives the identity deletion it is executing.

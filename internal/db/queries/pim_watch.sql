@@ -175,8 +175,9 @@ WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY(@
 -- A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
 INSERT INTO aura.pim_watch_verdicts (
     identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by,
-    auth_failed, fingerprint, decided_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    auth_failed, fingerprint, decided_at, ladder_tier, ladder_by, centroid_tier, centroid_margin,
+    sender_memory_tier, written_to, provider_important, bulk
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING;
 
 -- name: UpsertPIMWatchEventVerdict :execrows
@@ -268,3 +269,17 @@ ORDER BY created_at DESC;
 
 -- name: DeletePIMWatchCorrections :exec
 DELETE FROM aura.pim_watch_corrections WHERE identity_id = $1 AND account_id = $2;
+
+-- name: ListPIMWatchSenderMemory :many
+-- The per-sender memory, §7 G2b's baseline: each sender's last corrected tier.
+SELECT DISTINCT ON (sender_key) sender_key, tier FROM aura.pim_watch_corrections
+WHERE identity_id = $1 AND sender_key = ANY(@sender_keys::text[]) AND tier IS NOT NULL
+ORDER BY sender_key, created_at DESC;
+
+-- name: ListPIMWatchCorrectedAccounts :many
+SELECT DISTINCT account_id FROM aura.pim_watch_corrections WHERE identity_id = $1;
+
+-- name: ListPIMWatchShadowRows :many
+SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, decided_at, notified
+FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= @since;

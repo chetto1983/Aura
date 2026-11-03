@@ -29,6 +29,13 @@ type Verdict struct {
 	AlertRunID  string
 	AlertedAt   time.Time
 	Notified    bool
+	// The ladder's own answer, which a correction never changes, and the shadow beside it. A mail
+	// decided before 0152 and every event have none.
+	LadderTier   Tier
+	LadderBy     DecidedBy
+	Facts        MailFacts
+	Centroid     Tier
+	SenderMemory Tier
 }
 
 func verdictFromRow(r sqlc.AuraPimWatchVerdicts) Verdict {
@@ -38,6 +45,9 @@ func verdictFromRow(r sqlc.AuraPimWatchVerdicts) Verdict {
 		DecidedAt: r.DecidedAt.Time, AuthFailed: r.AuthFailed, Fingerprint: r.Fingerprint,
 		Start: EventTime{Time: r.EventStart.Time, AllDay: r.EventAllDay}, Change: ChangeWord(r.EventChange.String),
 		AlertRunID: r.AlertRunID.String(), AlertedAt: r.AlertedAt.Time, Notified: r.Notified,
+		LadderTier: Tier(r.LadderTier.String), LadderBy: DecidedBy(r.LadderBy.String),
+		Facts:    MailFacts{WrittenTo: r.WrittenTo, ProviderImportant: r.ProviderImportant, AuthFailed: r.AuthFailed, Bulk: r.Bulk},
+		Centroid: Tier(r.CentroidTier.String), SenderMemory: Tier(r.SenderMemoryTier.String),
 	}
 }
 
@@ -52,6 +62,8 @@ type VerdictDraft struct {
 	Start       EventTime
 	// OrganizerIsSelf is kept on the event row: a delete no longer names who organized it.
 	OrganizerIsSelf bool
+	// Shadow is what a mail's row keeps beside the ladder for the scoring; nil for an event.
+	Shadow *Shadow
 }
 
 // PageCommit is what one page of changes leaves behind, written in one transaction: "handled"
@@ -147,12 +159,7 @@ func writeVerdict(ctx context.Context, q *sqlc.Queries, id pgtype.UUID, p PageCo
 			EventChange: optionalText(string(draft.Decision.Change)),
 		})
 	} else {
-		n, err = q.InsertPIMWatchVerdict(ctx, sqlc.InsertPIMWatchVerdictParams{
-			IdentityID: id, AccountID: p.AccountID, Resource: p.Resource, ItemID: draft.ItemID,
-			CalendarID: draft.CalendarID, Tier: string(draft.Decision.Tier), LabelID: optionalUUID(draft.Decision.LabelID),
-			DecidedBy: string(draft.Decision.By), AuthFailed: draft.Decision.AuthFailed, Fingerprint: draft.Fingerprint,
-			DecidedAt: timestamp(decidedAt),
-		})
+		n, err = q.InsertPIMWatchVerdict(ctx, mailVerdictParams(id, p, draft, decidedAt))
 	}
 	if err != nil {
 		return false, fmt.Errorf("write verdict: %w", err)

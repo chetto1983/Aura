@@ -523,6 +523,7 @@ type Querier interface {
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWatchAccountVerdictsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchCorrectedAccounts(ctx context.Context, identityID pgtype.UUID) ([]string, error)
 	ListPIMWatchCorrectionsBefore(ctx context.Context, arg ListPIMWatchCorrectionsBeforeParams) ([]AuraPimWatchCorrections, error)
 	ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchCursors, error)
 	ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWatchDigestVerdictsParams) ([]AuraPimWatchVerdicts, error)
@@ -530,6 +531,9 @@ type Querier interface {
 	ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOwedAlertsParams) ([]AuraPimWatchVerdicts, error)
 	ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error)
 	ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchRules, error)
+	// The per-sender memory, §7 G2b's baseline: each sender's last corrected tier.
+	ListPIMWatchSenderMemory(ctx context.Context, arg ListPIMWatchSenderMemoryParams) ([]ListPIMWatchSenderMemoryRow, error)
+	ListPIMWatchShadowRows(ctx context.Context, arg ListPIMWatchShadowRowsParams) ([]ListPIMWatchShadowRowsRow, error)
 	// The runs of a window whose alert has not reached the person. A run completes before it notifies,
 	// so `notified` says the run ended, and only the queue knows the push did not arrive.
 	ListPIMWatchUndeliveredRuns(ctx context.Context, arg ListPIMWatchUndeliveredRunsParams) ([]pgtype.UUID, error)
