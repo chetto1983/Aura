@@ -53,29 +53,34 @@ func (b *sandboxSignInBrowser) Open(ctx context.Context, session string, opts br
 	}
 	b.sessions[session] = s
 	b.mu.Unlock()
+	_, err := b.preflight(ctx)
+	return s, err
+}
+
+func (b *sandboxSignInBrowser) preflight(ctx context.Context) (bool, error) {
 	present, err := b.router.SignInImageState(ctx, b.image)
 	if err != nil {
-		return s, err
+		return false, err
 	}
 	if present {
-		return s, nil
+		return true, nil
 	}
 	h, err := b.router.Route(ctx)
 	if err != nil {
-		return s, err
+		return false, err
 	}
 	disk, err := b.router.Exec(ctx, h, usersandbox.ExecRequest{Command: "df -B1 --output=avail /", Dir: "/"})
 	if err != nil || disk.ExitCode != 0 {
-		return s, errors.New("could not check space for the sign-in image")
+		return false, errors.New("could not check space for the sign-in image")
 	}
 	available, err := freeBytesFromDf(disk.Stdout)
 	if err != nil {
-		return s, err
+		return false, err
 	}
 	if available < signInMinFreeBytes {
-		return s, errSignInDiskLow
+		return false, errSignInDiskLow
 	}
-	return s, errSignInImageMissing
+	return false, errSignInImageMissing
 }
 
 type signInBrowserSession struct {

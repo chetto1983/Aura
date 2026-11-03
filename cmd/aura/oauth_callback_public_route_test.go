@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The two OAuth callbacks are the only routes a browser reaches without its session cookie on
+// The Google relay callback is the only route a browser reaches without its session cookie on
 // purpose; everything next to them must stay behind the gate.
 func TestPublicOAuthCallbackRouteAllowlist(t *testing.T) {
 	t.Parallel()
@@ -16,10 +16,10 @@ func TestPublicOAuthCallbackRouteAllowlist(t *testing.T) {
 		path   string
 		want   bool
 	}{
-		{"MCP OAuth callback admitted", http.MethodGet, mcpOAuthCallbackAPIPath, true},
+		{"retired MCP OAuth callback refused", http.MethodGet, "/api/governance/mcp/authorization/callback", false},
 		{"Google PIM callback admitted", http.MethodGet, "/admin/auth/google/callback", true},
 		{"non-GET on the Google callback refused", http.MethodPost, "/admin/auth/google/callback", false},
-		{"non-GET on the MCP callback refused", http.MethodPost, mcpOAuthCallbackAPIPath, false},
+		{"non-GET on the MCP callback refused", http.MethodPost, "/api/governance/mcp/authorization/callback", false},
 		{"Google start stays gated", http.MethodGet, "/api/connect/pim/accounts/work/google/start", false},
 		{"other sidecar admin paths are not public", http.MethodGet, "/admin/accounts", false},
 		{"trailing slash is a different path", http.MethodGet, "/admin/auth/google/callback/", false},

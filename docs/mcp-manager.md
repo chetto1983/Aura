@@ -283,7 +283,25 @@ client needs a public, non-IP redirect URI of its own, which a LAN install does 
 Aura ships no shared Google client: each install brings its own, so a code forwarded by the
 public relay is worthless without that install's secret.
 
-## Remote MCP servers with no client registration (ElevenLabs)
+## Signing in to remote MCP servers
+
+The connector card's **Connect** opens a temporary private Chromium desktop. The assistant
+cannot see or control this browser. The first use asks before downloading its pinned
+1.17 GB image, displays progress, and needs at least 8 GiB free disk. Closing the sign-in
+page cancels that attempt and removes its desktop, callback sidecar and network floor.
+An unsuccessful reauthorization keeps the previously stored grant.
+
+Use the cockpit over HTTPS. The desktop uses the same hostname and scheme on a separate
+port (8444 by default); that port must be reachable. With an appliance certificate, open
+the desktop address from the sign-in page, accept its certificate, then retry. A tunnel,
+an insecure LAN address, a different desktop hostname or an unavailable image offers
+**Use your own browser** instead. After consent, copy the complete return address from
+your browser's address bar into the connector card; a loopback connection error there is
+expected because the callback listener belongs to the temporary desktop.
+
+A pre-registered client's loopback `MCP_OAUTH_REDIRECT_URL` is retained. A registered
+HTTPS redirect uses the own-browser flow. An HTTP loopback cockpit can embed a desktop
+only when its configured origin also uses HTTP on the same hostname and another port.
 
 A remote MCP server authorizes through the cockpit's **Connect** control. Aura presents the
 client in `MCP_OAUTH_CLIENT_ID` when one is configured, else registers itself dynamically
@@ -292,9 +310,9 @@ with its own Client ID Metadata Document instead:
 `https://chetto1983-aura-connect.pages.dev/mcp/client-metadata.json`. No configuration is
 needed. The consent screen shows "Aura" as a self-declared app, and after consent the browser
 returns through the relay `https://chetto1983-aura-connect.pages.dev/mcp/callback/`, which
-forwards it to `<cockpit origin>/api/governance/mcp/authorization/callback`. Like the Google
-relay, it forwards only to an `https` origin or to loopback, so the cockpit must be reached
-over HTTPS or on `localhost`.
+forwards it to the loopback listener in the private desktop. The same relay also supports
+the explicit own-browser flow above. The cockpit no longer exposes a public MCP OAuth
+callback.
 
 A grant made before 2026-10-13 names the old document, and the provider refuses every refresh
 of it with `invalid_client: Client metadata document returned HTTP 404`. The server card then

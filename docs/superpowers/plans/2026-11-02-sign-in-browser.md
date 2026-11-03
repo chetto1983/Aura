@@ -358,7 +358,7 @@ func TestExecConnCarriesBytesBothWaysAndEndsWithTheProcess(t *testing.T) // Read
 - Consumes: `browserlogin.Login.Start`, `Flows.Cancel`, `OAuthSettings.SignInRedirect`.
 - Produces: `mcpSignIn`, a `browserlogin.Authorizer` over `Flows`. The start route answers `{flowId, signInUrl, authorizationUrl, status}`, or `{preparing: true, reason}` when the image is absent. Routes `GET /api/governance/sign-in/image` and `POST /api/governance/sign-in/image`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```go
 func TestStartAuthorizationGoesThroughTheContainer(t *testing.T) // Flows sees LoopbackCallback; the answer holds signInUrl "/signing-in/signin-…".
@@ -376,9 +376,9 @@ func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) // docker
 func TestAFailedReauthorizationKeepsTheStoredGrant(t *testing.T) // a cancelled flow leaves Load returning the old grant.
 ```
 
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement,** then remove the old callback-based `StartAuthorization`, `callbackFor`, `configuredCallbackURL`, `handleMCPAuthorizationCallback` and the route, and shrink `isPublicOAuthCallbackRoute`. Retain request-origin derivation for the dedicated stream: starting a sign-in needs the cockpit origin, separately from the OAuth redirect, and supplies both origins in `LaunchOptions`. `AURA_WEB_PUBLIC_URL` stays while `pimReturnOrigin` reads it. `relayedFetcher` stays: it is how a server with no registration reaches the listener.
-- [ ] **Step 4: Cockpit.** `SignInImageGate` shows the size, 1.17 GB, and the pull's progress on first use, then opens the sign-in page. Vitest: `it('asks before the first download and shows its progress')`, `it('opens the sign-in page once the image is there')`, `it('offers the paste-back when the image cannot be had')`.
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement,** then remove the old callback-based `StartAuthorization`, `callbackFor`, `configuredCallbackURL`, `handleMCPAuthorizationCallback` and the route, and shrink `isPublicOAuthCallbackRoute`. Retain request-origin derivation for the dedicated stream: starting a sign-in needs the cockpit origin, separately from the OAuth redirect, and supplies both origins in `LaunchOptions`. `AURA_WEB_PUBLIC_URL` stays while `pimReturnOrigin` reads it. `relayedFetcher` stays: it is how a server with no registration reaches the listener.
+- [x] **Step 4: Cockpit.** `SignInImageGate` shows the size, 1.17 GB, and the pull's progress on first use, then opens the sign-in page. Vitest: `it('asks before the first download and shows its progress')`, `it('opens the sign-in page once the image is there')`, `it('offers the paste-back when the image cannot be had')`.
 - [ ] **Step 5: S7, on the VM.** With the operator: Linear and Notion through the container, and a pre-registered GitHub client on the loopback redirect. Read Slack's rules on redirect URIs and write them down. Append to the verification file.
 - [ ] **Step 6: Run all tiers,** update `docs/mcp-manager.md`, commit, then the bundle apart. `feat(mcp): sign every OAuth server in through the container`.
 

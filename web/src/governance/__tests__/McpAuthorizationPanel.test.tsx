@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
+import { HttpError } from '../../api/json';
 
 vi.mock('../mcpAuthApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../mcpAuthApi')>()),
@@ -41,9 +42,97 @@ function probeInvalidated(client: QueryClient): boolean {
 
 afterEach(() => {
   vi.resetAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('McpAuthorizationPanel', () => {
+  it('opens the private desktop and keeps its link after polling the flow', async () => {
+    vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({ supported: true, authorized: false });
+    const pending = {
+      flowId: 'f1',
+      server: 'linear',
+      status: 'authorization_required' as const,
+      authorizationUrl: 'https://linear.app/consent',
+    };
+    const desktop = '/signing-in/signin-0123456789abcdef01234567?flow=f1';
+    vi.mocked(api.startMcpAuthorization).mockResolvedValue({ ...pending, signInUrl: desktop });
+    vi.mocked(api.pollMcpAuthorizationFlow).mockResolvedValue(pending);
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await waitFor(() => {
+      expect(api.pollMcpAuthorizationFlow).toHaveBeenCalled();
+    });
+    expect(open).toHaveBeenCalledWith(desktop, '_blank', 'noopener,noreferrer');
+    expect(await screen.findByDisplayValue(desktop)).not.toBeNull();
+  });
+
+  it('prepares the image before starting and opening a desktop', async () => {
+    vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({ supported: true, authorized: false });
+    vi.mocked(api.startMcpAuthorization)
+      .mockResolvedValueOnce({ preparing: true, reason: 'Download first' })
+      .mockResolvedValueOnce({
+        flowId: 'f1',
+        server: 'linear',
+        status: 'authorization_required',
+        signInUrl: '/signing-in/session?flow=f1',
+      });
+    vi.mocked(api.pollMcpAuthorizationFlow).mockResolvedValue({
+      flowId: 'f1',
+      server: 'linear',
+      status: 'authorization_required',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify({ present: true, pulling: false })))),
+    );
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await waitFor(() => {
+      expect(open).toHaveBeenCalledWith(
+        '/signing-in/session?flow=f1',
+        '_blank',
+        'noopener,noreferrer',
+      );
+    });
+    expect(api.startMcpAuthorization).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers the pasted return address when the server chooses the fallback', async () => {
+    vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({ supported: true, authorized: false });
+    const pending = {
+      flowId: 'f1',
+      server: 'linear',
+      status: 'authorization_required' as const,
+      authorizationUrl: 'https://linear.app/consent',
+      via: 'paste' as const,
+      reason: 'This address needs your own browser',
+    };
+    vi.mocked(api.startMcpAuthorization).mockResolvedValue(pending);
+    vi.mocked(api.pollMcpAuthorizationFlow).mockResolvedValue(pending);
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect(await screen.findByLabelText('Return address')).not.toBeNull();
+    expect(screen.getByText(pending.reason)).not.toBeNull();
+  });
+
+  it('ends the waiting state when closing the desktop removes the flow', async () => {
+    vi.mocked(api.fetchMcpAuthorization).mockResolvedValue({ supported: true, authorized: false });
+    vi.mocked(api.startMcpAuthorization).mockResolvedValue({
+      flowId: 'f1',
+      server: 'linear',
+      status: 'authorization_required',
+      authorizationUrl: 'https://linear.app/consent',
+    });
+    vi.mocked(api.pollMcpAuthorizationFlow).mockRejectedValue(new HttpError(404));
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('sign-in ended');
+    expect(screen.queryByDisplayValue('https://linear.app/consent')).toBeNull();
+  });
   for (const refused of [false, true]) {
     it(
       refused ? 'shows why a pasted address was refused' : 'completes a flow from a pasted address',

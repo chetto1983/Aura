@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
+
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,11 +22,6 @@ import (
 // the same time, which is why the agui handlers depend on an interface instead of
 // assembling any of it themselves.
 
-// mcpOAuthCallbackAPIPath must match the route registered in
-// internal/agui/mcp_oauth_api.go. It is appended to the cockpit's origin to form the
-// redirect URI the authorization server sends the human back to.
-const mcpOAuthCallbackAPIPath = "/api/governance/mcp/authorization/callback"
-
 // selfIssuedReason is why the cockpit offers a shipped sidecar no authorization: the token
 // is the keeper's to mint (mcp_first_party_grants.go), never a person's to consent to.
 const selfIssuedReason = "Aura issues this sidecar's credential itself and renews it before it expires"
@@ -39,11 +34,9 @@ type mcpAuthorizationStore interface {
 }
 
 type mcpAuthService struct {
-	store mcpAuthorizationStore
-	flows *mcp.Flows
-	// configuredCallback is the AURA_WEB_PUBLIC_URL override, empty when unset. It is
-	// an override and NOT a requirement: see callbackFor.
-	configuredCallback string
+	store  mcpAuthorizationStore
+	flows  *mcp.Flows
+	signIn *signInRuntime
 }
 
 var _ agui.MCPAuthorizationProvider = (*mcpAuthService)(nil)
@@ -77,11 +70,7 @@ func newMCPAuthService(cfg *config.Config, pool *pgxpool.Pool, logger *slog.Logg
 	if err != nil {
 		return nil, err
 	}
-	configured, err := configuredCallbackURL(cfg.WebPublicURL)
-	if err != nil {
-		return nil, err
-	}
-	return &mcpAuthService{store: store, flows: flows, configuredCallback: configured}, nil
+	return &mcpAuthService{store: store, flows: flows}, nil
 }
 
 // OnAuthorized wires the post-authorization mount. The composition root supplies it
@@ -90,49 +79,13 @@ func (s *mcpAuthService) OnAuthorized(mount func(context.Context, string, mcp.Ma
 	s.flows.OnAuthorized(mount)
 }
 
-// configuredCallbackURL validates the optional AURA_WEB_PUBLIC_URL override.
-func configuredCallbackURL(publicURL string) (string, error) {
-	trimmed := strings.TrimSpace(publicURL)
-	if trimmed == "" {
-		return "", nil
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("AURA_WEB_PUBLIC_URL must be an absolute origin like https://aura.example, got %q", publicURL)
-	}
-	return strings.TrimRight(trimmed, "/") + mcpOAuthCallbackAPIPath, nil
-}
-
-// callbackFor decides where the authorization server sends the human back.
-//
-// NO PUBLIC URL IS REQUIRED, and assuming one was the first design's mistake. The
-// redirect is never FETCHED by the authorization server — it is an address the human's
-// own browser is sent to — so the cockpit's own origin is a valid destination even when
-// it is http://localhost:8080 and reachable from nowhere else on the internet. Providers
-// accept exactly this: loopback redirects are the documented shape for a native client.
-//
-// The origin therefore comes from the browser that started the flow, which is the same
-// browser that will come back. AURA_WEB_PUBLIC_URL overrides it, and is worth setting for
-// two cases the request cannot answer: a pre-registered client whose redirect URI was
-// registered by hand at the provider and must match byte for byte, and a deployment
-// behind a proxy that rewrites the origin.
-func (m *mcpAuthService) callbackFor(origin string) (string, error) {
-	if m.configuredCallback != "" {
-		return m.configuredCallback, nil
-	}
-	trimmed := strings.TrimSpace(origin)
-	if trimmed == "" {
-		return "", errors.New("could not tell which address this cockpit is reached on; set AURA_WEB_PUBLIC_URL")
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("the cockpit origin %q is not an absolute URL; set AURA_WEB_PUBLIC_URL", origin)
-	}
-	return strings.TrimRight(trimmed, "/") + mcpOAuthCallbackAPIPath, nil
-}
-
 // Close releases flows still parked waiting for a redirect that will not arrive.
 func (m *mcpAuthService) Close() {
+	if m != nil && m.signIn != nil {
+		if err := m.signIn.Close(); err != nil {
+			slog.Warn("sign-in browser shutdown incomplete", "error", err)
+		}
+	}
 	if m != nil && m.flows != nil {
 		m.flows.Close()
 	}
@@ -166,18 +119,6 @@ func (m *mcpAuthService) AuthorizationState(ctx context.Context, name string) (a
 	return agui.MCPAuthorization{Supported: true, Authorized: grant.RefusedAt.IsZero(), Expired: !grant.RefusedAt.IsZero(), ExpiresAt: grant.ExpiresAt}, nil
 }
 
-func (m *mcpAuthService) StartAuthorization(ctx context.Context, owner, name, origin string) (mcp.Flow, error) {
-	callback, err := m.callbackFor(origin)
-	if err != nil {
-		return mcp.Flow{}, err
-	}
-	server, err := authorizationServer(name)
-	if err != nil {
-		return mcp.Flow{}, err
-	}
-	return m.flows.Start(ctx, owner, name, server, callback)
-}
-
 func authorizationServer(name string) (mcp.ManagedServer, error) {
 	server, ok, err := effectiveManagedMCPServer(name)
 	if err != nil {
@@ -193,6 +134,11 @@ func authorizationServer(name string) (mcp.ManagedServer, error) {
 }
 
 func (m *mcpAuthService) StartLoopbackAuthorization(ctx context.Context, owner, name string) (mcp.Flow, error) {
+	if m.signIn != nil {
+		if err := m.signIn.login.Cancel(ctx, owner, ""); err != nil {
+			return mcp.Flow{}, err
+		}
+	}
 	server, err := authorizationServer(name)
 	if err != nil {
 		return mcp.Flow{}, err
@@ -210,14 +156,6 @@ func (m *mcpAuthService) PasteAuthorization(owner, id, address string) (mcp.Flow
 
 func (m *mcpAuthService) AuthorizationFlow(owner, id string) (mcp.Flow, error) {
 	return m.flows.Status(owner, id)
-}
-
-func (m *mcpAuthService) CompleteAuthorization(state, code, iss string) (mcp.Flow, error) {
-	return m.flows.Complete(state, code, iss)
-}
-
-func (m *mcpAuthService) FailAuthorization(state string, reason error) (mcp.Flow, error) {
-	return m.flows.Fail(state, reason)
 }
 
 func (m *mcpAuthService) RevokeAuthorization(ctx context.Context, name string) (bool, error) {

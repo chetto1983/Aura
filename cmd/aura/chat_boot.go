@@ -118,6 +118,9 @@ type chatEnv struct {
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
+	if e.mcpAuthSvc != nil {
+		e.mcpAuthSvc.Close()
+	}
 	if e.chatGPTBrowser != nil {
 		if err := e.chatGPTBrowser.Close(); err != nil {
 			slog.Warn("ChatGPT login browser shutdown incomplete", "error", err)

@@ -195,14 +195,9 @@ const (
 	governanceMCPListRoute  = "GET /api/governance/mcp"
 	governanceMCPProbeRoute = "GET /api/governance/mcp/{name}/probe"
 	// The per-identity MCP authorization surface. The state read and the flow poll are
-	// governance.read; starting a flow and revoking a grant are governance.write. The
-	// callback is a READ mount on purpose: it is the human's own browser coming back
-	// from a consent screen, and requiring the stronger capability there would refuse
-	// the redirect of an operator who may read the board but not rewrite it — after
-	// they had already consented at the provider.
+	// governance.read; starting a flow and revoking a grant are governance.write.
 	governanceMCPAuthStateRoute = "GET /api/governance/mcp/{name}/authorization"
 	governanceMCPAuthFlowRoute  = "GET /api/governance/mcp/authorization/flow/{id}"
-	governanceMCPAuthCbRoute    = "GET /api/governance/mcp/authorization/callback"
 	governanceSkillsRoute       = "GET /api/governance/skills"
 	governanceSkillsAuditRoute  = "GET /api/governance/skills/audit"
 	governanceSkillsBodyRoute   = "GET /api/governance/skills/{name}/body"
@@ -418,18 +413,10 @@ const (
 	assetsDeleteRoute   = "DELETE /api/assets/{id}"
 )
 
-// isPublicOAuthCallbackRoute admits the two OAuth callbacks a browser reaches by a cross-site
-// top-level navigation from a consent screen, on which it withholds the `__Host-` SameSite
-// session cookie. Behind the gate the MCP one did what a missing session always does — bounced
-// the human to the login page and threw away a consent just given at Slack (measured
-// 2026-08-24); LibreChat mounts its equivalent with no auth middleware for the same reason.
-// Each is authenticated by `state` instead: the MCP callback against a flow this deployment
-// started (unknown gets a 409), the Google PIM callback by the sidecar against a value it
-// issued — single use, ten-minute TTL, redeemable only with the install's own client secret
-// and PKCE verifier. Exact paths and GET only.
+// isPublicOAuthCallbackRoute retains only the live Google relay until its migration.
 func isPublicOAuthCallbackRoute(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
-	return r.URL.Path == mcpOAuthCallbackAPIPath || r.URL.Path == agui.PIMGoogleCallbackPath
+	return r.URL.Path == agui.PIMGoogleCallbackPath
 }

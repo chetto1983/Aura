@@ -19,7 +19,7 @@ func (f *fakeAuthProvider) StartLoopbackAuthorization(_ context.Context, owner, 
 }
 
 func (f *fakeAuthProvider) PasteAuthorization(owner, _, address string) (mcp.Flow, error) {
-	f.sawOwner, f.completeAt = owner, address
+	f.sawOwner, f.pastedAddress = owner, address
 	return f.flow, f.flowErr
 }
 
@@ -61,6 +61,9 @@ func TestMCPPasteRoute(t *testing.T) {
 			}
 			if tc.identity != "" && p.sawOwner != tc.identity {
 				t.Fatalf("owner = %q", p.sawOwner)
+			}
+			if tc.identity != "" && p.pastedAddress != "http://127.0.0.1:43121/cb?state=secret-state&code=secret-code" {
+				t.Fatalf("paste address did not reach the provider")
 			}
 		})
 	}

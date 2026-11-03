@@ -225,6 +225,30 @@ func TestCIMDFallbackSignsInWhereTheServerOffersNoRegistration(t *testing.T) {
 	}
 }
 
+func TestAServerWithNoRegistrationReachesTheContainerThroughTheRelay(t *testing.T) {
+	t.Parallel()
+	f := startOAuthMCPFixture(t, asShape{cimd: true})
+	var consentURL url.Values
+	session, err := OpenSDKSession(t.Context(), "remote", f.server(), EgressPolicy{}, SessionOptions{OAuth: OAuthOptions{
+		Store: &rotatingGrantStore{}, Fetcher: f.consent(&consentURL), RedirectURL: LoopbackCallback,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	if tools, err := session.ListTools(t.Context(), nil); err != nil || len(tools.Tools) != 1 {
+		t.Fatalf("tools/list after loopback sign-in = %v, %v", tools, err)
+	}
+	if consentURL.Get("redirect_uri") != auraOAuthRelayURL {
+		t.Fatalf("redirect=%s", consentURL.Get("redirect_uri"))
+	}
+	nonce, packed, ok := strings.Cut(consentURL.Get("state"), ".")
+	callback, err := base64.RawURLEncoding.DecodeString(packed)
+	if !ok || nonce == "" || err != nil || string(callback) != LoopbackCallback {
+		t.Fatalf("relay target=%q, err=%v", callback, err)
+	}
+}
+
 // Measured 2026-10-13 on the lab VM: once Aura's metadata document moved, ElevenLabs
 // refused every refresh of the grant issued to the old URL with invalid_client, and Connect
 // died on that refresh instead of asking for consent. Only Disconnect first got it back. A
