@@ -26,7 +26,7 @@ RUN npm run build
 # change, so their zips go in as they are, pinned by version and SHA-256: nothing is fetched at run
 # time. The wasm and its glue are gzipped here because nothing in front of aura compresses: aura
 # sends the .gz to a browser that accepts it (internal/staticapp).
-FROM alpine:3.22 AS craft-official
+FROM alpine:3.24 AS craft-official
 ADD --checksum=sha256:e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip /tmp/gridcraft.zip
 ADD --checksum=sha256:fdb2508030d7668cb5164db3b7d05baa1011a87497c95ef043844d90cbbc4da2 https://github.com/storytold/pdfcraft/releases/download/v0.15.0/pdfcraft-web-0.15.0.zip /tmp/pdfcraft.zip
 ADD --checksum=sha256:4cf6808b762e6d1211a569dd0cac831b7f1e7eb1a41f70cae90bceeb2c6a6acf https://github.com/storytold/wordcraft/releases/download/v0.12.0/wordcraft-web-0.12.0.zip /tmp/wordcraft.zip
@@ -90,7 +90,7 @@ ARG VCS_REF=""
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.commit=${VCS_REF}" -o /out/aura ./cmd/aura
 
 # The same digest as docker/aura-sandbox/Dockerfile's base; Dependabot moves both weekly.
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 # A cached RUN keeps the packages it installed for as long as the base digest and its own line
 # stay the same, so a fix to a package the base does not carry never arrived: on 2026-10-24
