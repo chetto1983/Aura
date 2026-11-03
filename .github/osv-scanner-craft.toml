@@ -3,13 +3,18 @@
 # out. Measured with OSV-Scanner 2.7.0 on 2026-10-24: once ignoreUntil has passed, the finding
 # is reported again.
 
-# zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet).
-# The operator approved both acceptances on 2026-10-24.
-# Both advisories concern ZipArchive::extract() and ZipStreamReader::extract() writing to a
-# filesystem: SUID/SGID bits kept, permissions applied through symlinks. No source file of the
-# three apps calls either, as checked at the pinned tags with Aura's patches. On
-# wasm32-unknown-unknown, the only target these builds ship, the standard library has no
-# filesystem to extract to.
+# zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet;
+# on 2026-11-03 their newest tags, v0.14.0, v0.14.1 and v0.15.0, still lock it).
+# The operator approved the first two acceptances on 2026-10-24, the other three on 2026-11-03
+# (issue #212).
+# Every advisory concerns ZipArchive::extract() and ZipStreamReader::extract() writing to a
+# filesystem: SUID/SGID bits kept, permissions applied through symlinks, a symlink target buffer
+# sized from the declared length, file names taken from the local header instead of the central
+# directory. No source file of the three apps calls either: checked again on 2026-11-03 at the
+# pinned tags with Aura's patches, they use only ZipArchive::new, by_name, by_index and
+# ZipWriter. On wasm32-unknown-unknown, the only target these builds ship, the standard library
+# has no filesystem to extract to, and zip 3.0.0 compiles the symlink branch only for unix and
+# windows.
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0367"
 ignoreUntil = 2027-01-22
@@ -19,3 +24,18 @@ reason = "zip extract() to a filesystem: not called by WordCraft, DeckCraft or G
 id = "RUSTSEC-2026-0369"
 ignoreUntil = 2027-01-22
 reason = "zip extract() to a filesystem: not called by WordCraft, DeckCraft or GridCraft, and wasm32-unknown-unknown has no filesystem"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0429"
+ignoreUntil = 2027-02-01
+reason = "zip extract() symlink buffer: not called by WordCraft, DeckCraft or GridCraft, and not compiled for wasm32-unknown-unknown"
+
+[[IgnoredVulns]]
+id = "GHSA-q7v9-x93c-xqv3"
+ignoreUntil = 2027-02-01
+reason = "zip extract() symlink buffer: not called by WordCraft, DeckCraft or GridCraft, and not compiled for wasm32-unknown-unknown"
+
+[[IgnoredVulns]]
+id = "GHSA-m665-v7pm-7grj"
+ignoreUntil = 2027-02-01
+reason = "zip ZipStreamReader::extract() to a filesystem: not called by WordCraft, DeckCraft or GridCraft, and wasm32-unknown-unknown has no filesystem"

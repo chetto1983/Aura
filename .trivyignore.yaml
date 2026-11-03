@@ -10,7 +10,8 @@
 # anything.
 #
 # All entries below are third-party CRITICALs that only upstream can fix: each image is on its
-# newest release. The operator approved them on 2026-10-24. Review each one by its expired_at.
+# newest release. The operator approved the first two on 2026-10-24, and brotli on 2026-11-03
+# (issue #212). Review each one by its expired_at.
 vulnerabilities:
   # postgres:18.6-alpine3.24: gosu is built with Go 1.24.6.
   - id: CVE-2025-68121
@@ -26,49 +27,24 @@ vulnerabilities:
     statement: "netty-handler shaded into ArcadeDB 26.10.2, the newest release; fixed upstream only"
     expired_at: 2027-01-22
 
-  # ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0, the newest release: its Debian base and Python deps.
-  - id: CVE-2026-13221
+  # arcadedata/arcadedb:26.10.2 and postgres:18.6-alpine3.24: both Alpine bases still ship
+  # brotli-libs 1.2.0-r1 (fixed in 1.2.1-r0). Neither tag was rebuilt after 2026-10-26, and
+  # ArcadeDB's only newer image is 26.11.1-SNAPSHOT.
+  - id: CVE-2026-111497
     purls:
-      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
-    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
-    expired_at: 2027-01-22
-  - id: CVE-2026-42496
-    purls:
-      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
-    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
-    expired_at: 2027-01-22
-  - id: CVE-2026-8376
-    purls:
-      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
-    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
-    expired_at: 2027-01-22
-  - id: CVE-2026-63374
-    purls:
-      - "pkg:pypi/anyio@4.12.1"
-    statement: "anyio pinned by kokoro v0.9.0; fixed upstream only"
-    expired_at: 2027-01-22
-  - id: GHSA-6q48-6c7w-9gw2
-    purls:
-      - "pkg:pypi/certifi@2026.2.25"
-    statement: "certifi pinned by kokoro v0.9.0; fixed upstream only"
-    expired_at: 2027-01-22
+      - "pkg:apk/alpine/brotli-libs@1.2.0-r1?arch=x86_64&distro=3.24.2"
+      - "pkg:apk/alpine/brotli-libs@1.2.0-r1?arch=x86_64&distro=3.24.3"
+    statement: "brotli-libs in the Alpine bases of ArcadeDB 26.10.2 and Postgres 18.6, the newest releases; fixed upstream by a rebuild only"
+    expired_at: 2027-02-01
 
   # Aura's own images, where the vulnerable code sits inside a binary or package only upstream
   # ships. Each entry also carries the path, so the same version elsewhere in an image is still
   # reported (measured with Trivy 0.70.0 on 2026-10-24: a copy of the same undici at another path
-  # stays in the report). The operator approved both on 2026-10-24.
-
-  # aura-cloudflared: compress inside Cloudflare's own cloudflared 2026.10.2 binary.
-  - id: CVE-2026-63209
-    purls:
-      - "pkg:golang/github.com/klauspost/compress@v1.18.0"
-    paths:
-      - "usr/local/bin/cloudflared"
-    statement: "klauspost/compress compiled into cloudflared 2026.10.2, the newest release; only Cloudflare can rebuild it"
-    expired_at: 2027-01-22
+  # stays in the report). The operator approved the first on 2026-10-24, the rest on 2026-11-03
+  # (issue #212).
 
   # aura and aura-sandbox: the undici npm bundles. npm 11.21.1, the newest 11.x, and 12.2.1, the
-  # newest of all, both ship 6.29.0; the fix is 6.29.1.
+  # newest of all, both ship 6.29.0 (still so on 2026-11-03); the fix is 6.29.1.
   - id: CVE-2026-109869
     purls:
       - "pkg:npm/undici@6.29.0"
@@ -76,3 +52,101 @@ vulnerabilities:
       - "usr/lib/node_modules/npm/node_modules/undici/package.json"
     statement: "undici bundled inside npm 11.21.1; no npm release ships the fixed 6.29.1 yet"
     expired_at: 2027-01-22
+  - id: CVE-2026-109383
+    purls:
+      - "pkg:npm/undici@6.29.0"
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: "undici bundled inside npm 11.21.1; no npm release ships the fixed 6.29.1 yet"
+    expired_at: 2027-02-01
+  - id: CVE-2026-87018
+    purls:
+      - "pkg:npm/undici@6.29.0"
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: "undici bundled inside npm 11.21.1; no npm release ships the fixed 6.29.1 yet"
+    expired_at: 2027-02-01
+
+  # aura-sandbox: tsc in the artifact template is TypeScript 7.0.2's native binary, which
+  # Microsoft built with Go 1.26.4 and golang.org/x/text v0.38.0. 7.0.2 is the newest release
+  # (7.1 is a beta) and create-vite's react-ts template asks for ~7.0.2. The compiler runs on the
+  # model's own project inside its box, which is the boundary; it serves nothing over the network.
+  - id: CVE-2026-56851
+    purls:
+      - "pkg:golang/golang.org/x/text@v0.38.0"
+    paths: &tsc
+      - "opt/aura-artifacts/template/node_modules/.pnpm/@typescript+typescript-linux-x64@7.0.2/node_modules/@typescript/typescript-linux-x64/lib/tsc"
+    statement: "x/text compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56852
+    purls:
+      - "pkg:golang/golang.org/x/text@v0.38.0"
+    paths: *tsc
+    statement: "x/text compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-111943
+    purls: &tsc-go
+      - "pkg:golang/stdlib@v1.26.4"
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-33818
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-39821
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-39822
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-46600
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56853
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56858
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56859
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56860
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-56862
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-78667
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-78669
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01
+  - id: CVE-2026-97031
+    purls: *tsc-go
+    paths: *tsc
+    statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
+    expired_at: 2027-02-01

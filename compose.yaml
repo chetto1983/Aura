@@ -1202,7 +1202,7 @@ services:
   # aura-tts — Kokoro-82M (voice if_sara) → opus voice note. TTS_BASE_URL=
   # http://aura-tts:8880/v1, POST /audio/speech response_format=opus.
   aura-tts:
-    image: ${AURA_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0}
+    image: ${AURA_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.2}
     container_name: aura-tts
     restart: unless-stopped
     ports:
@@ -1584,7 +1584,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    image: grafana/grafana:13.2.5@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84
     profiles: [observability]
     restart: unless-stopped
     depends_on:
