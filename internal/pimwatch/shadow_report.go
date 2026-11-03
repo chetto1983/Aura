@@ -31,8 +31,9 @@ type Truth struct {
 // no subject and no id.
 type ShadowReport struct {
 	Rows, Answered int
-	// Strong is the corrected mail; Weak the uncorrected mail older than weakTruthAge that reached
-	// the person through an alert or a digest; All both.
+	// Strong is the mail whose tier the person changed; Weak the mail whose tier they kept while
+	// changing its label, and the uncorrected mail older than weakTruthAge that reached them through
+	// an alert or a digest; All both.
 	Strong, Weak, All Truth
 	// Overrules counts, by the ladder's rung, the mail the centroid would have put elsewhere.
 	Overrules                       map[DecidedBy]int
@@ -57,10 +58,12 @@ func BuildShadowReport(rows []ShadowRow, lastDigest, now time.Time) ShadowReport
 			}
 		}
 		settled := settledMail{truth: row.Tier, ladder: row.LadderTier, memory: row.SenderMemory, centroid: row.Centroid}
+		// A correction that changed only the label is decided_by person too, but its tier is the
+		// ladder's: the person saw the mail and kept it.
 		switch {
-		case row.By == ByPerson:
+		case row.By == ByPerson && row.Tier != row.LadderTier:
 			strong = append(strong, settled)
-		case reachedThePerson(row, lastDigest, now):
+		case row.By == ByPerson || reachedThePerson(row, lastDigest, now):
 			weak = append(weak, settled)
 		}
 	}
@@ -172,7 +175,7 @@ func (r ShadowReport) WriteText(w io.Writer) {
 	}
 	_, _ = fmt.Fprintf(w, "\nthe centroid would overrule the ladder, by rung: %s\n", rungs)
 	_, _ = fmt.Fprintf(w, "margin p10/p50/p90 over the answered mail: %.3f %.3f %.3f\n\n", r.MarginP10, r.MarginP50, r.MarginP90)
-	_, _ = fmt.Fprintln(w, "strong: the corrected mail. A correction is mostly the ladder's mistake, so the ladder scores low here by construction; the memory is the arm to beat.")
-	_, _ = fmt.Fprintln(w, "weak: uncorrected mail older than 48 h that an alert or a digest brought to the person. Its tier is the ladder's, so the ladder scores 100% by construction.")
+	_, _ = fmt.Fprintln(w, "strong: mail whose tier the person changed. The ladder's tier was the one changed, so the ladder scores zero here by construction; the memory is the arm to beat.")
+	_, _ = fmt.Fprintln(w, "weak: mail whose label alone the person changed, and uncorrected mail older than 48 h that an alert or a digest brought to the person. Its tier is the ladder's, so the ladder scores 100% by construction.")
 	_, _ = fmt.Fprintln(w, "all: both together, the fair comparison.")
 }

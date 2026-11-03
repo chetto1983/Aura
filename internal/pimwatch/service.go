@@ -250,7 +250,9 @@ func (s *Service) RemoveAccount(ctx context.Context, identityID, accountID strin
 	}
 	var forgot error
 	if s.Centroid != nil {
-		forgot = s.Centroid.Forget(ctx, identityID, accountID)
+		if err := s.Centroid.Forget(ctx, identityID, accountID); err != nil {
+			forgot = fmt.Errorf("forget the removed account's examples: %w", err)
+		}
 	}
 	return errors.Join(forgot, s.stopDigestIfIdle(ctx, identityID))
 }

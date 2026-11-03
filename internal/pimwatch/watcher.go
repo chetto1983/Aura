@@ -14,9 +14,9 @@ const (
 	failingAlarmAfter = time.Hour
 	// maxPagesPerResource keeps a large backlog of one resource from starving the other.
 	maxPagesPerResource = 20
-	// PageReserve is the time a run must have left to start another page. A scheduler bound below
-	// it would never let a page finish.
-	PageReserve = pimRequestTimeout + 5*time.Second
+	// PageReserve is the time a run must have left to start another page: the PIM's read, the
+	// shadow's and the commit. A scheduler bound below it would never let a page finish.
+	PageReserve = pimRequestTimeout + shadowTimeout + 5*time.Second
 )
 
 // TickInput names one account's run.

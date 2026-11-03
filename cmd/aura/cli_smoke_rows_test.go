@@ -44,7 +44,11 @@ var cliSmokeRows = []cliSmokeRow{
 	{name: "config_validate", argv: []string{"config", "validate"}, stdout: "no configuration violations"},
 
 	{name: "identity_list", argv: []string{"identity", "list"}, stdout: "aura-cli"},
-	{name: "identity_get", argv: []string{"identity", "get", "local"}, stdout: "local"},
+	{name: "identity_get", argv: []string{"identity", "get", "local"}, stdout: "local",
+		capture: map[string]string{"identity": `SELECT id::text FROM aura.identities WHERE name = 'local'`}},
+	{name: "mail_watch_shadow_reads_and_writes_nothing", argv: []string{"mail-watch", "shadow", "--identity={identity}"},
+		stdout: "mail decided: 0",
+		after:  `SELECT NOT EXISTS (SELECT 1 FROM aura.pim_watch_settings WHERE identity_id = '{identity}')`},
 	{name: "identity_get_by_uuid_is_not_found_C5", argv: []string{"identity", "get", "00000000-0000-0000-0000-000000000001"},
 		exit: 1, stderr: "identity not found"},
 	{name: "identity_grant", argv: []string{"identity", "grant", "local", "web"}, stdout: `granted "web"`},

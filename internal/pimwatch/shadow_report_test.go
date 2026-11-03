@@ -88,6 +88,19 @@ func TestWeakTruthNeedsTheMailToHaveReachedThePerson(t *testing.T) {
 	}
 }
 
+func TestALabelOnlyCorrectionIsWeakTruth(t *testing.T) {
+	labelOnly := shadowRow(TierToday, ByPerson, TierToday, ByPeople, TierToday, TierNow, 0.03)
+	labelOnly.DecidedAt = reportNow.Add(-time.Hour)
+	rows := []ShadowRow{labelOnly, shadowRow(TierNow, ByPerson, TierToday, ByPeople, TierNow, TierNow, 0.05)}
+	r := BuildShadowReport(rows, time.Time{}, reportNow)
+	if r.Strong.Count != 1 || r.Strong.Ladder.Right != 0 || r.Strong.Centroid.Right != 1 {
+		t.Fatalf("strong = %+v, want the tier change alone", r.Strong)
+	}
+	if r.Weak.Count != 1 || r.Weak.Ladder.Right != 1 || r.Weak.Centroid.Right != 0 {
+		t.Fatalf("weak = %+v, want the label-only correction, kept tier as the truth", r.Weak)
+	}
+}
+
 func TestAnEmptyReportHasNoMargins(t *testing.T) {
 	r := BuildShadowReport(nil, time.Time{}, reportNow)
 	if r.Rows != 0 || r.MarginP50 != 0 || r.All.Ladder.MacroF1 != 0 {

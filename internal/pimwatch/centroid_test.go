@@ -53,10 +53,11 @@ func (e *centroidEmbedder) embedded() [][]string {
 	return slices.Clone(e.calls)
 }
 
-// exampleStore keeps what the bank writes.
+// exampleStore keeps what the bank writes. block makes ForgetExamples wait for its context.
 type exampleStore struct {
-	mu  sync.Mutex
-	put []arcadedb.Example
+	mu    sync.Mutex
+	put   []arcadedb.Example
+	block bool
 }
 
 func (s *exampleStore) PutExample(_ context.Context, _ string, e arcadedb.Example) error {
@@ -70,7 +71,11 @@ func (s *exampleStore) Examples(context.Context, string, string, string) ([]arca
 	return nil, nil
 }
 
-func (s *exampleStore) ForgetExamples(context.Context, string, string, string) (int, error) {
+func (s *exampleStore) ForgetExamples(ctx context.Context, _, _, _ string) (int, error) {
+	if s.block {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
 	return 0, nil
 }
 
@@ -162,16 +167,27 @@ func TestExtraIsTheFourFactsInOrder(t *testing.T) {
 }
 
 func TestMailTextIsSenderThenSubject(t *testing.T) {
-	if got := mailText("a@b.example", "Oggetto"); got != "a@b.example\nOggetto" {
-		t.Fatalf("mailText = %q", got)
+	for from, want := range map[string]string{
+		"a@b.example":               "a@b.example\nOggetto",
+		"Mario <Mario@One.example>": "mario@one.example\nOggetto",
+		"not an address":            "not an address\nOggetto",
+	} {
+		if got := mailText(from, "Oggetto"); got != want {
+			t.Fatalf("mailText(%q) = %q, want %q: the seeds' bare, lower-case address", from, got, want)
+		}
 	}
 }
 
 func TestJudgeFailsWhileTheSeedsWarm(t *testing.T) {
-	centroid, _ := newTestCentroid(t, &centroidEmbedder{})
+	embedder := &centroidEmbedder{}
+	centroid, _ := newTestCentroid(t, embedder)
 	mails := []ShadowMail{{From: "a@b.example", Subject: "Oggetto"}}
 	if _, err := centroid.Judge(context.Background(), "id-1", mails); !errors.Is(err, examplebank.ErrSeedsWarming) {
 		t.Fatalf("cold judge: %v", err)
+	}
+	page := []string{mailText("a@b.example", "Oggetto")}
+	if slices.ContainsFunc(embedder.embedded(), func(call []string) bool { return slices.Equal(call, page) }) {
+		t.Fatal("a cold judge embedded the page it could not answer")
 	}
 	judged(t, centroid, mails)
 }
@@ -231,8 +247,35 @@ func TestLearnStoresTheCorrectionAsAnExample(t *testing.T) {
 	}
 }
 
+func TestAHungStoreCostsForgetAtMostTheTimeout(t *testing.T) {
+	centroid, store := newTestCentroid(t, &centroidEmbedder{})
+	store.block = true
+	centroid.timeout = 50 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := centroid.Forget(ctx, "id-1", "acc"); err == nil || time.Since(started) > 500*time.Millisecond {
+		t.Fatalf("forget returned %v after %s", err, time.Since(started))
+	}
+}
+
+func TestAPageStartsOnlyWithRoomForTheShadow(t *testing.T) {
+	at := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	w := &Watcher{Now: func() time.Time { return at }}
+	ctx, cancel := context.WithDeadline(context.Background(), at.Add(pimRequestTimeout+shadowTimeout+time.Second))
+	defer cancel()
+	if w.hasTime(ctx) {
+		t.Fatal("a page started with room for the PIM's read and the shadow, but not for the commit")
+	}
+}
+
 func TestASlowEmbedderCostsAtMostTheTimeout(t *testing.T) {
-	centroid, _ := newTestCentroid(t, &centroidEmbedder{block: true})
+	embedder := &centroidEmbedder{}
+	centroid, _ := newTestCentroid(t, embedder)
+	judged(t, centroid, []ShadowMail{{From: "warm@b.example", Subject: "Seeds"}})
+	embedder.mu.Lock()
+	embedder.block = true
+	embedder.mu.Unlock()
 	centroid.timeout = 50 * time.Millisecond
 	started := time.Now()
 	_, err := centroid.Judge(context.Background(), "id-1", []ShadowMail{{From: "a@b.example", Subject: "Oggetto"}})

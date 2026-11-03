@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,7 +27,7 @@ const (
 
 // mailTierSeeds are the pilot's 200 invented mails, every sender moved under .example and 13
 // subjects rewritten to name no real company, with their frozen tiers. Measured with semindex's
-// math on 2026-11-03: the same 56.7 macro F1 as the spike's seeds (D:\tmp\mail-class\run8.py).
+// math on 2026-11-03: the same 56.7 macro F1 as the spike's seeds.
 //
 //go:embed seeds/mail_tier.json
 var mailTierSeeds []byte
@@ -39,7 +40,7 @@ type Centroid interface {
 	Forget(ctx context.Context, identityID, accountID string) error
 }
 
-// ShadowMail is what the centroid reads of a mail. From is the bare address the PIM gives.
+// ShadowMail is what the centroid reads of a mail. From is the PIM's, display name and all.
 type ShadowMail struct {
 	From, Subject string
 	Facts         MailFacts
@@ -111,13 +112,23 @@ func NewCentroidShadow(bank *examplebank.Bank, owners OwnerLister) (*CentroidSha
 	}}, nil
 }
 
-// Judge answers for every mail of a page with one embedding call.
+// Judge answers for every mail of a page with one embedding call. The classifier comes first, so a
+// page is never embedded while the seeds warm: on a CPU sidecar that call would compete with the
+// seeds' own and be thrown away.
 func (c *CentroidShadow) Judge(ctx context.Context, identityID string, mails []ShadowMail) ([]CentroidAnswer, error) {
 	if len(mails) == 0 {
 		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
+	live, err := c.bank.Embedder.Space(ctx)
+	if err != nil {
+		return nil, err
+	}
+	classifier, err := c.bank.Classifier(ctx, identityID, c.domain, live.ID)
+	if err != nil {
+		return nil, err
+	}
 	texts := make([]string, len(mails))
 	for i, mail := range mails {
 		texts[i] = mailText(mail.From, mail.Subject)
@@ -126,9 +137,8 @@ func (c *CentroidShadow) Judge(ctx context.Context, identityID string, mails []S
 	if err != nil {
 		return nil, err
 	}
-	classifier, err := c.bank.Classifier(ctx, identityID, c.domain, space)
-	if err != nil {
-		return nil, err
+	if space != live.ID {
+		return nil, errors.New("pimwatch: the embedding space changed while judging a page")
 	}
 	answers := make([]CentroidAnswer, len(mails))
 	for i, mail := range mails {
@@ -145,16 +155,23 @@ func (c *CentroidShadow) Learn(ctx context.Context, identityID string, lesson Le
 	defer cancel()
 	vectors, space, err := c.bank.Embed(ctx, []string{mailText(lesson.From, lesson.Subject)})
 	if err != nil {
-		return err
+		return fmt.Errorf("embed the correction: %w", err)
 	}
-	return c.bank.Put(ctx, identityID, c.domain, arcadedb.Example{
+	err = c.bank.Put(ctx, identityID, c.domain, arcadedb.Example{
 		Domain: mailTierDomain, Owner: lesson.AccountID, Ref: lesson.ItemID, Label: string(lesson.Tier),
 		Vector: examplebank.Row(vectors[0], lesson.Facts.extra()), Space: space, CreatedAt: time.Now().UTC(),
 	})
+	if err != nil {
+		return fmt.Errorf("store the correction's example: %w", err)
+	}
+	return nil
 }
 
-// Forget removes an account's examples.
+// Forget removes an account's examples. It runs inside the cockpit's account removal, so it is
+// bounded like the rest of the shadow: what a timeout leaves, the next build forgets as an orphan.
 func (c *CentroidShadow) Forget(ctx context.Context, identityID, accountID string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	return c.bank.ForgetOwner(ctx, identityID, c.domain, accountID)
 }
 
@@ -179,5 +196,11 @@ func (f MailFacts) extra() []float64 {
 	return out
 }
 
-// mailText is the text the centroid embeds: the sender's address, then the subject.
-func mailText(from, subject string) string { return from + "\n" + subject }
+// mailText is the text the centroid embeds: the sender's bare, lower-case address as the seeds
+// carry it, then the subject. A From that does not parse is embedded as it came.
+func mailText(from, subject string) string {
+	if address, _ := SenderKey(from); address != "" {
+		from = address
+	}
+	return from + "\n" + subject
+}

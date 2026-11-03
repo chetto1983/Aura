@@ -1,11 +1,17 @@
 package pimwatch
 
-import "context"
+import (
+	"context"
+	"log/slog"
+)
 
 // shadowCount is what a tick tells the ledger of the centroid: counts only.
 type shadowCount struct {
 	on                      bool
 	answered, agreed, empty int
+	// failed stops asking the centroid after its first failure in the tick, so a hung embedder
+	// holds the tick's alerts one shadowTimeout, not one per page.
+	failed bool
 }
 
 // shadow fills each mail draft of a page with what the scoring needs: the four facts, the
@@ -22,7 +28,9 @@ func (w *Watcher) shadow(ctx context.Context, t *tick, mails []Change, drafts []
 		drafts[i].Shadow = &Shadow{Facts: factsOf(mail.Signals)}
 		keys[i], _ = SenderKey(mail.From)
 	}
-	if memory, err := w.Store.SenderMemory(ctx, t.IdentityID, keys); err == nil {
+	if memory, err := w.Store.SenderMemory(ctx, t.IdentityID, keys); err != nil {
+		slog.Warn("mail watch: the sender memory was not read for the shadow", "error", err)
+	} else {
 		for i := range drafts {
 			drafts[i].Shadow.SenderMemory = drafts[i].Decision.Tier
 			if tier, ok := memory[keys[i]]; ok {
@@ -33,12 +41,17 @@ func (w *Watcher) shadow(ctx context.Context, t *tick, mails []Change, drafts []
 	if w.Centroid == nil {
 		return
 	}
+	if t.shadow.failed {
+		t.shadow.empty += len(mails)
+		return
+	}
 	asks := make([]ShadowMail, len(mails))
 	for i, mail := range mails {
 		asks[i] = ShadowMail{From: mail.From, Subject: mail.Subject, Facts: drafts[i].Shadow.Facts}
 	}
 	answers, err := w.Centroid.Judge(ctx, t.IdentityID, asks)
 	if err != nil || len(answers) != len(mails) {
+		t.shadow.failed = true
 		t.shadow.empty += len(mails)
 		return
 	}

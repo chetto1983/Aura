@@ -126,6 +126,27 @@ func TestAFailingCentroidLeavesTheVerdictAsToday(t *testing.T) {
 	}
 }
 
+func TestAFailingCentroidIsAskedOncePerTick(t *testing.T) {
+	r := newWatchRig(t)
+	r.pim.page(ResourceMail, "start-mail", ChangesPage{NextCursor: "c1", HasMore: true, Changes: []Change{r.todayMail("m1")}})
+	r.pim.page(ResourceMail, "c1", ChangesPage{NextCursor: "c2", HasMore: true, Changes: []Change{r.todayMail("m2")}})
+	r.pim.page(ResourceMail, "c2", ChangesPage{NextCursor: "c3", Changes: []Change{r.todayMail("m3")}})
+	centroid := &fakeCentroid{err: context.DeadlineExceeded}
+	r.watcher.Centroid = centroid
+
+	out := r.tick()
+
+	if len(centroid.asked) != 1 {
+		t.Fatalf("asked %d times, want once: a hung embedder costs one timeout per tick", len(centroid.asked))
+	}
+	if !strings.HasSuffix(out.Summary, "shadow: 0 answered, 0 agreed, 3 empty") {
+		t.Fatalf("summary = %q", out.Summary)
+	}
+	if got := r.mailVerdict("m3"); got.LadderTier != TierToday || got.SenderMemory != TierToday || got.Centroid != "" {
+		t.Fatalf("a page after the failure = %+v", got)
+	}
+}
+
 func TestNoCentroidStillWritesTheFactsAndTheMemory(t *testing.T) {
 	r := newWatchRig(t)
 	r.pim.page(ResourceMail, "start-mail", ChangesPage{NextCursor: "c1", Changes: []Change{r.todayMail("m1")}})
@@ -245,8 +266,8 @@ func TestRemovingAnAccountForgetsItsExamples(t *testing.T) {
 	}
 
 	err := r.service.RemoveAccount(ctx, r.identity, "home")
-	if err == nil || !strings.Contains(err.Error(), "arcadedb down") {
-		t.Fatalf("remove = %v, want the forget's failure", err)
+	if err == nil || !strings.Contains(err.Error(), "forget the removed account's examples: arcadedb down") {
+		t.Fatalf("remove = %v, want the forget's failure, named as the examples'", err)
 	}
 	if len(centroid.forgotten) != 1 || centroid.forgotten[0] != "home" {
 		t.Fatalf("forgotten = %v", centroid.forgotten)

@@ -23,12 +23,19 @@ type fakeEmbedder struct {
 	spaces  []string
 	fail    int // the first fail Embed calls error
 	calls   [][]string
+	gate    chan struct{} // when set, Embed answers only once it is closed
 }
 
 func (f *fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, slices.Clone(texts))
+	gate := f.gate
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.fail > 0 {
 		f.fail--
 		return nil, errors.New("embedder down")
@@ -200,17 +207,19 @@ func TestAnExampleWeighsAsMuchAsSixSeeds(t *testing.T) {
 
 func TestTheSeedsWarmOnceInTheBackground(t *testing.T) {
 	embedder := twoSeedEmbedder("s1")
+	embedder.gate = make(chan struct{})
 	b := &Bank{Store: &fakeStore{}, Embedder: embedder}
 	d := twoSeedDomain()
 	var wg sync.WaitGroup
 	for range 5 {
 		wg.Go(func() {
-			if _, err := b.Classifier(context.Background(), "id-1", d, "s1"); err != nil && !errors.Is(err, ErrSeedsWarming) {
-				t.Errorf("cold classifier: %v", err)
+			if _, err := b.Classifier(context.Background(), "id-1", d, "s1"); !errors.Is(err, ErrSeedsWarming) {
+				t.Errorf("cold classifier: %v, want ErrSeedsWarming while the seeds embed", err)
 			}
 		})
 	}
 	wg.Wait()
+	close(embedder.gate)
 	warmed(t, b, d, "s1")
 	calls := embedder.embedCalls()
 	if len(calls) != 1 || !slices.Equal(calls[0], []string{"seed a", "seed b"}) {
@@ -340,6 +349,23 @@ func TestClassifierIsCachedUntilAnExampleChanges(t *testing.T) {
 	}
 	if reads := store.readCount(); reads != 3 {
 		t.Fatalf("reads = %d, want a fresh read after the put and after the forget", reads)
+	}
+}
+
+func TestAFailedForgetStillDropsTheClassifier(t *testing.T) {
+	store := &fakeStore{forgetErr: errors.New("arcadedb down")}
+	b := &Bank{Store: store, Embedder: twoSeedEmbedder("s1")}
+	d := twoSeedDomain()
+	ctx := context.Background()
+	warmed(t, b, d, "s1")
+	if err := b.ForgetOwner(ctx, "id-1", d, "a"); err == nil {
+		t.Fatal("the forget's failure was lost")
+	}
+	if _, err := b.Classifier(ctx, "id-1", d, "s1"); err != nil {
+		t.Fatal(err)
+	}
+	if reads := store.readCount(); reads != 2 {
+		t.Fatalf("reads = %d, want a rebuild: a forget that may have half-landed leaves no classifier cached", reads)
 	}
 }
 

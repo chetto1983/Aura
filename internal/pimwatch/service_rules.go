@@ -2,7 +2,6 @@ package pimwatch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -99,7 +98,7 @@ func (s *Service) teach(ctx context.Context, identityID string, c Correction, it
 		AccountID: c.AccountID, ItemID: c.ItemID, From: item.From, Subject: item.Subject, Facts: verdict.Facts, Tier: c.Tier,
 	})
 	if err != nil {
-		slog.Warn("mail watch: a correction taught the centroid nothing", "timeout", errors.Is(err, context.DeadlineExceeded))
+		slog.Warn("mail watch: a correction taught the centroid nothing", "error", err)
 	}
 }
 

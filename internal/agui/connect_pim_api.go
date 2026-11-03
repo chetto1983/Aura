@@ -146,10 +146,11 @@ func (s *Server) handlePIMDeleteAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// The account is already gone, so a client that hung up must not leave its watch behind. A
-	// failure here leaves a task that fails, pauses and says why.
+	// failure here leaves a task that fails, pauses and says why, or examples the centroid forgets
+	// on its next build; the error names which.
 	ctx := context.WithoutCancel(r.Context())
 	if err := s.mailWatch.RemoveAccount(ctx, scopedIdentityID(ctx), id); err != nil {
-		slog.Warn("agui: the removed account's watch stayed", "err", sanitizeErr(err))
+		slog.Warn("agui: removing the account's watch did not finish", "err", sanitizeErr(err))
 	}
 }
 

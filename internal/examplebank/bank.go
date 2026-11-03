@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sync"
 
@@ -166,6 +167,7 @@ func (b *Bank) build(ctx context.Context, identityID string, d Domain, space str
 	complete := true
 	for owner := range orphans {
 		if _, err := b.Store.ForgetExamples(ctx, identityID, d.Name, owner); err != nil {
+			slog.Warn("example bank: an orphan's examples stayed, the classifier is rebuilt until they go", "domain", d.Name, "error", err)
 			complete = false
 		}
 	}
