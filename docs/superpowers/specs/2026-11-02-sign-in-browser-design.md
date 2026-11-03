@@ -122,6 +122,9 @@ would use that configured MCP Apps origin must use the existing explicit
 own-browser flow before image preflight or admission. The default inline desktop
 remains available while the MCP Apps origin is unset. This introduces no extra
 listener or origin setting; co-hosting both GUIs on one origin is unsupported.
+The programmable MCP sandbox document must likewise be served only on its
+configured origin, and refused when no MCP Apps origin is configured. Otherwise
+the raw public document would still introduce app scripts on the private origin.
 
 Use the existing Caddy `:8444` keyhole for the authenticated stream, retaining its refusal of unrelated routes. The
 desktop origin must use the cockpit's hostname and another HTTPS port, so its Strict session cookie arrives without

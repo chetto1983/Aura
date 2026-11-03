@@ -3431,6 +3431,8 @@ admission. Co-hosting these GUIs is unsupported; no additional listener, origin
 setting or image is introduced. Default inline sign-in remains available while
 the MCP Apps origin is unset. This restriction follows from a synthetic DOM read,
 not a measured exposure of a user's browser.
+The programmable MCP sandbox document must also refuse unconfigured and other
+origins, keeping its same-origin view scripts off the private desktop origin.
 
 `AURA_SIGNIN_BROWSER_IMAGE` pins the separate, first-use desktop image; it is not
 in the appliance payload. The card asks before its 1.17 GB download and reports
