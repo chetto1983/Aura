@@ -2,9 +2,11 @@ package pimwatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -83,6 +85,27 @@ func (s *Store) CorrectedAccounts(ctx context.Context, identityID string) ([]str
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read pim watch corrected accounts: %w", err)
+	}
+	return out, nil
+}
+
+// LastDigest is when the last digest window closed: zero when none was sent or the identity has no
+// watch. Unlike Settings it writes nothing, so the report stays a read.
+func (s *Store) LastDigest(ctx context.Context, identityID string) (time.Time, error) {
+	var out time.Time
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		row, err := q.GetPIMWatchSettings(ctx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		out = row.LastDigestAt.Time
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read pim watch last digest: %w", err)
 	}
 	return out, nil
 }

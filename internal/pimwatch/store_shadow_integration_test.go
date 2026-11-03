@@ -125,6 +125,35 @@ func TestCorrectedAccountsListsTheAccountsWithCorrections(t *testing.T) {
 	}
 }
 
+func TestLastDigestReadsWithoutWriting(t *testing.T) {
+	ctx := context.Background()
+	pool := migratedPool(t)
+	store := NewStore(pool)
+	identity := seedIdentity(t, pool)
+	if at, err := store.LastDigest(ctx, identity); err != nil || !at.IsZero() {
+		t.Fatalf("an identity with no watch: %v, %v", at, err)
+	}
+	if err := store.tx(ctx, identity, func(q *sqlc.Queries, id pgtype.UUID) error {
+		_, err := q.GetPIMWatchSettings(ctx, id)
+		return err
+	}); err == nil {
+		t.Fatal("reading the last digest wrote a settings row")
+	}
+	if _, err := store.Settings(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	if at, err := store.LastDigest(ctx, identity); err != nil || !at.IsZero() {
+		t.Fatalf("a watch with no digest sent: %v, %v", at, err)
+	}
+	sent := time.Date(2026, 11, 2, 18, 0, 0, 0, time.UTC)
+	if err := store.SetLastDigest(ctx, identity, sent); err != nil {
+		t.Fatal(err)
+	}
+	if at, err := store.LastDigest(ctx, identity); err != nil || !at.Equal(sent) {
+		t.Fatalf("after a digest: %v, %v", at, err)
+	}
+}
+
 func TestShadowRowsReadOnlyMailWithALadderAnswer(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
