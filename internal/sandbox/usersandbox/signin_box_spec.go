@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	signInLabel       = "aura.signin"
-	signInRoleLabel   = "aura.signin.role"
+	signInLabel     = "aura.signin"
+	signInRoleLabel = "aura.signin.role"
+	// S6's public-page peak was 664 MiB; keep headroom for consent pages.
 	signInMemoryBytes = 1536 << 20
 	signInPidsLimit   = 2048
 	signInShmBytes    = 1 << 30

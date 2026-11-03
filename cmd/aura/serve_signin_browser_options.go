@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// S6's image and download total 5.83 GB; reserve extraction and write headroom.
 const signInMinFreeBytes = 8 << 30
 
 type signInListenerAddress struct {
