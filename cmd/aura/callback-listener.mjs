@@ -15,7 +15,9 @@ export async function listen({ path, port = 0, host = '127.0.0.1', expectedState
     catch { response.writeHead(400).end('Accesso non valido.'); return; }
     const state = typeof expectedState === 'function' ? expectedState() : expectedState;
     const authority = `${host.includes(':') ? `[${host}]` : host}:${server.address().port}`;
-    if (request.method !== 'GET' || request.headers.host !== authority ||
+    const canonicalAuthority = new URL(`http://${authority}`).host;
+    if (request.method !== 'GET' ||
+        (request.headers.host !== authority && request.headers.host !== canonicalAuthority) ||
         url.pathname !== path || request.url.length > 16384 || consumed ||
         !state || url.searchParams.getAll('state').length !== 1 ||
         url.searchParams.get('state') !== state) {

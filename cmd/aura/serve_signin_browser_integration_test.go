@@ -80,9 +80,18 @@ func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) {
 
 func TestSignInCallbackListenerAcceptsOnlyItsBoundState(t *testing.T) {
 	ctx, router, handle := liveBox(t)
-	for _, host := range []string{"127.0.0.1", "localhost", "[::1]"} {
-		t.Run(host, func(t *testing.T) {
-			redirect := "http://" + host + ":43121/aura/mcp/oauth/callback"
+	for _, redirect := range []string{
+		"http://127.0.0.1:43121/aura/mcp/oauth/callback",
+		"http://localhost:43121/aura/mcp/oauth/callback",
+		"http://[::1]:43121/aura/mcp/oauth/callback",
+		"http://127.0.0.1/aura/mcp/oauth/callback",
+		"http://127.0.0.1:80/aura/mcp/oauth/callback",
+		"http://localhost/aura/mcp/oauth/callback",
+		"http://localhost:80/aura/mcp/oauth/callback",
+		"http://[::1]/aura/mcp/oauth/callback",
+		"http://[::1]:80/aura/mcp/oauth/callback",
+	} {
+		t.Run(redirect, func(t *testing.T) {
 			browser := &sandboxSignInBrowser{router: router}
 			session := &signInBrowserSession{browser: browser, session: "signin-0123456789abcdef01234567", opts: browserlogin.LaunchOptions{Redirect: redirect}}
 			t.Cleanup(func() {

@@ -60,6 +60,11 @@
 }
 
 (aura_frontdoor) {
+	# Programmable MCP views must never acquire the cockpit's origin.
+	handle /mcp-sandbox {
+		respond 404
+	}
+
 	# Presigned object-store requests → garage: every per-identity bucket aura-<identity>
 	# (browser PUT uploads and GET downloads) and the shared aura-assets bucket. The
 	# identity charset mirrors internal/idroot identityPattern; no cockpit route starts /aura-.
