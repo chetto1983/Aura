@@ -68,6 +68,7 @@ type chatEnv struct {
 	llmRuntime            *llm.Runtime
 	credentials           settings.Credentials    // the cloud services' keys, read per call (service_credentials.go)
 	memoryEmbedder        arcadedb.DenseEmbedder  // the daemon's one memory route (memory_embedder.go)
+	memoryClients         *arcadedb.TenantClients // nil without ArcadeDB (newChatTenantClients)
 	documentEmbedder      documents.QueryEmbedder // the document query route, key read per call
 	llmFallback           llm.Config
 	reg                   *tools.Registry
@@ -556,7 +557,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, credentials: credentials, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox, chatGPTPlan: chatGPTPlan}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, credentials: credentials, memoryEmbedder: memoryDense, memoryClients: memoryClients, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox, chatGPTPlan: chatGPTPlan}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

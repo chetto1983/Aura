@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/examplebank"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -83,7 +84,9 @@ func newPIMWatchRuntime(chat *chatEnv) *pimWatchRuntime {
 		return runtime
 	}
 	runtime.service.PIM = reader
-	runtime.watcher = &pimwatch.Watcher{Store: store, PIM: reader, Ledger: pimWatchLedger{store: scheduler}, Locale: locale}
+	centroid := newPIMWatchCentroid(chat, store)
+	runtime.service.Centroid = centroid
+	runtime.watcher = &pimwatch.Watcher{Store: store, PIM: reader, Ledger: pimWatchLedger{store: scheduler}, Locale: locale, Centroid: centroid}
 	digester := &pimwatch.Digester{Store: store, PIM: reader, Locale: locale}
 	if resolver := identityLLMResolver(chat); resolver != nil {
 		digester.Model = pimDigestModel{snapshots: resolver}
@@ -104,6 +107,21 @@ func newPIMWatchClient(chat *chatEnv) pimwatch.PIMReader {
 		return nil
 	}
 	return client
+}
+
+// newPIMWatchCentroid returns a true nil without memory or an embedder, so the watch keeps its ladder
+// alone (docs/superpowers/specs/2026-11-03-urgency-centroid-design.md).
+func newPIMWatchCentroid(chat *chatEnv, store *pimwatch.Store) pimwatch.Centroid {
+	if chat.memoryClients == nil || chat.documentEmbedder == nil {
+		return nil
+	}
+	bank := &examplebank.Bank{Store: examplebank.TenantStore{Clients: chat.memoryClients}, Embedder: chat.documentEmbedder}
+	centroid, err := pimwatch.NewCentroidShadow(bank, store)
+	if err != nil {
+		slog.Error("mail watch: the urgency centroid's shadow is off", "error", err)
+		return nil
+	}
+	return centroid
 }
 
 const (
