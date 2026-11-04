@@ -47,7 +47,7 @@ func validSignInOrigins(cockpit, stream string) bool {
 	var parsed []*url.URL
 	for _, raw := range []string{cockpit, stream} {
 		u, err := url.Parse(raw)
-		if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || raw != u.Scheme+"://"+u.Host || strings.ContainsAny(raw, "*;,| \t\r\n\"'\\") {
+		if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || raw != u.Scheme+"://"+u.Host || strings.ContainsAny(raw, "*;,| \t\r\n\"'\\") {
 			return false
 		}
 		parsed = append(parsed, u)

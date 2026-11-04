@@ -37,6 +37,18 @@ func TestValidSignInOrigins(t *testing.T) {
 	}
 }
 
+func TestSignInMalformedSessionNeverReachesTheBrowser(t *testing.T) {
+	b := &proxySignInBrowser{}
+	h := signInProxyHandler(b)
+	for _, target := range []string{"https://aura.test:8444/sign-in/bad/", "https://aura.test/api/sign-in/signin-0123"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, signInProxyRequest(target, "alice"))
+		if rr.Code != http.StatusNotFound || b.checks.Load() != 0 {
+			t.Fatalf("%s status=%d ownership checks=%d", target, rr.Code, b.checks.Load())
+		}
+	}
+}
+
 func TestSignInRoutesWithoutABrowserAreNotFound(t *testing.T) {
 	h := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{}).Mux()
 	for _, target := range []string{"https://aura.test/api/sign-in/" + proxySignInSession, "https://aura.test:8444" + proxySignInPath} {
