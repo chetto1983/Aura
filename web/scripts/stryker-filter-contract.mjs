@@ -3,13 +3,27 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectTestName } from '../node_modules/@stryker-mutator/vitest-runner/dist/src/test-helpers.js';
-import { VitestTestRunner } from '../node_modules/@stryker-mutator/vitest-runner/dist/src/vitest-test-runner.js';
+import {
+  collectTestName,
+  VITEST_LEGACY_TEST_NAME_SEPARATOR,
+  VITEST_MODERN_TEST_NAME_SEPARATOR,
+} from '../node_modules/@stryker-mutator/vitest-runner/dist/src/test-helpers.js';
 
 const root = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
+// The runner chooses its separator in a private getter (#testNameSeparator in
+// vitest-test-runner.js): the modern one from Vitest 5 on. Pin the installed major so
+// a downgrade cannot silently send the legacy separator to a Vitest that ignores it.
+const vitestMajor = Number(
+  JSON.parse(readFileSync(join(root, 'node_modules/vitest/package.json'), 'utf8')).version.split(
+    '.',
+  )[0],
+);
+assert(
+  vitestMajor >= 5,
+  `the runner selects the modern separator only from Vitest 5; installed ${vitestMajor}`,
+);
 const sourceRoot = realpathSync(join(root, 'src'));
 const directory = mkdtempSync(join(sourceRoot, 'stryker-filter-contract-'));
-const runner = new VitestTestRunner({}, {}, '__stryker__');
 const task = {
   name: 'executes the selected test',
   suite: { name: 'inner suite', suite: { name: 'outer suite' } },
@@ -28,8 +42,8 @@ describe('outer suite', () => {
 `,
   );
   for (const [separator, expected] of [
-    [' ', 0],
-    [runner.testNameSeparator, 1],
+    [VITEST_LEGACY_TEST_NAME_SEPARATOR, 0],
+    [VITEST_MODERN_TEST_NAME_SEPARATOR, 1],
   ]) {
     const report = join(directory, `result-${String(expected)}.json`);
     const run = spawnSync(
