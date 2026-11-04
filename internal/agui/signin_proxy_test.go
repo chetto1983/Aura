@@ -257,7 +257,7 @@ func TestSignInReadinessIsOnlyReadableByTheCockpit(t *testing.T) {
 		rr := httptest.NewRecorder()
 		signInProxyHandler(b).ServeHTTP(rr, r)
 		if origin == "https://aura.test" {
-			if rr.Code != 204 || rr.Header().Get("Access-Control-Allow-Origin") != origin || rr.Header().Get("Access-Control-Allow-Credentials") != "true" {
+			if rr.Code != 204 || rr.Header().Get("Access-Control-Allow-Origin") != origin || rr.Header().Get("Access-Control-Allow-Credentials") != "true" || rr.Header().Get("Vary") != "Origin" {
 				t.Fatalf("readiness refused: %d %v", rr.Code, rr.Header())
 			}
 		} else if rr.Code != 403 || rr.Header().Get("Access-Control-Allow-Origin") != "" {

@@ -23,6 +23,7 @@ func TestValidSignInOrigins(t *testing.T) {
 		{"ftp://aura.test", "ftp://aura.test:8444", false},
 		{"https://", "https://aura.test:8444", false},
 		{"https://aura.test", "https://:8444", false},
+		{"https://", "https://:8444", false},
 		{"https://user@aura.test", "https://aura.test:8444", false},
 		{"https://aura.test/", "https://aura.test:8444", false},
 		{"https://aura.test", "https://aura.test:8444/x", false},
