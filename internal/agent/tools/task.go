@@ -165,6 +165,7 @@ func (t *TaskTool) Spec() Spec {
 		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active, paused and awaiting-approval tasks; action=cancel/run_now/pause/resume operate on a task_id. " +
 			"The scheduler pauses a task by itself after repeated failed runs; list marks it, and it should be resumed only once the cause is fixed. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
+			"Before scheduling, make sure the task has everything it will need when it fires: when (time or cadence), what (the reminder text or a self-contained job goal), where (the channel), and for a message the exact recipient and text. A scheduled run starts in a fresh session and cannot ask anyone anything. If any of these is missing or ambiguous in the request, ask the operator one question about it, time first, and schedule only after the answer. Never invent a time or a recipient. " +
 			"A reminder or message the operator wants later on a channel (\"remind me on WhatsApp in 10 minutes\", \"email me tomorrow\", \"message me on Telegram in an hour\") is a reminder task with notify set to that channel: at fire time the scheduler delivers it to the operator's own WhatsApp, email or Telegram. Never send it now with a messaging tool, and never look up the operator's contact for it. " +
 			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
@@ -222,6 +223,9 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	}
 	if a.Kind == "" {
 		return ToolResult{}, fmt.Errorf("task schedule: kind is required")
+	}
+	if err := requireTaskPayload(a.Kind, a.Payload); err != nil {
+		return ToolResult{}, err
 	}
 	if strings.TrimSpace(a.Notify) == "" {
 		return taskNotifyChoiceRequiredResult(), nil

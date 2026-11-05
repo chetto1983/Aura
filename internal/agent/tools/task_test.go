@@ -384,7 +384,7 @@ func TestTaskStoreErrorPropagates(t *testing.T) {
 	sentinel := errors.New("db down")
 	store := &fakeTaskStore{createErr: sentinel}
 	tool := &TaskTool{Store: store}
-	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":5,"kind":"reminder","notify":"stdout"}`))
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":5,"kind":"reminder","payload":{"text":"drink water"},"notify":"stdout"}`))
 	if !errors.Is(err, sentinel) {
 		t.Errorf("store error must propagate, got %v", err)
 	}
