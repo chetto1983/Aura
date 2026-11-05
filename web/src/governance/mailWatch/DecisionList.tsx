@@ -16,6 +16,7 @@ import {
   ruleInputFrom,
   ruleOnFile,
   type DecisionGroup,
+  type RuleDraft,
 } from './mailWatchLogic';
 import { TierMark } from './TierControls';
 
@@ -81,7 +82,12 @@ export function DecisionList({
 
   function offerFor(row: MailWatchDecision): AlwaysOffer | null {
     if (!canTakeRule(row) || hasThisRule(rules, row)) return null;
-    const draft = { key: row.from, tier: row.tier, labelId: row.label_id ?? '' };
+    const input = ruleInputFrom(row);
+    const draft: RuleDraft = {
+      key: input.key,
+      tier: input.tier ?? '',
+      labelId: input.label_id ?? '',
+    };
     const count = previewRule(draft, rows, rules, labels);
     return {
       preview: count === 0 ? null : t('governance.mailWatch.row.alwaysPreview', { count, when }),

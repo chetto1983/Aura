@@ -208,6 +208,19 @@ describe('previewRule', () => {
     expect(previewRule(draft, [decision({ tier: 'now', label_id: 'l1' })], [], labels)).toBe(1);
   });
 
+  it('a rule with a discard label counts the rows it would discard', () => {
+    const draft = { key: 'ada@example.com', tier: '', labelId: 'l1' } as const;
+    const spam = label({ discard: true });
+    const rows = [
+      decision({ tier: 'later', label_id: 'l1' }),
+      decision({ tier: 'later', label_id: 'l1', discarded: true }),
+      decision({ tier: 'now', label_id: 'l1', discarded: true }),
+    ];
+    expect(previewRule(draft, rows, [], [spam])).toBe(2);
+    expect(previewRule({ ...draft, tier: 'now' }, rows, [], [spam])).toBe(2);
+    expect(previewRule(draft, rows, [], [label({ discard: true, tier: 'later' })])).toBe(1);
+  });
+
   it('prefers the tier a rule states over its label tier', () => {
     const draft = { key: 'ada@example.com', tier: 'now', labelId: 'l1' } as const;
     const row = decision({ tier: 'now', label_id: 'l1' });

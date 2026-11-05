@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import '../../../i18n/i18n';
 import {
   CORRECT,
+  DECISIONS,
   dateInput,
   itemOf,
   openDay,
@@ -20,6 +21,7 @@ import {
   mailWatchServer,
   rule,
   settled,
+  watchDay,
 } from '../../../test/mailWatchServer';
 
 // What a correction changes, what it teaches, and the one-click rule a row offers.
@@ -106,6 +108,33 @@ describe('correcting one mail', () => {
       expect(server.writes('POST', CORRECT)[0]?.body).toMatchObject({ label_id: '' });
     });
     expect(await screen.findByRole('heading', { name: /To sort/ })).toBeTruthy();
+  });
+
+  it('moves the row to the discarded list when the label discards', async () => {
+    let moved = false;
+    server.on('GET /api/mail-watch/labels', () => ({
+      body: [label({ id: 'spam', name: 'Spam', discard: true })],
+    }));
+    server.on(`POST ${CORRECT}`, () => {
+      moved = true;
+      return { body: { tier: 'later', label_id: 'spam', discarded: true } };
+    });
+    server.on(DECISIONS, (call) => {
+      const mine = decision({ subject: 'One', tier: 'later', label_id: 'spam', discarded: true });
+      if (call.query.includes('discarded=1'))
+        return { body: watchDay(moved ? [mine] : [], undefined, 1) };
+      return {
+        body: watchDay(moved ? [] : [decision({ subject: 'One' })], undefined, moved ? 1 : 0),
+      };
+    });
+    openDay();
+    await screen.findByText('One');
+    fireEvent.click(within(itemOf('One')).getByRole('combobox', { name: 'Label' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Spam' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discarded (1)' }));
+    expect(await screen.findByText('One')).toBeTruthy();
+    expect(screen.getByText('Discarded')).toBeTruthy();
+    expect(tierOf('One')).toBe('Later');
   });
 
   it('corrects with the tier control too, and pressing the current tier does nothing', async () => {

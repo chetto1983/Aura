@@ -41,10 +41,14 @@ const STATUS_KEY = ['mail-watch', 'status'] as const;
 const RULES_KEY = ['mail-watch', 'rules'] as const;
 const LABELS_KEY = ['mail-watch', 'labels'] as const;
 
-function decisionsQuery(accountId: string, day: string | null) {
+function dayKey(accountId: string, day: string | null) {
+  return ['mail-watch', 'decisions', accountId, day ?? 'today'] as const;
+}
+
+function decisionsQuery(accountId: string, day: string | null, discarded: boolean) {
   return {
-    queryKey: ['mail-watch', 'decisions', accountId, day ?? 'today'],
-    queryFn: () => getDecisions(accountId, day),
+    queryKey: [...dayKey(accountId, day), discarded ? 'discarded' : 'kept'],
+    queryFn: () => getDecisions(accountId, day, discarded),
     retry: false,
   };
 }
@@ -66,14 +70,14 @@ export function useLabels() {
   return useQuery({ queryKey: LABELS_KEY, queryFn: listLabels, retry: false });
 }
 
-export function useDecisions(accountId: string, day: string | null) {
-  return useQuery(decisionsQuery(accountId, day));
+export function useDecisions(accountId: string, day: string | null, discarded: boolean) {
+  return useQuery(decisionsQuery(accountId, day, discarded));
 }
 
 /** The same day across several accounts, on the cache useDecisions fills. `ready` is false until
  * all have answered, so a count never reads as final with an account still out. */
 export function useDecisionsOfDay(accountIds: readonly string[], day: string | null) {
-  const results = useQueries({ queries: accountIds.map((id) => decisionsQuery(id, day)) });
+  const results = useQueries({ queries: accountIds.map((id) => decisionsQuery(id, day, false)) });
   return {
     ready: accountIds.length > 0 && results.every((result) => result.isSuccess),
     decisions: results.flatMap((result) => result.data?.decisions ?? []),
@@ -145,6 +149,11 @@ function corrected(
   };
 }
 
+/** Whether a row lives in the discarded list, which is where its optimistic write goes. */
+function listOf(row: MailWatchDecision): boolean {
+  return row.discarded === true;
+}
+
 export function useCorrection(
   accountId: string,
   day: string | null,
@@ -154,9 +163,9 @@ export function useCorrection(
   },
 ) {
   const queryClient = useQueryClient();
-  const { queryKey } = decisionsQuery(accountId, day);
 
   function writeRow(row: MailWatchDecision) {
+    const { queryKey } = decisionsQuery(accountId, day, listOf(row));
     queryClient.setQueryData<MailWatchDay>(queryKey, (answer) =>
       answer === undefined
         ? answer
@@ -179,7 +188,7 @@ export function useCorrection(
         ...(labelId === undefined ? {} : { label_id: labelId }),
       }),
     onMutate: async ({ row, tier, labelId }) => {
-      await queryClient.cancelQueries({ queryKey });
+      await queryClient.cancelQueries({ queryKey: dayKey(accountId, day) });
       writeRow(corrected(row, tier, labelId));
     },
     onError: (_error, { row }) => {
@@ -188,6 +197,10 @@ export function useCorrection(
     },
     onSuccess: (answer, { row, labelId }) => {
       writeRow(corrected(row, answer.tier, labelId));
+      // Only a row that changed lists is read again: any other correction is the write above.
+      if ((answer.discarded === true) !== listOf(row)) {
+        void queryClient.invalidateQueries({ queryKey: dayKey(accountId, day) });
+      }
       if (answer.rule === undefined) return undefined;
       const change = ruleChange(queryClient, answer.rule);
       // A correction that agrees with the rule on file taught nothing new.

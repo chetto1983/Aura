@@ -71,12 +71,16 @@ export interface MailWatchDecision {
   readonly decided_at: string;
   /** The tier the urgency centroid would have given, in shadow, only where it differs from the rules. */
   readonly centroid_tier?: MailWatchTier;
+  /** The mail was discarded: it is `later`, and the digest only counts it. */
+  readonly discarded?: boolean;
 }
 
 export interface MailWatchDay {
   /** YYYY-MM-DD in the identity's zone. */
   readonly day: string;
   readonly decisions: readonly MailWatchDecision[];
+  /** How many mails of the day were discarded, whichever of the two lists `decisions` is. */
+  readonly discarded: number;
 }
 
 export interface MailWatchRule {
@@ -110,6 +114,7 @@ export interface MailWatchCorrection {
 export interface MailWatchCorrected {
   readonly tier: MailWatchTier;
   readonly label_id?: string;
+  readonly discarded?: boolean;
   /** Set when this correction taught a rule. */
   readonly rule?: MailWatchRule;
   /** The rule is new. One merged into a rule on file holds the person's earlier words. */
@@ -159,10 +164,18 @@ export async function disableMailWatch(accountId: string): Promise<void> {
   await sendJSON<unknown>('POST', `${accountPath(accountId)}/disable`);
 }
 
-/** A day of decisions, newest first. A null day is today in the identity's zone, which only the
- * server knows, so the browser's date is never sent for it and the answer names the day read. */
-export function getDecisions(accountId: string, day: string | null): Promise<MailWatchDay> {
-  const query = day === null ? '' : `?day=${encodeURIComponent(day)}`;
+/** A day of decisions, newest first: the discarded mail's list, or the list of all the rest. A
+ * null day is today in the identity's zone, which only the server knows, so the browser's date is
+ * never sent for it and the answer names the day read. */
+export function getDecisions(
+  accountId: string,
+  day: string | null,
+  discarded: boolean,
+): Promise<MailWatchDay> {
+  const params = new URLSearchParams();
+  if (day !== null) params.set('day', day);
+  if (discarded) params.set('discarded', '1');
+  const query = params.size === 0 ? '' : `?${params.toString()}`;
   return sendJSON<MailWatchDay>('GET', `${accountPath(accountId)}/decisions${query}`);
 }
 

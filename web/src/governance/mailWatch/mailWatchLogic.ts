@@ -114,7 +114,8 @@ function domainOf(address: string): string {
 /** How many of these decisions a rule would have changed, read the way DecideMail reads a rule in
  * internal/pimwatch/ladder.go: a sender rule beats a domain rule outright, a label's tier stands
  * in for a rule's missing tier, and an event is never matched. A mail the person corrected is
- * left out, because their word on that one mail stands whatever the rule says. */
+ * left out, because their word on that one mail stands whatever the rule says. A label that
+ * discards, given with no tier at all, files a mail `later` and discards it. */
 export function previewRule(
   draft: RuleDraft,
   decisions: readonly MailWatchDecision[],
@@ -123,8 +124,10 @@ export function previewRule(
 ): number {
   const parsed = parseRuleKey(draft.key);
   if (parsed === null || !draftIsComplete(draft)) return 0;
-  const labelTier = labels.find((label) => label.id === draft.labelId)?.tier;
-  const tier = draft.tier === '' ? labelTier : draft.tier;
+  const given = labels.find((label) => label.id === draft.labelId);
+  const discards = draft.tier === '' && given?.tier === undefined && given?.discard === true;
+  const givenTier = draft.tier === '' ? given?.tier : draft.tier;
+  const tier = discards ? 'later' : givenTier;
   const senderRules = new Set(
     rules.filter((rule) => rule.key_kind === 'sender').map((rule) => rule.key),
   );
@@ -138,15 +141,17 @@ export function previewRule(
     if (!matches) return false;
     const changesTier = tier !== undefined && tier !== row.tier;
     const changesLabel = draft.labelId !== '' && draft.labelId !== row.label_id;
-    return changesTier || changesLabel;
+    return changesTier || changesLabel || (discards && row.discarded !== true);
   }).length;
 }
 
 /** The rule this decision would become, for "from now on, always like this". */
 export function ruleInputFrom(row: MailWatchDecision): MailWatchRuleInput {
+  // A discarded mail's tier came from its label, so the rule gives the label alone and discards too.
+  const byLabel = row.discarded === true && row.label_id !== undefined;
   return {
     key: row.from,
-    tier: row.tier,
+    ...(byLabel ? {} : { tier: row.tier }),
     ...(row.label_id === undefined ? {} : { label_id: row.label_id }),
   };
 }

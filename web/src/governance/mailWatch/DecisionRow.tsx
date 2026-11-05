@@ -249,6 +249,9 @@ function RowReason({
           })}
         </span>
       )}
+      {row.discarded === true ? (
+        <Badge className="mt-1">{t('governance.mailWatch.decide.row.discarded')}</Badge>
+      ) : null}
       {row.auth_failed ? (
         <Badge variant="warning" className="mt-1">
           <TriangleAlert aria-hidden="true" />

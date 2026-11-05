@@ -41,7 +41,8 @@ interface DecisionsViewProps {
 
 export function DecisionsView({ accountId, day, onDayChange, claimFocus }: DecisionsViewProps) {
   const { t } = useTranslation();
-  const decisions = useDecisions(accountId, day);
+  const [showDiscarded, setShowDiscarded] = useState(false);
+  const decisions = useDecisions(accountId, day, showDiscarded);
   const labels = useLabels();
   const rules = useRules();
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -59,10 +60,26 @@ export function DecisionsView({ accountId, day, onDayChange, claimFocus }: Decis
   });
   const when = useDayPhrase(day);
   const rows = decisions.data?.decisions ?? [];
+  const discardedCount = decisions.data?.discarded ?? 0;
 
   return (
     <div className="@container/day flex min-h-full flex-col">
       <DayHeader day={day ?? decisions.data?.day ?? null} rows={rows} onDayChange={onDayChange} />
+      {discardedCount > 0 || showDiscarded ? (
+        <div className="px-4 pb-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-pressed={showDiscarded}
+            onClick={() => {
+              setShowDiscarded((shown) => !shown);
+            }}
+          >
+            {t('governance.mailWatch.decide.decisions.discarded')} ({discardedCount})
+          </Button>
+        </div>
+      ) : null}
       <div className="flex-1">
         {decisions.isPending || labels.isPending ? (
           <DayPending />

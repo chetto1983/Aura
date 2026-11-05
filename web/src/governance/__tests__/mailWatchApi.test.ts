@@ -59,13 +59,20 @@ describe('routes', () => {
   });
 
   it('asks for today by leaving the day out, because only the server knows the zone', async () => {
-    await getDecisions('a/b', null);
+    await getDecisions('a/b', null, false);
     expect(server.calls.at(-1)?.query).toBe('');
   });
 
   it('asks for a day by name', async () => {
-    await getDecisions('a/b', '2026-10-28');
+    await getDecisions('a/b', '2026-10-28', false);
     expect(server.calls.at(-1)?.query).toBe('?day=2026-10-28');
+  });
+
+  it('asks for the discarded mail of a day apart from the rest', async () => {
+    await getDecisions('a/b', '2026-10-28', true);
+    expect(server.calls.at(-1)?.query).toBe('?day=2026-10-28&discarded=1');
+    await getDecisions('a/b', null, true);
+    expect(server.calls.at(-1)?.query).toBe('?discarded=1');
   });
 
   it('turns a watch on and off, escaping the account', async () => {
@@ -158,7 +165,7 @@ describe('Idempotency-Key', () => {
     await getMailWatch();
     await listRules();
     await listLabels();
-    await getDecisions('work', null);
+    await getDecisions('work', null, false);
     const reads = seen.splice(0);
     await saveMailWatchSettings({ digest_hour: 7, daily_alert_cap: 3 });
     await enableMailWatch('work');

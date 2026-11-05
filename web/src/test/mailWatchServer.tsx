@@ -47,8 +47,12 @@ export function decision(fields: Partial<MailWatchDecision> = {}): MailWatchDeci
 }
 
 /** The answer of the decisions route. */
-export function watchDay(rows: readonly MailWatchDecision[], day = '2026-11-01'): MailWatchDay {
-  return { day, decisions: rows };
+export function watchDay(
+  rows: readonly MailWatchDecision[],
+  day = '2026-11-01',
+  discarded = 0,
+): MailWatchDay {
+  return { day, decisions: rows, discarded };
 }
 
 export function rule(fields: Partial<MailWatchRule> = {}): MailWatchRule {

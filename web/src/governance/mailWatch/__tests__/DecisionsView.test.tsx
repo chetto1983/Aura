@@ -122,6 +122,33 @@ describe('the states of a day', () => {
   });
 });
 
+describe('the discarded mail', () => {
+  it('shows the discarded mail under its toggle', async () => {
+    server.on(DECISIONS, (call) => ({
+      body: call.query.includes('discarded=1')
+        ? watchDay([decision({ subject: 'Junk', tier: 'later', discarded: true })], '2026-11-01', 2)
+        : watchDay([decision({ subject: 'Kept' })], '2026-11-01', 2),
+    }));
+    openDay();
+    await screen.findByText('Kept');
+    expect(screen.queryByText('Junk')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Discarded (2)' }));
+    expect(await screen.findByText('Junk')).toBeTruthy();
+    expect(screen.queryByText('Kept')).toBeNull();
+    expect(screen.getByText('Discarded')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Discarded (2)' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  it('has no toggle on a day with none', async () => {
+    theDay(server, decision({ subject: 'Kept' }));
+    openDay();
+    await screen.findByText('Kept');
+    expect(screen.queryByRole('button', { name: /^Discarded/ })).toBeNull();
+  });
+});
+
 describe('the groups', () => {
   it('runs now, then labels, then the mail with no label, and hides what is empty', async () => {
     server.on('GET /api/mail-watch/labels', () => ({

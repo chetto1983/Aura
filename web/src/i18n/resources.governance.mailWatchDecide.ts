@@ -9,6 +9,8 @@ export const mailWatchDecideEn = {
   discardHint: 'Discarded mail leaves the list, and the digest counts it.',
   noDescription: 'Without a description the model skips it',
   reserved: 'Reserved name: the model skips it',
+  decisions: { discarded: 'Discarded' },
+  row: { discarded: 'Discarded' },
 };
 
 export const mailWatchDecideIt = {
@@ -19,4 +21,6 @@ export const mailWatchDecideIt = {
   discardHint: 'Le mail scartate escono dalla lista e il riepilogo le conta.',
   noDescription: 'Senza descrizione il modello non la usa',
   reserved: 'Nome riservato: il modello non la usa',
+  decisions: { discarded: 'Scartate' },
+  row: { discarded: 'Scartata' },
 };
