@@ -180,8 +180,9 @@ type Decision struct {
 
 // DecideMail walks rungs 1 to 4 and 6 of the ladder (spec §5.3). A rule wins over everything,
 // failed authentication included, and the mark stays on the verdict so the person sees it. A rule
-// that only gives a label lets the ladder go on, and the mail keeps the label, unless the label
-// discards: then the mail is `later` and discarded, by the rule.
+// that only gives a label lets the ladder go on, and the mail keeps the label. A label that
+// discards wins over its own tier: the mail is `later` and discarded, by the rule. Only a tier
+// the rule itself states beats the discard.
 //
 // `providerImportant` counts only for someone the account has written to: on Graph and IMAP the
 // sender sets it, and in the pilot 23 of the 25 mails it marked were `later`. Bulk mail is not
@@ -191,12 +192,12 @@ func DecideMail(book Book, from string, s Signals) Decision {
 	decision := Decision{AuthFailed: s.AuthFailed}
 	if rule, ok := book.match(from); ok {
 		decision.LabelID = rule.LabelID
-		if tier := book.tierOf(rule); tier != "" {
-			decision.Tier, decision.By = tier, ByRule
+		if rule.Tier == "" && book.labels[rule.LabelID].Discard {
+			decision.Tier, decision.By, decision.Discarded = TierLater, ByRule, true
 			return decision
 		}
-		if book.labels[rule.LabelID].Discard {
-			decision.Tier, decision.By, decision.Discarded = TierLater, ByRule, true
+		if tier := book.tierOf(rule); tier != "" {
+			decision.Tier, decision.By = tier, ByRule
 			return decision
 		}
 	}
