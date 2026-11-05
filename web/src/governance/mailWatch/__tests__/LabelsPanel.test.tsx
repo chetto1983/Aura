@@ -70,7 +70,12 @@ describe('adding a label', () => {
     fireEvent.change(nameField(), { target: { value: '  Client  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add label' }));
     await waitFor(() => {
-      expect(server.writes('POST', LABELS)[0]?.body).toEqual({ name: 'Client' });
+      expect(server.writes('POST', LABELS)[0]?.body).toEqual({
+        name: 'Client',
+        tier: '',
+        description: '',
+        discard: false,
+      });
     });
     await waitFor(() => {
       expect((nameField() as HTMLInputElement).value).toBe('');
@@ -85,7 +90,12 @@ describe('adding a label', () => {
     await chooseOption('Tier', 'Later');
     fireEvent.click(screen.getByRole('button', { name: 'Add label' }));
     await waitFor(() => {
-      expect(server.writes('POST', LABELS)[0]?.body).toEqual({ name: 'Ads', tier: 'later' });
+      expect(server.writes('POST', LABELS)[0]?.body).toEqual({
+        name: 'Ads',
+        tier: 'later',
+        description: '',
+        discard: false,
+      });
     });
   });
 
@@ -155,12 +165,14 @@ describe('renaming a label', () => {
       expect(server.writes('PUT', `${LABELS}/a`)[0]?.body).toEqual({
         name: 'Customers',
         tier: 'now',
+        description: '',
+        discard: false,
       });
     });
     expect(await screen.findByRole('button', { name: 'Rename Client' })).toBeTruthy();
   });
 
-  it('clears a tier by leaving it out', async () => {
+  it('clears a tier by sending it empty, because a PUT keeps what it leaves out', async () => {
     server.on(`PUT ${LABELS}/a`, () => ({ body: label() }));
     renderWatch(<LabelsPanel />);
     const item = await startRename();
@@ -168,7 +180,12 @@ describe('renaming a label', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'No tier' }));
     fireEvent.click(within(item).getByRole('button', { name: 'Save' }));
     await waitFor(() => {
-      expect(server.writes('PUT', `${LABELS}/a`)[0]?.body).toEqual({ name: 'Client' });
+      expect(server.writes('PUT', `${LABELS}/a`)[0]?.body).toEqual({
+        name: 'Client',
+        tier: '',
+        description: '',
+        discard: false,
+      });
     });
   });
 
@@ -194,6 +211,79 @@ describe('renaming a label', () => {
     renderWatch(<LabelsPanel />);
     await screen.findByText(/No labels yet/);
     expect(shownOption('Tier')).toBe('No tier');
+  });
+});
+
+describe('a label for the decision model', () => {
+  it('adds a label with a description and discard', async () => {
+    server.on(`POST ${LABELS}`, () => ({ body: label() }));
+    renderWatch(<LabelsPanel />);
+    await screen.findByText(/No labels yet/);
+    fireEvent.change(nameField(), { target: { value: 'Ads' } });
+    const field = screen.getByLabelText('Description') as HTMLTextAreaElement;
+    expect(field.maxLength).toBe(300);
+    expect(screen.getByText(/The model reads only this/)).toBeTruthy();
+    fireEvent.change(field, { target: { value: '  Offers sent to a list.  ' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Discard' }));
+    expect(screen.getByText(/Discarded mail leaves the list/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add label' }));
+    await waitFor(() => {
+      expect(server.writes('POST', LABELS)[0]?.body).toEqual({
+        name: 'Ads',
+        tier: '',
+        description: 'Offers sent to a list.',
+        discard: true,
+      });
+    });
+  });
+
+  it('edits a description and keeps what the label already says', async () => {
+    server.on(`GET ${LABELS}`, () => ({
+      body: [label({ id: 'a', name: 'Ads', description: 'Old.', discard: true })],
+    }));
+    server.on(`PUT ${LABELS}/a`, () => ({ body: label() }));
+    renderWatch(<LabelsPanel />);
+    const rename = await screen.findByRole('button', { name: 'Rename Ads' });
+    expect(rowHolding('Ads').getByText('Discard')).toBeTruthy();
+    fireEvent.click(rename);
+    const item = screen.getByRole('listitem');
+    const field = within(item).getByLabelText('Description') as HTMLTextAreaElement;
+    expect(field.value).toBe('Old.');
+    expect(within(item).getByRole('radio', { name: 'Discard' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    fireEvent.change(field, { target: { value: 'New.' } });
+    fireEvent.click(within(item).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(server.writes('PUT', `${LABELS}/a`)[0]?.body).toEqual({
+        name: 'Ads',
+        tier: '',
+        description: 'New.',
+        discard: true,
+      });
+    });
+  });
+
+  it('marks a label with no description', async () => {
+    server.on(`GET ${LABELS}`, () => ({
+      body: [
+        label({ id: 'a', name: 'Client', description: 'Customers asking for quotes.' }),
+        label({ id: 'b', name: 'Ads', position: 1 }),
+      ],
+    }));
+    renderWatch(<LabelsPanel />);
+    await screen.findByText('Client');
+    expect(rowHolding('Ads').getByText('Without a description the model skips it')).toBeTruthy();
+    expect(rowHolding('Client').queryByText('Without a description the model skips it')).toBeNull();
+  });
+
+  it('flags a reserved name', async () => {
+    server.on(`GET ${LABELS}`, () => ({
+      body: [label({ id: 'a', name: 'None', description: 'Anything at all.' })],
+    }));
+    renderWatch(<LabelsPanel />);
+    await screen.findByText('None');
+    expect(rowHolding('None').getByText('Reserved name: the model skips it')).toBeTruthy();
   });
 });
 

@@ -70,7 +70,7 @@ export function labelRule(labelId: string, fields: Partial<MailWatchRule> = {}):
 }
 
 export function label(fields: Partial<MailWatchLabel> = {}): MailWatchLabel {
-  return { id: 'l1', name: 'Client', position: 0, ...fields };
+  return { id: 'l1', name: 'Client', position: 0, description: '', discard: false, ...fields };
 }
 
 export function account(fields: Partial<MailWatchAccount> = {}): MailWatchAccount {

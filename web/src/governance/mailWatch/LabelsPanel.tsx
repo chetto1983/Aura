@@ -2,14 +2,17 @@ import { useId, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { MailWatchLabel, MailWatchLabelInput } from '../mailWatchApi';
-import { errorSentence, type TierChoice } from './mailWatchLogic';
+import { errorSentence, reservedLabelName, type TierChoice } from './mailWatchLogic';
 import { PanelHeading, PanelPending, RemoveConfirm } from './PanelParts';
 import { TierBadge, TierSelect } from './TierControls';
 import { useAddLabel, useLabels, useRemoveLabel, useRules, useUpdateLabel } from './useMailWatch';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 // LabelsPanel is the person's words for what mail is about (spec §5.8). A label takes an optional
 // tier and then acts as a rule. Removing one takes its rules with it, on the server, so the
@@ -17,6 +20,8 @@ import { Label } from '@/components/ui/label';
 
 /** The labels table's CHECK, in characters. */
 const LABEL_NAME_MAX = 60;
+/** The labels table's CHECK on a description, in characters. */
+const LABEL_DESCRIPTION_MAX = 300;
 
 export function LabelsPanel() {
   const { t } = useTranslation();
@@ -115,9 +120,20 @@ interface LabelRowProps {
 
 function LabelRow({ label, onEdit, onRemove }: LabelRowProps) {
   const { t } = useTranslation();
+  const note = reservedLabelName(label.name)
+    ? t('governance.mailWatch.decide.reserved')
+    : label.description.trim() === ''
+      ? t('governance.mailWatch.decide.noDescription')
+      : null;
   return (
     <li className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-2 py-1 pl-3 pr-1">
-      <span className="min-w-0 flex-1 break-words text-[15px] text-text">{label.name}</span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="break-words text-[15px] text-text">{label.name}</span>
+        {note === null ? null : <span className="text-[13px] text-text-muted">{note}</span>}
+      </div>
+      {label.discard ? (
+        <Badge variant="secondary">{t('governance.mailWatch.decide.discard')}</Badge>
+      ) : null}
       {label.tier === undefined ? null : <TierBadge tier={label.tier} />}
       <Button
         type="button"
@@ -189,9 +205,17 @@ function LabelForm({
   onCancel,
 }: LabelFormProps) {
   const { t } = useTranslation();
-  const ids = { name: useId(), nameError: useId(), tier: useId() };
+  const ids = {
+    name: useId(),
+    nameError: useId(),
+    tier: useId(),
+    description: useId(),
+    descriptionHint: useId(),
+  };
   const [name, setName] = useState(initial?.name ?? '');
   const [tier, setTier] = useState<TierChoice>(initial?.tier ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [discard, setDiscard] = useState(initial?.discard ?? false);
   const [submitted, setSubmitted] = useState(false);
   const trimmed = name.trim();
   const nameInvalid = trimmed === '' || Array.from(trimmed).length > LABEL_NAME_MAX;
@@ -205,7 +229,7 @@ function LabelForm({
         event.preventDefault();
         setSubmitted(true);
         if (nameInvalid) return;
-        onSubmit({ name: trimmed, ...(tier === '' ? {} : { tier }) });
+        onSubmit({ name: trimmed, tier, description: description.trim(), discard });
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
@@ -231,6 +255,23 @@ function LabelForm({
           <TierSelect id={ids.tier} value={tier} onChange={setTier} />
         </div>
       </div>
+      <div className="flex min-w-0 flex-col gap-1">
+        <Label htmlFor={ids.description}>{t('governance.mailWatch.decide.description')}</Label>
+        <Textarea
+          id={ids.description}
+          rows={2}
+          maxLength={LABEL_DESCRIPTION_MAX}
+          value={description}
+          aria-describedby={ids.descriptionHint}
+          onChange={(event) => {
+            setDescription(event.currentTarget.value);
+          }}
+        />
+        <p id={ids.descriptionHint} className="text-[13px] text-text-muted">
+          {t('governance.mailWatch.decide.descriptionHint')}
+        </p>
+      </div>
+      <DiscardSwitch value={discard} onChange={setDiscard} />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending} aria-busy={pending || undefined}>
           {pending ? <Spinner /> : null}
@@ -248,5 +289,43 @@ function LabelForm({
         )}
       </div>
     </form>
+  );
+}
+
+/** Keep or discard, as one choice. Radix reports '' when the pressed side is pressed again, which
+ * changes nothing: a label always does one or the other. */
+function DiscardSwitch({
+  value,
+  onChange,
+}: {
+  readonly value: boolean;
+  readonly onChange: (discard: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const hint = useId();
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <ToggleGroup
+        type="single"
+        role="radiogroup"
+        spacing={1}
+        value={value ? 'discard' : 'keep'}
+        aria-describedby={hint}
+        onValueChange={(next: string) => {
+          if (next !== '') onChange(next === 'discard');
+        }}
+        className="gap-0.5 rounded-[var(--radius-sm)] border border-border bg-surface p-0.5"
+      >
+        <ToggleGroupItem value="keep" className="h-9 px-3 text-[13px] font-semibold">
+          {t('governance.mailWatch.decide.keep')}
+        </ToggleGroupItem>
+        <ToggleGroupItem value="discard" className="h-9 px-3 text-[13px] font-semibold">
+          {t('governance.mailWatch.decide.discard')}
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <p id={hint} className="min-w-0 text-[13px] text-text-muted">
+        {t('governance.mailWatch.decide.discardHint')}
+      </p>
+    </div>
   );
 }

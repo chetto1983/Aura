@@ -79,8 +79,13 @@ describe('routes', () => {
     await saveMailWatchSettings({ digest_hour: 7, daily_alert_cap: 3 });
     await correctDecision('work', { resource: 'mail', item_id: 'm1', tier: 'now' });
     await addRule({ key: 'x.org', tier: 'later' });
-    await addLabel({ name: 'Client' });
-    await updateLabel('l/1', { name: 'Clients', tier: 'now' });
+    await addLabel({ name: 'Client', tier: '', description: '', discard: false });
+    await updateLabel('l/1', {
+      name: 'Clients',
+      tier: 'now',
+      description: '',
+      discard: false,
+    });
     expect(server.writes('PUT', '/api/mail-watch/settings')[0]?.body).toEqual({
       digest_hour: 7,
       daily_alert_cap: 3,
@@ -92,10 +97,17 @@ describe('routes', () => {
       key: 'x.org',
       tier: 'later',
     });
-    expect(server.writes('POST', '/api/mail-watch/labels')[0]?.body).toEqual({ name: 'Client' });
+    expect(server.writes('POST', '/api/mail-watch/labels')[0]?.body).toEqual({
+      name: 'Client',
+      tier: '',
+      description: '',
+      discard: false,
+    });
     expect(server.writes('PUT', '/api/mail-watch/labels/l%2F1')[0]?.body).toEqual({
       name: 'Clients',
       tier: 'now',
+      description: '',
+      discard: false,
     });
   });
 
@@ -154,8 +166,8 @@ describe('Idempotency-Key', () => {
     await correctDecision('work', { resource: 'mail', item_id: 'm1', tier: 'now' });
     await addRule({ key: 'x.org', tier: 'later' });
     await removeRule('r1');
-    await addLabel({ name: 'Client' });
-    await updateLabel('l1', { name: 'Clients' });
+    await addLabel({ name: 'Client', tier: '', description: '', discard: false });
+    await updateLabel('l1', { name: 'Clients', tier: '', description: '', discard: false });
     await removeLabel('l1');
     window.fetch = nativeFetch;
 

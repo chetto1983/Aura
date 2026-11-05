@@ -94,6 +94,9 @@ export interface MailWatchLabel {
   readonly name: string;
   readonly tier?: MailWatchTier;
   readonly position: number;
+  /** The only text of the label the decision model reads. */
+  readonly description: string;
+  readonly discard: boolean;
 }
 
 export interface MailWatchCorrection {
@@ -125,9 +128,12 @@ export interface MailWatchRuleInput {
   readonly label_id?: string;
 }
 
+/** A PUT keeps a field it leaves out, so a tier of '' is how a save clears one. */
 export interface MailWatchLabelInput {
   readonly name: string;
-  readonly tier?: MailWatchTier;
+  readonly tier: MailWatchTier | '';
+  readonly description: string;
+  readonly discard: boolean;
 }
 
 function accountPath(accountId: string): string {

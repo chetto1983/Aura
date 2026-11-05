@@ -4,7 +4,10 @@
 // `invalid` and `overview.reason` keys are reached by template from the wire's fixed codes, so a
 // new code needs a key here in both locales.
 
+import { mailWatchDecideEn, mailWatchDecideIt } from './resources.governance.mailWatchDecide';
+
 export const mailWatchEn = {
+  decide: mailWatchDecideEn,
   title: 'Mail and calendar watch',
   panelLoading: 'Loading…',
   switch: {
@@ -223,6 +226,8 @@ export const mailWatchEn = {
     invalid_rule_key: 'Write a whole address, or a domain such as company.com.',
     invalid_label_name: 'A label has a name of 1 to 60 characters.',
     label_exists: 'A label with that name already exists.',
+    label_reserved: 'That name is the model\'s "none" option. Choose another.',
+    invalid_label_description: 'A description is at most 300 characters.',
     invalid_digest_hour: 'The digest hour is from 0 to 23.',
     invalid_alert_cap: 'The daily alerts are from 0 to 100.',
     unknown: 'That cannot be saved as it is. Check it and try again.',
@@ -230,6 +235,7 @@ export const mailWatchEn = {
 } as const;
 
 export const mailWatchIt = {
+  decide: mailWatchDecideIt,
   title: 'Controllo di posta e calendario',
   panelLoading: 'Caricamento…',
   switch: {
@@ -449,6 +455,8 @@ export const mailWatchIt = {
     invalid_rule_key: 'Scrivi un indirizzo intero, o un dominio come azienda.it.',
     invalid_label_name: "Un'etichetta ha un nome da 1 a 60 caratteri.",
     label_exists: "Esiste già un'etichetta con questo nome.",
+    label_reserved: "Questo nome è l'opzione «nessuna» del modello. Scegline un altro.",
+    invalid_label_description: 'Una descrizione è lunga al massimo 300 caratteri.',
     invalid_digest_hour: "L'ora del riepilogo va da 0 a 23.",
     invalid_alert_cap: 'Gli avvisi al giorno vanno da 0 a 100.',
     unknown: 'Così non si può salvare. Controlla e riprova.',

@@ -17,6 +17,13 @@ import {
 /** A tier a person may leave unset, on a rule or a label. */
 export type TierChoice = MailWatchTier | '';
 
+/** The decision model's "none" options, in both languages: a label named so is left out of its
+ * question. It mirrors reservedLabelName in internal/pimwatch/text_decide.go. */
+export function reservedLabelName(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  return lower === 'nessuna' || lower === 'none';
+}
+
 export interface DecisionGroup {
   readonly id: string;
   readonly kind: 'now' | 'label' | 'unsorted';
