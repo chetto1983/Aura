@@ -2931,6 +2931,20 @@ warmup diagnostics, duplicate SPY/SPY warnings and internal paths in missing-rec
 The amended design/plan scopes their correction without implying independent formula,
 fault/load or operational production acceptance.
 
+The 0.4.1 follow-up is verified on the VM: source `e059c52`, packaging/tag `9d5d637`,
+339 offline tests, lint/build and both broker CIs green. New AAPL/SPY acquisition includes
+November 4 with its November 4 regular close; old report and legacy archive hashes remain
+unchanged. Chart=false accepts five lower groups, SMA1000 has a precise warmup warning,
+identical SPY/SPY warnings appear once and missing records hide internal paths. Three Important
+review findings have RED-to-GREEN regressions: historical overnight association, exchange-local
+dates and completion evidence for all retained rows. Unproven historical overnight mappings
+remain conservative. Actual installed discovery takes 2.80 s cached / 1.28 s offline. The real
+agent's tool checks passed; its initial answer was interrupted coincident with an external Aura
+restart, then same-thread continuation and a focused reread completed delivery. This does not
+establish uninterrupted operation. Full
+[follow-up evidence](docs/superpowers/verification/2026-11-05-broker-functional-followup.md)
+keeps that boundary explicit.
+
 **Self-installing box servers replace the install line, 2026-09-26.** Following that
 measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
 declares a pinned command that fetches itself, as LibreChat's do, and gets

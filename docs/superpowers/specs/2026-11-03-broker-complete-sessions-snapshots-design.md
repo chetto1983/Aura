@@ -133,6 +133,11 @@ provider schedule's date; freeze the minimal dated start/end evidence with the O
 it never borrows a different day's close. Missing schedule evidence retains the conservative
 fallback. Replay of already stored snapshots preserves their original values and metadata;
 new schedule evidence is strictly validated and replay never fetches it.
+Review established that yfinance derives its historical index from the start date. Only
+same-exchange-local-day schedule rows establish a daily-bar association; ambiguous historical
+overnight rows are omitted rather than attaching the next day's close. Current-period
+overnight fallback retains the existing closing-date fixture. Replay checks timezone/date
+association and applicable completion evidence for every retained bar, including nonfinal rows.
 
 Real stdio MCP on 0.4.0 also reproduced five lower groups failing with chart=false, SMA1000
 returning null without an insufficient-history warning, duplicate SPY/SPY exclusion warnings,

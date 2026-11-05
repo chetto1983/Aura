@@ -68,29 +68,29 @@ and tests. The new module owns serialization/coverage validation, not a second s
 
 **Files:** broker data/snapshot modules and session/snapshot regressions.
 
-- [ ] Reproduce the November 4/5 mismatch with a dated provider-schedule fixture; watch RED.
-- [ ] Fetch yfinance's existing lazy schedule only for an unmatched latest non-crypto bar;
+- [x] Reproduce the November 4/5 mismatch with a dated provider-schedule fixture; watch RED.
+- [x] Fetch yfinance's existing lazy schedule only for an unmatched latest non-crypto bar;
   persist dated evidence, use the selected session end and retain conservative missing-data behavior.
-- [ ] Validate new schedule shape/time/completion on replay; retain exact old snapshot replay.
-- [ ] Run full offline suite/lint and commit the coherent session fix.
+- [x] Validate new schedule shape/time/completion on replay; retain exact old snapshot replay.
+- [x] Run full offline suite/lint and commit the coherent session fix.
 
 ### Task 5: Separate numeric analysis from chart constraints and improve diagnostics
 
 **Files:** broker custom/workbench/charts, analysis/audit and focused regressions.
 
-- [ ] Watch failing regressions for chart=false with five lower groups, SMA1000 warmup,
+- [x] Watch failing regressions for chart=false with five lower groups, SMA1000 warmup,
   duplicate same-source warnings and path-free missing/unreadable record errors.
-- [ ] Enforce pane limits only for charts, preserve all other validation and emit accurate
+- [x] Enforce pane limits only for charts, preserve all other validation and emit accurate
   insufficient-history warnings; sanitize audit errors and keep integrity failures explicit.
-- [ ] Run full offline suite/lint/build and commit the focused fixes.
+- [x] Run full offline suite/lint/build and commit the focused fixes.
 
 ### Task 6: Review and release the measured functional fixes
 
 **Files:** version/pins/release docs and this plan's dated verification record.
 
-- [ ] Fresh review of tasks 4-5, TDD fix pass for Important/Critical findings, full suite.
-- [ ] Build/check CI, upgrade through Governance and check actual installed version/readiness.
-- [ ] Re-run old immutable snapshot, new dated acquisition, numerical-only panel/warmup/error
+- [x] Fresh review of tasks 4-5, TDD fix pass for Important/Critical findings, full suite.
+- [x] Build/check CI, check/upgrade through Governance and check actual installed version/readiness.
+- [x] Re-run old immutable snapshot, new dated acquisition, numerical-only panel/warmup/error
   scenarios, provider-forbidden replay and an actual Aura agent completion; record limits.
 
 ## Recorded decisions
@@ -105,3 +105,10 @@ and tests. The new module owns serialization/coverage validation, not a second s
   actual Governance upgrade, 15 tools, cached start 3.79 s online / 2.33 s offline, four
   provider-forbidden replay processes and exact legacy readback. Real-agent completion and
   shared-ID ledger checks passed; see the dated verification record for limits.
+- Completed 0.4.1 source `e059c52`, packaging/tag `9d5d637`: 339 tests, lint/build and both
+  broker CIs green. Same-local-day historical evidence fixes AAPL/SPY November 4; ambiguous
+  historical overnight rows retain conservative treatment. Actual installed start 2.80 s
+  cached / 1.28 s offline. Old report and legacy hashes unchanged; four guarded replay
+  processes pass. The real-agent run was interrupted during an external Aura restart and
+  completed through same-thread continuation and focused reread. See
+  `verification/2026-11-05-broker-functional-followup.md` for the separate evidence and limits.
