@@ -54,7 +54,7 @@ metadata, validation and lifecycle propagation at their existing ownership bound
 - [x] Measure uv cache directories/volume mounts, cached launch and Python imports on the VM.
 - [x] Add/run failing regression tests for the measured cause and slow reconnect budget.
 - [x] Apply minimal existing-runtime fixes; run WSL unit/race/vet/build and scope gates.
-- [ ] Review combined changes, commit, push and check CI; validate real agent calls on VM.
+- [x] Review combined changes, commit, push and check CI; validate real agent calls on VM.
 - [x] Record before/after measurements in dated verification and amend PRD from evidence.
 
 ## Execution decisions
@@ -76,5 +76,6 @@ metadata, validation and lifecycle propagation at their existing ownership bound
 - Aura code `047d0f092` and `e7663740a` passed clean pre-push build, deadcode and every
   tagged-tier compile; published to GitHub and GitLab. The authenticated updater applied
   `e7663740a`; readiness and the real two-worker acceptance passed. Both workers retain
-  identical actual args and positive start/end durations (2,350 and 4,053 ms). Main CI's
-  long media mutation job remains pending; all other completed jobs passed.
+  identical actual args and positive start/end durations (2,350 and 4,053 ms). The first
+  main run was superseded; its replacement failed the aggregate mutation gate. Full CI
+  subsequently passed on descendant `923975bf9`, run `41939001907` (checked November 5).

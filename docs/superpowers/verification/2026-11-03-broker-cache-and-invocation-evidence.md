@@ -113,8 +113,11 @@ reservation replay protection and first-writer behavior remain.
 
 The authenticated updater applied Aura `e7663740a3893d69c90c7e10c27dd13683a14b24`; `/readyz`
 returned HTTP 200, ready=true. The edge, ArcadeDB MCP, create-aura, CodeQL and Skills workflows
-passed on this exact SHA. The main CI's remaining long mutation scope is tracked separately;
-no success is inferred from it still running.
+passed on this exact SHA. Its main run `41663383023` was superseded and cancelled; run
+`41670177459` later passed all producer jobs but failed the aggregate mutation gate. Subsequent
+repository repairs reached a fully successful CI on descendant `923975bf9` (run `41939001907`,
+checked November 5). The earlier scoped and deployed e766 acceptance remains independently
+recorded; no green result is attributed to its cancelled run.
 
 Real-agent conversation `01a1a20f-5f15-7542-9683-de347f183aff` completed successfully in
 61.19 seconds, with two independently dispatched workers and the parent checking SPY/SPY.
