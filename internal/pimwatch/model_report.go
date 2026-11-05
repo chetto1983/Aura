@@ -74,7 +74,8 @@ func BuildModelReport(rows []ModelRow) ModelReport {
 
 func (r *ModelReport) countRulesOnly(row ModelRow) {
 	r.RulesOnly.Rows++
-	if row.Tier == TierNow && row.Notified {
+	// The ladder's answer, because a correction rewrites the tier and would hide the alerts it demoted.
+	if row.LadderTier == TierNow && row.Notified {
 		r.RulesOnly.Alerts++
 		if row.By == ByPerson {
 			r.RulesOnly.AlertsCorrected++
@@ -95,7 +96,7 @@ func (c *ModelCounts) count(row ModelRow) {
 		return
 	}
 	c.Asked++
-	standing := row.ModelLabelID != "" && row.LabelID == row.ModelLabelID
+	standing := row.ModelTier != "" && row.ModelLabelID != "" && row.LabelID == row.ModelLabelID
 	if standing {
 		c.Standing++
 	}
@@ -186,5 +187,5 @@ func (r ModelReport) WriteText(w io.Writer) {
 
 	_, _ = fmt.Fprintf(w, "\nrules only, the mail the model was neither asked about nor skipped: %d mails, %d alerts of which %d corrected, %d tiers or labels corrected\n",
 		r.RulesOnly.Rows, r.RulesOnly.Alerts, r.RulesOnly.AlertsCorrected, r.RulesOnly.Corrected)
-	_, _ = fmt.Fprintln(w, "baseline: no label, which is «Da smistare». Standing counts a label equal to the model's even where it was not applied, so a person's agreement with a guess under the threshold counts in standing and in by hand.")
+	_, _ = fmt.Fprintln(w, "baseline: no label, which is «Da smistare».")
 }
