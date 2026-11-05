@@ -20,7 +20,9 @@ const LICENCE_URL =
 
 // The route is saved with the pane, like any other row, and the mail watch reads it on its next
 // tick: there is nothing to preview, apply or restart. An empty model is the local sidecar, which
-// exists only where the installer put one; without it an empty model is the same as off.
+// exists only where the installer put one; `false` is that answer, and an empty model is then the
+// same as off. `undefined` is unknown (still loading, or OpenRouter unreachable, which is when the
+// local model matters most) and never takes the local route away.
 export function DecideBackendControl({
   loaded,
   onValueChange,
@@ -34,7 +36,7 @@ export function DecideBackendControl({
 
   const hosted = value !== '' && value !== OFF;
   const choice: DecideChoice =
-    hosted || choosingModel ? 'openrouter' : value === OFF || sidecar !== true ? 'off' : 'local';
+    hosted || choosingModel ? 'openrouter' : value === OFF || sidecar === false ? 'off' : 'local';
 
   const write = (next: string) => {
     onValueChange('AURA_DECIDE_MODEL', next);
@@ -47,7 +49,7 @@ export function DecideBackendControl({
   const changeModel = (model: string) => {
     if (model.trim() === '') {
       setChoosingModel(false);
-      write(sidecar === true ? '' : OFF);
+      write(sidecar === false ? OFF : '');
       return;
     }
     setChoosingModel(false);
@@ -57,7 +59,7 @@ export function DecideBackendControl({
   const picker: PickerBinding = {
     ...modelPicker,
     onValueChange: changeModel,
-    emptyOption: { label: t(sidecar === true ? 'decideRoute.useLocal' : 'decideRoute.useOff') },
+    emptyOption: { label: t(sidecar === false ? 'decideRoute.useOff' : 'decideRoute.useLocal') },
   };
   // 'off' is a route, not a model: the picker must not show it as one.
   const pickerLoaded: LoadedState = {
@@ -67,7 +69,7 @@ export function DecideBackendControl({
 
   const options: readonly RouteOption<DecideChoice>[] = [
     { id: 'off', label: t('decideRoute.off'), icon: Power },
-    { id: 'local', label: t('decideRoute.local'), icon: Cpu, disabled: sidecar !== true },
+    { id: 'local', label: t('decideRoute.local'), icon: Cpu, disabled: sidecar === false },
     { id: 'openrouter', label: t('decideRoute.openrouter'), icon: Cloud },
   ];
 

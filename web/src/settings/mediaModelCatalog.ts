@@ -68,14 +68,14 @@ export type MediaCatalogModel =
 /** A row of any catalogue the model picker lists. */
 export type ModelRow = LLMCatalogModel | MediaCatalogModel;
 
-// The daemon lists the catalogue of the route it runs on, shared with the generation tools,
-// so the browser names no base URL and receives no credential.
 export interface MediaCatalog {
   readonly models: readonly MediaCatalogModel[];
   /** Only the decisions catalogue says it: whether the installer put a local sidecar here. */
   readonly localSidecar: boolean | undefined;
 }
 
+// The daemon lists the catalogue of the route it runs on, shared with the generation tools,
+// so the browser names no base URL and receives no credential.
 export async function fetchMediaCatalog(
   kind: MediaKind,
   refresh = false,
@@ -91,12 +91,4 @@ export async function fetchMediaCatalog(
     readonly local_sidecar?: boolean;
   }>(res);
   return { models: body.models ?? [], localSidecar: body.local_sidecar };
-}
-
-export async function fetchMediaModels(
-  kind: MediaKind,
-  refresh = false,
-  signal?: AbortSignal,
-): Promise<readonly MediaCatalogModel[]> {
-  return (await fetchMediaCatalog(kind, refresh, signal)).models;
 }

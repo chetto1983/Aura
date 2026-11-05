@@ -5,21 +5,22 @@ import '../../i18n/i18n';
 import { DecideBackendControl } from '../DecideBackendControl';
 import type { LoadedState } from '../modelSettingsState';
 import type { PickerBinding } from '../SettingField';
+import type { ModelCatalogState } from '../useModelCatalog';
 
 const LICENCE =
   'https://huggingface.co/LiquidAI/d1-3B-GGUF/blob/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/LICENSE';
 
-function pickerFor(localSidecar: boolean): PickerBinding {
+type Catalogue = Pick<ModelCatalogState, 'status' | 'error' | 'localSidecar'>;
+
+function pickerFor(catalogue: Catalogue): PickerBinding {
   return {
     catalog: {
       models: [
         { kind: 'decisions', id: 'liquid/d1.1', has_price: false },
         { kind: 'decisions', id: 'liquid/d1.2', has_price: false },
       ],
-      status: 'ready',
-      error: undefined,
+      ...catalogue,
       reload: () => undefined,
-      localSidecar,
     },
     formatRow: (row) => row.id,
   };
@@ -27,11 +28,11 @@ function pickerFor(localSidecar: boolean): PickerBinding {
 
 function Harness({
   saved,
-  localSidecar,
+  catalogue,
   writes,
 }: {
   readonly saved: string;
-  readonly localSidecar: boolean;
+  readonly catalogue: Catalogue;
   readonly writes: string[];
 }) {
   const [values, setValues] = useState<Record<string, string>>({ AURA_DECIDE_MODEL: saved });
@@ -50,14 +51,18 @@ function Harness({
         writes.push(`${key}=${value}`);
         setValues((prev) => ({ ...prev, [key]: value }));
       }}
-      modelPicker={pickerFor(localSidecar)}
+      modelPicker={pickerFor(catalogue)}
     />
   );
 }
 
-function renderControl(saved: string, localSidecar: boolean) {
+function renderControl(saved: string, localSidecar: boolean | undefined) {
+  return renderWith(saved, { status: 'ready', error: undefined, localSidecar });
+}
+
+function renderWith(saved: string, catalogue: Catalogue) {
   const writes: string[] = [];
-  render(<Harness saved={saved} localSidecar={localSidecar} writes={writes} />);
+  render(<Harness saved={saved} catalogue={catalogue} writes={writes} />);
   return writes;
 }
 
@@ -72,6 +77,29 @@ describe('DecideBackendControl', () => {
     expect(screen.getByText('Local model not installed on this appliance')).toBeTruthy();
     // With no sidecar an empty row is no route at all, and the control says so.
     expect(option('Off').getAttribute('aria-checked')).toBe('true');
+  });
+
+  // The flag is unknown while the catalogue loads or when OpenRouter cannot be reached; an
+  // offline appliance is exactly the one that runs the local model.
+  it.each([
+    ['cannot be read', { status: 'error', error: 'unreachable', localSidecar: undefined }],
+    ['is loading', { status: 'loading', error: undefined, localSidecar: undefined }],
+  ] as const)('keeps the local route when the catalogue %s', (_when, catalogue) => {
+    renderWith('', catalogue);
+    expect(option('Local').getAttribute('aria-checked')).toBe('true');
+    expect(option('Local').hasAttribute('disabled')).toBe(false);
+    expect(screen.queryByText('Local model not installed on this appliance')).toBeNull();
+  });
+
+  it('lets the operator return to the local route while the flag is unknown', () => {
+    const writes = renderWith('off', {
+      status: 'error',
+      error: 'unreachable',
+      localSidecar: undefined,
+    });
+    expect(option('Off').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(option('Local'));
+    expect(writes).toEqual(['AURA_DECIDE_MODEL=']);
   });
 
   it('offers the local model when the installer put it there', () => {
@@ -126,6 +154,7 @@ describe('DecideBackendControl', () => {
   it.each([
     [true, 'Use the local model', 'AURA_DECIDE_MODEL=', 'Local'],
     [false, 'Turn the decision model off', 'AURA_DECIDE_MODEL=off', 'Off'],
+    [undefined, 'Use the local model', 'AURA_DECIDE_MODEL=', 'Local'],
   ])(
     'clearing the model returns to the local route, or to off where there is none (sidecar %s)',
     (localSidecar, clearLabel, written, checked) => {

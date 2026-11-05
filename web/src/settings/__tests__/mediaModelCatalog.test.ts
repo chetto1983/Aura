@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchMediaModels, type MediaCatalogModel } from '../mediaModelCatalog';
+import { fetchMediaCatalog, type MediaCatalogModel } from '../mediaModelCatalog';
 
 const IMAGE_MODELS: readonly MediaCatalogModel[] = [
   { kind: 'image', id: 'microsoft/mai-image-2.6', has_price: false, reference_max: 5 },
@@ -11,7 +11,7 @@ function stubFetch(response: Response) {
   return mock;
 }
 
-describe('fetchMediaModels', () => {
+describe('fetchMediaCatalog', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -21,7 +21,10 @@ describe('fetchMediaModels', () => {
       new Response(JSON.stringify({ models: IMAGE_MODELS }), { status: 200 }),
     );
 
-    await expect(fetchMediaModels('image')).resolves.toEqual(IMAGE_MODELS);
+    await expect(fetchMediaCatalog('image')).resolves.toEqual({
+      models: IMAGE_MODELS,
+      localSidecar: undefined,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] ?? [];
@@ -35,7 +38,10 @@ describe('fetchMediaModels', () => {
     const fetchMock = stubFetch(new Response(JSON.stringify({ models: [] }), { status: 200 }));
     const controller = new AbortController();
 
-    await expect(fetchMediaModels('video', true, controller.signal)).resolves.toEqual([]);
+    await expect(fetchMediaCatalog('video', true, controller.signal)).resolves.toEqual({
+      models: [],
+      localSidecar: undefined,
+    });
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe('/api/settings/video-models?refresh=1');
@@ -44,7 +50,18 @@ describe('fetchMediaModels', () => {
 
   it('treats a body with no model list as an empty catalogue', async () => {
     stubFetch(new Response('{}', { status: 200 }));
-    await expect(fetchMediaModels('image')).resolves.toEqual([]);
+    await expect(fetchMediaCatalog('image')).resolves.toEqual({
+      models: [],
+      localSidecar: undefined,
+    });
+  });
+
+  it('reads whether a local sidecar is installed from the decisions catalogue', async () => {
+    stubFetch(new Response(JSON.stringify({ models: [], local_sidecar: false }), { status: 200 }));
+    await expect(fetchMediaCatalog('decisions')).resolves.toEqual({
+      models: [],
+      localSidecar: false,
+    });
   });
 
   it('surfaces the daemon’s reason when the catalogue cannot be read', async () => {
@@ -56,6 +73,6 @@ describe('fetchMediaModels', () => {
         },
       ),
     );
-    await expect(fetchMediaModels('video')).rejects.toThrow('GET videos/models: 503');
+    await expect(fetchMediaCatalog('video')).rejects.toThrow('GET videos/models: 503');
   });
 });
