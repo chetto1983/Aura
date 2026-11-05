@@ -2920,6 +2920,17 @@ instead of inventing an exchange schedule. These samples do not establish latenc
 or a global error/null taxonomy. See the
 [acceptance evidence](docs/superpowers/verification/2026-11-03-broker-completed-sessions-snapshots.md).
 
+**Broker functional follow-up, measured November 5.** Snapshot `fe370e40...` on the live VM
+excludes November 4 while reporting November 5's close for its retained November 3 bar.
+The installed yfinance lazy historical schedule actually includes November 4's regular
+start/end (one cached request took 0.124 s). Use that existing dated evidence for unmatched
+latest bars and freeze it in new snapshots; never attach another session's end to a bar.
+Preserve old immutable replays and conservative fallback where evidence is unavailable.
+Real stdio MCP also reproduces the four-pane limit with chart=false, missing SMA1000
+warmup diagnostics, duplicate SPY/SPY warnings and internal paths in missing-record errors.
+The amended design/plan scopes their correction without implying independent formula,
+fault/load or operational production acceptance.
+
 **Self-installing box servers replace the install line, 2026-09-26.** Following that
 measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
 declares a pinned command that fetches itself, as LibreChat's do, and gets

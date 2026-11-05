@@ -62,7 +62,38 @@ and tests. The new module owns serialization/coverage validation, not a second s
 - [x] Run real acquisition/replay across MCP sessions with provider forbidden, cross-tool agreement,
   current-session exclusion/opt-in and frozen metadata; record measured limits and results.
 
-## Decisions
+## Functional follow-up
+
+### Task 4: Associate historical bars with captured provider schedules
+
+**Files:** broker data/snapshot modules and session/snapshot regressions.
+
+- [ ] Reproduce the November 4/5 mismatch with a dated provider-schedule fixture; watch RED.
+- [ ] Fetch yfinance's existing lazy schedule only for an unmatched latest non-crypto bar;
+  persist dated evidence, use the selected session end and retain conservative missing-data behavior.
+- [ ] Validate new schedule shape/time/completion on replay; retain exact old snapshot replay.
+- [ ] Run full offline suite/lint and commit the coherent session fix.
+
+### Task 5: Separate numeric analysis from chart constraints and improve diagnostics
+
+**Files:** broker custom/workbench/charts, analysis/audit and focused regressions.
+
+- [ ] Watch failing regressions for chart=false with five lower groups, SMA1000 warmup,
+  duplicate same-source warnings and path-free missing/unreadable record errors.
+- [ ] Enforce pane limits only for charts, preserve all other validation and emit accurate
+  insufficient-history warnings; sanitize audit errors and keep integrity failures explicit.
+- [ ] Run full offline suite/lint/build and commit the focused fixes.
+
+### Task 6: Review and release the measured functional fixes
+
+**Files:** version/pins/release docs and this plan's dated verification record.
+
+- [ ] Fresh review of tasks 4-5, TDD fix pass for Important/Critical findings, full suite.
+- [ ] Build/check CI, upgrade through Governance and check actual installed version/readiness.
+- [ ] Re-run old immutable snapshot, new dated acquisition, numerical-only panel/warmup/error
+  scenarios, provider-forbidden replay and an actual Aura agent completion; record limits.
+
+## Recorded decisions
 
 - Explicit acquisition keeps ordinary market reads read-only; snapshots are additive local writes.
 - Existing live hooks retain their explicit intraday behavior; report defaults become completed-only.

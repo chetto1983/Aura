@@ -116,3 +116,29 @@ Document the explicit one-time transfer. No permanent legacy lookup or migration
 Uniform structured application-error envelopes, exact reasons for every unrelated null,
 longitudinal latency/provider/calculation metrics and a cross-record monitoring summary remain
 separate medium-priority work. Existing invariant tests are retained rather than duplicated.
+
+## November 5 functional review amendment
+
+The operator's follow-up snapshot `fe370e40...` was inspected on the live VM. Its AAPL/SPY
+metadata excludes November 4, retains November 3 and incorrectly associates November 5's
+regular close with the retained row. A fresh AAPL provider request reproduced this mismatch.
+The installed yfinance public lazy `history_metadata.get("tradingPeriods")` returned a
+five-day DataFrame containing November 4's actual regular start/end, including its -05:00
+offset, in 0.124 s in this cached sample. No new calendar dependency or network adapter is needed.
+
+For new acquisitions, request that existing schedule only when the latest non-crypto bar
+cannot be matched to the current regular session. Match its exchange-local date to the
+provider schedule's date; freeze the minimal dated start/end evidence with the OHLCV.
+`session_end_timestamp` describes the selected bar's matched session or is null when unknown;
+it never borrows a different day's close. Missing schedule evidence retains the conservative
+fallback. Replay of already stored snapshots preserves their original values and metadata;
+new schedule evidence is strictly validated and replay never fetches it.
+
+Real stdio MCP on 0.4.0 also reproduced five lower groups failing with chart=false, SMA1000
+returning null without an insufficient-history warning, duplicate SPY/SPY exclusion warnings,
+and a nonexistent snapshot exposing its absolute storage path. Scope the pane limit to chart
+rendering while preserving numerical/spec validation and the chart=true limit. Add a specific
+custom-series warmup warning when the configured lookback exceeds valid source history.
+De-duplicate identical report warnings without merging distinct source evidence. Sanitize
+expected audit read errors without weakening hash checks or leaking paths. These are measured
+functional defects, not evidence about independent formula accuracy, load or production uptime.
