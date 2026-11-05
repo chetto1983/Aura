@@ -210,7 +210,7 @@ func TestACorrectionTeachesTheCentroid(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

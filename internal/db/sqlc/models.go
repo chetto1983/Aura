@@ -615,6 +615,15 @@ type AuraPimProviderApp struct {
 	UpdatedBy              string             `json:"updated_by"`
 }
 
+type AuraPimWatchAccounts struct {
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	AccountID      string             `json:"account_id"`
+	CloudDecide    bool               `json:"cloud_decide"`
+	DecideError    string             `json:"decide_error"`
+	DecideFailedAt pgtype.Timestamptz `json:"decide_failed_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AuraPimWatchCorrections struct {
 	ID         pgtype.UUID        `json:"id"`
 	IdentityID pgtype.UUID        `json:"identity_id"`
@@ -642,12 +651,14 @@ type AuraPimWatchCursors struct {
 }
 
 type AuraPimWatchLabels struct {
-	ID         pgtype.UUID        `json:"id"`
-	IdentityID pgtype.UUID        `json:"identity_id"`
-	Name       string             `json:"name"`
-	Tier       pgtype.Text        `json:"tier"`
-	Position   int32              `json:"position"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	IdentityID  pgtype.UUID        `json:"identity_id"`
+	Name        string             `json:"name"`
+	Tier        pgtype.Text        `json:"tier"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Description string             `json:"description"`
+	Discard     bool               `json:"discard"`
 }
 
 type AuraPimWatchRules struct {
@@ -662,15 +673,16 @@ type AuraPimWatchRules struct {
 }
 
 type AuraPimWatchSettings struct {
-	IdentityID           pgtype.UUID        `json:"identity_id"`
-	DigestHour           int16              `json:"digest_hour"`
-	DailyAlertCap        int32              `json:"daily_alert_cap"`
-	IntervalMinutes      int32              `json:"interval_minutes"`
-	LastDigestAt         pgtype.Timestamptz `json:"last_digest_at"`
-	VerdictRetentionDays int32              `json:"verdict_retention_days"`
-	LabelsSeeded         bool               `json:"labels_seeded"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IdentityID              pgtype.UUID        `json:"identity_id"`
+	DigestHour              int16              `json:"digest_hour"`
+	DailyAlertCap           int32              `json:"daily_alert_cap"`
+	IntervalMinutes         int32              `json:"interval_minutes"`
+	LastDigestAt            pgtype.Timestamptz `json:"last_digest_at"`
+	VerdictRetentionDays    int32              `json:"verdict_retention_days"`
+	LabelsSeeded            bool               `json:"labels_seeded"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	LabelDescriptionsSeeded bool               `json:"label_descriptions_seeded"`
 }
 
 type AuraPimWatchVerdicts struct {
@@ -700,6 +712,14 @@ type AuraPimWatchVerdicts struct {
 	WrittenTo         bool               `json:"written_to"`
 	ProviderImportant bool               `json:"provider_important"`
 	Bulk              bool               `json:"bulk"`
+	ModelLabelID      pgtype.UUID        `json:"model_label_id"`
+	ModelProbability  pgtype.Float8      `json:"model_probability"`
+	ModelName         pgtype.Text        `json:"model_name"`
+	ModelTier         pgtype.Text        `json:"model_tier"`
+	ModelDiscarded    bool               `json:"model_discarded"`
+	ModelOptions      pgtype.Int2        `json:"model_options"`
+	ModelSkipped      bool               `json:"model_skipped"`
+	Discarded         bool               `json:"discarded"`
 }
 
 // Resumable provisioning/de-provisioning saga journal (Phase 36, D-14/D-27). MUTABLE: step status transitions pending -> done/failed for forward recovery. identity_id has NO FK so a de-provision saga survives the identity deletion it is executing.

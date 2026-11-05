@@ -19,7 +19,7 @@ func (r *watchRig) digester(lang Lang) *Digester {
 func TestTheDigestListsNowFirstThenLabelsAndCountsAsAWholeDay(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestAGoneMailLeavesTheDigest(t *testing.T) {
 func TestARemovedLabelsMailsReadAsUnsorted(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
-	label, err := r.store.AddLabel(ctx, r.identity, "Ex", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Ex"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}

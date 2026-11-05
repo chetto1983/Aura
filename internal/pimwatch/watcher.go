@@ -386,7 +386,7 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 			continue
 		}
 		decision := DecideMail(t.book, change.From, change.Signals)
-		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Decision: decision})
+		drafts = append(drafts, VerdictDraft{ItemID: change.ID, Ladder: decision, Decision: decision})
 		mails = append(mails, change)
 		lines[change.ID] = Line{
 			AccountID: t.AccountID, Resource: resource, ItemID: change.ID, From: change.From, FromName: change.FromName,

@@ -205,7 +205,7 @@ func (s *Service) AddLabel(ctx context.Context, identityID, name string, tier Ti
 	for _, label := range labels {
 		position = max(position, label.Position+1)
 	}
-	return s.Store.AddLabel(ctx, identityID, strings.TrimSpace(name), tier, position)
+	return s.Store.AddLabel(ctx, identityID, LabelInput{Name: strings.TrimSpace(name), Tier: tier}, position)
 }
 
 // UpdateLabel renames a label and sets its tier.
@@ -213,7 +213,7 @@ func (s *Service) UpdateLabel(ctx context.Context, identityID, labelID, name str
 	if err := checkLabelInput(name, tier); err != nil {
 		return Label{}, err
 	}
-	return s.Store.UpdateLabel(ctx, identityID, labelID, strings.TrimSpace(name), tier)
+	return s.Store.UpdateLabel(ctx, identityID, labelID, LabelInput{Name: strings.TrimSpace(name), Tier: tier})
 }
 
 // labelNameRunes is what the labels table's CHECK allows.

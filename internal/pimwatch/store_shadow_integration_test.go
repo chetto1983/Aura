@@ -70,7 +70,7 @@ func TestSenderMemoryIsTheLastCorrectedTier(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
 	r.commit(rigAccount, r.draft("m1", TierToday, ""), r.draft("m2", TierToday, ""), r.draft("m3", TierToday, ""))
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

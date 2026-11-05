@@ -356,7 +356,8 @@ type Querier interface {
 	InsertMessageDraft(ctx context.Context, arg InsertMessageDraftParams) (AuraMessageDrafts, error)
 	InsertPIMWatchCorrection(ctx context.Context, arg InsertPIMWatchCorrectionParams) error
 	InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLabelParams) (AuraPimWatchLabels, error)
-	// A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
+	// A mail is decided once: a replayed change leaves the first verdict and is told to nobody. A label
+	// deleted since the Book was read is written as NULL: the page commits, and is never replayed for it.
 	InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchVerdictParams) (int64, error)
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
 	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)

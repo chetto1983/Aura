@@ -45,6 +45,29 @@ func TestDefaultLabelsInEachLanguageKeepTheirOrderAndTheAdvertisingTier(t *testi
 	}
 }
 
+func TestDefaultLabelsCarryG1sDescriptions(t *testing.T) {
+	it := DefaultLabels(LangIT)
+	if it[0].Name != "Cliente" ||
+		it[0].Description != "Clienti o potenziali clienti che chiedono preventivi, informazioni, assistenza o fanno reclami." { //nolint:misspell // Italian "complaints".
+		t.Errorf("IT[0] = %+v", it[0])
+	}
+	en := DefaultLabels(LangEN)
+	if en[4].Name != "Advertising" || en[4].Tier != TierLater ||
+		en[4].Description != "Promotions, discounts, newsletters and offers sent to a list." {
+		t.Errorf("EN[4] = %+v", en[4])
+	}
+	for lang, labels := range map[Lang][]Label{LangIT: it, LangEN: en} {
+		for _, label := range labels {
+			if label.Discard {
+				t.Errorf("%s: %q discards by default", lang, label.Name)
+			}
+			if label.Description == "" || len([]rune(label.Description)) > 300 {
+				t.Errorf("%s: %q has a description of %d characters", lang, label.Name, len([]rune(label.Description)))
+			}
+		}
+	}
+}
+
 func TestDefaultLabelsAreACopy(t *testing.T) {
 	DefaultLabels(LangEN)[0].Name = "changed"
 	if DefaultLabels(LangEN)[0].Name == "changed" {

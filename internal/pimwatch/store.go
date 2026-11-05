@@ -39,7 +39,7 @@ func invalid(code, message string) error { return &InvalidError{Code: code, Mess
 func invalidTier() error { return invalid("invalid_tier", "the tier is now, today or later") }
 
 // Store is the watch's state in Postgres. Every method binds the identity before it touches a
-// table, because all six carry the fail-closed RLS pair: another identity's verdict is invisible.
+// table, because all seven carry the fail-closed RLS pair: another identity's verdict is invisible.
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -97,6 +97,7 @@ func (s *Store) SeedLabels(ctx context.Context, identityID string, labels []Labe
 		for _, label := range labels {
 			if err := q.SeedPIMWatchLabel(ctx, sqlc.SeedPIMWatchLabelParams{
 				IdentityID: id, Name: label.Name, Tier: optionalText(string(label.Tier)), Position: int32(label.Position), //nolint:gosec // G115: a list position.
+				Description: label.Description, Discard: label.Discard,
 			}); err != nil {
 				return err
 			}
@@ -193,11 +194,12 @@ func (s *Store) Labels(ctx context.Context, identityID string) ([]Label, error) 
 }
 
 // AddLabel adds a label at the end of the list.
-func (s *Store) AddLabel(ctx context.Context, identityID, name string, tier Tier, position int) (Label, error) {
+func (s *Store) AddLabel(ctx context.Context, identityID string, in LabelInput, position int) (Label, error) {
 	var out Label
 	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		row, err := q.InsertPIMWatchLabel(ctx, sqlc.InsertPIMWatchLabelParams{
-			IdentityID: id, Name: name, Tier: optionalText(string(tier)), Position: int32(position), //nolint:gosec // G115: a list position.
+			IdentityID: id, Name: in.Name, Tier: optionalText(string(in.Tier)), Position: int32(position), //nolint:gosec // G115: a list position.
+			Description: in.Description, Discard: in.Discard,
 		})
 		if err != nil {
 			return err
@@ -211,8 +213,8 @@ func (s *Store) AddLabel(ctx context.Context, identityID, name string, tier Tier
 	return out, nil
 }
 
-// UpdateLabel renames a label and sets its tier. An empty tier clears it.
-func (s *Store) UpdateLabel(ctx context.Context, identityID, labelID, name string, tier Tier) (Label, error) {
+// UpdateLabel rewrites a label's name, tier, description and discard. An empty tier clears it.
+func (s *Store) UpdateLabel(ctx context.Context, identityID, labelID string, in LabelInput) (Label, error) {
 	lid, err := db.ParseUUID("label_id", labelID)
 	if err != nil {
 		return Label{}, fmt.Errorf("update label: %w", ErrNotFound)
@@ -220,7 +222,8 @@ func (s *Store) UpdateLabel(ctx context.Context, identityID, labelID, name strin
 	var out Label
 	err = s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
 		row, err := q.UpdatePIMWatchLabel(ctx, sqlc.UpdatePIMWatchLabelParams{
-			IdentityID: id, ID: lid, Name: name, Tier: optionalText(string(tier)),
+			IdentityID: id, ID: lid, Name: in.Name, Tier: optionalText(string(in.Tier)),
+			Description: in.Description, Discard: in.Discard,
 		})
 		if err != nil {
 			return err
@@ -334,7 +337,10 @@ func settingsFromRow(r sqlc.AuraPimWatchSettings) Settings {
 }
 
 func labelFromRow(r sqlc.AuraPimWatchLabels) Label {
-	return Label{ID: r.ID.String(), Name: r.Name, Tier: Tier(r.Tier.String), Position: int(r.Position)}
+	return Label{
+		ID: r.ID.String(), Name: r.Name, Tier: Tier(r.Tier.String), Position: int(r.Position),
+		Description: r.Description, Discard: r.Discard,
+	}
 }
 
 func ruleFromRow(r sqlc.AuraPimWatchRules) Rule {

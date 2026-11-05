@@ -35,8 +35,9 @@ func (t Tier) Valid() bool {
 // DecidedBy names the rung that gave a verdict its tier.
 type DecidedBy string
 
-// The rungs, plus a calendar change and the person's own correction.
+// The rungs, plus a calendar change, the decision model's label and the person's own correction.
 const (
+	ByModel      DecidedBy = "model"
 	ByRule       DecidedBy = "rule"
 	ByAuthFailed DecidedBy = "auth_failed"
 	ByPeople     DecidedBy = "people"
@@ -67,12 +68,24 @@ type Rule struct {
 	CreatedAt time.Time
 }
 
-// Label is the person's name for what a mail is about. A Tier, when set, acts as a rule.
+// Label is the person's name for what a mail is about. A Tier, when set, acts as a rule. The
+// Description is the only text of it the decision model reads, and Discard sends the mails the
+// label is given to out of the digest.
 type Label struct {
-	ID       string
-	Name     string
-	Tier     Tier
-	Position int
+	ID          string
+	Name        string
+	Tier        Tier
+	Position    int
+	Description string
+	Discard     bool
+}
+
+// LabelInput is what a person writes about a label.
+type LabelInput struct {
+	Name        string
+	Tier        Tier
+	Description string
+	Discard     bool
 }
 
 // Book is an identity's rules and labels, read once per run.
@@ -162,6 +175,7 @@ type Decision struct {
 	By         DecidedBy
 	AuthFailed bool
 	Change     ChangeWord
+	Discarded  bool
 }
 
 // DecideMail walks rungs 1 to 4 and 6 of the ladder (spec §5.3). A rule wins over everything,

@@ -36,6 +36,19 @@ type Verdict struct {
 	Facts        MailFacts
 	Centroid     Tier
 	SenderMemory Tier
+	// Discarded says the mail stands out of the digest. The Model fields are what the decision model
+	// said, which a correction never changes: ModelAsked is false for a mail it was not asked about,
+	// an empty ModelLabelID beside ModelAsked is "none" or a label since removed, and ModelTier is set
+	// only when its label was applied.
+	Discarded        bool
+	ModelAsked       bool
+	ModelSkipped     bool
+	ModelDiscarded   bool
+	ModelLabelID     string
+	ModelName        string
+	ModelProbability float64
+	ModelTier        Tier
+	ModelOptions     int
 }
 
 func verdictFromRow(r sqlc.AuraPimWatchVerdicts) Verdict {
@@ -48,14 +61,21 @@ func verdictFromRow(r sqlc.AuraPimWatchVerdicts) Verdict {
 		LadderTier: Tier(r.LadderTier.String), LadderBy: DecidedBy(r.LadderBy.String),
 		Facts:    MailFacts{WrittenTo: r.WrittenTo, ProviderImportant: r.ProviderImportant, AuthFailed: r.AuthFailed, Bulk: r.Bulk},
 		Centroid: Tier(r.CentroidTier.String), SenderMemory: Tier(r.SenderMemoryTier.String),
+		Discarded: r.Discarded, ModelAsked: r.ModelProbability.Valid, ModelSkipped: r.ModelSkipped,
+		ModelDiscarded: r.ModelDiscarded, ModelLabelID: r.ModelLabelID.String(), ModelName: r.ModelName.String,
+		ModelProbability: r.ModelProbability.Float64, ModelTier: Tier(r.ModelTier.String), ModelOptions: int(r.ModelOptions.Int16),
 	}
 }
 
 // VerdictDraft is a decision on its way to a row. Event marks a calendar item, decided again each
 // time its fingerprint moves, and Start is what its row keeps of it. A mail is decided once.
+//
+// Ladder is the ladder's own answer, kept when the decision model rewrites Decision. A draft built
+// with no Ladder keeps Decision there.
 type VerdictDraft struct {
 	ItemID      string
 	CalendarID  string
+	Ladder      Decision
 	Decision    Decision
 	Fingerprint string
 	Event       bool
@@ -64,6 +84,10 @@ type VerdictDraft struct {
 	OrganizerIsSelf bool
 	// Shadow is what a mail's row keeps beside the ladder for the scoring; nil for an event.
 	Shadow *Shadow
+	// Model is what the decision model answered, nil when it was not asked, and ModelSkipped says it
+	// was on for the tick but this mail was not asked.
+	Model        *ModelAnswer
+	ModelSkipped bool
 }
 
 // PageCommit is what one page of changes leaves behind, written in one transaction: "handled"
@@ -338,13 +362,15 @@ func (s *Store) ExpireVerdicts(ctx context.Context, identityID string, now time.
 }
 
 // Correction is what a person changed about one verdict. An empty Tier leaves the tier, and
-// LabelID is nil when the label stays; an empty LabelID clears it.
+// LabelID is nil when the label stays; an empty LabelID clears it. Discard keeps the mail out of
+// the digest.
 type Correction struct {
 	AccountID string
 	Resource  string
 	ItemID    string
 	Tier      Tier
 	LabelID   *string
+	Discard   bool
 }
 
 // ApplyCorrection changes the verdict and, when the sender is known, stores the correction, in one
@@ -367,6 +393,7 @@ func (s *Store) ApplyCorrection(ctx context.Context, identityID, senderKey strin
 		}
 		row, err := q.CorrectPIMWatchVerdict(ctx, sqlc.CorrectPIMWatchVerdictParams{
 			IdentityID: id, AccountID: c.AccountID, Resource: c.Resource, ItemID: c.ItemID, Tier: tier, LabelID: label,
+			Discarded: c.Discard,
 		})
 		if err != nil {
 			return err

@@ -24,8 +24,8 @@ SET labels_seeded = true
 WHERE identity_id = $1 AND NOT labels_seeded;
 
 -- name: SeedPIMWatchLabel :exec
-INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
-VALUES ($1, $2, $3, $4)
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (identity_id, name) DO NOTHING;
 
 -- name: ListPIMWatchLabels :many
@@ -34,13 +34,13 @@ WHERE identity_id = $1
 ORDER BY position, name;
 
 -- name: InsertPIMWatchLabel :one
-INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
-VALUES ($1, $2, $3, $4)
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: UpdatePIMWatchLabel :one
 UPDATE aura.pim_watch_labels
-SET name = $3, tier = $4
+SET name = $3, tier = $4, description = $5, discard = $6
 WHERE identity_id = $1 AND id = $2
 RETURNING *;
 
@@ -172,12 +172,23 @@ SELECT item_id, fingerprint, event_start, event_all_day, event_self, event_chang
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = ANY(@item_ids::text[]);
 
 -- name: InsertPIMWatchVerdict :execrows
--- A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
+-- A mail is decided once: a replayed change leaves the first verdict and is told to nobody. A label
+-- deleted since the Book was read is written as NULL: the page commits, and is never replayed for it.
 INSERT INTO aura.pim_watch_verdicts (
     identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by,
     auth_failed, fingerprint, decided_at, ladder_tier, ladder_by, centroid_tier, centroid_margin,
-    sender_memory_tier, written_to, provider_important, bulk
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    sender_memory_tier, written_to, provider_important, bulk,
+    model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded
+) VALUES (
+    sqlc.arg(identity_id), sqlc.arg(account_id), sqlc.arg(resource), sqlc.arg(item_id), sqlc.arg(calendar_id),
+    sqlc.arg(tier), (SELECT l.id FROM aura.pim_watch_labels l WHERE l.id = sqlc.narg(label_id)), sqlc.arg(decided_by),
+    sqlc.arg(auth_failed), sqlc.arg(fingerprint), sqlc.arg(decided_at), sqlc.narg(ladder_tier), sqlc.narg(ladder_by),
+    sqlc.narg(centroid_tier), sqlc.narg(centroid_margin), sqlc.narg(sender_memory_tier), sqlc.arg(written_to),
+    sqlc.arg(provider_important), sqlc.arg(bulk),
+    (SELECT l.id FROM aura.pim_watch_labels l WHERE l.id = sqlc.narg(model_label_id)),
+    sqlc.narg(model_probability), sqlc.narg(model_name), sqlc.narg(model_tier), sqlc.arg(model_discarded),
+    sqlc.narg(model_options), sqlc.arg(model_skipped), sqlc.arg(discarded)
+)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING;
 
 -- name: UpsertPIMWatchEventVerdict :execrows
@@ -235,7 +246,7 @@ LIMIT @row_limit;
 
 -- name: CorrectPIMWatchVerdict :one
 UPDATE aura.pim_watch_verdicts
-SET tier = $5, label_id = $6, decided_by = 'person'
+SET tier = $5, label_id = $6, decided_by = 'person', discarded = $7
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4
 RETURNING *;
 
@@ -280,6 +291,7 @@ ORDER BY sender_key, created_at DESC;
 SELECT DISTINCT account_id FROM aura.pim_watch_corrections WHERE identity_id = $1;
 
 -- name: ListPIMWatchShadowRows :many
-SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, decided_at, notified
+SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, model_tier,
+    decided_at, notified
 FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= @since;

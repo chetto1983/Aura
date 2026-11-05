@@ -64,7 +64,7 @@ func TestCorrectionsThatDisagreeTeachNothing(t *testing.T) {
 func TestTierAndLabelAreLearnedApart(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}

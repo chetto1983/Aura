@@ -17,7 +17,7 @@ func TestAnotherIdentitySeesNothingOfAWatch(t *testing.T) {
 	other := seedIdentity(t, migratedPool(t))
 	r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{r.urgentMail("m1")}, NextCursor: "c1"})
 	r.tick()
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestAConnectionWithNoIdentitySeesNoRowOfAnyTable(t *testing.T) {
 	ctx := context.Background()
 	r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{r.urgentMail("m1")}, NextCursor: "c1"})
 	r.tick()
-	if _, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0); err != nil {
+	if _, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0); err != nil {
 		t.Fatalf("label: %v", err)
 	}
 	if _, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@b.it", Kind: KeySender, Tier: TierNow}); err != nil {
@@ -104,10 +104,10 @@ func TestAReadOfUnknownIDsFindsNothingAndABadIdentityIsRefused(t *testing.T) {
 	if err := r.store.RemoveLabel(ctx, r.identity, "not-a-uuid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("remove label: %v", err)
 	}
-	if _, err := r.store.UpdateLabel(ctx, r.identity, "not-a-uuid", "x", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := r.store.UpdateLabel(ctx, r.identity, "not-a-uuid", LabelInput{Name: "x"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update label: %v", err)
 	}
-	if _, err := r.store.UpdateLabel(ctx, r.identity, uuid.NewString(), "x", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := r.store.UpdateLabel(ctx, r.identity, uuid.NewString(), LabelInput{Name: "x"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update missing label: %v", err)
 	}
 }
@@ -163,14 +163,14 @@ func TestTheDefaultLabelsGoInOnceInAnIdentitysLife(t *testing.T) {
 func TestALabelsNameIsUniqueAndARuleThatOnlyGaveItGoesWithIt(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}
-	if _, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 1); !errors.Is(err, ErrInvalid) {
+	if _, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 1); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a duplicate name: %v", err)
 	}
-	updated, err := r.store.UpdateLabel(ctx, r.identity, label.ID, "Clienti", TierToday)
+	updated, err := r.store.UpdateLabel(ctx, r.identity, label.ID, LabelInput{Name: "Clienti", Tier: TierToday})
 	if err != nil || updated.Name != "Clienti" || updated.Tier != TierToday {
 		t.Fatalf("updated = %+v, %v", updated, err)
 	}
@@ -196,7 +196,7 @@ func TestALabelsNameIsUniqueAndARuleThatOnlyGaveItGoesWithIt(t *testing.T) {
 func TestARuleKeepsItsLastWordAndALearnedOneKeepsTheOtherField(t *testing.T) {
 	r := newWatchRig(t)
 	ctx := context.Background()
-	label, err := r.store.AddLabel(ctx, r.identity, "Cliente", "", 0)
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0)
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}

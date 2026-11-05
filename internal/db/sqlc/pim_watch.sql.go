@@ -91,9 +91,9 @@ func (q *Queries) ConfirmPIMWatchAlerts(ctx context.Context, arg ConfirmPIMWatch
 
 const correctPIMWatchVerdict = `-- name: CorrectPIMWatchVerdict :one
 UPDATE aura.pim_watch_verdicts
-SET tier = $5, label_id = $6, decided_by = 'person'
+SET tier = $5, label_id = $6, decided_by = 'person', discarded = $7
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4
-RETURNING identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk
+RETURNING identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded
 `
 
 type CorrectPIMWatchVerdictParams struct {
@@ -103,6 +103,7 @@ type CorrectPIMWatchVerdictParams struct {
 	ItemID     string      `json:"item_id"`
 	Tier       string      `json:"tier"`
 	LabelID    pgtype.UUID `json:"label_id"`
+	Discarded  bool        `json:"discarded"`
 }
 
 func (q *Queries) CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatchVerdictParams) (AuraPimWatchVerdicts, error) {
@@ -113,6 +114,7 @@ func (q *Queries) CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatc
 		arg.ItemID,
 		arg.Tier,
 		arg.LabelID,
+		arg.Discarded,
 	)
 	var i AuraPimWatchVerdicts
 	err := row.Scan(
@@ -142,6 +144,14 @@ func (q *Queries) CorrectPIMWatchVerdict(ctx context.Context, arg CorrectPIMWatc
 		&i.WrittenTo,
 		&i.ProviderImportant,
 		&i.Bulk,
+		&i.ModelLabelID,
+		&i.ModelProbability,
+		&i.ModelName,
+		&i.ModelTier,
+		&i.ModelDiscarded,
+		&i.ModelOptions,
+		&i.ModelSkipped,
+		&i.Discarded,
 	)
 	return i, err
 }
@@ -333,7 +343,7 @@ func (q *Queries) GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorPa
 }
 
 const getPIMWatchSettings = `-- name: GetPIMWatchSettings :one
-SELECT identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at FROM aura.pim_watch_settings WHERE identity_id = $1
+SELECT identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at, label_descriptions_seeded FROM aura.pim_watch_settings WHERE identity_id = $1
 `
 
 func (q *Queries) GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUID) (AuraPimWatchSettings, error) {
@@ -349,12 +359,13 @@ func (q *Queries) GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUI
 		&i.LabelsSeeded,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LabelDescriptionsSeeded,
 	)
 	return i, err
 }
 
 const getPIMWatchVerdict = `-- name: GetPIMWatchVerdict :one
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3 AND item_id = $4
 `
 
@@ -400,6 +411,14 @@ func (q *Queries) GetPIMWatchVerdict(ctx context.Context, arg GetPIMWatchVerdict
 		&i.WrittenTo,
 		&i.ProviderImportant,
 		&i.Bulk,
+		&i.ModelLabelID,
+		&i.ModelProbability,
+		&i.ModelName,
+		&i.ModelTier,
+		&i.ModelDiscarded,
+		&i.ModelOptions,
+		&i.ModelSkipped,
+		&i.Discarded,
 	)
 	return i, err
 }
@@ -429,16 +448,18 @@ func (q *Queries) InsertPIMWatchCorrection(ctx context.Context, arg InsertPIMWat
 }
 
 const insertPIMWatchLabel = `-- name: InsertPIMWatchLabel :one
-INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
-VALUES ($1, $2, $3, $4)
-RETURNING id, identity_id, name, tier, position, created_at
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, identity_id, name, tier, position, created_at, description, discard
 `
 
 type InsertPIMWatchLabelParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Name       string      `json:"name"`
-	Tier       pgtype.Text `json:"tier"`
-	Position   int32       `json:"position"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Name        string      `json:"name"`
+	Tier        pgtype.Text `json:"tier"`
+	Position    int32       `json:"position"`
+	Description string      `json:"description"`
+	Discard     bool        `json:"discard"`
 }
 
 func (q *Queries) InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLabelParams) (AuraPimWatchLabels, error) {
@@ -447,6 +468,8 @@ func (q *Queries) InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLab
 		arg.Name,
 		arg.Tier,
 		arg.Position,
+		arg.Description,
+		arg.Discard,
 	)
 	var i AuraPimWatchLabels
 	err := row.Scan(
@@ -456,6 +479,8 @@ func (q *Queries) InsertPIMWatchLabel(ctx context.Context, arg InsertPIMWatchLab
 		&i.Tier,
 		&i.Position,
 		&i.CreatedAt,
+		&i.Description,
+		&i.Discard,
 	)
 	return i, err
 }
@@ -464,8 +489,18 @@ const insertPIMWatchVerdict = `-- name: InsertPIMWatchVerdict :execrows
 INSERT INTO aura.pim_watch_verdicts (
     identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by,
     auth_failed, fingerprint, decided_at, ladder_tier, ladder_by, centroid_tier, centroid_margin,
-    sender_memory_tier, written_to, provider_important, bulk
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    sender_memory_tier, written_to, provider_important, bulk,
+    model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, (SELECT l.id FROM aura.pim_watch_labels l WHERE l.id = $7), $8,
+    $9, $10, $11, $12, $13,
+    $14, $15, $16, $17,
+    $18, $19,
+    (SELECT l.id FROM aura.pim_watch_labels l WHERE l.id = $20),
+    $21, $22, $23, $24,
+    $25, $26, $27
+)
 ON CONFLICT (identity_id, account_id, resource, item_id) DO NOTHING
 `
 
@@ -489,9 +524,18 @@ type InsertPIMWatchVerdictParams struct {
 	WrittenTo         bool               `json:"written_to"`
 	ProviderImportant bool               `json:"provider_important"`
 	Bulk              bool               `json:"bulk"`
+	ModelLabelID      pgtype.UUID        `json:"model_label_id"`
+	ModelProbability  pgtype.Float8      `json:"model_probability"`
+	ModelName         pgtype.Text        `json:"model_name"`
+	ModelTier         pgtype.Text        `json:"model_tier"`
+	ModelDiscarded    bool               `json:"model_discarded"`
+	ModelOptions      pgtype.Int2        `json:"model_options"`
+	ModelSkipped      bool               `json:"model_skipped"`
+	Discarded         bool               `json:"discarded"`
 }
 
-// A mail is decided once: a replayed change leaves the first verdict and is told to nobody.
+// A mail is decided once: a replayed change leaves the first verdict and is told to nobody. A label
+// deleted since the Book was read is written as NULL: the page commits, and is never replayed for it.
 func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchVerdictParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertPIMWatchVerdict,
 		arg.IdentityID,
@@ -513,6 +557,14 @@ func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchV
 		arg.WrittenTo,
 		arg.ProviderImportant,
 		arg.Bulk,
+		arg.ModelLabelID,
+		arg.ModelProbability,
+		arg.ModelName,
+		arg.ModelTier,
+		arg.ModelDiscarded,
+		arg.ModelOptions,
+		arg.ModelSkipped,
+		arg.Discarded,
 	)
 	if err != nil {
 		return 0, err
@@ -521,7 +573,7 @@ func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchV
 }
 
 const listPIMWatchAccountVerdicts = `-- name: ListPIMWatchAccountVerdicts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND decided_at >= $3 AND decided_at < $4
 ORDER BY decided_at DESC, item_id
 LIMIT $5
@@ -577,6 +629,14 @@ func (q *Queries) ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWa
 			&i.WrittenTo,
 			&i.ProviderImportant,
 			&i.Bulk,
+			&i.ModelLabelID,
+			&i.ModelProbability,
+			&i.ModelName,
+			&i.ModelTier,
+			&i.ModelDiscarded,
+			&i.ModelOptions,
+			&i.ModelSkipped,
+			&i.Discarded,
 		); err != nil {
 			return nil, err
 		}
@@ -693,7 +753,7 @@ func (q *Queries) ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUI
 }
 
 const listPIMWatchDigestVerdicts = `-- name: ListPIMWatchDigestVerdicts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND decided_at > $2 AND decided_at <= $3 AND tier IN ('now', 'today')
 ORDER BY decided_at, item_id
 `
@@ -740,6 +800,14 @@ func (q *Queries) ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWat
 			&i.WrittenTo,
 			&i.ProviderImportant,
 			&i.Bulk,
+			&i.ModelLabelID,
+			&i.ModelProbability,
+			&i.ModelName,
+			&i.ModelTier,
+			&i.ModelDiscarded,
+			&i.ModelOptions,
+			&i.ModelSkipped,
+			&i.Discarded,
 		); err != nil {
 			return nil, err
 		}
@@ -752,7 +820,7 @@ func (q *Queries) ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWat
 }
 
 const listPIMWatchLabels = `-- name: ListPIMWatchLabels :many
-SELECT id, identity_id, name, tier, position, created_at FROM aura.pim_watch_labels
+SELECT id, identity_id, name, tier, position, created_at, description, discard FROM aura.pim_watch_labels
 WHERE identity_id = $1
 ORDER BY position, name
 `
@@ -773,6 +841,8 @@ func (q *Queries) ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID
 			&i.Tier,
 			&i.Position,
 			&i.CreatedAt,
+			&i.Description,
+			&i.Discard,
 		); err != nil {
 			return nil, err
 		}
@@ -785,7 +855,7 @@ func (q *Queries) ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID
 }
 
 const listPIMWatchOwedAlerts = `-- name: ListPIMWatchOwedAlerts :many
-SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk FROM aura.pim_watch_verdicts
+SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND alert_run_id IS NOT NULL AND NOT notified
 ORDER BY alerted_at, item_id
 `
@@ -831,6 +901,14 @@ func (q *Queries) ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOw
 			&i.WrittenTo,
 			&i.ProviderImportant,
 			&i.Bulk,
+			&i.ModelLabelID,
+			&i.ModelProbability,
+			&i.ModelName,
+			&i.ModelTier,
+			&i.ModelDiscarded,
+			&i.ModelOptions,
+			&i.ModelSkipped,
+			&i.Discarded,
 		); err != nil {
 			return nil, err
 		}
@@ -968,7 +1046,8 @@ func (q *Queries) ListPIMWatchSenderMemory(ctx context.Context, arg ListPIMWatch
 }
 
 const listPIMWatchShadowRows = `-- name: ListPIMWatchShadowRows :many
-SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, decided_at, notified
+SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, model_tier,
+    decided_at, notified
 FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= $2
 `
@@ -986,6 +1065,7 @@ type ListPIMWatchShadowRowsRow struct {
 	CentroidTier     pgtype.Text        `json:"centroid_tier"`
 	CentroidMargin   pgtype.Float8      `json:"centroid_margin"`
 	SenderMemoryTier pgtype.Text        `json:"sender_memory_tier"`
+	ModelTier        pgtype.Text        `json:"model_tier"`
 	DecidedAt        pgtype.Timestamptz `json:"decided_at"`
 	Notified         bool               `json:"notified"`
 }
@@ -1007,6 +1087,7 @@ func (q *Queries) ListPIMWatchShadowRows(ctx context.Context, arg ListPIMWatchSh
 			&i.CentroidTier,
 			&i.CentroidMargin,
 			&i.SenderMemoryTier,
+			&i.ModelTier,
 			&i.DecidedAt,
 			&i.Notified,
 		); err != nil {
@@ -1301,16 +1382,18 @@ func (q *Queries) RetellPIMWatchAlerts(ctx context.Context, arg RetellPIMWatchAl
 }
 
 const seedPIMWatchLabel = `-- name: SeedPIMWatchLabel :exec
-INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position)
-VALUES ($1, $2, $3, $4)
+INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (identity_id, name) DO NOTHING
 `
 
 type SeedPIMWatchLabelParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Name       string      `json:"name"`
-	Tier       pgtype.Text `json:"tier"`
-	Position   int32       `json:"position"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Name        string      `json:"name"`
+	Tier        pgtype.Text `json:"tier"`
+	Position    int32       `json:"position"`
+	Description string      `json:"description"`
+	Discard     bool        `json:"discard"`
 }
 
 func (q *Queries) SeedPIMWatchLabel(ctx context.Context, arg SeedPIMWatchLabelParams) error {
@@ -1319,6 +1402,8 @@ func (q *Queries) SeedPIMWatchLabel(ctx context.Context, arg SeedPIMWatchLabelPa
 		arg.Name,
 		arg.Tier,
 		arg.Position,
+		arg.Description,
+		arg.Discard,
 	)
 	return err
 }
@@ -1400,16 +1485,18 @@ func (q *Queries) TallyPIMWatchAlerts(ctx context.Context, arg TallyPIMWatchAler
 
 const updatePIMWatchLabel = `-- name: UpdatePIMWatchLabel :one
 UPDATE aura.pim_watch_labels
-SET name = $3, tier = $4
+SET name = $3, tier = $4, description = $5, discard = $6
 WHERE identity_id = $1 AND id = $2
-RETURNING id, identity_id, name, tier, position, created_at
+RETURNING id, identity_id, name, tier, position, created_at, description, discard
 `
 
 type UpdatePIMWatchLabelParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	ID         pgtype.UUID `json:"id"`
-	Name       string      `json:"name"`
-	Tier       pgtype.Text `json:"tier"`
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Tier        pgtype.Text `json:"tier"`
+	Description string      `json:"description"`
+	Discard     bool        `json:"discard"`
 }
 
 func (q *Queries) UpdatePIMWatchLabel(ctx context.Context, arg UpdatePIMWatchLabelParams) (AuraPimWatchLabels, error) {
@@ -1418,6 +1505,8 @@ func (q *Queries) UpdatePIMWatchLabel(ctx context.Context, arg UpdatePIMWatchLab
 		arg.ID,
 		arg.Name,
 		arg.Tier,
+		arg.Description,
+		arg.Discard,
 	)
 	var i AuraPimWatchLabels
 	err := row.Scan(
@@ -1427,6 +1516,8 @@ func (q *Queries) UpdatePIMWatchLabel(ctx context.Context, arg UpdatePIMWatchLab
 		&i.Tier,
 		&i.Position,
 		&i.CreatedAt,
+		&i.Description,
+		&i.Discard,
 	)
 	return i, err
 }
@@ -1435,7 +1526,7 @@ const updatePIMWatchSettings = `-- name: UpdatePIMWatchSettings :one
 UPDATE aura.pim_watch_settings
 SET digest_hour = $2, daily_alert_cap = $3, updated_at = now()
 WHERE identity_id = $1
-RETURNING identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at
+RETURNING identity_id, digest_hour, daily_alert_cap, interval_minutes, last_digest_at, verdict_retention_days, labels_seeded, created_at, updated_at, label_descriptions_seeded
 `
 
 type UpdatePIMWatchSettingsParams struct {
@@ -1457,6 +1548,7 @@ func (q *Queries) UpdatePIMWatchSettings(ctx context.Context, arg UpdatePIMWatch
 		&i.LabelsSeeded,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LabelDescriptionsSeeded,
 	)
 	return i, err
 }

@@ -49,7 +49,6 @@ type phrases struct {
 	dayLayout       string
 	watchTask       string // account
 	digestTask      string
-	defaultLabels   []Label
 }
 
 var texts = map[Lang]phrases{
@@ -76,10 +75,6 @@ var texts = map[Lang]phrases{
 		dayLayout:       "02/01",
 		watchTask:       "Controllo di posta e calendario: %s",
 		digestTask:      "Riepilogo di posta e calendario",
-		defaultLabels: []Label{
-			{Name: "Cliente"}, {Name: "Lavoro"}, {Name: "Personale"}, {Name: "Opportunità"},
-			{Name: "Pubblicità", Tier: TierLater},
-		},
 	},
 	LangEN: {
 		alertHead:       "Worth a look on %s:",
@@ -104,10 +99,6 @@ var texts = map[Lang]phrases{
 		dayLayout:       "Jan 2",
 		watchTask:       "Mail and calendar watch: %s",
 		digestTask:      "Mail and calendar digest",
-		defaultLabels: []Label{
-			{Name: "Client"}, {Name: "Work"}, {Name: "Personal"}, {Name: "Opportunity"},
-			{Name: "Advertising", Tier: TierLater},
-		},
 	},
 }
 
@@ -116,17 +107,6 @@ func phrasesFor(lang Lang) phrases {
 		return p
 	}
 	return texts[LangEN]
-}
-
-// DefaultLabels is the set an identity starts with, in its language (spec §5.8).
-func DefaultLabels(lang Lang) []Label {
-	labels := phrasesFor(lang).defaultLabels
-	out := make([]Label, len(labels))
-	for i, label := range labels {
-		label.Position = i
-		out[i] = label
-	}
-	return out
 }
 
 func (p phrases) resource(resource string) string {
