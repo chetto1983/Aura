@@ -49,6 +49,85 @@ embed_header_value() {
   '
 }
 
+# Compose on a sidecar that may sit behind a profile: the decision sidecar's is not enabled in
+# COMPOSE_PROFILES until its files are placed, so its calls name it. The embedding path
+# passes no profile and its docker calls stay what they were.
+sidecar_compose() {
+  profile="$1"
+  shift
+  if [ -n "$profile" ]; then
+    docker compose --profile "$profile" "$@"
+  else
+    docker compose "$@"
+  fi
+}
+
+# Sets sidecar_cid to the container of a service, creating it when it does not exist yet: the
+# volume is filled through a container that is created and not started.
+sidecar_container_id() {
+  service="$1"
+  profile="${2:-}"
+  create_error="$(sidecar_compose "$profile" create "$service" 2>&1 >/dev/null)" || true
+  sidecar_cid="$(sidecar_compose "$profile" ps -aq "$service" 2>/dev/null | head -1)"
+  if [ -z "$sidecar_cid" ]; then
+    echo "FAIL: could not materialise the ${service} container to place the model: ${create_error}" >&2
+    exit 1
+  fi
+}
+
+# Places ONE file in the volume of the container sidecar_cid names, unless the file there
+# already hashes to the sha256 given. `fetch_fn` is a function that fetches the file into the
+# temp path it is handed; a replaced file sets sidecar_replaced for restart_sidecar_if_replaced.
+# `stale_note` ends "<label> on disk (sha256 …) is not <stale_note>".
+place_in_sidecar_volume() {
+  volume_path="$1"
+  want_sha="$2"
+  label="$3"
+  stale_note="$4"
+  fetch_fn="$5"
+  have_sha="$(docker run --rm --volumes-from "$sidecar_cid" alpine \
+    sh -c "sha256sum '$volume_path' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '\r')"
+
+  if [ "$have_sha" = "$want_sha" ]; then
+    echo "${label} already present (sha256 ${want_sha})"
+    return 0
+  fi
+  if [ -n "$have_sha" ]; then
+    echo "${label} on disk (sha256 ${have_sha}) is not ${stale_note}"
+  fi
+
+  tmp_file="$(mktemp -t aura-sidecar-file.XXXXXX)"
+  trap 'rm -f "$tmp_file"' EXIT
+  "$fetch_fn" "$tmp_file"
+  docker cp "$tmp_file" "${sidecar_cid}:${volume_path}" || {
+    echo "FAIL: could not place ${label} into the sidecar volume" >&2
+    exit 1
+  }
+  rm -f "$tmp_file"
+  trap - EXIT
+  sidecar_replaced=1
+  echo "${label} installed at ${volume_path}"
+}
+
+# llama-server loads its GGUF at start, and the `compose up -d` that follows leaves a
+# container whose config did not change alone, so a running sidecar would keep serving the
+# model this replaced. A sidecar only created is started on the new file by that up.
+restart_sidecar_if_replaced() {
+  service="$1"
+  profile="${2:-}"
+  if [ -z "${sidecar_replaced:-}" ]; then
+    return 0
+  fi
+  sidecar_replaced=
+  if [ -n "$(sidecar_compose "$profile" ps -q --status running "$service" 2>/dev/null)" ]; then
+    sidecar_compose "$profile" restart "$service" >/dev/null
+  fi
+}
+
+fetch_embed_model() {
+  scripts/fetch_embedding_model.sh "$1" "$model_url" "$fingerprint"
+}
+
 ensure_embed_model() {
   model_path="$EMBED_MODEL_PATH"
   # The artifact .env names, not whatever main serves today. ensure_embed_provenance froze
@@ -62,85 +141,40 @@ ensure_embed_model() {
   fi
   model_url="${EMBED_MODEL_URL/\/resolve\/main\//\/resolve\/${revision}\/}"
 
-  docker compose create aura-llama-embed >/dev/null 2>&1 || true
-  embed_cid="$(docker compose ps -aq aura-llama-embed 2>/dev/null | head -1)"
-  if [ -z "$embed_cid" ]; then
-    echo "FAIL: could not materialise the aura-llama-embed container to place the model" >&2
-    exit 1
-  fi
-  have_sha="$(docker run --rm --volumes-from "$embed_cid" alpine \
-    sh -c "sha256sum '$model_path' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '\r')"
-
-  if [ "$have_sha" = "$fingerprint" ]; then
-    echo "embedding model already present (sha256 ${fingerprint})"
-    return 0
-  fi
-  if [ -n "$have_sha" ]; then
-    echo "embedding model on disk (sha256 ${have_sha}) is not AURA_EMBED_FINGERPRINT — refetching revision ${revision}"
-  fi
-
-  tmp_model="$(mktemp -t aura-embed-model.XXXXXX)"
-  trap 'rm -f "$tmp_model"' EXIT
-  scripts/fetch_embedding_model.sh "$tmp_model" "$model_url" "$fingerprint"
-
-  docker cp "$tmp_model" "${embed_cid}:${model_path}" || {
-    echo "FAIL: could not place the embedding model into the sidecar volume" >&2
-    exit 1
-  }
-  rm -f "$tmp_model"
-  trap - EXIT
-  # llama-server loads its GGUF at start, and the `compose up -d` that follows leaves a
-  # container whose config did not change alone, so a running sidecar would keep serving the
-  # model this replaced. A sidecar only created is started on the new file by that up.
-  if [ -n "$(docker compose ps -q --status running aura-llama-embed 2>/dev/null)" ]; then
-    docker compose restart aura-llama-embed >/dev/null
-  fi
-  echo "embedding model installed at ${model_path}"
+  sidecar_container_id aura-llama-embed
+  place_in_sidecar_volume "$model_path" "$fingerprint" "embedding model" \
+    "AURA_EMBED_FINGERPRINT — refetching revision ${revision}" fetch_embed_model
+  restart_sidecar_if_replaced aura-llama-embed
 }
 
 # ensure_decide_model installs the optional local decision sidecar, and only when the operator
 # asked for it with AURA_DECIDE_LOCAL=1. It places Liquid AI's d1-3B GGUF and its LICENSE in
 # the aura-llama-decide volume (fetch_decide_model.sh pins both), enables the localdecide
 # profile and writes the address aura reads: no address, no local route (spec decision 13).
-# A file already in the volume that hashes to its pin is left alone, as the embedding model is.
+# Every compose call names the profile, because it is enabled in .env only at the end.
 DECIDE_VOLUME_DIR="/root/.cache/llama.cpp"
-DECIDE_LICENSE_URL="https://huggingface.co/LiquidAI/d1-3B-GGUF/blob/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/LICENSE"
+
+fetch_decide_artifact() {
+  scripts/fetch_decide_model.sh --artifact "$artifact_name" "$1"
+}
 
 ensure_decide_model() {
   if [ "${AURA_DECIDE_LOCAL:-}" != "1" ]; then
     return 0
   fi
 
-  docker compose create aura-llama-decide >/dev/null 2>&1 || true
-  decide_cid="$(docker compose ps -aq aura-llama-decide 2>/dev/null | head -1)"
-  if [ -z "$decide_cid" ]; then
-    echo "FAIL: could not materialise the aura-llama-decide container to place the model" >&2
-    exit 1
-  fi
-
+  sidecar_container_id aura-llama-decide localdecide
   for artifact_name in model license; do
     pin="$(scripts/fetch_decide_model.sh --artifact "$artifact_name" --show)"
     artifact_file="$(printf '%s\n' "$pin" | awk '$1 == "file" { print $2 }')"
     artifact_sha="$(printf '%s\n' "$pin" | awk '$1 == "sha256" { print $2 }')"
-    artifact_path="${DECIDE_VOLUME_DIR}/${artifact_file}"
-    have_sha="$(docker run --rm --volumes-from "$decide_cid" alpine \
-      sh -c "sha256sum '$artifact_path' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '\r')"
-    if [ "$have_sha" = "$artifact_sha" ]; then
-      echo "${artifact_file} already present (sha256 ${artifact_sha})"
-      continue
+    place_in_sidecar_volume "${DECIDE_VOLUME_DIR}/${artifact_file}" "$artifact_sha" "$artifact_file" \
+      "its pin — refetching" fetch_decide_artifact
+    if [ "$artifact_name" = license ]; then
+      license_url="$(printf '%s\n' "$pin" | awk '$1 == "url" { print $2 }')"
     fi
-
-    tmp_artifact="$(mktemp -t aura-decide-model.XXXXXX)"
-    trap 'rm -f "$tmp_artifact"' EXIT
-    scripts/fetch_decide_model.sh --artifact "$artifact_name" "$tmp_artifact"
-    docker cp "$tmp_artifact" "${decide_cid}:${artifact_path}" || {
-      echo "FAIL: could not place ${artifact_file} into the aura-llama-decide volume" >&2
-      exit 1
-    }
-    rm -f "$tmp_artifact"
-    trap - EXIT
-    echo "${artifact_file} installed at ${artifact_path}"
   done
+  restart_sidecar_if_replaced aura-llama-decide localdecide
 
   profiles="$(env_value COMPOSE_PROFILES)"
   case ",${profiles}," in
@@ -150,7 +184,7 @@ ensure_decide_model() {
   esac
   set_env_value AURA_DECIDE_BASE_URL http://aura-llama-decide:8085
 
-  echo "The local decision model is Liquid AI's d1-3B under the LFM Open License 1.0: commercial use is licensed only below USD 10M annual revenue. Its LICENSE is in the aura-llama-decide volume and at ${DECIDE_LICENSE_URL}."
+  echo "The local decision model is Liquid AI's d1-3B under the LFM Open License 1.0: commercial use is licensed only below USD 10M annual revenue. Its LICENSE is in the aura-llama-decide volume and at ${license_url/\/resolve\//\/blob\/}."
 }
 
 set_env_value() {

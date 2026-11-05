@@ -195,7 +195,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	// down with it. Which model embeds is the release's decision, carried by the payload,
 	// so compose names the path itself and the installer fetches the model to exactly that
 	// path; an .env override froze each appliance on the model it was installed with.
-	embedModel := regexp.MustCompile(`(?m)^\s+- -m\n\s+- (/\S+\.gguf)\s*$`).FindStringSubmatch(compose)
+	embedModel := firstModelPath.FindStringSubmatch(compose)
 	if embedModel == nil {
 		t.Fatalf("compose.yaml's aura-llama-embed does not load a literal local gguf with -m")
 	}

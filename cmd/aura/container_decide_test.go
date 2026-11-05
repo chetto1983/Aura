@@ -8,6 +8,10 @@ import (
 
 const decideService = "aura-llama-decide"
 
+// firstModelPath finds the first literal `-m <gguf>` in compose.yaml, which must stay the embedding
+// sidecar's (container_artifacts_test.go pins that it matches the installer's path).
+var firstModelPath = regexp.MustCompile(`(?m)^\s+- -m\n\s+- (/\S+\.gguf)\s*$`)
+
 var composeFilesWithLlamaPin = []string{
 	"compose.yaml",
 	"compose.cpu.yaml",
@@ -57,7 +61,7 @@ func TestAuraForwardsTheDecideAddressAndNoKey(t *testing.T) {
 func TestEmbeddingGGUFIsStillTheFirstModelCompose(t *testing.T) {
 	root := repoRootForTest(t)
 	compose := readProjectFile(t, root, "compose.yaml")
-	first := regexp.MustCompile(`(?m)^\s+- -m\n\s+- (/\S+\.gguf)\s*$`).FindStringSubmatch(compose)
+	first := firstModelPath.FindStringSubmatch(compose)
 	if first == nil || !strings.HasSuffix(first[1], "embeddinggemma-300M-Q8_0.gguf") {
 		t.Fatalf("the first literal -m in compose.yaml must be the embedding model, got %v", first)
 	}
