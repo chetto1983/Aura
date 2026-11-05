@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import {
   useMutation,
   useMutationState,
@@ -163,6 +164,8 @@ export function useCorrection(
   },
 ) {
   const queryClient = useQueryClient();
+  // A correction moved a row between the lists, and no read of the day has followed it yet.
+  const moved = useRef(false);
 
   function writeRow(row: MailWatchDecision) {
     const { queryKey } = decisionsQuery(accountId, day, listOf(row));
@@ -188,6 +191,9 @@ export function useCorrection(
         ...(labelId === undefined ? {} : { label_id: labelId }),
       }),
     onMutate: async ({ row, tier, labelId }) => {
+      // The read that is cancelled here may be the one that moves a row, so the last correction
+      // to settle asks again.
+      if (queryClient.isFetching({ queryKey: dayKey(accountId, day) }) > 0) moved.current = true;
       await queryClient.cancelQueries({ queryKey: dayKey(accountId, day) });
       writeRow(corrected(row, tier, labelId));
     },
@@ -197,10 +203,7 @@ export function useCorrection(
     },
     onSuccess: (answer, { row, labelId }) => {
       writeRow(corrected(row, answer.tier, labelId));
-      // Only a row that changed lists is read again: any other correction is the write above.
-      if ((answer.discarded === true) !== listOf(row)) {
-        void queryClient.invalidateQueries({ queryKey: dayKey(accountId, day) });
-      }
+      if ((answer.discarded === true) !== listOf(row)) moved.current = true;
       if (answer.rule === undefined) return undefined;
       const change = ruleChange(queryClient, answer.rule);
       // A correction that agrees with the rule on file taught nothing new.
@@ -208,6 +211,13 @@ export function useCorrection(
         handlers.onLearned(change, answer.rule_created === true);
       }
       return refreshRules(queryClient);
+    },
+    // Only after the last correction settles, or the next one's cancel would drop the read. Only a
+    // row that changed lists is read again: any other correction is the write above.
+    onSettled: () => {
+      if (!moved.current || queryClient.isMutating({ mutationKey: CORRECTION_KEY }) > 1) return;
+      moved.current = false;
+      void queryClient.invalidateQueries({ queryKey: dayKey(accountId, day) });
     },
   });
 }
