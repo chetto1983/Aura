@@ -37,6 +37,7 @@
     "github.com/chetto1983/aura/internal/cron": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron/handlers": {"mode": "target"},
     "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 278, "total_statements": 331},
+    "github.com/chetto1983/aura/internal/decide": {"mode": "target"},
     "github.com/chetto1983/aura/internal/docfields": {"mode": "baseline", "covered_statements": 419, "total_statements": 1169},
     "github.com/chetto1983/aura/internal/docfields/rules": {"mode": "target"},
     "github.com/chetto1983/aura/internal/documents": {"mode": "target"},
