@@ -1,16 +1,19 @@
 # Scheduled delivery defaults and reviewed scheduled messages: implementation plan
 
 
-**Status:** written 2026-11-05. The operator confirmed the three open choices the same day ("confermo"): an unapproved message task is released at its time only to expire and report "not approved in time" (decision 8); an approved message task can only be cancelled (decision 14); the Telegram review fix covers immediate drafts too (decision 13). Execution is deferred until the parallel session working on the settings/agui files has finished; validate the plan with three reviewers before starting. Recommended execution: subagent-driven.
+**Status:** written 2026-11-05. The operator confirmed the three open choices the same day ("confermo"): an unapproved message task reaches its time only to expire and report "not approved in time" (decision 8); an approved message task can only be cancelled (decision 14); the Telegram review fix covers immediate drafts too (decision 13). Extended the same day to the spec's Part 3: every approval appears in the chat that creates the task (Task 13), and a one-shot that passes its time unapproved expires and is reported (Task 14). Decision 8 is now met by Task 14's expiry, with no activation. The operator confirmed the Part 3 choices the same day ("ok"): a call with nobody in the chat is stored pending and reminded by the existing sweep, not refused; an expired one-shot is deleted by the existing cleanup after its notice is delivered; the risk tier leaves the approval question. Execution is deferred until the parallel session working on the settings/agui files has finished; validate the plan with three reviewers before starting. Recommended execution: subagent-driven.
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans, task by task, on `master`. Steps use checkbox syntax.
 
-**Goal:** `task` uses a default channel that the operator sets in the cockpit's Profile panel, and it names that channel in every reply that used it. A new one-shot task kind, `message`, sends one fixed message to someone else at a set time. The operator reviews the recipient and the text when it is scheduled, in the cockpit or on Telegram. At fire time it goes out once, with no model in between. A job that tries to write to someone else is reported as "not sent".
+**Goal:** `task` uses a default channel that the operator sets in the cockpit's Profile panel, and it names that channel in every reply that used it. A new one-shot task kind, `message`, sends one fixed message to someone else at a set time. The operator reviews the recipient and the text when it is scheduled, in the cockpit or on Telegram. At fire time it goes out once, with no model in between. A job that tries to write to someone else is reported as "not sent". Every task that needs approval asks for it in the chat that creates it, in that turn, naming what will run. A one-shot nobody approved in time expires and the operator is told.
 
 **Architecture:** Part 1 adds `default_notify` to `aura.identity_profiles`. `task` reads it through a `Defaults` seam that sits beside `Timezones`. The delivery logic moves from `actionSchedule` into `task_delivery.go`. Part 2 makes the `task` call with `kind=message` a host-reviewed call. The agent parks it before it runs, the same way it parks a trusted send today (`withholdOutboundMessage`). The tool persists a `pending_approval` task and a message draft bound to it, and returns the review pause, keyed to the model's own call id. The draft row has the only authority to send:
 - the review moves it to `approved`, then activates the task;
-- the scheduler releases a message task when it is due, whether or not it was approved;
 - a handler with no model claims the approved draft (one-send CAS) and dispatches it through `agent.ExecuteReviewedMessage`, so the gateway's claim binding stays as it is;
-- an unapproved draft expires and is reported, and nothing is sent.
+- an unapproved draft expires with its task (Part 3), and nothing is sent.
+
+Part 3 widens the host review to every `task` schedule call that will need approval. One pure rule, `taskNeedsApproval`, decides it from the arguments, both before the call and inside it. The pause is a `scheduled_task_approval` keyed to the model's call id. Its question names the kind, the time in the operator's zone and the goal or text. The model-relayed directive retires. On each tick, the scheduler's new lapsed-approval pass handles any one-shot still `pending_approval` past its time, of any kind, `message` included. It closes the task's pending pause, cancels the task (a CAS, so a concurrent approval wins), opens and closes a run carrying the notice, and delivers it through the dispatcher's own notify and origin record.
+
+Everything new runs in the same turn and needs a person in the chat. Headless and delegated schedule calls still persist `pending_approval`, and the existing sweep stays their backstop.
 
 **Tech Stack:** Go, Postgres (two migrations + sqlc), the existing message-draft review (`internal/messagedrafts`, `internal/runner`), cron dispatch, telebot (Telegram), React + i18next (cockpit).
 
@@ -23,6 +26,12 @@
 - `kind=message` is one-shot only (`schedule_kind=at`). It fires at most `24h − 15m` ahead. The draft lives until the fire time plus `ScheduledMessageGrace = 15 * time.Minute`, inside `Store.Create`'s 24 h bound (`internal/messagedrafts/store.go:104`).
 - Only an approved draft is ever dispatched, and at most once (the `approved → dispatching` CAS). No answer means the message is not sent.
 - No regex and no text analysis of an `agent_job` goal (spec, anti-goals).
+- A task needs approval when `kind == "agent_job"` (AG-016) or `scoring.GateRecommended(scoring.ComputeTaskTier(…))`. That rule is `taskNeedsApproval`, and nothing else decides it.
+- The approval question, verbatim: `Approve scheduled <kind> task <first 8 of id> (<schedule>), first run <when>? It runs: <summary>. It will not fire until you approve.`
+  - `<schedule>` is `once`, `every <n>m`, or `cron "<expr>"`.
+  - `<when>` is the first fire in the operator's zone, as `02/01 15:04 (<zone>)`.
+  - `<summary>` is the goal (agent_job), the text (reminder) or the kind, on one line, cut at 160 runes with `…`.
+- The lapsed-approval notice, verbatim: `<kind> for <02/01 15:04 (<zone>)> was not approved in time and did not run.` Its time is the task's `next_run_at` in the task's `tz`.
 - Migration numbers: `ls internal/db/migrations/ | tail -1` at landing. Today the last is `0153`, so Part 1 is `0154` and Part 2 is `0155`. Re-check both when each one lands.
 - No file over 600 lines. Measured today: `task.go` 568, `serve_adapters.go` 555, `chat_boot.go` 578, `agui/server.go` 590, `dispatch.go` 571, `cmd/aura/task.go` 562, `resources.settings.ts` 576. A peer session has uncommitted edits in `internal/agui/server.go` and `web/src/i18n/resources.ts` (2026-11-05), so measure again when a task touches them. If the canceller field would push `server.go` past 600 lines, move an existing group of setters out of it into its own file, in the same commit.
 - Commands:
@@ -38,8 +47,8 @@
 1. **A scheduled draft goes out too early or too late.** Two cases: the interactive "send" path claims it at once, or the operator approves it after its send time. Neither may send. Pinned by `TestClaimSendRefusesAScheduledDraft` (Task 4) and `TestApproveRefusesAfterTheSendTime` (Task 6).
 2. **A message task is activated by its id alone.** That covers the approval sweep, the scheduled-task resume hook, the board's approve, `aura task approve`, and a `scheduled_task_approval` that the model relays. None may activate it, and none mints a bare Sì/No. Pinned by `TestApproveTaskRefusesAMessageTask`, `TestTheScheduledTaskHookNeverActivatesAMessageTask` and `TestTheSweepNeverMintsABareApprovalForAMessage` (Task 7).
 3. **The same message task fires twice**, from a boot catch-up, a second tick, or a crash after the claim. Only one dispatch ever happens. Pinned by `TestASecondFireNeverSendsAgain` (Task 11).
-4. **No answer reaches the fire time.** Nothing is sent, the operator is told "not approved in time", and the task settles instead of waiting forever. Pinned by `TestAnUnapprovedMessageIsReportedAndSettles` (Task 11).
-5. **The text is longer than a Telegram message can hold (4096 characters).** The card still sends, with the text cut and a pointer to the cockpit, and Approva still works. Pinned by `TestALongMessageIsCutWithAPointerToTheCockpit` (Task 10).
+4. **No answer reaches a one-shot's time,** for a message or an agent_job, including the one stuck since 2026-11-02. Nothing runs or is sent, and the operator is told on the notify route. The task leaves the awaiting-approval list, and its pause leaves the approvals list. An approval racing the expiry wins or loses whole. Pinned by `TestAnUnapprovedMessageIsReportedAndSettles`, `TestATaskStuckBeforeDeployExpiresOnTheFirstPass` and `TestALostRaceSendsNothing` (Task 14).
+5. **The gate before the call disagrees with the gate inside it.** If so, a gated task would be created active, or a harmless one parked. Pinned by `TestTheGateBeforeTheCallIsTheGateInsideIt` (Task 13). The Telegram card's 4096-character limit, the next most likely, is pinned by `TestALongMessageIsCutWithAPointerToTheCockpit` (Task 10).
 
 ## Decisions taken while writing this plan
 
@@ -50,7 +59,13 @@
 5. **The grace period is 15 minutes.** So a message is scheduled at most 23 h 45 m ahead.
 6. **Payload names:** `channel` (`whatsapp` | `email`), `recipient` (WhatsApp), `to` (a list, email), `account`, `subject` (email) and `text`. WhatsApp maps to `{"recipient", "message"}`. Email maps to `{"action":"send_email","accountId","to","subject","body","bodyFormat":"text"}`, because the PIM's default body format is HTML (`internal/messagedrafts/validation.go:191-201`).
 7. **The tools package cannot call `messagedrafts`,** because `messagedrafts` imports `tools` (`internal/messagedrafts/validation.go:13`). Draft creation is a seam, `taskMessageDrafts`, implemented in `cmd/aura/serve_scheduled_message.go`. It resolves the mounted trusted tool by recipe through a new `Registry.ByTrustedRecipe`, which `selfSendResolver.Resolve` (`cmd/aura/serve_notify.go:53-64`) then uses too. The registry is a map (`spec.go:281-289`), so the helper sorts by name before it picks the first match.
-8. **A message task due without approval is released to its handler** (`ReleaseDueMessages`, run on each tick before `DueTasks`). Without this nothing reports the "no answer" case: `DueTasks` selects only active tasks (`internal/db/queries/scheduler_tasks.sql:50`), and a `pending_approval` task never fires. Once released, the handler expires the draft and reports "not approved in time". It cannot send, because the claim needs an approved draft. The task then settles as a fired one-shot. This is activation by the scheduler, but it never makes a send possible. See "Needs a human decision" in the report.
+8. **A message task due without approval expires with every other lapsed one-shot (Task 14), and is never released.** The first version released it to its handler. Part 3 needs the same rule for every kind, and releasing an `agent_job` would run it unapproved. So one pass handles all kinds, with no activation:
+   - it closes the pause, expiring a message draft on the way;
+   - it cancels the task with a CAS;
+   - it opens a run and completes it `failed` with the notice;
+   - it delivers the notice through `Dispatch.notify` and `recordToOrigin`.
+
+   The reason it is needed is unchanged: `DueTasks` selects only active tasks (`internal/db/queries/scheduler_tasks.sql:50`). The operator's confirmed behaviour ("not approved in time", nothing sent) holds. `ReleaseDueMessages` is not built.
 9. **The handler learns its task.** `cron.Job` and `handlers.Job` gain `TaskID` (`internal/cron/dispatch.go:42-59` has no task id today).
 10. **The `agent_job` line comes from the job's own events, not from the deny fact.** The gateway writes the deny fact only on a strict profile (`internal/gateway/message_draft.go:61-63`). The handler instead reads the end `ToolInvocation` event (`Refused` true) for a tool that `messagedrafts.TrustedOutboundTarget` recognizes. `decideReviewedMessage` is the first check in `Decide` (`internal/gateway/decide.go:69-71`), so such a refusal can only be the review refusal.
 11. **Five activation paths are refused, not three.** The other two are `aura task approve` (`cmd/aura/task.go:375-392`), which now calls `cron.Store.ApproveTask`, and `cronTaskStore.ApproveScheduledTask` (`cmd/aura/serve_adapters.go:283-…`), which has no production caller and is deleted.
@@ -61,6 +76,37 @@
 16. **The profile block's sentence renders only when the block does.** `RenderProfileBlock` returns `""` for an empty profile (`internal/onboarding/profile_block.go:95-97`), and that test stays.
 17. **The fire-time summary uses the identity's zone,** through `jobLocation`, which is extracted from `AgentDeps.clockLocation` (`internal/cron/handlers/handler.go:57-…`). The Telegram card uses `Runner.Location`, which wraps `turnLocation` (`internal/runner/runner_profile.go:29`).
 18. **The three new cockpit keys get their own resource file,** `resources.profileDefaultNotify.ts`, so `resources.settings.ts` (576 lines) stays under 600.
+
+Part 3 (added 2026-11-05):
+
+19. **One gating rule, read twice.** Today's gating is three inline statements in `actionSchedule`: the tier at `task.go:237-241`, `GateRecommended` at `:267-269`, and the AG-016 override at `:275-277`. They become `taskNeedsApproval(a taskArgs) (scoring.RiskTier, bool)`. `HostReview` calls it before the call runs and `actionSchedule` calls it inside the call. Both read only `Kind`, `ScheduleKind` and `Payload`, and `scoring.ComputeTaskTier` is pure, so the two cannot disagree. A table test pins it.
+20. **The in-turn approval pause keeps the `scheduled_task_approval` resume type.** Everything downstream already keys on it:
+    - the resume hook that activates or cancels (`cmd/aura/serve_scheduled_approval.go:99-115`);
+    - the answer the model reads after a decision (`internal/runner/runner_resume.go:253-274`);
+    - the sweep's de-duplication, which finds the in-turn pause and does not push (`serve_scheduled_approval.go:152-162`);
+    - the presentation (`internal/approvaltext/presentation.go:98`).
+
+    The runner stamps the decision policy and the presentation on every agent pause it persists (`internal/runner/runner_persist_pause.go:42-50`), so the parked pause needs nothing more. The hook keys on `origin_conversation_id = pending.ConversationID`. `HostReview` therefore stores the conversation the agent passes (`a.ledgerConvID`) as the origin.
+21. **The host review runs only with a person in the chat:** `gateway.HasResponder(ctx) && !tools.IsDelegatedDispatch(ctx)`, the gateway's `personPresent` (`internal/gateway/decide.go:51-53`). Task 5's message withhold uses the same test. A delegated swarm worker inherits the responder marker but has nobody on it.
+    - Such a call, and a headless `agent_job` scheduling another task, falls through to `Execute`. `Execute` persists `pending_approval` and returns a plain `awaitingApprovalResult` that tells the model not to call `ask_user`.
+    - For `kind=message`, `Execute` refuses as planned in Task 5.
+22. **The question is canonical English, and the renderers localize from presentation params.** `ScheduledKey` gains the params `schedule`, `when` and `summary`, parsed by a new `deriveScheduledNamed` that runs before `deriveScheduledCreated` (`presentation.go:175-197`). The latter stays for rows written before this change.
+    - `when` is written `02/01 15:04 (<zone>)`, numeric, so the Italian Telegram render (`RenderItalian`, `presentation.go:254`) and the cockpit (`web/src/approvals/approvalQuestion.ts:64-67`) need no day or month names.
+    - The risk tier leaves the question.
+23. **The model-relayed directive retires.** `scheduledApprovalRequiredResult` (`task.go:377-403`) and its "Call ask_user with kind="approval"" text are deleted. Its `immediate_alert` field has no reader: `git grep immediate_alert` finds only its producer at `task.go:393`.
+24. **Who still produces `pending_approval`, and what the sweep is still for.** The sweep's code is unchanged: it de-duplicates against the in-turn pause and never pushes it. It remains the backstop for producers 2, 3 and 5 below.
+    1. The model's `task` in a turn with a person (`task.go:266-277`). It now parks in-turn, and the sweep never pushes it.
+    2. The model's `task` without a person: an `agent_job` worker or a delegated worker. Rows are persisted with the origin conversation, so the sweep mints after its grace and pushes, as today.
+    3. An in-turn call whose pause commit failed after the task row was written. The sweep mints.
+    4. `aura task schedule` (`cmd/aura/task.go:118-123`). Its rows have no origin conversation, so `ListDuePendingApprovalReminders` already skips them (`internal/db/queries/scheduler_tasks.sql:101-118`). They keep `aura task approve`, unchanged.
+    5. Rows written before deploy by the retired relay path. Recurring ones keep the sweep's reminder. One-shots expire (Task 14).
+
+    Not producers: the mail watch (`cmd/aura/serve_pimwatch.go:330`, default status active), the provisioning seeds (`cmd/aura/serve_provisioning.go:441`, `:534`), and the board's edit, which keeps the status (`scheduler_tasks.sql:167`).
+25. **The terminal state of a lapsed one-shot is `cancelled`, so there is no new status and no migration.** The 0009 CHECK allows `active`, `paused`, `pending_approval` and `cancelled` (`internal/db/migrations/0009_scheduler.up.sql:24`).
+    - The run the pass opens, completed `failed` with the notice, keeps the reason in the ledger until `DeleteSettledOneShots` removes the task (`scheduler_tasks.sql:66-86`). That happens once its notification is delivered, which is the operator's rule of 2026-10-05.
+    - `InsertRun` already exists (`internal/cron/store.go:263`).
+26. **The pass closes the pause before it cancels the task.** If the close fails (a busy thread, a DB error), the task stays pending and the next tick retries. Otherwise a cancelled task would leave a live approval nobody can use: the hook's `UPDATE … status = 'pending_approval'` would match nothing (`serve_scheduled_approval.go:36-46`), and the cockpit's approvals would keep showing it.
+27. **The sweep's own minted question stays bounded** (kind + short id). The ensurer receives only `(taskID, conversationID, kind)` (`internal/cron/deliver_approval.go:131`). The named question belongs to the in-turn pause, which spec item 3 is about.
 
 ## File structure
 
@@ -76,7 +122,10 @@
 | `internal/agent/llm_agent_message_draft.go`, `llm_agent_pause.go` | host-reviewed calls, `ReviewedMessageOutcome` |
 | `internal/messagedrafts/store.go`, new `store_scheduled.go`, `pause.go`, new `review.go` | scheduled lifecycle |
 | `internal/runner/message_draft_resume.go`, new `message_draft_scheduled.go`, `runner_deps.go`, `runner_profile.go` | approve/decline a scheduled draft, `Location` |
-| `internal/cron/store.go`, new `store_message.go`, `pause.go`, `store_manage.go`, `scheduler.go`, `dispatch.go` | kind, activation, release, `Job.TaskID` |
+| `internal/cron/store.go`, new `store_message.go`, `pause.go`, `store_manage.go`, `dispatch.go` | kind, activation, `Job.TaskID` |
+| `internal/agent/tools/` new `task_approval.go`, `task_directives.go`, `task.go` | Part 3: one gating rule, the named question, the in-turn approval, the directive retired |
+| `internal/approvaltext/presentation.go`, `web/src/approvals/approvalQuestion.ts`, `web/src/i18n/resources.approval.ts` | Part 3: the named question's presentation |
+| `internal/cron/` new `deliver_lapsed.go`, `store_approval.go`, `scheduler.go`, `dispatch.go`; `internal/runner/` new `runner_expire_approval.go`; `cmd/aura/serve_scheduled_approval.go`, `serve_dispatch.go` | Part 3: lapsed one-shot approvals expire and are reported |
 | `internal/cron/handlers/handler.go`, new `message.go`, `agentjob.go`, new `agentjob_outbound.go` | fire-time handler, job outcome line |
 | `internal/agui/governance_write_scheduler.go`, `message_drafts_api.go`, `server.go` | refusals, cancel, `send_at` |
 | `internal/channels/telegram/hitl.go`, new `hitl_message_draft.go`, `bot_dispatch_hitl.go` | read-only review card |
@@ -310,7 +359,7 @@ func (d scheduledMessageDrafts) CreateScheduledMessageDraft(ctx context.Context,
 4. It calls `CreateScheduledMessageDraft`. If that fails, it logs `slog.Warn("task: scheduled message draft not created", "task", id, "error_type", fmt.Sprintf("%T", err))`, calls `Store.CancelScheduledTask`, and returns `(nil, false)`.
 5. It returns `&ErrAwaitingUserInput{Question: "Review this scheduled message before it is sent", Kind: KindApproval, Priority: 90, ToolCallID: toolCallID, ResumeContext: {"type":"message_draft","draft_id":…,"task_id":…}}`.
 
-In `actionSchedule`, `kind=message` runs `resolveDelivery` (so a directive still comes back first), then `messageSchedule`, then returns `errMessageNeedsReview`. It never creates anything. The agent's `pauseCalls` tries `withholdHostReviewedCall` for every call that `withholdOutboundMessage` did not take. That method needs `gateway.HasResponder(ctx)`, a tool that implements `tools.HostReviewer`, and an owner on ctx. It passes `a.ledgerConvID` and `call.ID`, and it sets `originalToolName` and `originalArguments` as the outbound withhold does. The adapter resolves the trusted tool and passes `Store.Create` these fields:
+In `actionSchedule`, `kind=message` runs `resolveDelivery` (so a directive still comes back first), then `messageSchedule`, then returns `errMessageNeedsReview`. It never creates anything. The agent's `pauseCalls` tries `withholdHostReviewedCall` for every call that `withholdOutboundMessage` did not take. That method needs `gateway.HasResponder(ctx) && !tools.IsDelegatedDispatch(ctx)` (decision 21), a tool that implements `tools.HostReviewer`, and an owner on ctx. It passes `a.ledgerConvID` and `call.ID`, and it sets `originalToolName` and `originalArguments` as the outbound withhold does. The adapter resolves the trusted tool and passes `Store.Create` these fields:
 - `Target` from `TrustedOutboundTarget`;
 - `RegisteredToolName` from `spec.Name`;
 - `ExpiresAt = SendAt + tools.ScheduledMessageGrace`;
@@ -343,7 +392,7 @@ Exact copy:
   - `TestByTrustedRecipeIsDeterministic`: with two matching tools named `b__send_message` and `a__send_message`, it returns `a__send_message`.
 - [ ] Agent tests:
   - `TestAHostReviewedCallParksWithoutExecuting`. With a responder, a fake `HostReviewer` tool gives one pause event with `ToolCallID == call.ID` and `OriginalToolName == "task"`, and its `Execute` count is 0.
-  - `TestAHostReviewedCallWithoutAResponderRunsNormally`. With no responder, `HostReview` is not called and `Execute` is called once.
+  - `TestAHostReviewedCallWithoutAResponderRunsNormally`. With no responder, and with a responder under `tools.WithDelegatedDispatch` (`internal/agent/tools/result.go:176`), `HostReview` is not called and `Execute` is called once.
 - [ ] cmd/aura:
   - `TestNoMountedWhatsAppRefusesTheScheduledDraft` (unit): an empty registry gives an error holding `WhatsApp is not connected`.
   - `TestTheRegisteredTaskToolIsHostReviewed` (unit, beside `serve_notify_test.go:137`): `newTaskTool(newCronTaskStore(nil, nil), nil, "", tools.NewRegistry())` has a non-nil `MessageDrafts`, and the value registered under `task` satisfies `tools.HostReviewer`. Without a store, `MessageDrafts` is nil.
@@ -528,7 +577,7 @@ A non-pending card shows the title line and then the status: `approved` `Approva
 
 ### Task 11: At its time the message goes out once, with no model
 
-**Files:** `internal/cron/dispatch.go` (`Job.TaskID`), `scheduler.go` (`tick`), `internal/cron/store_message.go` (`ReleaseDueMessages`), `internal/db/queries/scheduler_tasks.sql` (`ReleaseDueMessageTasks`), `internal/db/queries/message_drafts.sql` (`GetMessageDraftByTask`, `ClaimScheduledMessageDraft`, `ExpireScheduledMessageDraft`), `internal/db/sqlc/`, `internal/messagedrafts/store_scheduled.go`, `internal/agent/llm_agent_message_draft.go` (`ReviewedMessageOutcome`, moved from `internal/runner/message_draft_resume.go:194-203`), `internal/cron/handlers/handler.go` (`Job.TaskID`, `KindMessage`, `jobLocation`), new `internal/cron/handlers/message.go`, new `message_test.go`, `cmd/aura/serve_dispatch.go`
+**Files:** `internal/cron/dispatch.go` (`Job.TaskID`), `internal/db/queries/message_drafts.sql` (`GetMessageDraftByTask`, `ClaimScheduledMessageDraft`, `ExpireScheduledMessageDraft`), `internal/db/sqlc/`, `internal/messagedrafts/store_scheduled.go`, `internal/agent/llm_agent_message_draft.go` (`ReviewedMessageOutcome`, moved from `internal/runner/message_draft_resume.go:194-203`), `internal/cron/handlers/handler.go` (`Job.TaskID`, `KindMessage`, `jobLocation`), new `internal/cron/handlers/message.go`, new `message_test.go`, `cmd/aura/serve_dispatch.go`
 
 **Consumes:** Task 6's `approved` drafts, Task 10's `Draft.Review`.
 
@@ -538,7 +587,6 @@ func (s *Store) ForTask(ctx context.Context, ownerID, taskID string) (Draft, err
 func (s *Store) ClaimScheduled(ctx context.Context, ownerID, draftID string) (Draft, error) // approved -> dispatching, expires_at > now
 func (s *Store) ExpireScheduled(ctx context.Context, ownerID, draftID string) (Draft, error)
 func ReviewedMessageOutcome(err error) (messagedrafts.Status, string) // agent
-func (s *Store) ReleaseDueMessages(ctx context.Context) (int64, error) // cron
 func jobLocation(ctx context.Context, tz jobTimezones, fallback *time.Location) *time.Location
 type MessageDrafts interface {
 	ForTask(ctx context.Context, ownerID, taskID string) (messagedrafts.Draft, error)
@@ -559,8 +607,7 @@ const KindMessage TaskKind = "message"
 const messageMaxDuration = 2 * time.Minute
 ```
 
-The queries:
-- `ReleaseDueMessageTasks :execrows` is `UPDATE aura.scheduler_tasks SET status = 'active', updated_at = now() WHERE kind = 'message' AND status = 'pending_approval' AND next_run_at <= now()`. `tick` calls it before `DueTasks`. An error is `slog.Warn("tick release due messages", "err", err)` and the tick goes on.
+The queries (decision 8: nothing releases a pending message task, Task 14 expires it):
 - `ClaimScheduledMessageDraft` requires `status = 'approved' AND expires_at > now()`, and sets `dispatching` and `dispatch_started_at`.
 - `ExpireScheduledMessageDraft` requires `send_at IS NOT NULL AND send_at <= now() AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))`.
 
@@ -571,7 +618,7 @@ The queries:
   - `failed` gives the error `message to <r> not sent: the channel reported it did not go out`.
   - `uncertain` gives the error `message to <r>: delivery is uncertain, and it was not retried`.
   - If `ClaimScheduled` gives `ErrUnavailable` because the draft expired, `ExpireScheduled` runs and the summary is `Scheduled message to <r> not sent: it expired before it could be sent.`.
-- **pending:** `ExpireScheduled`, then `Scheduled message to <r> not sent: it was not approved in time.`.
+- **pending:** Task 7's refusals mean this branch is unreachable. It is kept as a defence: `ExpireScheduled`, then `Scheduled message to <r> not sent: it was not approved in time.`.
 - **declined:** `Scheduled message to <r> not sent: it was declined.`.
 - **expired:** `Scheduled message to <r> not sent: it expired before it could be sent.`.
 - **dispatching, sent, failed or uncertain:** `Scheduled message to <r> was already handled (<status>); nothing was sent again.`.
@@ -582,14 +629,13 @@ The runner calls `agent.ReviewedMessageOutcome` in place of its local copy. `Age
 - [ ] Handler unit tests (fake drafts, spy trusted tool, nil gateway, frozen location):
   - `TestAnApprovedMessageIsSentOnceAtItsTime`: one `Execute` with the effective args, `MarkOutcome(sent, "ok")`, and the summary `Message sent to 10000000000 at 08:25.`.
   - `TestASecondFireNeverSendsAgain`. A draft in `dispatching` or `sent` gives `Execute` count 0 and the "already handled" summary. Two concurrent `Run`s over a fake whose `ClaimScheduled` succeeds once give exactly one `Execute`.
-  - `TestAnUnapprovedMessageIsReportedAndSettles` (unit part): a pending draft gives `ExpireScheduled` once, `Execute` count 0, and the summary ending `it was not approved in time.`.
+  - `TestAPendingDraftIsNeverSent`: a pending draft gives `ExpireScheduled` once, `Execute` count 0, and the summary ending `it was not approved in time.`.
   - `TestAMissingChannelLeavesTheDraftApproved`: no registered tool gives the error and no `ClaimScheduled` call.
   - `TestAFailedSendIsAFailedRun`: the tool returns `agent.ErrToolNotExecuted`, which gives `MarkOutcome(failed, "no_effect")` and the `not sent` error.
   - `TestTheFireTimeSendRunsUnderTheScheduledOperation`: the shape of `TestExecuteReviewedMessageDispatchesUnderTheResolveOperation`, with `idempotency.ScopeSchedulerRun`, gives one dispatch.
-- [ ] `TestAnUnapprovedMessageIsReportedAndSettles` (cron `db_integration`). A pending `message` task has `next_run_at` in the past. After `ReleaseDueMessages`, `DueTasks` returns it once. After a run with the real handler and store, the draft is `expired`, the run summary holds `not approved in time`, and `DeleteSettledOneShots` removes the task while the draft stays.
 - [ ] `TestClaimScheduledTakesOnlyAnApprovedDraftOnce` (`db_integration`): the first claim gives `dispatching` and the second gives `ErrUnavailable`. A pending draft gives `ErrUnavailable`.
 - [ ] `TestExpireScheduledLeavesAnApprovedDraftUntilItsLifetimeEnds` (`db_integration`): an approved draft with `send_at` past but `expires_at` future is unchanged. A pending one becomes `expired`.
-- [ ] Red, `make sqlc`, implement, green with race on `./internal/cron/...`, `./internal/agent/` and `./internal/runner/`, and with `db_integration` on `./internal/cron/` and `./internal/messagedrafts/`. `dispatch.go` and `scheduler.go` stay under 600 lines. Commit: `feat(cron): a reviewed message is sent once at its time, with no model`.
+- [ ] Red, `make sqlc`, implement, green with race on `./internal/cron/...`, `./internal/agent/` and `./internal/runner/`, and with `db_integration` on `./internal/messagedrafts/`. `dispatch.go` stays under 600 lines. Commit: `feat(cron): a reviewed message is sent once at its time, with no model`.
 
 ### Task 12: An `agent_job` that tried to write to someone says so
 
@@ -617,9 +663,154 @@ The `Description` sentence after the `agent_job` one, verbatim: `An agent_job ca
 - [ ] `TestTheJobTextSaysItCannotWriteToOthers`: `Spec().Description` holds the sentence.
 - [ ] Red, implement, green with race on `./internal/cron/handlers/` and `./internal/agent/tools/`. Commit: `feat(agent_job): a refused send to someone else is reported, never promised`.
 
-### Task 13: Live, on the lab VM
+## Part 3: every approval in the creating chat, and none left hanging
 
-- [ ] Run the full gate in WSL: `make quality-full`. Coverage is the combined figure, at least 85% across the tag matrix, and the package policy holds. Spot-check mutation, at least 70% killed, on `internal/messagedrafts/store_scheduled.go`, `internal/cron/handlers/message.go` and `internal/agent/tools/task_message.go` (CI-run, per the project's mutation rule).
+### Task 13: Every task that needs approval is approved in the chat that creates it
+
+Part 3 items 1–4. Builds on Task 5's `HostReviewer` and agent withhold, which need no change.
+
+**Files:** new `internal/agent/tools/task_approval.go`, new `task_approval_test.go`, `task_message.go` (`HostReview` dispatches by kind; Task 5's body becomes `hostReviewMessage`), `task.go` (`actionSchedule` over `taskNeedsApproval`, text), `task_directives.go` (delete `scheduledApprovalRequiredResult`, add `awaitingApprovalResult`), `task_test.go` and the other tests that pin the retired directive, `internal/approvaltext/presentation.go`, `presentation_test.go`, `internal/agent/llm_agent_pause.go` (the `ARCHITECTURAL CONSTRAINT` comment names host-reviewed calls), `cmd/aura/serve_scheduled_approval.go:76-83` (comment), `web/src/approvals/approvalQuestion.ts`, `__tests__/approvalQuestion.test.ts`, `web/src/i18n/resources.approval.ts`
+
+**Consumes:** Task 2's `resolveDelivery`, Task 5's `HostReviewer` and `withholdHostReviewedCall`.
+
+**Produces:**
+```go
+// taskNeedsApproval is the one gating rule (AG-016 plus the scorer), read before the call runs and inside it.
+func taskNeedsApproval(a taskArgs) (scoring.RiskTier, bool)
+func approvalSchedule(spec resolvedSpec) string               // "once" | "every 30m" | `cron "30 7 * * 1-5"`
+func approvalWhen(next time.Time, loc *time.Location) string  // "06/11 08:25 (Europe/Rome)"
+func taskSummary(kind string, payload json.RawMessage) string // one line, ≤160 runes + "…"
+func approvalQuestion(kind, taskID string, spec resolvedSpec, next time.Time, payload json.RawMessage) string
+func (t *TaskTool) hostReviewApproval(ctx context.Context, conversationID, toolCallID string, a taskArgs) (*ErrAwaitingUserInput, bool)
+func (t *TaskTool) hostReviewMessage(ctx context.Context, conversationID, toolCallID string, a taskArgs) (*ErrAwaitingUserInput, bool)
+func awaitingApprovalResult(taskID, kind, schedule, tier, delivery string) ToolResult
+// approvaltext:
+func deriveScheduledNamed(question, task string) (Presentation, bool)
+```
+
+How the pieces behave:
+- `approvalQuestion` renders the Global Constraints question in `tools.LocationOrUTC(spec.TZ)`, which is the zone the task row stores.
+- `taskSummary` reads `goal` for `agent_job` and `text` for `reminder`. Any other kind gives the kind's name, and an empty value gives `(no goal)`. Whitespace is collapsed.
+- `HostReview` parses the call and returns `(nil, false)` unless `action=schedule`. Then `kind=message` goes to `hostReviewMessage` and every other kind to `hostReviewApproval`. Task 5's `MessageDrafts == nil` check moves into `hostReviewMessage`, and `hostReviewApproval` needs only `Store`.
+- `hostReviewApproval` takes these steps, in order:
+  1. It returns `(nil, false)` when `taskNeedsApproval` says no.
+  2. It runs `resolveDelivery`. A directive or an error gives `(nil, false)`.
+  3. It fills `a.TZ` with `t.scheduleZone(ctx)` when empty, then runs `resolveSchedule`. An error gives `(nil, false)`.
+  4. It persists the task `pending_approval` with `OriginConversationID = conversationID`. An error is logged by type and gives `(nil, false)`.
+  5. It returns `&ErrAwaitingUserInput{Question: approvalQuestion(…), Kind: KindApproval, Priority: 90, ToolCallID: toolCallID, ResumeContext: {"type":"scheduled_task_approval","task_id":<id>}}`.
+- `actionSchedule` uses `taskNeedsApproval` for its status. A `pending_approval` result is `awaitingApprovalResult`, which is reached only without a person in the chat (decision 21). Its copy, verbatim:
+  `scheduled task <id> (kind=<kind>, <spec.summary()>, risk=<tier>, status=pending_approval). It needs the operator's approval and will not fire until they approve it; they are reminded on their channel. Do not call ask_user for it.`
+  The delivery line follows it on its own line, when present.
+- The `Description`'s last sentence (`task.go:170`) becomes: `A task that needs approval (every agent_job, and payloads scored destructive) is shown to the operator for approval in this chat before it can fire; with nobody in the chat it waits, and the operator is reminded on their channel.`
+- `deriveScheduledNamed` parses the question. It cuts the prefix `Approve scheduled `, then ` task <short> (`, then `), first run `. The suffix `. It will not fire until you approve.` goes, and the first `? It runs: ` splits `when` from `summary`.
+  - The params are `task`, `kind`, `schedule`, `when` and `summary`.
+  - `valid` gains the limits `when` (`maxShortParamBytes`) and `summary` (`maxArgsBytes`).
+  - `deriveScheduled` tries it before `deriveScheduledCreated`.
+- `RenderItalian`, with `when` and `summary` present: `Approva l'attività pianificata %s %s (%s), prima esecuzione %s?\nEsegue: %s\nNon verrà eseguita finché non approvi.`, with `once` rendered `una volta`.
+- Web: `approvalQuestion.ts`'s `SCHEDULED_KEY` branch renders `t('approval.question.scheduledNamed', {...params, schedule})` when `when` and `summary` are present, with `schedule === 'once'` mapped to `t('approval.question.once')`.
+  - en: `scheduledNamed: 'Approve scheduled {{kind}} task {{task}} ({{schedule}}), first run {{when}}? It runs: {{summary}}. It will not run until you approve.'`, `once: 'once'`.
+  - it: `scheduledNamed: "Approvare l'attività pianificata {{kind}} {{task}} ({{schedule}}), prima esecuzione {{when}}? Esegue: {{summary}}. Non verrà eseguita finché non approvi."`, `once: 'una volta'`.
+
+- [ ] `TestTheGateBeforeTheCallIsTheGateInsideIt`. The table holds: a reminder `Buy bread`; a reminder whose text `scoring.ComputeTaskTier` gates (take the payload from a gating case in `internal/scoring/scoring_test.go`); an `agent_job`; a `backup_postgres`; and a reminder `every` 30 minutes. For each case, three things agree:
+  - `taskNeedsApproval`'s bool;
+  - whether `HostReview` (with stores and `"notify":"stdout"`) returns a pause;
+  - whether a fresh tool's `Execute` on the same args creates `pending_approval`.
+
+  Whenever `HostReview` parked, its own created task is `pending_approval`.
+- [ ] `TestTheApprovalQuestionNamesKindTimeAndGoal` (pure). With `kind "agent_job"`, id `01a19af5-0000-…`, an `at` spec with `TZ "Europe/Rome"`, next 2026-11-06T07:25Z and goal `Riassumi la posta`, the question equals `Approve scheduled agent_job task 01a19af5 (once), first run 06/11 08:25 (Europe/Rome)? It runs: Riassumi la posta. It will not fire until you approve.`.
+- [ ] `TestARecurringQuestionNamesItsCadence`: `every 30m` and `cron "30 7 * * 1-5"` appear in the parentheses.
+- [ ] `TestTheSummaryIsOneBoundedLine`:
+  - a 300-rune goal with newlines gives 160 runes plus `…` and no `\n`;
+  - an empty goal gives `(no goal)`;
+  - a reminder gives its text;
+  - `backup_postgres` gives `backup_postgres`.
+- [ ] `TestAnAgentJobIsParkedInTheChatThatCreatesIt`. `HostReview(ctx, "conv-1", "call-1", …)` for an `agent_job` at now + 2h gives `ToolCallID "call-1"` and `Kind "approval"`. Its `ResumeContext` decodes to `{"type":"scheduled_task_approval","task_id":<created id>}`. The question starts `Approve scheduled agent_job task ` and holds `It runs: `. The created task has `Status "pending_approval"` and `OriginConversationID "conv-1"`.
+- [ ] `TestAHarmlessTaskIsNotParked`: a `Buy bread` reminder gives `(nil, false)` from `HostReview`, and `Execute` creates it `active`.
+- [ ] `TestAHeadlessScheduleWaitsWithoutADirective`: `Execute` for an `agent_job` returns the `awaitingApprovalResult` copy, and the preview holds neither `resume_context` nor `Call ask_user`.
+- [ ] `TestTheNamedScheduledQuestionDerivesItsParams` (approvaltext). `Enrich(question, {"type":"scheduled_task_approval","task_id":"01a19af5-…"})` gives the five params, and `RenderItalian` gives the Italian copy above with `una volta`. A question naming another short id gives no presentation. The existing `deriveScheduledCreated` tests stay green unchanged.
+- [ ] Vitest `it('renders a named scheduled approval with its cadence, time and goal')`, in en and it.
+- [ ] Rewrite the tests that pinned the retired directive: `git grep -n 'scheduledApprovalRequiredResult\|kind=\\"approval\\"' -- '*_test.go'` lists them. Each rewritten test now pins `awaitingApprovalResult`, and the commit body says why: the behaviour changed by design (spec Part 3 item 4).
+- [ ] Red, implement, green with race on `./internal/agent/tools/`, `./internal/approvaltext/`, `./internal/agent/` and `./cmd/aura/`, then the vitest file, lint and the type check. Run `make deadcode` in WSL: it stays clean. `task.go` stays under 600 lines. Commit: `feat(task): a task that needs approval asks in the chat that creates it`.
+
+### Task 14: A one-shot that passes its time unapproved expires, and the operator is told
+
+Part 3 items 5–6, and the message "no answer" of Part 2 (decision 8).
+
+**Files:** `internal/db/queries/scheduler_tasks.sql` (`ListLapsedApprovals`, `ExpireLapsedApproval`), `internal/db/sqlc/`, `internal/cron/store_approval.go`, new `internal/cron/deliver_lapsed.go`, new `deliver_lapsed_test.go`, new `lapsed_integration_test.go`, `scheduler.go` (`tick`), `dispatch.go` (`DispatchDeps`, `NewDispatch` defaults), new `internal/runner/runner_expire_approval.go`, new `runner_expire_approval_integration_test.go`, `cmd/aura/serve_scheduled_approval.go`, `serve_dispatch.go`
+
+**Consumes:** Task 11's `messagedrafts.Store.ExpireScheduled` and Task 7's `messagedrafts.PauseTaskID`.
+
+**Produces:**
+```go
+// cron
+type LapsedApprovalStore interface {
+	ListLapsedApprovals(ctx context.Context, limit int) ([]Task, error)
+	ExpireLapsedApproval(ctx context.Context, id string) (bool, error) // CAS: false when the task left pending_approval first
+	InsertRun(ctx context.Context, taskID string, stepBudget int) (Run, error)
+}
+type LapsedPauseCloser interface {
+	CloseLapsedApproval(ctx context.Context, task Task, answer string) error
+}
+// DispatchDeps gains:  LapsedApprovals LapsedApprovalStore (defaulted from *Store); LapsedPauseCloser LapsedPauseCloser
+func (d *Dispatch) expireLapsedApprovals(ctx context.Context) error
+func lapsedApprovalText(task Task) string // the Global Constraints notice
+func lapsedPauseAnswer(task Task) string
+// runner
+func (r *Runner) ExpireApprovalPause(ctx context.Context, conversationID, taskID, answer string) (bool, error)
+// cmd/aura
+type lapsedPauseCloser struct{ runner *runner.Runner }
+func (c lapsedPauseCloser) CloseLapsedApproval(ctx context.Context, task cron.Task, answer string) error
+```
+
+The queries:
+- `ListLapsedApprovals :many` selects the task columns `WHERE status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now() ORDER BY next_run_at LIMIT $1`. It has no age floor, so tasks stuck before deploy are taken on the first pass (item 6).
+- `ExpireLapsedApproval :execrows` is `UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now() WHERE id = $1 AND status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()`.
+
+`expireLapsedApprovals` takes these steps per row, at most 50 a tick:
+1. It binds `identityctx.WithIdentityID(ctx, operationIdentity(task.IdentityID))`.
+2. With a closer, it calls `CloseLapsedApproval(ctx, task, lapsedPauseAnswer(task))`. On error it logs `slog.Warn("lapsed approval: pause not closed (retry next tick)", "task", id, "err", err)` and skips the row (decision 26).
+3. It calls `ExpireLapsedApproval`. `false` skips the row.
+4. It calls `InsertRun(task.ID, 0)`. On error it logs at Error and skips the row.
+5. It sets `task = d.homeTask(ctx, task)` and calls `d.complete(ctx, task, run.ID, "failed", text, errors.New(text))`. Then `undelivered := d.notify(ctx, task, run.ID, text, nil)`, then `d.recordToOrigin(ctx, task, text, nil, undelivered)`.
+
+A store-query error is returned, and the tick logs it as it logs the other sweeps. `tick` calls the pass through a type-asserted `lapsedApprovalSweeper` after `sweepNotifications` and before `sweepApprovalReminders`, so a lapsed one-shot is never reminded first.
+
+- `lapsedApprovalText` renders `next_run_at` in `time.LoadLocation(task.TZ)`, or in UTC when that fails, as `02/01 15:04 (<zone>)`.
+- `lapsedPauseAnswer`, verbatim: `Scheduled <kind> task <first 8 of id> was not approved in time; it has been cancelled and did not run. Do NOT re-schedule it unless the operator asks.`
+
+`ExpireApprovalPause` takes these steps:
+1. It lists the conversation's pending pauses. It looks for an approval pause whose context is either `{"type":"scheduled_task_approval","task_id":taskID}` (read with `approvaltext.RootString`) or a message review with `PauseTaskID == taskID`. If none matches it returns `(false, nil)`.
+2. It takes `TryLockThread`. A busy thread gives `ErrThreadBusy`.
+3. For a message review, it calls `ExpireScheduled` on its draft. `ErrUnavailable` is tolerated, because the draft is already terminal.
+4. It commits the answer as `ResolveMessageDraft` does (`message_draft_resume.go:161-172`): action `decline`, with `claim.Turn.Content` and `claim.Answer.Content` set to `answer`. It never runs the resume hook.
+
+`lapsedPauseCloser` returns nil for a task with no origin conversation. `serve_dispatch.go` sets `LapsedPauseCloser: lapsedPauseCloser{runner: chat.run}`. If `dispatch.go` would pass 600 lines, `DispatchDeps` moves into a new `dispatch_deps.go` in the same commit.
+
+- [ ] Unit tests (fake store, closer, notifier, recorder), in `deliver_lapsed_test.go`:
+  - `TestALapsedOneShotIsExpiredReportedAndClosed`. The task is an `agent_job` with TZ `Europe/Rome`, `NextRunAt` 2026-11-02T17:00Z and notify `telegram`. Expected:
+    - the closer gets `Scheduled agent_job task <8> was not approved in time; it has been cancelled and did not run. Do NOT re-schedule it unless the operator asks.`;
+    - then `ExpireLapsedApproval` and `InsertRun` run;
+    - the run completes `failed`;
+    - the notifier and the conversation recorder each receive `agent_job for 02/11 18:00 (Europe/Rome) was not approved in time and did not run.`.
+  - `TestAPauseThatCannotBeClosedIsRetriedNextTick`: a closer error gives no CAS, no run and no notice.
+  - `TestALostRaceSendsNothing`: when the CAS returns `false`, there is no run and no notice.
+- [ ] `db_integration` tests in `lapsed_integration_test.go`:
+  - `TestOnlyLapsedOneShotsAreListed`. Only the pending `at` task past its time is listed. A pending `at` task in the future, a pending `every` task past due, and an `active` `at` task past its time are not.
+  - `TestATaskStuckBeforeDeployExpiresOnTheFirstPass`: a pending `at` `agent_job` with `created_at` and `next_run_at` three days ago is `cancelled` after one pass, and has one `failed` run carrying the notice.
+  - `TestAnUnapprovedMessageIsReportedAndSettles`. A pending `message` task past its time has a pending draft and its review pause. After one tick:
+    - the task is `cancelled` and its run summary holds `was not approved in time and did not run`;
+    - the draft is `expired`, and the pause is resolved, so `/api/approvals` and `ListMessageDrafts` no longer show it;
+    - once the notice is delivered, `DeleteSettledOneShots` removes the task and the draft stays.
+- [ ] `TestExpireApprovalPauseClosesTheTasksPause` (runner `db_integration`):
+  - a `scheduled_task_approval` pause for the task is resolved with the answer, and `ListPending` is empty;
+  - a message review pause has its draft `expired` and is resolved;
+  - a conversation with no matching pause gives `(false, nil)`;
+  - the resume hook is not called.
+- [ ] Red, `make sqlc`, implement, green with race on `./internal/cron/` and `./internal/runner/`, and with `db_integration` on `./internal/cron/`, `./internal/runner/` and `./cmd/aura/`. Commit: `feat(scheduler): a one-shot not approved in time expires and the operator is told`.
+
+### Task 15: Live, on the lab VM
+
+- [ ] Run the full gate in WSL: `make quality-full`. Coverage is the combined figure, at least 85% across the tag matrix, and the package policy holds. Spot-check mutation, at least 70% killed, on `internal/messagedrafts/store_scheduled.go`, `internal/cron/handlers/message.go`, `internal/agent/tools/task_message.go`, `internal/agent/tools/task_approval.go` and `internal/cron/deliver_lapsed.go` (CI-run, per the project's mutation rule).
 - [ ] Push with the WSL recipe in `CLAUDE.md`. Wait until every workflow is green on the SHA. The operator then updates the VM from the cockpit.
 - [ ] The operator drives the spec's Verification through the cockpit and Telegram, with a contact the operator controls:
   1. With the default set to Telegram, "remind me in 10 minutes to X" asks nothing, names the default, and arrives on Telegram.
@@ -628,6 +819,13 @@ The `Description` sentence after the `agent_job` one, verbatim: `An agent_job ca
   4. On Telegram the read-only card appears. Approva sends once at the time. Rifiuta, and silence past the time, send nothing, and silence reports "not approved in time".
   5. Declining the card, and cancelling an approved task before its time, both send nothing.
   6. An `agent_job` asked to write to someone is steered to `kind=message`, or reported "not sent" with the reason.
+  7. Verification item 6. An `agent_job` is scheduled from the cockpit, and another from Telegram. Each shows its approval in that chat, in the same turn, with no `ask_user` call in the model's output. The question names the kind, the time in the operator's zone and the goal. Approving one makes the model confirm it, and it then fires. Declining the other cancels it.
+  8. Verification item 7. A one-shot `agent_job` is scheduled about five minutes ahead and left unapproved. After its time:
+     - the notice `agent_job for <time> was not approved in time and did not run.` arrives on its notify route;
+     - the task leaves the scheduler board's awaiting-approval list;
+     - its pause leaves the cockpit's approvals.
+
+     Also record what the first pass after deploy did to the tasks already stuck, the 2026-11-02 one included: counts and kinds only. Each operator got the notice.
   For each, record the run ledger rows, the draft statuses (counts and states only) and the tool-invocation rows.
 - [ ] Write `docs/superpowers/verification/2026-11-XX-scheduled-delivery-and-messages-live.md`. It covers what was measured per scenario, what the run does not prove (email at volume, more than one WhatsApp mount, a daemon down across the grace period), and no contact, number or message text.
-- [ ] Only then, the PRD amendment. It records the measurement and cites that file: the default channel, the `message` kind, the 24 h − 15 m horizon, and the scheduler releasing a due unapproved message to report it. Commit both docs.
+- [ ] Only then, the PRD amendment. It records the measurement and cites that file: the default channel, the `message` kind, the 24 h − 15 m horizon, approval in the creating chat with the relay retired, and the expiry of lapsed one-shot approvals. Commit both docs.

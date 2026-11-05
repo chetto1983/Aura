@@ -195,6 +195,39 @@ recipient and text are fixed when it is scheduled.
   sent: a scheduled job cannot write to other people; schedule a reviewed message instead." *My call*: honesty must not
   depend on the model's final text.
 
+## Part 3: every approval in the chat that creates the task, and no approval left hanging
+
+Added 2026-11-05 at the operator's request ("si"), after asking why a task's approval does not simply appear in
+the chat that creates it.
+
+**Why.**
+- Today a task that needs approval is persisted `pending_approval`, and `task` returns a directive the model must
+  relay with `ask_user`. That is the fast path, and it depends on the model.
+- When the model does not relay it, a sweep mints the pause after a 60-second grace and pushes a Telegram Sì/No
+  (`internal/cron/deliver_approval.go:122-136`). The grace exists because minting mid-turn breaks the transcript.
+- A second gap shows in the same export: an `agent_job` due on 2026-11-02 at 18:00 was still awaiting approval three
+  days later. Nothing ever tells the operator that a one-shot missed its time unapproved. It stays "awaiting approval"
+  for good.
+
+**What changes.**
+1. **The host parks the call.** A `task` schedule call that will need approval is parked by the agent before it runs,
+   with the same in-turn withhold Part 2 uses for `kind=message`. The approval pause is keyed to the model's own call
+   id and appears in the chat that made the call, in that turn, with no model relay.
+2. **Which calls need approval** is decided before the call runs, from the arguments alone: every `agent_job`
+   (AG-016), and any task whose `scoring.ComputeTaskTier` recommends a gate. The tier is a pure function of the
+   arguments, so the decision before the call and the one inside the tool cannot disagree. A test pins that.
+3. **The question names what will run:** kind, time in the operator's zone, and the goal or text, bounded the way
+   today's question bounds the id. The operator no longer approves "task 01a19af5" blind.
+4. **The model-relayed path and its directive retire** for model-scheduled tasks. The sweep stays only as far as some
+   other producer of `pending_approval` tasks still needs it. The builder inventories the producers and records what
+   remains.
+5. **A one-shot task whose time passes unapproved expires.** It leaves `pending_approval` for a terminal state, and
+   the operator is told on the task's notify route: "<kind> for <time> was not approved in time and did not run".
+   This is the same rule the plan already applies to `message` tasks (plan decision 8, confirmed by the operator).
+   Recurring tasks awaiting approval do not expire; they keep the reminder.
+6. **Tasks already stuck expire too.** The rule applies on its first pass after deploy to tasks like the 2026-11-02
+   one, and each operator gets the notice.
+
 ## Constraints
 
 - File size ≤ 600 LOC. `task.go` is 568 today, so the `message` scheduling goes in its own `task_message.go`, and the
@@ -219,6 +252,10 @@ Live on the lab VM, driven through the cockpit by the operator, with a dated fil
 4. **Decline and cancel.** Declining the card, and cancelling an approved task before it fires, both send nothing.
 5. **Refused shapes.** An `agent_job` asked to write to someone else is either steered to `kind=message` at
    scheduling time or reported as "not sent" with the reason, and is never announced as a send.
+6. **Approval in the creating chat.** An `agent_job` scheduled from the cockpit and one scheduled from Telegram each
+   show their approval in that chat, in the same turn, naming what will run.
+7. **Missed approval.** A one-shot left unapproved past its time is reported on its notify route as not run, and
+   leaves the awaiting-approval list.
 
 ## Left to the builder
 
@@ -230,7 +267,8 @@ Live on the lab VM, driven through the cockpit by the operator, with a dated fil
 ## Out of scope, seen in the same export
 
 These go to the operator separately, not into this work:
-- one `agent_job` awaiting approval since 2026-11-02, so its recurrence was probably never created;
+- one `agent_job` awaiting approval since 2026-11-02, so its recurrence was probably never created (Part 3 item 6
+  will expire it and tell the operator; the recurrence it should have created still needs asking for again);
 - fourteen one-shot reminders where one cron would do;
 - an `agent_job` with an empty payload, paused since 2026-10-08;
 - a branched turn that could not see the job's outcome, because `memory_recall` excludes the current conversation
