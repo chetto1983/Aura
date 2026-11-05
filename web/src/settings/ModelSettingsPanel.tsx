@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields, type PickerBindings } from './SettingField';
 import { EmbeddingBackendControl } from './EmbeddingBackendControl';
+import { DecideBackendControl } from './DecideBackendControl';
 import { EmbeddingSpacePanel } from './EmbeddingSpacePanel';
 import { RouteToggle } from './RouteToggle';
 import { RestartAuraControl } from './RestartAuraControl';
@@ -134,6 +135,7 @@ export function ModelSettingsPanel({
   const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled);
   const speechCatalog = useMediaModelCatalog('speech', backendsEnabled);
   const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled);
+  const decisionCatalog = useMediaModelCatalog('decisions', backendsEnabled);
   const cloudVoiceCatalog = ttsVoiceCatalog(speechCatalog, loaded?.values.AURA_TTS_MODEL ?? '');
 
   if (loadStatus === 'loading') {
@@ -205,6 +207,7 @@ export function ModelSettingsPanel({
       formatRow,
       emptyOption: localSidecarOption,
     },
+    AURA_DECIDE_MODEL: { catalog: decisionCatalog, formatRow },
     AURA_STT_CLOUD_MODEL: {
       catalog: transcriptionCatalog,
       formatRow,
@@ -224,6 +227,8 @@ export function ModelSettingsPanel({
     (def.key !== 'AURA_TTS_CLOUD_VOICE' || (loaded.values.AURA_TTS_MODEL ?? '').trim() !== '');
   const embeddingPicker = pickers.AURA_EMBED_MODEL;
   if (embeddingPicker === undefined) throw new Error('embedding picker must be configured');
+  const decidePicker = pickers.AURA_DECIDE_MODEL;
+  if (decidePicker === undefined) throw new Error('decision picker must be configured');
 
   return (
     <div className={cn('flex flex-col gap-7', className)}>
@@ -286,9 +291,17 @@ export function ModelSettingsPanel({
                 modelPicker={embeddingPicker}
               />
               <EmbeddingSpacePanel />
+              <DecideBackendControl
+                loaded={loaded}
+                onValueChange={setValue}
+                modelPicker={decidePicker}
+              />
               <SettingsFields
                 defs={group.fields.filter(
-                  (def) => !def.key.startsWith('AURA_EMBED_') && shown(def),
+                  (def) =>
+                    !def.key.startsWith('AURA_EMBED_') &&
+                    def.key !== 'AURA_DECIDE_MODEL' &&
+                    shown(def),
                 )}
                 loaded={loaded}
                 resetting={resetting}

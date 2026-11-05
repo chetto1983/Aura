@@ -8,6 +8,8 @@ export interface ModelCatalogState<M = LLMCatalogModel> {
   readonly status: CatalogStatus;
   readonly error: string | undefined;
   readonly reload: () => void;
+  /** The decisions catalogue's own answer: a local sidecar is installed on this appliance. */
+  readonly localSidecar?: boolean | undefined;
 }
 
 /** Why a catalogue read failed, as the picker shows it. */

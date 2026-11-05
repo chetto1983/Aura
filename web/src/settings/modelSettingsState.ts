@@ -48,6 +48,7 @@ const CALL_TIME_SETTING_KEYS = new Set<SettingsKey>([
   'AURA_OPENROUTER_SERVICES_CAP_USD',
   'AURA_IMAGE_MODEL',
   'AURA_VIDEO_MODEL',
+  'AURA_DECIDE_MODEL',
 ]);
 
 function emptyItem(def: SettingDef): SettingItem {

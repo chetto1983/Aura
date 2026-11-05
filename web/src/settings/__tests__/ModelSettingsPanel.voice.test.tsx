@@ -168,6 +168,17 @@ function stubFetch(settings: unknown): {
 
 const previewButton = () => screen.getByRole('button', { name: 'Preview change' });
 
+// The decision model's route control sits in the same pane with its own Local and OpenRouter, so
+// the embedding choices are found inside the embedding group.
+const embeddingRoute = (name: string) =>
+  within(screen.getByRole('radiogroup', { name: 'Embedding backend route' })).getByRole('radio', {
+    name,
+  });
+const embeddingRouteWhenShown = async (name: string) => {
+  await screen.findByRole('radiogroup', { name: 'Embedding backend route' });
+  return embeddingRoute(name);
+};
+
 function renderBackends() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -298,7 +309,7 @@ describe('ModelSettingsPanel backend models', () => {
       '/api/settings/speech-models',
       '/api/settings/embeddings-models',
     ]);
-    const openRouter = screen.getByRole('radio', { name: 'OpenRouter' });
+    const openRouter = embeddingRoute('OpenRouter');
     expect(openRouter.hasAttribute('disabled')).toBe(false);
   });
 
@@ -365,7 +376,7 @@ describe('ModelSettingsPanel backend models', () => {
   it('previews, confirms and applies a new route with the space it was shown', async () => {
     const { posts } = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
     renderBackends();
-    fireEvent.click(await screen.findByRole('radio', { name: 'OpenRouter' }));
+    fireEvent.click(await embeddingRouteWhenShown('OpenRouter'));
     const embed = await screen.findByLabelText('Embedding model');
     await waitFor(() => {
       expect(
@@ -446,7 +457,7 @@ describe('ModelSettingsPanel backend models', () => {
     renderBackends();
     await screen.findByRole('radio', { name: 'Manual endpoint' });
     expect(screen.queryByLabelText('Endpoint API key')).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
+    fireEvent.click(embeddingRoute('Local'));
     expect(screen.queryByLabelText('Endpoint API key')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Manual endpoint' }));
     expect(screen.getByLabelText('Endpoint API key')).toBeTruthy();
@@ -490,8 +501,8 @@ describe('ModelSettingsPanel backend models', () => {
       ),
     );
     renderBackends();
-    await screen.findByRole('radio', { name: 'Local' });
-    fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
+    await embeddingRouteWhenShown('Local');
+    fireEvent.click(embeddingRoute('Local'));
     expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
     fireEvent.click(previewButton());
 

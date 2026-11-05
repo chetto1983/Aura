@@ -1,6 +1,6 @@
 import { readJSON, type LLMCatalogModel } from './settingsApi';
 
-export type MediaKind = 'image' | 'video' | 'transcription' | 'speech' | 'embeddings';
+export type MediaKind = 'image' | 'video' | 'transcription' | 'speech' | 'embeddings' | 'decisions';
 
 // A capability or price the catalogue did not declare is absent, never zero: zero is a real
 // price, and an invented limit would clamp nothing the tools actually clamp.
@@ -51,24 +51,52 @@ export interface EmbeddingCatalogModel {
   readonly has_price: boolean;
 }
 
+/** A model OpenRouter lists with the decisions output, which labels mail. Its rate has no unit either. */
+export interface DecisionCatalogModel {
+  readonly kind: 'decisions';
+  readonly id: string;
+  readonly has_price: boolean;
+}
+
 export type MediaCatalogModel =
-  ImageCatalogModel | VideoCatalogModel | VoiceCatalogModel | EmbeddingCatalogModel;
+  | ImageCatalogModel
+  | VideoCatalogModel
+  | VoiceCatalogModel
+  | EmbeddingCatalogModel
+  | DecisionCatalogModel;
 
 /** A row of any catalogue the model picker lists. */
 export type ModelRow = LLMCatalogModel | MediaCatalogModel;
 
 // The daemon lists the catalogue of the route it runs on, shared with the generation tools,
 // so the browser names no base URL and receives no credential.
-export async function fetchMediaModels(
+export interface MediaCatalog {
+  readonly models: readonly MediaCatalogModel[];
+  /** Only the decisions catalogue says it: whether the installer put a local sidecar here. */
+  readonly localSidecar: boolean | undefined;
+}
+
+export async function fetchMediaCatalog(
   kind: MediaKind,
   refresh = false,
   signal?: AbortSignal,
-): Promise<readonly MediaCatalogModel[]> {
+): Promise<MediaCatalog> {
   const res = await fetch(`/api/settings/${kind}-models${refresh ? '?refresh=1' : ''}`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
     signal: signal ?? null,
   });
-  const body = await readJSON<{ readonly models?: readonly MediaCatalogModel[] }>(res);
-  return body.models ?? [];
+  const body = await readJSON<{
+    readonly models?: readonly MediaCatalogModel[];
+    readonly local_sidecar?: boolean;
+  }>(res);
+  return { models: body.models ?? [], localSidecar: body.local_sidecar };
+}
+
+export async function fetchMediaModels(
+  kind: MediaKind,
+  refresh = false,
+  signal?: AbortSignal,
+): Promise<readonly MediaCatalogModel[]> {
+  return (await fetchMediaCatalog(kind, refresh, signal)).models;
 }

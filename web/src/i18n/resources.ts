@@ -27,6 +27,7 @@ import { mediaEn, mediaIt } from './resources.media';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { embeddingRouteEn, embeddingRouteIt } from './resources.embeddingRoute';
+import { decideRouteEn, decideRouteIt } from './resources.decideRoute';
 import { remoteAccessEn, remoteAccessIt } from './resources.remoteAccess';
 import { shareEn, shareIt } from './resources.share';
 import { studioEn, studioIt } from './resources.studio';
@@ -205,6 +206,7 @@ export const resources = {
       ...graphEn,
       ...settingsEn,
       ...embeddingRouteEn,
+      ...decideRouteEn,
       ...remoteAccessEn,
       ...updateEn,
       ...questionCardEn,
@@ -466,6 +468,7 @@ export const resources = {
       ...graphIt,
       ...settingsIt,
       ...embeddingRouteIt,
+      ...decideRouteIt,
       ...remoteAccessIt,
       ...updateIt,
       ...questionCardIt,

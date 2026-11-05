@@ -38,7 +38,8 @@ export type SettingsKey =
   | 'AURA_TTS_CLOUD_VOICE'
   | 'AURA_STT_CLOUD_MODEL'
   | 'AURA_IMAGE_MODEL'
-  | 'AURA_VIDEO_MODEL';
+  | 'AURA_VIDEO_MODEL'
+  | 'AURA_DECIDE_MODEL';
 
 export interface SettingDef {
   readonly key: SettingsKey;
@@ -200,8 +201,17 @@ export const EMBEDDING_SETTINGS: readonly SettingDef[] = [
   },
 ];
 
+// Empty is the local sidecar, 'off' is off, anything else is an OpenRouter model id. The sidecar's
+// address is the installer's: no row names it.
+export const DECIDE_MODEL_SETTING: SettingDef = {
+  key: 'AURA_DECIDE_MODEL',
+  kind: 'string',
+  labelKey: 'decideRoute.model',
+};
+
 export const BACKEND_SETTINGS: readonly SettingDef[] = [
   ...EMBEDDING_SETTINGS,
+  DECIDE_MODEL_SETTING,
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
   { key: 'AURA_TTS_CLOUD_VOICE', kind: 'string', labelKey: 'settings.fields.ttsCloudVoice' },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchMediaModels, type MediaCatalogModel, type MediaKind } from './mediaModelCatalog';
+import { fetchMediaCatalog, type MediaCatalogModel, type MediaKind } from './mediaModelCatalog';
 import { catalogError, type ModelCatalogState } from './useModelCatalog';
 
 interface CatalogRequest {
@@ -12,6 +12,7 @@ interface CatalogRequest {
 interface CatalogAnswer {
   readonly request: CatalogRequest;
   readonly models: readonly MediaCatalogModel[];
+  readonly localSidecar: boolean | undefined;
   readonly error: string | undefined;
 }
 
@@ -44,12 +45,16 @@ export function useMediaModelCatalog(
     const controller = new AbortController();
     async function run() {
       try {
-        const models = await fetchMediaModels(request.kind, request.refresh, controller.signal);
+        const { models, localSidecar } = await fetchMediaCatalog(
+          request.kind,
+          request.refresh,
+          controller.signal,
+        );
         if (controller.signal.aborted) return;
-        setAnswer({ request, models, error: undefined });
+        setAnswer({ request, models, localSidecar, error: undefined });
       } catch (err) {
         if (controller.signal.aborted) return;
-        setAnswer({ request, models: [], error: catalogError(err) });
+        setAnswer({ request, models: [], localSidecar: undefined, error: catalogError(err) });
       }
     }
     void run();
@@ -70,6 +75,7 @@ export function useMediaModelCatalog(
   }
   return {
     models: answer.models,
+    localSidecar: answer.localSidecar,
     status: answer.error === undefined ? 'ready' : 'error',
     error: answer.error,
     reload,
