@@ -104,10 +104,10 @@ func TestAReadOfUnknownIDsFindsNothingAndABadIdentityIsRefused(t *testing.T) {
 	if err := r.store.RemoveLabel(ctx, r.identity, "not-a-uuid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("remove label: %v", err)
 	}
-	if _, err := r.store.UpdateLabel(ctx, r.identity, "not-a-uuid", LabelInput{Name: "x"}); !errors.Is(err, ErrNotFound) {
+	if _, err := r.store.PatchLabel(ctx, r.identity, "not-a-uuid", overwrite(LabelInput{Name: "x"})); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update label: %v", err)
 	}
-	if _, err := r.store.UpdateLabel(ctx, r.identity, uuid.NewString(), LabelInput{Name: "x"}); !errors.Is(err, ErrNotFound) {
+	if _, err := r.store.PatchLabel(ctx, r.identity, uuid.NewString(), overwrite(LabelInput{Name: "x"})); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("update missing label: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestALabelsNameIsUniqueAndARuleThatOnlyGaveItGoesWithIt(t *testing.T) {
 	if _, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 1); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a duplicate name: %v", err)
 	}
-	updated, err := r.store.UpdateLabel(ctx, r.identity, label.ID, LabelInput{Name: "Clienti", Tier: TierToday})
+	updated, err := r.store.PatchLabel(ctx, r.identity, label.ID, overwrite(LabelInput{Name: "Clienti", Tier: TierToday}))
 	if err != nil || updated.Name != "Clienti" || updated.Tier != TierToday {
 		t.Fatalf("updated = %+v, %v", updated, err)
 	}

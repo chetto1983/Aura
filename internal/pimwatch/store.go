@@ -213,30 +213,6 @@ func (s *Store) AddLabel(ctx context.Context, identityID string, in LabelInput, 
 	return out, nil
 }
 
-// UpdateLabel rewrites a label's name, tier, description and discard. An empty tier clears it.
-func (s *Store) UpdateLabel(ctx context.Context, identityID, labelID string, in LabelInput) (Label, error) {
-	lid, err := db.ParseUUID("label_id", labelID)
-	if err != nil {
-		return Label{}, fmt.Errorf("update label: %w", ErrNotFound)
-	}
-	var out Label
-	err = s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
-		row, err := q.UpdatePIMWatchLabel(ctx, sqlc.UpdatePIMWatchLabelParams{
-			IdentityID: id, ID: lid, Name: in.Name, Tier: optionalText(string(in.Tier)),
-			Description: in.Description, Discard: in.Discard,
-		})
-		if err != nil {
-			return err
-		}
-		out = labelFromRow(row)
-		return nil
-	})
-	if err != nil {
-		return Label{}, labelError("update", err)
-	}
-	return out, nil
-}
-
 // RemoveLabel removes a label. Its verdicts keep their tier and read as unsorted, and a rule that
 // only gave this label goes with it, since it would say nothing.
 func (s *Store) RemoveLabel(ctx context.Context, identityID, labelID string) error {

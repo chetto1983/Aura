@@ -133,7 +133,7 @@ func TestLabelsKeepTheirDescriptionAndDiscard(t *testing.T) {
 	if label.Description != "Offers sent to a list." || !label.Discard {
 		t.Fatalf("added label = %+v", label)
 	}
-	updated, err := r.store.UpdateLabel(ctx, r.identity, label.ID, LabelInput{Name: "Spam", Description: "Promotions.", Discard: false})
+	updated, err := r.store.PatchLabel(ctx, r.identity, label.ID, overwrite(LabelInput{Name: "Spam", Description: "Promotions.", Discard: false}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestDescriptionsAreSeededOnceAndOnlyIntoEmptyDefaults(t *testing.T) {
 	}
 
 	labels, _ := r.store.Labels(ctx, r.identity)
-	if _, err := r.store.UpdateLabel(ctx, r.identity, labels[0].ID, LabelInput{Name: "Cliente"}); err != nil {
+	if _, err := r.store.PatchLabel(ctx, r.identity, labels[0].ID, overwrite(LabelInput{Name: "Cliente"})); err != nil {
 		t.Fatal(err)
 	}
 	seeded, err = r.store.SeedLabelDescriptions(ctx, r.identity, defaults)
@@ -194,4 +194,9 @@ func TestDescriptionsAreSeededOnceAndOnlyIntoEmptyDefaults(t *testing.T) {
 	if described()["Cliente"] != "" {
 		t.Fatal("a second seed refilled a description the person cleared")
 	}
+}
+
+// overwrite is a patch that sets every field, the way a full rewrite of a label does.
+func overwrite(in LabelInput) LabelPatch {
+	return LabelPatch{Name: &in.Name, Tier: &in.Tier, Description: &in.Description, Discard: &in.Discard}
 }
