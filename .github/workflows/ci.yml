@@ -1760,6 +1760,8 @@ jobs:
     # under turn_reading's 1013 s. Each timeout is at least 2.7 times its group's cold
     # total, for runner variance and setup. turn_reading was measured before the background
     # teacher removed its teacher branches, so its timeout is a ceiling for the current file.
+    # decide_floor, decide_tick and decide_wire (2026-11-05) are not measured yet: the
+    # elicitation group's timeout assumes about 900 s for the three until a run says otherwise.
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -1776,8 +1778,8 @@ jobs:
             scopes: turn_reading
             timeout: 46
           - group: elicitation-boundaries
-            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf
-            timeout: 34
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire
+            timeout: 75
           - group: media
             scopes: media_clamp media_watcher signin_flow signin_options signin_proxy
             timeout: 150
@@ -1830,8 +1832,8 @@ jobs:
     # the measurement that is missing and fails closed.
     if: ${{ !cancelled() }}
     timeout-minutes: 10
-    # REL-02: this is deliberately unconditional. The twelve independently-scored
-    # boundaries — ten Go files, the frontend aggregate and the media frontend on its own
+    # REL-02: this is deliberately unconditional. The eighteen independently-scored
+    # boundaries — sixteen Go files, the frontend aggregate and the media frontend on its own
     # denominator — publish one candidate-bound report on every run; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
     # A Go scope is re-measured only when its input closure changed (2026-09-28): the result

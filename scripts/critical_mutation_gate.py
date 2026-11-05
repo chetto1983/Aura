@@ -29,6 +29,9 @@ GO_SCOPES = {
     "signin_flow": "internal/browserlogin/login.go",
     "signin_options": "internal/browserlogin/login_types.go",
     "signin_proxy": "internal/agui/signin_proxy.go",
+    "decide_floor": "internal/pimwatch/ladder_model.go",
+    "decide_tick": "internal/pimwatch/watcher_decide.go",
+    "decide_wire": "internal/decide/wire.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -64,6 +67,9 @@ REQUIRED_SCOPE_IDS = frozenset(
         "signin_flow",
         "signin_options",
         "signin_proxy",
+        "decide_floor",
+        "decide_tick",
+        "decide_wire",
         "frontend",
         "media_frontend",
     }

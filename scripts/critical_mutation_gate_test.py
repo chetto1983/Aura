@@ -107,6 +107,17 @@ class GoMutationParserTest(unittest.TestCase):
                 self.assertEqual(critical_mutation_gate.GO_SCOPES[scope], relative)
                 self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
 
+    def test_the_decision_models_floor_tick_and_wire_are_scoped(self) -> None:
+        expected = {
+            "decide_floor": "internal/pimwatch/ladder_model.go",
+            "decide_tick": "internal/pimwatch/watcher_decide.go",
+            "decide_wire": "internal/decide/wire.go",
+        }
+        for scope, relative in expected.items():
+            with self.subTest(scope=scope):
+                self.assertEqual(critical_mutation_gate.GO_SCOPES[scope], relative)
+                self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
+
     def test_required_ids_and_go_scopes_cannot_drift(self) -> None:
         # REQUIRED_SCOPE_IDS is written out by hand on purpose. Deleting a boundary from
         # GO_SCOPES must fail the suite here rather than quietly delete its own requirement.
