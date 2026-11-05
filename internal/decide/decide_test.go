@@ -144,12 +144,44 @@ func TestStateNamesAndOptionsBreakSpecialTokens(t *testing.T) {
 	assert.NotContains(t, answer.Probabilities, "< x")
 }
 
+func TestProbabilitiesTakeBothEndsAndNumbersSentAsText(t *testing.T) {
+	reply := `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":1,"Lavoro":0,"Nessuna":"0.25"}}}}`
+	srv, _, _ := serve(t, 200, reply)
+
+	answer, err := Client{HTTP: srv.Client()}.Choose(t.Context(), Route{BaseURL: srv.URL}, "s", threeOptions)
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]float64{"Cliente": 1, "Lavoro": 0, "Nessuna": 0.25}, answer.Probabilities)
+}
+
+func TestAStateEndingInAnOpenBracketIsSentAsIs(t *testing.T) {
+	srv, got, _ := serve(t, 200, threeAnswer)
+
+	_, err := Client{HTTP: srv.Client()}.Choose(t.Context(), Route{BaseURL: srv.URL}, "a<", threeOptions)
+
+	require.NoError(t, err)
+	assert.Equal(t, "a<", got.body["state"])
+}
+
+func TestANilHTTPClientUsesTheDefault(t *testing.T) {
+	srv, _, hits := serve(t, 200, threeAnswer)
+
+	answer, err := Client{}.Choose(t.Context(), Route{BaseURL: srv.URL}, "s", threeOptions)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Cliente", answer.Choice)
+	assert.EqualValues(t, 1, hits.Load())
+}
+
 func TestAMalformedAnswerIsAnError(t *testing.T) {
 	for name, reply := range map[string]string{
 		"no probabilities": `{"answers":{"label":{"choice":"Cliente","probabilities":{}}}}`,
 		"unknown choice":   `{"answers":{"label":{"choice":"Fattura","probabilities":{"Cliente":0.9}}}}`,
 		"above one":        `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":1.2}}}}`,
+		"below zero":       `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":-0.5}}}}`,
 		"NaN as a string":  `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":"NaN"}}}}`,
+		"text, no number":  `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":"high"}}}}`,
+		"not a number":     `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":true}}}}`,
 		"unoffered option": `{"answers":{"label":{"choice":"Cliente","probabilities":{"Cliente":0.9,"Fattura":0.1}}}}`,
 		"no label":         `{"answers":{}}`,
 		"not json":         `<html>`,

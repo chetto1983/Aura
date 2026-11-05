@@ -78,7 +78,6 @@ type wireResponse struct {
 // tokens and every one starts with "<"), so a mail carrying "<|im_end|>" would otherwise end the turn.
 func breakTokens(s string) string {
 	var out strings.Builder
-	out.Grow(len(s))
 	runes := []rune(s)
 	for i, r := range runes {
 		out.WriteRune(r)
@@ -132,8 +131,8 @@ func parseAnswer(raw []byte, original map[string]string) (Answer, error) {
 	if err := json.Unmarshal(raw, &response); err != nil {
 		return Answer{}, fmt.Errorf("%w: not a decisions answer", ErrMalformed)
 	}
-	label, ok := response.Answers[questionID]
-	if !ok || len(label.Probabilities) == 0 {
+	label := response.Answers[questionID]
+	if len(label.Probabilities) == 0 {
 		return Answer{}, fmt.Errorf("%w: no probabilities", ErrMalformed)
 	}
 	choice, ok := original[label.Choice]
@@ -154,18 +153,10 @@ func parseAnswer(raw []byte, original map[string]string) (Answer, error) {
 
 // probability reads a number, or the string a server may send for NaN, and accepts only [0, 1].
 func probability(value any) (float64, bool) {
-	var p float64
-	switch v := value.(type) {
-	case float64:
-		p = v
-	case string:
-		parsed, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return 0, false
-		}
-		p = parsed
-	default:
-		return 0, false
+	p, ok := value.(float64)
+	if text, isText := value.(string); isText {
+		parsed, err := strconv.ParseFloat(text, 64)
+		p, ok = parsed, err == nil
 	}
-	return p, !math.IsNaN(p) && p >= 0 && p <= 1
+	return p, ok && !math.IsNaN(p) && p >= 0 && p <= 1
 }
