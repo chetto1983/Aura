@@ -29,8 +29,8 @@ type DigestStore interface {
 var _ DigestStore = (*Store)(nil)
 
 // Digester writes an identity's daily digest, read live: no sender or subject was kept. Discarded
-// mail is not read at all: it is counted on one line. The one model call of the day is the only
-// place the digest pays for one.
+// mail is not read at all: it is counted on one line. The digest pays for one model call a day,
+// beside the decision model's calls on each tick.
 type Digester struct {
 	Store  DigestStore
 	PIM    PIMReader

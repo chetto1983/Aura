@@ -192,10 +192,10 @@ func TestPIMDigestFailsClearlyWithoutASidecar(t *testing.T) {
 }
 
 // A bound below the watcher's reserve would stop every run before its first page, and the account
-// would never move.
+// would never move. A mail page reserves the decision model's whole budget besides.
 func TestAWatchRunHasRoomForAPageAtItsWorst(t *testing.T) {
-	if pimWatchMaxDuration <= pimwatch.PageReserve {
-		t.Fatalf("%s leaves no room for a page that needs %s", pimWatchMaxDuration, pimwatch.PageReserve)
+	if worst := pimwatch.PageReserve + pimwatch.DecideBudget; pimWatchMaxDuration <= worst {
+		t.Fatalf("%s leaves no room for a page that needs %s", pimWatchMaxDuration, worst)
 	}
 }
 

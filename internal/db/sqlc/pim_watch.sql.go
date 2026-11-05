@@ -66,6 +66,23 @@ func (q *Queries) ClaimPIMWatchLabelSeed(ctx context.Context, identityID pgtype.
 	return result.RowsAffected(), nil
 }
 
+const clearPIMWatchDecideFailure = `-- name: ClearPIMWatchDecideFailure :exec
+UPDATE aura.pim_watch_accounts SET decide_error = '', decide_failed_at = NULL, updated_at = now()
+WHERE identity_id = $1 AND account_id = $2 AND decide_error <> ''
+`
+
+type ClearPIMWatchDecideFailureParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	AccountID  string      `json:"account_id"`
+}
+
+// An answer clears the last failure. It touches only a row that holds one, so a tick with nothing
+// to clear writes nothing.
+func (q *Queries) ClearPIMWatchDecideFailure(ctx context.Context, arg ClearPIMWatchDecideFailureParams) error {
+	_, err := q.db.Exec(ctx, clearPIMWatchDecideFailure, arg.IdentityID, arg.AccountID)
+	return err
+}
+
 const confirmPIMWatchAlarm = `-- name: ConfirmPIMWatchAlarm :exec
 UPDATE aura.pim_watch_cursors
 SET alarm_since = CASE WHEN alarm_kind = 'gap' THEN NULL ELSE alarm_since END,
@@ -1480,6 +1497,24 @@ func (q *Queries) RaisePIMWatchFailingAlarm(ctx context.Context, arg RaisePIMWat
 		arg.Resource,
 		arg.AlarmRunID,
 	)
+	return err
+}
+
+const recordPIMWatchDecideFailure = `-- name: RecordPIMWatchDecideFailure :exec
+INSERT INTO aura.pim_watch_accounts (identity_id, account_id, decide_error, decide_failed_at) VALUES ($1, $2, $3, now())
+ON CONFLICT (identity_id, account_id) DO UPDATE
+SET decide_error = EXCLUDED.decide_error, decide_failed_at = EXCLUDED.decide_failed_at, updated_at = now()
+`
+
+type RecordPIMWatchDecideFailureParams struct {
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	AccountID   string      `json:"account_id"`
+	DecideError string      `json:"decide_error"`
+}
+
+// The decision model's last failure on an account, a class with no text.
+func (q *Queries) RecordPIMWatchDecideFailure(ctx context.Context, arg RecordPIMWatchDecideFailureParams) error {
+	_, err := q.db.Exec(ctx, recordPIMWatchDecideFailure, arg.IdentityID, arg.AccountID, arg.DecideError)
 	return err
 }
 

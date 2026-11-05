@@ -1,10 +1,12 @@
-// Package pimwatch tells a person when something in their mail or calendar needs them, and calls
-// no model to do it (docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md; prd.md §11
-// and §15, 2026-11-01). The scheduler's pim_watch and pim_digest handlers drive it through ports.
+// Package pimwatch tells a person when something in their mail or calendar needs them
+// (docs/superpowers/specs/2026-10-31-mail-calendar-watch-design.md; prd.md §11 and §15,
+// 2026-11-01). The scheduler's pim_watch and pim_digest handlers drive it through ports.
 //
-// The first release decides with rules and provider facts alone. Rung 5 of the spec's ladder,
-// corrections by similarity and a classifier, does not exist here yet: mail nothing decided is
-// `today`, which is the harmless outcome.
+// The ladder decides with rules and provider facts alone and calls no model: mail nothing decided
+// is `today`, which is the harmless outcome. After it, a decision model may give the mail the rules
+// left without a label one of the person's described labels, whose tier or discard then moves it
+// within the people floor (ladder_model.go,
+// docs/superpowers/specs/2026-11-03-decision-model-labels-design.md).
 //
 // Aura keeps ids and verdicts, never a mail index. Sender and subject are read live from the PIM
 // when a digest or the decisions view needs them, and the only sender text stored is the key of a

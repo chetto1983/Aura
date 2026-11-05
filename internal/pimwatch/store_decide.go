@@ -186,6 +186,21 @@ func (s *Store) CloudDecide(ctx context.Context, identityID, accountID string) (
 	return on, nil
 }
 
+// RecordDecideFailure keeps the decision model's last failure on an account for the cockpit: a class
+// from decide.ErrorClass, never the answer's text. An empty class clears it.
+func (s *Store) RecordDecideFailure(ctx context.Context, identityID, accountID, class string) error {
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		if class == "" {
+			return q.ClearPIMWatchDecideFailure(ctx, sqlc.ClearPIMWatchDecideFailureParams{IdentityID: id, AccountID: accountID})
+		}
+		return q.RecordPIMWatchDecideFailure(ctx, sqlc.RecordPIMWatchDecideFailureParams{IdentityID: id, AccountID: accountID, DecideError: class})
+	})
+	if err != nil {
+		return fmt.Errorf("record pim watch decide failure: %w", err)
+	}
+	return nil
+}
+
 // SetCloudDecide records the person's consent for an account. It leaves the model's last failure
 // as it was.
 func (s *Store) SetCloudDecide(ctx context.Context, identityID, accountID string, on bool) error {

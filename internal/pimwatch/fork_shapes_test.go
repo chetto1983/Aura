@@ -33,10 +33,10 @@ func TestAMailKeepsItsAddressAndItsNameApart(t *testing.T) {
 		t.Fatal(err)
 	}
 	mail := page.Changes[0]
-	if mail.From != "mario@acme.it" || mail.FromName != "Mario Rossi" {
+	if mail.From != "mario@officina.example" || mail.FromName != "Pinco Pallino" {
 		t.Fatalf("from %q, name %q", mail.From, mail.FromName)
 	}
-	if address, domain := SenderKey(mail.From); address != "mario@acme.it" || domain != "acme.it" {
+	if address, domain := SenderKey(mail.From); address != "mario@officina.example" || domain != "officina.example" {
 		t.Fatalf("key = %q, %q", address, domain)
 	}
 }
@@ -141,7 +141,7 @@ func TestAMailReadByIDCarriesTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := lineOf(Verdict{Resource: ResourceMail, ItemID: "m-1"}, map[string]Item{"m-1": result.Items[0]})
-	if line.From != "mario@acme.it" || line.FromName != "Mario Rossi" || !line.Start.IsZero() {
+	if line.From != "mario@officina.example" || line.FromName != "Pinco Pallino" || !line.Start.IsZero() {
 		t.Fatalf("line = %+v", line)
 	}
 	if len(result.Gone) != 1 || result.Gone[0].ID != "m-2" || result.Gone[0].CalendarID != "" {

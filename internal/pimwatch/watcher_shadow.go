@@ -18,7 +18,8 @@ type shadowCount struct {
 // per-sender memory's tier and the centroid's answer
 // (docs/superpowers/specs/2026-11-03-urgency-centroid-design.md, decisions 7 to 9). Nothing here
 // changes a verdict, and a failure only leaves part of the shadow empty: a tick never fails, or
-// waits on a retry, because of it.
+// waits on a retry, because of it. It compares with the ladder's own tier, which the decision model
+// may change after it.
 func (w *Watcher) shadow(ctx context.Context, t *tick, mails []Change, drafts []VerdictDraft) {
 	if len(mails) == 0 {
 		return
@@ -32,7 +33,7 @@ func (w *Watcher) shadow(ctx context.Context, t *tick, mails []Change, drafts []
 		slog.Warn("mail watch: the sender memory was not read for the shadow", "error", err)
 	} else {
 		for i := range drafts {
-			drafts[i].Shadow.SenderMemory = drafts[i].Decision.Tier
+			drafts[i].Shadow.SenderMemory = drafts[i].Ladder.Tier
 			if tier, ok := memory[keys[i]]; ok {
 				drafts[i].Shadow.SenderMemory = tier
 			}
@@ -60,7 +61,7 @@ func (w *Watcher) shadow(ctx context.Context, t *tick, mails []Change, drafts []
 		switch answer.Tier {
 		case "":
 			t.shadow.empty++
-		case drafts[i].Decision.Tier:
+		case drafts[i].Ladder.Tier:
 			t.shadow.answered++
 			t.shadow.agreed++
 		default:

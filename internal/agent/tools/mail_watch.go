@@ -61,7 +61,7 @@ func (t *MailWatchTool) Spec() Spec {
 	return Spec{
 		Name:    "mail_watch",
 		Summary: "Watch mail and calendar for the operator: turn an account's watch on or off, list and change what was decided about a mail, and add rules such as never notify me about this sender.",
-		Description: "The watch reads an account's new mail and calendar changes every few minutes with no model, notifies the operator of what is urgent, and lists the rest in a daily digest. " +
+		Description: "The watch reads an account's new mail and calendar changes every few minutes, decides with rules and, where they leave a mail unlabelled, a small decision model that picks one of the operator's labels, notifies the operator of what is urgent, and lists the rest in a daily digest. " +
 			"action=status shows what is watched and what failed. action=enable watches an account from now on: nothing already in the mailbox is read. action=disable stops it and stops for the operator's approval. " +
 			"action=list_decisions lists one account's decisions of a day, newest first, each with its tier, what decided it, the ids correct takes, and sender and subject read live, including what never reached a notification. " +
 			"action=correct changes one item's tier or label when the operator says a decision was wrong; a sender corrected twice gets a rule by itself. " +

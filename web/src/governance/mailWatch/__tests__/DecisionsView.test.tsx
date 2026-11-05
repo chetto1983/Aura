@@ -257,6 +257,16 @@ describe('why', () => {
     expect(await screen.findByText(sentence)).toBeTruthy();
   });
 
+  it('explains a verdict the model decided', async () => {
+    theDay(server, decision({ decided_by: 'model' }));
+    openDay();
+    expect(await screen.findByText('The model decided')).toBeTruthy();
+    cleanup();
+    await i18n.changeLanguage('it');
+    openDay();
+    expect(await screen.findByText("L'ha deciso il modello")).toBeTruthy();
+  });
+
   it('marks a sender that failed authentication', async () => {
     theDay(server, decision({ auth_failed: true, decided_by: 'auth_failed' }));
     openDay();

@@ -7,11 +7,12 @@ import (
 )
 
 // newDecideBoot reads the decision model's wiring from the process environment on its first call
-// and returns that same read ever after. The first caller is the wiring, which runs after main has
-// loaded .env; a package-level initialiser would have run before it. The settings overlay cannot
-// move AURA_DECIDE_BASE_URL (it copies only AllowedKeys into the environment, settings.OverlayEnv),
-// so the address is the installer's whenever it is read. AURA_DECIDE_MODEL may be overlaid, but the
-// route reads that row live (settings.DecideRoute), so the boot read is for the address.
+// and returns that same read ever after. The first caller is the boot, after main has loaded .env
+// and before the settings overlay runs (resolveConfigAndPoolWithSettings); a package-level
+// initialiser would have run before .env. The overlay cannot move AURA_DECIDE_BASE_URL (it copies
+// only AllowedKeys into the environment, settings.OverlayEnv), so the address is the installer's.
+// AURA_DECIDE_MODEL's row is overlaid, and the route reads it live (settings.DecideRoute): the boot
+// read is what the route falls back to once the row is deleted.
 func newDecideBoot() func() config.DecideConfig {
 	return sync.OnceValue(config.LoadDecide)
 }

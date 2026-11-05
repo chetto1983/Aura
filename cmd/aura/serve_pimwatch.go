@@ -72,9 +72,10 @@ func newPIMWatchRuntime(chat *chatEnv) *pimWatchRuntime {
 	store := pimwatch.NewStore(chat.pool)
 	locale := pimWatchLocale{profiles: onboarding.NewProfileStore(chat.pool), deployment: tools.LocationOrUTC(chat.cfg.Timezone)}
 	scheduler := cron.New(chat.pool)
+	decider := pimWatchDecider(chat)
 	runtime := &pimWatchRuntime{locale: locale, service: &pimwatch.Service{
 		Store: store, Tasks: pimWatchTasks{store: scheduler}, Locale: locale,
-		Routes: pimWatchRoutes{accounts: telegram.New(chat.pool), threads: chat},
+		Routes: pimWatchRoutes{accounts: telegram.New(chat.pool), threads: chat}, Decide: decider,
 	}}
 	if chat.identity != nil {
 		runtime.sweep = pimwatch.Sweep{Store: store, Identities: identityRoster{store: chat.identity}}
@@ -86,7 +87,9 @@ func newPIMWatchRuntime(chat *chatEnv) *pimWatchRuntime {
 	runtime.service.PIM = reader
 	centroid := newPIMWatchCentroid(chat, store)
 	runtime.service.Centroid = centroid
-	runtime.watcher = &pimwatch.Watcher{Store: store, PIM: reader, Ledger: pimWatchLedger{store: scheduler}, Locale: locale, Centroid: centroid}
+	runtime.watcher = &pimwatch.Watcher{
+		Store: store, PIM: reader, Ledger: pimWatchLedger{store: scheduler}, Locale: locale, Centroid: centroid, Decider: decider,
+	}
 	digester := &pimwatch.Digester{Store: store, PIM: reader, Locale: locale}
 	if resolver := identityLLMResolver(chat); resolver != nil {
 		digester.Model = pimDigestModel{snapshots: resolver}

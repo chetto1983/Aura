@@ -147,7 +147,7 @@ func TestEveryShapeTheForkWritesPassesThroughAPage(t *testing.T) {
 	if _, err := r.store.Verdict(ctx, r.identity, rigAccount, ResourceCalendar, "e-3"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a delete with no row and no start left one: %v", err)
 	}
-	mustContain(t, out.Notice, "anna@acme.it: Cancelled: Riunione annullata")
+	mustContain(t, out.Notice, "anna@officina.example: Cancelled: Riunione annullata")
 }
 
 // All day on the third has begun for a person in Tokyo while it is still the second in UTC.

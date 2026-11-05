@@ -100,6 +100,7 @@ export const mailWatchEn = {
     default: 'Nothing stood out, so it waits for the digest',
     calendar: 'A change in your calendar',
     person: 'You decided this',
+    model: 'The model decided',
   },
   day: {
     dateLabel: 'Day',
@@ -329,6 +330,7 @@ export const mailWatchIt = {
     default: 'Niente di particolare, quindi aspetta il riepilogo',
     calendar: 'Un cambiamento nel tuo calendario',
     person: "L'hai deciso tu",
+    model: "L'ha deciso il modello",
   },
   day: {
     dateLabel: 'Giorno',

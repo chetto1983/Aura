@@ -9,8 +9,8 @@
         "type": "added",
         "id": "m-1",
         "occurredAt": "2026-10-31T14:47:00Z",
-        "from": "mario@acme.it",
-        "fromName": "Mario Rossi",
+        "from": "mario@officina.example",
+        "fromName": "Pinco Pallino",
         "subject": "Fermo linea 3",
         "snippet": "La pompa si è fermata",
         "signals": {
@@ -28,7 +28,7 @@
         "id": "e-1",
         "calendarId": "primary",
         "occurredAt": "2026-10-31T14:50:00Z",
-        "from": "anna@acme.it",
+        "from": "anna@officina.example",
         "subject": "Riunione budget",
         "event": {
           "start": "2026-11-01T09:00:00Z",
@@ -76,7 +76,7 @@
         "id": "e-4",
         "calendarId": "primary",
         "occurredAt": "2026-10-31T14:52:00Z",
-        "from": "anna@acme.it",
+        "from": "anna@officina.example",
         "subject": "Riunione annullata",
         "event": {
           "start": "2026-11-01T11:00:00Z",
@@ -92,7 +92,7 @@
         "id": "e-5",
         "calendarId": "primary",
         "occurredAt": "2026-10-31T14:53:00Z",
-        "from": "anna@acme.it",
+        "from": "anna@officina.example",
         "subject": "Fiera",
         "event": {
           "start": "2026-11-03",
@@ -110,7 +110,7 @@
   },
   "itemsRequest": {"accountId": "work", "resource": "mail", "items": [{"id": "m-1"}, {"id": "m-2"}]},
   "itemsResponse": {
-    "items": [{"id": "m-1", "occurredAt": "2026-10-31T14:47:00Z", "from": "mario@acme.it", "fromName": "Mario Rossi", "subject": "Fermo linea 3"}],
+    "items": [{"id": "m-1", "occurredAt": "2026-10-31T14:47:00Z", "from": "mario@officina.example", "fromName": "Pinco Pallino", "subject": "Fermo linea 3"}],
     "gone": [{"id": "m-2", "calendarId": null}]
   },
   "calendarItemsResponse": {
@@ -119,7 +119,7 @@
         "id": "e-1",
         "calendarId": "primary",
         "occurredAt": "2026-10-30T08:00:00Z",
-        "from": "anna@acme.it",
+        "from": "anna@officina.example",
         "subject": "Riunione budget",
         "event": {
           "start": "2026-11-01T09:00:00Z",

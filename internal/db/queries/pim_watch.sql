@@ -336,5 +336,17 @@ SELECT * FROM aura.pim_watch_accounts WHERE identity_id = $1 ORDER BY account_id
 INSERT INTO aura.pim_watch_accounts (identity_id, account_id, cloud_decide) VALUES ($1, $2, $3)
 ON CONFLICT (identity_id, account_id) DO UPDATE SET cloud_decide = EXCLUDED.cloud_decide, updated_at = now();
 
+-- name: RecordPIMWatchDecideFailure :exec
+-- The decision model's last failure on an account, a class with no text.
+INSERT INTO aura.pim_watch_accounts (identity_id, account_id, decide_error, decide_failed_at) VALUES ($1, $2, $3, now())
+ON CONFLICT (identity_id, account_id) DO UPDATE
+SET decide_error = EXCLUDED.decide_error, decide_failed_at = EXCLUDED.decide_failed_at, updated_at = now();
+
+-- name: ClearPIMWatchDecideFailure :exec
+-- An answer clears the last failure. It touches only a row that holds one, so a tick with nothing
+-- to clear writes nothing.
+UPDATE aura.pim_watch_accounts SET decide_error = '', decide_failed_at = NULL, updated_at = now()
+WHERE identity_id = $1 AND account_id = $2 AND decide_error <> '';
+
 -- name: DeletePIMWatchAccountSettings :exec
 DELETE FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2;

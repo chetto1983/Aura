@@ -74,6 +74,9 @@ func resolveConfigAndPoolWithSettings(
 	if err != nil {
 		return nil, nil, fmt.Errorf("db open: %w", err)
 	}
+	// Before the overlay copies AURA_DECIDE_MODEL's row into the environment: once the row is
+	// deleted, the mail tick falls back to what the deployment itself named.
+	bootDecide()
 	overlayBootSettings(ctx, pool, settingsOps)
 	cfg, err = loadConfig()
 	if err != nil {

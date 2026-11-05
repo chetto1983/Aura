@@ -81,6 +81,9 @@ type Querier interface {
 	ClearActiveMCPProfile(ctx context.Context) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
 	ClearGatewayToolPolicy(ctx context.Context, arg ClearGatewayToolPolicyParams) (int64, error)
+	// An answer clears the last failure. It touches only a row that holds one, so a tick with nothing
+	// to clear writes nothing.
+	ClearPIMWatchDecideFailure(ctx context.Context, arg ClearPIMWatchDecideFailureParams) error
 	// The asset must be deliverable by BindMediaJobAssetDelivery when the job completes: owned,
 	// in the job's conversation, an accepted agent video that is not deleted.
 	CompleteMediaJob(ctx context.Context, arg CompleteMediaJobParams) (AuraMediaJob, error)
@@ -740,6 +743,8 @@ type Querier interface {
 	// one memory decided, one already labelled, or one with no decision is never overwritten;
 	// a repeat is a zero-row update, as SetConversationTitleIfNull's is.
 	RecordConversationTurnTeacherLabel(ctx context.Context, arg RecordConversationTurnTeacherLabelParams) (int64, error)
+	// The decision model's last failure on an account, a class with no text.
+	RecordPIMWatchDecideFailure(ctx context.Context, arg RecordPIMWatchDecideFailureParams) error
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// One finished run's effect on its task, in one statement: a success resets the failure count;
 	// a failure increments it and, when the caller's pause_after is positive and the new count

@@ -1,6 +1,7 @@
 package pimwatch
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
@@ -58,10 +59,10 @@ func BuildShadowReport(rows []ShadowRow, lastDigest, now time.Time) ShadowReport
 			}
 		}
 		settled := settledMail{truth: row.Tier, ladder: row.LadderTier, memory: row.SenderMemory, centroid: row.Centroid}
-		// A correction that changed only the label is decided_by person too, but its tier is the
-		// ladder's: the person saw the mail and kept it.
+		// A correction that changed only the label is decided_by person too, but its tier is the one
+		// the person saw, the model's where its label applied: they saw the mail and kept it.
 		switch {
-		case row.By == ByPerson && row.Tier != row.LadderTier:
+		case row.By == ByPerson && row.Tier != cmp.Or(row.ModelTier, row.LadderTier):
 			strong = append(strong, settled)
 		case row.By == ByPerson || reachedThePerson(row, lastDigest, now):
 			weak = append(weak, settled)
@@ -175,7 +176,7 @@ func (r ShadowReport) WriteText(w io.Writer) {
 	}
 	_, _ = fmt.Fprintf(w, "\nthe centroid would overrule the ladder, by rung: %s\n", rungs)
 	_, _ = fmt.Fprintf(w, "margin p10/p50/p90 over the answered mail: %.3f %.3f %.3f\n\n", r.MarginP10, r.MarginP50, r.MarginP90)
-	_, _ = fmt.Fprintln(w, "strong: mail whose tier the person changed. The ladder's tier was the one changed, so the ladder scores zero here by construction; the memory is the arm to beat.")
-	_, _ = fmt.Fprintln(w, "weak: mail whose label alone the person changed, and uncorrected mail older than 48 h that an alert or a digest brought to the person. Its tier is the ladder's, so the ladder scores 100% by construction.")
+	_, _ = fmt.Fprintln(w, "strong: mail whose tier the person changed. The tier changed was the one they saw, so the ladder scores zero here by construction wherever the decision model's label had not moved it; the memory is the arm to beat.")
+	_, _ = fmt.Fprintln(w, "weak: mail whose label alone the person changed, and uncorrected mail older than 48 h that an alert or a digest brought to the person. Its tier is the tier the person saw: the decision model's where its label applied, else the ladder's, which then scores 100% by construction.")
 	_, _ = fmt.Fprintln(w, "all: both together, the fair comparison.")
 }

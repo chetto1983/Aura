@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -311,5 +312,25 @@ func TestEventTimesDecode(t *testing.T) {
 	}
 	if page.Changes[1].Event.Start.Before(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("start = %v", page.Changes[1].Event.Start)
+	}
+}
+
+func TestChangeDecodesTheSnippet(t *testing.T) {
+	t.Parallel()
+	var page ChangesPage
+	if err := json.Unmarshal(loadContract(t).ChangesResponse, &page); err != nil {
+		t.Fatal(err)
+	}
+	if mail := page.Changes[0]; mail.ID != "m-1" || mail.Snippet != "La pompa si è fermata" {
+		t.Fatalf("m-1 = %+v", mail)
+	}
+	raw, err := os.ReadFile("testdata/pim_contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, address := range regexp.MustCompile(`[\w.+-]+@[\w.-]+`).FindAllString(string(raw), -1) {
+		if !strings.HasSuffix(address, ".example") {
+			t.Errorf("the fixture holds an address outside .example: %s", address)
+		}
 	}
 }

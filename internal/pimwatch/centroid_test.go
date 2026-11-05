@@ -264,7 +264,7 @@ func TestAPageStartsOnlyWithRoomForTheShadow(t *testing.T) {
 	w := &Watcher{Now: func() time.Time { return at }}
 	ctx, cancel := context.WithDeadline(context.Background(), at.Add(pimRequestTimeout+shadowTimeout+time.Second))
 	defer cancel()
-	if w.hasTime(ctx) {
+	if w.hasTime(ctx, &tick{}, ResourceMail) {
 		t.Fatal("a page started with room for the PIM's read and the shadow, but not for the commit")
 	}
 }

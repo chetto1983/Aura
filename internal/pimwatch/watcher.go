@@ -62,6 +62,8 @@ type WatchStore interface {
 	OwedAlerts(ctx context.Context, identityID, accountID string) ([]Verdict, error)
 	ConfirmAlerts(ctx context.Context, identityID, accountID, runID string) error
 	RetellAlerts(ctx context.Context, identityID, accountID, oldRun, newRun string) error
+	CloudDecide(ctx context.Context, identityID, accountID string) (bool, error)
+	RecordDecideFailure(ctx context.Context, identityID, accountID, class string) error
 }
 
 var _ WatchStore = (*Store)(nil)
@@ -93,6 +95,10 @@ type Watcher struct {
 	Locale Locale
 	// Centroid answers in shadow beside the ladder; nil switches it off.
 	Centroid Centroid
+	// Decider labels the mail the rules left unsorted; nil switches it off. DecideTime is the model
+	// time a tick may spend, 0 meaning DecideBudget.
+	Decider    Decider
+	DecideTime time.Duration
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
 }
@@ -119,6 +125,7 @@ type tick struct {
 	backlog  bool
 	hard     *HardFailure
 	shadow   shadowCount
+	decide   decideStep
 }
 
 func (t *tick) carry(p phrases, kind, resource string, since time.Time) {
@@ -165,11 +172,15 @@ func (w *Watcher) open(ctx context.Context, in TickInput) (*tick, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tick{
+	t := &tick{
 		TickInput: in, settings: settings, book: book,
 		lang: w.Locale.Language(ctx, in.IdentityID), loc: w.Locale.Location(ctx, in.IdentityID),
 		shadow: shadowCount{on: w.Centroid != nil},
-	}, nil
+	}
+	if err := w.openDecide(ctx, t); err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 // recoverAlerts settles what earlier runs told. A completed run's alerts went out. Any other run
@@ -233,7 +244,7 @@ func (w *Watcher) watchResource(ctx context.Context, t *tick, resource string) e
 	}
 	value := cursor.Value
 	for pages := 0; ; pages++ {
-		if !w.hasTime(ctx) || pages == maxPagesPerResource {
+		if !w.hasTime(ctx, t, resource) || pages == maxPagesPerResource {
 			t.backlog = true
 			return nil
 		}
@@ -303,10 +314,15 @@ func (w *Watcher) settleAlarm(ctx context.Context, t *tick, cursor Cursor) error
 	return nil
 }
 
-// hasTime reports whether another page fits before the handler's deadline.
-func (w *Watcher) hasTime(ctx context.Context) bool {
+// hasTime reports whether another page fits before the handler's deadline. A mail page also holds
+// the model time the tick has left; the model never reads a calendar page.
+func (w *Watcher) hasTime(ctx context.Context, t *tick, resource string) bool {
 	deadline, ok := ctx.Deadline()
-	return !ok || w.now().Add(PageReserve).Before(deadline)
+	reserve := PageReserve
+	if resource == ResourceMail {
+		reserve += t.decide.remaining()
+	}
+	return !ok || w.now().Add(reserve).Before(deadline)
 }
 
 // fail keeps a failed read on the cursor row. A transient failure raises one alarm after an hour,
@@ -397,6 +413,7 @@ func (w *Watcher) draft(ctx context.Context, t *tick, resource string, changes [
 		}
 	}
 	w.shadow(ctx, t, mails, drafts)
+	w.decide(ctx, t, mails, drafts, lines)
 	return drafts, lines, nil
 }
 
@@ -496,6 +513,9 @@ func (t *tick) summary() string {
 	}
 	if t.shadow.on {
 		parts = append(parts, fmt.Sprintf("shadow: %d answered, %d agreed, %d empty", t.shadow.answered, t.shadow.agreed, t.shadow.empty))
+	}
+	if model := t.decide.summary(); model != "" {
+		parts = append(parts, model)
 	}
 	return strings.Join(parts, "; ")
 }

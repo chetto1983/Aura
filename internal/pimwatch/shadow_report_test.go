@@ -121,3 +121,23 @@ func TestTheReportPrintsNoSenderAndNoId(t *testing.T) {
 		}
 	}
 }
+
+// The person saw the model's tier where its label applied, so that is the tier a correction changed
+// or kept.
+func TestACorrectionOfAModelTierIsStrongTruth(t *testing.T) {
+	modelled := func(r ShadowRow) ShadowRow { r.ModelTier = TierLater; return r }
+	changed := modelled(shadowRow(TierToday, ByPerson, TierToday, ByDefault, TierToday, TierToday, 0.03))
+	kept := modelled(shadowRow(TierLater, ByPerson, TierToday, ByDefault, TierToday, TierToday, 0.03))
+	r := BuildShadowReport([]ShadowRow{changed, kept}, time.Time{}, reportNow)
+	if r.Strong.Count != 1 || r.Strong.Ladder.Right != 1 {
+		t.Fatalf("strong = %+v, want the correction away from the model's later", r.Strong)
+	}
+	if r.Weak.Count != 1 || r.Weak.Ladder.Right != 0 {
+		t.Fatalf("weak = %+v, want the label-only correction that kept the model's later", r.Weak)
+	}
+	var out strings.Builder
+	r.WriteText(&out)
+	if !strings.Contains(out.String(), "the tier the person saw") {
+		t.Fatalf("the weak truth's sentence does not say whose tier it is:\n%s", out.String())
+	}
+}

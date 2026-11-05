@@ -139,8 +139,8 @@ type Event struct {
 }
 
 // Change is one item in a page. From is the address alone, what a rule reads, and FromName the
-// display name beside it. The snippet is not decoded: nothing here reads it until a classifier
-// exists.
+// display name beside it. The decision model reads the Snippet beside the subject, and nothing
+// keeps it.
 type Change struct {
 	Type       ChangeType `json:"type"`
 	ID         string     `json:"id"`
@@ -149,6 +149,7 @@ type Change struct {
 	From       string     `json:"from"`
 	FromName   string     `json:"fromName"`
 	Subject    string     `json:"subject"`
+	Snippet    string     `json:"snippet"`
 	Signals    Signals    `json:"signals"`
 	Event      *Event     `json:"event"`
 }
