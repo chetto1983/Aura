@@ -10,7 +10,7 @@ export const mailWatchDecideEn = {
   noDescription: 'Without a description the model skips it',
   reserved: 'Reserved name: the model skips it',
   decisions: { discarded: 'Discarded' },
-  row: { discarded: 'Discarded' },
+  row: { discarded: 'Discarded', byModel: 'by the model' },
   cloud: {
     label: 'Let the OpenRouter decision model read this account',
     hint: 'The subject and start of each mail go to OpenRouter, sent with a request not to keep them.',
@@ -36,7 +36,7 @@ export const mailWatchDecideIt = {
   noDescription: 'Senza descrizione il modello non la usa',
   reserved: 'Nome riservato: il modello non la usa',
   decisions: { discarded: 'Scartate' },
-  row: { discarded: 'Scartata' },
+  row: { discarded: 'Scartata', byModel: 'dal modello' },
   cloud: {
     label: 'Lascia leggere questo account al modello su OpenRouter',
     hint: 'Oggetto e inizio di ogni mail vanno a OpenRouter, che li riceve con la richiesta di non conservarli.',

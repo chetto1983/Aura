@@ -376,6 +376,10 @@ type DecisionLine struct {
 	// Centroid is the tier the centroid would have given, set only where it differs from the ladder's.
 	Centroid  Tier
 	Discarded bool
+	// ModelLabelID and ModelTier are the label the decision model chose and the tier it set, which a
+	// correction never changes; ModelTier is empty unless the model's label was applied.
+	ModelLabelID string
+	ModelTier    Tier
 }
 
 // DayDecisions is one account's day: the day read, in the identity's zone and so not always the
@@ -429,6 +433,7 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 			Line:  read[verdictKey(verdict.AccountID, verdict.Resource, verdict.ItemID)],
 			Label: book.LabelName(verdict.LabelID), By: verdict.By, DecidedAt: verdict.DecidedAt,
 			Centroid: verdict.centroidDisagrees(), Discarded: verdict.Discarded,
+			ModelLabelID: verdict.ModelLabelID, ModelTier: verdict.ModelTier,
 		})
 	}
 	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out, Discarded: count}, nil

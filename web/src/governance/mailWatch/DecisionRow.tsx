@@ -249,6 +249,9 @@ function RowReason({
           })}
         </span>
       )}
+      {row.model_label === true ? (
+        <Badge className="mt-1 mr-1">{t('governance.mailWatch.decide.row.byModel')}</Badge>
+      ) : null}
       {row.discarded === true ? (
         <Badge className="mt-1">{t('governance.mailWatch.decide.row.discarded')}</Badge>
       ) : null}

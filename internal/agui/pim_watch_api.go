@@ -239,6 +239,7 @@ type mailWatchDecisionJSON struct {
 	// CentroidTier is the urgency centroid's tier where it differs from the ladder's, in shadow.
 	CentroidTier string `json:"centroid_tier,omitempty"`
 	Discarded    bool   `json:"discarded,omitempty"`
+	ModelLabel   bool   `json:"model_label,omitempty"`
 }
 
 // mailWatchDayJSON is the decisions of the day it names. Today is the identity's today, which the
@@ -265,10 +266,16 @@ func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request
 			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,
 			Tier: string(line.Tier), Change: string(line.Change), LabelID: line.LabelID, Label: line.Label,
 			DecidedBy: string(line.By), DecidedAt: line.DecidedAt, CentroidTier: string(line.Centroid),
-			Discarded: line.Discarded,
+			Discarded: line.Discarded, ModelLabel: modelLabelStands(line),
 		})
 	}
 	writeJSON(w, out)
+}
+
+// modelLabelStands reports a label the decision model applied that is still the row's. decided_by
+// cannot tell: it names the model only when the label moved the tier or discarded the mail.
+func modelLabelStands(line pimwatch.DecisionLine) bool {
+	return line.ModelTier != "" && line.LabelID != "" && line.ModelLabelID == line.LabelID
 }
 
 func (s *Server) handleMailWatchCorrect(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {

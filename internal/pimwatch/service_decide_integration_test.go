@@ -79,6 +79,28 @@ func TestACorrectionFindsAnUppercaseLabelId(t *testing.T) {
 	}
 }
 
+func TestADecisionLineCarriesTheModelsLabel(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	ads, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Pubblicità", Tier: TierLater})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.commit(rigAccount, VerdictDraft{
+		ItemID:   "m1",
+		Ladder:   Decision{Tier: TierToday, By: ByDefault},
+		Decision: Decision{Tier: TierLater, LabelID: ads.ID, By: ByModel},
+		Model:    &ModelAnswer{LabelID: ads.ID, Probability: 0.8, Name: decideModel, Options: 6, Applied: true},
+	})
+	day, err := r.service.Decisions(ctx, r.identity, rigAccount, "", false)
+	if err != nil || len(day.Lines) != 1 {
+		t.Fatalf("lines %+v, %v", day.Lines, err)
+	}
+	if line := day.Lines[0]; line.LabelID != ads.ID || line.ModelLabelID != ads.ID || line.ModelTier != TierLater {
+		t.Fatalf("line = %+v", line)
+	}
+}
+
 func TestDiscardedMailDoesNotTakeTheDaysRows(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()

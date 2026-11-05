@@ -292,6 +292,25 @@ describe('why', () => {
     expect(await screen.findByText('Da mail simili avrebbe detto Dopo')).toBeTruthy();
   });
 
+  it('marks only the label the model gave and nobody changed', async () => {
+    theDay(
+      server,
+      decision({ item_id: 'a', subject: 'Offer', label_id: 'l1', label: 'Ads', model_label: true }),
+      decision({ item_id: 'b', subject: 'Report', label_id: 'l2', label: 'Work' }),
+    );
+    openDay();
+    await screen.findByText('Offer');
+    expect(within(rowOf('Offer')).getByText('by the model')).toBeTruthy();
+    expect(within(rowOf('Report')).queryByText('by the model')).toBeNull();
+  });
+
+  it('marks it in the identity’s language', async () => {
+    await i18n.changeLanguage('it');
+    theDay(server, decision({ label_id: 'l1', label: 'Pubblicità', model_label: true }));
+    openDay();
+    expect(await screen.findByText('dal modello')).toBeTruthy();
+  });
+
   it('says nothing of the centroid where it agrees', async () => {
     theDay(server, decision({ decided_by: 'people' }));
     openDay();

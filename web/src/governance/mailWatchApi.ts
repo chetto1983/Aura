@@ -80,6 +80,8 @@ export interface MailWatchDecision {
   readonly centroid_tier?: MailWatchTier;
   /** The mail was discarded: it is `later`, and the digest only counts it. */
   readonly discarded?: boolean;
+  /** The label is the one the decision model gave, and nobody has changed it since. */
+  readonly model_label?: boolean;
 }
 
 export interface MailWatchDay {

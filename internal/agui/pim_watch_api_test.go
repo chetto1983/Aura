@@ -239,6 +239,25 @@ func TestMailWatchDecisionsCarryTheCentroidWhereItDisagrees(t *testing.T) {
 	}
 }
 
+func TestMailWatchDecisionsMarkALabelTheModelGave(t *testing.T) {
+	service := &fakeWatchService{lines: []pimwatch.DecisionLine{
+		{ItemID: "standing", LabelID: "l-ads", Label: "Pubblicità", By: pimwatch.ByDefault, ModelLabelID: "l-ads", ModelTier: pimwatch.TierLater},
+		{ItemID: "corrected", LabelID: "l-work", Label: "Lavoro", By: pimwatch.ByPerson, ModelLabelID: "l-ads", ModelTier: pimwatch.TierLater},
+		{ItemID: "unsure", By: pimwatch.ByDefault, ModelLabelID: "l-ads"},
+	}}
+	out := decodeWatch[mailWatchDayJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions", ""))
+	marked := map[string]bool{}
+	for _, row := range out.Decisions {
+		marked[row.ItemID] = row.ModelLabel
+	}
+	if !marked["standing"] || marked["corrected"] || marked["unsure"] {
+		t.Fatalf("model_label = %v, want it on the label the model gave and nobody changed", marked)
+	}
+	if out.Decisions[0].DecidedBy != "default" || out.Decisions[1].DecidedBy != "person" {
+		t.Fatalf("decided_by changed meaning: %+v", out.Decisions)
+	}
+}
+
 func TestMailWatchDecisionsListTheDiscarded(t *testing.T) {
 	service := &fakeWatchService{count: 7, lines: []pimwatch.DecisionLine{
 		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", Tier: pimwatch.TierLater, Discarded: true},
