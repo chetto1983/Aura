@@ -1047,7 +1047,7 @@ func (q *Queries) ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID
 }
 
 const listPIMWatchModelRows = `-- name: ListPIMWatchModelRows :many
-SELECT tier, decided_by, ladder_tier, ladder_by, label_id, model_label_id, model_probability, model_name, model_tier,
+SELECT tier, decided_by, ladder_tier, label_id, model_label_id, model_probability, model_name, model_tier,
     model_discarded, model_options, model_skipped, discarded, notified
 FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= $2
@@ -1062,7 +1062,6 @@ type ListPIMWatchModelRowsRow struct {
 	Tier             string        `json:"tier"`
 	DecidedBy        string        `json:"decided_by"`
 	LadderTier       pgtype.Text   `json:"ladder_tier"`
-	LadderBy         pgtype.Text   `json:"ladder_by"`
 	LabelID          pgtype.UUID   `json:"label_id"`
 	ModelLabelID     pgtype.UUID   `json:"model_label_id"`
 	ModelProbability pgtype.Float8 `json:"model_probability"`
@@ -1088,7 +1087,6 @@ func (q *Queries) ListPIMWatchModelRows(ctx context.Context, arg ListPIMWatchMod
 			&i.Tier,
 			&i.DecidedBy,
 			&i.LadderTier,
-			&i.LadderBy,
 			&i.LabelID,
 			&i.ModelLabelID,
 			&i.ModelProbability,

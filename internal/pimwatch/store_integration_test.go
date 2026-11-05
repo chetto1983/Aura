@@ -21,7 +21,7 @@ func TestAnotherIdentitySeesNothingOfAWatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}
-	rule, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@b.it", Kind: KeySender, Tier: TierNow})
+	rule, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@one.example", Kind: KeySender, Tier: TierNow})
 	if err != nil {
 		t.Fatalf("rule: %v", err)
 	}
@@ -203,21 +203,21 @@ func TestARuleKeepsItsLastWordAndALearnedOneKeepsTheOtherField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("label: %v", err)
 	}
-	if _, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@b.it", Kind: KeySender, Tier: TierNow}); err != nil {
+	if _, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@one.example", Kind: KeySender, Tier: TierNow}); err != nil {
 		t.Fatalf("rule: %v", err)
 	}
-	replaced, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@b.it", Kind: KeySender, LabelID: label.ID})
+	replaced, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@one.example", Kind: KeySender, LabelID: label.ID})
 	if err != nil || replaced.Tier != "" || replaced.LabelID != label.ID || replaced.Source != sourcePerson {
 		t.Fatalf("replaced = %+v, %v", replaced, err)
 	}
-	learned, err := r.store.LearnRule(ctx, r.identity, "a@b.it", TierLater, "")
+	learned, err := r.store.LearnRule(ctx, r.identity, "a@one.example", TierLater, "")
 	if err != nil || learned.Tier != TierLater || learned.LabelID != label.ID || learned.Source != sourceCorrection {
 		t.Fatalf("learned = %+v, %v", learned, err)
 	}
 	if learned.Created {
 		t.Fatalf("a rule merged into one on file reads as created: %+v", learned)
 	}
-	fresh, err := r.store.LearnRule(ctx, r.identity, "new@b.it", TierLater, "")
+	fresh, err := r.store.LearnRule(ctx, r.identity, "new@one.example", TierLater, "")
 	if err != nil || !fresh.Created {
 		t.Fatalf("fresh = %+v, %v", fresh, err)
 	}

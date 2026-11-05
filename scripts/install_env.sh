@@ -70,7 +70,7 @@ sidecar_container_id() {
   create_error="$(sidecar_compose "$profile" create "$service" 2>&1 >/dev/null)" || true
   sidecar_cid="$(sidecar_compose "$profile" ps -aq "$service" 2>/dev/null | head -1)"
   if [ -z "$sidecar_cid" ]; then
-    echo "FAIL: could not materialise the ${service} container to place the model: ${create_error}" >&2
+    echo "FAIL: could not materialise the ${service} container to place the model${create_error:+: ${create_error}}" >&2
     exit 1
   fi
 }
@@ -100,7 +100,7 @@ place_in_sidecar_volume() {
   trap 'rm -f "$tmp_file"' EXIT
   "$fetch_fn" "$tmp_file"
   docker cp "$tmp_file" "${sidecar_cid}:${volume_path}" || {
-    echo "FAIL: could not place ${label} into the sidecar volume" >&2
+    echo "FAIL: could not place the ${label} into the sidecar volume" >&2
     exit 1
   }
   rm -f "$tmp_file"

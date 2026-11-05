@@ -402,13 +402,13 @@ docker() {
     "compose ps")
       if [ "$*" = "compose ps -q --status running aura-llama-embed" ]; then
         cat "$embed_fixture/running" 2>/dev/null || true
-      else
+      elif [ ! -e "$embed_fixture/no-container" ]; then
         echo embed-cid
       fi
       ;;
     "compose restart") printf '%s\n' "$*" >> "$embed_fixture/restarts" ;;
     "run --rm") cat "$embed_fixture/volume-sha" ;;
-    "cp "*) printf '%s\n' "$3" > "$embed_fixture/cp-target" ;;
+    "cp "*) [ ! -e "$embed_fixture/cp-fails" ] && printf '%s\n' "$3" > "$embed_fixture/cp-target" ;;
     *) echo "FAIL: unexpected docker $*" >&2; exit 1 ;;
   esac
 }
@@ -442,6 +442,15 @@ want_fp="b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
   [ "$(cat restarts 2>/dev/null)" = "compose restart aura-llama-embed" ] \
     || { echo "FAIL: a running sidecar was not restarted onto the model placed under it" >&2; exit 1; }
 )
+# The embed path's failures read as they did before the shared placement helper.
+for failure in "no-container:FAIL: could not materialise the aura-llama-embed container to place the model" \
+  "cp-fails:FAIL: could not place the embedding model into the sidecar volume"; do (
+  embed_case 0f741b5 "$want_fp" "$(printf '%064d' 7)"
+  cd "$embed_fixture"
+  touch "${failure%%:*}"
+  err="$( (ensure_embed_model) 2>&1 >/dev/null)" && { echo "FAIL: ${failure%%:*} passed" >&2; exit 1; }
+  [ "$err" = "${failure#*:}" ] || { echo "FAIL: ${failure%%:*} reads: $err" >&2; exit 1; }
+); done
 (
   embed_case "" "$want_fp" ""
   cd "$embed_fixture"

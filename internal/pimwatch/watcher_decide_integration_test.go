@@ -25,7 +25,7 @@ func decideRig(t *testing.T, labels ...LabelInput) (*watchRig, *fakeDecider, map
 		}
 		ids[in.Name] = label.ID
 	}
-	decider := &fakeDecider{route: localDecide}
+	decider := &fakeDecider{route: localDecide, elapse: r.clock.advance}
 	r.watcher.Decider = decider
 	return r, decider, ids
 }
@@ -244,17 +244,19 @@ func (r *watchRig) tickBefore(left time.Duration) Outcome {
 }
 
 func TestTheCalendarIsReadAfterASlowModel(t *testing.T) {
-	t.Run("the budget spent on the mail page", func(t *testing.T) {
+	t.Run("the time the model took on the mail page", func(t *testing.T) {
 		r, decider, _ := decideRig(t, urgentLabel)
-		r.watcher.DecideTime = 50 * time.Millisecond
-		decider.script = []fakeAnswer{{choice: urgentLabel.Name, p: 0.9, sleep: time.Second}}
+		r.watcher.DecideTime = 10 * time.Second
+		// The answer takes 10 s of the run, so the calendar page finds 75 s left: room for its own
+		// reserve, not for the model's unspent budget as well.
+		decider.script = []fakeAnswer{{choice: urgentLabel.Name, p: 0.9, latency: 10 * time.Second}}
 		r.mailPage("start-mail", "m-2", false, r.unsortedMail("m1", Signals{WrittenTo: no()}))
 		before := r.pim.calls[ResourceCalendar]
 		out := r.tickBefore(85 * time.Second)
 		if r.pim.calls[ResourceCalendar] != before+1 || strings.Contains(out.Summary, "backlog") {
 			t.Fatalf("the calendar was not read: %s", out.Summary)
 		}
-		mustContain(t, out.Summary, "decide: 0 labelled, 0 none, 1 left, 0 no text")
+		mustContain(t, out.Summary, "decide: 1 labelled, 0 none, 0 left, 0 no text")
 	})
 	t.Run("the unspent budget is reserved for a mail page alone", func(t *testing.T) {
 		r, decider, _ := decideRig(t, urgentLabel)

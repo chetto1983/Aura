@@ -197,7 +197,7 @@ func TestMailWatchSettingsNeedBothValues(t *testing.T) {
 func TestMailWatchDecisionsCarryTheDayAndTheLiveText(t *testing.T) {
 	at := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
 	service := &fakeWatchService{lines: []pimwatch.DecisionLine{
-		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@b.it", Subject: "Linea ferma", Tier: pimwatch.TierNow, LabelID: "l1", Label: "Cliente", By: pimwatch.ByRule, DecidedAt: at},
+		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@one.example", Subject: "Linea ferma", Tier: pimwatch.TierNow, LabelID: "l1", Label: "Cliente", By: pimwatch.ByRule, DecidedAt: at},
 		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m2", Gone: true, Tier: pimwatch.TierToday, By: pimwatch.ByDefault, DecidedAt: at},
 	}}
 	out := decodeWatch[mailWatchDayJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?day=2026-11-01", ""))
@@ -205,7 +205,7 @@ func TestMailWatchDecisionsCarryTheDayAndTheLiveText(t *testing.T) {
 	if service.day != "2026-11-01" || service.account != "work" || out.Day != "2026-11-02" || len(rows) != 2 {
 		t.Fatalf("day %q account %q out %+v", service.day, service.account, out)
 	}
-	if rows[0].From != "a@b.it" || rows[0].Label != "Cliente" || rows[0].DecidedBy != "rule" || rows[0].Start != nil {
+	if rows[0].From != "a@one.example" || rows[0].Label != "Cliente" || rows[0].DecidedBy != "rule" || rows[0].Start != nil {
 		t.Fatalf("first = %+v", rows[0])
 	}
 	if !rows[1].Gone || rows[1].From != "" {
@@ -216,12 +216,12 @@ func TestMailWatchDecisionsCarryTheDayAndTheLiveText(t *testing.T) {
 func TestMailWatchDecisionsCarryTheNameAndAnAllDayDate(t *testing.T) {
 	day := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
 	service := &fakeWatchService{lines: []pimwatch.DecisionLine{
-		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@b.it", FromName: "Mario Rossi"},
+		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", From: "a@one.example", FromName: "Mario Rossi"},
 		{AccountID: "work", Resource: pimwatch.ResourceCalendar, ItemID: "e1", Start: day, AllDay: true, Change: pimwatch.WordCancelled},
 	}}
 	rec := mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?day=2026-11-01", "")
 	body := rec.Body.String()
-	for _, want := range []string{`"from":"a@b.it"`, `"from_name":"Mario Rossi"`, `"all_day":true`, `"change":"cancelled"`} {
+	for _, want := range []string{`"from":"a@one.example"`, `"from_name":"Mario Rossi"`, `"all_day":true`, `"change":"cancelled"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %s in %s", want, body)
 		}
@@ -283,20 +283,20 @@ func TestMailWatchCorrectReportsADiscard(t *testing.T) {
 
 func TestMailWatchCorrectDefaultsToMailAndReportsARule(t *testing.T) {
 	service := &fakeWatchService{rule: &pimwatch.WrittenRule{
-		ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater, Created: true,
+		ID: "r1", Key: "a@one.example", Kind: pimwatch.KeySender, Tier: pimwatch.TierLater, Created: true,
 	}}
 	out := decodeWatch[mailWatchCorrectedJSON](t, mailWatchCall(t, service, http.MethodPost,
 		"/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","tier":"later","label_id":""}`))
 	if service.got.AccountID != "work" || service.got.Resource != pimwatch.ResourceMail || service.got.LabelID == nil || *service.got.LabelID != "" {
 		t.Fatalf("correction = %+v", service.got)
 	}
-	if out.Tier != "later" || out.Rule == nil || out.Rule.Key != "a@b.it" || !out.RuleCreated {
+	if out.Tier != "later" || out.Rule == nil || out.Rule.Key != "a@one.example" || !out.RuleCreated {
 		t.Fatalf("out = %+v", out)
 	}
 }
 
 func TestMailWatchCorrectSaysARuleMergedIntoOneOnFile(t *testing.T) {
-	service := &fakeWatchService{rule: &pimwatch.WrittenRule{ID: "r1", Key: "a@b.it", Kind: pimwatch.KeySender}}
+	service := &fakeWatchService{rule: &pimwatch.WrittenRule{ID: "r1", Key: "a@one.example", Kind: pimwatch.KeySender}}
 	rec := mailWatchCall(t, service, http.MethodPost, "/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","tier":"later"}`)
 	if !strings.Contains(rec.Body.String(), `"rule"`) || strings.Contains(rec.Body.String(), "rule_created") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
@@ -321,7 +321,7 @@ func TestMailWatchRulesAndLabelsRoundTrip(t *testing.T) {
 	if len(rules) != 1 || rules[0].KeyKind != "domain" {
 		t.Fatalf("rules = %+v", rules)
 	}
-	added := decodeWatch[mailWatchRuleJSON](t, mailWatchCall(t, service, http.MethodPost, "/api/mail-watch/rules", `{"key":"a@b.it","tier":"now"}`))
+	added := decodeWatch[mailWatchRuleJSON](t, mailWatchCall(t, service, http.MethodPost, "/api/mail-watch/rules", `{"key":"a@one.example","tier":"now"}`))
 	if added.ID != "r1" || service.added.Tier != pimwatch.TierNow {
 		t.Fatalf("added = %+v", added)
 	}
@@ -399,7 +399,7 @@ func TestEveryMailWatchRouteReportsAServiceFailure(t *testing.T) {
 		{http.MethodGet, "/api/mail-watch/accounts/work/decisions", ""},
 		{http.MethodPost, "/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m"}`},
 		{http.MethodGet, "/api/mail-watch/rules", ""},
-		{http.MethodPost, "/api/mail-watch/rules", `{"key":"a@b.it"}`},
+		{http.MethodPost, "/api/mail-watch/rules", `{"key":"a@one.example"}`},
 		{http.MethodDelete, "/api/mail-watch/rules/r1", ""},
 		{http.MethodGet, "/api/mail-watch/labels", ""},
 		{http.MethodPost, "/api/mail-watch/labels", `{"name":"x"}`},
@@ -470,8 +470,8 @@ func TestMailWatchAddRuleSaysWhetherTheKeyHadNone(t *testing.T) {
 	for _, created := range []bool{true, false} {
 		service := &fakeWatchService{ruleNew: created}
 		out := decodeWatch[mailWatchSavedRuleJSON](t, mailWatchCall(t, service, http.MethodPost,
-			"/api/mail-watch/rules", `{"key":"a@b.it","tier":"later"}`))
-		if out.Key != "a@b.it" || out.RuleCreated != created {
+			"/api/mail-watch/rules", `{"key":"a@one.example","tier":"later"}`))
+		if out.Key != "a@one.example" || out.RuleCreated != created {
 			t.Fatalf("created %v: out = %+v", created, out)
 		}
 	}

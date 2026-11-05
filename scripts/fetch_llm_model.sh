@@ -27,7 +27,6 @@
 # resident in the aura_aura-llm volume. All three agreed exactly.
 set -euo pipefail
 
-
 repo_commit="980b060c40a8539ac159e0501a3e0f66a6365af3"
 repo_base="https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF/resolve/${repo_commit}"
 fetch_script_name="fetch_llm_model.sh"

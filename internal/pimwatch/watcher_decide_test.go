@@ -20,13 +20,18 @@ type fakeDecider struct {
 	states   []string
 	// allowed is the time each call's context had left when it arrived.
 	allowed []time.Duration
+	// elapse moves the clock the watcher reads by an answer's latency.
+	elapse func(time.Duration)
 }
 
+// fakeAnswer is one answer. sleep is real time, which the budget counts; latency is time on the
+// watcher's clock alone, which only its deadline checks see.
 type fakeAnswer struct {
 	choice   string
 	p        float64
 	tokens   int
 	sleep    time.Duration
+	latency  time.Duration
 	err      error
 	nameless bool
 }
@@ -43,6 +48,9 @@ func (f *fakeDecider) Choose(ctx context.Context, _ decide.Route, state string, 
 		f.allowed = append(f.allowed, time.Until(deadline))
 	}
 	answer := f.script[min(f.calls, len(f.script))-1]
+	if answer.latency > 0 {
+		f.elapse(answer.latency)
+	}
 	if answer.sleep > 0 {
 		select {
 		case <-time.After(answer.sleep):

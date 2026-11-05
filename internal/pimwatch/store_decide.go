@@ -218,7 +218,7 @@ func (s *Store) SetCloudDecide(ctx context.Context, identityID, accountID string
 // the model's. ModelTier is the tier its label gave, "" when it gave none.
 type ModelRow struct {
 	Tier, LadderTier, ModelTier                         Tier
-	By, LadderBy                                        DecidedBy
+	By                                                  DecidedBy
 	LabelID, ModelLabelID, ModelName                    string
 	ModelAsked, ModelDiscarded, ModelSkipped, Discarded bool
 	Notified                                            bool
@@ -240,7 +240,7 @@ func (s *Store) ModelRows(ctx context.Context, identityID string, since time.Tim
 		for _, r := range rows {
 			out = append(out, ModelRow{
 				Tier: Tier(r.Tier), LadderTier: Tier(r.LadderTier.String), ModelTier: Tier(r.ModelTier.String),
-				By: DecidedBy(r.DecidedBy), LadderBy: DecidedBy(r.LadderBy.String),
+				By:      DecidedBy(r.DecidedBy),
 				LabelID: r.LabelID.String(), ModelLabelID: r.ModelLabelID.String(), ModelName: r.ModelName.String,
 				ModelAsked: r.ModelProbability.Valid, ModelDiscarded: r.ModelDiscarded, ModelSkipped: r.ModelSkipped,
 				Discarded: r.Discarded, Notified: r.Notified, ModelOptions: int(r.ModelOptions.Int16),

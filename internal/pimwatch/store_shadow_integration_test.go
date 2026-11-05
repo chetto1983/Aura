@@ -233,7 +233,7 @@ func TestModelRowsReadOnlyMailWithALadderAnswer(t *testing.T) {
 		case row.ModelAsked:
 			asked++
 			if row.Tier != TierNow || row.LadderTier != TierToday || row.ModelTier != TierNow || row.By != ByModel ||
-				row.LadderBy != ByDefault || row.LabelID != label.ID || row.ModelLabelID != label.ID ||
+				row.LabelID != label.ID || row.ModelLabelID != label.ID ||
 				row.ModelName != decideModel || row.ModelOptions != 6 || row.ModelDiscarded || row.Discarded {
 				t.Fatalf("asked row = %+v", row)
 			}

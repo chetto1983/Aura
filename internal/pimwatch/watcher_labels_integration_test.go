@@ -13,7 +13,7 @@ func TestAWatchFillsTheDefaultDescriptionsBeforeItReadsTheLabels(t *testing.T) {
 	if _, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0); err != nil {
 		t.Fatal(err)
 	}
-	spy := &seedSpy{WatchStore: r.store, store: r.store, identity: r.identity, t: t}
+	spy := &seedSpy{WatchStore: r.store}
 	r.watcher.Store = spy
 	r.tick()
 	if !spy.seeded || !spy.seededBeforeBook {
@@ -29,16 +29,13 @@ func TestAWatchFillsTheDefaultDescriptionsBeforeItReadsTheLabels(t *testing.T) {
 // the description.
 type seedSpy struct {
 	WatchStore
-	store            *Store
-	identity         string
-	t                *testing.T
 	seeded           bool
 	seededBeforeBook bool
 }
 
 func (s *seedSpy) SeedLabelDescriptions(ctx context.Context, identityID string, defaults []Label) (bool, error) {
 	s.seeded = true
-	return s.store.SeedLabelDescriptions(ctx, identityID, defaults)
+	return s.WatchStore.SeedLabelDescriptions(ctx, identityID, defaults)
 }
 
 func (s *seedSpy) Book(ctx context.Context, identityID string) (Book, error) {
