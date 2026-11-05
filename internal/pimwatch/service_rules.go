@@ -193,8 +193,9 @@ func (s *Service) LabelID(ctx context.Context, identityID, name string) (string,
 }
 
 // AddLabel appends a label to the list.
-func (s *Service) AddLabel(ctx context.Context, identityID, name string, tier Tier) (Label, error) {
-	if err := checkLabelInput(name, tier); err != nil {
+func (s *Service) AddLabel(ctx context.Context, identityID string, in LabelInput) (Label, error) {
+	in.Name = strings.TrimSpace(in.Name)
+	if err := checkLabelInput(in); err != nil {
 		return Label{}, err
 	}
 	labels, err := s.Store.Labels(ctx, identityID)
@@ -205,37 +206,65 @@ func (s *Service) AddLabel(ctx context.Context, identityID, name string, tier Ti
 	for _, label := range labels {
 		position = max(position, label.Position+1)
 	}
-	return s.Store.AddLabel(ctx, identityID, LabelInput{Name: strings.TrimSpace(name), Tier: tier}, position)
+	return s.Store.AddLabel(ctx, identityID, in, position)
 }
 
-// UpdateLabel renames a label and sets its tier. The description and discard it already has stay.
-func (s *Service) UpdateLabel(ctx context.Context, identityID, labelID, name string, tier Tier) (Label, error) {
-	if err := checkLabelInput(name, tier); err != nil {
-		return Label{}, err
-	}
-	labels, err := s.Store.Labels(ctx, identityID)
-	if err != nil {
-		return Label{}, err
-	}
-	i := slices.IndexFunc(labels, func(l Label) bool { return l.ID == labelID })
-	if i < 0 {
-		return Label{}, fmt.Errorf("update label: %w", ErrNotFound)
-	}
-	return s.Store.UpdateLabel(ctx, identityID, labelID, LabelInput{
-		Name: strings.TrimSpace(name), Tier: tier, Description: labels[i].Description, Discard: labels[i].Discard,
-	})
+// LabelPatch is a PUT: a nil field keeps what the label has, so a page that does not know a field
+// cannot wipe it. A Tier pointing at "" clears the tier.
+type LabelPatch struct {
+	Name        *string
+	Tier        *Tier
+	Description *string
+	Discard     *bool
 }
 
-// labelNameRunes is what the labels table's CHECK allows.
-const labelNameRunes = 60
+// UpdateLabel changes the fields of a label the patch names.
+func (s *Service) UpdateLabel(ctx context.Context, identityID, labelID string, in LabelPatch) (Label, error) {
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		in.Name = &name
+	}
+	return s.Store.PatchLabel(ctx, identityID, labelID, in)
+}
 
-func checkLabelInput(name string, tier Tier) error {
+const (
+	labelNameRunes = 60 // what the labels table's CHECK allows
+	// labelDescriptionRunes is the table's CHECK too: the model reads a description in a prompt that
+	// holds up to 24 of them.
+	labelDescriptionRunes = 300
+)
+
+func checkLabelInput(in LabelInput) error {
+	if err := checkLabelName(in.Name); err != nil {
+		return err
+	}
+	if err := checkLabelTier(in.Tier); err != nil {
+		return err
+	}
+	return checkLabelDescription(in.Description)
+}
+
+func checkLabelName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > labelNameRunes {
 		return invalid("invalid_label_name", fmt.Sprintf("a label's name is 1 to %d characters", labelNameRunes))
 	}
+	if reservedLabelName(name) {
+		return invalid("label_reserved", "that name is the model's \"none\" option")
+	}
+	return nil
+}
+
+func checkLabelTier(tier Tier) error {
 	if tier != "" && !tier.Valid() {
 		return invalidTier()
+	}
+	return nil
+}
+
+func checkLabelDescription(description string) error {
+	if len([]rune(description)) > labelDescriptionRunes {
+		return invalid("invalid_label_description", fmt.Sprintf("a label's description is at most %d characters", labelDescriptionRunes))
 	}
 	return nil
 }

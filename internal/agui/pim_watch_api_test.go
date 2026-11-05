@@ -26,6 +26,8 @@ type fakeWatchService struct {
 	rules    []pimwatch.Rule
 	added    pimwatch.RuleInput
 	labels   []pimwatch.Label
+	newLabel pimwatch.LabelInput
+	patch    pimwatch.LabelPatch
 	removed  string
 	hour     int
 	cap      int
@@ -80,12 +82,21 @@ func (f *fakeWatchService) Labels(context.Context, string) ([]pimwatch.Label, er
 	return f.labels, f.err
 }
 
-func (f *fakeWatchService) AddLabel(_ context.Context, _, name string, tier pimwatch.Tier) (pimwatch.Label, error) {
-	return pimwatch.Label{ID: "l1", Name: name, Tier: tier}, f.err
+func (f *fakeWatchService) AddLabel(_ context.Context, _ string, in pimwatch.LabelInput) (pimwatch.Label, error) {
+	f.newLabel = in
+	return pimwatch.Label{ID: "l1", Name: in.Name, Tier: in.Tier, Description: in.Description, Discard: in.Discard}, f.err
 }
 
-func (f *fakeWatchService) UpdateLabel(_ context.Context, _, labelID, name string, tier pimwatch.Tier) (pimwatch.Label, error) {
-	return pimwatch.Label{ID: labelID, Name: name, Tier: tier}, f.err
+func (f *fakeWatchService) UpdateLabel(_ context.Context, _, labelID string, in pimwatch.LabelPatch) (pimwatch.Label, error) {
+	f.patch = in
+	label := pimwatch.Label{ID: labelID}
+	if in.Name != nil {
+		label.Name = *in.Name
+	}
+	if in.Tier != nil {
+		label.Tier = *in.Tier
+	}
+	return label, f.err
 }
 
 func (f *fakeWatchService) RemoveLabel(_ context.Context, _, labelID string) error {

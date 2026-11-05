@@ -30,8 +30,8 @@ type mailWatchService interface {
 	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error)
 	RemoveRule(ctx context.Context, identityID, ruleID string) error
 	Labels(ctx context.Context, identityID string) ([]pimwatch.Label, error)
-	AddLabel(ctx context.Context, identityID, name string, tier pimwatch.Tier) (pimwatch.Label, error)
-	UpdateLabel(ctx context.Context, identityID, labelID, name string, tier pimwatch.Tier) (pimwatch.Label, error)
+	AddLabel(ctx context.Context, identityID string, in pimwatch.LabelInput) (pimwatch.Label, error)
+	UpdateLabel(ctx context.Context, identityID, labelID string, in pimwatch.LabelPatch) (pimwatch.Label, error)
 	RemoveLabel(ctx context.Context, identityID, labelID string) error
 	SaveSettings(ctx context.Context, identityID string, digestHour, dailyCap int) (pimwatch.Settings, error)
 }
@@ -363,14 +363,19 @@ func (s *Server) handleMailWatchRemoveRule(w http.ResponseWriter, r *http.Reques
 }
 
 type mailWatchLabelJSON struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Tier     string `json:"tier,omitempty"`
-	Position int    `json:"position"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Tier        string `json:"tier,omitempty"`
+	Position    int    `json:"position"`
+	Description string `json:"description"`
+	Discard     bool   `json:"discard"`
 }
 
 func mailWatchLabel(label pimwatch.Label) mailWatchLabelJSON {
-	return mailWatchLabelJSON{ID: label.ID, Name: label.Name, Tier: string(label.Tier), Position: label.Position}
+	return mailWatchLabelJSON{
+		ID: label.ID, Name: label.Name, Tier: string(label.Tier), Position: label.Position,
+		Description: label.Description, Discard: label.Discard,
+	}
 }
 
 func (s *Server) handleMailWatchLabels(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
@@ -386,10 +391,20 @@ func (s *Server) handleMailWatchLabels(w http.ResponseWriter, r *http.Request, s
 	writeJSON(w, out)
 }
 
-// mailWatchLabelBody names a label and sets its tier, which may be empty.
+// mailWatchLabelBody is a new label: its tier may be empty, and so may its description.
 type mailWatchLabelBody struct {
-	Name string `json:"name"`
-	Tier string `json:"tier"`
+	Name        string `json:"name"`
+	Tier        string `json:"tier"`
+	Description string `json:"description"`
+	Discard     bool   `json:"discard"`
+}
+
+// mailWatchLabelPatchBody is a label's PUT: a field the page does not send keeps its value.
+type mailWatchLabelPatchBody struct {
+	Name        *string `json:"name"`
+	Tier        *string `json:"tier"`
+	Description *string `json:"description"`
+	Discard     *bool   `json:"discard"`
 }
 
 func (s *Server) handleMailWatchAddLabel(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
@@ -397,7 +412,9 @@ func (s *Server) handleMailWatchAddLabel(w http.ResponseWriter, r *http.Request,
 	if !decodeMailWatchBody(w, r, &body) {
 		return
 	}
-	label, err := service.AddLabel(r.Context(), identityID, body.Name, pimwatch.Tier(body.Tier))
+	label, err := service.AddLabel(r.Context(), identityID, pimwatch.LabelInput{
+		Name: body.Name, Tier: pimwatch.Tier(body.Tier), Description: body.Description, Discard: body.Discard,
+	})
 	if err != nil {
 		writeMailWatchError(w, err)
 		return
@@ -406,11 +423,16 @@ func (s *Server) handleMailWatchAddLabel(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) handleMailWatchUpdateLabel(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
-	var body mailWatchLabelBody
+	var body mailWatchLabelPatchBody
 	if !decodeMailWatchBody(w, r, &body) {
 		return
 	}
-	label, err := service.UpdateLabel(r.Context(), identityID, r.PathValue("id"), body.Name, pimwatch.Tier(body.Tier))
+	patch := pimwatch.LabelPatch{Name: body.Name, Description: body.Description, Discard: body.Discard}
+	if body.Tier != nil {
+		tier := pimwatch.Tier(*body.Tier)
+		patch.Tier = &tier
+	}
+	label, err := service.UpdateLabel(r.Context(), identityID, r.PathValue("id"), patch)
 	if err != nil {
 		writeMailWatchError(w, err)
 		return

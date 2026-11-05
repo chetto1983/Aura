@@ -152,3 +152,46 @@ func TestLabelsKeepTheirDescriptionAndDiscard(t *testing.T) {
 		t.Fatalf("Book label = %+v, %v", book.labels[label.ID], err)
 	}
 }
+
+func TestDescriptionsAreSeededOnceAndOnlyIntoEmptyDefaults(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	for i, in := range []LabelInput{{Name: "Cliente"}, {Name: "Lavoro", Description: "mia"}, {Name: "Fornitori"}, {Name: "Work"}} {
+		if _, err := r.store.AddLabel(ctx, r.identity, in, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defaults := append(DefaultLabels(LangIT), DefaultLabels(LangEN)...)
+	seeded, err := r.store.SeedLabelDescriptions(ctx, r.identity, defaults)
+	if err != nil || !seeded {
+		t.Fatalf("first seed = %v, %v", seeded, err)
+	}
+	described := func() map[string]string {
+		labels, err := r.store.Labels(ctx, r.identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, l := range labels {
+			out[l.Name] = l.Description
+		}
+		return out
+	}
+	got := described()
+	if got["Cliente"] != DefaultLabels(LangIT)[0].Description || got["Work"] != DefaultLabels(LangEN)[1].Description ||
+		got["Lavoro"] != "mia" || got["Fornitori"] != "" {
+		t.Fatalf("descriptions = %+v", got)
+	}
+
+	labels, _ := r.store.Labels(ctx, r.identity)
+	if _, err := r.store.UpdateLabel(ctx, r.identity, labels[0].ID, LabelInput{Name: "Cliente"}); err != nil {
+		t.Fatal(err)
+	}
+	seeded, err = r.store.SeedLabelDescriptions(ctx, r.identity, defaults)
+	if err != nil || seeded {
+		t.Fatalf("second seed = %v, %v", seeded, err)
+	}
+	if described()["Cliente"] != "" {
+		t.Fatal("a second seed refilled a description the person cleared")
+	}
+}

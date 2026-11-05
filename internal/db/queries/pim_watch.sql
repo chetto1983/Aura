@@ -23,6 +23,17 @@ UPDATE aura.pim_watch_settings
 SET labels_seeded = true
 WHERE identity_id = $1 AND NOT labels_seeded;
 
+-- name: ClaimPIMWatchLabelDescriptions :execrows
+UPDATE aura.pim_watch_settings
+SET label_descriptions_seeded = true
+WHERE identity_id = $1 AND NOT label_descriptions_seeded;
+
+-- name: FillPIMWatchLabelDescription :exec
+-- Only a label with that exact name and no description of its own: what the person wrote stays.
+UPDATE aura.pim_watch_labels
+SET description = $3
+WHERE identity_id = $1 AND name = $2 AND description = '';
+
 -- name: SeedPIMWatchLabel :exec
 INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -37,6 +48,11 @@ ORDER BY position, name;
 INSERT INTO aura.pim_watch_labels (identity_id, name, tier, position, description, discard)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
+
+-- name: GetPIMWatchLabelForUpdate :one
+SELECT * FROM aura.pim_watch_labels
+WHERE identity_id = $1 AND id = $2
+FOR UPDATE;
 
 -- name: UpdatePIMWatchLabel :one
 UPDATE aura.pim_watch_labels

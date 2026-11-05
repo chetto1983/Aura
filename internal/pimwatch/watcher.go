@@ -48,6 +48,7 @@ type Locale interface {
 type WatchStore interface {
 	Settings(ctx context.Context, identityID string) (Settings, error)
 	Book(ctx context.Context, identityID string) (Book, error)
+	SeedLabelDescriptions(ctx context.Context, identityID string, defaults []Label) (bool, error)
 	Cursor(ctx context.Context, identityID, accountID, resource string) (Cursor, error)
 	StartCursor(ctx context.Context, identityID, accountID, resource, value, status string) error
 	PriorEvents(ctx context.Context, identityID, accountID, resource string, ids []string) (map[string]PriorEvent, error)
@@ -155,6 +156,7 @@ func (w *Watcher) Tick(ctx context.Context, in TickInput) (Outcome, error) {
 }
 
 func (w *Watcher) open(ctx context.Context, in TickInput) (*tick, error) {
+	w.seedDescriptions(ctx, in.IdentityID)
 	settings, err := w.Store.Settings(ctx, in.IdentityID)
 	if err != nil {
 		return nil, err

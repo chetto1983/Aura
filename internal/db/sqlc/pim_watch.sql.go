@@ -38,6 +38,20 @@ func (q *Queries) AdvancePIMWatchCursor(ctx context.Context, arg AdvancePIMWatch
 	return err
 }
 
+const claimPIMWatchLabelDescriptions = `-- name: ClaimPIMWatchLabelDescriptions :execrows
+UPDATE aura.pim_watch_settings
+SET label_descriptions_seeded = true
+WHERE identity_id = $1 AND NOT label_descriptions_seeded
+`
+
+func (q *Queries) ClaimPIMWatchLabelDescriptions(ctx context.Context, identityID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimPIMWatchLabelDescriptions, identityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimPIMWatchLabelSeed = `-- name: ClaimPIMWatchLabelSeed :execrows
 UPDATE aura.pim_watch_settings
 SET labels_seeded = true
@@ -310,6 +324,24 @@ func (q *Queries) EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.
 	return err
 }
 
+const fillPIMWatchLabelDescription = `-- name: FillPIMWatchLabelDescription :exec
+UPDATE aura.pim_watch_labels
+SET description = $3
+WHERE identity_id = $1 AND name = $2 AND description = ''
+`
+
+type FillPIMWatchLabelDescriptionParams struct {
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+}
+
+// Only a label with that exact name and no description of its own: what the person wrote stays.
+func (q *Queries) FillPIMWatchLabelDescription(ctx context.Context, arg FillPIMWatchLabelDescriptionParams) error {
+	_, err := q.db.Exec(ctx, fillPIMWatchLabelDescription, arg.IdentityID, arg.Name, arg.Description)
+	return err
+}
+
 const getPIMWatchCursor = `-- name: GetPIMWatchCursor :one
 SELECT identity_id, account_id, resource, cursor, status, last_error, failing_since, alarm_kind, alarm_since, alarm_run_id, advanced_at, alerts_day_start, alerts_told FROM aura.pim_watch_cursors
 WHERE identity_id = $1 AND account_id = $2 AND resource = $3
@@ -338,6 +370,33 @@ func (q *Queries) GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorPa
 		&i.AdvancedAt,
 		&i.AlertsDayStart,
 		&i.AlertsTold,
+	)
+	return i, err
+}
+
+const getPIMWatchLabelForUpdate = `-- name: GetPIMWatchLabelForUpdate :one
+SELECT id, identity_id, name, tier, position, created_at, description, discard FROM aura.pim_watch_labels
+WHERE identity_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type GetPIMWatchLabelForUpdateParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetPIMWatchLabelForUpdate(ctx context.Context, arg GetPIMWatchLabelForUpdateParams) (AuraPimWatchLabels, error) {
+	row := q.db.QueryRow(ctx, getPIMWatchLabelForUpdate, arg.IdentityID, arg.ID)
+	var i AuraPimWatchLabels
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Name,
+		&i.Tier,
+		&i.Position,
+		&i.CreatedAt,
+		&i.Description,
+		&i.Discard,
 	)
 	return i, err
 }

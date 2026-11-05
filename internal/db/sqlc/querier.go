@@ -74,6 +74,7 @@ type Querier interface {
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
 	ClaimMediaJobDelivery(ctx context.Context, arg ClaimMediaJobDeliveryParams) (AuraMediaJob, error)
 	ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDraftSendParams) (AuraMessageDrafts, error)
+	ClaimPIMWatchLabelDescriptions(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	ClaimPIMWatchLabelSeed(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
@@ -218,6 +219,8 @@ type Querier interface {
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
+	// Only a label with that exact name and no description of its own: what the person wrote stays.
+	FillPIMWatchLabelDescription(ctx context.Context, arg FillPIMWatchLabelDescriptionParams) error
 	// Removes a deleting row whose object is gone. A row a media_job points at is left for
 	// MarkAssetDeleted instead: that key has no ON DELETE action (migration 0128) because a paid
 	// clip keeps its pointer.
@@ -275,6 +278,7 @@ type Querier interface {
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPIMProviderApp(ctx context.Context, provider string) (AuraPimProviderApp, error)
 	GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorParams) (AuraPimWatchCursors, error)
+	GetPIMWatchLabelForUpdate(ctx context.Context, arg GetPIMWatchLabelForUpdateParams) (AuraPimWatchLabels, error)
 	GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUID) (AuraPimWatchSettings, error)
 	GetPIMWatchVerdict(ctx context.Context, arg GetPIMWatchVerdictParams) (AuraPimWatchVerdicts, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)

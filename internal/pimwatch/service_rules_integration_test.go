@@ -161,7 +161,7 @@ func TestEveryRefusalNamesItsCode(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()
 	r.commit(rigAccount, r.draft("m1", TierToday, ""))
-	if _, err := r.service.AddLabel(ctx, r.identity, "Cliente", ""); err != nil {
+	if _, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}); err != nil {
 		t.Fatalf("label: %v", err)
 	}
 	ghost := "00000000-0000-0000-0000-000000000000"
@@ -196,11 +196,11 @@ func TestEveryRefusalNamesItsCode(t *testing.T) {
 			return err
 		},
 		"invalid_label_name": func() error {
-			_, err := r.service.AddLabel(ctx, r.identity, " ", "")
+			_, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: " "})
 			return err
 		},
 		"label_exists": func() error {
-			_, err := r.service.AddLabel(ctx, r.identity, "Cliente", "")
+			_, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"})
 			return err
 		},
 		"invalid_digest_hour": func() error {
@@ -300,11 +300,11 @@ func TestSavingSettingsMovesTheDigest(t *testing.T) {
 func TestLabelsAreManagedThroughTheService(t *testing.T) {
 	r := newServiceRig(t)
 	ctx := context.Background()
-	first, err := r.service.AddLabel(ctx, r.identity, " Cliente ", "")
+	first, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: " Cliente "})
 	if err != nil || first.Name != "Cliente" || first.Position != 0 {
 		t.Fatalf("first = %+v, %v", first, err)
 	}
-	second, err := r.service.AddLabel(ctx, r.identity, "Lavoro", TierToday)
+	second, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Lavoro", Tier: TierToday})
 	if err != nil || second.Position != 1 {
 		t.Fatalf("second = %+v, %v", second, err)
 	}
@@ -314,17 +314,17 @@ func TestLabelsAreManagedThroughTheService(t *testing.T) {
 	if _, err := r.service.LabelID(ctx, r.identity, "nobody"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unknown name: %v", err)
 	}
-	if updated, err := r.service.UpdateLabel(ctx, r.identity, first.ID, "Clienti", TierNow); err != nil || updated.Tier != TierNow {
+	if updated, err := r.service.UpdateLabel(ctx, r.identity, first.ID, LabelPatch{Name: ptr("Clienti"), Tier: ptr(TierNow)}); err != nil || updated.Tier != TierNow {
 		t.Fatalf("updated = %+v, %v", updated, err)
 	}
 	for _, bad := range []struct {
 		name string
 		tier Tier
 	}{{"", ""}, {strings.Repeat("x", 61), ""}, {"ok", "soon"}} {
-		if _, err := r.service.AddLabel(ctx, r.identity, bad.name, bad.tier); !errors.Is(err, ErrInvalid) {
+		if _, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: bad.name, Tier: bad.tier}); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("add %+v: %v", bad, err)
 		}
-		if _, err := r.service.UpdateLabel(ctx, r.identity, first.ID, bad.name, bad.tier); !errors.Is(err, ErrInvalid) {
+		if _, err := r.service.UpdateLabel(ctx, r.identity, first.ID, LabelPatch{Name: &bad.name, Tier: &bad.tier}); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("update %+v: %v", bad, err)
 		}
 	}
@@ -339,7 +339,7 @@ func TestUpdatingALabelKeepsItsDescriptionAndDiscard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, "Clienti", TierNow); err != nil {
+	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Name: ptr("Clienti"), Tier: ptr(TierNow)}); err != nil {
 		t.Fatal(err)
 	}
 	labels, err := r.store.Labels(ctx, r.identity)
@@ -350,7 +350,7 @@ func TestUpdatingALabelKeepsItsDescriptionAndDiscard(t *testing.T) {
 	if labels[0] != want {
 		t.Fatalf("label = %+v, want %+v", labels[0], want)
 	}
-	if _, err := r.service.UpdateLabel(ctx, r.identity, uuid.NewString(), "x", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := r.service.UpdateLabel(ctx, r.identity, uuid.NewString(), LabelPatch{Name: ptr("x")}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown label: %v", err)
 	}
 }
@@ -390,3 +390,26 @@ func TestARuleSavedOverOneOnFileIsNotCreated(t *testing.T) {
 		t.Fatalf("second = %+v, %v", second, err)
 	}
 }
+
+func TestALabelPatchChangesOnlyWhatItSendsAndFindsAnUppercaseId(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	label, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente", Tier: TierToday, Description: "Customers.", Discard: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := r.service.UpdateLabel(ctx, r.identity, strings.ToUpper(label.ID), LabelPatch{Name: ptr("Clienti")})
+	if err != nil || renamed.Name != "Clienti" || renamed.Tier != TierToday || renamed.Description != "Customers." || !renamed.Discard {
+		t.Fatalf("renamed = %+v, %v", renamed, err)
+	}
+	edited, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Description: ptr("New."), Discard: ptr(false), Tier: ptr(Tier(""))})
+	if err != nil || edited.Name != "Clienti" || edited.Tier != "" || edited.Description != "New." || edited.Discard {
+		t.Fatalf("edited = %+v, %v", edited, err)
+	}
+	long := strings.Repeat("a", labelDescriptionRunes+1)
+	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Description: &long}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a long description: %v", err)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
