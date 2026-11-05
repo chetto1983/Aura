@@ -35,6 +35,7 @@ type decideStep struct {
 	labelIDs                     map[string]string
 	budget, spent                time.Duration
 	labelled, none, left, noText int
+	inputTokens                  int
 }
 
 // remaining is the model time the tick may still spend, 0 once the step is off, failed or spent.
@@ -52,7 +53,7 @@ func (s *decideStep) summary() string {
 	case !s.on:
 		return ""
 	}
-	line := fmt.Sprintf("decide: %d labelled, %d none, %d left, %d no text", s.labelled, s.none, s.left, s.noText)
+	line := fmt.Sprintf("decide: %d labelled, %d none, %d left, %d no text, %d input tokens", s.labelled, s.none, s.left, s.noText, s.inputTokens)
 	if s.failed {
 		line += " (failed)"
 	}
@@ -60,33 +61,28 @@ func (s *decideStep) summary() string {
 }
 
 // openDecide reads the route once per tick, so a route switched in the cockpit holds from the next
-// tick. A hosted route reads the mail only for an account whose person allowed it.
-func (w *Watcher) openDecide(ctx context.Context, t *tick) error {
+// tick. A route or consent it cannot read switches the step off, so the ladder never waits for it.
+func (w *Watcher) openDecide(ctx context.Context, t *tick) {
 	if w.Decider == nil {
-		return nil
+		return
 	}
 	route, err := w.Decider.Route(ctx)
 	switch {
 	case err != nil:
+		slog.Warn("mail watch: the decision model's route cannot be read", "error", err)
 		t.decide.note = "route unreadable"
-		return nil
+		return
 	case route.Off():
-		return nil
+		return
 	}
-	if route.Hosted() {
-		consent, err := w.Store.CloudDecide(ctx, t.IdentityID, t.AccountID)
-		if err != nil {
-			return err
-		}
-		if !consent {
-			t.decide.note = "no consent"
-			return nil
-		}
+	if withheld := w.withheld(ctx, t, route); withheld != "" {
+		t.decide.note = withheld
+		return
 	}
 	labels := t.book.DescribedLabels()
 	if len(labels) == 0 {
 		t.decide.note = "no described label"
-		return nil
+		return
 	}
 	question, ids := mailQuestion(t.lang, labels)
 	budget := w.DecideTime
@@ -94,14 +90,30 @@ func (w *Watcher) openDecide(ctx context.Context, t *tick) error {
 		budget = DecideBudget
 	}
 	t.decide = decideStep{on: true, route: route, question: question, labelIDs: ids, budget: budget}
-	return nil
+}
+
+// withheld says why a hosted route may not read the account's mail now, "" when it may. The person
+// can withdraw the consent at any moment, so decide reads it again for every mail page.
+func (w *Watcher) withheld(ctx context.Context, t *tick, route decide.Route) string {
+	if !route.Hosted() {
+		return ""
+	}
+	consent, err := w.Store.CloudDecide(ctx, t.IdentityID, t.AccountID)
+	switch {
+	case err != nil:
+		slog.Warn("mail watch: the consent for the cloud decision model cannot be read", "error", err)
+		return "consent unreadable"
+	case !consent:
+		return "no consent"
+	}
+	return ""
 }
 
 // decide asks the model about each mail of a page that no rule labelled. Whatever it cannot ask
 // keeps the ladder's verdict, so the model never holds a page back.
 func (w *Watcher) decide(ctx context.Context, t *tick, mails []Change, drafts []VerdictDraft, lines map[string]Line) {
 	step := &t.decide
-	if !step.on {
+	if !step.on || w.withheld(ctx, t, step.route) != "" {
 		return
 	}
 	for i, mail := range mails {
@@ -121,19 +133,19 @@ func (w *Watcher) decide(ctx context.Context, t *tick, mails []Change, drafts []
 }
 
 // ask puts one mail to the model. The budget is the real time the calls took, so a slow PIM read
-// spends none of it. A call cut by the budget leaves the rest to the ladder; any other failure stops
-// the model for the tick and stays on the account until an answer clears it.
+// spends none of it. A call cut by the budget or by the run's end leaves the rest to the ladder; any
+// other failure stops the model for the tick and stays on the account until an answer clears it.
 func (w *Watcher) ask(ctx context.Context, t *tick, mail Change, draft *VerdictDraft, lines map[string]Line) {
 	step := &t.decide
 	callCtx, cancel := context.WithTimeout(ctx, step.remaining())
+	defer cancel()
 	start := time.Now()
 	answer, err := w.Decider.Choose(callCtx, step.route, mailState(t.lang, mail.Subject, mail.Snippet), step.question)
 	step.spent += time.Since(start)
-	cancel()
 	if err != nil {
 		draft.ModelSkipped = true
 		step.left++
-		if errors.Is(err, context.DeadlineExceeded) {
+		if callCtx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
 			step.spent = step.budget
 			return
 		}
@@ -141,6 +153,7 @@ func (w *Watcher) ask(ctx context.Context, t *tick, mail Change, draft *VerdictD
 		w.recordDecide(ctx, t, decide.ErrorClass(err))
 		return
 	}
+	step.inputTokens += answer.InputTokens
 	if !step.answered {
 		step.answered = true
 		w.recordDecide(ctx, t, "")

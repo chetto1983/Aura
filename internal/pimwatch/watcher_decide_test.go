@@ -25,6 +25,7 @@ type fakeDecider struct {
 type fakeAnswer struct {
 	choice   string
 	p        float64
+	tokens   int
 	sleep    time.Duration
 	err      error
 	nameless bool
@@ -56,11 +57,12 @@ func (f *fakeDecider) Choose(ctx context.Context, _ decide.Route, state string, 
 	if answer.nameless {
 		model = ""
 	}
-	return decide.Answer{Choice: answer.choice, Probabilities: map[string]float64{answer.choice: answer.p}, Model: model}, nil
+	return decide.Answer{Choice: answer.choice, Probabilities: map[string]float64{answer.choice: answer.p}, Model: model, InputTokens: answer.tokens}, nil
 }
 
 var (
 	localDecide  = decide.Route{BaseURL: "http://decide.example:8085"}
+	hostedDecide = decide.Route{BaseURL: "https://openrouter.example/api/v1", Model: "vendor/decider"}
 	errModelDown = errors.New("the model is down")
 )
 
@@ -89,15 +91,16 @@ var (
 )
 
 // openUnit opens a tick's model step over the given labels, as Watcher.open does.
-func openUnit(t *testing.T, w *Watcher, labels ...Label) (*tick, error) {
-	t.Helper()
+func openUnit(w *Watcher, labels ...Label) *tick {
 	tk := &tick{IdentityID: "id-1", AccountID: "work", book: NewBook(nil, labels), lang: LangEN}
-	return tk, w.openDecide(context.Background(), tk)
+	w.openDecide(context.Background(), tk)
+	return tk
 }
 
+// An unreadable route or consent switches the step off rather than failing the tick, so the
+// ladder's alerts never wait for the model.
 func TestTheModelStepOpensOnlyWithARouteConsentAndADescribedLabel(t *testing.T) {
 	t.Parallel()
-	hosted := decide.Route{BaseURL: "https://openrouter.example/api/v1", Model: "vendor/decider"}
 	cases := []struct {
 		name    string
 		decider *fakeDecider
@@ -109,8 +112,9 @@ func TestTheModelStepOpensOnlyWithARouteConsentAndADescribedLabel(t *testing.T) 
 		{"no decider", nil, &decideStore{}, []Label{unitUrgent}, false, ""},
 		{"a route that cannot be read", &fakeDecider{route: localDecide, routeErr: errModelDown}, &decideStore{}, []Label{unitUrgent}, false, "route unreadable"},
 		{"an off route", &fakeDecider{}, &decideStore{}, []Label{unitUrgent}, false, ""},
-		{"a hosted route without consent", &fakeDecider{route: hosted}, &decideStore{}, []Label{unitUrgent}, false, "no consent"},
-		{"a hosted route with consent", &fakeDecider{route: hosted}, &decideStore{consent: true}, []Label{unitUrgent}, true, ""},
+		{"a hosted route without consent", &fakeDecider{route: hostedDecide}, &decideStore{}, []Label{unitUrgent}, false, "no consent"},
+		{"a consent that cannot be read", &fakeDecider{route: hostedDecide}, &decideStore{consent: true, consentErr: errModelDown}, []Label{unitUrgent}, false, "consent unreadable"},
+		{"a hosted route with consent", &fakeDecider{route: hostedDecide}, &decideStore{consent: true}, []Label{unitUrgent}, true, ""},
 		{"no described label", &fakeDecider{route: localDecide}, &decideStore{}, []Label{unitFiled}, false, "no described label"},
 		{"a local route", &fakeDecider{route: localDecide}, &decideStore{}, []Label{unitUrgent, unitFiled}, true, ""},
 	}
@@ -121,10 +125,7 @@ func TestTheModelStepOpensOnlyWithARouteConsentAndADescribedLabel(t *testing.T) 
 			if tc.decider != nil {
 				w.Decider = tc.decider
 			}
-			tk, err := openUnit(t, w, tc.labels...)
-			if err != nil {
-				t.Fatal(err)
-			}
+			tk := openUnit(w, tc.labels...)
 			if tk.decide.on != tc.on || tk.decide.note != tc.note {
 				t.Fatalf("step = on %v, note %q", tk.decide.on, tk.decide.note)
 			}
@@ -138,19 +139,10 @@ func TestTheModelStepOpensOnlyWithARouteConsentAndADescribedLabel(t *testing.T) 
 	}
 }
 
-func TestAConsentThatCannotBeReadFailsTheTick(t *testing.T) {
-	t.Parallel()
-	hosted := decide.Route{BaseURL: "https://openrouter.example/api/v1", Model: "vendor/decider"}
-	w := &Watcher{Store: &decideStore{consentErr: errModelDown}, Decider: &fakeDecider{route: hosted}}
-	if _, err := openUnit(t, w, unitUrgent); !errors.Is(err, errModelDown) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestDecideTimeSetsTheBudget(t *testing.T) {
 	t.Parallel()
 	w := &Watcher{Store: &decideStore{}, Decider: &fakeDecider{route: localDecide}, DecideTime: 5 * time.Second}
-	if tk, _ := openUnit(t, w, unitUrgent); tk.decide.budget != 5*time.Second || tk.decide.remaining() != 5*time.Second {
+	if tk := openUnit(w, unitUrgent); tk.decide.budget != 5*time.Second || tk.decide.remaining() != 5*time.Second {
 		t.Fatalf("budget %s, remaining %s", tk.decide.budget, tk.decide.remaining())
 	}
 }
@@ -174,11 +166,11 @@ func stranger(id, snippet string) Change {
 func TestTheModelStepAsksOnlyWhatNoRuleLabelled(t *testing.T) {
 	t.Parallel()
 	decider := &fakeDecider{route: localDecide, script: []fakeAnswer{
-		{choice: unitUrgent.Name, p: 0.9, nameless: true}, {choice: unitUrgent.Name, p: 0.4}, {choice: "None", p: 0.95},
+		{choice: unitUrgent.Name, p: 0.9, tokens: 120, nameless: true}, {choice: unitUrgent.Name, p: 0.4, tokens: 95}, {choice: "None", p: 0.95, tokens: 130},
 	}}
 	store := &decideStore{}
 	w := &Watcher{Store: store, Decider: decider}
-	tk, _ := openUnit(t, w, unitUrgent)
+	tk := openUnit(w, unitUrgent)
 	mails := []Change{stranger("ruled", "text"), stranger("blank", "  "), stranger("applied", "text"), stranger("unsure", "text"), stranger("none", "text")}
 	drafts, lines := pageOf(tk, mails...)
 	drafts[0].Decision.LabelID = unitFiled.ID
@@ -204,7 +196,7 @@ func TestTheModelStepAsksOnlyWhatNoRuleLabelled(t *testing.T) {
 	if none := drafts[4]; none.Model.LabelID != "" || none.Model.Applied || none.Model.Name != "fake/d1" || none.Decision.LabelID != "" {
 		t.Fatalf("none = %+v", none.Model)
 	}
-	if got := tk.decide.summary(); got != "decide: 1 labelled, 2 none, 0 left, 1 no text" {
+	if got := tk.decide.summary(); got != "decide: 1 labelled, 2 none, 0 left, 1 no text, 345 input tokens" {
 		t.Fatalf("summary = %q", got)
 	}
 	if len(store.recorded) != 1 || store.recorded[0] != "" {
@@ -221,7 +213,7 @@ func TestAFailureStopsTheStepAndIsRecorded(t *testing.T) {
 	decider := &fakeDecider{route: localDecide, script: []fakeAnswer{{err: errModelDown}}}
 	store := &decideStore{recordErr: errModelDown}
 	w := &Watcher{Store: store, Decider: decider}
-	tk, _ := openUnit(t, w, unitUrgent)
+	tk := openUnit(w, unitUrgent)
 	mails := []Change{stranger("m1", "text"), stranger("m2", "text")}
 	drafts, lines := pageOf(tk, mails...)
 	w.decide(context.Background(), tk, mails, drafts, lines)
@@ -231,7 +223,7 @@ func TestAFailureStopsTheStepAndIsRecorded(t *testing.T) {
 	if len(store.recorded) != 1 || store.recorded[0] != "unreachable" {
 		t.Fatalf("recorded = %q", store.recorded)
 	}
-	if got := tk.decide.summary(); got != "decide: 0 labelled, 0 none, 2 left, 0 no text (failed)" {
+	if got := tk.decide.summary(); got != "decide: 0 labelled, 0 none, 2 left, 0 no text, 0 input tokens (failed)" {
 		t.Fatalf("summary = %q", got)
 	}
 }
@@ -241,15 +233,60 @@ func TestADeadlineSpendsTheBudgetAndIsNoFailure(t *testing.T) {
 	decider := &fakeDecider{route: localDecide, script: []fakeAnswer{{err: context.DeadlineExceeded}}}
 	store := &decideStore{}
 	w := &Watcher{Store: store, Decider: decider}
-	tk, _ := openUnit(t, w, unitUrgent)
+	tk := openUnit(w, unitUrgent)
 	mails := []Change{stranger("m1", "text"), stranger("m2", "text")}
 	drafts, lines := pageOf(tk, mails...)
 	w.decide(context.Background(), tk, mails, drafts, lines)
 	if decider.calls != 1 || tk.decide.failed || tk.decide.remaining() != 0 || len(store.recorded) != 0 {
 		t.Fatalf("calls %d, step %+v, recorded %q", decider.calls, tk.decide, store.recorded)
 	}
-	if got := tk.decide.summary(); got != "decide: 0 labelled, 0 none, 2 left, 0 no text" {
+	if got := tk.decide.summary(); got != "decide: 0 labelled, 0 none, 2 left, 0 no text, 0 input tokens" {
 		t.Fatalf("summary = %q", got)
+	}
+}
+
+// A run cancelled while the model answers stops asking, and the model has not failed.
+func TestACancelledRunIsNoFailure(t *testing.T) {
+	t.Parallel()
+	decider := &fakeDecider{route: localDecide, script: []fakeAnswer{{choice: unitUrgent.Name, p: 0.9, sleep: time.Minute}}}
+	store := &decideStore{}
+	w := &Watcher{Store: store, Decider: decider}
+	tk := openUnit(w, unitUrgent)
+	mails := []Change{stranger("m1", "text"), stranger("m2", "text")}
+	drafts, lines := pageOf(tk, mails...)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w.decide(ctx, tk, mails, drafts, lines)
+	if decider.calls != 1 || tk.decide.failed || len(store.recorded) != 0 || !drafts[0].ModelSkipped || !drafts[1].ModelSkipped {
+		t.Fatalf("calls %d, step %+v, recorded %q", decider.calls, tk.decide, store.recorded)
+	}
+	if got := tk.decide.summary(); got != "decide: 0 labelled, 0 none, 2 left, 0 no text, 0 input tokens" {
+		t.Fatalf("summary = %q", got)
+	}
+}
+
+// decide reads the consent again before each mail page, so a switch turned off mid-tick stops the
+// next page's calls, and an unreadable consent stops only the page it was read for.
+func TestAHostedRouteReadsTheConsentForEachPage(t *testing.T) {
+	t.Parallel()
+	decider := &fakeDecider{route: hostedDecide, script: []fakeAnswer{{choice: "None", p: 0.9}}}
+	store := &decideStore{consent: true}
+	w := &Watcher{Store: store, Decider: decider}
+	tk := openUnit(w, unitUrgent)
+	page := func(id string) {
+		mails := []Change{stranger(id, "text")}
+		drafts, lines := pageOf(tk, mails...)
+		w.decide(context.Background(), tk, mails, drafts, lines)
+	}
+	page("m1")
+	store.consentErr = errModelDown
+	page("m2")
+	store.consentErr = nil
+	page("m3")
+	store.consent = false
+	page("m4")
+	if decider.calls != 2 || tk.decide.failed {
+		t.Fatalf("calls %d, step %+v: want m1 and m3 asked", decider.calls, tk.decide)
 	}
 }
 
@@ -257,7 +294,7 @@ func TestEachCallHasWhatTheBudgetHasLeft(t *testing.T) {
 	t.Parallel()
 	decider := &fakeDecider{route: localDecide, script: []fakeAnswer{{choice: "None", p: 0.9, sleep: 30 * time.Millisecond}}}
 	w := &Watcher{Store: &decideStore{}, Decider: decider, DecideTime: time.Second}
-	tk, _ := openUnit(t, w, unitUrgent)
+	tk := openUnit(w, unitUrgent)
 	mails := []Change{stranger("m1", "text"), stranger("m2", "text")}
 	drafts, lines := pageOf(tk, mails...)
 	w.decide(context.Background(), tk, mails, drafts, lines)

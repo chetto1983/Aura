@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,7 +22,7 @@ func pimWatchDecider(chat *chatEnv) pimwatch.Decider {
 	}
 	store, err := settings.NewStore(chat.pool, chat.cfg.AuthulaSecret)
 	if err != nil {
-		slog.Warn("mail watch: the decision model is off, aura.settings cannot be opened")
+		slog.Warn("mail watch: the decision model is off, aura.settings cannot be opened", "error", err)
 		return nil
 	}
 	return pimDecider{settings: store, client: decide.Client{HTTP: &http.Client{Timeout: pimwatch.DecideBudget}}}
@@ -36,10 +37,11 @@ func (d pimDecider) Route(ctx context.Context) (decide.Route, error) {
 	return settings.DecideRoute(ctx, d.settings, bootDecideLookup)
 }
 
-// Choose logs a failure by its class alone: an OpenRouter error's text carries the response body.
+// Choose logs a failure by its class alone: an OpenRouter error's text carries the response body. A
+// call the tick's budget cut or its run cancelled is no failure, and the tick's summary counts it.
 func (d pimDecider) Choose(ctx context.Context, route decide.Route, state string, q decide.Question) (decide.Answer, error) {
 	answer, err := d.client.Choose(ctx, route, state, q)
-	if err != nil {
+	if err != nil && ctx.Err() == nil && !errors.Is(err, context.DeadlineExceeded) {
 		slog.Warn("mail watch: the decision model did not answer", "class", decide.ErrorClass(err))
 	}
 	return answer, err

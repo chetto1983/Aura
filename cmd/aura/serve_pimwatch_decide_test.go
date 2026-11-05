@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/decide"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -20,8 +25,12 @@ func TestTheWatcherGetsADeciderOnlyWithAPool(t *testing.T) {
 	}
 	pool := unreachablePool(t)
 	t.Cleanup(pool.Close)
+	buf := captureLog(t)
 	if decider := pimWatchDecider(&chatEnv{pool: pool, cfg: &config.Config{AuthulaSecret: "not hex"}}); decider != nil {
 		t.Fatalf("an unusable secret: decider = %#v, want an untyped nil", decider)
+	}
+	if got := buf.String(); !strings.Contains(got, "aura.settings cannot be opened") || !strings.Contains(got, "error=") {
+		t.Fatalf("an unusable secret logged %q, want its error", got)
 	}
 	if decider := pimWatchDecider(&chatEnv{pool: pool, cfg: &config.Config{AuthulaSecret: decideTestSecret}}); decider == nil {
 		t.Fatal("a pool gave no decider")
@@ -65,5 +74,39 @@ func TestTheDecideBootIsReadBeforeTheOverlay(t *testing.T) {
 	}
 	if key, err := route.Key(context.Background()); err != nil || key != "sk-from-the-environment" {
 		t.Fatalf("key = %q, %v: the other names read the environment", key, err)
+	}
+}
+
+// A call the budget cut or the run cancelled is the tick's business, not a model failure, so only a
+// model that answered wrongly is logged.
+func TestOnlyAModelFailureIsLogged(t *testing.T) {
+	release := make(chan struct{})
+	stalled := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	t.Cleanup(stalled.Close)
+	t.Cleanup(func() { close(release) })
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(broken.Close)
+	d := pimDecider{client: decide.Client{HTTP: &http.Client{}}}
+	question := decide.Question{Options: []decide.Option{{Name: "Breakdown", Description: "A machine has stopped."}}}
+
+	cut, cancelCut := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelCut()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, ctx := range map[string]context.Context{"a budget cut": cut, "a cancelled run": cancelled} {
+		buf := captureLog(t)
+		if _, err := d.Choose(ctx, decide.Route{BaseURL: stalled.URL}, "Subject: Line stopped", question); err == nil || buf.Len() != 0 {
+			t.Errorf("%s (%v) logged %q", name, err, buf)
+		}
+	}
+
+	buf := captureLog(t)
+	_, err := d.Choose(context.Background(), decide.Route{BaseURL: broken.URL}, "Subject: Line stopped", question)
+	if got := buf.String(); err == nil || !strings.Contains(got, "did not answer") || !strings.Contains(got, "class=upstream") {
+		t.Fatalf("a model failure (%v) logged %q", err, got)
 	}
 }

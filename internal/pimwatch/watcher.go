@@ -177,9 +177,7 @@ func (w *Watcher) open(ctx context.Context, in TickInput) (*tick, error) {
 		lang: w.Locale.Language(ctx, in.IdentityID), loc: w.Locale.Location(ctx, in.IdentityID),
 		shadow: shadowCount{on: w.Centroid != nil},
 	}
-	if err := w.openDecide(ctx, t); err != nil {
-		return nil, err
-	}
+	w.openDecide(ctx, t)
 	return t, nil
 }
 

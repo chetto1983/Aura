@@ -112,7 +112,7 @@ func ErrorClass(err error) string {
 		return "no_credential"
 	case errors.Is(err, ErrMalformed):
 		return "malformed"
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
 	default:
 		return "unreachable"

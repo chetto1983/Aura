@@ -185,7 +185,7 @@ func TestAFailingModelIsAskedOncePerTickAndShown(t *testing.T) {
 			t.Fatalf("%s = %+v, want the ladder's verdict", id, v)
 		}
 	}
-	mustContain(t, out.Summary, "decide: 0 labelled, 0 none, 2 left, 0 no text (failed)")
+	mustContain(t, out.Summary, "decide: 0 labelled, 0 none, 2 left, 0 no text, 0 input tokens (failed)")
 	if s := r.accountSettings(); s.DecideError != "unreachable" || s.DecideFailedAt.IsZero() {
 		t.Fatalf("account = %+v", s)
 	}
@@ -290,7 +290,7 @@ func TestTheCalendarIsReadAfterASlowModel(t *testing.T) {
 
 func TestAHostedRouteWithoutConsentAsksNothing(t *testing.T) {
 	r, decider, _ := decideRig(t, urgentLabel)
-	decider.route = decide.Route{BaseURL: "https://openrouter.example/api/v1", Model: "vendor/decider"}
+	decider.route = hostedDecide
 	decider.script = []fakeAnswer{{choice: urgentLabel.Name, p: 0.9}}
 	r.mailPage("start-mail", "m-2", false, r.unsortedMail("m1", Signals{WrittenTo: no()}))
 	out := r.tick()
@@ -307,6 +307,66 @@ func TestAHostedRouteWithoutConsentAsksNothing(t *testing.T) {
 	if v := r.mailVerdict("m2"); decider.calls != 1 || v.ModelName != "fake/d1" {
 		t.Fatalf("with consent: calls %d, verdict %+v", decider.calls, v)
 	}
+}
+
+// hostedRig is a watch on the hosted route whose person allowed it, over two mail pages: the
+// consent can change between them.
+func hostedRig(t *testing.T) (*watchRig, *fakeDecider) {
+	t.Helper()
+	r, decider, _ := decideRig(t, urgentLabel)
+	decider.route = hostedDecide
+	decider.script = []fakeAnswer{{choice: urgentLabel.Name, p: 0.9}}
+	if err := r.store.SetCloudDecide(context.Background(), r.identity, rigAccount, true); err != nil {
+		t.Fatal(err)
+	}
+	r.mailPage("start-mail", "m-2", true, r.unsortedMail("m1", Signals{WrittenTo: no()}))
+	r.mailPage("m-2", "m-3", false, r.unsortedMail("m2", Signals{WrittenTo: no()}))
+	return r, decider
+}
+
+func TestConsentTurnedOffMidTickStopsTheNextPage(t *testing.T) {
+	r, decider := hostedRig(t)
+	r.pim.onChanges = func(resource, cursor string) {
+		if resource == ResourceMail && cursor == "m-2" {
+			if err := r.store.SetCloudDecide(context.Background(), r.identity, rigAccount, false); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	r.tick()
+	if decider.calls != 1 || !r.mailVerdict("m1").ModelAsked {
+		t.Fatalf("calls %d: want the first page asked and the second not", decider.calls)
+	}
+	if v := r.mailVerdict("m2"); v.ModelAsked || v.ModelSkipped || v.Tier != TierToday {
+		t.Fatalf("a page after the consent went off = %+v", v)
+	}
+}
+
+// consentStore fails the consent read while failing is set.
+type consentStore struct {
+	WatchStore
+	failing bool
+}
+
+func (s *consentStore) CloudDecide(ctx context.Context, identityID, accountID string) (bool, error) {
+	if s.failing {
+		return false, errBroken
+	}
+	return s.WatchStore.CloudDecide(ctx, identityID, accountID)
+}
+
+func TestAnUnreadableConsentStopsOnlyItsPage(t *testing.T) {
+	r, decider := hostedRig(t)
+	store := &consentStore{WatchStore: r.store}
+	r.watcher.Store = store
+	r.pim.onChanges = func(resource, cursor string) {
+		store.failing = resource == ResourceMail && cursor == "m-2"
+	}
+	out := r.tick()
+	if decider.calls != 1 || !r.mailVerdict("m1").ModelAsked || r.mailVerdict("m2").ModelAsked {
+		t.Fatalf("calls %d: want the first page asked and the second not", decider.calls)
+	}
+	mustContain(t, out.Summary, "2 decided", "decide: 1 labelled")
 }
 
 func TestNoDescribedLabelAsksNothing(t *testing.T) {

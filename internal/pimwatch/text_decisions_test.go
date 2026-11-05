@@ -74,6 +74,29 @@ func TestRenderDecisionsNamesAMailThatIsGone(t *testing.T) {
 	}
 }
 
+// The list leaves the discarded mail out, so the agent is told how much there was.
+func TestRenderDecisionsCountsTheDiscarded(t *testing.T) {
+	kept := []DecisionLine{{AccountID: "home", Resource: ResourceMail, ItemID: "m1", Tier: TierToday, By: ByDefault}}
+	cases := []struct {
+		name string
+		lang Lang
+		day  DayDecisions
+		want string
+	}{
+		{"English", LangEN, DayDecisions{Day: "2026-11-02", Lines: kept, Discarded: 4}, "\nDiscarded mail: 4."},
+		{"Italian", LangIT, DayDecisions{Day: "2026-11-02", Lines: kept, Discarded: 4}, "\nMail scartate: 4."},
+		{"nothing kept", LangEN, DayDecisions{Day: "2026-11-02", Discarded: 2}, "Discarded mail: 2."},
+	}
+	for _, tc := range cases {
+		if got := renderDecisions(tc.lang, time.UTC, tc.day); !strings.HasSuffix(got, tc.want) || strings.Contains(got, "Nothing was decided") {
+			t.Fatalf("%s: got %q, want it to end %q", tc.name, got, tc.want)
+		}
+	}
+	if got := renderDecisions(LangEN, time.UTC, DayDecisions{Day: "2026-11-02", Lines: kept}); strings.Contains(got, "Discarded") {
+		t.Fatalf("a day with nothing discarded says %q", got)
+	}
+}
+
 func TestRenderDecisionsSaysWhenNothingWasDecided(t *testing.T) {
 	if got := renderDecisions(LangEN, time.UTC, DayDecisions{Day: "2026-11-02"}); got != "Nothing was decided on 2026-11-02." {
 		t.Fatalf("got %q", got)

@@ -12,13 +12,14 @@ const refRunes = 1024
 
 // renderDecisions writes a day's verdicts for a tool, one to a line: what was decided and by what,
 // the ref a correction takes, then sender and subject. Every field is made plain, so a stranger's
-// text cannot forge a line, and the tool's whole result stands in the untrusted frame.
+// text cannot forge a line, and the tool's whole result stands in the untrusted frame. The day's
+// discarded mail is not listed, so its count closes the text.
 func renderDecisions(lang Lang, loc *time.Location, day DayDecisions) string {
-	if len(day.Lines) == 0 {
+	if len(day.Lines) == 0 && day.Discarded == 0 {
 		return "Nothing was decided on " + day.Day + "."
 	}
 	p := phrasesFor(lang)
-	out := make([]string, 0, len(day.Lines)+1)
+	out := make([]string, 0, len(day.Lines)+2)
 	for i, line := range day.Lines {
 		decided := fmt.Sprintf("%d. %s by %s", i+1, line.Tier, line.By)
 		if label := plainLine(line.Label); label != "" {
@@ -29,6 +30,9 @@ func renderDecisions(lang Lang, loc *time.Location, day DayDecisions) string {
 	}
 	if len(day.Lines) >= decisionsLimit {
 		out = append(out, fmt.Sprintf("Only the newest %d are listed.", decisionsLimit))
+	}
+	if day.Discarded > 0 {
+		out = append(out, fmt.Sprintf(p.discardedLine, day.Discarded))
 	}
 	return strings.Join(out, "\n")
 }
