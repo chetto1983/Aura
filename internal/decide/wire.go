@@ -10,8 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+
+	"github.com/chetto1983/aura/internal/openaisdk"
 )
 
 const questionID = "label"
@@ -88,20 +89,6 @@ func breakTokens(s string) string {
 	return out.String()
 }
 
-// sdkClient builds the SDK client from explicit options only, as internal/mediagen/client.go does:
-// openai.NewClient would read OPENAI_API_KEY from the environment and send it to this base URL.
-// Retries are off, so a failing call is one request.
-func sdkClient(httpClient *http.Client, baseURL string, opts ...option.RequestOption) *openai.Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &openai.Client{Options: append([]option.RequestOption{
-		option.WithBaseURL(strings.TrimRight(baseURL, "/") + "/"),
-		option.WithHTTPClient(httpClient),
-		option.WithMaxRetries(0),
-	}, opts...)}
-}
-
 // post sends the question and returns the raw answer. The hosted path is relative to the base URL's
 // parent: Client.Execute resolves it with url.Parse, so "../alpha/decisions" on ".../api/v1/" is
 // ".../api/alpha/decisions", where OpenRouter serves its alpha Decisions API. The answer lands in a
@@ -112,8 +99,11 @@ func post(ctx context.Context, httpClient *http.Client, route Route, body wireRe
 	if route.Hosted() {
 		path, opts = "../alpha/decisions", []option.RequestOption{option.WithAPIKey(apiKey)}
 	}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	var raw []byte
-	err := sdkClient(httpClient, route.BaseURL, opts...).Post(ctx, path, body, &raw)
+	err := openaisdk.Client(httpClient, route.BaseURL, opts...).Post(ctx, path, body, &raw)
 	return raw, err
 }
 

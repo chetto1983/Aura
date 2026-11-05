@@ -12,6 +12,8 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+
+	"github.com/chetto1983/aura/internal/openaisdk"
 )
 
 // ImageURL is the wire shape OpenRouter's image and video APIs share for a
@@ -72,7 +74,7 @@ var sniffableImageMIME = map[string]bool{
 // schema the SDK models. It never emits a successful result from a response
 // with no usable output.
 func (c *Client) GenerateImage(ctx context.Context, baseURL, apiKey string, req ImageRequest) (ImageResult, error) {
-	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
+	client := openaisdk.Client(c.http, baseURL, option.WithAPIKey(apiKey))
 	images := openai.NewImageService(client.Options...)
 
 	var opts []option.RequestOption

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	openai "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 )
 
 // Client executes image and video generation requests against a per-call
@@ -45,21 +44,6 @@ func rejectCrossOriginRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("mediagen: refusing redirect from %s to a different origin", origin.Host)
 	}
 	return nil
-}
-
-// sdkClient builds the one SDK client this package uses (ruling R5), from
-// explicit options only. openai.NewClient would first load OPENAI_API_KEY,
-// OPENAI_ADMIN_KEY and custom headers from the environment and send them to
-// the operator's base URL whenever no identity key overrides them; the SDK's
-// opt-out marker is internal API (ruling R12). Only Options is populated, so
-// callers use the generic Get/Post/Execute methods, or build a typed service
-// from client.Options. Retries are off: a paid POST must never be sent twice.
-func sdkClient(httpClient *http.Client, baseURL string, opts ...option.RequestOption) *openai.Client {
-	return &openai.Client{Options: append([]option.RequestOption{
-		option.WithBaseURL(strings.TrimRight(baseURL, "/") + "/"),
-		option.WithHTTPClient(httpClient),
-		option.WithMaxRetries(0),
-	}, opts...)}
 }
 
 // classifyProviderError maps an OpenRouter HTTP error response to a coded

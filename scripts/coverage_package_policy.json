@@ -73,6 +73,7 @@
     "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 129, "total_statements": 159},
     "github.com/chetto1983/aura/internal/obs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/onboarding": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/openaisdk": {"mode": "target"},
     "github.com/chetto1983/aura/internal/openrouterprovision": {"mode": "target"},
     "github.com/chetto1983/aura/internal/packs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/pausable": {"mode": "target"},

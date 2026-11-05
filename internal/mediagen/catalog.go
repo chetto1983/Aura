@@ -12,6 +12,8 @@ import (
 	"time"
 
 	openai "github.com/openai/openai-go/v3"
+
+	"github.com/chetto1983/aura/internal/openaisdk"
 )
 
 // maxEndpointReads bounds the per-model endpoint reads one image refresh runs at once.
@@ -21,7 +23,7 @@ const maxEndpointReads = 4
 // lists need no credential and the cache is shared across identities, so none is sent.
 func NewCatalog(httpClient *http.Client) *Catalog {
 	return newCatalog(func(ctx context.Context, baseURL string, kind Kind) ([]Model, error) {
-		client := sdkClient(httpClient, baseURL)
+		client := openaisdk.Client(httpClient, baseURL)
 		switch kind {
 		case KindImage:
 			return fetchImageModels(ctx, client)

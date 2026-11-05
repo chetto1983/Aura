@@ -8,6 +8,8 @@ import (
 	"net/url"
 
 	"github.com/openai/openai-go/v3/option"
+
+	"github.com/chetto1983/aura/internal/openaisdk"
 )
 
 // FrameReference is one entry of VideoRequest.FrameImages: a first- or
@@ -57,7 +59,7 @@ type videoStatusWire struct {
 
 // SubmitVideo submits a video generation job and returns its initial state.
 func (c *Client) SubmitVideo(ctx context.Context, baseURL, apiKey string, req VideoRequest) (RemoteVideo, error) {
-	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
+	client := openaisdk.Client(c.http, baseURL, option.WithAPIKey(apiKey))
 	var raw []byte
 	if err := client.Post(ctx, "videos", req, &raw); err != nil {
 		return RemoteVideo{}, paidCallError(err)
@@ -75,7 +77,7 @@ func (c *Client) GetVideo(ctx context.Context, baseURL, apiKey, providerID strin
 	if err != nil {
 		return RemoteVideo{}, err
 	}
-	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
+	client := openaisdk.Client(c.http, baseURL, option.WithAPIKey(apiKey))
 	var raw []byte
 	if err := client.Get(ctx, "videos/"+url.PathEscape(id), nil, &raw); err != nil {
 		return RemoteVideo{}, classifyProviderError(err)
@@ -97,7 +99,7 @@ func (c *Client) DownloadVideo(ctx context.Context, baseURL, apiKey, providerID 
 	if err := ValidByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
-	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
+	client := openaisdk.Client(c.http, baseURL, option.WithAPIKey(apiKey))
 	var resp *http.Response
 	if err := client.Get(ctx, "videos/"+url.PathEscape(id)+"/content", nil, &resp); err != nil {
 		return nil, classifyProviderError(err)
