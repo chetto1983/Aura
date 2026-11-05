@@ -51,15 +51,17 @@ referencing files outside `web/`. Vitest still reads the copied tsconfigs; the s
 TypeScript7 typecheck and the mutation targets, thresholds and sandbox remain active.
 Mutation testing runs in CI only, at the operator's request.
 
-The pinned Stryker10 Vitest runner also builds test filters with the pre-Vitest5
-space separator. The reviewed runtime equivalent of
-[upstream PR6214](https://github.com/stryker-mutator/stryker-js/pull/6214) is applied
-by `patch-package` after installation. Vitest5 uses `>` between suite names;
-the old filter executes zero tests and falsely labels covered mutants as survivors.
-`npm run mutation:contract` verifies the real helper against one ordinary Vitest
-test, including the old filter's negative control. It executes no mutations.
-Remove the patch when the upstream runner ships this fix; patch application fails
-closed if an upgrade changes its target. Mutation targets and thresholds are unchanged.
+Vitest5 joins suite names with `>` when it matches a test filter. Stryker's Vitest runner
+uses that separator from 10.1.1 on (it was a local patch of 10.0.0, the runtime
+equivalent of [upstream PR6214](https://github.com/stryker-mutator/stryker-js/pull/6214));
+the older space-separated filter executes zero tests and falsely labels covered mutants as
+survivors. `npm run mutation:contract` verifies the runner's real helper against one
+ordinary Vitest test, including the old filter's negative control. It executes no mutations.
+
+Stryker runs the suites from a copy of `web/` in `.stryker-tmp/sandbox-*`, two levels
+deeper, where a relative import of a repository fixture (`internal/...`) would point outside
+the repository. `vitest.stryker.config.ts` resolves those imports from the repository root.
+From 10.1 Stryker reports a test file that fails to load; 10.0 dropped it silently.
 
 ## Design tokens
 

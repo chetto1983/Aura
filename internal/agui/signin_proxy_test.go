@@ -20,17 +20,29 @@ const proxySignInSession = "signin-0123456789abcdef01234567"
 const proxySignInPath = "/sign-in/" + proxySignInSession + "/"
 
 type proxySignInBrowser struct {
-	ended   bool
-	target  string
-	dials   atomic.Int32
-	cancels atomic.Int32
+	ended  bool
+	target string
+	// origins overrides the default cockpit/stream pair; noOrigins reports none.
+	origins     *[2]string
+	noOrigins   bool
+	cancelErr   error
+	revokeAfter int32 // Owns turns false after this many checks; zero never revokes.
+	checks      atomic.Int32
+	dials       atomic.Int32
+	cancels     atomic.Int32
 }
 
 func (b *proxySignInBrowser) Owns(ctx context.Context, owner, session string) bool {
+	if n := b.checks.Add(1); b.revokeAfter > 0 && n > b.revokeAfter {
+		return false
+	}
 	return !b.ended && owner == "alice" && identityctx.IdentityID(ctx) == owner && session == proxySignInSession
 }
-func (*proxySignInBrowser) Origins(string) (string, string, bool) {
-	return "https://aura.test", "https://aura.test:8444", true
+func (b *proxySignInBrowser) Origins(string) (string, string, bool) {
+	if b.origins != nil {
+		return b.origins[0], b.origins[1], !b.noOrigins
+	}
+	return "https://aura.test", "https://aura.test:8444", !b.noOrigins
 }
 func (b *proxySignInBrowser) Dial(ctx context.Context, _ string) (net.Conn, error) {
 	b.dials.Add(1)
@@ -41,7 +53,7 @@ func (b *proxySignInBrowser) Dial(ctx context.Context, _ string) (net.Conn, erro
 }
 func (b *proxySignInBrowser) Cancel(context.Context, string, string) error {
 	b.cancels.Add(1)
-	return nil
+	return b.cancelErr
 }
 
 func signInProxyHandler(b *proxySignInBrowser) http.Handler {
@@ -245,7 +257,7 @@ func TestSignInReadinessIsOnlyReadableByTheCockpit(t *testing.T) {
 		rr := httptest.NewRecorder()
 		signInProxyHandler(b).ServeHTTP(rr, r)
 		if origin == "https://aura.test" {
-			if rr.Code != 204 || rr.Header().Get("Access-Control-Allow-Origin") != origin || rr.Header().Get("Access-Control-Allow-Credentials") != "true" {
+			if rr.Code != 204 || rr.Header().Get("Access-Control-Allow-Origin") != origin || rr.Header().Get("Access-Control-Allow-Credentials") != "true" || rr.Header().Get("Vary") != "Origin" {
 				t.Fatalf("readiness refused: %d %v", rr.Code, rr.Header())
 			}
 		} else if rr.Code != 403 || rr.Header().Get("Access-Control-Allow-Origin") != "" {

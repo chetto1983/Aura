@@ -1,5 +1,19 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+// Stryker copies web/ into web/.stryker-tmp/sandbox-*, two levels below web/, so a suite's
+// relative import of a repo fixture (sseAdapter_network's golden AG-UI stream) points
+// outside the repo there. Resolve such imports from the repository root instead. Stryker
+// 10.0 dropped the failing file silently; 10.1 reports it and stops the dry run.
+function repositoryRoot(from: string): string {
+  for (let dir = from; dir !== dirname(dir); dir = dirname(dir)) {
+    if (existsSync(join(dir, 'go.mod'))) return dir;
+  }
+  throw new Error(`no go.mod above ${from}`);
+}
+const repoRoot = repositoryRoot(fileURLToPath(new URL('.', import.meta.url)));
 
 const mutationTests = [
   'src/approvals/__tests__/ApprovalList.test.tsx',
@@ -111,9 +125,12 @@ const mutationTests = [
 
 export default defineConfig({
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: /^(?:\.\.\/)+internal\/(.*)$/, replacement: `${repoRoot}/internal/$1` },
+    ],
   },
-  server: { fs: { allow: ['..'] } },
+  server: { fs: { allow: [repoRoot] } },
   test: {
     environment: 'jsdom',
     globals: true,
