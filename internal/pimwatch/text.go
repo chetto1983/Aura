@@ -41,6 +41,7 @@ type phrases struct {
 	digestNow       string
 	unsorted        string
 	digestRest      string // count
+	discardedLine   string // count
 	unreadable      string // accounts
 	droppedLines    string // accounts
 	resourceMail    string
@@ -67,6 +68,7 @@ var texts = map[Lang]phrases{
 		digestNow:       "Urgenti",
 		unsorted:        "Da smistare",
 		digestRest:      "E altre %d voci.",
+		discardedLine:   "Mail scartate: %d.",
 		unreadable:      "Non ho potuto leggere: %s. Le sue voci tornano nel prossimo riepilogo.",
 		droppedLines:    "Non ho potuto leggere: %s. Le sue voci restano nella giornata dell'account, nel cockpit.",
 		resourceMail:    "la posta",
@@ -91,6 +93,7 @@ var texts = map[Lang]phrases{
 		digestNow:       "Urgent",
 		unsorted:        "To sort",
 		digestRest:      "And %d more.",
+		discardedLine:   "Discarded mail: %d.",
 		unreadable:      "I could not read: %s. Its items come back in the next digest.",
 		droppedLines:    "I could not read: %s. Its items stay in the account's day in the cockpit.",
 		resourceMail:    "the mail",
@@ -345,9 +348,9 @@ func accountNames(accounts []string) string {
 	return strings.Join(names, ", ")
 }
 
-// digestTail says what a digest does not show: how many it left out, and which accounts it could
-// not read.
-func digestTail(p phrases, rest int, missing unread) []string {
+// digestTail says what a digest does not show: how many it left out, which accounts it could not
+// read, and how much mail was discarded.
+func digestTail(p phrases, rest int, missing unread, discarded int) []string {
 	var tail []string
 	if rest > 0 {
 		tail = append(tail, fmt.Sprintf(p.digestRest, rest))
@@ -358,12 +361,16 @@ func digestTail(p phrases, rest int, missing unread) []string {
 	if len(missing.dropped) > 0 {
 		tail = append(tail, fmt.Sprintf(p.droppedLines, accountNames(missing.dropped)))
 	}
+	if discarded > 0 {
+		tail = append(tail, fmt.Sprintf(p.discardedLine, discarded))
+	}
 	return tail
 }
 
 // renderDigest writes the day's digest from lines already in digest order. Each change of heading
-// starts a group, and rest counts what the cap left out.
-func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest int, missing unread) Outcome {
+// starts a group, and rest counts what the cap left out. Discarded mail is a line of its own and
+// never makes a digest on its own.
+func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest int, missing unread, discarded int) Outcome {
 	if len(lines) == 0 && rest == 0 && missing.none() {
 		return Outcome{}
 	}
@@ -390,7 +397,7 @@ func renderDigest(lang Lang, loc *time.Location, book Book, lines []Line, rest i
 		}
 		body = append(body, text)
 	}
-	tail := digestTail(p, rest, missing)
+	tail := digestTail(p, rest, missing, discarded)
 	refs, quoted := recordParts(oneEach(lines), body)
 	notice := append(append([]string{p.digestTitle}, body...), tail...)
 	return Outcome{

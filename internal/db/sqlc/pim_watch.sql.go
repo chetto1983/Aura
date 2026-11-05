@@ -189,6 +189,50 @@ func (q *Queries) CountPIMWatchAlertsOfDay(ctx context.Context, arg CountPIMWatc
 	return column_1, err
 }
 
+const countPIMWatchDiscardedInWindow = `-- name: CountPIMWatchDiscardedInWindow :one
+SELECT count(*) FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND decided_at > $2 AND decided_at <= $3 AND discarded
+`
+
+type CountPIMWatchDiscardedInWindowParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+	Until      pgtype.Timestamptz `json:"until"`
+}
+
+// The discarded mail of a digest's window, counted on the window the digest lists.
+func (q *Queries) CountPIMWatchDiscardedInWindow(ctx context.Context, arg CountPIMWatchDiscardedInWindowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPIMWatchDiscardedInWindow, arg.IdentityID, arg.Since, arg.Until)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPIMWatchDiscardedOfDay = `-- name: CountPIMWatchDiscardedOfDay :one
+SELECT count(*) FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND account_id = $2 AND decided_at >= $3 AND decided_at < $4 AND discarded
+`
+
+type CountPIMWatchDiscardedOfDayParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	AccountID  string             `json:"account_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+	Until      pgtype.Timestamptz `json:"until"`
+}
+
+// The discarded mail of a cockpit day, which the day's list leaves out and its toggle shows.
+func (q *Queries) CountPIMWatchDiscardedOfDay(ctx context.Context, arg CountPIMWatchDiscardedOfDayParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPIMWatchDiscardedOfDay,
+		arg.IdentityID,
+		arg.AccountID,
+		arg.Since,
+		arg.Until,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteExpiredPIMWatchVerdicts = `-- name: DeleteExpiredPIMWatchVerdicts :execrows
 DELETE FROM aura.pim_watch_verdicts AS v
 USING (
@@ -634,8 +678,9 @@ func (q *Queries) InsertPIMWatchVerdict(ctx context.Context, arg InsertPIMWatchV
 const listPIMWatchAccountVerdicts = `-- name: ListPIMWatchAccountVerdicts :many
 SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND decided_at >= $3 AND decided_at < $4
+  AND discarded = $5
 ORDER BY decided_at DESC, item_id
-LIMIT $5
+LIMIT $6
 `
 
 type ListPIMWatchAccountVerdictsParams struct {
@@ -643,6 +688,7 @@ type ListPIMWatchAccountVerdictsParams struct {
 	AccountID  string             `json:"account_id"`
 	Since      pgtype.Timestamptz `json:"since"`
 	Until      pgtype.Timestamptz `json:"until"`
+	Discarded  bool               `json:"discarded"`
 	RowLimit   int32              `json:"row_limit"`
 }
 
@@ -652,6 +698,7 @@ func (q *Queries) ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWa
 		arg.AccountID,
 		arg.Since,
 		arg.Until,
+		arg.Discarded,
 		arg.RowLimit,
 	)
 	if err != nil {
@@ -814,6 +861,7 @@ func (q *Queries) ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUI
 const listPIMWatchDigestVerdicts = `-- name: ListPIMWatchDigestVerdicts :many
 SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND decided_at > $2 AND decided_at <= $3 AND tier IN ('now', 'today')
+  AND NOT discarded
 ORDER BY decided_at, item_id
 `
 

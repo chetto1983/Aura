@@ -3,6 +3,7 @@ package pimwatch
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -99,4 +100,38 @@ func (p LabelPatch) apply(stored Label) (LabelInput, error) {
 		in.Discard = *p.Discard
 	}
 	return in, nil
+}
+
+// DiscardedOfDay counts an account's discarded verdicts decided in [since, until): what the day's
+// list leaves out.
+func (s *Store) DiscardedOfDay(ctx context.Context, identityID, accountID string, since, until time.Time) (int, error) {
+	var n int64
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		var err error
+		n, err = q.CountPIMWatchDiscardedOfDay(ctx, sqlc.CountPIMWatchDiscardedOfDayParams{
+			IdentityID: id, AccountID: accountID, Since: timestamp(since), Until: timestamp(until),
+		})
+		return err
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count discarded pim watch decisions: %w", err)
+	}
+	return int(n), nil
+}
+
+// DiscardedInWindow counts the identity's discarded verdicts decided in (since, until]: what a
+// digest leaves out.
+func (s *Store) DiscardedInWindow(ctx context.Context, identityID string, since, until time.Time) (int, error) {
+	var n int64
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		var err error
+		n, err = q.CountPIMWatchDiscardedInWindow(ctx, sqlc.CountPIMWatchDiscardedInWindowParams{
+			IdentityID: id, Since: timestamp(since), Until: timestamp(until),
+		})
+		return err
+	})
+	if err != nil {
+		return 0, fmt.Errorf("count discarded pim watch verdicts: %w", err)
+	}
+	return int(n), nil
 }

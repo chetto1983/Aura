@@ -262,3 +262,21 @@ func TestDecideEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestARuleWithADiscardLabelFilesTheMailLater(t *testing.T) {
+	t.Parallel()
+	spam := Label{ID: "l-spam", Name: "Spam", Discard: true}
+	book := NewBook([]Rule{
+		{Key: "junk@shop.example", Kind: KeySender, LabelID: spam.ID},
+		{Key: "both@shop.example", Kind: KeySender, Tier: TierNow, LabelID: spam.ID},
+	}, []Label{spam})
+
+	got := DecideMail(book, "junk@shop.example", Signals{WrittenTo: yes(), ProviderImportant: true})
+	if got.Tier != TierLater || got.By != ByRule || !got.Discarded || got.LabelID != spam.ID {
+		t.Fatalf("a discard label: %+v", got)
+	}
+	got = DecideMail(book, "both@shop.example", Signals{})
+	if got.Tier != TierNow || got.By != ByRule || got.Discarded {
+		t.Fatalf("a rule tier over a discard label: %+v", got)
+	}
+}

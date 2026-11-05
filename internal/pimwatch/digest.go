@@ -22,13 +22,15 @@ type DigestStore interface {
 	Book(ctx context.Context, identityID string) (Book, error)
 	Labels(ctx context.Context, identityID string) ([]Label, error)
 	DigestVerdicts(ctx context.Context, identityID string, since, until time.Time) ([]Verdict, error)
+	DiscardedInWindow(ctx context.Context, identityID string, since, until time.Time) (int, error)
 	SetLastDigest(ctx context.Context, identityID string, at time.Time) error
 }
 
 var _ DigestStore = (*Store)(nil)
 
-// Digester writes an identity's daily digest, read live: no sender or subject was kept. The one
-// model call of the day is the only place the watch pays for one.
+// Digester writes an identity's daily digest, read live: no sender or subject was kept. Discarded
+// mail is not read at all: it is counted on one line. The one model call of the day is the only
+// place the digest pays for one.
 type Digester struct {
 	Store  DigestStore
 	PIM    PIMReader
@@ -93,12 +95,16 @@ func (d *Digester) Run(ctx context.Context, identityID string) (Outcome, error) 
 	if err != nil {
 		return Outcome{}, err
 	}
+	discarded, err := d.Store.DiscardedInWindow(ctx, identityID, since, until)
+	if err != nil {
+		return Outcome{}, err
+	}
 	sortDigest(verdicts, labels)
 	read := verdicts[:min(len(verdicts), maxDigestRead)]
 	lines, missing := d.read(ctx, read)
 	out, shown := d.write(ctx, digestDay{
 		identityID: identityID, lang: d.Locale.Language(ctx, identityID), loc: d.Locale.Location(ctx, identityID),
-		book: book, lines: lines, beyond: untold(verdicts[len(read):]), missing: missing,
+		book: book, lines: lines, beyond: untold(verdicts[len(read):]), missing: missing, discarded: discarded,
 	})
 	out.Summary = fmt.Sprintf("%d in the window, %s", len(verdicts), shown)
 	if !missing.none() {
@@ -118,8 +124,9 @@ type digestDay struct {
 	book       Book
 	lines      []Line
 	// beyond counts the new verdicts past what a digest reads.
-	beyond  int
-	missing unread
+	beyond    int
+	missing   unread
+	discarded int
 }
 
 // write sends what the model wrote, or the list when it wrote nothing usable, and says which for
@@ -138,7 +145,7 @@ func (d *Digester) write(ctx context.Context, day digestDay) (Outcome, string) {
 	}
 	news := newsIn(day.lines)
 	shown := news[:min(len(news), maxDigestLines)]
-	out := renderDigest(day.lang, day.loc, day.book, shown, len(news)-len(shown)+day.beyond, day.missing)
+	out := renderDigest(day.lang, day.loc, day.book, shown, len(news)-len(shown)+day.beyond, day.missing, day.discarded)
 	return out, fmt.Sprintf("%d shown%s", len(shown), note)
 }
 
@@ -157,7 +164,7 @@ func (d *Digester) written(ctx context.Context, day digestDay, known []Line) (Ou
 		return Outcome{}, "", err
 	}
 	owed := slices.DeleteFunc(slices.Clone(day.lines), func(line Line) bool { return !line.owed() })
-	out := renderWritten(day.lang, day.loc, known, owed, written, day.beyond, day.missing)
+	out := renderWritten(day.lang, day.loc, known, owed, written, day.beyond, day.missing, day.discarded)
 	return out, fmt.Sprintf("%d written by the model, %d+%d tokens", len(written), reply.PromptTokens, reply.CompletionTokens), nil
 }
 

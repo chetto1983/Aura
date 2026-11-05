@@ -168,7 +168,7 @@ func TestEveryRefusalNamesItsCode(t *testing.T) {
 	refused := map[string]func() error{
 		"account_required": func() error { return r.service.Enable(ctx, r.identity, " ") },
 		"invalid_day": func() error {
-			_, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026")
+			_, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026", false)
 			return err
 		},
 		"empty_correction": func() error {

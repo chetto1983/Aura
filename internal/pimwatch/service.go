@@ -357,19 +357,22 @@ type DecisionLine struct {
 	By        DecidedBy
 	DecidedAt time.Time
 	// Centroid is the tier the centroid would have given, set only where it differs from the ladder's.
-	Centroid Tier
+	Centroid  Tier
+	Discarded bool
 }
 
 // DayDecisions is one account's day: the day read, in the identity's zone and so not always the
-// caller's, and its lines.
+// caller's, its lines, and how many mails of the day were discarded, whichever list the lines are.
 type DayDecisions struct {
-	Day   string
-	Lines []DecisionLine
+	Day       string
+	Lines     []DecisionLine
+	Discarded int
 }
 
 // Decisions lists an account's verdicts of one local day, newest first, read live by id. day is
-// YYYY-MM-DD in the identity's zone; empty means today.
-func (s *Service) Decisions(ctx context.Context, identityID, accountID, day string) (DayDecisions, error) {
+// YYYY-MM-DD in the identity's zone; empty means today. The discarded mail has a list of its own:
+// discarded picks it, so that it never takes the rows of the day's other list.
+func (s *Service) Decisions(ctx context.Context, identityID, accountID, day string, discarded bool) (DayDecisions, error) {
 	if s.PIM == nil {
 		return DayDecisions{}, ErrUnavailable
 	}
@@ -382,7 +385,12 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 		}
 		start = parsed
 	}
-	verdicts, err := s.Store.AccountVerdicts(ctx, identityID, accountID, start, start.AddDate(0, 0, 1), decisionsLimit)
+	end := start.AddDate(0, 0, 1)
+	verdicts, err := s.Store.AccountVerdicts(ctx, identityID, accountID, start, end, decisionsLimit, discarded)
+	if err != nil {
+		return DayDecisions{}, err
+	}
+	count, err := s.Store.DiscardedOfDay(ctx, identityID, accountID, start, end)
 	if err != nil {
 		return DayDecisions{}, err
 	}
@@ -403,15 +411,15 @@ func (s *Service) Decisions(ctx context.Context, identityID, accountID, day stri
 		out = append(out, DecisionLine{
 			Line:  read[verdictKey(verdict.AccountID, verdict.Resource, verdict.ItemID)],
 			Label: book.LabelName(verdict.LabelID), By: verdict.By, DecidedAt: verdict.DecidedAt,
-			Centroid: verdict.centroidDisagrees(),
+			Centroid: verdict.centroidDisagrees(), Discarded: verdict.Discarded,
 		})
 	}
-	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out}, nil
+	return DayDecisions{Day: start.Format(time.DateOnly), Lines: out, Discarded: count}, nil
 }
 
 // DecisionsText is Decisions as a tool reads it, in the identity's language and zone.
 func (s *Service) DecisionsText(ctx context.Context, identityID, accountID, day string) (string, error) {
-	decisions, err := s.Decisions(ctx, identityID, accountID, day)
+	decisions, err := s.Decisions(ctx, identityID, accountID, day, false)
 	if err != nil {
 		return "", err
 	}

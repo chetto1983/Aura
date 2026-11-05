@@ -245,7 +245,13 @@ WHERE identity_id = $1 AND account_id = $2 AND alert_run_id = @old_run AND NOT n
 -- name: ListPIMWatchDigestVerdicts :many
 SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND decided_at > @since AND decided_at <= @until AND tier IN ('now', 'today')
+  AND NOT discarded
 ORDER BY decided_at, item_id;
+
+-- name: CountPIMWatchDiscardedInWindow :one
+-- The discarded mail of a digest's window, counted on the window the digest lists.
+SELECT count(*) FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND decided_at > @since AND decided_at <= @until AND discarded;
 
 -- name: ListPIMWatchUndeliveredRuns :many
 -- The runs of a window whose alert has not reached the person. A run completes before it notifies,
@@ -257,8 +263,14 @@ WHERE v.identity_id = $1 AND v.decided_at > @since AND v.decided_at <= @until AN
 -- name: ListPIMWatchAccountVerdicts :many
 SELECT * FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND decided_at >= @since AND decided_at < @until
+  AND discarded = @discarded
 ORDER BY decided_at DESC, item_id
 LIMIT @row_limit;
+
+-- name: CountPIMWatchDiscardedOfDay :one
+-- The discarded mail of a cockpit day, which the day's list leaves out and its toggle shows.
+SELECT count(*) FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND account_id = $2 AND decided_at >= @since AND decided_at < @until AND discarded;
 
 -- name: CorrectPIMWatchVerdict :one
 UPDATE aura.pim_watch_verdicts

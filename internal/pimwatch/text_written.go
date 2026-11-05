@@ -124,7 +124,7 @@ func writtenEntries(p phrases, loc *time.Location, known, owed []Line, written [
 
 // renderWritten writes the digest the model answered. known are the items as it read them, owed
 // what it must not touch, and unseen counts what it never read.
-func renderWritten(lang Lang, loc *time.Location, known, owed []Line, written []writtenLine, unseen int, missing unread) Outcome {
+func renderWritten(lang Lang, loc *time.Location, known, owed []Line, written []writtenLine, unseen int, missing unread, discarded int) Outcome {
 	p, w := phrasesFor(lang), writtenPhrasesFor(lang)
 	entries, quiet, stopped := writtenEntries(p, loc, known, owed, written)
 	unseen += stopped
@@ -149,7 +149,7 @@ func renderWritten(lang Lang, loc *time.Location, known, owed []Line, written []
 	case quiet > 1:
 		tail = append(tail, fmt.Sprintf(w.quiet, quiet))
 	}
-	tail = append(tail, digestTail(p, unseen, missing)...)
+	tail = append(tail, digestTail(p, unseen, missing, discarded)...)
 	refs, quoted := recordParts(groups, body)
 	return Outcome{
 		Notice: strings.Join(append(append([]string{p.digestTitle}, body...), tail...), "\n"),

@@ -294,7 +294,7 @@ func TestDecisionsMarkWhereTheCentroidDisagrees(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	day, err := r.service.Decisions(ctx, r.identity, rigAccount, r.clock.at.Format(time.DateOnly))
+	day, err := r.service.Decisions(ctx, r.identity, rigAccount, r.clock.at.Format(time.DateOnly), false)
 	if err != nil {
 		t.Fatal(err)
 	}

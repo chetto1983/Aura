@@ -250,7 +250,7 @@ func TestANameCannotHideTheAddress(t *testing.T) {
 
 func TestADigestLineCarriesTheNameInsideTheFrame(t *testing.T) {
 	lines := []Line{{AccountID: "work", Resource: ResourceMail, ItemID: "m1", From: "mario@acme.it", FromName: "Mario Rossi", Subject: "Ciao", Tier: TierToday}}
-	out := renderDigest(LangEN, time.UTC, Book{}, lines, 0, unread{})
+	out := renderDigest(LangEN, time.UTC, Book{}, lines, 0, unread{}, 0)
 	if !strings.Contains(out.Quoted, "Mario Rossi <mario@acme.it>: Ciao") {
 		t.Fatalf("quoted = %q", out.Quoted)
 	}
@@ -321,7 +321,7 @@ func TestTheDigestGroupsAndNumbersThrough(t *testing.T) {
 		{AccountID: "work", Tier: TierToday, From: "g@h.it", Subject: "quattro", LabelID: "l2"},
 		{AccountID: "work", Tier: TierToday, From: "i@l.it", Subject: "cinque"},
 	}
-	out := renderDigest(LangIT, time.UTC, book, lines, 7, unread{held: []string{"old"}})
+	out := renderDigest(LangIT, time.UTC, book, lines, 7, unread{held: []string{"old"}}, 0)
 	want := strings.Join([]string{
 		"Riepilogo di posta e calendario",
 		"Urgenti",
@@ -342,7 +342,7 @@ func TestTheDigestGroupsAndNumbersThrough(t *testing.T) {
 }
 
 func TestAnEmptyDigestSaysNothing(t *testing.T) {
-	if out := renderDigest(LangEN, time.UTC, NewBook(nil, nil), nil, 0, unread{}); out != (Outcome{}) {
+	if out := renderDigest(LangEN, time.UTC, NewBook(nil, nil), nil, 0, unread{}, 0); out != (Outcome{}) {
 		t.Fatalf("outcome = %+v", out)
 	}
 }
@@ -352,7 +352,7 @@ func TestTheDigestRecordKeepsEachNumbersAddress(t *testing.T) {
 		{AccountID: "work", Resource: ResourceMail, ItemID: "m1", Tier: TierToday, From: "a@b.it", Subject: "uno"},
 		{AccountID: "home", Resource: ResourceMail, ItemID: "m2", Tier: TierToday, From: "c@d.it", Subject: "due"},
 	}
-	out := renderDigest(LangEN, time.UTC, NewBook(nil, nil), lines, 0, unread{})
+	out := renderDigest(LangEN, time.UTC, NewBook(nil, nil), lines, 0, unread{}, 0)
 	if out.Refs != "1. account=work resource=mail id=m1\n2. account=home resource=mail id=m2" {
 		t.Fatalf("refs = %q", out.Refs)
 	}
@@ -366,7 +366,7 @@ const tenantAccount = "733cd5d5d8584831b0ca65a2e7c95430__lavoro"
 func TestAPersonReadsTheSlugTheyGaveAndTheRecordKeepsTheWholeID(t *testing.T) {
 	line := Line{AccountID: tenantAccount, Resource: ResourceMail, ItemID: "INBOX/1/2", From: "a@b.it", Subject: "Fermo", Tier: TierNow}
 	alert := renderAlert(LangEN, time.UTC, tenantAccount, []Line{line}, 0, nil)
-	digest := renderDigest(LangEN, time.UTC, Book{}, []Line{line}, 0, unread{held: []string{tenantAccount}})
+	digest := renderDigest(LangEN, time.UTC, Book{}, []Line{line}, 0, unread{held: []string{tenantAccount}}, 0)
 	running := &tick{AccountID: tenantAccount, loc: time.UTC}
 	running.carry(phrasesFor(LangEN), AlarmGap, ResourceMail, time.Unix(0, 0))
 	failure := (&HardFailure{AccountID: tenantAccount, Resource: ResourceMail, Code: "provider_auth"}).Error()

@@ -26,7 +26,7 @@ func TestAWrittenDigestReadsLikeTheSpec(t *testing.T) {
 		{Section: sectionLook, Items: []int{4}, Text: "build fallita su master"},
 	}
 
-	out := renderWritten(LangIT, time.UTC, known, nil, written, 0, unread{})
+	out := renderWritten(LangIT, time.UTC, known, nil, written, 0, unread{}, 0)
 
 	want := strings.Join([]string{
 		"Riepilogo di posta e calendario",
@@ -54,7 +54,7 @@ func TestAWrittenDigestHasEnglishHeadings(t *testing.T) {
 		{Section: sectionLook, Items: []int{2}, Text: "read"},
 		{Section: sectionKnow, Items: []int{3}, Text: "aware"},
 	}
-	out := renderWritten(LangEN, time.UTC, known, nil, written, 0, unread{})
+	out := renderWritten(LangEN, time.UTC, known, nil, written, 0, unread{}, 0)
 	mustContain(t, out.Notice, "To do\n1. a@b.it: act", "Worth a look\n2. c@d.it: read", "Good to know\n3. e@f.it: aware", "1 more asks nothing of you.")
 }
 
@@ -80,7 +80,7 @@ func TestALineSaysWhoItIsFromAndTheModelCannotChangeThat(t *testing.T) {
 		for i := range c.items {
 			items = append(items, i+1)
 		}
-		out := renderWritten(LangIT, time.UTC, c.items, nil, []writtenLine{{Section: sectionDo, Items: items, Text: "testo"}}, 0, unread{})
+		out := renderWritten(LangIT, time.UTC, c.items, nil, []writtenLine{{Section: sectionDo, Items: items, Text: "testo"}}, 0, unread{}, 0)
 		if !strings.Contains(out.Notice, c.want+"\n") && !strings.HasSuffix(out.Notice, c.want) {
 			t.Fatalf("%s:\n%s\nwant %q", c.name, out.Notice, c.want)
 		}
@@ -90,7 +90,7 @@ func TestALineSaysWhoItIsFromAndTheModelCannotChangeThat(t *testing.T) {
 func TestAFailedAuthenticationStaysOnTheLine(t *testing.T) {
 	forged := mailLine("m1", "x@evil.it", "", "urgente", TierToday)
 	forged.AuthFailed = true
-	out := renderWritten(LangIT, time.UTC, []Line{forged}, nil, []writtenLine{{Section: sectionDo, Items: []int{1}, Text: "bonifico"}}, 0, unread{})
+	out := renderWritten(LangIT, time.UTC, []Line{forged}, nil, []writtenLine{{Section: sectionDo, Items: []int{1}, Text: "bonifico"}}, 0, unread{}, 0)
 	mustContain(t, out.Notice, "1. x@evil.it: bonifico [mittente non autenticato]")
 }
 
@@ -99,7 +99,7 @@ func TestWhatIsOwedStandsFirstAsThePIMReadIt(t *testing.T) {
 	owed := []Line{mailLine("m1", "a@b.it", "Anna", "fermo macchina", TierNow)}
 	written := []writtenLine{{Section: sectionLook, Items: []int{1}, Text: "saluta"}}
 
-	out := renderWritten(LangIT, time.UTC, known, owed, written, 0, unread{})
+	out := renderWritten(LangIT, time.UTC, known, owed, written, 0, unread{}, 0)
 
 	mustContain(t, out.Notice, "Da guardare\n1. Anna <a@b.it>: fermo macchina\n2. c@d.it: saluta")
 	if out.Refs != "1. account=work resource=mail id=m1\n2. account=work resource=mail id=m2" {
@@ -112,7 +112,7 @@ func TestAnUrgentDayStopsAtTheCapAndSaysHowMany(t *testing.T) {
 	for range maxDigestLines + 5 {
 		owed = append(owed, mailLine("m", "a@b.it", "", "fermo", TierNow))
 	}
-	out := renderWritten(LangEN, time.UTC, nil, owed, nil, 0, unread{})
+	out := renderWritten(LangEN, time.UTC, nil, owed, nil, 0, unread{}, 0)
 	mustContain(t, out.Notice, "20. a@b.it: fermo", "And 5 more.")
 	if strings.Contains(out.Notice, "21. ") {
 		t.Fatalf("past the cap:\n%s", out.Notice)
@@ -122,17 +122,17 @@ func TestAnUrgentDayStopsAtTheCapAndSaysHowMany(t *testing.T) {
 func TestWhatWasToldStandsOnlyIfCitedAndIsNeverCounted(t *testing.T) {
 	told := mailLine("m1", "a@b.it", "", "invito", TierNow)
 	told.Told = true
-	quiet := renderWritten(LangIT, time.UTC, []Line{told}, nil, nil, 0, unread{})
+	quiet := renderWritten(LangIT, time.UTC, []Line{told}, nil, nil, 0, unread{}, 0)
 	if quiet != (Outcome{}) {
 		t.Fatalf("outcome = %+v", quiet)
 	}
-	cited := renderWritten(LangIT, time.UTC, []Line{told}, nil, []writtenLine{{Section: sectionKnow, Items: []int{1}, Text: "annullata"}}, 0, unread{})
+	cited := renderWritten(LangIT, time.UTC, []Line{told}, nil, []writtenLine{{Section: sectionKnow, Items: []int{1}, Text: "annullata"}}, 0, unread{}, 0)
 	mustContain(t, cited.Notice, "1. a@b.it: annullata")
 }
 
 func TestWhatTheModelNeverSawIsSaidApart(t *testing.T) {
 	known := []Line{mailLine("m1", "a@b.it", "", "uno", TierToday), mailLine("m2", "c@d.it", "", "due", TierToday)}
-	out := renderWritten(LangIT, time.UTC, known, nil, []writtenLine{{Section: sectionDo, Items: []int{1}, Text: "x"}}, 4, unread{held: []string{"t__old"}})
+	out := renderWritten(LangIT, time.UTC, known, nil, []writtenLine{{Section: sectionDo, Items: []int{1}, Text: "x"}}, 4, unread{held: []string{"t__old"}}, 0)
 	mustContain(t, out.Notice, "Un'altra voce non chiede nulla.", "E altre 4 voci.", "Non ho potuto leggere: old.")
 }
 
@@ -141,9 +141,9 @@ func TestManyQuietItemsAreCountedInThePlural(t *testing.T) {
 		mailLine("m1", "a@b.it", "", "uno", TierToday), mailLine("m2", "c@d.it", "", "due", TierToday),
 		mailLine("m3", "e@f.it", "", "tre", TierToday),
 	}
-	italian := renderWritten(LangIT, time.UTC, known, nil, nil, 0, unread{})
+	italian := renderWritten(LangIT, time.UTC, known, nil, nil, 0, unread{}, 0)
 	mustContain(t, italian.Notice, "Altre 3 voci non chiedono nulla.")
-	english := renderWritten(LangEN, time.UTC, known, nil, nil, 0, unread{})
+	english := renderWritten(LangEN, time.UTC, known, nil, nil, 0, unread{}, 0)
 	mustContain(t, english.Notice, "3 more ask nothing of you.")
 }
 
@@ -151,7 +151,7 @@ func TestAMergedLineKeepsEveryAddressUnderItsNumber(t *testing.T) {
 	known := []Line{mailLine("m1", "a@b.it", "Anna", "uno", TierToday), mailLine("m2", "a@b.it", "Anna", "due", TierToday), mailLine("m3", "c@d.it", "", "tre", TierToday)}
 	written := []writtenLine{{Section: sectionDo, Items: []int{1, 2}, Text: "x"}, {Section: sectionLook, Items: []int{3}, Text: "y"}}
 
-	out := renderWritten(LangEN, time.UTC, known, nil, written, 0, unread{})
+	out := renderWritten(LangEN, time.UTC, known, nil, written, 0, unread{}, 0)
 
 	want := "1. account=work resource=mail id=m1\n1. account=work resource=mail id=m2\n2. account=work resource=mail id=m3"
 	if out.Refs != want {
@@ -159,5 +159,18 @@ func TestAMergedLineKeepsEveryAddressUnderItsNumber(t *testing.T) {
 	}
 	if strings.Contains(out.Head, "Anna") || !strings.Contains(out.Quoted, "1. Anna <a@b.it>: x") {
 		t.Fatalf("head %q quoted %q", out.Head, out.Quoted)
+	}
+}
+
+func TestTheWrittenDigestKeepsTheDiscardedLine(t *testing.T) {
+	known := []Line{mailLine("m1", "a@b.it", "", "uno", TierToday)}
+	written := []writtenLine{{Section: sectionDo, Items: []int{1}, Text: "agire"}}
+
+	out := renderWritten(LangIT, time.UTC, known, nil, written, 0, unread{}, 3)
+	if !strings.HasSuffix(out.Notice, "\nMail scartate: 3.") || !strings.HasSuffix(out.Head, "\nMail scartate: 3.") {
+		t.Fatalf("digest:\n%s\nhead:\n%s", out.Notice, out.Head)
+	}
+	if only := renderWritten(LangIT, time.UTC, nil, nil, nil, 0, unread{}, 3); only != (Outcome{}) {
+		t.Fatalf("a discarded line alone made a digest: %+v", only)
 	}
 }

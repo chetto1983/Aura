@@ -24,7 +24,7 @@ type mailWatchService interface {
 	Enable(ctx context.Context, identityID, accountID string) error
 	Disable(ctx context.Context, identityID, accountID string) error
 	RemoveAccount(ctx context.Context, identityID, accountID string) error
-	Decisions(ctx context.Context, identityID, accountID, day string) (pimwatch.DayDecisions, error)
+	Decisions(ctx context.Context, identityID, accountID, day string, discarded bool) (pimwatch.DayDecisions, error)
 	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error)
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)
 	AddRule(ctx context.Context, identityID string, in pimwatch.RuleInput) (pimwatch.WrittenRule, error)
@@ -231,22 +231,26 @@ type mailWatchDecisionJSON struct {
 	DecidedAt  time.Time  `json:"decided_at"`
 	// CentroidTier is the urgency centroid's tier where it differs from the ladder's, in shadow.
 	CentroidTier string `json:"centroid_tier,omitempty"`
+	Discarded    bool   `json:"discarded,omitempty"`
 }
 
 // mailWatchDayJSON is the decisions of the day it names. Today is the identity's today, which the
-// browser may not share, so the cockpit heads the day with this one.
+// browser may not share, so the cockpit heads the day with this one. Discarded counts the day's
+// discarded mail, whichever list Decisions is.
 type mailWatchDayJSON struct {
 	Day       string                  `json:"day"`
 	Decisions []mailWatchDecisionJSON `json:"decisions"`
+	Discarded int                     `json:"discarded"`
 }
 
 func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
-	day, err := service.Decisions(r.Context(), identityID, r.PathValue("id"), r.URL.Query().Get("day"))
+	query := r.URL.Query()
+	day, err := service.Decisions(r.Context(), identityID, r.PathValue("id"), query.Get("day"), query.Get("discarded") == "1")
 	if err != nil {
 		writeMailWatchError(w, err)
 		return
 	}
-	out := mailWatchDayJSON{Day: day.Day, Decisions: make([]mailWatchDecisionJSON, 0, len(day.Lines))}
+	out := mailWatchDayJSON{Day: day.Day, Decisions: make([]mailWatchDecisionJSON, 0, len(day.Lines)), Discarded: day.Discarded}
 	for _, line := range day.Lines {
 		out.Decisions = append(out.Decisions, mailWatchDecisionJSON{
 			AccountID: line.AccountID, Resource: line.Resource, ItemID: line.ItemID, CalendarID: line.CalendarID,
@@ -254,6 +258,7 @@ func (s *Server) handleMailWatchDecisions(w http.ResponseWriter, r *http.Request
 			Start: mailWatchTime(line.Start), AllDay: line.AllDay, Gone: line.Gone, AuthFailed: line.AuthFailed,
 			Tier: string(line.Tier), Change: string(line.Change), LabelID: line.LabelID, Label: line.Label,
 			DecidedBy: string(line.By), DecidedAt: line.DecidedAt, CentroidTier: string(line.Centroid),
+			Discarded: line.Discarded,
 		})
 	}
 	writeJSON(w, out)
@@ -281,7 +286,7 @@ func (s *Server) handleMailWatchCorrect(w http.ResponseWriter, r *http.Request, 
 		writeMailWatchError(w, err)
 		return
 	}
-	out := mailWatchCorrectedJSON{Tier: string(verdict.Tier), LabelID: verdict.LabelID}
+	out := mailWatchCorrectedJSON{Tier: string(verdict.Tier), LabelID: verdict.LabelID, Discarded: verdict.Discarded}
 	if rule != nil {
 		learned := mailWatchRule(rule.Rule)
 		out.Rule, out.RuleCreated = &learned, rule.Created
@@ -295,6 +300,7 @@ func (s *Server) handleMailWatchCorrect(w http.ResponseWriter, r *http.Request, 
 type mailWatchCorrectedJSON struct {
 	Tier        string             `json:"tier"`
 	LabelID     string             `json:"label_id,omitempty"`
+	Discarded   bool               `json:"discarded,omitempty"`
 	Rule        *mailWatchRuleJSON `json:"rule,omitempty"`
 	RuleCreated bool               `json:"rule_created,omitempty"`
 }

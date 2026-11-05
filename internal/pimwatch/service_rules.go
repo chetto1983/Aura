@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/db"
 )
 
 // correctionWindow is how far apart two corrections must be to teach a rule, so that one burst of
@@ -20,14 +22,14 @@ const correctionWindow = 15 * time.Minute
 // that failed authentication: a rule beats that rung, so one learned from it would let a forged
 // sender reach `now`.
 func (s *Service) Correct(ctx context.Context, identityID string, c Correction) (Verdict, *WrittenRule, error) {
-	if err := s.checkCorrection(ctx, identityID, c); err != nil {
+	c, err := s.checkCorrection(ctx, identityID, c)
+	if err != nil {
 		return Verdict{}, nil, err
 	}
 	item := s.itemOf(ctx, c)
 	sender, _ := SenderKey(item.From)
 	var past []PastCorrection
 	if sender != "" {
-		var err error
 		past, err = s.Store.CorrectionsBefore(ctx, identityID, sender, s.now().Add(-correctionWindow))
 		if err != nil {
 			return Verdict{}, nil, err
@@ -51,28 +53,37 @@ func (s *Service) Correct(ctx context.Context, identityID string, c Correction) 
 	return verdict, &rule, nil
 }
 
-func (s *Service) checkCorrection(ctx context.Context, identityID string, c Correction) error {
+// checkCorrection refuses what a correction cannot mean, and sets Discard: a label that discards
+// discards the mail it is given, unless the same correction sets a tier.
+func (s *Service) checkCorrection(ctx context.Context, identityID string, c Correction) (Correction, error) {
+	c.Discard = false
 	if c.Tier == "" && c.LabelID == nil {
-		return invalid("empty_correction", "a correction changes a tier or a label")
+		return c, invalid("empty_correction", "a correction changes a tier or a label")
 	}
 	if c.Tier != "" && !c.Tier.Valid() {
-		return invalidTier()
+		return c, invalidTier()
 	}
 	if c.LabelID == nil || *c.LabelID == "" {
-		return nil
+		return c, nil
 	}
-	return s.checkLabel(ctx, identityID, *c.LabelID)
+	label, err := s.checkLabel(ctx, identityID, *c.LabelID)
+	c.LabelID, c.Discard = &label.ID, label.Discard && c.Tier == ""
+	return c, err
 }
 
-func (s *Service) checkLabel(ctx context.Context, identityID, labelID string) error {
+// checkLabel finds the label an id names. The id is compared as the store reads it, so an
+// uppercase UUID finds its label.
+func (s *Service) checkLabel(ctx context.Context, identityID, labelID string) (Label, error) {
 	labels, err := s.Store.Labels(ctx, identityID)
 	if err != nil {
-		return err
+		return Label{}, err
 	}
-	if !slices.ContainsFunc(labels, func(l Label) bool { return l.ID == labelID }) {
-		return invalid("unknown_label", "no such label")
+	want, parseErr := db.ParseUUID("label_id", labelID)
+	at := slices.IndexFunc(labels, func(l Label) bool { return parseErr == nil && l.ID == want.String() })
+	if at < 0 {
+		return Label{}, invalid("unknown_label", "no such label")
 	}
-	return nil
+	return labels[at], nil
 }
 
 // itemOf reads a mail live by id, and gives an empty item when it cannot.
@@ -136,9 +147,11 @@ func (s *Service) AddRule(ctx context.Context, identityID string, in RuleInput) 
 		return WrittenRule{}, invalidTier()
 	}
 	if in.LabelID != "" {
-		if err := s.checkLabel(ctx, identityID, in.LabelID); err != nil {
+		label, err := s.checkLabel(ctx, identityID, in.LabelID)
+		if err != nil {
 			return WrittenRule{}, err
 		}
+		in.LabelID = label.ID
 	}
 	return s.Store.PutRule(ctx, identityID, Rule{Key: key, Kind: kind, Tier: in.Tier, LabelID: in.LabelID})
 }

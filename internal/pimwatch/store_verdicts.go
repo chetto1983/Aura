@@ -330,12 +330,13 @@ func (s *Store) DigestVerdicts(ctx context.Context, identityID string, since, un
 	return verdicts, nil
 }
 
-// AccountVerdicts lists an account's verdicts decided in [since, until), newest first.
-func (s *Store) AccountVerdicts(ctx context.Context, identityID, accountID string, since, until time.Time, limit int) ([]Verdict, error) {
+// AccountVerdicts lists an account's verdicts decided in [since, until), newest first: the ones
+// the person discarded when discarded is true, and the rest when it is false.
+func (s *Store) AccountVerdicts(ctx context.Context, identityID, accountID string, since, until time.Time, limit int, discarded bool) ([]Verdict, error) {
 	verdicts, err := list(ctx, s, identityID, func(q *sqlc.Queries, id pgtype.UUID) ([]sqlc.AuraPimWatchVerdicts, error) {
 		return q.ListPIMWatchAccountVerdicts(ctx, sqlc.ListPIMWatchAccountVerdictsParams{
 			IdentityID: id, AccountID: accountID, Since: timestamp(since), Until: timestamp(until),
-			RowLimit: int32(limit), //nolint:gosec // G115: a caller's small bound.
+			Discarded: discarded, RowLimit: int32(limit), //nolint:gosec // G115: a caller's small bound.
 		})
 	}, verdictFromRow)
 	if err != nil {
@@ -362,8 +363,9 @@ func (s *Store) ExpireVerdicts(ctx context.Context, identityID string, now time.
 }
 
 // Correction is what a person changed about one verdict. An empty Tier leaves the tier, and
-// LabelID is nil when the label stays; an empty LabelID clears it. Discard keeps the mail out of
-// the digest.
+// LabelID is nil when the label stays; an empty LabelID clears it. Discard says that the label set
+// discards: with no tier it sends the mail `later` and out of the digest, and any other correction
+// of the mail rescues it.
 type Correction struct {
 	AccountID string
 	Resource  string
@@ -371,6 +373,28 @@ type Correction struct {
 	Tier      Tier
 	LabelID   *string
 	Discard   bool
+}
+
+// params is the update a correction makes to the verdict it finds. A tier clears the discard, and
+// a label with no tier sets it to what the label says, `later` when it discards.
+func (c Correction) params(id pgtype.UUID, current sqlc.AuraPimWatchVerdicts) sqlc.CorrectPIMWatchVerdictParams {
+	params := sqlc.CorrectPIMWatchVerdictParams{
+		IdentityID: id, AccountID: c.AccountID, Resource: c.Resource, ItemID: c.ItemID,
+		Tier: current.Tier, LabelID: current.LabelID, Discarded: current.Discarded,
+	}
+	if c.LabelID != nil {
+		params.LabelID = optionalUUID(*c.LabelID)
+	}
+	switch {
+	case c.Tier != "":
+		params.Tier, params.Discarded = string(c.Tier), false
+	case c.LabelID != nil:
+		params.Discarded = c.Discard
+		if c.Discard {
+			params.Tier = string(TierLater)
+		}
+	}
+	return params
 }
 
 // ApplyCorrection changes the verdict and, when the sender is known, stores the correction, in one
@@ -384,17 +408,7 @@ func (s *Store) ApplyCorrection(ctx context.Context, identityID, senderKey strin
 		if err != nil {
 			return err
 		}
-		tier, label := current.Tier, current.LabelID
-		if c.Tier != "" {
-			tier = string(c.Tier)
-		}
-		if c.LabelID != nil {
-			label = optionalUUID(*c.LabelID)
-		}
-		row, err := q.CorrectPIMWatchVerdict(ctx, sqlc.CorrectPIMWatchVerdictParams{
-			IdentityID: id, AccountID: c.AccountID, Resource: c.Resource, ItemID: c.ItemID, Tier: tier, LabelID: label,
-			Discarded: c.Discard,
-		})
+		row, err := q.CorrectPIMWatchVerdict(ctx, c.params(id, current))
 		if err != nil {
 			return err
 		}

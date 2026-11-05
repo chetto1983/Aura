@@ -196,7 +196,7 @@ func TestEnablingWithoutASidecarSaysWhy(t *testing.T) {
 	if err := r.service.Enable(context.Background(), r.identity, "home"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
-	if _, err := r.service.Decisions(context.Background(), r.identity, "home", ""); !errors.Is(err, ErrUnavailable) {
+	if _, err := r.service.Decisions(context.Background(), r.identity, "home", "", false); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("decisions: %v", err)
 	}
 }
@@ -439,7 +439,7 @@ func TestDecisionsReadTheDayLive(t *testing.T) {
 	r.commit(rigAccount, r.draft("m1", TierToday, label.ID), r.draft("gone", TierNow, ""))
 	delete(r.pim.items, "gone")
 
-	today, err := r.service.Decisions(ctx, r.identity, rigAccount, "")
+	today, err := r.service.Decisions(ctx, r.identity, rigAccount, "", false)
 	if err != nil {
 		t.Fatalf("decisions: %v", err)
 	}
@@ -461,14 +461,14 @@ func TestDecisionsReadTheDayLive(t *testing.T) {
 	}
 
 	yesterday := r.clock.at.AddDate(0, 0, -1).Format(time.DateOnly)
-	if past, err := r.service.Decisions(ctx, r.identity, rigAccount, yesterday); err != nil || len(past.Lines) != 0 || past.Day != yesterday {
+	if past, err := r.service.Decisions(ctx, r.identity, rigAccount, yesterday, false); err != nil || len(past.Lines) != 0 || past.Day != yesterday {
 		t.Fatalf("yesterday = %+v, %v", past, err)
 	}
-	if _, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026"); !errors.Is(err, ErrInvalid) {
+	if _, err := r.service.Decisions(ctx, r.identity, rigAccount, "01/11/2026", false); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a bad day: %v", err)
 	}
 	r.pim.itemsErr[rigAccount] = transient()
-	if _, err := r.service.Decisions(ctx, r.identity, rigAccount, ""); err == nil {
+	if _, err := r.service.Decisions(ctx, r.identity, rigAccount, "", false); err == nil {
 		t.Fatalf("a failed read reported success")
 	}
 }

@@ -62,8 +62,9 @@ func (f fakeLocale) Location(context.Context, string) *time.Location { return f.
 
 // windowStore is a day of verdicts with no database behind it.
 type windowStore struct {
-	verdicts []Verdict
-	moved    bool
+	verdicts  []Verdict
+	discarded int
+	moved     bool
 }
 
 func (s *windowStore) Settings(context.Context, string) (Settings, error) { return Settings{}, nil }
@@ -71,6 +72,10 @@ func (s *windowStore) Book(context.Context, string) (Book, error)         { retu
 func (s *windowStore) Labels(context.Context, string) ([]Label, error)    { return nil, nil }
 func (s *windowStore) DigestVerdicts(context.Context, string, time.Time, time.Time) ([]Verdict, error) {
 	return s.verdicts, nil
+}
+
+func (s *windowStore) DiscardedInWindow(context.Context, string, time.Time, time.Time) (int, error) {
+	return s.discarded, nil
 }
 
 func (s *windowStore) SetLastDigest(context.Context, string, time.Time) error {
@@ -314,5 +319,30 @@ func TestSweepReportsARosterThatCannotBeRead(t *testing.T) {
 	sweep := Sweep{Identities: staticRoster{err: errExpire}}
 	if _, err := sweep.SweepExpired(context.Background(), time.Now()); !errors.Is(err, errExpire) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTheDigestCountsTheDiscardedMail(t *testing.T) {
+	for lang, want := range map[Lang]string{LangIT: "\nMail scartate: 3.", LangEN: "\nDiscarded mail: 3."} {
+		store := &windowStore{verdicts: dayOf("new", 2, false), discarded: 3}
+		digester := &Digester{Store: store, PIM: &everyItem{}, Locale: fakeLocale{lang, time.UTC}}
+
+		out, err := digester.Run(context.Background(), "identity")
+		if err != nil {
+			t.Fatalf("digest: %v", err)
+		}
+		if !strings.HasSuffix(out.Notice, want) || !strings.HasSuffix(out.Head, want) {
+			t.Fatalf("%s: missing %q at the end of:\n%s\nhead:\n%s", lang, want, out.Notice, out.Head)
+		}
+	}
+}
+
+func TestOnlyDiscardedMailMakesNoDigest(t *testing.T) {
+	store := &windowStore{discarded: 4}
+	digester := &Digester{Store: store, PIM: &everyItem{}, Locale: fakeLocale{LangEN, time.UTC}}
+
+	out, err := digester.Run(context.Background(), "identity")
+	if err != nil || out.Notice != "" || out.Head != "" || !store.moved {
+		t.Fatalf("out %+v, err %v, moved %v", out, err, store.moved)
 	}
 }

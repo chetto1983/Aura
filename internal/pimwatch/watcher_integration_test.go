@@ -127,7 +127,7 @@ func TestABacklogStopsShortOfTheDeadlineAndTheCursorCoversOnlyWhatWasHandled(t *
 	if stopped == "p6" {
 		t.Fatalf("the run reached the end it had no time for")
 	}
-	verdicts, err := r.store.AccountVerdicts(context.Background(), r.identity, rigAccount, r.clock.at.Add(-time.Hour), r.clock.at.Add(time.Hour), 100)
+	verdicts, err := r.store.AccountVerdicts(context.Background(), r.identity, rigAccount, r.clock.at.Add(-time.Hour), r.clock.at.Add(time.Hour), 100, false)
 	if err != nil {
 		t.Fatalf("verdicts: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestABacklogStopsShortOfTheDeadlineAndTheCursorCoversOnlyWhatWasHandled(t *
 	if got := r.cursor(ResourceMail).Value; got != "p6" {
 		t.Fatalf("the next tick stopped at %q", got)
 	}
-	verdicts, err = r.store.AccountVerdicts(context.Background(), r.identity, rigAccount, r.clock.at.Add(-time.Hour), r.clock.at.Add(time.Hour), 100)
+	verdicts, err = r.store.AccountVerdicts(context.Background(), r.identity, rigAccount, r.clock.at.Add(-time.Hour), r.clock.at.Add(time.Hour), 100, false)
 	if err != nil {
 		t.Fatalf("verdicts: %v", err)
 	}

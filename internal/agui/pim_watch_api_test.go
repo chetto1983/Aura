@@ -18,6 +18,9 @@ type fakeWatchService struct {
 	identity string
 	account  string
 	day      string
+	asked    bool
+	count    int
+	rescued  bool
 	status   pimwatch.Status
 	lines    []pimwatch.DecisionLine
 	got      pimwatch.Correction
@@ -54,14 +57,14 @@ func (f *fakeWatchService) RemoveAccount(_ context.Context, _, accountID string)
 	return f.err
 }
 
-func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string) (pimwatch.DayDecisions, error) {
-	f.account, f.day = accountID, day
-	return pimwatch.DayDecisions{Day: "2026-11-02", Lines: f.lines}, f.err
+func (f *fakeWatchService) Decisions(_ context.Context, _, accountID, day string, discarded bool) (pimwatch.DayDecisions, error) {
+	f.account, f.day, f.asked = accountID, day, discarded
+	return pimwatch.DayDecisions{Day: "2026-11-02", Lines: f.lines, Discarded: f.count}, f.err
 }
 
 func (f *fakeWatchService) Correct(_ context.Context, _ string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error) {
 	f.got = c
-	return pimwatch.Verdict{Tier: c.Tier}, f.rule, f.err
+	return pimwatch.Verdict{Tier: c.Tier, Discarded: f.rescued}, f.rule, f.err
 }
 
 func (f *fakeWatchService) Rules(context.Context, string) ([]pimwatch.Rule, error) {
@@ -232,6 +235,29 @@ func TestMailWatchDecisionsCarryTheCentroidWhereItDisagrees(t *testing.T) {
 	body := mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions", "").Body.String()
 	if strings.Count(body, `"centroid_tier"`) != 1 || !strings.Contains(body, `"centroid_tier":"now"`) {
 		t.Fatalf("body = %s, want one centroid_tier, now", body)
+	}
+}
+
+func TestMailWatchDecisionsListTheDiscarded(t *testing.T) {
+	service := &fakeWatchService{count: 7, lines: []pimwatch.DecisionLine{
+		{AccountID: "work", Resource: pimwatch.ResourceMail, ItemID: "m1", Tier: pimwatch.TierLater, Discarded: true},
+	}}
+	kept := decodeWatch[mailWatchDayJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions", ""))
+	if service.asked || kept.Discarded != 7 {
+		t.Fatalf("asked %v, count %d", service.asked, kept.Discarded)
+	}
+	out := decodeWatch[mailWatchDayJSON](t, mailWatchCall(t, service, http.MethodGet, "/api/mail-watch/accounts/work/decisions?discarded=1", ""))
+	if !service.asked || len(out.Decisions) != 1 || !out.Decisions[0].Discarded {
+		t.Fatalf("asked %v, decisions %+v", service.asked, out.Decisions)
+	}
+}
+
+func TestMailWatchCorrectReportsADiscard(t *testing.T) {
+	service := &fakeWatchService{rescued: true}
+	out := decodeWatch[mailWatchCorrectedJSON](t, mailWatchCall(t, service, http.MethodPost,
+		"/api/mail-watch/accounts/work/decisions/correct", `{"item_id":"m1","label_id":"l1"}`))
+	if !out.Discarded {
+		t.Fatalf("out = %+v", out)
 	}
 }
 

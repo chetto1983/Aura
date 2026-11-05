@@ -110,6 +110,10 @@ type Querier interface {
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
 	// What the account pushed since this local midnight, mail and calendar together.
 	CountPIMWatchAlertsOfDay(ctx context.Context, arg CountPIMWatchAlertsOfDayParams) (int32, error)
+	// The discarded mail of a digest's window, counted on the window the digest lists.
+	CountPIMWatchDiscardedInWindow(ctx context.Context, arg CountPIMWatchDiscardedInWindowParams) (int64, error)
+	// The discarded mail of a cockpit day, which the day's list leaves out and its toggle shows.
+	CountPIMWatchDiscardedOfDay(ctx context.Context, arg CountPIMWatchDiscardedOfDayParams) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
