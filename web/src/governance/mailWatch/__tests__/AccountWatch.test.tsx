@@ -299,3 +299,48 @@ describe('a deployment that cannot watch', () => {
     expect(container.textContent).toBe('');
   });
 });
+
+describe('the decision model on an account', () => {
+  const CONSENT = 'Let the OpenRouter decision model read this account';
+
+  it.each([['local'], ['']] as const)('hides the consent on the %s route', async (route) => {
+    server.on(`GET ${STATUS}`, () => ({ body: watchStatus({ decide_route: route }) }));
+    renderWatch(<AccountWatch account={PIM} />);
+    await theSwitch();
+    expect(screen.queryByRole('switch', { name: CONSENT })).toBeNull();
+    expect(screen.queryByText(/sent with a request not to keep them/)).toBeNull();
+  });
+
+  it('the consent switch sends on:true', async () => {
+    server.on(`GET ${STATUS}`, () => ({
+      body: watchStatus({
+        decide_route: 'openrouter',
+        accounts: [account({ cloud_decide: false })],
+      }),
+    }));
+    server.on('PUT /api/mail-watch/accounts/work/cloud-decide', () => ({
+      body: { cloud_decide: true },
+    }));
+    renderWatch(<AccountWatch account={PIM} />);
+    const consent = await screen.findByRole('switch', { name: CONSENT });
+    expect(consent.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText(/sent with a request not to keep them/)).toBeTruthy();
+    fireEvent.click(consent);
+    await waitFor(() => {
+      expect(server.writes('PUT', '/api/mail-watch/accounts/work/cloud-decide')).toHaveLength(1);
+    });
+    expect(server.writes('PUT', '/api/mail-watch/accounts/work/cloud-decide')[0]?.body).toEqual({
+      on: true,
+    });
+  });
+
+  it("shows the model's last failure", async () => {
+    const failedAt = '2026-11-04T08:30:00Z';
+    statusWith(account({ decide_error: 'rejected', decide_failed_at: failedAt }));
+    renderWatch(<AccountWatch account={PIM} />);
+    const line = await screen.findByText(/The model has not answered since/);
+    expect(line.textContent).toBe(
+      `The model has not answered since ${clockTime(failedAt, 'en')} (OpenRouter refused the request)`,
+    );
+  });
+});

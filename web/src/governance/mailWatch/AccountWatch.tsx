@@ -12,7 +12,7 @@ import {
   pausedSentence,
 } from './mailWatchLogic';
 import { MailWatchDialog } from './MailWatchDialog';
-import { useMailWatchStatus, useWatchToggle } from './useMailWatch';
+import { useCloudDecide, useMailWatchStatus, useWatchToggle } from './useMailWatch';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -30,10 +30,11 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
   const stateId = useId();
   const status = useMailWatchStatus();
   const toggle = useWatchToggle(account.id);
+  const consent = useCloudDecide(account.id);
   const [dayOpen, setDayOpen] = useState(false);
 
   if (status.data === undefined) return null;
-  const { configured, settings, accounts } = status.data;
+  const { configured, settings, accounts, decide_route: decideRoute } = status.data;
   const watch = accounts.find((entry) => entry.account_id === account.id);
   if ((!configured || account.linked === false) && watch === undefined) return null;
   const name = account.displayName || account.id;
@@ -87,6 +88,20 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
         )}
         <p className="text-[13px] text-text-muted">{t('governance.mailWatch.switch.scope')}</p>
       </div>
+      {watch === undefined || decideRoute !== 'openrouter' ? null : (
+        <CloudConsent
+          checked={consent.isPending ? consent.variables : watch.cloud_decide}
+          pending={consent.isPending}
+          onChange={(next) => {
+            consent.mutate(next);
+          }}
+        />
+      )}
+      {consent.isError ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {errorSentence(consent.error, t)}
+        </p>
+      ) : null}
       {toggle.isError ? (
         <p role="alert" className="text-[13px] text-danger">
           {errorSentence(toggle.error, t)}
@@ -142,6 +157,7 @@ function WatchState({ watch, cap, resuming, onResume }: WatchStateProps) {
       {[...failing, ...refused].map((entry) => (
         <FailingLine key={entry.resource} entry={entry} />
       ))}
+      {watch.decide_error ? <DecideFailure watch={watch} /> : null}
       {notOffered.map((entry) => (
         <p key={entry.resource} className="text-[13px] text-text-muted">
           {t('governance.mailWatch.state.unsupported', {
@@ -190,6 +206,54 @@ function FailingLine({ entry }: { readonly entry: MailWatchResource }) {
           {since === null ? name : `${name}, ${failingSince(since, now, i18n.language, t)}`}:
         </strong>{' '}
         {failureSentence(entry.last_error ?? '', t)}
+      </span>
+    </p>
+  );
+}
+
+interface CloudConsentProps {
+  readonly checked: boolean;
+  readonly pending: boolean;
+  readonly onChange: (next: boolean) => void;
+}
+
+function CloudConsent({ checked, pending, onChange }: CloudConsentProps) {
+  const { t } = useTranslation();
+  const switchId = useId();
+  const hintId = useId();
+  return (
+    <div className="flex flex-col">
+      <Label htmlFor={switchId} className="min-h-11 min-w-0 cursor-pointer gap-3">
+        <Switch
+          id={switchId}
+          checked={checked}
+          disabled={pending}
+          aria-describedby={hintId}
+          onCheckedChange={onChange}
+          className="data-[state=checked]:bg-info"
+        />
+        <span className="min-w-0">{t('governance.mailWatch.decide.cloud.label')}</span>
+        {pending ? <Spinner /> : null}
+      </Label>
+      <p id={hintId} className="text-[13px] text-text-muted">
+        {t('governance.mailWatch.decide.cloud.hint')}
+      </p>
+    </div>
+  );
+}
+
+function DecideFailure({ watch }: { readonly watch: MailWatchAccount }) {
+  const { t, i18n } = useTranslation();
+  const reason = watch.decide_error ?? '';
+  return (
+    <p className="flex items-start gap-1.5 text-[13px] text-warning">
+      <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        {t('governance.mailWatch.decide.failing', {
+          time:
+            watch.decide_failed_at === null ? '' : clockTime(watch.decide_failed_at, i18n.language),
+          reason: t(`governance.mailWatch.decide.error.${reason}`, { defaultValue: reason }),
+        })}
       </span>
     </p>
   );

@@ -21,6 +21,7 @@ import {
   removeLabel,
   removeRule,
   saveMailWatchSettings,
+  setCloudDecide,
   updateLabel,
   type MailWatchDay,
   type MailWatchDecision,
@@ -97,6 +98,14 @@ export function useWatchToggle(accountId: string) {
   return useMutation({
     mutationFn: (on: boolean) => (on ? enableMailWatch(accountId) : disableMailWatch(accountId)),
     // Returned, so the switch stays busy until the status it shows has caught up.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
+  });
+}
+
+export function useCloudDecide(accountId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => setCloudDecide(accountId, on),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
   });
 }

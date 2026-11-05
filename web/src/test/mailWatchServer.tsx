@@ -84,6 +84,8 @@ export function account(fields: Partial<MailWatchAccount> = {}): MailWatchAccoun
     next_run_at: '2026-11-01T14:35:00Z',
     alerts_today: 2,
     resources: [],
+    cloud_decide: false,
+    decide_failed_at: null,
     ...fields,
   };
 }
@@ -98,6 +100,7 @@ export function watchStatus(fields: Partial<MailWatchStatus> = {}): MailWatchSta
       last_digest_at: null,
     },
     accounts: [account()],
+    decide_route: '',
     ...fields,
   };
 }

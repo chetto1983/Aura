@@ -39,6 +39,11 @@ export interface MailWatchAccount {
   readonly next_run_at: string | null;
   readonly alerts_today: number;
   readonly resources: readonly MailWatchResource[];
+  /** The person's consent for the OpenRouter decision model to read this account. */
+  readonly cloud_decide: boolean;
+  /** The class of the model's last failure, a fixed code for the UI to translate. */
+  readonly decide_error?: string;
+  readonly decide_failed_at: string | null;
 }
 
 export interface MailWatchStatus {
@@ -47,6 +52,8 @@ export interface MailWatchStatus {
   readonly settings: MailWatchSettings;
   /** The accounts with a live watch, paused ones included. An account not listed is not watched. */
   readonly accounts: readonly MailWatchAccount[];
+  /** Where the decision model runs; empty when it is off or its route cannot be read. */
+  readonly decide_route: '' | 'local' | 'openrouter';
 }
 
 export interface MailWatchDecision {
@@ -162,6 +169,10 @@ export async function enableMailWatch(accountId: string): Promise<void> {
 
 export async function disableMailWatch(accountId: string): Promise<void> {
   await sendJSON<unknown>('POST', `${accountPath(accountId)}/disable`);
+}
+
+export async function setCloudDecide(accountId: string, on: boolean): Promise<void> {
+  await sendJSON<unknown>('PUT', `${accountPath(accountId)}/cloud-decide`, { on });
 }
 
 /** A day of decisions, newest first: the discarded mail's list, or the list of all the rest. A
