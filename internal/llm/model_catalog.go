@@ -172,8 +172,8 @@ func ollamaCloudAlias(name string) string {
 }
 
 // FetchOutputModalityCatalog lists the models OpenRouter publishes for one output modality:
-// "transcription" (speech-to-text), "speech" (text-to-speech) or "embeddings". Those ids are
-// absent from the default /models list, which is text-only; measured 2026-09-19, the filter
+// "transcription" (speech-to-text), "speech" (text-to-speech), "embeddings" or "decisions". Those
+// ids are absent from the default /models list, which is text-only; measured 2026-09-19, the filter
 // returns 21 and 18 models for the first two. Their rows carry a prompt rate with no unit in the
 // payload, so no price is read: the picker shows the id rather than a number whose unit it would
 // have to guess. The context windows are read, since the embedding picker filters on them.

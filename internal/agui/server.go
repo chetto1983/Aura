@@ -177,6 +177,7 @@ type Server struct {
 	modelCatalog    modelCatalogFetcher
 	mediaCatalog    MediaCatalogLister
 	modalityCatalog ModalityCatalogLister
+	decideSidecar   bool // a local decision sidecar was installed (SetDecideLocalSidecar)
 	// studio serves the cockpit Studio's generation and history routes (studio_api.go); nil
 	// until SetStudio, and those routes then answer 503. studioLibrary serves the pickers'
 	// library route the same way, on its own because it needs no media provider.

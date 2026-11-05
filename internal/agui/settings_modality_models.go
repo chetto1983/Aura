@@ -28,7 +28,12 @@ const (
 	modalityTranscription = "transcription"
 	modalitySpeech        = "speech"
 	modalityEmbeddings    = "embeddings"
+	modalityDecisions     = "decisions"
 )
+
+// SetDecideLocalSidecar says whether the installer put a decision sidecar on this appliance: the
+// boot snapshot of AURA_DECIDE_BASE_URL, which no settings row can change.
+func (s *Server) SetDecideLocalSidecar(installed bool) { s.decideSidecar = installed }
 
 // SetModalityCatalog wires the output-modality catalogue. Until set, every route answers 503.
 func (s *Server) SetModalityCatalog(lister ModalityCatalogLister) { s.modalityCatalog = lister }
@@ -39,6 +44,14 @@ func (s *Server) handleListTranscriptionModels(w http.ResponseWriter, r *http.Re
 
 func (s *Server) handleListSpeechModels(w http.ResponseWriter, r *http.Request) {
 	s.listModalityModels(w, r, modalitySpeech)
+}
+
+// handleListDecisionModels lists the models OpenRouter publishes with the decisions output, and
+// says whether the Locale option exists on this appliance.
+func (s *Server) handleListDecisionModels(w http.ResponseWriter, r *http.Request) {
+	s.writeModalityRows(w, modalityDecisions, func() ([]llm.ModelCatalogEntry, error) {
+		return s.modalityCatalog.List(r.Context(), modalityDecisions)
+	}, func(dto *catalogDTO) { dto.LocalSidecar = &s.decideSidecar })
 }
 
 func (s *Server) handleListEmbeddingModels(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +104,9 @@ func (s *Server) listModalityModels(w http.ResponseWriter, r *http.Request, moda
 	})
 }
 
-func (s *Server) writeModalityRows(w http.ResponseWriter, modality string, list func() ([]llm.ModelCatalogEntry, error)) {
+func (s *Server) writeModalityRows(
+	w http.ResponseWriter, modality string, list func() ([]llm.ModelCatalogEntry, error), annotate ...func(*catalogDTO),
+) {
 	writeCatalogRows(w, s.modalityCatalog != nil, "modality", list,
 		func(model llm.ModelCatalogEntry) (catalogModelDTO, bool) {
 			row := catalogModelDTO{ID: model.ID, Kind: modality}
@@ -107,5 +122,5 @@ func (s *Server) writeModalityRows(w http.ResponseWriter, modality string, list 
 			}
 			row.Voices = model.SupportedVoices
 			return row, true
-		})
+		}, annotate...)
 }

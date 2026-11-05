@@ -34,6 +34,8 @@ type catalogModelDTO struct {
 
 type catalogDTO struct {
 	Models []catalogModelDTO `json:"models"`
+	// LocalSidecar is the decisions catalogue's own answer; no other catalogue sets it.
+	LocalSidecar *bool `json:"local_sidecar,omitempty"`
 }
 
 // writeCatalogRows answers one picker route. `wired` is whether the composition root
@@ -47,6 +49,7 @@ func writeCatalogRows[M any](
 	name string,
 	list func() ([]M, error),
 	row func(M) (catalogModelDTO, bool),
+	annotate ...func(*catalogDTO),
 ) {
 	if !wired {
 		writeJSONStatus(w, http.StatusServiceUnavailable,
@@ -65,6 +68,9 @@ func writeCatalogRows[M any](
 		if dto, offer := row(model); offer {
 			out.Models = append(out.Models, dto)
 		}
+	}
+	for _, set := range annotate {
+		set(&out)
 	}
 	writeJSON(w, out)
 }

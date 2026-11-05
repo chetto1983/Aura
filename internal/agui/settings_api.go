@@ -127,6 +127,7 @@ func settingsCatalogHandlers(s *Server) map[string]http.HandlerFunc {
 		"GET /api/settings/transcription-models": s.handleListTranscriptionModels,
 		"GET /api/settings/speech-models":        s.handleListSpeechModels,
 		"GET /api/settings/embeddings-models":    s.handleListEmbeddingModels,
+		"GET /api/settings/decisions-models":     s.handleListDecisionModels,
 	}
 }
 

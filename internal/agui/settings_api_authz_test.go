@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 func TestMemberCannotChangeTheRoute(t *testing.T) {
@@ -212,5 +213,27 @@ func TestCallTimeSettingsReadAsLive(t *testing.T) {
 	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
 	if item := settingItemByKey(t, rr.Body.Bytes(), "AURA_OPENROUTER_MANAGEMENT_KEY"); item.Applied != appliedLive {
 		t.Fatalf("applied = %q, want live: the key is read on every call", item.Applied)
+	}
+}
+
+// The decision model is read on every tick, so its row is live at once; the sidecar's address is
+// the installer's environment, so no row can name it.
+func TestDecideModelIsALiveSettingAndTheAddressIsNoSetting(t *testing.T) {
+	if !isCallTimeSetting("AURA_DECIDE_MODEL") {
+		t.Fatal("AURA_DECIDE_MODEL must be a call-time setting: the tick reads it fresh")
+	}
+	if _, ok := settings.AllowedKeys["AURA_DECIDE_MODEL"]; !ok {
+		t.Fatal("AURA_DECIDE_MODEL is not an allowed key")
+	}
+	if _, ok := settings.AllowedKeys["AURA_DECIDE_BASE_URL"]; ok || isCallTimeSetting("AURA_DECIDE_BASE_URL") {
+		t.Fatal("AURA_DECIDE_BASE_URL is a setting: the address must come from the environment only")
+	}
+
+	store := &fakeSettingsStore{}
+	s := &Server{settings: store, idAdmin: adminCaps("op-1")}
+	rr, r := putReq(t, "AURA_DECIDE_BASE_URL", "http://attacker.example:1", "op-1")
+	s.handlePutSetting(rr, r)
+	if rr.Code != http.StatusBadRequest || len(store.upserted) != 0 {
+		t.Fatalf("status = %d, upserted %v, want 400 and nothing written", rr.Code, store.upserted)
 	}
 }

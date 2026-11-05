@@ -10,7 +10,8 @@
 // environment (secret rows never reach it) BEFORE config loading, so the existing env
 // readers pick them up with NO per-field mapping; DB values WIN over pre-set env.
 // The primary LLM profile is also published to the live runtime by the Settings API;
-// the remaining backend knobs still take effect on restart.
+// the remaining backend knobs still take effect on restart, except AURA_DECIDE_MODEL, which the
+// watch tick reads fresh (DecideRoute).
 //
 // The overlay applies ONLY an allowlist of product configuration keys, so a settings row
 // can never clobber connection/security env (POSTGRES_*, ARCADEDB_PASSWORD,
@@ -95,6 +96,7 @@ var AllowedKeys = map[string]KeyMeta{
 	// minted, never overlaid into a running config.
 	"AURA_OPENROUTER_SERVICES_CAP_USD":  {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},
 	"AURA_EMBED_MODEL":                  {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_DECIDE_MODEL":                 {Kind: KindString, Label: "Decision model"},
 	"AURA_EMBED_BASE_URL":               {Kind: KindString, Label: "Embedding base URL"},
 	"AURA_EMBED_CLOUD_BASE_URL":         {Kind: KindString, Label: "Embedding cloud base URL"},
 	"AURA_EMBED_CLOUD_API_KEY":          {Secret: true, Kind: KindString, Label: "Embedding endpoint API key"},
