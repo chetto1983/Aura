@@ -212,3 +212,43 @@ func (s *Store) SetCloudDecide(ctx context.Context, identityID, accountID string
 	}
 	return nil
 }
+
+// ModelRow is one mail the decision model's report counts: what stands now, the ladder's answer and
+// the model's. ModelTier is the tier its label gave, "" when it gave none.
+type ModelRow struct {
+	Tier, LadderTier, ModelTier                         Tier
+	By, LadderBy                                        DecidedBy
+	LabelID, ModelLabelID, ModelName                    string
+	ModelAsked, ModelDiscarded, ModelSkipped, Discarded bool
+	Notified                                            bool
+	ModelOptions                                        int
+}
+
+// ModelRows reads the mail decided since then that carries a ladder answer. A zero since reads them
+// all, as ShadowRows does.
+func (s *Store) ModelRows(ctx context.Context, identityID string, since time.Time) ([]ModelRow, error) {
+	var out []ModelRow
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		rows, err := q.ListPIMWatchModelRows(ctx, sqlc.ListPIMWatchModelRowsParams{
+			IdentityID: id, Since: pgtype.Timestamptz{Time: since.UTC(), Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		out = make([]ModelRow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, ModelRow{
+				Tier: Tier(r.Tier), LadderTier: Tier(r.LadderTier.String), ModelTier: Tier(r.ModelTier.String),
+				By: DecidedBy(r.DecidedBy), LadderBy: DecidedBy(r.LadderBy.String),
+				LabelID: r.LabelID.String(), ModelLabelID: r.ModelLabelID.String(), ModelName: r.ModelName.String,
+				ModelAsked: r.ModelProbability.Valid, ModelDiscarded: r.ModelDiscarded, ModelSkipped: r.ModelSkipped,
+				Discarded: r.Discarded, Notified: r.Notified, ModelOptions: int(r.ModelOptions.Int16),
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read pim watch model rows: %w", err)
+	}
+	return out, nil
+}

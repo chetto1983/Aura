@@ -1046,6 +1046,70 @@ func (q *Queries) ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID
 	return items, nil
 }
 
+const listPIMWatchModelRows = `-- name: ListPIMWatchModelRows :many
+SELECT tier, decided_by, ladder_tier, ladder_by, label_id, model_label_id, model_probability, model_name, model_tier,
+    model_discarded, model_options, model_skipped, discarded, notified
+FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= $2
+`
+
+type ListPIMWatchModelRowsParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+}
+
+type ListPIMWatchModelRowsRow struct {
+	Tier             string        `json:"tier"`
+	DecidedBy        string        `json:"decided_by"`
+	LadderTier       pgtype.Text   `json:"ladder_tier"`
+	LadderBy         pgtype.Text   `json:"ladder_by"`
+	LabelID          pgtype.UUID   `json:"label_id"`
+	ModelLabelID     pgtype.UUID   `json:"model_label_id"`
+	ModelProbability pgtype.Float8 `json:"model_probability"`
+	ModelName        pgtype.Text   `json:"model_name"`
+	ModelTier        pgtype.Text   `json:"model_tier"`
+	ModelDiscarded   bool          `json:"model_discarded"`
+	ModelOptions     pgtype.Int2   `json:"model_options"`
+	ModelSkipped     bool          `json:"model_skipped"`
+	Discarded        bool          `json:"discarded"`
+	Notified         bool          `json:"notified"`
+}
+
+func (q *Queries) ListPIMWatchModelRows(ctx context.Context, arg ListPIMWatchModelRowsParams) ([]ListPIMWatchModelRowsRow, error) {
+	rows, err := q.db.Query(ctx, listPIMWatchModelRows, arg.IdentityID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPIMWatchModelRowsRow{}
+	for rows.Next() {
+		var i ListPIMWatchModelRowsRow
+		if err := rows.Scan(
+			&i.Tier,
+			&i.DecidedBy,
+			&i.LadderTier,
+			&i.LadderBy,
+			&i.LabelID,
+			&i.ModelLabelID,
+			&i.ModelProbability,
+			&i.ModelName,
+			&i.ModelTier,
+			&i.ModelDiscarded,
+			&i.ModelOptions,
+			&i.ModelSkipped,
+			&i.Discarded,
+			&i.Notified,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPIMWatchOwedAlerts = `-- name: ListPIMWatchOwedAlerts :many
 SELECT identity_id, account_id, resource, item_id, calendar_id, tier, label_id, decided_by, decided_at, auth_failed, fingerprint, event_start, event_all_day, event_self, event_change, alert_run_id, alerted_at, notified, ladder_tier, ladder_by, centroid_tier, centroid_margin, sender_memory_tier, written_to, provider_important, bulk, model_label_id, model_probability, model_name, model_tier, model_discarded, model_options, model_skipped, discarded FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND account_id = $2 AND alert_run_id IS NOT NULL AND NOT notified

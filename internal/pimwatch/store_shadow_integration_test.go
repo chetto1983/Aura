@@ -195,3 +195,55 @@ func TestShadowRowsReadOnlyMailWithALadderAnswer(t *testing.T) {
 		t.Fatalf("row = %+v", got)
 	}
 }
+
+func TestModelRowsReadOnlyMailWithALadderAnswer(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Pubblicità", Tier: TierLater}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.commit(rigAccount,
+		VerdictDraft{
+			ItemID:   "asked",
+			Ladder:   Decision{Tier: TierToday, By: ByDefault},
+			Decision: Decision{Tier: TierNow, LabelID: label.ID, By: ByModel},
+			Model:    &ModelAnswer{LabelID: label.ID, Probability: 0.9, Name: decideModel, Options: 6, Applied: true},
+		},
+		VerdictDraft{ItemID: "skipped", Decision: Decision{Tier: TierToday, By: ByDefault}, ModelSkipped: true},
+		VerdictDraft{ItemID: "rules", Decision: Decision{Tier: TierLater, By: ByDefault}},
+	)
+	if _, err := r.store.CommitPage(ctx, r.identity, PageCommit{
+		AccountID: rigAccount, Resource: ResourceCalendar, Cursor: "c-event", Now: r.clock.at, DayStart: r.clock.at,
+		Drafts: []VerdictDraft{{ItemID: "e1", Decision: Decision{Tier: TierToday, By: ByCalendar}, Event: true, Fingerprint: "f"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := r.store.ModelRows(ctx, r.identity, r.clock.at.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v, want the three mails", rows)
+	}
+	var asked, skipped, rules int
+	for _, row := range rows {
+		switch {
+		case row.ModelAsked:
+			asked++
+			if row.Tier != TierNow || row.LadderTier != TierToday || row.ModelTier != TierNow || row.By != ByModel ||
+				row.LadderBy != ByDefault || row.LabelID != label.ID || row.ModelLabelID != label.ID ||
+				row.ModelName != decideModel || row.ModelOptions != 6 || row.ModelDiscarded || row.Discarded {
+				t.Fatalf("asked row = %+v", row)
+			}
+		case row.ModelSkipped:
+			skipped++
+		default:
+			rules++
+		}
+	}
+	if asked != 1 || skipped != 1 || rules != 1 {
+		t.Fatalf("asked %d, skipped %d, rules %d", asked, skipped, rules)
+	}
+}

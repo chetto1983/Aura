@@ -324,6 +324,12 @@ SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin,
 FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= @since;
 
+-- name: ListPIMWatchModelRows :many
+SELECT tier, decided_by, ladder_tier, ladder_by, label_id, model_label_id, model_probability, model_name, model_tier,
+    model_discarded, model_options, model_skipped, discarded, notified
+FROM aura.pim_watch_verdicts
+WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= @since;
+
 -- name: GetPIMWatchAccount :one
 SELECT * FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2;
 

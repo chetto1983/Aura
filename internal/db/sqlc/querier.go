@@ -543,6 +543,7 @@ type Querier interface {
 	ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchCursors, error)
 	ListPIMWatchDigestVerdicts(ctx context.Context, arg ListPIMWatchDigestVerdictsParams) ([]AuraPimWatchVerdicts, error)
 	ListPIMWatchLabels(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchLabels, error)
+	ListPIMWatchModelRows(ctx context.Context, arg ListPIMWatchModelRowsParams) ([]ListPIMWatchModelRowsRow, error)
 	ListPIMWatchOwedAlerts(ctx context.Context, arg ListPIMWatchOwedAlertsParams) ([]AuraPimWatchVerdicts, error)
 	ListPIMWatchPriorEvents(ctx context.Context, arg ListPIMWatchPriorEventsParams) ([]ListPIMWatchPriorEventsRow, error)
 	ListPIMWatchRules(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchRules, error)
