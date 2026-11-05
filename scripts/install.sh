@@ -529,6 +529,7 @@ download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
 download_file scripts/install_env.sh scripts/install_env.sh
 download_file scripts/appliance_posture.sh scripts/appliance_posture.sh
 download_file scripts/fetch_embedding_model.sh scripts/fetch_embedding_model.sh
+download_file scripts/lib/pinned_fetch.sh scripts/lib/pinned_fetch.sh
 download_file scripts/fetch_decide_model.sh scripts/fetch_decide_model.sh
 download_file scripts/observability_sidecar_check.sh scripts/observability_sidecar_check.sh
 download_file observability/grafana/provisioning/alerting/aura.yml observability/grafana/provisioning/alerting/aura.yml

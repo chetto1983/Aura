@@ -44,7 +44,7 @@ help:
 	@echo "make agent-memory-eval-contract — deterministic evaluator; never claims a live MRS"
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make sandbox-images — build the per-identity box + egress images the daemon needs"
-	@echo "make installer-artifact — pack install.sh + its 36 payload files into one makeself .run"
+	@echo "make installer-artifact — pack install.sh + its 37 payload files into one makeself .run"
 	@echo "make payload-manifest — freeze scripts/payload_manifest.txt; run after touching a payload file"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
@@ -344,14 +344,14 @@ sandbox-images:
 sandbox-image-contract: sandbox-images
 	bash scripts/sandbox_image_contract_test.sh
 
-# Packs install.sh and the 36 files it installs into one self-extracting archive, so an
+# Packs install.sh and the 37 files it installs into one self-extracting archive, so an
 # appliance install fetches nothing from a moving git ref. Needs makeself (WSL/Linux only;
 # apt-get install -y makeself).
 installer-artifact:
 	bash scripts/build_installer.sh dist/install-appliance.run
 
 # Refreshes the hash inventory that scripts/payload_manifest_gate.sh checks. Run this after
-# touching any of the 36 payload files and commit the result -- the gate fails closed
+# touching any of the 37 payload files and commit the result -- the gate fails closed
 # otherwise. Refuses if a payload file is dirty in git (freezing uncommitted bytes into the
 # manifest would make CI red for a reason nobody could explain later).
 payload-manifest:
