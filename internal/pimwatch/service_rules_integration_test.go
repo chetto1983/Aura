@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func correctionOf(id string, tier Tier) Correction {
@@ -325,6 +327,31 @@ func TestLabelsAreManagedThroughTheService(t *testing.T) {
 		if _, err := r.service.UpdateLabel(ctx, r.identity, first.ID, bad.name, bad.tier); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("update %+v: %v", bad, err)
 		}
+	}
+}
+
+func TestUpdatingALabelKeepsItsDescriptionAndDiscard(t *testing.T) {
+	r := newServiceRig(t)
+	ctx := context.Background()
+	label, err := r.store.AddLabel(ctx, r.identity, LabelInput{
+		Name: "Cliente", Description: "Customers asking for quotes.", Discard: true,
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, "Clienti", TierNow); err != nil {
+		t.Fatal(err)
+	}
+	labels, err := r.store.Labels(ctx, r.identity)
+	if err != nil || len(labels) != 1 {
+		t.Fatalf("labels = %+v, %v", labels, err)
+	}
+	want := Label{ID: label.ID, Name: "Clienti", Tier: TierNow, Description: "Customers asking for quotes.", Discard: true}
+	if labels[0] != want {
+		t.Fatalf("label = %+v, want %+v", labels[0], want)
+	}
+	if _, err := r.service.UpdateLabel(ctx, r.identity, uuid.NewString(), "x", ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown label: %v", err)
 	}
 }
 

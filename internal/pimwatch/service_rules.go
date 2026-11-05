@@ -208,12 +208,22 @@ func (s *Service) AddLabel(ctx context.Context, identityID, name string, tier Ti
 	return s.Store.AddLabel(ctx, identityID, LabelInput{Name: strings.TrimSpace(name), Tier: tier}, position)
 }
 
-// UpdateLabel renames a label and sets its tier.
+// UpdateLabel renames a label and sets its tier. The description and discard it already has stay.
 func (s *Service) UpdateLabel(ctx context.Context, identityID, labelID, name string, tier Tier) (Label, error) {
 	if err := checkLabelInput(name, tier); err != nil {
 		return Label{}, err
 	}
-	return s.Store.UpdateLabel(ctx, identityID, labelID, LabelInput{Name: strings.TrimSpace(name), Tier: tier})
+	labels, err := s.Store.Labels(ctx, identityID)
+	if err != nil {
+		return Label{}, err
+	}
+	i := slices.IndexFunc(labels, func(l Label) bool { return l.ID == labelID })
+	if i < 0 {
+		return Label{}, fmt.Errorf("update label: %w", ErrNotFound)
+	}
+	return s.Store.UpdateLabel(ctx, identityID, labelID, LabelInput{
+		Name: strings.TrimSpace(name), Tier: tier, Description: labels[i].Description, Discard: labels[i].Discard,
+	})
 }
 
 // labelNameRunes is what the labels table's CHECK allows.
