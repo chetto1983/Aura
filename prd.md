@@ -2905,9 +2905,20 @@ not a correct future calendar or snapshot implementation. The
 [follow-up design](docs/superpowers/specs/2026-11-03-broker-complete-sessions-snapshots-design.md)
 requires one completed-session default, explicit uncertainty for unmatched latest bars, and
 one immutable full-OHLCV acquisition reused by reports without further provider access.
-Reuse the existing broker audit store and Aura's identity-scoped `PLUGIN_DATA`; the current
-broker home selector ignores that variable, leaving its default home ephemeral. Preserve
+Reuse the existing broker audit store and Aura's identity-scoped `PLUGIN_DATA`; the 0.3.1
+broker home selector ignored that variable, leaving its default home ephemeral. Preserve
 existing home files with collision checks before upgrading. Do not add another cache engine.
+
+The November 5 acceptance installed broker 0.4.0, packaging `84d01b1` / source `831e466`:
+316 offline regressions and real provider acquisition passed. Five report paths replayed
+one dataset in fresh provider-forbidden MCP processes, preserving the legacy archive hash;
+the actual Aura agent used one snapshot for standard/custom/risk with matching values.
+The home selector now honors identity-scoped `PLUGIN_DATA`. Actual installed discovery takes
+3.79 s cached online or 2.33 s with uv offline, with 15 tools and no stdout noise. The
+conservative metadata policy can omit an already closed latest row; it reports uncertainty
+instead of inventing an exchange schedule. These samples do not establish latency percentiles
+or a global error/null taxonomy. See the
+[acceptance evidence](docs/superpowers/verification/2026-11-03-broker-completed-sessions-snapshots.md).
 
 **Self-installing box servers replace the install line, 2026-09-26.** Following that
 measurement, `runtime.install`, its record, lock and `--install` were removed: a box server

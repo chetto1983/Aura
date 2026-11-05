@@ -35,10 +35,10 @@ tool reusing existing audit storage, and provider-free replay in the existing re
 `hooks.py`, `server.py` and focused tests.
 **Interfaces:** history/FX acquisition takes the explicit policy; reports carry session metadata.
 
-- [ ] Write failing fixtures for the session matrix and same-frame report disagreement.
-- [ ] Implement shared selection using existing metadata keys without lazy provider fetches.
-- [ ] Propagate flags to reports/FX; preserve live hooks through explicit opt-in; remove UTC cutoff.
-- [ ] Run full offline tests/lint and commit only this coherent policy change.
+- [x] Write failing fixtures for the session matrix and same-frame report disagreement.
+- [x] Implement shared selection using existing metadata keys without lazy provider fetches.
+- [x] Propagate flags to reports/FX; preserve live hooks through explicit opt-in; remove UTC cutoff.
+- [x] Run full offline tests/lint and commit only this coherent policy change.
 
 ### Task 2: Immutable snapshot acquisition and replay
 
@@ -46,20 +46,20 @@ tool reusing existing audit storage, and provider-free replay in the existing re
 and tests. The new module owns serialization/coverage validation, not a second storage engine.
 **Interfaces:** market_snapshot returns a typed object hash; reports consume it without provider I/O.
 
-- [ ] Write failing storage-precedence, exact-roundtrip, no-network replay and conflict tests.
-- [ ] Reuse audit selectors/put/read; add the explicit acquisition tool and report snapshot inputs.
-- [ ] Test same-snapshot standard/custom and SPY invariants, archive integrity and 15-tool lazy discovery.
-- [ ] Run full offline tests/lint/build and commit the dataset/replay contract.
+- [x] Write failing storage-precedence, exact-roundtrip, no-network replay and conflict tests.
+- [x] Reuse audit selectors/put/read; add the explicit acquisition tool and report snapshot inputs.
+- [x] Test same-snapshot standard/custom and SPY invariants, archive integrity and 15-tool lazy discovery.
+- [x] Run full offline tests/lint/build and commit the dataset/replay contract.
 
 ### Task 3: Review and real Aura acceptance
 
 **Files:** release metadata/launchers/docs and dated verification artifacts.
 **Interfaces:** immutable source pins and existing live plugin upgrade path.
 
-- [ ] Fresh review, one TDD fix pass for Important/Critical findings, then full offline suite.
-- [ ] Preserve old-home files into PLUGIN_DATA with verified collision checks before upgrading.
-- [ ] Pin tested source, push/check CI, upgrade plugin through Governance, verify actual version/tools.
-- [ ] Run real acquisition/replay across MCP sessions with provider forbidden, cross-tool agreement,
+- [x] Fresh review, one TDD fix pass for Important/Critical findings, then full offline suite.
+- [x] Preserve old-home files into PLUGIN_DATA with verified collision checks before upgrading.
+- [x] Pin tested source, push/check CI, upgrade plugin through Governance, verify actual version/tools.
+- [x] Run real acquisition/replay across MCP sessions with provider forbidden, cross-tool agreement,
   current-session exclusion/opt-in and frozen metadata; record measured limits and results.
 
 ## Decisions
@@ -70,3 +70,7 @@ and tests. The new module owns serialization/coverage validation, not a second s
   measured old Tokyo bar; this conservative policy can lag one row.
 - Reuse audit.root's pure path semantics and hooks.home's existing mkdir wrapper.
 - Baseline source 0.3.1 `edbb031`, packaging `0525e82`, current docs-only head `9f0cfa7`.
+- Completed 0.4.0 source `831e466`, packaging `84d01b1`: 316 offline tests, Ruff/build/CI pass;
+  actual Governance upgrade, 15 tools, cached start 3.79 s online / 2.33 s offline, four
+  provider-forbidden replay processes and exact legacy readback. Real-agent completion and
+  shared-ID ledger checks passed; see the dated verification record for limits.
