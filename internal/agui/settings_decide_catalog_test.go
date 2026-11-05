@@ -44,16 +44,38 @@ func TestDecisionsCatalogueAsksForDecisionsAndSaysWhetherALocalSidecarExists(t *
 	}
 }
 
-func TestDecisionsCatalogueAnswersUnavailableUntilTheCatalogIsWired(t *testing.T) {
-	rr := getMediaModels(t, NewServer(nil, nil, ServerConfig{}), "/api/settings/decisions-models")
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rr.Code)
+// The flag is a boot fact, not an OpenRouter one: an appliance with no connection to OpenRouter
+// still has its local sidecar, and the cockpit must be told so on every answer it gets.
+func TestDecisionsCatalogueSaysWhetherASidecarExistsWhenItsListCannotBeRead(t *testing.T) {
+	for _, sidecar := range []bool{true, false} {
+		failing := modalityCatalogServer(&fakeModalityCatalog{err: llm.ErrModelCatalogUnavailable})
+		unwired := NewServer(nil, nil, ServerConfig{})
+		for name, s := range map[string]*Server{"502": failing, "503": unwired} {
+			s.SetDecideLocalSidecar(sidecar)
+			rr := getMediaModels(t, s, "/api/settings/decisions-models")
+			want := map[string]int{"502": http.StatusBadGateway, "503": http.StatusServiceUnavailable}[name]
+			if rr.Code != want {
+				t.Fatalf("%s: status = %d, want %d", name, rr.Code, want)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatalf("%s: decode: %v", name, err)
+			}
+			if body["local_sidecar"] != sidecar || body["error"] == nil {
+				t.Fatalf("%s sidecar=%v: body = %v, want the error and local_sidecar=%v", name, sidecar, body, sidecar)
+			}
+		}
 	}
 }
 
-func TestDecisionsCatalogueKeepsTheCatalogsReasonOnFailure(t *testing.T) {
+func TestOtherCatalogueErrorsCarryNoSidecarFlag(t *testing.T) {
 	s := modalityCatalogServer(&fakeModalityCatalog{err: llm.ErrModelCatalogUnavailable})
-	if rr := getMediaModels(t, s, "/api/settings/decisions-models"); rr.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502", rr.Code)
+	rr := getMediaModels(t, s, "/api/settings/speech-models")
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, present := body["local_sidecar"]; present {
+		t.Fatalf("body = %v: only the decisions catalogue says whether a sidecar exists", body)
 	}
 }

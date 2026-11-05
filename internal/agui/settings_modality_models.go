@@ -47,11 +47,13 @@ func (s *Server) handleListSpeechModels(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleListDecisionModels lists the models OpenRouter publishes with the decisions output, and
-// says whether the Locale option exists on this appliance.
+// says whether the Locale option exists on this appliance, on every answer: the flag is a boot
+// fact, so it survives the list being unreachable.
 func (s *Server) handleListDecisionModels(w http.ResponseWriter, r *http.Request) {
+	installed := s.decideSidecar
 	s.writeModalityRows(w, modalityDecisions, func() ([]llm.ModelCatalogEntry, error) {
 		return s.modalityCatalog.List(r.Context(), modalityDecisions)
-	}, func(dto *catalogDTO) { dto.LocalSidecar = &s.decideSidecar })
+	}, func(dto *catalogDTO) { dto.LocalSidecar = &installed })
 }
 
 func (s *Server) handleListEmbeddingModels(w http.ResponseWriter, r *http.Request) {

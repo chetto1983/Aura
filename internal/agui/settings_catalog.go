@@ -38,6 +38,13 @@ type catalogDTO struct {
 	LocalSidecar *bool `json:"local_sidecar,omitempty"`
 }
 
+// catalogErrorDTO is a refused or failed read. It carries what annotate set, so a fact that is
+// not OpenRouter's (a local sidecar exists) is not lost with OpenRouter's list.
+type catalogErrorDTO struct {
+	Error        string `json:"error"`
+	LocalSidecar *bool  `json:"local_sidecar,omitempty"`
+}
+
 // writeCatalogRows answers one picker route. `wired` is whether the composition root
 // supplied the catalogue; `name` appears in the 503 so an unwired route says WHICH
 // catalogue is missing. `row` turns one upstream model into a picker row and reports
@@ -51,26 +58,27 @@ func writeCatalogRows[M any](
 	row func(M) (catalogModelDTO, bool),
 	annotate ...func(*catalogDTO),
 ) {
+	out := catalogDTO{}
+	for _, set := range annotate {
+		set(&out)
+	}
 	if !wired {
 		writeJSONStatus(w, http.StatusServiceUnavailable,
-			map[string]string{"error": name + " model catalog not configured"})
+			catalogErrorDTO{Error: name + " model catalog not configured", LocalSidecar: out.LocalSidecar})
 		return
 	}
 	models, err := list()
 	if err != nil {
 		// The catalog's reason names the failing read ("GET videos/models: 503"), which is what
 		// tells the operator whether to wait or to look at the route.
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeJSONStatus(w, http.StatusBadGateway, catalogErrorDTO{Error: err.Error(), LocalSidecar: out.LocalSidecar})
 		return
 	}
-	out := catalogDTO{Models: make([]catalogModelDTO, 0, len(models))}
+	out.Models = make([]catalogModelDTO, 0, len(models))
 	for _, model := range models {
 		if dto, offer := row(model); offer {
 			out.Models = append(out.Models, dto)
 		}
-	}
-	for _, set := range annotate {
-		set(&out)
 	}
 	writeJSON(w, out)
 }

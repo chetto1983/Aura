@@ -224,7 +224,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// (multimodalConfig) is untouched.
 	wireVoiceProviders(aguiServer, chat.cfg, chat.credentials.ServicesKey)
 	aguiServer.SetModalityCatalog(newModalityCatalogRoute())
-	aguiServer.SetDecideLocalSidecar(bootDecideEnvironment.BaseURL != "")
+	aguiServer.SetDecideLocalSidecar(bootDecide().BaseURL != "")
 	// Wire the 37E reasoning-capability source (WEBMODEL-01/D-13): the active model's advertised
 	// effort set, selected by llm.ReasoningTarget and warmed once at boot (never blocking). It
 	// backs the composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run effort
