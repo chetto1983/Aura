@@ -200,7 +200,10 @@ func (s *Store) DeleteAccount(ctx context.Context, identityID, accountID string)
 		if err := q.DeletePIMWatchVerdicts(ctx, sqlc.DeletePIMWatchVerdictsParams{IdentityID: id, AccountID: accountID}); err != nil {
 			return err
 		}
-		return q.DeletePIMWatchCorrections(ctx, sqlc.DeletePIMWatchCorrectionsParams{IdentityID: id, AccountID: accountID})
+		if err := q.DeletePIMWatchCorrections(ctx, sqlc.DeletePIMWatchCorrectionsParams{IdentityID: id, AccountID: accountID}); err != nil {
+			return err
+		}
+		return q.DeletePIMWatchAccountSettings(ctx, sqlc.DeletePIMWatchAccountSettingsParams{IdentityID: id, AccountID: accountID})
 	})
 	if err != nil {
 		return fmt.Errorf("delete pim watch account: %w", err)

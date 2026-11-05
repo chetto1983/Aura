@@ -60,14 +60,17 @@ func TestAConnectionWithNoIdentitySeesNoRowOfAnyTable(t *testing.T) {
 	if _, err := r.store.AddLabel(ctx, r.identity, LabelInput{Name: "Cliente"}, 0); err != nil {
 		t.Fatalf("label: %v", err)
 	}
-	if _, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@b.it", Kind: KeySender, Tier: TierNow}); err != nil {
+	if _, err := r.store.PutRule(ctx, r.identity, Rule{Key: "a@one.example", Kind: KeySender, Tier: TierNow}); err != nil {
 		t.Fatalf("rule: %v", err)
 	}
-	if _, err := r.store.ApplyCorrection(ctx, r.identity, "a@b.it", Correction{AccountID: rigAccount, Resource: ResourceMail, ItemID: "m1", Tier: TierToday}); err != nil {
+	if _, err := r.store.ApplyCorrection(ctx, r.identity, "a@one.example", Correction{AccountID: rigAccount, Resource: ResourceMail, ItemID: "m1", Tier: TierToday}); err != nil {
 		t.Fatalf("correction: %v", err)
 	}
+	if err := r.store.SetCloudDecide(ctx, r.identity, rigAccount, true); err != nil {
+		t.Fatalf("consent: %v", err)
+	}
 
-	for _, table := range []string{"settings", "labels", "cursors", "verdicts", "rules", "corrections"} {
+	for _, table := range []string{"settings", "labels", "cursors", "verdicts", "rules", "corrections", "accounts"} {
 		var n int
 		if err := r.store.pool.QueryRow(ctx, "SELECT count(*) FROM aura.pim_watch_"+table).Scan(&n); err != nil {
 			t.Fatalf("count %s: %v", table, err)
@@ -243,6 +246,9 @@ func TestDeleteAccountForgetsThatAccountAlone(t *testing.T) {
 	r.commit("home", r.draft("h1", TierToday, ""))
 	if _, err := r.store.ApplyCorrection(ctx, r.identity, "a@b.it", Correction{AccountID: "work", Resource: ResourceMail, ItemID: "w1", Tier: TierLater}); err != nil {
 		t.Fatalf("correction: %v", err)
+	}
+	if err := r.store.SetCloudDecide(ctx, r.identity, rigAccount, true); err != nil {
+		t.Fatalf("consent: %v", err)
 	}
 
 	if err := r.store.DeleteAccount(ctx, r.identity, "work"); err != nil {

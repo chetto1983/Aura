@@ -264,6 +264,20 @@ func (q *Queries) DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteE
 	return result.RowsAffected(), nil
 }
 
+const deletePIMWatchAccountSettings = `-- name: DeletePIMWatchAccountSettings :exec
+DELETE FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2
+`
+
+type DeletePIMWatchAccountSettingsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	AccountID  string      `json:"account_id"`
+}
+
+func (q *Queries) DeletePIMWatchAccountSettings(ctx context.Context, arg DeletePIMWatchAccountSettingsParams) error {
+	_, err := q.db.Exec(ctx, deletePIMWatchAccountSettings, arg.IdentityID, arg.AccountID)
+	return err
+}
+
 const deletePIMWatchCorrections = `-- name: DeletePIMWatchCorrections :exec
 DELETE FROM aura.pim_watch_corrections WHERE identity_id = $1 AND account_id = $2
 `
@@ -384,6 +398,29 @@ type FillPIMWatchLabelDescriptionParams struct {
 func (q *Queries) FillPIMWatchLabelDescription(ctx context.Context, arg FillPIMWatchLabelDescriptionParams) error {
 	_, err := q.db.Exec(ctx, fillPIMWatchLabelDescription, arg.IdentityID, arg.Name, arg.Description)
 	return err
+}
+
+const getPIMWatchAccount = `-- name: GetPIMWatchAccount :one
+SELECT identity_id, account_id, cloud_decide, decide_error, decide_failed_at, updated_at FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2
+`
+
+type GetPIMWatchAccountParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	AccountID  string      `json:"account_id"`
+}
+
+func (q *Queries) GetPIMWatchAccount(ctx context.Context, arg GetPIMWatchAccountParams) (AuraPimWatchAccounts, error) {
+	row := q.db.QueryRow(ctx, getPIMWatchAccount, arg.IdentityID, arg.AccountID)
+	var i AuraPimWatchAccounts
+	err := row.Scan(
+		&i.IdentityID,
+		&i.AccountID,
+		&i.CloudDecide,
+		&i.DecideError,
+		&i.DecideFailedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getPIMWatchCursor = `-- name: GetPIMWatchCursor :one
@@ -743,6 +780,37 @@ func (q *Queries) ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWa
 			&i.ModelOptions,
 			&i.ModelSkipped,
 			&i.Discarded,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPIMWatchAccounts = `-- name: ListPIMWatchAccounts :many
+SELECT identity_id, account_id, cloud_decide, decide_error, decide_failed_at, updated_at FROM aura.pim_watch_accounts WHERE identity_id = $1 ORDER BY account_id
+`
+
+func (q *Queries) ListPIMWatchAccounts(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchAccounts, error) {
+	rows, err := q.db.Query(ctx, listPIMWatchAccounts, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraPimWatchAccounts{}
+	for rows.Next() {
+		var i AuraPimWatchAccounts
+		if err := rows.Scan(
+			&i.IdentityID,
+			&i.AccountID,
+			&i.CloudDecide,
+			&i.DecideError,
+			&i.DecideFailedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1512,6 +1580,24 @@ func (q *Queries) SeedPIMWatchLabel(ctx context.Context, arg SeedPIMWatchLabelPa
 		arg.Description,
 		arg.Discard,
 	)
+	return err
+}
+
+const setPIMWatchCloudDecide = `-- name: SetPIMWatchCloudDecide :exec
+INSERT INTO aura.pim_watch_accounts (identity_id, account_id, cloud_decide) VALUES ($1, $2, $3)
+ON CONFLICT (identity_id, account_id) DO UPDATE SET cloud_decide = EXCLUDED.cloud_decide, updated_at = now()
+`
+
+type SetPIMWatchCloudDecideParams struct {
+	IdentityID  pgtype.UUID `json:"identity_id"`
+	AccountID   string      `json:"account_id"`
+	CloudDecide bool        `json:"cloud_decide"`
+}
+
+// The person's consent for the hosted decision model, kept apart from the cursors so that turning the
+// watch off and on does not take it back.
+func (q *Queries) SetPIMWatchCloudDecide(ctx context.Context, arg SetPIMWatchCloudDecideParams) error {
+	_, err := q.db.Exec(ctx, setPIMWatchCloudDecide, arg.IdentityID, arg.AccountID, arg.CloudDecide)
 	return err
 }
 

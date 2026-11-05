@@ -34,6 +34,7 @@ type mailWatchService interface {
 	UpdateLabel(ctx context.Context, identityID, labelID string, in pimwatch.LabelPatch) (pimwatch.Label, error)
 	RemoveLabel(ctx context.Context, identityID, labelID string) error
 	SaveSettings(ctx context.Context, identityID string, digestHour, dailyCap int) (pimwatch.Settings, error)
+	SetCloudDecide(ctx context.Context, identityID, accountID string, on bool) error
 }
 
 // SetMailWatch wires the watch. Until set, the routes answer 503.
@@ -44,6 +45,7 @@ func (s *Server) registerMailWatchRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/mail-watch/settings", s.mailWatchRoute(s.handleMailWatchSettings))
 	mux.HandleFunc("POST /api/mail-watch/accounts/{id}/enable", s.mailWatchRoute(s.handleMailWatchEnable))
 	mux.HandleFunc("POST /api/mail-watch/accounts/{id}/disable", s.mailWatchRoute(s.handleMailWatchDisable))
+	mux.HandleFunc("PUT /api/mail-watch/accounts/{id}/cloud-decide", s.mailWatchRoute(s.handleMailWatchCloudDecide))
 	mux.HandleFunc("GET /api/mail-watch/accounts/{id}/decisions", s.mailWatchRoute(s.handleMailWatchDecisions))
 	mux.HandleFunc("POST /api/mail-watch/accounts/{id}/decisions/correct", s.mailWatchRoute(s.handleMailWatchCorrect))
 	mux.HandleFunc("GET /api/mail-watch/rules", s.mailWatchRoute(s.handleMailWatchRules))
@@ -121,19 +123,23 @@ type mailWatchResourceJSON struct {
 }
 
 type mailWatchAccountJSON struct {
-	AccountID    string                  `json:"account_id"`
-	Paused       bool                    `json:"paused"`
-	PausedReason string                  `json:"paused_reason,omitempty"`
-	NextRunAt    *time.Time              `json:"next_run_at"`
-	AlertsToday  int                     `json:"alerts_today"`
-	Resources    []mailWatchResourceJSON `json:"resources"`
+	AccountID      string                  `json:"account_id"`
+	Paused         bool                    `json:"paused"`
+	PausedReason   string                  `json:"paused_reason,omitempty"`
+	NextRunAt      *time.Time              `json:"next_run_at"`
+	AlertsToday    int                     `json:"alerts_today"`
+	Resources      []mailWatchResourceJSON `json:"resources"`
+	CloudDecide    bool                    `json:"cloud_decide"`
+	DecideError    string                  `json:"decide_error,omitempty"`
+	DecideFailedAt *time.Time              `json:"decide_failed_at"`
 }
 
 type mailWatchStatusJSON struct {
-	Configured bool                   `json:"configured"`
-	Reason     string                 `json:"reason,omitempty"`
-	Settings   mailWatchSettingsJSON  `json:"settings"`
-	Accounts   []mailWatchAccountJSON `json:"accounts"`
+	Configured  bool                   `json:"configured"`
+	Reason      string                 `json:"reason,omitempty"`
+	Settings    mailWatchSettingsJSON  `json:"settings"`
+	Accounts    []mailWatchAccountJSON `json:"accounts"`
+	DecideRoute string                 `json:"decide_route"`
 }
 
 func (s *Server) handleMailWatchStatus(w http.ResponseWriter, r *http.Request, service mailWatchService, identityID string) {
@@ -143,7 +149,7 @@ func (s *Server) handleMailWatchStatus(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	out := mailWatchStatusJSON{
-		Configured: status.Configured, Settings: mailWatchSettings(status.Settings),
+		Configured: status.Configured, Settings: mailWatchSettings(status.Settings), DecideRoute: status.DecideRoute,
 		Accounts: make([]mailWatchAccountJSON, 0, len(status.Accounts)),
 	}
 	if !status.Configured {
@@ -160,6 +166,7 @@ func (s *Server) handleMailWatchStatus(w http.ResponseWriter, r *http.Request, s
 		out.Accounts = append(out.Accounts, mailWatchAccountJSON{
 			AccountID: account.AccountID, Paused: account.Paused, PausedReason: account.PausedReason,
 			NextRunAt: mailWatchTime(account.NextRunAt), AlertsToday: account.AlertsToday, Resources: resources,
+			CloudDecide: account.CloudDecide, DecideError: account.DecideError, DecideFailedAt: mailWatchTime(account.DecideFailedAt),
 		})
 	}
 	writeJSON(w, out)

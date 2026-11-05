@@ -88,6 +88,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"PUT /api/mail-watch/settings":                         httpMutationMeta("mail_watch_settings"),
 	"POST /api/mail-watch/accounts/{id}/enable":            httpMutationMeta("mail_watch_enable"),
 	"POST /api/mail-watch/accounts/{id}/disable":           httpMutationMeta("mail_watch_disable"),
+	"PUT /api/mail-watch/accounts/{id}/cloud-decide":       httpMutationMeta("mail_watch_cloud_decide"),
 	"POST /api/mail-watch/accounts/{id}/decisions/correct": httpMutationMeta("mail_watch_correct"),
 	"POST /api/mail-watch/rules":                           httpMutationMeta("mail_watch_rule_add"),
 	"DELETE /api/mail-watch/rules/{id}":                    httpMutationMeta("mail_watch_rule_remove"),

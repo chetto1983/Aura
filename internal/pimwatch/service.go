@@ -86,6 +86,8 @@ type Service struct {
 	Locale Locale
 	// Centroid learns from corrections and forgets removed accounts; nil switches it off.
 	Centroid Centroid
+	// Decide says where the decision model runs; nil means the watch has no model step.
+	Decide RouteReader
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
 }
@@ -303,6 +305,11 @@ type AccountStatus struct {
 	NextRunAt    time.Time
 	AlertsToday  int
 	Resources    []ResourceStatus
+	// CloudDecide is the person's consent for the hosted model; DecideError is the class of its last
+	// failure, with no text, and DecideFailedAt when.
+	CloudDecide    bool
+	DecideError    string
+	DecideFailedAt time.Time
 }
 
 // Status is everything a person needs to see about their watch.
@@ -310,6 +317,8 @@ type Status struct {
 	Configured bool
 	Settings   Settings
 	Accounts   []AccountStatus
+	// DecideRoute is "local" or "openrouter", and "" when the model is off or its route unreadable.
+	DecideRoute string
 }
 
 // Status reads the identity's watch: its settings, and for each live task how far it got.
@@ -326,8 +335,15 @@ func (s *Service) Status(ctx context.Context, identityID string) (Status, error)
 	if err != nil {
 		return Status{}, err
 	}
+	held, err := s.Store.AccountSettings(ctx, identityID)
+	if err != nil {
+		return Status{}, err
+	}
 	today := dayStart(s.now(), s.Locale.Location(ctx, identityID))
-	out := Status{Configured: s.Configured(), Settings: settings, Accounts: make([]AccountStatus, 0, len(watches))}
+	out := Status{
+		Configured: s.Configured(), Settings: settings, Accounts: make([]AccountStatus, 0, len(watches)),
+		DecideRoute: s.decideRoute(ctx),
+	}
 	for _, watch := range watches {
 		alerts, err := s.Store.AlertsToday(ctx, identityID, watch.AccountID, today)
 		if err != nil {
@@ -335,7 +351,8 @@ func (s *Service) Status(ctx context.Context, identityID string) (Status, error)
 		}
 		account := AccountStatus{
 			AccountID: watch.AccountID, Paused: watch.Paused, PausedReason: watch.PausedReason,
-			NextRunAt: watch.NextRunAt, AlertsToday: alerts,
+			NextRunAt: watch.NextRunAt, AlertsToday: alerts, CloudDecide: held[watch.AccountID].CloudDecide,
+			DecideError: held[watch.AccountID].DecideError, DecideFailedAt: held[watch.AccountID].DecideFailedAt,
 		}
 		for _, cursor := range cursors {
 			if cursor.AccountID == watch.AccountID {

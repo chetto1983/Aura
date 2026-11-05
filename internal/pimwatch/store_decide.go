@@ -2,9 +2,11 @@ package pimwatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -134,4 +136,64 @@ func (s *Store) DiscardedInWindow(ctx context.Context, identityID string, since,
 		return 0, fmt.Errorf("count discarded pim watch verdicts: %w", err)
 	}
 	return int(n), nil
+}
+
+// AccountSettings is what the person decided for an account and what the model last did to it.
+// DecideError is a class with no text, set from DecideFailedAt until the next answer clears both.
+type AccountSettings struct {
+	CloudDecide    bool
+	DecideError    string
+	DecideFailedAt time.Time
+}
+
+func accountSettingsFromRow(r sqlc.AuraPimWatchAccounts) AccountSettings {
+	return AccountSettings{CloudDecide: r.CloudDecide, DecideError: r.DecideError, DecideFailedAt: r.DecideFailedAt.Time}
+}
+
+// AccountSettings lists the identity's accounts that hold a setting, by account id. An account
+// with no row has the defaults: no consent, no failure.
+func (s *Store) AccountSettings(ctx context.Context, identityID string) (map[string]AccountSettings, error) {
+	var rows []sqlc.AuraPimWatchAccounts
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		var err error
+		rows, err = q.ListPIMWatchAccounts(ctx, id)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list pim watch accounts: %w", err)
+	}
+	out := make(map[string]AccountSettings, len(rows))
+	for _, row := range rows {
+		out[row.AccountID] = accountSettingsFromRow(row)
+	}
+	return out, nil
+}
+
+// CloudDecide reports whether the person let the hosted decision model read this account.
+func (s *Store) CloudDecide(ctx context.Context, identityID, accountID string) (bool, error) {
+	var on bool
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		row, err := q.GetPIMWatchAccount(ctx, sqlc.GetPIMWatchAccountParams{IdentityID: id, AccountID: accountID})
+		on = row.CloudDecide
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read pim watch consent: %w", err)
+	}
+	return on, nil
+}
+
+// SetCloudDecide records the person's consent for an account. It leaves the model's last failure
+// as it was.
+func (s *Store) SetCloudDecide(ctx context.Context, identityID, accountID string, on bool) error {
+	err := s.tx(ctx, identityID, func(q *sqlc.Queries, id pgtype.UUID) error {
+		return q.SetPIMWatchCloudDecide(ctx, sqlc.SetPIMWatchCloudDecideParams{IdentityID: id, AccountID: accountID, CloudDecide: on})
+	})
+	if err != nil {
+		return fmt.Errorf("set pim watch consent: %w", err)
+	}
+	return nil
 }

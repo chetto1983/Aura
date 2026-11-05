@@ -177,6 +177,7 @@ type Querier interface {
 	DeleteIdentityTaskRows(ctx context.Context, arg DeleteIdentityTaskRowsParams) error
 	DeleteMCPProfilesExcept(ctx context.Context, keep []string) error
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
+	DeletePIMWatchAccountSettings(ctx context.Context, arg DeletePIMWatchAccountSettingsParams) error
 	DeletePIMWatchCorrections(ctx context.Context, arg DeletePIMWatchCorrectionsParams) error
 	DeletePIMWatchCursors(ctx context.Context, arg DeletePIMWatchCursorsParams) error
 	DeletePIMWatchLabel(ctx context.Context, arg DeletePIMWatchLabelParams) (int64, error)
@@ -281,6 +282,7 @@ type Querier interface {
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPIMProviderApp(ctx context.Context, provider string) (AuraPimProviderApp, error)
+	GetPIMWatchAccount(ctx context.Context, arg GetPIMWatchAccountParams) (AuraPimWatchAccounts, error)
 	GetPIMWatchCursor(ctx context.Context, arg GetPIMWatchCursorParams) (AuraPimWatchCursors, error)
 	GetPIMWatchLabelForUpdate(ctx context.Context, arg GetPIMWatchLabelForUpdateParams) (AuraPimWatchLabels, error)
 	GetPIMWatchSettings(ctx context.Context, identityID pgtype.UUID) (AuraPimWatchSettings, error)
@@ -532,6 +534,7 @@ type Querier interface {
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWatchAccountVerdictsParams) ([]AuraPimWatchVerdicts, error)
+	ListPIMWatchAccounts(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchAccounts, error)
 	ListPIMWatchCorrectedAccounts(ctx context.Context, identityID pgtype.UUID) ([]string, error)
 	ListPIMWatchCorrectionsBefore(ctx context.Context, arg ListPIMWatchCorrectionsBeforeParams) ([]AuraPimWatchCorrections, error)
 	ListPIMWatchCursors(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchCursors, error)
@@ -822,6 +825,9 @@ type Querier interface {
 	SetBoardCardPosition(ctx context.Context, arg SetBoardCardPositionParams) error
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	SetGatewayToolPolicy(ctx context.Context, arg SetGatewayToolPolicyParams) error
+	// The person's consent for the hosted decision model, kept apart from the cursors so that turning the
+	// watch off and on does not take it back.
+	SetPIMWatchCloudDecide(ctx context.Context, arg SetPIMWatchCloudDecideParams) error
 	SetPIMWatchLastDigest(ctx context.Context, arg SetPIMWatchLastDigestParams) error
 	// Move a task into the conversation it answers in from now on, when the one it was
 	// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.

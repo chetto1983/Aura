@@ -323,3 +323,18 @@ SELECT tier, decided_by, ladder_tier, ladder_by, centroid_tier, centroid_margin,
     decided_at, notified
 FROM aura.pim_watch_verdicts
 WHERE identity_id = $1 AND resource = 'mail' AND ladder_tier IS NOT NULL AND decided_at >= @since;
+
+-- name: GetPIMWatchAccount :one
+SELECT * FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2;
+
+-- name: ListPIMWatchAccounts :many
+SELECT * FROM aura.pim_watch_accounts WHERE identity_id = $1 ORDER BY account_id;
+
+-- name: SetPIMWatchCloudDecide :exec
+-- The person's consent for the hosted decision model, kept apart from the cursors so that turning the
+-- watch off and on does not take it back.
+INSERT INTO aura.pim_watch_accounts (identity_id, account_id, cloud_decide) VALUES ($1, $2, $3)
+ON CONFLICT (identity_id, account_id) DO UPDATE SET cloud_decide = EXCLUDED.cloud_decide, updated_at = now();
+
+-- name: DeletePIMWatchAccountSettings :exec
+DELETE FROM aura.pim_watch_accounts WHERE identity_id = $1 AND account_id = $2;

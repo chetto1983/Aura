@@ -71,6 +71,7 @@ func connectGatedRoutes() []writeRoute {
 		{http.MethodPut, "/api/mail-watch/settings", `{"digest_hour":7,"daily_alert_cap":5}`},
 		{http.MethodPost, "/api/mail-watch/accounts/x/enable", ""},
 		{http.MethodPost, "/api/mail-watch/accounts/x/disable", ""},
+		{http.MethodPut, "/api/mail-watch/accounts/x/cloud-decide", `{"on":true}`},
 		{http.MethodGet, "/api/mail-watch/accounts/x/decisions", ""},
 		{http.MethodPost, "/api/mail-watch/accounts/x/decisions/correct", `{"item_id":"m","tier":"later"}`},
 		{http.MethodGet, "/api/mail-watch/rules", ""},

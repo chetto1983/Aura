@@ -19,6 +19,7 @@ type fakeWatchService struct {
 	account  string
 	day      string
 	asked    bool
+	consent  bool
 	count    int
 	rescued  bool
 	status   pimwatch.Status
