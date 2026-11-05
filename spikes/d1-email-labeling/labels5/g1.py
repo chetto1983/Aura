@@ -122,7 +122,14 @@ def score(rows, labels):
     }
 
 
-def run_arm(name, arm, cases, base_url, out):
+def systemone(base_url, model, state, question):
+    payload = {"state": state, "questions": {"label": question}}
+    if model:
+        payload["model"] = model
+    return request_json(base_url + "/v1/systemone", payload)
+
+
+def run_arm(name, arm, cases, base_url, model, out):
     question = {"type": "choice", "instructions": FRAME, "criteria": arm["criteria"]}
     rows = []
     for case in cases:
@@ -132,9 +139,7 @@ def run_arm(name, arm, cases, base_url, out):
         elif arm["hint"] == "wrong":
             hint = wrong_hint(case["gold5"])
         t0 = time.perf_counter()
-        response = request_json(base_url + "/v1/systemone", {
-            "state": state_for(case, hint, arm.get("body", True)), "questions": {"label": question},
-        })
+        response = systemone(base_url, model, state_for(case, hint, arm.get("body", True)), question)
         answer = response["answers"]["label"]
         probs = answer["probabilities"]
         assert set(probs) == set(arm["criteria"]), probs
@@ -172,19 +177,19 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--arms", default=",".join(ARMS))
     parser.add_argument("--cases", type=Path, nargs="+", default=TRAIN)
+    # rizzo-flow's /v1/systemone requires "model" (rizzo-latest); the llama.cpp runs sent none.
+    parser.add_argument("--model")
     args = parser.parse_args()
     cases = load_cases(args.cases)
     args.out.mkdir(parents=True, exist_ok=True)
-    request_json(args.base_url + "/v1/systemone", {
-        "state": "Oggetto: Pranzo\n\nCiao zio, domenica vieni a pranzo?",
-        "questions": {"label": {"type": "choice", "instructions": FRAME, "criteria": ITALIAN}},
-    })
+    systemone(args.base_url, args.model, "Oggetto: Pranzo\n\nCiao zio, domenica vieni a pranzo?",
+              {"type": "choice", "instructions": FRAME, "criteria": ITALIAN})
     results = {
         "models": request_json(args.base_url + "/v1/models"), "preview": PREVIEW,
         "cases": [p.resolve().relative_to(HERE.parent).as_posix() for p in args.cases], "arms": {},
     }
     for name in args.arms.split(","):
-        results["arms"][name] = run_arm(name, ARMS[name], cases, args.base_url, args.out)
+        results["arms"][name] = run_arm(name, ARMS[name], cases, args.base_url, args.model, args.out)
         print(name, json.dumps(results["arms"][name], ensure_ascii=False), flush=True)
     (args.out / "summary.json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

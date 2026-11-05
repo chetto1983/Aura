@@ -1,0 +1,148 @@
+{
+  "models": {
+    "models": [
+      {
+        "name": "/models/rizzo-flow/spark-x2.5-4b-rizzo-flow-lora-q4_k_m.gguf",
+        "model": "/models/rizzo-flow/spark-x2.5-4b-rizzo-flow-lora-q4_k_m.gguf",
+        "modified_at": "",
+        "size": "",
+        "digest": "",
+        "type": "model",
+        "description": "",
+        "tags": [
+          ""
+        ],
+        "capabilities": [
+          "completion"
+        ],
+        "parameters": "",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "",
+          "families": [
+            ""
+          ],
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      }
+    ],
+    "object": "list",
+    "data": [
+      {
+        "id": "/models/rizzo-flow/spark-x2.5-4b-rizzo-flow-lora-q4_k_m.gguf",
+        "aliases": [
+          "/models/rizzo-flow/spark-x2.5-4b-rizzo-flow-lora-q4_k_m.gguf"
+        ],
+        "tags": [],
+        "object": "model",
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "text"
+          ]
+        },
+        "created": 1793720502,
+        "owned_by": "llamacpp",
+        "meta": {
+          "vocab_type": 2,
+          "n_vocab": 131072,
+          "n_ctx": 2048,
+          "n_ctx_train": 1048576,
+          "n_embd": 2560,
+          "n_params": 4112079360,
+          "size": 2594836480,
+          "ftype": "Q4_K - Medium"
+        }
+      }
+    ]
+  },
+  "build": "b11960-8642541b2",
+  "prompt": "spark-decisions-v3 via /apply-template + /completion, softmax over the option letters",
+  "cases": [
+    "improvement/confirmation.tsv",
+    "improvement/holdout.tsv"
+  ],
+  "arms": {
+    "it": {
+      "total": 120,
+      "correct": 70,
+      "macro_f1": 0.6581,
+      "latency_ms_p50": 409,
+      "input_tokens": 48283,
+      "thresholds": {
+        "0.0": {
+          "applied": 120,
+          "right": 70,
+          "coverage_of_labelable": 0.9333,
+          "label_on_none": 45,
+          "false_pubblicita": 0
+        },
+        "0.4": {
+          "applied": 120,
+          "right": 70,
+          "coverage_of_labelable": 0.9333,
+          "label_on_none": 45,
+          "false_pubblicita": 0
+        },
+        "0.5": {
+          "applied": 115,
+          "right": 69,
+          "coverage_of_labelable": 0.92,
+          "label_on_none": 41,
+          "false_pubblicita": 0
+        },
+        "0.6": {
+          "applied": 108,
+          "right": 69,
+          "coverage_of_labelable": 0.92,
+          "label_on_none": 35,
+          "false_pubblicita": 0
+        },
+        "0.7": {
+          "applied": 103,
+          "right": 68,
+          "coverage_of_labelable": 0.9067,
+          "label_on_none": 32,
+          "false_pubblicita": 0
+        },
+        "0.8": {
+          "applied": 89,
+          "right": 63,
+          "coverage_of_labelable": 0.84,
+          "label_on_none": 24,
+          "false_pubblicita": 0
+        },
+        "0.9": {
+          "applied": 70,
+          "right": 57,
+          "coverage_of_labelable": 0.76,
+          "label_on_none": 13,
+          "false_pubblicita": 0
+        },
+        "0.3": {
+          "applied": 120,
+          "right": 70,
+          "coverage_of_labelable": 0.9333,
+          "label_on_none": 45,
+          "false_pubblicita": 0
+        }
+      },
+      "best_threshold_by_cost": {
+        "3": [
+          0.9
+        ],
+        "5": [
+          0.9
+        ],
+        "10": [
+          0.9
+        ]
+      },
+      "letters_outside_top": 0
+    }
+  }
+}

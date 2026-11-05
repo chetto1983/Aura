@@ -108,6 +108,23 @@ wrong ones. That value is 0.5 for c = 5 and c = 10, and 0.4 and 0.5 tie for c = 
   Q8_0 GGUF of `convaiinnovations/laya-multilingual`), was run through G1 on 2026-11-03 (`results-laya*/`). It got 108
   of 200 right and 72 of 120 held out. At 0.5, 46 of its 73 labels were right, and 6 mails were wrongly labelled
   Pubblicità. The operator kept d1.
+- **rizzo-flow, a second Apache-2.0 candidate, also fails.**
+  - The model is Spark-X2.5 4B with Rizzo AI Academy's LoRA for typed decisions (`rizzoaiacademy/rizzo-flow` at
+    `55633c8`, Q4_K_M, sha256 checked against its pin). It was run through G1 on 2026-11-03 (`rizzo_llama.py`,
+    `results-rizzo*/`).
+  - `llama-server` b11960 loads it but refuses it on `/v1/systemone` (501, "This model is not a decision model"): its
+    GGUF has no `<arch>.decision.*` metadata and no `systemone` template. The script replays rizzo-flow's own prompt,
+    `spark-decisions-v3`, through `/apply-template` and `/completion`, and takes the softmax over the option letters.
+    In that prompt each option reads `<name>: <description>`, so the label's name reaches the model.
+  - It got 108 of 200 right and 70 of 120 held out. It never chose «Nessuna»: none of the 120 mails without a label
+    got it, and most went to Lavoro or Cliente. Among the mails that have a label it was right on 108 of 125 and 70
+    of 75.
+  - The cost rule picks 0.9 on the 200. There 86 of its 106 labels were right, and 57 of 70 held out: 81%, against
+    d1-3B's 91 of 94 at 0.5.
+  - What this does not show:
+    - rizzo-flow's own server on llama.cpp b11081 (same prompt, other numerics);
+    - English descriptions;
+    - its native abstention option, which the Jev-compatible API turns off.
 - **Latency of d1-3B on the GPU:** p50 133 to 152 ms per mail.
 - No body in either set is longer than 255 characters, so the preview cut was never exercised.
 
