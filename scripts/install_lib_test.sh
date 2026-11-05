@@ -454,6 +454,91 @@ unset -f docker
 
 echo "ok: the embedding model placed is the one AURA_EMBED_REVISION and AURA_EMBED_FINGERPRINT name"
 
+# The local decision model is opt-in: nothing is fetched, no profile is enabled and no address is
+# written unless the operator asked for it with AURA_DECIDE_LOCAL=1, and the licence limit is
+# printed only when the sidecar is installed.
+decide_fixture="$fixture_root/decide"
+decide_case() {
+  rm -rf "$decide_fixture"
+  mkdir -p "$decide_fixture/scripts"
+  printf '%s\n' "$@" > "$decide_fixture/.env"
+  printf '%064d' 7 > "$decide_fixture/pin-sha"
+  : > "$decide_fixture/volume-sha"
+  cat > "$decide_fixture/scripts/fetch_decide_model.sh" <<'FETCH'
+#!/usr/bin/env bash
+case "$*" in
+  *--show*)
+    file=d1-3B-Q4_K_M.gguf
+    case "$*" in *license*) file=LICENSE ;; esac
+    printf 'file     %s\nsha256   %s\n' "$file" "$(cat "$(dirname "$0")/../pin-sha")"
+    ;;
+  *) printf '%s\n' "$*" >> "$(dirname "$0")/../fetch-calls" ;;
+esac
+FETCH
+  chmod +x "$decide_fixture/scripts/fetch_decide_model.sh"
+}
+docker() {
+  case "$1 $2" in
+    "compose create") printf '%s\n' "$*" >> "$decide_fixture/docker-calls" ;;
+    "compose ps") echo decide-cid ;;
+    "run --rm") cat "$decide_fixture/volume-sha" ;;
+    "cp "*) printf '%s\n' "$3" >> "$decide_fixture/cp-targets" ;;
+    *) echo "FAIL: unexpected docker $*" >&2; exit 1 ;;
+  esac
+}
+(
+  decide_case COMPOSE_PROFILES=observability
+  cd "$decide_fixture"
+  unset AURA_DECIDE_LOCAL
+  out="$(ensure_decide_model)"
+  [ -z "$out" ] || { echo "FAIL: ensure_decide_model printed without AURA_DECIDE_LOCAL: $out" >&2; exit 1; }
+  [ ! -e fetch-calls ] && [ ! -e docker-calls ] && [ ! -e cp-targets ] \
+    || { echo "FAIL: ensure_decide_model fetched or touched docker without AURA_DECIDE_LOCAL" >&2; exit 1; }
+  [ "$(cat .env)" = "COMPOSE_PROFILES=observability" ] \
+    || { echo "FAIL: ensure_decide_model changed .env without AURA_DECIDE_LOCAL" >&2; exit 1; }
+)
+(
+  decide_case COMPOSE_PROFILES=observability
+  cd "$decide_fixture"
+  AURA_DECIDE_LOCAL=0 ensure_decide_model >/dev/null
+  [ ! -e fetch-calls ] || { echo "FAIL: AURA_DECIDE_LOCAL=0 fetched the decision model" >&2; exit 1; }
+)
+(
+  decide_case COMPOSE_PROFILES=observability
+  cd "$decide_fixture"
+  out="$(AURA_DECIDE_LOCAL=1 ensure_decide_model)"
+  [ "$(env_value AURA_DECIDE_BASE_URL)" = "http://aura-llama-decide:8085" ] \
+    || { echo "FAIL: AURA_DECIDE_BASE_URL is '$(env_value AURA_DECIDE_BASE_URL)'" >&2; exit 1; }
+  [ "$(env_value COMPOSE_PROFILES)" = "observability,localdecide" ] \
+    || { echo "FAIL: COMPOSE_PROFILES is '$(env_value COMPOSE_PROFILES)'" >&2; exit 1; }
+  [ "$(grep -c -- '--artifact license' fetch-calls)" = 1 ] && [ "$(grep -vc -- '--artifact license' fetch-calls)" = 1 ] \
+    || { echo "FAIL: the model and its licence were not each fetched once: $(cat fetch-calls)" >&2; exit 1; }
+  [ "$(cat cp-targets)" = "$(printf '%s\n%s' \
+    'decide-cid:/root/.cache/llama.cpp/d1-3B-Q4_K_M.gguf' 'decide-cid:/root/.cache/llama.cpp/LICENSE')" ] \
+    || { echo "FAIL: the model and licence were not placed in the sidecar volume: $(cat cp-targets)" >&2; exit 1; }
+  case "$out" in
+    *"LFM Open License 1.0: commercial use is licensed only below USD 10M annual revenue"*) ;;
+    *) echo "FAIL: the licence limit was not printed: $out" >&2; exit 1 ;;
+  esac
+  case "$out" in
+    *"LiquidAI/d1-3B-GGUF/blob/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/LICENSE"*) ;;
+    *) echo "FAIL: the licence address was not printed: $out" >&2; exit 1 ;;
+  esac
+  # Files already in the volume that hash to their pins are not fetched again.
+  rm -f fetch-calls cp-targets
+  printf '%064d' 7 > volume-sha
+  AURA_DECIDE_LOCAL=1 ensure_decide_model >/dev/null
+  [ ! -e fetch-calls ] && [ ! -e cp-targets ] \
+    || { echo "FAIL: a file already hashing to its pin was fetched again: $(cat fetch-calls)" >&2; exit 1; }
+  # A second run adds neither the profile nor the address twice.
+  AURA_DECIDE_LOCAL=1 ensure_decide_model >/dev/null
+  [ "$(grep -c '^AURA_DECIDE_BASE_URL=' .env)" = 1 ] && [ "$(env_value COMPOSE_PROFILES)" = "observability,localdecide" ] \
+    || { echo "FAIL: a re-run duplicated the profile or the address: $(cat .env)" >&2; exit 1; }
+)
+unset -f docker
+
+echo "ok: the local decision model is installed only on request, and the installer says what its licence limits"
+
 # The phase counter is hand-maintained, and the first version of it shipped as [10/9]
 # because a phase was added without moving the total. An operator reading "10 of 9" learns
 # that the number lying to them is the one thing they were given to trust.

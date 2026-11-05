@@ -120,6 +120,8 @@ services:
       AURA_HISTORY_HARD_CAP_TURNS: ${AURA_HISTORY_HARD_CAP_TURNS:-50}
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
+      # The local decision sidecar, empty unless the installer put it there (spec decision 13).
+      AURA_DECIDE_BASE_URL: ${AURA_DECIDE_BASE_URL:-}
       # The strict boot hashes the GGUF the sidecar serves against AURA_EMBED_FINGERPRINT,
       # reading it from the sidecar's own volume, mounted read-only below.
       AURA_EMBED_MODEL_DIR: /var/lib/aura-embed-model
@@ -921,6 +923,61 @@ services:
       retries: 30
       start_period: 300s                       # first-boot HF model download can exceed 4 minutes
 
+  # The optional local decision model (Liquid AI d1-3B, LFM Open License 1.0): it labels unsorted
+  # mail when AURA_DECIDE_MODEL is empty, and is installed only on request -- the profile is
+  # off unless scripts/install_env.sh (ensure_decide_model) adds localdecide to COMPOSE_PROFILES
+  # and writes AURA_DECIDE_BASE_URL. aura does not depend on it: a sidecar that is down costs the
+  # watch its model step, never the stack. The llama.cpp build is aura-llama-embed's, pinned
+  # here and in the three overlays together. The GGUF and its LICENSE are fetched into the
+  # volume by scripts/fetch_decide_model.sh, because the sidecar has no egress.
+  aura-llama-decide:
+    profiles: [localdecide]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11960
+    container_name: aura-llama-decide
+    restart: unless-stopped
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
+    command:
+      - -m
+      - /root/.cache/llama.cpp/d1-3B-Q4_K_M.gguf
+      # The name the answer carries back as the model, and what the decisions API shows.
+      - --alias
+      - d1-3B-Q4_K_M
+      - --port
+      - "8085"
+      - -t
+      - "4"                                    # the per-sidecar CPU thread rule
+      - -np
+      - "1"
+      - -c
+      - "4096"
+      - -b
+      - "512"
+      - -ub
+      - "512"
+      # The embedding sidecar's backend on purpose: the installer sets one -ngl for both.
+      - -ngl
+      - "${AURA_EMBED_NGL:-99}"
+    ports:
+      - "127.0.0.1:8085:8085"
+    volumes:
+      - aura-llama-decide:/root/.cache/llama.cpp
+    # The reservation lives here for the reason aura-llama-embed's does, and goes the same way
+    # in compose.cpu.yaml, compose.vulkan.yaml and CI's cache overlay.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 300s
+
   # ↓↓ Document-pipeline rewrite (amendment #118) — CocoIndex reconciliation sidecar ↓↓
   # Reconciles one identity's Garage bucket into ArcadeDB with no delete/dedup/memoization
   # code of ours: CocoIndex's own target reconciliation does that (proven live in Task 6's
@@ -1629,6 +1686,7 @@ volumes:
   aura-workspace:
   aura-postgres:
   aura-llama-embed:
+  aura-llama-decide:
   aura-llm:
   # CocoIndex's LMDB memoization state (see the aura-ingest service comment above).
   aura-ingest-state:

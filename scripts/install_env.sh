@@ -98,6 +98,61 @@ ensure_embed_model() {
   echo "embedding model installed at ${model_path}"
 }
 
+# ensure_decide_model installs the optional local decision sidecar, and only when the operator
+# asked for it with AURA_DECIDE_LOCAL=1. It places Liquid AI's d1-3B GGUF and its LICENSE in
+# the aura-llama-decide volume (fetch_decide_model.sh pins both), enables the localdecide
+# profile and writes the address aura reads: no address, no local route (spec decision 13).
+# A file already in the volume that hashes to its pin is left alone, as the embedding model is.
+DECIDE_VOLUME_DIR="/root/.cache/llama.cpp"
+DECIDE_LICENSE_URL="https://huggingface.co/LiquidAI/d1-3B-GGUF/blob/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/LICENSE"
+
+ensure_decide_model() {
+  if [ "${AURA_DECIDE_LOCAL:-}" != "1" ]; then
+    return 0
+  fi
+
+  docker compose create aura-llama-decide >/dev/null 2>&1 || true
+  decide_cid="$(docker compose ps -aq aura-llama-decide 2>/dev/null | head -1)"
+  if [ -z "$decide_cid" ]; then
+    echo "FAIL: could not materialise the aura-llama-decide container to place the model" >&2
+    exit 1
+  fi
+
+  for artifact_name in model license; do
+    pin="$(scripts/fetch_decide_model.sh --artifact "$artifact_name" --show)"
+    artifact_file="$(printf '%s\n' "$pin" | awk '$1 == "file" { print $2 }')"
+    artifact_sha="$(printf '%s\n' "$pin" | awk '$1 == "sha256" { print $2 }')"
+    artifact_path="${DECIDE_VOLUME_DIR}/${artifact_file}"
+    have_sha="$(docker run --rm --volumes-from "$decide_cid" alpine \
+      sh -c "sha256sum '$artifact_path' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '\r')"
+    if [ "$have_sha" = "$artifact_sha" ]; then
+      echo "${artifact_file} already present (sha256 ${artifact_sha})"
+      continue
+    fi
+
+    tmp_artifact="$(mktemp -t aura-decide-model.XXXXXX)"
+    trap 'rm -f "$tmp_artifact"' EXIT
+    scripts/fetch_decide_model.sh --artifact "$artifact_name" "$tmp_artifact"
+    docker cp "$tmp_artifact" "${decide_cid}:${artifact_path}" || {
+      echo "FAIL: could not place ${artifact_file} into the aura-llama-decide volume" >&2
+      exit 1
+    }
+    rm -f "$tmp_artifact"
+    trap - EXIT
+    echo "${artifact_file} installed at ${artifact_path}"
+  done
+
+  profiles="$(env_value COMPOSE_PROFILES)"
+  case ",${profiles}," in
+    *,localdecide,*) ;;
+    ,,) set_env_value COMPOSE_PROFILES localdecide ;;
+    *) set_env_value COMPOSE_PROFILES "${profiles},localdecide" ;;
+  esac
+  set_env_value AURA_DECIDE_BASE_URL http://aura-llama-decide:8085
+
+  echo "The local decision model is Liquid AI's d1-3B under the LFM Open License 1.0: commercial use is licensed only below USD 10M annual revenue. Its LICENSE is in the aura-llama-decide volume and at ${DECIDE_LICENSE_URL}."
+}
+
 set_env_value() {
   key="$1"
   value="$2"

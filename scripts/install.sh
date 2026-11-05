@@ -529,6 +529,7 @@ download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
 download_file scripts/install_env.sh scripts/install_env.sh
 download_file scripts/appliance_posture.sh scripts/appliance_posture.sh
 download_file scripts/fetch_embedding_model.sh scripts/fetch_embedding_model.sh
+download_file scripts/fetch_decide_model.sh scripts/fetch_decide_model.sh
 download_file scripts/observability_sidecar_check.sh scripts/observability_sidecar_check.sh
 download_file observability/grafana/provisioning/alerting/aura.yml observability/grafana/provisioning/alerting/aura.yml
 download_file observability/grafana/provisioning/dashboards/aura.yml observability/grafana/provisioning/dashboards/aura.yml
@@ -543,7 +544,7 @@ download_file observability/prometheus/rules/aura-alerts.yml observability/prome
 download_file observability/prometheus/rules/aura-recording.yml observability/prometheus/rules/aura-recording.yml
 download_file observability/prometheus/tests/aura-rules.test.yml observability/prometheus/tests/aura-rules.test.yml
 download_file observability/tempo/tempo.yml observability/tempo/tempo.yml
-chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/observability_sidecar_check.sh deploy/aura-image-update.sh
+chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/fetch_decide_model.sh scripts/observability_sidecar_check.sh deploy/aura-image-update.sh
 
 # shellcheck source=scripts/install_env.sh
 source scripts/install_env.sh
@@ -563,6 +564,7 @@ step "Downloading the sandbox images"
 ensure_sandbox_image
 step "Downloading the embedding model"
 ensure_embed_model
+ensure_decide_model
 step "Starting the stack (this waits for every service to report healthy)"
 docker compose pull aura-cloudflared
 docker compose up -d --wait --wait-timeout 300

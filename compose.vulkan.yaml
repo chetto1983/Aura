@@ -10,3 +10,8 @@ services:
     deploy: !reset null
     devices:
       - /dev/dri:/dev/dri
+  aura-llama-decide:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b11960
+    deploy: !reset null
+    devices:
+      - /dev/dri:/dev/dri

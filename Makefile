@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint py-lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract capability-declaration web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
+.PHONY: help tools sqlc memory-up-core lint py-lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract decide-model-contract capability-declaration web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -19,6 +19,7 @@ GO_PACKAGES = $(eval GO_PACKAGES := $$(shell bash scripts/go_packages.sh))$(GO_P
 help:
 	@echo "make embedding-model-contract — verify validated atomic EmbeddingGemma cache materialization"
 	@echo "make llm-model-contract     — verify pinned gemma-4-12B model+MTP-drafter fetch"
+	@echo "make decide-model-contract  — verify pinned d1-3B decision model + LICENSE fetch"
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
 	@echo "make quality       — pre-push gate: deadcode vet build file-size lint test-race vuln (no containers)"
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
@@ -43,7 +44,7 @@ help:
 	@echo "make agent-memory-eval-contract — deterministic evaluator; never claims a live MRS"
 	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make sandbox-images — build the per-identity box + egress images the daemon needs"
-	@echo "make installer-artifact — pack install.sh + its 25 payload files into one makeself .run"
+	@echo "make installer-artifact — pack install.sh + its 26 payload files into one makeself .run"
 	@echo "make payload-manifest — freeze scripts/payload_manifest.txt; run after touching a payload file"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
@@ -142,9 +143,9 @@ agent-eval:
 	go test -tags agent_eval -count=1 -v -timeout 30m ./internal/agenteval/
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: deadcode vet file-size capability-declaration embedding-model-contract llm-model-contract lint test-race vuln
+quality: deadcode vet file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract lint test-race vuln
 	go build $(GO_PACKAGES)
-	@echo "ok: quality gate passed (deadcode vet build file-size capability-declaration embedding-model-contract llm-model-contract lint test-race vuln)"
+	@echo "ok: quality gate passed (deadcode vet build file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract lint test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage
@@ -176,6 +177,10 @@ embedding-model-contract:
 # ever checked by whoever remembered the script existed.
 llm-model-contract:
 	bash scripts/fetch_llm_model_test.sh
+
+# The optional local decision model (d1-3B) and its LICENSE: the same pin-and-refuse contract.
+decide-model-contract:
+	bash scripts/fetch_decide_model_test.sh
 
 # ↓↓ Frontend (web/) industrial gates — mirror the CI web-* jobs. Assume
 # web/node_modules is present (run `npm ci` in web/ first). ↓↓
@@ -339,14 +344,14 @@ sandbox-images:
 sandbox-image-contract: sandbox-images
 	bash scripts/sandbox_image_contract_test.sh
 
-# Packs install.sh and the 25 files it installs into one self-extracting archive, so an
+# Packs install.sh and the 26 files it installs into one self-extracting archive, so an
 # appliance install fetches nothing from a moving git ref. Needs makeself (WSL/Linux only;
 # apt-get install -y makeself).
 installer-artifact:
 	bash scripts/build_installer.sh dist/install-appliance.run
 
 # Refreshes the hash inventory that scripts/payload_manifest_gate.sh checks. Run this after
-# touching any of the 25 payload files and commit the result -- the gate fails closed
+# touching any of the 26 payload files and commit the result -- the gate fails closed
 # otherwise. Refuses if a payload file is dirty in git (freezing uncommitted bytes into the
 # manifest would make CI red for a reason nobody could explain later).
 payload-manifest:

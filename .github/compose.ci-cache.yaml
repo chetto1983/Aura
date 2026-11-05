@@ -13,3 +13,8 @@ services:
     volumes:
       - ${AURA_CI_LLAMA_CACHE_DIR:?AURA_CI_LLAMA_CACHE_DIR required in CI}/llama.cpp:/root/.cache/llama.cpp
       - ${AURA_CI_LLAMA_CACHE_DIR:?AURA_CI_LLAMA_CACHE_DIR required in CI}/huggingface:/root/.cache/huggingface
+  # The optional local decision sidecar sits behind a profile CI never enables; the overlay
+  # keeps it renderable on a runner with no NVIDIA runtime, on the same build.
+  aura-llama-decide:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11960
+    deploy: !reset null

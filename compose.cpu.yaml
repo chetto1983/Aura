@@ -9,3 +9,6 @@ services:
   aura-llama-embed:
     image: ghcr.io/ggml-org/llama.cpp:server-b11960
     deploy: !reset null
+  aura-llama-decide:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11960
+    deploy: !reset null
