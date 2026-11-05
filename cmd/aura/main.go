@@ -151,7 +151,7 @@ func runMCPDispatch(args []string) {
 	runMCP(ctx, pool, args)
 }
 
-const topLevelUsage = "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|mail-watch shadow|version}"
+const topLevelUsage = "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|mail-watch <shadow|model>|version}"
 
 func usage() {
 	fmt.Fprintln(os.Stderr, topLevelUsage)
