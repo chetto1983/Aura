@@ -332,6 +332,11 @@ correction takes one step. The evidence is the pilot's held-out result, far smal
 alerts and corrections are its gate: if it alarms more than it finds, it goes off. The local head of §5.3 keeps
 shadow, because it files mail out of the digest, which is the worse mistake.
 
+**Amended 2026-11-03.** The decision model that labels unsorted mail is live from the first day, with no shadow week
+(operator: "si va bene poi l'utente decide"). As with Laya's exception, live counts are the gate (G4 of
+`2026-11-03-decision-model-labels-design.md`). The mistake this section kept the local head in shadow for was filing a
+person's mail out of the digest, and that spec's decision 1 puts a floor under it.
+
 **Which model is open.** The operator chose Laya before Decider 2B was measured, and Decider then found 22 of 23 `now`
 against Laya's 9 (§7). Everything above applies to whichever local model is chosen.
 
@@ -373,6 +378,10 @@ frame, with no tools, and Aura writes the result from numbers it checks. The lad
 An opted-in decision model changes privacy, not this. It generates no text and calls no tools, so an
 injected mail can at worst change a tier, and the people floor still holds.
 
+**Amended 2026-11-03.** "The people floor still holds" stays true by decision 1 of
+`2026-11-03-decision-model-labels-design.md`: the model's label never lowers a tier and never discards a mail the
+ladder reads as a person's.
+
 ### 5.8 Labels, in the person's words
 
 A label says what a mail is about, a tier says how soon it matters, and the two stay separate (operator,
@@ -387,6 +396,11 @@ so a label implies no tier.
 - A label may carry a tier, which then acts as a rule: "Pubblicità" can mean `later`. "Cliente" carries none.
 - Labels live in the verdict rows and per-identity settings, with no mail text, and are never written to
   the mailbox.
+
+**Amended 2026-11-03: labels need the person's description, not examples.** A label without a description is not
+offered to the decision model (it scored worse on names alone, see the measurements of
+`2026-11-03-decision-model-labels-design.md`), and no label carries seeds from a corpus. The text below is the
+first release's, kept as history.
 
 **Labels need examples.** In the first release a label comes from a rule or from the person moving a mail. A
 local head fills them in only if it earns that in G2. Naming a label is rarely enough: only Decider beat "always
@@ -656,7 +670,9 @@ never holds real mail.
 3. Record the amendments to T1, item 4 and P3, and the mail-table answer of §5.2, in prd.md §11 and §15.
 4. `changes` for Google, Microsoft and IMAP, `pim_watch`, `pim_digest`, rules, labels, corrections and the
    decisions view, with no classifier. G1, G3.
-5. Laya zero-shot on by default and the local head in shadow, after the checks of "Before C and D" in §7. The
+5. (Amended 2026-11-03: the local model of this step is d1, for labels, per
+   `2026-11-03-decision-model-labels-design.md`; Laya's detection of `now` stays as described here.)
+   Laya zero-shot on by default and the local head in shadow, after the checks of "Before C and D" in §7. The
    full corpus, the fine-tune and the rest of G2 wait for a reason from live counts.
 6. Corrections by similarity, once G2b passes and live use shows a feed.
 7. CalDAV, ICS and JSON adapters, in the same contract.

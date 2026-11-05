@@ -4680,6 +4680,28 @@ What this does not establish:
 - mutation at 70% on the centroid's files: CI's critical-mutation gate does not scope them;
 - the token cost on a cloud route over a day.
 
+### Mail watch: the decision model labels unsorted mail (2026-11-03)
+
+`docs/superpowers/specs/2026-11-03-decision-model-labels-design.md`, approved by the operator on
+2026-11-03. A decision model picks one of the person's described labels for a mail no rule sorted. The
+label's tier then counts, within the people floor, and a label may discard. Gates G1 to G3 ran the same day
+on synthetic Italian mail (`spikes/d1-email-labeling/labels5/`, `spikes/d1-document-labels/`).
+
+| Decided | Measured |
+|---|---|
+| The model reads the subject and the snippet and never the sender. A label counts at probability 0.5 or more | G1, d1-3B local: at 0.5, 91 of 94 labels right on 200 mails and 58 of 58 on 120 held out. G3, `liquid/d1.1` on OpenRouter: 121 of 124 and 72 of 75 |
+| A label gains the person's description (at most 300 characters) and keep or discard; only a described label is offered | Names alone, G1: 31 of 47 labels right on the 200, against 91 of 94 with descriptions |
+| The verdict keeps the model's answer apart from the ladder's and from a correction (migration 0153) | Tests only |
+| The default labels arrive described in Italian and English | Descriptions are G1's `ITALIAN` texts; the English arm ran Italian mail under English descriptions |
+| The model is live from the first day, with no shadow week (operator: "si va bene poi l'utente decide") | G4, two weeks live on the lab VM, is the gate and is not run |
+
+What this does not establish:
+- that synthetic mail with one author and balanced classes stands for a real inbox;
+- that a person's own descriptions read as well as the engineer's, or that the English defaults work on English mail;
+- that `liquid/d1.1` and the local d1-3B label alike: OpenRouter does not say its size;
+- the threshold with 11 or more options (G1 measured 6, and 4), or snippets longer than 255 characters;
+- the speed on an appliance CPU, or the hosted model's probabilities between identical calls (they move by a few hundredths).
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
