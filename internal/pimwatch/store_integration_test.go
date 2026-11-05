@@ -244,11 +244,13 @@ func TestDeleteAccountForgetsThatAccountAlone(t *testing.T) {
 	ctx := context.Background()
 	r.commit("work", r.draft("w1", TierToday, ""))
 	r.commit("home", r.draft("h1", TierToday, ""))
-	if _, err := r.store.ApplyCorrection(ctx, r.identity, "a@b.it", Correction{AccountID: "work", Resource: ResourceMail, ItemID: "w1", Tier: TierLater}); err != nil {
+	if _, err := r.store.ApplyCorrection(ctx, r.identity, "a@one.example", Correction{AccountID: "work", Resource: ResourceMail, ItemID: "w1", Tier: TierLater}); err != nil {
 		t.Fatalf("correction: %v", err)
 	}
-	if err := r.store.SetCloudDecide(ctx, r.identity, rigAccount, true); err != nil {
-		t.Fatalf("consent: %v", err)
+	for _, account := range []string{"work", "home"} {
+		if err := r.store.SetCloudDecide(ctx, r.identity, account, true); err != nil {
+			t.Fatalf("consent: %v", err)
+		}
 	}
 
 	if err := r.store.DeleteAccount(ctx, r.identity, "work"); err != nil {
@@ -260,9 +262,15 @@ func TestDeleteAccountForgetsThatAccountAlone(t *testing.T) {
 	if _, err := r.store.Cursor(ctx, r.identity, "work", ResourceMail); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("work's cursor stayed: %v", err)
 	}
-	past, err := r.store.CorrectionsBefore(ctx, r.identity, "a@b.it", time.Now().Add(time.Hour))
+	past, err := r.store.CorrectionsBefore(ctx, r.identity, "a@one.example", time.Now().Add(time.Hour))
 	if err != nil || len(past) != 0 {
 		t.Fatalf("work's corrections stayed: %v, %v", past, err)
+	}
+	if on, err := r.store.CloudDecide(ctx, r.identity, "work"); err != nil || on {
+		t.Fatalf("work's consent stayed: %v, %v", on, err)
+	}
+	if on, err := r.store.CloudDecide(ctx, r.identity, "home"); err != nil || !on {
+		t.Fatalf("home's consent went: %v, %v", on, err)
 	}
 	if _, err := r.store.Verdict(ctx, r.identity, "home", ResourceMail, "h1"); err != nil {
 		t.Fatalf("home's verdict went: %v", err)
