@@ -207,7 +207,7 @@ export function ModelSettingsPanel({
       formatRow,
       emptyOption: localSidecarOption,
     },
-    AURA_DECIDE_MODEL: { catalog: decisionCatalog, formatRow },
+    AURA_DECIDE_MODEL: { catalog: decisionCatalog, formatRow, allowCustom: false },
     AURA_STT_CLOUD_MODEL: {
       catalog: transcriptionCatalog,
       formatRow,

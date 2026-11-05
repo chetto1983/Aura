@@ -77,4 +77,26 @@ describe('ModelSettingsPanel decision model', () => {
     expect(calls).toContain('GET /api/settings/decisions-models');
     expect(screen.queryByRole('button', { name: 'Restart Aura' })).toBeNull();
   });
+
+  it('picks a hosted decision model from the list only', async () => {
+    stubFetch(true);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ModelSettingsPanel groups={['backends']} />
+      </QueryClientProvider>,
+    );
+
+    const route = within(await screen.findByRole('radiogroup', { name: 'Decision model route' }));
+    fireEvent.click(route.getByRole('radio', { name: 'OpenRouter' }));
+    fireEvent.click(await screen.findByLabelText('Decision model'));
+    fireEvent.change(await screen.findByPlaceholderText('Search models...'), {
+      target: { value: 'vendor/private-decider' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('No published model matches.')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Use "vendor\/private-decider" as typed/)).toBeNull();
+  });
 });
