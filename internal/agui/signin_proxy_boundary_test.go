@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -131,6 +132,7 @@ func TestSignInProxyRechecksTheOwnerBeforeDialing(t *testing.T) {
 }
 
 func TestSignInProxyRewritesHostAndDropsBrowserState(t *testing.T) {
+	upstreamPolicy := map[string]string{"Content-Security-Policy": "frame-ancestors *", "Cache-Control": "public, max-age=600", "Referrer-Policy": "unsafe-url"}
 	dropped := []string{"Set-Cookie2", "Access-Control-Allow-Credentials", "Content-Security-Policy-Report-Only", "Refresh", "Reporting-Endpoints", "Report-To", "NEL"}
 	type seenRequest struct {
 		host   string
@@ -142,12 +144,15 @@ func TestSignInProxyRewritesHostAndDropsBrowserState(t *testing.T) {
 		for _, h := range dropped {
 			w.Header().Set(h, "upstream")
 		}
-		w.Header().Set("Cache-Control", "public, max-age=600")
-		w.Header().Set("Referrer-Policy", "unsafe-url")
+		for h, v := range upstreamPolicy {
+			w.Header().Set(h, v)
+		}
 	}))
 	defer upstream.Close()
 	b := &proxySignInBrowser{target: strings.TrimPrefix(upstream.URL, "http://")}
-	r := signInProxyRequest("https://aura.test:8444"+proxySignInPath, "alice")
+	// sameOrigin ignores host case, so the upstream Host must come from the stream origin,
+	// not from whatever spelling the browser sent.
+	r := signInProxyRequest("https://AURA.test:8444"+proxySignInPath, "alice")
 	r.Header.Set("Referer", "https://aura.test/chat/secret")
 	r.Header.Set("Cookie2", "private")
 	rr := httptest.NewRecorder()
@@ -161,8 +166,12 @@ func TestSignInProxyRewritesHostAndDropsBrowserState(t *testing.T) {
 			t.Errorf("response kept %s=%q", h, v)
 		}
 	}
-	if rr.Header().Get("Cache-Control") != "no-store" || rr.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Fatalf("upstream overrode privacy headers: %v", rr.Header())
+	// ReverseProxy copies response headers with Add onto the ones the handler already set, so
+	// an upstream value that ModifyResponse did not replace would sit beside ours.
+	for h, upstreamValue := range upstreamPolicy {
+		if slices.Contains(rr.Header().Values(h), upstreamValue) {
+			t.Errorf("%s kept the upstream value %q", h, upstreamValue)
+		}
 	}
 }
 
