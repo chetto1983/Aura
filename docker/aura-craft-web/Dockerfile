@@ -35,9 +35,9 @@ RUN set -eu; \
     tool "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-$arch-linux.tar.gz" "$binaryen" binaryen-version_123/bin/wasm-opt; \
     rustup target add wasm32-unknown-unknown
 COPY docker/craft-web/ /craft-web/
-RUN /craft-web/build.sh deckcraft v0.12.0 29f0f7772c47aa2bfb74fcbb0c4d3b1503300849 /apps
-RUN /craft-web/build.sh photocraft v0.17.0 b8c3f3aa8e2918032cadc0e042664414a03be333 /apps
-RUN /craft-web/build.sh filmcraft v0.14.0 a2d8e9ce269aba9c399e36262522e11456df6fbf /apps
+RUN /craft-web/build.sh deckcraft v0.15.1 9bac60ff53029039c82083ee574c22d74c1541f1 /apps
+RUN /craft-web/build.sh photocraft v0.20.2 7c12f647150f8e7b2e07718f7993b1fcaa57fefe /apps
+RUN /craft-web/build.sh filmcraft v0.17.1 2fe0d0460da86621fd8b193dcc0a61f790106200 /apps
 
 FROM scratch
 COPY --from=craft-web /apps /apps

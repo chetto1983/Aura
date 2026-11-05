@@ -1,5 +1,5 @@
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 0176e0fe..b1587d8b 100644
+index 0176e0f..b1587d8 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
@@ -13,7 +13,7 @@ index 0176e0fe..b1587d8b 100644
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/host.rs b/apps/photocraft-web/src/host.rs
 new file mode 100644
-index 00000000..f17c650c
+index 0000000..f17c650
 --- /dev/null
 +++ b/apps/photocraft-web/src/host.rs
 @@ -0,0 +1,146 @@
@@ -164,7 +164,7 @@ index 00000000..f17c650c
 +    }
 +}
 diff --git a/apps/photocraft-web/src/main.rs b/apps/photocraft-web/src/main.rs
-index 0802a02e..141975ef 100644
+index 0802a02..141975e 100644
 --- a/apps/photocraft-web/src/main.rs
 +++ b/apps/photocraft-web/src/main.rs
 @@ -12,10 +12,14 @@
@@ -184,7 +184,7 @@ index 0802a02e..141975ef 100644
  mod preset_bridge;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index f82051db..6c0d51e0 100644
+index 024888c..1814de0 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
 @@ -75,6 +75,10 @@ pub fn start() {
@@ -215,11 +215,11 @@ index f82051db..6c0d51e0 100644
                      }
                      let unsaved = Arc::new(AtomicBool::new(false));
                      guard_unload(unsaved.clone());
--                    Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets }))
+-                    Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets, ui_language: "" }))
 +                    if let Some(bridge) = &app_bridge {
 +                        bridge.post_ready();
 +                    }
-+                    Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets, bridge: app_bridge }))
++                    Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets, ui_language: "", bridge: app_bridge }))
                  }),
              )
              .await;
@@ -240,16 +240,16 @@ index f82051db..6c0d51e0 100644
  /// Reads the served font manifest, if the host has one, and lists its families in the font menus.
  fn load_font_manifest(served: Served, ctx: egui::Context) {
      wasm_bindgen_futures::spawn_local(async move {
-@@ -270,6 +288,8 @@ struct WebShell {
-     served: Served,
-     database: Option<web_sys::IdbDatabase>,
+@@ -275,6 +293,8 @@ struct WebShell {
      presets: crate::preset_bridge::Bridge,
+     /// The interface language whose served script font was last asked for.
+     ui_language: &'static str,
 +    /// The framing page's bridge, in host mode.
 +    bridge: Option<crate::host::Bridge>,
  }
  
  impl WebShell {
-@@ -361,6 +381,9 @@ impl eframe::App for WebShell {
+@@ -372,6 +392,9 @@ impl eframe::App for WebShell {
              });
          }
          self.serve_fonts(ctx);
@@ -259,7 +259,7 @@ index f82051db..6c0d51e0 100644
          self.app.logic_frame(ctx, frame);
          self.save_presets(ctx);
          self.app.finish_type_reset_logic(ctx);
-@@ -392,6 +415,9 @@ impl eframe::App for WebShell {
+@@ -403,6 +426,9 @@ impl eframe::App for WebShell {
          }
          self.app.ui_frame(ui, frame);
          self.save_presets(ui.ctx());
@@ -270,10 +270,10 @@ index f82051db..6c0d51e0 100644
      }
  }
 diff --git a/crates/engine/src/shell_commands.rs b/crates/engine/src/shell_commands.rs
-index 61c33bb8..cccca4d3 100644
+index 3b52c03..4033337 100644
 --- a/crates/engine/src/shell_commands.rs
 +++ b/crates/engine/src/shell_commands.rs
-@@ -89,9 +89,9 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+@@ -90,9 +90,9 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
      ("window.theme.softLight", "Soft", &["Window", "Theme", "Light Theme"], None),
      ("window.theme.system", "Sync with system", &["Window", "Theme"], None),
      ("edit.search", "Search…", &["Edit"], Some("Cmd+F")),
@@ -286,7 +286,7 @@ index 61c33bb8..cccca4d3 100644
      ("help.reportIssue", "Report an Issue…", &["Help"], None),
      ("help.systemInfo", "System Info…", &["Help"], None),
 diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
-index c95da851..a9bdb0ff 100644
+index 9fccf05..26bf5d1 100644
 --- a/crates/ui-egui/Cargo.toml
 +++ b/crates/ui-egui/Cargo.toml
 @@ -50,6 +50,10 @@ rayon = { workspace = true }
@@ -297,14 +297,14 @@ index c95da851..a9bdb0ff 100644
 +# The browser's UI languages (`navigator.languages`) for Auto.
 +sys-locale = { version = "=0.3.2", features = ["js"] }
 +
- # Installed RAM for the GPU memory budget (`gpu_canvas::physical_memory`): the safe binding the
- # desktop app already uses, pinned to the same version.
- [target.'cfg(target_os = "windows")'.dependencies]
+ # Installed RAM for the GPU memory budget (`gpu_canvas::physical_memory`) and the user's decimal
+ # symbol (`i18n::decimal_separator`, a registry read): the safe binding the desktop app already
+ # uses, pinned to the same version.
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index a14b42c3..cdb24b8d 100644
+index fc0c268..30742d7 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -756,6 +756,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
+@@ -791,6 +791,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
          "models" => crate::credits::models_ui(ui),
          _ => {
              ui.label(tl!("PhotoCraft — an open-source, native image editor written in Rust."));
@@ -313,7 +313,7 @@ index a14b42c3..cdb24b8d 100644
              ui.add_space(12.0);
              ui.vertical_centered(|ui| {
 diff --git a/crates/ui-egui/src/i18n/system.rs b/crates/ui-egui/src/i18n/system.rs
-index 25cc9fec..9e74453b 100644
+index b2bef18..56f747c 100644
 --- a/crates/ui-egui/src/i18n/system.rs
 +++ b/crates/ui-egui/src/i18n/system.rs
 @@ -1,10 +1,9 @@
@@ -348,9 +348,9 @@ index 25cc9fec..9e74453b 100644
 +    bounded_tags(sys_locale::get_locales())
  }
  
- #[cfg(test)]
+ /// The decimal separator of the system's number format (Windows: Region › Decimal symbol), when it
 diff --git a/crates/ui-egui/src/links.rs b/crates/ui-egui/src/links.rs
-index 2042d996..6ba95c75 100644
+index 2042d99..6ba95c7 100644
 --- a/crates/ui-egui/src/links.rs
 +++ b/crates/ui-egui/src/links.rs
 @@ -41,15 +41,15 @@ pub fn discord_button(app: &mut PhotocraftApp, ui: &mut egui::Ui, min_width: f32

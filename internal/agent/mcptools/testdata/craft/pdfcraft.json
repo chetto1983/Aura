@@ -128,7 +128,7 @@
    "readOnlyHint": true,
    "title": "Render a page"
   },
-  "description": "Render one page to a PNG image (default 96 dpi, at most 600).",
+  "description": "Render one page to a PNG image (default 96 dpi, at most 600). When the picture is incomplete or approximate (content cut at the page's safety budget, a colour painted in a fallback colour), a JSON part follows the image: { page, warnings: [sentence, ...] }.",
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
@@ -534,7 +534,7 @@
    "readOnlyHint": true,
    "title": "Render a preview"
   },
-  "description": "Render a PNG bounded by max_side (default 1024), without changing or saving the document. Page defaults to 1; doc may be omitted when exactly one document is open.",
+  "description": "Render a PNG bounded by max_side (default 1024), without changing or saving the document. Page defaults to 1; doc may be omitted when exactly one document is open. Render warnings follow the image as page_render gives them.",
   "inputSchema": {
    "additionalProperties": false,
    "properties": {

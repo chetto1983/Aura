@@ -4,13 +4,14 @@
 # is reported again.
 
 # zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet;
-# on 2026-11-03 their newest tags, v0.14.0, v0.14.1 and v0.15.0, still lock it).
+# on 2026-11-05 the pinned tags, v0.15.2, v0.15.1 and v0.16.1, still resolve it in their wasm32
+# graph).
 # The operator approved the first two acceptances on 2026-10-24, the other three on 2026-11-03
 # (issue #212).
 # Every advisory concerns ZipArchive::extract() and ZipStreamReader::extract() writing to a
 # filesystem: SUID/SGID bits kept, permissions applied through symlinks, a symlink target buffer
 # sized from the declared length, file names taken from the local header instead of the central
-# directory. No source file of the three apps calls either: checked again on 2026-11-03 at the
+# directory. No source file of the three apps calls either: checked again on 2026-11-05 at the
 # pinned tags with Aura's patches, they use only ZipArchive::new, by_name, by_index and
 # ZipWriter. On wasm32-unknown-unknown, the only target these builds ship, the standard library
 # has no filesystem to extract to, and zip 3.0.0 compiles the symlink branch only for unix and

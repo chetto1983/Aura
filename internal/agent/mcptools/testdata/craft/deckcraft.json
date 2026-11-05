@@ -657,7 +657,7 @@
    "readOnlyHint": false,
    "title": "Insert chart"
   },
-  "description": "Insert a chart (column, bar, line, pie, doughnut, area, scatter, stackedColumn\u2026) with categories and series.",
+  "description": "Insert a chart (column, bar, line, pie, doughnut, area, scatter, stackedColumn\u2026) with categories and series, optionally at a box.",
   "inputSchema": {
    "additionalProperties": false,
    "properties": {
@@ -666,6 +666,10 @@
       "type": "string"
      },
      "type": "array"
+    },
+    "h": {
+     "description": "Height",
+     "type": "number"
     },
     "series": {
      "items": {
@@ -696,6 +700,18 @@
     "type": {
      "description": "Chart type",
      "type": "string"
+    },
+    "w": {
+     "description": "Width",
+     "type": "number"
+    },
+    "x": {
+     "description": "Left",
+     "type": "number"
+    },
+    "y": {
+     "description": "Top",
+     "type": "number"
     }
    },
    "type": "object"

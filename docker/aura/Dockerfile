@@ -26,9 +26,9 @@ RUN npm run build
 # time. The wasm and its glue are gzipped here because nothing in front of aura compresses: aura
 # sends the .gz to a browser that accepts it (internal/staticapp).
 FROM alpine:3.24 AS craft-official
-ADD --checksum=sha256:e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip /tmp/gridcraft.zip
-ADD --checksum=sha256:fdb2508030d7668cb5164db3b7d05baa1011a87497c95ef043844d90cbbc4da2 https://github.com/storytold/pdfcraft/releases/download/v0.15.0/pdfcraft-web-0.15.0.zip /tmp/pdfcraft.zip
-ADD --checksum=sha256:4cf6808b762e6d1211a569dd0cac831b7f1e7eb1a41f70cae90bceeb2c6a6acf https://github.com/storytold/wordcraft/releases/download/v0.12.0/wordcraft-web-0.12.0.zip /tmp/wordcraft.zip
+ADD --checksum=sha256:496785cf8b1f406abeef8531e323961a13170be3815b6ac6809499adea598368 https://github.com/storytold/gridcraft/releases/download/v0.16.1/gridcraft-web-0.16.1.zip /tmp/gridcraft.zip
+ADD --checksum=sha256:3f2c11ae9e33d91762eaeb92a0921734a6e6cbab38c8a6a0d715fe1af73c6867 https://github.com/storytold/pdfcraft/releases/download/v0.18.2/pdfcraft-web-0.18.2.zip /tmp/pdfcraft.zip
+ADD --checksum=sha256:6c7e0f1fdda793ed29122e10c1674942b0693dca112ed748d97ea70714bdafc8 https://github.com/storytold/wordcraft/releases/download/v0.15.2/wordcraft-web-0.15.2.zip /tmp/wordcraft.zip
 RUN set -eu; \
     mkdir /apps; \
     for app in gridcraft pdfcraft wordcraft; do \

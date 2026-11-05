@@ -312,10 +312,10 @@ index 3bab46e..c996a34 100644
 +    None
  }
 diff --git a/crates/ui-egui/src/header.rs b/crates/ui-egui/src/header.rs
-index 181de22..8aa845b 100644
+index 6b6d7a0..6690ff5 100644
 --- a/crates/ui-egui/src/header.rs
 +++ b/crates/ui-egui/src/header.rs
-@@ -130,8 +130,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
+@@ -132,8 +132,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
          let g = p.layout_no_wrap(label.to_string(), Tokens::ui(12.0), Color32::WHITE);
          let w = g.size().x + 34.0;
          let r = Rect::from_min_size(pos2(wr.min.x - w - 14.0, rect.center().y - 12.0), vec2(w, 24.0));
@@ -327,7 +327,7 @@ index 181de22..8aa845b 100644
          icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)), Icon::Chat, Color32::WHITE);
          ui.painter().galley(pos2(r.min.x + 25.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
 diff --git a/crates/ui-egui/src/links.rs b/crates/ui-egui/src/links.rs
-index da4fa72..d8c8ac9 100644
+index e5d4b90..86f26c5 100644
 --- a/crates/ui-egui/src/links.rs
 +++ b/crates/ui-egui/src/links.rs
 @@ -19,9 +19,9 @@ pub const ISSUES: &str = "https://github.com/storytold/filmcraft/issues";
@@ -344,10 +344,10 @@ index da4fa72..d8c8ac9 100644
      ("help.reportIssue", "Report an Issue…", ISSUES),
  ];
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 6be0e33..f04a5be 100644
+index 9e10031..e9d8a33 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -139,9 +139,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
+@@ -147,9 +147,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
      uic!("mode.import", "Import", [], None),
      uic!("mode.edit", "Edit", [], None),
      uic!("mode.export", "Export", ["File", "Export"], Some("Cmd+M")),
@@ -361,10 +361,10 @@ index 6be0e33..f04a5be 100644
      uic!("help.reportIssue", "Report an Issue…", ["Help"], None),
      uic!("help.revealLogFiles", "Reveal Log Files…", ["Help"], None),
 diff --git a/crates/ui-egui/src/panels/dialogs.rs b/crates/ui-egui/src/panels/dialogs.rs
-index 4ea69e5..cf12c11 100644
+index 40e3bac..9d0d60d 100644
 --- a/crates/ui-egui/src/panels/dialogs.rs
 +++ b/crates/ui-egui/src/panels/dialogs.rs
-@@ -461,7 +461,7 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -471,7 +471,7 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
      ui.add_space(6.0);
      ui.heading("FilmCraft");
      ui.label(tlf!("Version {version}", version = env!("CARGO_PKG_VERSION")));
@@ -373,7 +373,7 @@ index 4ea69e5..cf12c11 100644
      ui.add_space(10.0);
      let mut link = |ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, url: &str, primary: bool| {
          let size = egui::vec2(ui.available_width(), if primary { 36.0 } else { 28.0 });
-@@ -490,10 +490,10 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -500,10 +500,10 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
              links::open(app, ui.ctx(), url);
          }
      };

@@ -1,13 +1,13 @@
 diff --git a/apps/deckcraft-web/Cargo.toml b/apps/deckcraft-web/Cargo.toml
-index 7014421..51a094b 100644
+index 541985e..ca04d5b 100644
 --- a/apps/deckcraft-web/Cargo.toml
 +++ b/apps/deckcraft-web/Cargo.toml
 @@ -27,4 +27,4 @@ rfd = { workspace = true }
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
  js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "EventTarget", "MessageEvent", "UrlSearchParams"] }
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "MessageEvent", "Event", "EventTarget"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "MessageEvent", "Event", "EventTarget", "UrlSearchParams"] }
 diff --git a/apps/deckcraft-web/src/host.rs b/apps/deckcraft-web/src/host.rs
 new file mode 100644
 index 0000000..6c02ca0
@@ -205,7 +205,7 @@ index 0000000..6c02ca0
 +    }
 +}
 diff --git a/apps/deckcraft-web/src/main.rs b/apps/deckcraft-web/src/main.rs
-index 6d2b7e9..c16f198 100644
+index 2ce622e..0db38d9 100644
 --- a/apps/deckcraft-web/src/main.rs
 +++ b/apps/deckcraft-web/src/main.rs
 @@ -14,10 +14,13 @@
@@ -221,10 +221,10 @@ index 6d2b7e9..c16f198 100644
 +#[cfg(target_arch = "wasm32")]
 +mod host;
  #[cfg(target_arch = "wasm32")]
- mod web;
- 
+ mod presenter;
+ #[cfg(target_arch = "wasm32")]
 diff --git a/apps/deckcraft-web/src/web.rs b/apps/deckcraft-web/src/web.rs
-index f8e68a3..cdb79a4 100644
+index a385d44..c3335d9 100644
 --- a/apps/deckcraft-web/src/web.rs
 +++ b/apps/deckcraft-web/src/web.rs
 @@ -30,6 +30,10 @@ pub fn start() {
@@ -238,9 +238,9 @@ index f8e68a3..cdb79a4 100644
          let result = eframe::WebRunner::new()
              .start(
                  canvas,
-@@ -40,22 +44,34 @@ pub fn start() {
+@@ -44,22 +48,34 @@ pub fn start() {
+                         return Ok(Box::new(presenter) as Box<dyn eframe::App>);
                      }
-                     deckcraft_ui_egui::install_ime_pass_hooks(&cc.egui_ctx);
                      let inbox: Inbox = Inbox::default();
 -                    let mut app = SlideApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
 -                    let q = query();
@@ -284,7 +284,7 @@ index f8e68a3..cdb79a4 100644
          if let Some(el) = document.get_element_by_id(LOADING_ID) {
              match result {
                  Ok(()) => el.remove(),
-@@ -69,16 +85,26 @@ fn query() -> String {
+@@ -73,16 +89,26 @@ fn query() -> String {
      web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
  }
  
@@ -309,9 +309,9 @@ index f8e68a3..cdb79a4 100644
 +            push_inbox(&self.inbox, InboxEvent::File(InboxFile { id, name, bytes }));
 +        }
          self.app.logic(ctx);
-     }
- 
-@@ -111,6 +137,9 @@ impl eframe::App for WebShell {
+         if self.app.show.is_none()
+             && let Some(host) = self.app.services.presenter.as_mut()
+@@ -120,6 +146,9 @@ impl eframe::App for WebShell {
  
      fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
          self.app.ui(ui);
