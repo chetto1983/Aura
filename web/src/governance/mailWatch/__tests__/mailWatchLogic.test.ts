@@ -218,7 +218,7 @@ describe('previewRule', () => {
     ];
     expect(previewRule(draft, rows, [], [spam])).toBe(2);
     expect(previewRule({ ...draft, tier: 'now' }, rows, [], [spam])).toBe(2);
-    expect(previewRule(draft, rows, [], [label({ discard: true, tier: 'later' })])).toBe(1);
+    expect(previewRule(draft, rows, [], [label({ discard: true, tier: 'today' })])).toBe(2);
   });
 
   it('prefers the tier a rule states over its label tier', () => {

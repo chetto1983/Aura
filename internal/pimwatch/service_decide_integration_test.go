@@ -45,6 +45,17 @@ func TestACorrectionDiscardsAndRescues(t *testing.T) {
 	if err != nil || verdict.Tier != TierLater || verdict.Discarded || verdict.LabelID != client.ID {
 		t.Fatalf("a keep label: %+v, %v", verdict, err)
 	}
+
+	timed, err := r.service.AddLabel(ctx, r.identity, LabelInput{Name: "Spam with a tier", Tier: TierToday, Discard: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.commit(rigAccount, r.draft("m3", TierNow, ""))
+	r.pim.items["m3"] = Item{ID: "m3", From: "m3@one.example"}
+	verdict, _, err = r.service.Correct(ctx, r.identity, Correction{AccountID: rigAccount, Resource: ResourceMail, ItemID: "m3", LabelID: &timed.ID})
+	if err != nil || verdict.Tier != TierLater || !verdict.Discarded {
+		t.Fatalf("a label with a tier and a discard: %+v, %v", verdict, err)
+	}
 }
 
 func TestACorrectionFindsAnUppercaseLabelId(t *testing.T) {

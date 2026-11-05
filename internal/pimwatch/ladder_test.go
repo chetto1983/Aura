@@ -266,10 +266,13 @@ func TestDecideEvent(t *testing.T) {
 func TestARuleWithADiscardLabelFilesTheMailLater(t *testing.T) {
 	t.Parallel()
 	spam := Label{ID: "l-spam", Name: "Spam", Discard: true}
+	timed := Label{ID: "l-timed", Name: "Spam with a tier", Tier: TierToday, Discard: true}
 	book := NewBook([]Rule{
 		{Key: "junk@shop.example", Kind: KeySender, LabelID: spam.ID},
 		{Key: "both@shop.example", Kind: KeySender, Tier: TierNow, LabelID: spam.ID},
-	}, []Label{spam})
+		{Key: "timed@shop.example", Kind: KeySender, LabelID: timed.ID},
+		{Key: "owntier@shop.example", Kind: KeySender, Tier: TierNow, LabelID: timed.ID},
+	}, []Label{spam, timed})
 
 	got := DecideMail(book, "junk@shop.example", Signals{WrittenTo: yes(), ProviderImportant: true})
 	if got.Tier != TierLater || got.By != ByRule || !got.Discarded || got.LabelID != spam.ID {
@@ -278,5 +281,13 @@ func TestARuleWithADiscardLabelFilesTheMailLater(t *testing.T) {
 	got = DecideMail(book, "both@shop.example", Signals{})
 	if got.Tier != TierNow || got.By != ByRule || got.Discarded {
 		t.Fatalf("a rule tier over a discard label: %+v", got)
+	}
+	got = DecideMail(book, "timed@shop.example", Signals{})
+	if got.Tier != TierLater || got.By != ByRule || !got.Discarded {
+		t.Fatalf("discard wins over the label's own tier: %+v", got)
+	}
+	got = DecideMail(book, "owntier@shop.example", Signals{})
+	if got.Tier != TierNow || got.Discarded {
+		t.Fatalf("a rule's own tier over a label with both: %+v", got)
 	}
 }

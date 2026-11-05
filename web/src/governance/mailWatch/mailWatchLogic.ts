@@ -115,7 +115,8 @@ function domainOf(address: string): string {
  * internal/pimwatch/ladder.go: a sender rule beats a domain rule outright, a label's tier stands
  * in for a rule's missing tier, and an event is never matched. A mail the person corrected is
  * left out, because their word on that one mail stands whatever the rule says. A label that
- * discards, given with no tier at all, files a mail `later` and discards it. */
+ * discards, given with no tier of the rule's own, files a mail `later` and discards it, whatever
+ * tier the label has. */
 export function previewRule(
   draft: RuleDraft,
   decisions: readonly MailWatchDecision[],
@@ -125,7 +126,7 @@ export function previewRule(
   const parsed = parseRuleKey(draft.key);
   if (parsed === null || !draftIsComplete(draft)) return 0;
   const given = labels.find((label) => label.id === draft.labelId);
-  const discards = draft.tier === '' && given?.tier === undefined && given?.discard === true;
+  const discards = draft.tier === '' && given?.discard === true;
   const givenTier = draft.tier === '' ? given?.tier : draft.tier;
   const tier = discards ? 'later' : givenTier;
   const senderRules = new Set(
