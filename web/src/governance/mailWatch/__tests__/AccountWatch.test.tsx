@@ -334,13 +334,38 @@ describe('the decision model on an account', () => {
     });
   });
 
-  it("shows the model's last failure", async () => {
-    const failedAt = '2026-11-04T08:30:00Z';
-    statusWith(account({ decide_error: 'rejected', decide_failed_at: failedAt }));
+  const failedAt = '2026-11-04T08:30:00Z';
+  function failedOn(route: '' | 'local' | 'openrouter', consent: boolean) {
+    server.on(`GET ${STATUS}`, () => ({
+      body: watchStatus({
+        decide_route: route,
+        accounts: [
+          account({ cloud_decide: consent, decide_error: 'rejected', decide_failed_at: failedAt }),
+        ],
+      }),
+    }));
+  }
+
+  it.each([
+    ['local', false],
+    ['openrouter', true],
+  ] as const)("shows the model's failure on the %s route", async (route, consent) => {
+    failedOn(route, consent);
     renderWatch(<AccountWatch account={PIM} />);
     const line = await screen.findByText(/The model has not answered since/);
     expect(line.textContent).toBe(
       `The model has not answered since ${clockTime(failedAt, 'en')} (OpenRouter refused the request)`,
     );
+  });
+
+  it.each([
+    ['the route is off', '', true],
+    ['OpenRouter has no consent', 'openrouter', false],
+  ] as const)('hides the failure of a model that is not asked: %s', async (_, route, consent) => {
+    failedOn(route, consent);
+    renderWatch(<AccountWatch account={PIM} />);
+    await theSwitch();
+    expect(screen.getByText(/Watching/)).toBeTruthy();
+    expect(screen.queryByText(/The model has not answered/)).toBeNull();
   });
 });

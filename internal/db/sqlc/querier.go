@@ -744,7 +744,8 @@ type Querier interface {
 	// one memory decided, one already labelled, or one with no decision is never overwritten;
 	// a repeat is a zero-row update, as SetConversationTitleIfNull's is.
 	RecordConversationTurnTeacherLabel(ctx context.Context, arg RecordConversationTurnTeacherLabelParams) (int64, error)
-	// The decision model's last failure on an account, a class with no text.
+	// The decision model's last failure on an account, a class with no text. The time stays the first
+	// failure's until an answer clears it, so the cockpit can say since when the model has not answered.
 	RecordPIMWatchDecideFailure(ctx context.Context, arg RecordPIMWatchDecideFailureParams) error
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// One finished run's effect on its task, in one statement: a success resets the failure count;

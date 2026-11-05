@@ -343,10 +343,13 @@ INSERT INTO aura.pim_watch_accounts (identity_id, account_id, cloud_decide) VALU
 ON CONFLICT (identity_id, account_id) DO UPDATE SET cloud_decide = EXCLUDED.cloud_decide, updated_at = now();
 
 -- name: RecordPIMWatchDecideFailure :exec
--- The decision model's last failure on an account, a class with no text.
+-- The decision model's last failure on an account, a class with no text. The time stays the first
+-- failure's until an answer clears it, so the cockpit can say since when the model has not answered.
 INSERT INTO aura.pim_watch_accounts (identity_id, account_id, decide_error, decide_failed_at) VALUES ($1, $2, $3, now())
 ON CONFLICT (identity_id, account_id) DO UPDATE
-SET decide_error = EXCLUDED.decide_error, decide_failed_at = EXCLUDED.decide_failed_at, updated_at = now();
+SET decide_error = EXCLUDED.decide_error,
+    decide_failed_at = COALESCE(aura.pim_watch_accounts.decide_failed_at, EXCLUDED.decide_failed_at),
+    updated_at = now();
 
 -- name: ClearPIMWatchDecideFailure :exec
 -- An answer clears the last failure. It touches only a row that holds one, so a tick with nothing

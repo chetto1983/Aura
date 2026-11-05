@@ -139,7 +139,8 @@ func (s *Store) DiscardedInWindow(ctx context.Context, identityID string, since,
 }
 
 // AccountSettings is what the person decided for an account and what the model last did to it.
-// DecideError is a class with no text, set from DecideFailedAt until the next answer clears both.
+// DecideError is the latest failure's class, with no text, and DecideFailedAt the first failure's
+// time; the next answer clears both.
 type AccountSettings struct {
 	CloudDecide    bool
 	DecideError    string

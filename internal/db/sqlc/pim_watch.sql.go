@@ -1567,7 +1567,9 @@ func (q *Queries) RaisePIMWatchFailingAlarm(ctx context.Context, arg RaisePIMWat
 const recordPIMWatchDecideFailure = `-- name: RecordPIMWatchDecideFailure :exec
 INSERT INTO aura.pim_watch_accounts (identity_id, account_id, decide_error, decide_failed_at) VALUES ($1, $2, $3, now())
 ON CONFLICT (identity_id, account_id) DO UPDATE
-SET decide_error = EXCLUDED.decide_error, decide_failed_at = EXCLUDED.decide_failed_at, updated_at = now()
+SET decide_error = EXCLUDED.decide_error,
+    decide_failed_at = COALESCE(aura.pim_watch_accounts.decide_failed_at, EXCLUDED.decide_failed_at),
+    updated_at = now()
 `
 
 type RecordPIMWatchDecideFailureParams struct {
@@ -1576,7 +1578,8 @@ type RecordPIMWatchDecideFailureParams struct {
 	DecideError string      `json:"decide_error"`
 }
 
-// The decision model's last failure on an account, a class with no text.
+// The decision model's last failure on an account, a class with no text. The time stays the first
+// failure's until an answer clears it, so the cockpit can say since when the model has not answered.
 func (q *Queries) RecordPIMWatchDecideFailure(ctx context.Context, arg RecordPIMWatchDecideFailureParams) error {
 	_, err := q.db.Exec(ctx, recordPIMWatchDecideFailure, arg.IdentityID, arg.AccountID, arg.DecideError)
 	return err

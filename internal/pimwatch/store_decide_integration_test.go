@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 const decideModel = "liquid/d1.1-20261027"
@@ -199,4 +200,29 @@ func TestDescriptionsAreSeededOnceAndOnlyIntoEmptyDefaults(t *testing.T) {
 // overwrite is a patch that sets every field, the way a full rewrite of a label does.
 func overwrite(in LabelInput) LabelPatch {
 	return LabelPatch{Name: &in.Name, Tier: &in.Tier, Description: &in.Description, Discard: &in.Discard}
+}
+
+func TestAFailureKeepsItsFirstTimeUntilAnAnswerClearsIt(t *testing.T) {
+	r := newWatchRig(t)
+	ctx := context.Background()
+	record := func(class string) AccountSettings {
+		t.Helper()
+		if err := r.store.RecordDecideFailure(ctx, r.identity, rigAccount, class); err != nil {
+			t.Fatal(err)
+		}
+		return r.accountSettings()
+	}
+	first := record("unreachable")
+	time.Sleep(10 * time.Millisecond)
+	second := record("loading")
+	if second.DecideError != "loading" || first.DecideFailedAt.IsZero() || !second.DecideFailedAt.Equal(first.DecideFailedAt) {
+		t.Fatalf("first %+v, second %+v: want the second class since the first time", first, second)
+	}
+	if cleared := record(""); cleared.DecideError != "" || !cleared.DecideFailedAt.IsZero() {
+		t.Fatalf("cleared = %+v", cleared)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if again := record("upstream"); !again.DecideFailedAt.After(first.DecideFailedAt) {
+		t.Fatalf("a failure after the clear reads the old time: %+v", again)
+	}
 }

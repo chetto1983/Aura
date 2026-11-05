@@ -80,6 +80,7 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
           <WatchState
             watch={watch}
             cap={settings.daily_alert_cap}
+            modelAsked={decideRoute !== '' && (decideRoute !== 'openrouter' || watch.cloud_decide)}
             resuming={toggle.isPending}
             onResume={() => {
               toggle.mutate(true);
@@ -121,11 +122,13 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
 interface WatchStateProps {
   readonly watch: MailWatchAccount;
   readonly cap: number;
+  /** A failure stays on the account until an answer clears it, so it shows only while the model is asked. */
+  readonly modelAsked: boolean;
   readonly resuming: boolean;
   readonly onResume: () => void;
 }
 
-function WatchState({ watch, cap, resuming, onResume }: WatchStateProps) {
+function WatchState({ watch, cap, modelAsked, resuming, onResume }: WatchStateProps) {
   const { t } = useTranslation();
   const failing = watch.resources.filter((entry) => entry.status === 'failing');
   const unsupported = watch.resources.filter((entry) => entry.status === 'unsupported');
@@ -157,7 +160,7 @@ function WatchState({ watch, cap, resuming, onResume }: WatchStateProps) {
       {[...failing, ...refused].map((entry) => (
         <FailingLine key={entry.resource} entry={entry} />
       ))}
-      {watch.decide_error ? <DecideFailure watch={watch} /> : null}
+      {modelAsked && watch.decide_error ? <DecideFailure watch={watch} /> : null}
       {notOffered.map((entry) => (
         <p key={entry.resource} className="text-[13px] text-text-muted">
           {t('governance.mailWatch.state.unsupported', {

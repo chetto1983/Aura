@@ -306,7 +306,7 @@ type AccountStatus struct {
 	AlertsToday  int
 	Resources    []ResourceStatus
 	// CloudDecide is the person's consent for the hosted model; DecideError is the class of its last
-	// failure, with no text, and DecideFailedAt when.
+	// failure, with no text, and DecideFailedAt when the failures began.
 	CloudDecide    bool
 	DecideError    string
 	DecideFailedAt time.Time
