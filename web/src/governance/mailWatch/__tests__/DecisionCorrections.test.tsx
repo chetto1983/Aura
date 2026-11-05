@@ -137,6 +137,49 @@ describe('correcting one mail', () => {
     expect(tierOf('One')).toBe('Later');
   });
 
+  it('reads the day again after a later correction cancelled the read that moves a row', async () => {
+    let discarded = false;
+    let keptReads = 0;
+    server.on('GET /api/mail-watch/labels', () => ({
+      body: [label({ id: 'spam', name: 'Spam', discard: true })],
+    }));
+    server.on(`POST ${CORRECT}`, (call) => {
+      const { item_id: item } = call.body as { item_id: string };
+      if (item === 'a') discarded = true;
+      return {
+        body: item === 'a' ? { tier: 'later', label_id: 'spam', discarded: true } : { tier: 'now' },
+      };
+    });
+    server.on(DECISIONS, (call) => {
+      if (call.query.includes('discarded=1')) {
+        const mine = decision({ item_id: 'a', subject: 'Alpha', tier: 'later', discarded: true });
+        return { body: watchDay(discarded ? [mine] : [], undefined, discarded ? 1 : 0) };
+      }
+      keptReads += 1;
+      // The read that follows the move hangs, as a slow PIM does, until the next correction cancels it.
+      if (discarded && keptReads === 2) return hang();
+      const alpha = decision({ item_id: 'a', subject: 'Alpha', from: 'a@x.org' });
+      const bravo = decision({ item_id: 'b', subject: 'Bravo', from: 'b@x.org' });
+      return { body: watchDay(discarded ? [bravo] : [alpha, bravo], undefined, discarded ? 1 : 0) };
+    });
+    openDay();
+    await screen.findByText('Alpha');
+    fireEvent.click(within(itemOf('Alpha')).getByRole('combobox', { name: 'Label' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Spam' }));
+    await waitFor(() => {
+      expect(keptReads).toBe(2);
+    });
+    press('1', rowOf('Bravo'));
+    await waitFor(() => {
+      expect(server.writes('POST', CORRECT)).toHaveLength(2);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Alpha')).toBeNull();
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Discarded (1)' }));
+    expect(await screen.findByText('Alpha')).toBeTruthy();
+  });
+
   it('corrects with the tier control too, and pressing the current tier does nothing', async () => {
     server.on(`POST ${CORRECT}`, () => ({ body: { tier: 'later' } }));
     theDay(server, decision({ subject: 'One' }));
