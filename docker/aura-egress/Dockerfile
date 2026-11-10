@@ -24,7 +24,7 @@
 #
 # Digest-pinned base (D-13), the same pin as docker/aura-sandbox/Dockerfile. Dependabot
 # refreshes it when bookworm-slim moves, before Hub can collect the superseded manifest.
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # A cached RUN keeps the packages it installed: on 2026-10-26 aura-egress:edge still had the
 # libssl3 of 2026-10-24, deb12u1, while bookworm had deb12u2 (CVE-2026-84782, issue #189). The
