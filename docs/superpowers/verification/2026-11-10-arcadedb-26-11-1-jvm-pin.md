@@ -13,6 +13,8 @@ question for the operator.
 - The image drops brotli-libs, libexpat, musl and guava-android. netty-handler 4.1.136.Final
   (CRITICAL CVE-2026-75595) is still shaded into `arcadedb-ha-raft`, so its `.trivyignore.yaml`
   entry stays.
+- **One-way.** Once 26.11.1 has written, 26.10.2 cannot read its vectors. Going back means restoring
+  the last backup 26.10.2 took (section "Back to 26.10.2").
 
 ## Setup
 
@@ -57,6 +59,30 @@ started on it.
 The 26.11.1 log loaded the vector graph from disk (`500 nodes`). The live tier then ran on this
 database with 26.11.1: 1500 passed, 5 skipped, 0 failed, and 0 `SEVERE` lines. Its schema pass
 re-applies every `IF NOT EXISTS` statement to a schema created by the older engine.
+
+## Back to 26.10.2 after 26.11.1 has written: not safe
+
+CodeRabbit's review of #235 claimed that 26.10.2 cannot read float arrays written by 26.11.1. Measured:
+the same database, opened by 26.11.1, which added 100 entities, 300 `FACT` edges and 100
+`ConversationTurn` vertices with new embeddings and rewrote the embedding of 50 existing facts. The
+server was stopped, and the directory opened by 26.10.2.
+
+| Probe | 26.11.1 | 26.10.2 on the same files |
+|---|---|---|
+| Record counts, full-text counts, `DATETIME`, index validity | 300 / 800 / 400, 165, 256 | same |
+| `vector.neighbors` top 10 on `FACT[embedding]` | includes `n238` and `n11`, written by 26.11.1 | both missing, replaced by older facts |
+| `vector.neighbors` top 10 on `ConversationTurn[embedding]` | 10 rows | last 2 differ |
+| Server log | 0 errors | 448 `SerializationException: Error on deserializing value of unknown type 36` |
+
+- **The upgrade is one-way once 26.11.1 writes.** 26.11.1 stores a float array under a type that
+  26.10.2 does not know. On 26.10.2 those records still count, but their vectors cannot be read, so
+  vector recall silently loses every fact, turn or trace written or re-embedded since the upgrade,
+  and the log fills with exceptions.
+- **The way back is the last backup 26.10.2 took.** `docker/arcadedb/backup.json` backs up every
+  database every 60 minutes, but every backup after the upgrade is written by 26.11.1. Going back
+  means restoring the last pre-upgrade archive into 26.10.2, and losing what was written since.
+- **What this does not show:** whether 26.10.2 can open a 26.11.1 backup (assumed not, not tried),
+  and which other types 26.11.1 writes differently.
 
 ## Release notes read against Aura
 

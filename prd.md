@@ -1556,6 +1556,11 @@ ArcadeDB 26.11.1 on the JVM, 2026-11-10
 - **Data from 26.10.2.** A memory database written by 26.10.2 opens on 26.11.1 with the same record
   counts, top-10 vector neighbours and distances on both vector indexes, full-text counts, index
   validity and `DATETIME` values. The live tier then passes on it unchanged.
+- **The upgrade is one-way once 26.11.1 writes.** It stores float arrays under a type 26.10.2
+  cannot read (`SerializationException ... unknown type 36`). Opened again by 26.10.2, those
+  records still count but drop out of vector recall with no error to the caller. Going back means
+  restoring the last backup 26.10.2 took (hourly, `docker/arcadedb/backup.json`), and losing what
+  was written since.
 - **The image.** Same user (UID and GID 1000). It drops brotli-libs, libexpat, musl and
   guava-android. netty-handler 4.1.136.Final is still shaded into `arcadedb-ha-raft`, so its
   `.trivyignore.yaml` entry stays.

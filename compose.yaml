@@ -627,6 +627,8 @@ services:
     # vector neighbours and full-text answers:
     # docs/superpowers/verification/2026-11-10-arcadedb-26-11-1-jvm-pin.md.
     # The floor in internal/arcadedb/admin.go stays 26.10.1: no statement needs 26.11.1.
+    # One way only: 26.10.2 cannot read the float arrays 26.11.1 writes, and drops them from
+    # vector recall. Going back means restoring the last backup 26.10.2 took.
     # The native image and the `where` filter stay with
     # docs/superpowers/specs/2026-10-17-arcadedb-26-11-native-design.md.
     #
