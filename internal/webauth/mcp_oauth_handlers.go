@@ -161,7 +161,7 @@ func (s *OAuthServer) exchangeAuthorizationCode(w http.ResponseWriter, r *http.R
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code is invalid or expired")
 		return
 	}
-	extra := mcpTokenClaims(code.resource, code.scope, code.clientID, code.identityID)
+	extra := mcpTokenClaims(code.resource, code.scope, code.identityID)
 	pair, err := s.tokens.jwt.GenerateUserToken(r.Context(), code.userID, code.sessionID, extra)
 	if err != nil {
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "token generation failed")
@@ -177,7 +177,7 @@ func (s *OAuthServer) exchangeAuthorizationCode(w http.ResponseWriter, r *http.R
 
 func (s *OAuthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Request) {
 	refreshToken := r.Form.Get("refresh_token")
-	claims, err := s.tokens.jwt.ExtractClaims(r.Context(), refreshToken)
+	claims, err := s.tokens.jwt.ValidateRefreshToken(r.Context(), refreshToken)
 	clientID, _ := claims["client_id"].(string)
 	if err != nil {
 		slog.Warn("mcp oauth server: refresh token rejected", "stage", "decode_claims", "error", err)

@@ -12,6 +12,7 @@ import (
 	authula "github.com/Authula/authula"
 	authulaconfig "github.com/Authula/authula/config"
 	authulamodels "github.com/Authula/authula/models"
+	secondarystorageplugin "github.com/Authula/authula/plugins/secondary-storage"
 	"github.com/google/uuid"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -54,11 +55,17 @@ func NewLiveMCPTokenIssuer(dsn, secret string) (_ *LiveMCPTokenIssuer, err error
 			Provider: "gochannel", GoChannel: &authulamodels.GoChannelConfig{BufferSize: 10},
 		}),
 		authulaconfig.WithPlugins(authulamodels.PluginsConfig{
+			authulamodels.PluginSecondaryStorage.String(): map[string]any{"enabled": true},
 			mcpJWTPluginName: map[string]any{"enabled": true},
 		}),
 	)
 	tokens := newMCPTokenPlugin()
-	auth := authula.New(&authula.AuthConfig{Config: config, Plugins: []authulamodels.Plugin{tokens}})
+	auth := authula.New(&authula.AuthConfig{Config: config, Plugins: []authulamodels.Plugin{
+		secondarystorageplugin.New(secondarystorageplugin.SecondaryStoragePluginConfig{
+			Enabled: true, Provider: secondarystorageplugin.SecondaryStorageProviderMemory,
+		}),
+		tokens,
+	}})
 	return &LiveMCPTokenIssuer{auth: auth, tokens: tokens}, nil
 }
 
@@ -72,13 +79,7 @@ func (i *LiveMCPTokenIssuer) AccessToken(ctx context.Context, resource, subject 
 		return "", fmt.Errorf("webauth: live MCP token subject: %w", err)
 	}
 	sessionID := uuid.NewString()
-	pair, err := i.tokens.jwt.GenerateUserToken(ctx, "mcp-live-probe", sessionID, map[string]any{
-		"iss":           mcp.AuraAuthorizationServerIssuer,
-		"aud":           resource,
-		"scope":         mcp.AuraOAuthToolsScope,
-		"client_id":     mcpOAuthClientID,
-		mcpSubjectClaim: subject,
-	})
+	pair, err := i.tokens.jwt.GenerateUserToken(ctx, "mcp-live-probe", sessionID, mcpTokenClaims(resource, mcp.AuraOAuthToolsScope, subject))
 	if err != nil {
 		return "", fmt.Errorf("webauth: issue live MCP access token: %w", err)
 	}
