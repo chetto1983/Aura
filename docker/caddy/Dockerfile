@@ -14,16 +14,15 @@
 # source, and — unlike DuckDNS, which has no wildcard at all — it answers the
 # wildcard case that the two-origin design depends on.
 #
-# Caddy v2.11.7 requires golang.org/x/net v0.59.0 (CVE-2026-78669, fixed in v0.60.0; weekly
-# security scan, 2026-10-24) and go-jose/v4 v4.1.5 (CVE-2026-116587, fixed in v4.1.6; issue
-# #212). xcaddy's --replace writes a replace directive, its README's way to move a dependency
-# that is not a plugin. `go version -m` then shows the fixed versions in the binary, and Trivy
-# reports nothing for them. Drop each once upstream carries it: a replace pins a version, it
-# does not raise a floor, so once Caddy requires a newer one this line would downgrade it.
+# Caddy v2.11.9 requires golang.org/x/net v0.60.0 (CVE-2026-78661, fixed in v0.62.0; weekly
+# security scan, 2026-11-09, issue #227). xcaddy's --replace writes a replace directive, its
+# README's way to move a dependency that is not a plugin. `go version -m` then shows the fixed
+# version in the binary, and Trivy reports nothing for it. Drop it once upstream carries it: a
+# replace pins a version, it does not raise a floor, so once Caddy requires a newer one this line
+# would downgrade it. The go-jose/v4 replace went for that reason: v2.11.9 requires v4.1.6 itself.
 FROM caddy:2-builder AS build
 RUN xcaddy build --with github.com/caddy-dns/desec \
-      --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
-      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6
+      --replace golang.org/x/net=golang.org/x/net@v0.62.0
 
 FROM caddy:2
 # caddy:2's Alpine base trails Alpine's own fixes: brotli-libs 1.2.0-r0 on 2026-10-24
