@@ -147,7 +147,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// and the `aura` gate on it are part of the image contract, not incidental
 		// wiring.
 		"arcadedb:",
-		"image: arcadedata/arcadedb:26.10.2@sha256:7a498ebbbb9a5f02f7d43487c13b6632f83eb7fff345968baf220ac9266fd791",
+		"image: arcadedata/arcadedb:26.11.1@sha256:22a049898f34f01c256b56a1ba95fb01d32e5e14755d3c4367415c8e55ae5035",
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
 		// Built from THIS tree, not pulled from a registry. The sidecar is Aura's own
