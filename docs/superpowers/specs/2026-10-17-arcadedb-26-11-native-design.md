@@ -22,6 +22,10 @@ esca la nuova release di ArcadeDB nelle prossime 2 settimane". It is not yet app
   ([verification](../verification/2026-10-23-cocoindex-neo4j-connector-and-arcadedb-26-10-2.md)),
   with the floor still at 26.10.1. Where this spec starts from 26.10.1 (phase A's revert,
   acceptance 8), it now starts from 26.10.2.
+- **2026-11-10: 26.11.1 shipped, and the JVM pin moved to it**
+  ([verification](../verification/2026-11-10-arcadedb-26-11-1-jvm-pin.md)), with the floor still
+  at 26.10.1. Where this spec starts from 26.10.2, it now starts from 26.11.1. The steps "On the
+  release, before the plan" above are still to do, the operator's question first.
 
 **This spec waits for ArcadeDB 26.11.1.**
 - Roberto Franchini said on 2026-10-17 that it ships "un paio di settimane" later.
