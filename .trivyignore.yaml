@@ -150,3 +150,38 @@ vulnerabilities:
     paths: *tsc
     statement: "Go 1.26.4 compiled into TypeScript 7.0.2's tsc, the newest release; only Microsoft can rebuild it"
     expired_at: 2027-02-01
+
+  # Weekly scan of 2026-11-09 (issue #227); the operator approved these on 2026-11-10.
+
+  # aura-cloudflared: cloudflare/cloudflared:2026.10.7 is the newest image, and cloudflared's
+  # master on 2026-11-10 still requires golang.org/x/net v0.61.0 (the fix is v0.62.0). Its
+  # distroless Debian 13.7 base has no package manager to upgrade zlib1g with.
+  - id: CVE-2026-78661
+    purls:
+      - "pkg:golang/golang.org/x/net@v0.61.0"
+    paths:
+      - "usr/local/bin/cloudflared"
+    statement: "x/net compiled into cloudflared 2026.10.7, the newest release; only Cloudflare can rebuild it"
+    expired_at: 2027-02-08
+  # The deb purl also matches whatsapp-mcp's Debian 13.7 base, whose own build upgrades zlib1g
+  # past this version, so there the purl no longer applies.
+  - id: CVE-2026-76844
+    purls: &cloudflared-zlib
+      - "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.1-1%2Bb1?arch=amd64&distro=debian-13.7&epoch=1"
+    statement: "zlib1g in cloudflared 2026.10.7's distroless base, the newest image; fixed upstream by a rebuild only"
+    expired_at: 2027-02-08
+  - id: CVE-2026-85091
+    purls: *cloudflared-zlib
+    statement: "zlib1g in cloudflared 2026.10.7's distroless base, the newest image; fixed upstream by a rebuild only"
+    expired_at: 2027-02-08
+
+  # aura-sandbox: gh from cli.github.com. v2.103.3, the newest release, still requires
+  # golang.org/x/net v0.60.0 (the fix is v0.62.0); the box runs it on the model's behalf, inside
+  # the sandbox boundary.
+  - id: CVE-2026-78661
+    purls:
+      - "pkg:golang/golang.org/x/net@v0.60.0"
+    paths:
+      - "usr/bin/gh"
+    statement: "x/net compiled into gh 2.103.3, the newest release; only GitHub can rebuild it"
+    expired_at: 2027-02-08
