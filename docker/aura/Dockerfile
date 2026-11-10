@@ -89,7 +89,7 @@ ARG VCS_REF=""
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.commit=${VCS_REF}" -o /out/aura ./cmd/aura
 
 # The same digest as docker/aura-sandbox/Dockerfile's base; Dependabot moves both weekly.
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # A cached RUN keeps the packages it installed for as long as the base digest and its own line
 # stay the same, so a fix to a package the base does not carry never arrived: on 2026-10-24
