@@ -3462,6 +3462,27 @@ revocation use protected storage and the existing native flow, also for Aura-own
 sidecars. A JWKS outage is infrastructure failure, not an invalid token. Log the cause
 without flooding each turn with the same error.
 
+**Aura signs its MCP tokens with Authula's keys (2026-11-10, amendment #212).** Authula
+v1.50 sets `iss`, `aud` and `sub` from one plugin-wide config, ignores them and
+`client_id` in caller claims, and drops all four when it rotates a refresh token
+(`plugins/jwt/services/token_service.go`, `refresh_token_service.go`). The three resource
+servers read exactly those four: `aud` is the resource URL and `sub` the Aura identity, not
+the Authula login user. `internal/webauth/mcp_token_service.go` therefore implements
+Authula's `TokenService`: it signs with Authula's active key, fixes `iss` and `client_id`,
+takes `aud` and `sub` from `mcp_resource` and `mcp_subject` (which survive rotation), and
+leaves key rotation, JWKS, refresh storage, rotation and reuse detection to Authula. Reuse
+of a rotated refresh token after the grace period now revokes the session family through
+Authula's blacklist on the secondary storage, which the plugin requires. A refresh token
+minted before this change carries the resource only in `aud`; `ValidateRefreshToken` copies
+it into `mcp_resource`, so existing browser grants refresh instead of asking for a new
+sign-in, until the 7-day refresh TTL retires them. Measured: unit tests pass through
+Authula v1.50.1's own `RefreshTokenService` (contract claims restored after a rotation,
+also from a pre-change token; reuse revokes the session; a caller claim cannot replace
+them), and the `webauth_integration` tier passes on Postgres 16.
+
+This does not establish the browser authorize → token → refresh flow against the three
+live sidecars; the resource-server tiers in CI and a lab VM run cover that.
+
 ### Private MCP sign-in browser — measured 2026-11-02/03
 
 Evidence: [spike and provider acceptance](docs/superpowers/verification/2026-11-02-sign-in-browser-spike.md),

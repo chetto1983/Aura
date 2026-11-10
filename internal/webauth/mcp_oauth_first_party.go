@@ -86,7 +86,7 @@ func (s *OAuthServer) IssueFirstPartyToken(ctx context.Context, resource, identi
 	sessionID := uuid.NewString()
 	scope := mcp.AuraOAuthToolsScope
 	pair, err := s.tokens.jwt.GenerateUserToken(ctx, subject, sessionID,
-		mcpTokenClaims(resource, scope, mcpOAuthClientID, subject))
+		mcpTokenClaims(resource, scope, subject))
 	if err != nil {
 		return IssuedMCPToken{}, fmt.Errorf("webauth: issue first-party MCP token: %w", err)
 	}

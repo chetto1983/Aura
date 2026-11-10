@@ -33,7 +33,9 @@ func (*stubIssuer) GenerateMachineToken(context.Context, string, string, []strin
 	return &jwtoptions.TokenPair{}, nil
 }
 
-func (*stubIssuer) ExtractClaims(context.Context, string) (map[string]any, error) { return nil, nil }
+func (*stubIssuer) ValidateRefreshToken(context.Context, string) (map[string]any, error) {
+	return nil, nil
+}
 
 // refusingRefreshStore proves the issuer never touches Authula's refresh_tokens table.
 // It cannot: the row is foreign-keyed to a login session, and a self-issued grant has
@@ -70,7 +72,7 @@ func TestIssueFirstPartyTokenMintsTheBrowserExchangeClaimShape(t *testing.T) {
 		t.Fatalf("IssueFirstPartyToken: %v", err)
 	}
 
-	want := mcpTokenClaims(resource, mcp.AuraOAuthToolsScope, mcpOAuthClientID, identity)
+	want := mcpTokenClaims(resource, mcp.AuraOAuthToolsScope, identity)
 	for key, value := range want {
 		if got := jwtStub.claims[key]; got != value {
 			t.Errorf("claim %q = %#v, want %#v", key, got, value)
@@ -109,8 +111,8 @@ func TestIssueFirstPartyTokenScopesTheSubjectToTheIdentity(t *testing.T) {
 	if got := jwtStub.claims[mcpSubjectClaim]; got != other {
 		t.Fatalf("%s = %#v, want %q", mcpSubjectClaim, got, other)
 	}
-	if got := jwtStub.claims["aud"]; got != "http://127.0.0.1:8093/" {
-		t.Fatalf("aud = %#v, want the calendar resource", got)
+	if got := jwtStub.claims[mcpResourceClaim]; got != "http://127.0.0.1:8093/" {
+		t.Fatalf("%s = %#v, want the calendar resource", mcpResourceClaim, got)
 	}
 }
 
