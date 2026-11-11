@@ -129,15 +129,15 @@ func TestSignInEmail(t *testing.T) {
 	}
 }
 
-// A schedule with no tz reads the identity's zone only where a profile store exists, and the
-// deployment's zone everywhere.
+// A schedule with no tz reads the identity's zone, and one with no notify its default channel,
+// only where a profile store exists; the deployment's zone applies everywhere.
 func TestTaskToolCarriesTheZonesItSchedulesIn(t *testing.T) {
 	t.Parallel()
 
-	if got := newTaskTool(nil, nil, "Asia/Tokyo"); got.Timezones != nil || got.DeploymentZone != "Asia/Tokyo" {
-		t.Fatalf("pool-free tool: Timezones=%v DeploymentZone=%q, want no profile store and the deployment zone", got.Timezones, got.DeploymentZone)
+	if got := newTaskTool(nil, nil, "Asia/Tokyo"); got.Timezones != nil || got.Defaults != nil || got.DeploymentZone != "Asia/Tokyo" {
+		t.Fatalf("pool-free tool: Timezones=%v Defaults=%v DeploymentZone=%q, want no profile store and the deployment zone", got.Timezones, got.Defaults, got.DeploymentZone)
 	}
-	if got := newTaskTool(newCronTaskStore(nil, nil), nil, "Asia/Tokyo"); got.Timezones == nil {
-		t.Fatal("the live task tool must read the identity's zone")
+	if got := newTaskTool(newCronTaskStore(nil, nil), nil, "Asia/Tokyo"); got.Timezones == nil || got.Defaults == nil {
+		t.Fatal("the live task tool must read the identity's zone and default channel")
 	}
 }

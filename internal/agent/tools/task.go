@@ -45,6 +45,9 @@ type TaskTool struct {
 	// AURA_TIMEZONE (task_timezone.go). Both empty leave cron.ParseSchedule's Europe/Rome.
 	Timezones      taskTimezones
 	DeploymentZone string
+	// Defaults is the operator's default channel, applied when a schedule names no notify
+	// (task_default_notify.go). Nil, or nothing set, leaves the delivery choice directive.
+	Defaults taskDefaults
 
 	routerOnce sync.Once
 	router     *ActionRouter
@@ -149,7 +152,7 @@ const taskParamsSchema = `{
     "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres (database dump)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
-    "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Required when action=schedule. Where the task output is delivered. If the operator did not choose, call ask_user(kind=choice) before scheduling. An omitted value persists nothing and returns the same choice directive. none keeps the outcome only in the run ledger; telegram is an intentional push to the linked Telegram accounts named in telegram_recipients; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
+    "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Optional when action=schedule. Where the task output is delivered. If the request names no channel, omit notify: the operator's default channel is applied, and when none is set a delivery_choice_required directive comes back. none keeps the outcome only in the run ledger; telegram is an intentional push to the linked Telegram accounts named in telegram_recipients; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
     "telegram_recipients": {"type": "array", "items": {"type": "integer"}, "description": "Optional, only with notify=telegram. The Telegram user ids of the linked accounts the task reaches. With two or more linked and none named, nothing is persisted and a telegram_recipients_required choice directive comes back: relay it with ask_user(kind=choice)."},
     "task_id": {"type": "string", "description": "Required when action=cancel, run_now, pause or resume. The id of the target task."}
   },
@@ -165,9 +168,9 @@ func (t *TaskTool) Spec() Spec {
 		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active, paused and awaiting-approval tasks; action=cancel/run_now/pause/resume operate on a task_id. " +
 			"The scheduler pauses a task by itself after repeated failed runs; list marks it, and it should be resumed only once the cause is fixed. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
-			"Before scheduling, make sure the task has everything it will need when it fires: when (time or cadence), what (the reminder text or a self-contained job goal), where (the channel), and for a message the exact recipient and text. A scheduled run starts in a fresh session and cannot ask anyone anything. If any of these is missing or ambiguous in the request, ask the operator one question about it, time first, and schedule only after the answer. Never invent a time or a recipient. " +
+			"Before scheduling, make sure the task has everything it will need when it fires: when (time or cadence), what (the reminder text or a self-contained job goal), and for a message the exact recipient and text; where it is delivered comes from an explicit notify, else the operator's default channel. A scheduled run starts in a fresh session and cannot ask anyone anything. If any of these is missing or ambiguous in the request, ask the operator one question about it, time first, and schedule only after the answer. Never invent a time or a recipient. " +
 			"A reminder or message the operator wants later on a channel (\"remind me on WhatsApp in 10 minutes\", \"email me tomorrow\", \"message me on Telegram in an hour\") is a reminder task with notify set to that channel: at fire time the scheduler delivers it to the operator's own WhatsApp, email or Telegram. Never send it now with a messaging tool, and never look up the operator's contact for it. " +
-			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
+			"For action=schedule always honor an explicit notify choice. If the request names no channel, omit notify: the operator's default channel is applied, and when none is set a delivery_choice_required directive comes back. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		// Deferred: 795 token per una capacita' che entra in gioco solo quando l'operatore
@@ -227,9 +230,6 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if err := requireTaskPayload(a.Kind, a.Payload); err != nil {
 		return ToolResult{}, err
 	}
-	if strings.TrimSpace(a.Notify) == "" {
-		return taskNotifyChoiceRequiredResult(), nil
-	}
 	if strings.TrimSpace(a.TZ) == "" {
 		a.TZ = t.scheduleZone(ctx)
 	}
@@ -243,28 +243,12 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		ScheduleKind: a.ScheduleKind,
 		Payload:      a.Payload,
 	})
-	// The JSON-schema enum is advisory: an OpenAI-compat provider may pass anything
-	// through. Reject it here, where the model can still correct itself.
-	if !cron.ValidNotifyRoute(a.Notify) {
-		return ToolResult{}, fmt.Errorf("task schedule: notify %q is not a delivery route (want none|whatsapp|email|stdout|telegram)", a.Notify)
-	}
-	// Measured 2026-10-05: a whatsapp reminder with no recipient was accepted here, fired
-	// and reached nobody, while the model promised it "on your work number". A route that
-	// cannot deliver is refused now, and an accepted one names whom it reaches.
-	recipient, err := t.destination(ctx, a.Notify)
-	if err != nil {
-		return ToolResult{}, fmt.Errorf("task schedule: notify=%s cannot deliver: %w. No task was created: tell the operator why, or ask which other notify route to use", a.Notify, err)
-	}
-	delivery := deliveryNote(a.Notify, recipient)
-	recipients, choice, err := t.telegramRecipients(ctx, a)
+	plan, directive, err := t.resolveDelivery(ctx, &a)
 	if err != nil {
 		return ToolResult{}, err
 	}
-	if choice != nil {
-		return *choice, nil
-	}
-	if len(recipients) > 0 {
-		delivery = deliveryNote(a.Notify, accountNames(recipients))
+	if directive != nil {
+		return *directive, nil
 	}
 
 	status := "active"
@@ -303,7 +287,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		Status:               status,
 		NextRunAt:            next,
 		OriginConversationID: originConvID,
-		TelegramRecipients:   TelegramRecipientIDs(recipients),
+		TelegramRecipients:   TelegramRecipientIDs(plan.Recipients),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)
@@ -316,104 +300,18 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	// turn (amendment #51 / D-40), so the tool cannot pause directly.
 	if status == "pending_approval" {
 		immediate := scoring.RequiresImmediateAlert(tier, t.alertThreshold())
-		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), delivery, immediate), nil
+		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), plan.Note, immediate), nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=active)", created.ID, a.Kind, spec.summary(), tier)
 	if !next.IsZero() {
 		fmt.Fprintf(&b, "\nNext run at %s.", next.UTC().Format(time.RFC3339))
 	}
-	if delivery != "" {
-		b.WriteString("\n" + delivery)
+	if plan.Note != "" {
+		b.WriteString("\n" + plan.Note)
 	}
 	s := b.String()
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
-}
-
-func (t *TaskTool) destination(ctx context.Context, route string) (string, error) {
-	if t.Destinations == nil {
-		return "", nil
-	}
-	return t.Destinations.Destination(ctx, cron.NotifyRoute(route))
-}
-
-// deliveryNote names the recipient an external route reaches, "" for a route that
-// addresses no one.
-func deliveryNote(route, recipient string) string {
-	if recipient == "" {
-		return ""
-	}
-	return fmt.Sprintf("Delivers via %s to %s.", route, recipient)
-}
-
-func taskNotifyChoiceRequiredResult() ToolResult {
-	payload := struct {
-		Status   string              `json:"status"`
-		Question string              `json:"question"`
-		Options  []map[string]string `json:"options"`
-		Message  string              `json:"message"`
-	}{
-		Status:   "delivery_choice_required",
-		Question: "Where should the scheduled task deliver its result?",
-		Options: []map[string]string{
-			{"label": "No notification", "value": string(cron.RouteNone)},
-			{"label": "This conversation", "value": string(cron.RouteStdout)},
-			{"label": "Telegram", "value": string(cron.RouteTelegram)},
-			{"label": "WhatsApp", "value": string(cron.RouteWhatsApp)},
-			{"label": "Email", "value": string(cron.RouteEmail)},
-		},
-		Message: "No task was created. Call ask_user with kind=\"choice\", the question and options above. After the operator answers, call task action=\"schedule\" again with notify set to the selected option value.",
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		raw = []byte(`{"status":"delivery_choice_required"}`)
-	}
-	return ToolResult{Preview: string(raw), Bytes: len(raw)}
-}
-
-// scheduledApprovalRequiredResult builds the pending_approval directive (the
-// shell_exec/gateway approval-required precedent): a scheduled task never fires until
-// the operator approves it on the channel it was scheduled from. The model MUST relay
-// this as an ask_user approval pause carrying the resume_context the scheduled-task
-// resume hook decodes; on accept the hook flips the task to active. The task_id +
-// authenticated origin conversation are the authorization (the hook owner-scopes the
-// UPDATE), so no question-match challenge is needed here.
-func scheduledApprovalRequiredResult(taskID, kind, summary, tier, delivery string, immediate bool) ToolResult {
-	// The human-facing question masks the UUID to its first 8 chars (kind + summary already
-	// identify the task) so the Sì/No prompt reads friendly instead of dumping a 36-char id;
-	// the full task_id stays in the machine-facing resume_context below (the resume hook keys
-	// on it). Bounded id + kind only — never the payload.
-	question := fmt.Sprintf("Approve scheduled %s task %s (%s, risk=%s)? It will not fire until you approve.", kind, shortScheduledTaskID(taskID), summary, tier)
-	payload := map[string]string{
-		"status":   "pending_approval",
-		"task_id":  taskID,
-		"question": question,
-		"message": "This scheduled task requires operator approval before it can fire. " +
-			"Call ask_user with kind=\"approval\", question exactly equal to the question field, and " +
-			"resume_context={\"type\":\"scheduled_task_approval\",\"task_id\":\"" + taskID + "\"}. " +
-			"The task activates only after the operator accepts on their channel.",
-	}
-	if immediate {
-		payload["immediate_alert"] = "true"
-	}
-	if delivery != "" {
-		payload["delivery"] = delivery
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		raw = []byte(`{"status":"pending_approval","task_id":"` + taskID + `"}`)
-	}
-	return ToolResult{Preview: string(raw), Bytes: len(raw)}
-}
-
-// shortScheduledTaskID renders the first 8 chars of a task id for the operator-facing approval
-// prompt — a bounded, friendly handle instead of the raw 36-char UUID (the full id stays in the
-// machine-facing resume_context). Parity with the sweep push's shortTelegramTaskID.
-func shortScheduledTaskID(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
 }
 
 // resolvedSpec is the validated grammar the tool persists. It mirrors the cron
