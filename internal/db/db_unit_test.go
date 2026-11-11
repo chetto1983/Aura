@@ -398,8 +398,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0152 keeps the urgency centroid's shadow beside each mail verdict.
 	// 0153 keeps the decision model's answer and a label's description and discard.
 	// 0154 adds the operator's default channel for scheduled delivery.
-	if head != 154 {
-		t.Fatalf("MigrationHead=%d, want embedded head 154", head)
+	// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.
+	if head != 155 {
+		t.Fatalf("MigrationHead=%d, want embedded head 155", head)
 	}
 }
 

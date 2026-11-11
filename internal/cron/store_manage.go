@@ -21,7 +21,7 @@ import (
 // or purge may touch: enrolment hands the deployment's sweeps to the operator's identity
 // (retireLegacyLocalIdentity), so owning a task does not make it that person's. The queries take
 // this list as a parameter, so Go and SQL cannot name two different sets.
-var personKinds = []TaskKind{KindReminder, KindAgentJob, KindPIMWatch, KindPIMDigest}
+var personKinds = []TaskKind{KindReminder, KindAgentJob, KindPIMWatch, KindPIMDigest, KindMessage}
 
 func identityTaskKinds() []string {
 	kinds := make([]string, 0, len(personKinds))

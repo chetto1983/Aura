@@ -2,27 +2,40 @@
 INSERT INTO aura.scheduler_tasks (
     id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, sqlc.narg(origin_tool_call_id))
+-- A retried turn parks the same model call again: it must find this row, not add a second
+-- (migration 0155, decision 30). No row back means GetTaskByOriginCall has it.
+ON CONFLICT (identity_id, origin_conversation_id, origin_tool_call_id)
+    WHERE origin_tool_call_id IS NOT NULL DO NOTHING
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients;
+    telegram_recipients, origin_tool_call_id;
 
 -- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE id = $1;
+
+-- name: GetTaskByOriginCall :one
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients, origin_tool_call_id
+FROM aura.scheduler_tasks
+WHERE identity_id = sqlc.arg(identity_id) AND origin_conversation_id = sqlc.arg(origin_conversation_id)
+  AND origin_tool_call_id = sqlc.arg(origin_tool_call_id);
 
 -- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -32,7 +45,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE identity_id = $1 AND kind = $2 AND status IN ('active', 'paused')
 ORDER BY created_at, id;
@@ -45,7 +58,7 @@ ORDER BY created_at, id;
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -93,7 +106,7 @@ WHERE t.schedule_kind = 'at'
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -113,7 +126,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL

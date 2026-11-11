@@ -173,6 +173,7 @@ func schedulerTaskRow(t *testing.T) []any {
 		pgtype.Text{},                              // paused_reason (NULL)
 		int32(0),                                   // transient_retries
 		[]int64(nil),                               // telegram_recipients (NULL, migration 0145)
+		pgtype.Text{},                              // origin_tool_call_id (NULL, migration 0155)
 	}
 }
 
@@ -201,8 +202,11 @@ func TestStoreFakeCreateTaskSuccessAndDefaults(t *testing.T) {
 	}
 	// Defaults are bound into the INSERT args: empty IdentityID→"local", empty Status→"active".
 	args := f.gotArgs
-	if len(args) != 15 {
-		t.Fatalf("CreateTask must bind 15 params, got %d", len(args))
+	if len(args) != 16 {
+		t.Fatalf("CreateTask must bind 16 params, got %d", len(args))
+	}
+	if call, ok := args[15].(pgtype.Text); !ok || call.Valid {
+		t.Fatalf("a task parked by no model call must bind NULL, got %#v", args[15])
 	}
 	if recipients, ok := args[14].([]int64); !ok || recipients != nil {
 		t.Fatalf("a task naming no Telegram recipient must bind NULL, got %#v", args[14])

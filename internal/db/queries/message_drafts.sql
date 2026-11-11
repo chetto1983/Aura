@@ -1,11 +1,11 @@
 -- name: InsertMessageDraft :one
 INSERT INTO aura.message_drafts (
   identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action,
-  original_args, original_fingerprint, expires_at
+  original_args, original_fingerprint, expires_at, scheduled_task_id, send_at
 ) VALUES (
   sqlc.arg(identity_id), sqlc.arg(conversation_id), sqlc.arg(tool_call_id),
   sqlc.arg(recipe), sqlc.arg(tool_name), sqlc.arg(registered_tool_name), sqlc.arg(action), sqlc.arg(original_args),
-  sqlc.arg(original_fingerprint), sqlc.arg(expires_at)
+  sqlc.arg(original_fingerprint), sqlc.arg(expires_at), sqlc.narg(scheduled_task_id), sqlc.narg(send_at)
 )
 ON CONFLICT (identity_id, conversation_id, tool_call_id) DO NOTHING
 RETURNING *;
@@ -28,7 +28,7 @@ SET status = 'dispatching', effective_args = sqlc.arg(effective_args),
     effective_fingerprint = sqlc.arg(effective_fingerprint),
     dispatch_started_at = now(), updated_at = now()
 WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
-  AND status = 'pending' AND expires_at > now()
+  AND status = 'pending' AND expires_at > now() AND send_at IS NULL
 RETURNING *;
 
 -- name: DeclineMessageDraft :one

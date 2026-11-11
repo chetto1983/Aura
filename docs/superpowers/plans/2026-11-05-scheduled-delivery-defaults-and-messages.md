@@ -330,7 +330,7 @@ The down migration first deletes the drafts with `send_at IS NOT NULL` and the t
 
 `InsertMessageDraft` takes `sqlc.narg(scheduled_task_id)` and `sqlc.narg(send_at)`. `ClaimMessageDraftSend` adds `AND send_at IS NULL`. `Create` refuses, as `errInvalidDraftArgs` and before any query, a `SendAt` without a `ScheduledTaskID` or the reverse, a `SendAt` not in the future, and an `ExpiresAt` not after `SendAt`. `draftFromRow` maps both columns. `Create`'s duplicate-by-call check (`store.go:124-131`) also compares `scheduled_task_id` and `send_at` (decision 30). `CreateScheduledTask` takes `OriginToolCallID`; a unique violation on its index returns the existing row (`GetScheduledTaskByOriginCall :one`). `IsPausableKind` stays `IsCancellableKind` in this task; Task 8 narrows it.
 
-- [ ] `TestMigrate0155AdmitsTheScheduledMessage` (copy the shape of 0153's):
+- [x] `TestMigrate0155AdmitsTheScheduledMessage` (copy the shape of 0153's):
   - at 155, a `message` task inserts;
   - a draft with `send_at` and no task inserts;
   - a draft with a task and no `send_at` fails;
@@ -339,14 +339,14 @@ The down migration first deletes the drafts with `send_at IS NOT NULL` and the t
   - deleting the task leaves the draft with `scheduled_task_id IS NULL`;
   - two tasks with the same `(identity_id, origin_conversation_id, origin_tool_call_id)` fail, and two with a NULL call id insert;
   - stepping down removes the `message` rows and the columns.
-- [ ] Set the head pin to 155, with the comment line `// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.`
-- [ ] `TestADraftForAnotherTaskIsADuplicate` (`db_integration`): a second `Create` with the same call and another `ScheduledTaskID` gives `ErrDuplicate`.
-- [ ] `TestTheSameCallCreatesOneTask` (cron `db_integration`): a second `CreateScheduledTask` with the same origin call returns the first row's id.
-- [ ] `TestCreateRefusesAHalfScheduledDraft` (unit, nil pool). `SendAt` without a task id, a task id without `SendAt`, `SendAt` in the past, and `ExpiresAt == SendAt` each give `errInvalidDraftArgs`.
-- [ ] `TestAScheduledDraftIsCreatedBoundToItsTask` (`db_integration`): `Get` gives back `ScheduledTaskID`, and `SendAt` within 1 ms.
-- [ ] `TestClaimSendRefusesAScheduledDraft` (`db_integration`): `ClaimSend` on a pending scheduled draft gives `ErrUnavailable`, and the row is still `pending`.
-- [ ] `TestAMessageTaskIsCancellable` (cron unit): `IsCancellableKind(KindMessage)` and `IsAgentStoppableKind(KindMessage)` are both true.
-- [ ] Red, migrate, `make sqlc`, implement, green with race on `./internal/messagedrafts/` and `./internal/cron/`, and under `db_integration` on `./internal/db/` and `./internal/messagedrafts/`. Commit: `feat(messagedrafts): a draft can belong to a scheduled message task`.
+- [x] Set the head pin to 155, with the comment line `// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.`
+- [x] `TestADraftForAnotherTaskIsADuplicate` (`db_integration`): a second `Create` with the same call and another `ScheduledTaskID` gives `ErrDuplicate`.
+- [x] `TestTheSameCallCreatesOneTask` (cron `db_integration`): a second `CreateScheduledTask` with the same origin call returns the first row's id.
+- [x] `TestCreateRefusesAHalfScheduledDraft` (unit, nil pool). `SendAt` without a task id, a task id without `SendAt`, `SendAt` in the past, and `ExpiresAt == SendAt` each give `errInvalidDraftArgs`.
+- [x] `TestAScheduledDraftIsCreatedBoundToItsTask` (`db_integration`): `Get` gives back `ScheduledTaskID`, and `SendAt` within 1 ms.
+- [x] `TestClaimSendRefusesAScheduledDraft` (`db_integration`): `ClaimSend` on a pending scheduled draft gives `ErrUnavailable`, and the row is still `pending`.
+- [x] `TestAMessageTaskIsCancellable` (cron unit): `IsCancellableKind(KindMessage)` and `IsAgentStoppableKind(KindMessage)` are both true.
+- [x] Red, migrate, `make sqlc`, implement, green with race on `./internal/messagedrafts/` and `./internal/cron/`, and under `db_integration` on `./internal/db/` and `./internal/messagedrafts/`. Commit: `feat(messagedrafts): a draft can belong to a scheduled message task`.
 
 ### Task 5a: The trusted recipe tool is found by one helper (refactor)
 
