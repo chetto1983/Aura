@@ -98,6 +98,11 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 		fmt.Fprintln(os.Stderr, "aura task schedule: --kind is required")
 		os.Exit(exitUsage)
 	}
+	// A CLI row has no review and no draft (decision 38).
+	if *kind == string(cron.KindMessage) {
+		fmt.Fprintln(os.Stderr, "aura task schedule: kind=message is scheduled from a conversation, where the operator reviews it")
+		os.Exit(exitUsage)
+	}
 	if !cron.ValidNotifyRoute(*notify) {
 		fmt.Fprintln(os.Stderr, "aura task schedule: --notify must be none|whatsapp|email|stdout|telegram")
 		os.Exit(exitUsage)
@@ -377,17 +382,13 @@ func taskApprove(ctx context.Context, cfg *config.Config, args []string) {
 	pool := openTaskPool(ctx, cfg)
 	defer pool.Close()
 
-	tag, err := pool.Exec(ctx, `
-		UPDATE aura.scheduler_tasks
-		SET status = 'active', updated_at = now()
-		WHERE id = $1 AND status = 'pending_approval'`, id)
-	if err != nil {
+	if err := cron.New(pool).ApproveTask(ctx, id); err != nil {
+		if errors.Is(err, cron.ErrTaskNotFound) {
+			fmt.Fprintf(os.Stderr, "aura task approve: %s is not awaiting approval (a scheduled message is approved from its message card)\n", id)
+			os.Exit(exitUsage)
+		}
 		fmt.Fprintln(os.Stderr, "aura task approve:", err)
 		os.Exit(exitInfra)
-	}
-	if tag.RowsAffected() == 0 {
-		fmt.Fprintf(os.Stderr, "aura task approve: %s is not awaiting approval\n", id)
-		os.Exit(exitUsage)
 	}
 	fmt.Printf("approved %s (now active)\n", id)
 }

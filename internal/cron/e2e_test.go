@@ -107,8 +107,7 @@ func (s *e2eStore) PauseScheduledTask(ctx context.Context, id string) error {
 func (s *e2eStore) ResumeScheduledTask(ctx context.Context, id string) (time.Time, error) {
 	return s.store.ResumeTask(ctx, id, time.Now())
 }
-func (s *e2eStore) RunScheduledTaskNow(context.Context, string) error  { return nil }
-func (s *e2eStore) ApproveScheduledTask(context.Context, string) error { return nil }
+func (s *e2eStore) RunScheduledTaskNow(context.Context, string) error { return nil }
 
 // TestSchedulerNorthStarE2E drives the natural-prompt → `task` tool → persisted-row
 // leg of the North-Star queries live. The fire + delivery read-back is the operator

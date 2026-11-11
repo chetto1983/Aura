@@ -23,3 +23,16 @@ func IsReviewPause(raw json.RawMessage) bool {
 	}
 	return json.Unmarshal(raw, &fields) == nil && fields.Type == "message_draft"
 }
+
+// PauseTaskID is the task a scheduled message's review pause answers for, from the resume
+// context the host review wrote. An immediate review, or any other pause, has none.
+func PauseTaskID(raw json.RawMessage) (string, bool) {
+	var fields struct {
+		Type   string `json:"type"`
+		TaskID string `json:"task_id"`
+	}
+	if json.Unmarshal(raw, &fields) != nil || fields.Type != "message_draft" || fields.TaskID == "" {
+		return "", false
+	}
+	return fields.TaskID, true
+}

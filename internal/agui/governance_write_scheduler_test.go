@@ -113,6 +113,19 @@ func TestSchedulerApproveManageable(t *testing.T) {
 	}
 }
 
+// A message is approved by reading it, on its card; the board never shows the text.
+func TestTheBoardSendsAMessageTaskToItsCard(t *testing.T) {
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindMessage, Status: "pending_approval"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/approve")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "approve it from the message card") {
+		t.Fatalf("status = %d %s, want 409 pointing at the card", rec.Code, rec.Body.String())
+	}
+	if board.approvedID != "" {
+		t.Fatal("a message task reached ApproveTask")
+	}
+}
+
 // A system-seeded sweep is never operator-mutable: the guard returns 403 BEFORE any mutate.
 func TestSchedulerApproveSystemKindForbidden(t *testing.T) {
 	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindIdentityPurge, Status: "active"}}

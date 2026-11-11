@@ -89,6 +89,11 @@ var cliSmokeRows = []cliSmokeRow{
 	{name: "task_schedule", argv: []string{"task", "schedule", "--kind", "reminder", "--every", "60", "--notify", "none",
 		"--args", `{"text":"cli smoke"}`}, stdout: "scheduled",
 		capture: map[string]string{"task": `SELECT id::text FROM aura.scheduler_tasks WHERE kind = 'reminder' ORDER BY created_at DESC LIMIT 1`}},
+	// Decision 38: a CLI row has no review and no draft, so the CLI never schedules a message.
+	{name: "task_schedule_never_schedules_a_message", argv: []string{"task", "schedule", "--kind", "message",
+		"--at", "2099-01-01T09:00:00Z", "--notify", "none", "--args", `{"text":"cli smoke"}`},
+		exit: exitUsage, stderr: "kind=message is scheduled from a conversation",
+		after: `SELECT NOT EXISTS (SELECT 1 FROM aura.scheduler_tasks WHERE kind = 'message')`},
 	{name: "task_list", argv: []string{"task", "list"}, stdout: "{task}"},
 	{name: "task_list_ignores_an_unknown_flag_C3", argv: []string{"task", "list", "--json"}, stdout: "KIND"},
 	{name: "task_pause", argv: []string{"task", "pause", "{task}"}, stdout: "paused",

@@ -4,6 +4,7 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -24,7 +25,9 @@ func TestOnlyItsOwnersMessageTaskIsActivatedByItsReview(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s: %v", kind, err)
 		}
-		t.Cleanup(func() { _, _ = s.pool.Exec(context.Background(), `DELETE FROM aura.scheduler_tasks WHERE id = $1`, task.ID) })
+		t.Cleanup(func() {
+			_, _ = s.pool.Exec(context.Background(), `DELETE FROM aura.scheduler_tasks WHERE id = $1`, task.ID)
+		})
 		return task.ID
 	}
 	if err := s.ActivateReviewedMessage(ctx, owner, create(KindReminder, owner)); err == nil {
@@ -45,5 +48,29 @@ func TestOnlyItsOwnersMessageTaskIsActivatedByItsReview(t *testing.T) {
 	}
 	if err := s.CancelReviewedMessage(ctx, owner, mine); err == nil {
 		t.Fatal("an active message was cancelled as declined")
+	}
+}
+
+// The board, the CLI and the hook all reach ApproveTask; none may activate a message.
+func TestApproveTaskRefusesAMessageTask(t *testing.T) {
+	s := New(migratedPool(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	at := time.Now().Add(time.Hour)
+	task, err := s.CreateTask(ctx, CreateTaskParams{
+		Kind: KindMessage, Spec: ScheduleSpec{Kind: KindAt, RunAt: at, TZ: "UTC"}, Payload: []byte(`{}`),
+		NextRunAt: at, NotifyRoute: string(RouteNone), Status: "pending_approval", IdentityID: uuid.NewString(),
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM aura.scheduler_tasks WHERE id = $1`, task.ID)
+	})
+	if err := s.ApproveTask(ctx, task.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("ApproveTask = %v, want ErrTaskNotFound", err)
+	}
+	if got, _ := s.GetTask(ctx, task.ID); got.Status != "pending_approval" {
+		t.Fatalf("status = %q, want pending_approval", got.Status)
 	}
 }

@@ -45,7 +45,8 @@ type Querier interface {
 	ApproveScheduledMessageDraft(ctx context.Context, arg ApproveScheduledMessageDraftParams) (AuraMessageDrafts, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
-	// a task that is not awaiting approval (0).
+	// a task that is not awaiting approval (0). A message task is approved only by its draft
+	// review (spec 2026-11-05 Part 2), never here.
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	// The keys among object_keys some row of the identity holds, in any status. A file-manager
 	// write landing on one would replace an asset's bytes under its row, hand them to the sweep
