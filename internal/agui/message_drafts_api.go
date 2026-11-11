@@ -26,6 +26,8 @@ type messageDraftItem struct {
 	Arguments      json.RawMessage      `json:"arguments"`
 	EffectiveArgs  json.RawMessage      `json:"effective_arguments,omitempty"`
 	ExpiresAt      time.Time            `json:"expires_at"`
+	// SendAt is when a scheduled message goes out; absent for one sent on review.
+	SendAt *time.Time `json:"send_at,omitempty"`
 }
 
 func projectMessageDraft(draft messagedrafts.Draft) messageDraftItem {
@@ -37,11 +39,15 @@ func projectMessageDraft(draft messagedrafts.Draft) messageDraftItem {
 	if status == messagedrafts.StatusPending && !draft.ExpiresAt.After(time.Now()) {
 		status = messagedrafts.StatusExpired
 	}
-	return messageDraftItem{
+	item := messageDraftItem{
 		ID: draft.ID, ConversationID: draft.ConversationID, Channel: channel,
 		Status: status, Arguments: reviewMessageArgs(draft.OriginalArgs), EffectiveArgs: reviewMessageArgs(draft.EffectiveArgs),
 		ExpiresAt: draft.ExpiresAt,
 	}
+	if draft.Scheduled() {
+		item.SendAt = &draft.SendAt
+	}
+	return item
 }
 
 // Attachment bytes and opaque storage identifiers stay in the server-side call.

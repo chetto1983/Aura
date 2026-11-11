@@ -88,4 +88,47 @@ describe('MessageDraftCard', () => {
       expect(resolve).toHaveBeenCalledWith({ id: email.id, action: 'decline' });
     });
   });
+
+  it('shows when a scheduled message will be sent and approves it with the edits', async () => {
+    const resolve = vi.fn<(input: ResolveMessageDraft) => Promise<unknown>>().mockResolvedValue({});
+    render(
+      <MessageDraftCard
+        draft={{
+          ...email,
+          channel: 'whatsapp',
+          arguments: { recipient: '10000000000', message: 'Original message' },
+          send_at: '2030-01-02T09:30:00Z',
+        }}
+        busy={false}
+        onResolve={resolve}
+      />,
+    );
+    expect(screen.getByText(/Sends at/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Message body'), { target: { value: 'Edited' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve for that time' }));
+    await waitFor(() => {
+      expect(resolve).toHaveBeenCalledWith({
+        id: email.id,
+        action: 'send',
+        overrides: { recipient: '10000000000', message: 'Edited' },
+      });
+    });
+  });
+
+  it('an approved scheduled message offers only to continue', async () => {
+    const resolve = vi.fn<(input: ResolveMessageDraft) => Promise<unknown>>().mockResolvedValue({});
+    render(
+      <MessageDraftCard
+        draft={{ ...email, status: 'approved', send_at: '2030-01-02T09:30:00Z' }}
+        busy={false}
+        onResolve={resolve}
+      />,
+    );
+    expect(screen.getByText('Approved. It will be sent at the scheduled time.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Approve for that time' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue conversation' }));
+    await waitFor(() => {
+      expect(resolve).toHaveBeenCalledWith({ id: email.id, action: 'send' });
+    });
+  });
 });

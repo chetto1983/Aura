@@ -596,10 +596,10 @@ The query: `DeclineScheduledMessageDraftsForTask :exec` sets `status = 'declined
 
 Copy: en `sendAt: 'Sends at {{time}}'`, `approveScheduled: 'Approve for that time'`, `status.approved: 'Approved. It will be sent at the scheduled time.'`. it `sendAt: 'Parte alle {{time}}'`, `approveScheduled: "Approva per quell'ora"`, `status.approved: "Approvato. Partirà all'ora prevista."`.
 
-- [ ] `TestAScheduledDraftCarriesItsSendTime` (agui): a scheduled draft projects `send_at` and an immediate one omits the key.
-- [ ] Vitest `it('shows when a scheduled message will be sent and approves it with the edits')`. The card shows `Sends at`, and after editing the text, `Approve for that time` sends `{action:'send', overrides:{recipient, message:'Edited'}}`.
-- [ ] Vitest `it('an approved scheduled message offers only to continue')`: the status text is the approved copy, and the button sends `action:'send'` with no overrides.
-- [ ] Red, implement, green: Go with race on `./internal/agui/`, and `npx vitest run src/approvals/__tests__/MessageDraftCard.test.tsx` plus the web commands of Global Constraints. Commit: `feat(cockpit): the message card shows the time of a scheduled message`.
+- [x] `TestAScheduledDraftCarriesItsSendTime` (agui): a scheduled draft projects `send_at` and an immediate one omits the key.
+- [x] Vitest `it('shows when a scheduled message will be sent and approves it with the edits')`. The card shows `Sends at`, and after editing the text, `Approve for that time` sends `{action:'send', overrides:{recipient, message:'Edited'}}`.
+- [x] Vitest `it('an approved scheduled message offers only to continue')`: the status text is the approved copy, and the button sends `action:'send'` with no overrides.
+- [x] Red, implement, green: Go with race on `./internal/agui/`, and `npx vitest run src/approvals/__tests__/MessageDraftCard.test.tsx` plus the web commands of Global Constraints. Commit: `feat(cockpit): the message card shows the time of a scheduled message`.
 
 ### Task 10: Telegram shows the review as a read-only card
 

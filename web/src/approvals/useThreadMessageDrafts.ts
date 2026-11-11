@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type MessageDraftStatus =
-  'pending' | 'dispatching' | 'sent' | 'failed' | 'declined' | 'uncertain' | 'expired';
+  'pending' | 'approved' | 'dispatching' | 'sent' | 'failed' | 'declined' | 'uncertain' | 'expired';
 
 export interface MessageDraft {
   readonly id: string;
@@ -12,6 +12,8 @@ export interface MessageDraft {
   readonly arguments: Record<string, unknown>;
   readonly effective_arguments?: Record<string, unknown>;
   readonly expires_at: string;
+  // When a scheduled message goes out; absent for one sent on review.
+  readonly send_at?: string;
 }
 
 export interface MessageDraftResolution {
