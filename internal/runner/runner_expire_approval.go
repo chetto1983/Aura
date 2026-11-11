@@ -31,7 +31,7 @@ func (r *Runner) ExpireApprovalPause(ctx context.Context, conversationID, taskID
 	if r.pause == nil || r.resumeCommitter == nil {
 		return cron.PauseNone, nil
 	}
-	pending, found, err := r.taskApprovalPause(ctx, conversationID, taskID)
+	_, found, err := r.taskApprovalPause(ctx, conversationID, taskID)
 	if err != nil || !found {
 		return r.unpausedApproval(ctx, conversationID, taskID, err)
 	}
@@ -42,7 +42,7 @@ func (r *Runner) ExpireApprovalPause(ctx context.Context, conversationID, taskID
 		}
 		defer unlock()
 	}
-	pending, found, err = r.taskApprovalPause(ctx, conversationID, taskID)
+	pending, found, err := r.taskApprovalPause(ctx, conversationID, taskID)
 	if err != nil || !found {
 		return r.unpausedApproval(ctx, conversationID, taskID, err)
 	}
