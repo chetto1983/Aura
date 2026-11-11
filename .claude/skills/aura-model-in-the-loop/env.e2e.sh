@@ -2,6 +2,8 @@
 #   HAND=<scratch dir> source .claude/skills/aura-model-in-the-loop/env.e2e.sh
 # Every value is a CI dummy (ci.yml uses the same passwords); nothing here is a real secret.
 : "${HAND:?set HAND to the scratch directory of the run}"
+# `HAND=… source` sets HAND for the source alone; cockpit.py reads it from the environment.
+export HAND
 export POSTGRES_PASSWORD=ci-test-password
 export AURA_DB_URL="postgres://aura_app:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"

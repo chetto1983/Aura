@@ -29,6 +29,16 @@ def load_state():
 state = load_state()
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    # urllib copies added headers onto a redirect, so the session cookie and the CSRF token
+    # would follow one anywhere. The cockpit API never redirects: a 3xx surfaces as an error.
+    def redirect_request(self, *args):
+        return None
+
+
+opener = urllib.request.build_opener(NoRedirect)
+
+
 def save_state():
     # It holds the operator's session cookie: owner-only, like any credential file.
     fd = os.open(STATE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -50,7 +60,7 @@ def call(method, path, body=None, stream=False):
     if state["cookies"]:
         req.add_header("Cookie", "; ".join(f"{k}={v}" for k, v in state["cookies"].items()))
     try:
-        res = urllib.request.urlopen(req, timeout=None if stream else 60)
+        res = opener.open(req, timeout=None if stream else 60)
     except urllib.error.HTTPError as e:
         sys.exit(f"HTTP {e.code}: {e.read().decode()[:400]}")
     for header in res.headers.get_all("Set-Cookie") or []:

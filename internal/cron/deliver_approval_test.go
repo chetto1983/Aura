@@ -86,11 +86,11 @@ type fakeApprovalChannel struct {
 		delivered bool
 		err       error
 	}
-	calls []struct{ identityID, token, taskID, kind string }
+	calls []struct{ identityID, token, taskID, kind, ctxIdentity string }
 }
 
-func (f *fakeApprovalChannel) DeliverApproval(_ context.Context, identityID, token, taskID, kind string) (bool, error) {
-	f.calls = append(f.calls, struct{ identityID, token, taskID, kind string }{identityID, token, taskID, kind})
+func (f *fakeApprovalChannel) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
+	f.calls = append(f.calls, struct{ identityID, token, taskID, kind, ctxIdentity string }{identityID, token, taskID, kind, identityctx.IdentityID(ctx)})
 	r := f.byIdentity[identityID]
 	return r.delivered, r.err
 }
@@ -265,13 +265,17 @@ func TestSweepApprovalRemindersEnsureAsTheTasksOwner(t *testing.T) {
 	store := &fakeApprovalReminderStore{tasks: []Task{
 		{ID: "owned-1", Kind: "agent_job", IdentityID: owner, OriginConversationID: "conv-O"},
 	}}
-	ensurer := &fakeEnsurer{mintedByTask: map[string]bool{"owned-1": false}}
-	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: ensurer, ApprovalChannel: &fakeApprovalChannel{}})
+	ensurer := &fakeEnsurer{}
+	channel := &fakeApprovalChannel{}
+	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: ensurer, ApprovalChannel: channel})
 	if err := d.sweepApprovalReminders(context.Background()); err != nil {
 		t.Fatalf("sweepApprovalReminders: %v", err)
 	}
 	if len(ensurer.calls) != 1 || ensurer.calls[0].identity != owner {
 		t.Fatalf("ensure ran as %+v, want the task's owner %s", ensurer.calls, owner)
+	}
+	if len(channel.calls) != 1 || channel.calls[0].ctxIdentity != owner {
+		t.Fatalf("the minted pause was pushed as %+v, want the task's owner %s", channel.calls, owner)
 	}
 }
 
