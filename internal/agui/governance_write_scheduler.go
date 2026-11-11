@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // schedulerEditBodyCap bounds the edit request body: a schedule grammar + a short payload
@@ -149,6 +150,14 @@ func (s *Server) handleSchedulerCancel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if task.Status == "pending_approval" && task.OriginConversationID != "" && s.approvalExpirer != nil {
+		answer := fmt.Sprintf("Scheduled %s task %s was cancelled by the operator; it will not run.", task.Kind, shortID(id))
+		ownerCtx := identityctx.WithIdentityID(r.Context(), task.IdentityID)
+		if _, err := s.approvalExpirer.ExpireApprovalPause(ownerCtx, task.OriginConversationID, id, answer); err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
+			return
+		}
+	}
 	if err := s.governance.Scheduler.CancelTask(r.Context(), id); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 		return
@@ -269,4 +278,20 @@ func refuseMessageChange(w http.ResponseWriter, task cron.Task) bool {
 	}
 	writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "a scheduled message cannot be run now or edited; cancel it and schedule a new one"})
 	return true
+}
+
+// ApprovalPauseExpirer closes a task's pending approval when the task is cancelled; the runner
+// satisfies it. The result is a cron.PauseClosed; the board needs only the error.
+type ApprovalPauseExpirer interface {
+	ExpireApprovalPause(ctx context.Context, conversationID, taskID, answer string) (cron.PauseClosed, error)
+}
+
+// SetApprovalPauseExpirer wires the approval close a pending task's cancel runs first.
+func (s *Server) SetApprovalPauseExpirer(e ApprovalPauseExpirer) { s.approvalExpirer = e }
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }

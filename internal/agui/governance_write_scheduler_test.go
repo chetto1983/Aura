@@ -440,3 +440,25 @@ func TestSchedulerBoardCarriesWhyATaskIsPaused(t *testing.T) {
 		t.Fatalf("board = %d %s, want the pause reason and the failure count", rec.Code, body)
 	}
 }
+
+// fakeApprovalExpirer records the approvals a board cancel closes.
+type fakeApprovalExpirer struct{ closed []string }
+
+func (f *fakeApprovalExpirer) ExpireApprovalPause(_ context.Context, conversationID, taskID, _ string) (cron.PauseClosed, error) {
+	f.closed = append(f.closed, conversationID+"/"+taskID)
+	return cron.PauseClosedNow, nil
+}
+
+// Decision 36: cancelling a task that waits for approval closes its approval first.
+func TestCancellingAPendingTaskOnTheBoardClosesItsApproval(t *testing.T) {
+	expirer := &fakeApprovalExpirer{}
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindAgentJob, Status: "pending_approval", OriginConversationID: "conv-1", IdentityID: "owner"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	s.SetApprovalPauseExpirer(expirer)
+	if rec := doGov(t, s, http.MethodDelete, "/api/governance/scheduler/"+schedTaskID); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	if len(expirer.closed) != 1 || expirer.closed[0] != "conv-1/"+schedTaskID || board.cancelledID != schedTaskID {
+		t.Fatalf("closed %v, cancelled %q", expirer.closed, board.cancelledID)
+	}
+}

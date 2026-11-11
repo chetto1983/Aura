@@ -299,6 +299,20 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 	return items, nil
 }
 
+const expireLapsedApproval = `-- name: ExpireLapsedApproval :execrows
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE id = $1 AND status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
+`
+
+// The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
+func (q *Queries) ExpireLapsedApproval(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, expireLapsedApproval, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
@@ -468,6 +482,62 @@ type ListDuePendingApprovalRemindersParams struct {
 // lock; a rare cross-instance double-nudge under HA is benign.
 func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error) {
 	rows, err := q.db.Query(ctx, listDuePendingApprovalReminders, arg.ApprovalRemindedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraSchedulerTasks{}
+	for rows.Next() {
+		var i AuraSchedulerTasks
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ScheduleKind,
+			&i.CronExpr,
+			&i.EveryMinutes,
+			&i.RunAt,
+			&i.Tz,
+			&i.Payload,
+			&i.StepBudget,
+			&i.Status,
+			&i.NextRunAt,
+			&i.NotifyRoute,
+			&i.IdentityID,
+			&i.OriginConversationID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
+			&i.TransientRetries,
+			&i.TelegramRecipients,
+			&i.OriginToolCallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLapsedApprovals = `-- name: ListLapsedApprovals :many
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients, origin_tool_call_id
+FROM aura.scheduler_tasks
+WHERE status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
+ORDER BY next_run_at
+LIMIT $1
+`
+
+// A one-shot whose time passed while it waited for approval (spec 2026-11-05 Part 3, items 5-6).
+// No age floor: a task stuck before this existed is taken on the first pass.
+func (q *Queries) ListLapsedApprovals(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error) {
+	rows, err := q.db.Query(ctx, listLapsedApprovals, limit)
 	if err != nil {
 		return nil, err
 	}

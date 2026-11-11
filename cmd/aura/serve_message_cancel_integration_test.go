@@ -226,3 +226,33 @@ func TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim(t *testing.T) {
 		})
 	}
 }
+
+// recordingExpirer stands for the runner: it records the approvals a cancel closes.
+type recordingExpirer struct{ closed []string }
+
+func (r *recordingExpirer) ExpireApprovalPause(_ context.Context, conversationID, taskID, answer string) (cron.PauseClosed, error) {
+	r.closed = append(r.closed, conversationID+"|"+taskID+"|"+answer)
+	return cron.PauseClosedNow, nil
+}
+
+// Decision 36: cancelling a task that waits for approval closes its approval, so the approvals
+// list no longer offers it.
+func TestCancellingAPendingTaskClosesItsPause(t *testing.T) {
+	pool := bootstrapMigratedPool(t)
+	f := newScheduledMessageFixture(t, pool)
+	id := insertOwnedTask(t, pool, f.owner, "agent_job")
+	conversation := uuid.NewString()
+	if _, err := pool.Exec(context.Background(), `UPDATE aura.scheduler_tasks SET status = 'pending_approval', origin_conversation_id = $2 WHERE id = $1`, id, conversation); err != nil {
+		t.Fatalf("park: %v", err)
+	}
+	expirer := &recordingExpirer{}
+	store := newCronTaskStore(pool, nil)
+	store.pauses = expirer
+	if err := store.CancelScheduledTask(identityctx.WithIdentityID(context.Background(), f.owner), id); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	want := conversation + "|" + id + "|Scheduled agent_job task " + id[:8] + " was cancelled by the operator; it will not run."
+	if len(expirer.closed) != 1 || expirer.closed[0] != want || schedulerTaskStatus(t, pool, id) != "cancelled" {
+		t.Fatalf("closed %v, status %s", expirer.closed, schedulerTaskStatus(t, pool, id))
+	}
+}

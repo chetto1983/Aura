@@ -147,3 +147,28 @@ func (s *Store) scheduledRow(ctx context.Context, ownerID string, read func(*sql
 	})
 	return result, err
 }
+
+// ApprovedForTask reports whether the task's draft was approved: a lapsed pass then activates the
+// task instead of cancelling it, and the handler sends it inside its grace (decision 36).
+func (s *Store) ApprovedForTask(ctx context.Context, ownerID, taskID string) (bool, error) {
+	draft, err := s.ForTask(ctx, ownerID, taskID)
+	if errors.Is(err, ErrUnavailable) {
+		return false, nil
+	}
+	return err == nil && draft.Status == StatusApproved, err
+}
+
+// ExpireForTask expires the task's draft when it is still pending; any other state is left.
+func (s *Store) ExpireForTask(ctx context.Context, ownerID, taskID string) error {
+	draft, err := s.ForTask(ctx, ownerID, taskID)
+	if errors.Is(err, ErrUnavailable) || (err == nil && draft.Status != StatusPending) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.ExpireScheduled(ctx, ownerID, draft.ID); err != nil && !errors.Is(err, ErrUnavailable) {
+		return err
+	}
+	return nil
+}

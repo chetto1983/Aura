@@ -896,7 +896,7 @@ A store-query error is returned, and the tick logs it as it logs the other sweep
 
 Cancel closes the pause (decision 36): the task tool's cancel (`cronTaskStore.CancelScheduledTask`) and the board's cancel call `ExpireApprovalPause` with the answer `Scheduled <kind> task <first 8 of id> was cancelled by the operator; it will not run.` for a task that was `pending_approval`. `aura task cancel` runs outside the daemon and leaves the pause; Task 16's verification file records that limit. If `dispatch.go` would pass 600 lines, `DispatchDeps` moves into a new `dispatch_deps.go` in the same commit.
 
-- [ ] Unit tests (fake store, closer, notifier, recorder), in `deliver_lapsed_test.go`:
+- [x] Unit tests (fake store, closer, notifier, recorder), in `deliver_lapsed_test.go`:
   - `TestALapsedOneShotIsExpiredReportedAndClosed`. The task is an `agent_job` with TZ `Europe/Rome`, `NextRunAt` 2026-11-02T17:00Z and notify `telegram`. Expected:
     - the closer gets `Scheduled agent_job task <8> was not approved in time; it has been cancelled and did not run. Do NOT re-schedule it unless the operator asks.`;
     - then `ExpireLapsedApproval` and `InsertRun` run;
@@ -907,22 +907,22 @@ Cancel closes the pause (decision 36): the task tool's cancel (`cronTaskStore.Ca
   - `TestAnApprovalInFlightIsNotExpired`: a closer that returns `PauseAnswered` gives no CAS, no run and no notice.
   - `TestAnApprovedMessageDueNowIsActivatedNotCancelled`: `ApprovedForTask` true gives `ActivateReviewedMessage` once, and no closer call, CAS, run or notice.
   - `TestAMessageWithNoPauseHasItsDraftExpired`: `PauseNone` on a `message` task gives `ExpireForTask` once, then the CAS and the notice.
-- [ ] `db_integration` tests in `lapsed_integration_test.go`:
+- [x] `db_integration` tests in `lapsed_integration_test.go`:
   - `TestOnlyLapsedOneShotsAreListed`. Only the pending `at` task past its time is listed. A pending `at` task in the future, a pending `every` task past due, and an `active` `at` task past its time are not.
   - `TestATaskStuckBeforeDeployExpiresOnTheFirstPass`: a pending `at` `agent_job` with `created_at` and `next_run_at` three days ago is `cancelled` after one pass, and has one `failed` run carrying the notice.
   - `TestAnUnapprovedMessageIsReportedAndSettles`. A pending `message` task past its time has a pending draft and its review pause. After one tick:
     - the task is `cancelled` and its run summary holds `was not approved in time and did not run`;
     - the draft is `expired`, and the pause is resolved, so `/api/approvals` and `ListMessageDrafts` no longer show it;
     - once the notice is delivered, `DeleteSettledOneShots` removes the task and the draft stays.
-- [ ] `TestExpireApprovalPauseClosesTheTasksPause` (runner `db_integration`):
+- [x] `TestExpireApprovalPauseClosesTheTasksPause` (runner `db_integration`): *(The race between the first listing and the lock is guarded by the relist after `TryLockThread`; it is not simulated by a hook here.)*
   - a `scheduled_task_approval` pause for the task is resolved with the answer, and `ListPending` is empty;
   - a message review pause has its draft `expired` and is resolved;
   - a conversation with no matching pause gives `PauseNone`, and one whose pause was answered accept gives `PauseAnswered`;
   - a pause resolved between the first listing and the lock commits nothing (a hook on the lock simulates the race);
   - the resume hook is not called.
-- [ ] `TestCancellingAPendingTaskClosesItsPause` (cmd/aura `db_integration`): cancelling a pending `agent_job` through the task tool leaves no pending pause for it, and the approvals list no longer shows it.
-- [ ] Add a `TestMain` with `goleak.VerifyTestMain` to `internal/messagedrafts` (it has none; `internal/runner`, `internal/cron` and `internal/cron/handlers` already have one), since Tasks 6 and 14 start lock-holding work there.
-- [ ] Red, `make sqlc`, implement, green with race on `./internal/cron/`, `./internal/runner/` and `./internal/messagedrafts/`, and with `db_integration` on `./internal/cron/`, `./internal/runner/`, `./internal/messagedrafts/` and `./cmd/aura/`. Commit: `feat(scheduler): a one-shot not approved in time expires and the operator is told`.
+- [x] `TestCancellingAPendingTaskClosesItsPause` (cmd/aura `db_integration`): cancelling a pending `agent_job` through the task tool leaves no pending pause for it, and the approvals list no longer shows it. *(The runner is a recording fake in this test; `TestExpireApprovalPauseClosesTheTasksPause` covers what the runner then does.)*
+- [x] Add a `TestMain` with `goleak.VerifyTestMain` to `internal/messagedrafts` (it has none; `internal/runner`, `internal/cron` and `internal/cron/handlers` already have one), since Tasks 6 and 14 start lock-holding work there.
+- [x] Red, `make sqlc`, implement, green with race on `./internal/cron/`, `./internal/runner/` and `./internal/messagedrafts/`, and with `db_integration` on `./internal/cron/`, `./internal/runner/`, `./internal/messagedrafts/` and `./cmd/aura/`. Commit: `feat(scheduler): a one-shot not approved in time expires and the operator is told`.
 
 ### Task 15: The new critical files are measured by CI's mutation gate
 

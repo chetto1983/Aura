@@ -26,6 +26,9 @@ import (
 // *runner.Runner mints). These keep the serve_dispatch wiring honest without a full-boot test.
 var (
 	_ cron.ApprovalPauseEnsurer = approvalPauseEnsurer{}
+	_ cron.LapsedPauseCloser    = lapsedPauseCloser{}
+	_ cron.LapsedMessages       = lapsedMessages{}
+	_ approvalPauseExpirer      = (*runner.Runner)(nil)
 	_ approvalPauseLister       = (*askuser.Store)(nil)
 	_ approvalMinter            = (*runner.Runner)(nil)
 )
@@ -254,4 +257,44 @@ func shortTaskID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// approvalPauseExpirer closes a task's pending approval with an answer the model reads;
+// *runner.Runner satisfies it.
+type approvalPauseExpirer interface {
+	ExpireApprovalPause(ctx context.Context, conversationID, taskID, answer string) (cron.PauseClosed, error)
+}
+
+// lapsedPauseCloser closes a lapsed task's approval in the conversation it was asked in. A task
+// with no origin conversation (a CLI row) has no pause to close.
+type lapsedPauseCloser struct{ runner approvalPauseExpirer }
+
+func (c lapsedPauseCloser) CloseLapsedApproval(ctx context.Context, task cron.Task, answer string) (cron.PauseClosed, error) {
+	if task.OriginConversationID == "" || c.runner == nil {
+		return cron.PauseNone, nil
+	}
+	return c.runner.ExpireApprovalPause(ctx, task.OriginConversationID, task.ID, answer)
+}
+
+// lapsedMessages settles a lapsed message task's draft over the drafts and the task store.
+type lapsedMessages struct {
+	drafts *messagedrafts.Store
+	tasks  *cron.Store
+}
+
+func (m lapsedMessages) ApprovedForTask(ctx context.Context, ownerID, taskID string) (bool, error) {
+	return m.drafts.ApprovedForTask(ctx, ownerID, taskID)
+}
+
+func (m lapsedMessages) ActivateReviewedMessage(ctx context.Context, ownerID, taskID string) error {
+	return m.tasks.ActivateReviewedMessage(ctx, ownerID, taskID)
+}
+
+func (m lapsedMessages) ExpireForTask(ctx context.Context, ownerID, taskID string) error {
+	return m.drafts.ExpireForTask(ctx, ownerID, taskID)
+}
+
+// cancelledApprovalAnswer closes the approval of a task the operator cancelled while it waited.
+func cancelledApprovalAnswer(kind, taskID string) string {
+	return fmt.Sprintf("Scheduled %s task %s was cancelled by the operator; it will not run.", kind, shortTaskID(taskID))
 }
