@@ -54,13 +54,11 @@ func (r selfSendResolver) Resolve(recipe, tool string) (cron.SelfSendTool, bool)
 	if r.reg == nil {
 		return nil, false
 	}
-	for _, t := range r.reg.All() {
-		spec := t.Spec()
-		if spec.TrustedRecipeSource == recipe && spec.TrustedRecipeTool == tool {
-			return selfSendTool{tool: t, runDir: r.runDir, previewCap: r.previewCap}, true
-		}
+	t, ok := r.reg.ByTrustedRecipe(recipe, tool)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return selfSendTool{tool: t, runDir: r.runDir, previewCap: r.previewCap}, true
 }
 
 // selfSendTool executes a resolved MCP tool with the arguments the notifier built. An

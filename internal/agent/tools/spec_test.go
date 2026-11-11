@@ -110,3 +110,30 @@ func TestMultiplexedToolsMutatingFloor(t *testing.T) {
 		t.Error("swarm_spawn Spec().Deferred = false, want true (deferred-tool contract preserved)")
 	}
 }
+
+// recipeTool is a tool the MCP bridge classified as a trusted recipe's.
+type recipeTool struct{ name string }
+
+func (r recipeTool) Spec() Spec {
+	return Spec{Name: r.name, TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_message"}
+}
+func (recipeTool) Execute(context.Context, json.RawMessage) (ToolResult, error) {
+	return ToolResult{}, nil
+}
+
+// The registry is a map: two mounts of one recipe must resolve the same way every time.
+func TestByTrustedRecipeIsDeterministic(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(recipeTool{name: "b__send_message"})
+	reg.Register(recipeTool{name: "a__send_message"})
+	reg.Register(stubTool{name: "c__other"})
+	for range 20 {
+		got, ok := reg.ByTrustedRecipe("recipe:whatsapp", "send_message")
+		if !ok || got.Spec().Name != "a__send_message" {
+			t.Fatalf("ByTrustedRecipe = %v, %v; want a__send_message", got, ok)
+		}
+	}
+	if _, ok := reg.ByTrustedRecipe("recipe:calendar", "calendar"); ok {
+		t.Fatal("an unmounted recipe resolved")
+	}
+}
