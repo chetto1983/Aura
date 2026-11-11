@@ -57,19 +57,18 @@ func RenderProfileBlock(a Answers) string {
 	add("Custom instructions", a.CustomInstructions)
 	add("Default channel for reminders and scheduled results", a.DefaultNotify)
 
-	vetoes := joinList(a.Vetoes)
 	// The channel is a setting the panel owns. Without this line a rule the operator states
 	// in chat ("always send reminders on Telegram") is filed as a memory the task tool never
-	// reads. It rides every non-empty block, set or not, because the rule is as likely to be
-	// stated before the panel is ever opened.
-	if len(lines) > 0 || vetoes != "" {
+	// reads. It rides every block that describes the operator, channel set or not, because
+	// the rule is as likely to be stated before the panel is ever opened.
+	if len(lines) > 0 {
 		lines = append(lines, profileChannelRule)
 	}
 
 	// Vetoes go LAST and under their own heading. They are the only entries here that are
 	// prohibitions rather than description, and burying them in a list of interests is how
 	// a hard rule reads as a preference.
-	if vetoes != "" {
+	if vetoes := joinList(a.Vetoes); vetoes != "" {
 		lines = append(lines, "Never do: "+vetoes)
 	}
 
