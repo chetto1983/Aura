@@ -1764,6 +1764,9 @@ jobs:
     # teacher removed its teacher branches, so its timeout is a ceiling for the current file.
     # decide_floor, decide_tick and decide_wire (2026-11-05) are not measured yet: the
     # elicitation group's timeout assumes about 900 s for the three until a run says otherwise.
+    # task_approval, task_message, message_fire and lapsed_approval (2026-11-11, the scheduled
+    # delivery) ride with turn_reading: 990 s for the four, measured warm in a cloud container,
+    # not on a runner, so 2003 s for the group and a 90-minute timeout until a run says otherwise.
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -1777,8 +1780,8 @@ jobs:
       matrix:
         include:
           - group: turn-reading
-            scopes: turn_reading
-            timeout: 46
+            scopes: turn_reading task_approval task_message message_fire lapsed_approval
+            timeout: 90
           - group: elicitation-boundaries
             scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire
             timeout: 75

@@ -32,6 +32,10 @@ GO_SCOPES = {
     "decide_floor": "internal/pimwatch/ladder_model.go",
     "decide_tick": "internal/pimwatch/watcher_decide.go",
     "decide_wire": "internal/decide/wire.go",
+    "task_approval": "internal/agent/tools/task_approval.go",
+    "task_message": "internal/agent/tools/task_message.go",
+    "message_fire": "internal/cron/handlers/message.go",
+    "lapsed_approval": "internal/cron/deliver_lapsed.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -70,6 +74,10 @@ REQUIRED_SCOPE_IDS = frozenset(
         "decide_floor",
         "decide_tick",
         "decide_wire",
+        "task_approval",
+        "task_message",
+        "message_fire",
+        "lapsed_approval",
         "frontend",
         "media_frontend",
     }

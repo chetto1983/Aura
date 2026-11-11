@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -21,20 +22,27 @@ const messageOwner = "10000000-0000-4000-8000-000000000001"
 
 // fakeMessageDrafts serves one draft per task and records every transition the handler asks for.
 type fakeMessageDrafts struct {
-	mu       sync.Mutex
-	draft    messagedrafts.Draft
-	reread   *messagedrafts.Draft // what ForTask returns after a lost claim
-	claims   int
-	claimOK  int // how many claims succeed
-	expires  int
-	outcomes []string
-	forTasks int
+	mu        sync.Mutex
+	draft     messagedrafts.Draft
+	reread    *messagedrafts.Draft // what ForTask returns after a lost claim
+	claims    int
+	claimOK   int // how many claims succeed
+	expires   int
+	outcomes  []string
+	forTasks  int
+	claimErr  error
+	expireErr error
+	markErr   error
+	rereadErr error
 }
 
 func (f *fakeMessageDrafts) ForTask(context.Context, string, string) (messagedrafts.Draft, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forTasks++
+	if f.forTasks > 1 && f.rereadErr != nil {
+		return messagedrafts.Draft{}, f.rereadErr
+	}
 	if f.forTasks > 1 && f.reread != nil {
 		return *f.reread, nil
 	}
@@ -48,6 +56,9 @@ func (f *fakeMessageDrafts) ClaimScheduled(context.Context, string, string) (mes
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.claims++
+	if f.claimErr != nil {
+		return messagedrafts.Draft{}, f.claimErr
+	}
 	if f.claims > f.claimOK {
 		return messagedrafts.Draft{}, messagedrafts.ErrUnavailable
 	}
@@ -60,14 +71,14 @@ func (f *fakeMessageDrafts) ExpireScheduled(context.Context, string, string) (me
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.expires++
-	return f.draft, nil
+	return f.draft, f.expireErr
 }
 
 func (f *fakeMessageDrafts) MarkOutcome(_ context.Context, _, _ string, status messagedrafts.Status, code string) (messagedrafts.Draft, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.outcomes = append(f.outcomes, string(status)+"/"+code)
-	return f.draft, nil
+	return f.draft, f.markErr
 }
 
 // sendSpy is the mounted WhatsApp send, with the operation metadata of a mutating MCP tool.
@@ -248,5 +259,111 @@ func TestAFailedSendIsAFailedRun(t *testing.T) {
 	_, err := messageHandler(drafts, spy).Run(scheduledRunCtx(t), Job{TaskID: "task-1"})
 	if err == nil || !strings.Contains(err.Error(), "not sent") || len(drafts.outcomes) != 1 || drafts.outcomes[0] != "failed/no_effect" {
 		t.Fatalf("err = %v, outcomes %v", err, drafts.outcomes)
+	}
+}
+
+func TestTheMessageHandlerIsBoundedAndReschedulesOnRecovery(t *testing.T) {
+	meta := MessageHandler{}.Meta()
+	if meta.Kind != KindMessage || meta.MaxDuration != 2*time.Minute || !meta.ReschedulesOnRecovery {
+		t.Fatalf("meta = %+v", meta)
+	}
+}
+
+// Every store failure is the run's error, and nothing is sent after it.
+func TestAStoreFailureIsTheRunsError(t *testing.T) {
+	boom := errors.New("db down")
+	pending := approvedDraft(t)
+	pending.Status = messagedrafts.StatusPending
+	stale := approvedDraft(t)
+	stale.Status, stale.DispatchStartedAt = messagedrafts.StatusDispatching, time.Now().Add(-31*time.Minute)
+	cases := map[string]*fakeMessageDrafts{
+		"no draft":                      {},
+		"the claim fails":               {draft: approvedDraft(t), claimErr: boom},
+		"the reread fails":              {draft: approvedDraft(t), rereadErr: boom},
+		"the outcome is not saved":      {draft: approvedDraft(t), claimOK: 1, markErr: boom},
+		"a pending draft cannot expire": {draft: pending, expireErr: boom},
+		"a stale outcome is not saved":  {draft: stale, markErr: boom},
+	}
+	for name, drafts := range cases {
+		t.Run(name, func(t *testing.T) {
+			spy := &sendSpy{}
+			if _, err := messageHandler(drafts, spy).Run(scheduledRunCtx(t), Job{TaskID: "task-1"}); err == nil {
+				t.Fatal("the failure was not the run's error")
+			}
+		})
+	}
+}
+
+// A draft already closed is reported, never an error: ErrUnavailable means another path won.
+func TestAnAlreadyClosedDraftIsReported(t *testing.T) {
+	pending := approvedDraft(t)
+	pending.Status = messagedrafts.StatusPending
+	expired := approvedDraft(t)
+	expired.Status = messagedrafts.StatusExpired
+	approvedPast := approvedDraft(t)
+	cases := map[string]struct {
+		drafts *fakeMessageDrafts
+		suffix string
+	}{
+		"a pending draft another path closed": {&fakeMessageDrafts{draft: pending, expireErr: messagedrafts.ErrUnavailable}, "it was not approved in time."},
+		"an expired draft":                    {&fakeMessageDrafts{draft: expired}, "it expired before it could be sent."},
+		"an approval past its review":         {&fakeMessageDrafts{draft: approvedPast, reread: &approvedPast}, "it expired before it could be sent."},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			summary, err := messageHandler(c.drafts, &sendSpy{}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"})
+			if err != nil || !strings.HasSuffix(summary, c.suffix) {
+				t.Fatalf("%q, %v", summary, err)
+			}
+		})
+	}
+	approvedPast2 := approvedDraft(t)
+	drafts := &fakeMessageDrafts{draft: approvedPast2, reread: &approvedPast2, expireErr: errors.New("db down")}
+	if _, err := messageHandler(drafts, &sendSpy{}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"}); err == nil {
+		t.Fatal("a failed expiry of a lapsed approval was swallowed")
+	}
+}
+
+// A dispatch with no start time is not called stale: it is reported as handled.
+func TestADispatchWithoutAStartIsNotStale(t *testing.T) {
+	draft := approvedDraft(t)
+	draft.Status = messagedrafts.StatusDispatching
+	drafts := &fakeMessageDrafts{draft: draft}
+	summary, err := messageHandler(drafts, &sendSpy{}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"})
+	if err != nil || len(drafts.outcomes) != 0 || !strings.Contains(summary, "was already handled") {
+		t.Fatalf("%q, %v, outcomes %v", summary, err, drafts.outcomes)
+	}
+}
+
+// The tool must be the one the draft was reviewed against: same recipe and target.
+func TestADifferentToolIsNotTheReviewedOne(t *testing.T) {
+	draft := approvedDraft(t)
+	draft.Target = messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
+	drafts := &fakeMessageDrafts{draft: draft, claimOK: 1}
+	if _, err := messageHandler(drafts, &sendSpy{}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"}); err == nil || drafts.claims != 0 {
+		t.Fatalf("err = %v, claims %d", err, drafts.claims)
+	}
+	if _, err := (MessageHandler{Drafts: drafts}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"}); err == nil {
+		t.Fatal("a handler with no registry sent")
+	}
+}
+
+// The sent time is read in the operator's zone, and in UTC with none.
+func TestTheSentTimeIsInTheOperatorsZone(t *testing.T) {
+	tokyo, _ := time.LoadLocation("Asia/Tokyo")
+	h := messageHandler(&fakeMessageDrafts{draft: approvedDraft(t), claimOK: 1}, &sendSpy{})
+	h.Location = tokyo
+	before := time.Now().In(tokyo).Format("15:04")
+	summary, err := h.Run(scheduledRunCtx(t), Job{TaskID: "task-1"})
+	after := time.Now().In(tokyo).Format("15:04")
+	if err != nil || (!strings.HasSuffix(summary, " at "+before+".") && !strings.HasSuffix(summary, " at "+after+".")) {
+		t.Fatalf("%q, %v; want Tokyo time %s", summary, err, before)
+	}
+	h = messageHandler(&fakeMessageDrafts{draft: approvedDraft(t), claimOK: 1}, &sendSpy{})
+	h.Location = nil
+	before = time.Now().UTC().Format("15:04")
+	summary, _ = h.Run(scheduledRunCtx(t), Job{TaskID: "task-1"})
+	if !strings.HasSuffix(summary, " at "+before+".") && !strings.HasSuffix(summary, " at "+time.Now().UTC().Format("15:04")+".") {
+		t.Fatalf("%q; want UTC", summary)
 	}
 }
