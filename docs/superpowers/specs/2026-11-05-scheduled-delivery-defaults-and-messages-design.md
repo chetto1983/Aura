@@ -185,6 +185,11 @@ recipient and text are fixed when it is scheduled.
 - **Cancellation.** Cancelling the task before it fires declines its draft. Cancelling after the claim changes
   nothing; the send is the one-send boundary.
 - **No edits after approval.** Changing the message means cancelling and scheduling again.
+- **Deactivation cancels.** Deactivating the identity cancels its pending or approved `message` tasks and declines
+  their drafts; it never pauses them (operator, 2026-11-11, "Confermo"). The drafts are declined by owner, so a retry
+  after a failed decline still finds them. The draft is declined before the task is cancelled, here and on every cancel
+  path, because a handler already running only claims the draft. A draft already claimed for sending is left to finish
+  its one send: the claim and the decline are both compare-and-set on the draft's status, and the first one wins.
 
 ### `agent_job`
 
@@ -212,12 +217,14 @@ the chat that creates it.
 **What changes.**
 1. **The host parks the call.** A `task` schedule call that will need approval is parked by the agent before it runs,
    with the same in-turn withhold Part 2 uses for `kind=message`. The approval pause is keyed to the model's own call
-   id and appears in the chat that made the call, in that turn, with no model relay.
+   id and appears in the chat that made the call, in that turn, with no model relay. A call the identity's gateway
+   policy denies is never parked: it runs and the gateway refuses it as today (operator, 2026-11-11, "Confermo").
 2. **Which calls need approval** is decided before the call runs, from the arguments alone: every `agent_job`
    (AG-016), and any task whose `scoring.ComputeTaskTier` recommends a gate. The tier is a pure function of the
    arguments, so the decision before the call and the one inside the tool cannot disagree. A test pins that.
 3. **The question names what will run:** kind, time in the operator's zone, and the goal or text, bounded the way
-   today's question bounds the id. The operator no longer approves "task 01a19af5" blind.
+   today's question bounds the id. The operator no longer approves "task 01a19af5" blind. It ends "It will not run
+   until you approve." in every surface (operator, 2026-11-11, "Confermo").
 4. **The model-relayed path and its directive retire** for model-scheduled tasks. The sweep stays only as far as some
    other producer of `pending_approval` tasks still needs it. The builder inventories the producers and records what
    remains.
