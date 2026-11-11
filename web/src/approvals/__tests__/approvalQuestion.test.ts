@@ -83,6 +83,29 @@ describe('approvalQuestion', () => {
     );
   });
 
+  it('renders a named scheduled approval with its cadence, time and goal', async () => {
+    const named = approval({
+      presentation: {
+        key: 'approval.scheduled.task',
+        params: {
+          task: '01a19af5',
+          kind: 'agent_job',
+          schedule: 'once',
+          when: '06/11 08:25 (Europe/Rome)',
+          summary: 'Riassumi la posta',
+        },
+      },
+    });
+    await i18n.changeLanguage('en');
+    expect(approvalQuestion(named, i18n.t)).toBe(
+      'Approve scheduled agent_job task 01a19af5 (once), first run 06/11 08:25 (Europe/Rome)? It runs: Riassumi la posta. It will not run until you approve.',
+    );
+    await i18n.changeLanguage('it');
+    expect(approvalQuestion(named, i18n.t)).toBe(
+      "Approvare l'attività pianificata agent_job 01a19af5 (una volta), prima esecuzione 06/11 08:25 (Europe/Rome)? Esegue: Riassumi la posta. Non verrà eseguita finché non approvi.",
+    );
+  });
+
   it('renders a plugin install and a removal in either language', async () => {
     const install = approval({
       question: 'Canonical plugin consent',

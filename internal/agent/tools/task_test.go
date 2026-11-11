@@ -198,11 +198,9 @@ func TestTaskScheduleDestructivePayloadGated(t *testing.T) {
 	}
 }
 
-// TestTaskScheduleApprovalDirective proves a pending_approval schedule returns the
-// on-channel HITL directive (not the passive "awaiting approval" text): a JSON payload
-// carrying the task_id and the ask_user relay instruction with the
-// scheduled_task_approval resume_context the resume hook decodes. This is what makes
-// the approval reach the sending channel instead of the CLI-only path (bug fix).
+// TestTaskScheduleApprovalDirective: with nobody in the chat (the agent parks the call in-turn
+// otherwise), a gated task waits pending_approval and the tool says so. It no longer hands the
+// model an ask_user relay: the host owns the question (spec 2026-11-05 Part 3, item 4).
 func TestTaskScheduleApprovalDirective(t *testing.T) {
 	const fullID = "019f9349-e0e5-77cc-9639-804bcf88b968" // a real 36-char UUID
 	store := &fakeTaskStore{createID: fullID}
@@ -214,45 +212,16 @@ func TestTaskScheduleApprovalDirective(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schedule agent_job: %v", err)
 	}
-	if store.created.Status != "pending_approval" {
-		t.Fatalf("agent_job must be pending_approval, got %q", store.created.Status)
+	if store.created.Status != "pending_approval" || store.created.NotifyRoute != "telegram" {
+		t.Fatalf("created %+v, want pending_approval on telegram", store.created)
 	}
-	if store.created.NotifyRoute != "telegram" {
-		t.Fatalf("NotifyRoute = %q, want explicit telegram", store.created.NotifyRoute)
+	if !strings.HasPrefix(res.Preview, "scheduled task "+fullID+" (kind=agent_job, ") ||
+		!strings.Contains(res.Preview, "status=pending_approval). It needs the operator's approval and will not fire until they approve it; they are reminded on their channel. Do not call ask_user for it.") {
+		t.Fatalf("preview = %q", res.Preview)
 	}
-
-	var got struct {
-		Status   string `json:"status"`
-		TaskID   string `json:"task_id"`
-		Question string `json:"question"`
-		Message  string `json:"message"`
-	}
-	if err := json.Unmarshal([]byte(res.Preview), &got); err != nil {
-		t.Fatalf("preview must be a JSON directive, got %q: %v", res.Preview, err)
-	}
-	if got.Status != "pending_approval" {
-		t.Errorf("directive status = %q, want pending_approval", got.Status)
-	}
-	// The machine-facing task_id + resume_context still carry the FULL id (the resume hook
-	// keys on it) — only the human-facing question is masked.
-	if got.TaskID != fullID {
-		t.Errorf("directive task_id = %q, want the full created id", got.TaskID)
-	}
-	// The question the operator sees masks the UUID to its first 8 chars (no raw 36-char id)
-	// and names the kind, so the Sì/No prompt reads friendly instead of dumping a UUID.
-	if strings.Contains(got.Question, fullID) {
-		t.Errorf("question must NOT contain the full UUID, got %q", got.Question)
-	}
-	for _, want := range []string{"019f9349", "agent_job"} {
-		if !strings.Contains(got.Question, want) {
-			t.Errorf("question must contain %q (masked id + kind), got %q", want, got.Question)
-		}
-	}
-	// The message must instruct the model to relay via ask_user with the exact
-	// resume_context the scheduled-task resume hook keys on (full id preserved).
-	for _, want := range []string{"ask_user", "scheduled_task_approval", fullID} {
-		if !strings.Contains(got.Message, want) {
-			t.Errorf("directive message must contain %q, got %q", want, got.Message)
+	for _, gone := range []string{"resume_context", "Call ask_user"} {
+		if strings.Contains(res.Preview, gone) {
+			t.Errorf("preview still holds %q", gone)
 		}
 	}
 }

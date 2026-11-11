@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
-	"github.com/chetto1983/aura/internal/scoring"
 )
 
 // TaskTool is the ONE scheduling verb the model sees (D-09/D-11). A single entry —
@@ -30,10 +29,6 @@ import (
 // through the consumer-declared taskStore and taskDestinations seams below.
 type TaskTool struct {
 	Store taskStore
-	// AlertThreshold is the risk tier at/above which a scheduled task fires an
-	// immediate alert (config owns AURA_RISK_ALERT_THRESHOLD; scoring takes it as
-	// an argument, never reads env). Empty defaults to Risky.
-	AlertThreshold scoring.RiskTier
 	// Destinations resolves, before a task is persisted, the recipient an external notify
 	// route would reach for the caller (the live scheduler Notifier). Nil skips the check,
 	// as on the pool-free manifest path.
@@ -178,7 +173,7 @@ func (t *TaskTool) Spec() Spec {
 			"A reminder or message the operator wants later on a channel (\"remind me on WhatsApp in 10 minutes\", \"email me tomorrow\", \"message me on Telegram in an hour\") is a reminder task with notify set to that channel: at fire time the scheduler delivers it to the operator's own WhatsApp, email or Telegram. Never send it now with a messaging tool, and never look up the operator's contact for it. " +
 			"For action=schedule always honor an explicit notify choice. If the request names no channel, omit notify: the operator's default channel is applied, and when none is set a delivery_choice_required directive comes back. " +
 			"kind=message sends one fixed message to someone else (WhatsApp or email) once, at most 23h45m ahead, with schedule_kind=at: resolve the exact recipient first and ask the operator now if two contacts match; the operator reviews the recipient and the text before the task exists, and it is sent at its time with no model in between. " +
-			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
+			"A task that needs approval (every agent_job, and payloads scored destructive) is shown to the operator for approval in this chat before it can fire; with nobody in the chat it waits, and the operator is reminded on their channel.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		// Deferred: 795 token per una capacita' che entra in gioco solo quando l'operatore
 		// chiede lavoro ricorrente o futuro — una frazione dei turni.
@@ -214,13 +209,6 @@ func (t *TaskTool) actionRouter() *ActionRouter {
 	return t.router
 }
 
-func (t *TaskTool) alertThreshold() scoring.RiskTier {
-	if t.AlertThreshold == "" {
-		return scoring.Risky
-	}
-	return t.AlertThreshold
-}
-
 // actionSchedule validates the grammar, computes the risk tier, and persists the
 // task as active or — when scoring recommends a gate (Risky/Destructive) — as
 // pending_approval so a destructive scheduled task can never fire before an
@@ -245,11 +233,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, err
 	}
 
-	tier := scoring.ComputeTaskTier(scoring.TaskArgs{
-		Kind:         a.Kind,
-		ScheduleKind: a.ScheduleKind,
-		Payload:      a.Payload,
-	})
+	tier, needsApproval := taskNeedsApproval(a)
 	plan, directive, err := t.resolveDelivery(ctx, &a)
 	if err != nil {
 		return ToolResult{}, err
@@ -257,17 +241,8 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if directive != nil {
 		return *directive, nil
 	}
-
 	status := "active"
-	if scoring.GateRecommended(tier) {
-		status = "pending_approval"
-	}
-	// AG-016: an agent_job runs a fresh FULL-tool agent turn at fire time, so a
-	// benign-looking goal can still drive arbitrary later action. Gate EVERY
-	// agent_job to pending_approval rather than trusting the rm/drop/delete keyword
-	// score — the keyword check is necessary but not sufficient for a code-capable
-	// scheduled run. reminders/backups keep their tier-based gating.
-	if a.Kind == "agent_job" {
+	if needsApproval {
 		status = "pending_approval"
 	}
 
@@ -300,14 +275,11 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)
 	}
 
-	// A pending_approval task must NOT fire until the operator approves it ON THE
-	// CHANNEL it was scheduled from (HITL parity, no notify-route/env detour): return
-	// the approval directive so the model relays it as an ask_user approval pause the
-	// scheduled-task resume hook resolves — ask_user is the ONLY tool that pauses the
-	// turn (amendment #51 / D-40), so the tool cannot pause directly.
+	// With a person in the chat the agent parked this call behind the approval question
+	// (HostReview), so this branch runs only headless: the task waits, and the sweep reminds the
+	// operator on their channel (decision 24).
 	if status == "pending_approval" {
-		immediate := scoring.RequiresImmediateAlert(tier, t.alertThreshold())
-		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), plan.Note, immediate), nil
+		return awaitingApprovalResult(created.ID, a.Kind, spec.summary(), string(tier), plan.Note), nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=active)", created.ID, a.Kind, spec.summary(), tier)

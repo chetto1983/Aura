@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
@@ -67,18 +69,56 @@ func (s *cronTaskStore) CancelScheduledTaskInConversation(ctx context.Context, t
 	return nil
 }
 
+// ApprovalQuestions are the questions the host writes for a task awaiting approval in this
+// conversation: the in-turn one naming what will run, and the sweep's bounded one. The hook
+// accepts an approval only on one of them (decision 35).
+func (s *cronTaskStore) ApprovalQuestions(ctx context.Context, taskID, conversationID string) ([]string, error) {
+	var (
+		kind, scheduleKind, tz string
+		cronExpr               *string
+		everyMinutes           *int32
+		next                   time.Time
+		payload                []byte
+	)
+	err := s.pool.QueryRow(ctx, `
+		SELECT kind, schedule_kind, cron_expr, every_minutes, tz, next_run_at, payload
+		FROM aura.scheduler_tasks
+		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval'`, taskID, conversationID).
+		Scan(&kind, &scheduleKind, &cronExpr, &everyMinutes, &tz, &next, &payload)
+	if err != nil {
+		return nil, fmt.Errorf("scheduled task %s: read its approval: %w", taskID, err)
+	}
+	expr, every := "", 0
+	if cronExpr != nil {
+		expr = *cronExpr
+	}
+	if everyMinutes != nil {
+		every = int(*everyMinutes)
+	}
+	return []string{
+		tools.ApprovalQuestion(kind, taskID, scheduleKind, expr, every, tz, next, payload),
+		mintedApprovalQuestion(kind, taskID),
+	}, nil
+}
+
 // scheduledTaskApprover is the owner-scoped approve/cancel seam the scheduled-task resume
 // hook drives. *cronTaskStore satisfies it live; unit tests inject a fake.
 type scheduledTaskApprover interface {
 	ApproveScheduledTaskInConversation(ctx context.Context, taskID, conversationID string) error
 	CancelScheduledTaskInConversation(ctx context.Context, taskID, conversationID string) error
+	ApprovalQuestions(ctx context.Context, taskID, conversationID string) ([]string, error)
 }
+
+// errQuestionNotHostWritten is an approval whose question the host did not write: ask_user lets
+// the model set a resume context, so an innocent question could otherwise approve a pending job.
+var errQuestionNotHostWritten = errors.New("scheduled task approval: the question was not written by the host")
 
 // newScheduledTaskResumeHook is the production ResumeHook that resolves a pending_approval
 // scheduled task when the operator ACTS on its scheduled_task_approval ask_user pause — the
 // on-channel HITL parity for the scheduler (the analog of newShellResumeHook/newGatewayResumeHook).
-// The pause is created either by the model relaying scheduledApprovalRequiredResult, or
-// deterministically by the reminder sweep via approvalPauseEnsurer. It keys the transition on the
+// The pause is created either in-turn by the task tool's host review (tools.ApprovalQuestion), or
+// deterministically by the reminder sweep via approvalPauseEnsurer. An accept is honoured only on
+// a question one of the two wrote (decision 35). It keys the transition on the
 // AUTHENTICATED pending.ConversationID (server-stored at pause creation), never the model-relayed
 // resume_context id, so an action surfaced in conv-B cannot touch a task scheduled from conv-A
 // (WR-02). Accept → active; decline → cancelled. ActionCancel never reaches a ResumeHook, and a
@@ -113,6 +153,13 @@ func newScheduledTaskResumeHook(store scheduledTaskApprover) runner.ResumeHook {
 		}
 		if resp.Action == askuser.ActionDecline {
 			return store.CancelScheduledTaskInConversation(ctx, rc.TaskID, pending.ConversationID)
+		}
+		questions, err := store.ApprovalQuestions(ctx, rc.TaskID, pending.ConversationID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(questions, pending.Question) {
+			return errQuestionNotHostWritten
 		}
 		return store.ApproveScheduledTaskInConversation(ctx, rc.TaskID, pending.ConversationID)
 	}
@@ -170,7 +217,7 @@ func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, c
 	if err != nil {
 		return "", false, fmt.Errorf("ensure approval pause: marshal resume context: %w", err)
 	}
-	question := fmt.Sprintf("Scheduled %s task %s needs your approval. Approve or reject it below.", kind, shortTaskID(taskID))
+	question := mintedApprovalQuestion(kind, taskID)
 	token, err := e.minter.MintApprovalPause(ctx, conversationID, question, rc, []string{
 		askuser.ActionAccept,
 		askuser.ActionDecline,
@@ -193,6 +240,11 @@ func messageReviewPause(pending []askuser.Pending, taskID string) (string, bool,
 		}
 	}
 	return "", false, errMessageReviewMissing
+}
+
+// mintedApprovalQuestion is the sweep's bounded question: kind and short id, never the payload.
+func mintedApprovalQuestion(kind, taskID string) string {
+	return fmt.Sprintf("Scheduled %s task %s needs your approval. Approve or reject it below.", kind, shortTaskID(taskID))
 }
 
 // shortTaskID renders the first 8 chars of a task id for a bounded, secret-safe prompt (the

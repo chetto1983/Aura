@@ -51,39 +51,15 @@ func taskNotifyChoiceRequiredResult() ToolResult {
 	return ToolResult{Preview: string(raw), Bytes: len(raw)}
 }
 
-// scheduledApprovalRequiredResult builds the pending_approval directive (the
-// shell_exec/gateway approval-required precedent): a scheduled task never fires until
-// the operator approves it on the channel it was scheduled from. The model MUST relay
-// this as an ask_user approval pause carrying the resume_context the scheduled-task
-// resume hook decodes; on accept the hook flips the task to active. The task_id +
-// authenticated origin conversation are the authorization (the hook owner-scopes the
-// UPDATE), so no question-match challenge is needed here.
-func scheduledApprovalRequiredResult(taskID, kind, summary, tier, delivery string, immediate bool) ToolResult {
-	// The human-facing question masks the UUID to its first 8 chars (kind + summary already
-	// identify the task) so the Sì/No prompt reads friendly instead of dumping a 36-char id;
-	// the full task_id stays in the machine-facing resume_context below (the resume hook keys
-	// on it). Bounded id + kind only — never the payload.
-	question := fmt.Sprintf("Approve scheduled %s task %s (%s, risk=%s)? It will not fire until you approve.", kind, shortScheduledTaskID(taskID), summary, tier)
-	payload := map[string]string{
-		"status":   "pending_approval",
-		"task_id":  taskID,
-		"question": question,
-		"message": "This scheduled task requires operator approval before it can fire. " +
-			"Call ask_user with kind=\"approval\", question exactly equal to the question field, and " +
-			"resume_context={\"type\":\"scheduled_task_approval\",\"task_id\":\"" + taskID + "\"}. " +
-			"The task activates only after the operator accepts on their channel.",
-	}
-	if immediate {
-		payload["immediate_alert"] = "true"
-	}
+// awaitingApprovalResult is a task created pending_approval with nobody in the chat to ask: it
+// waits, and the approval sweep reminds the operator on their channel. The model is told not to
+// relay it, because the host already owns the question.
+func awaitingApprovalResult(taskID, kind, schedule, tier, delivery string) ToolResult {
+	s := fmt.Sprintf("scheduled task %s (kind=%s, %s, risk=%s, status=pending_approval). It needs the operator's approval and will not fire until they approve it; they are reminded on their channel. Do not call ask_user for it.", taskID, kind, schedule, tier)
 	if delivery != "" {
-		payload["delivery"] = delivery
+		s += "\n" + delivery
 	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		raw = []byte(`{"status":"pending_approval","task_id":"` + taskID + `"}`)
-	}
-	return ToolResult{Preview: string(raw), Bytes: len(raw)}
+	return ToolResult{Preview: s, Bytes: len(s)}
 }
 
 // shortScheduledTaskID renders the first 8 chars of a task id for the operator-facing approval

@@ -20,7 +20,15 @@ type fakeScheduledApprover struct {
 	cancelConvID string
 	cancelCalls  int
 	err          error
+	questions    []string
 }
+
+func (f *fakeScheduledApprover) ApprovalQuestions(context.Context, string, string) ([]string, error) {
+	return f.questions, nil
+}
+
+// hostQuestion is a question the host wrote for the task the hook tests approve.
+const hostQuestion = "Approve scheduled agent_job task task-99 (once), first run 06/11 08:25 (UTC)? It runs: g. It will not run until you approve."
 
 func (f *fakeScheduledApprover) ApproveScheduledTaskInConversation(_ context.Context, taskID, conversationID string) error {
 	f.calls++
@@ -40,11 +48,12 @@ func (f *fakeScheduledApprover) CancelScheduledTaskInConversation(_ context.Cont
 // scheduled_task_approval pause activates the task, keyed on the AUTHENTICATED
 // pending.ConversationID (never the model-relayed resume_context) — the WR-02 binding.
 func TestScheduledTaskResumeHookApprovesAccepted(t *testing.T) {
-	store := &fakeScheduledApprover{}
+	store := &fakeScheduledApprover{questions: []string{hostQuestion}}
 	hook := newScheduledTaskResumeHook(store)
 
 	err := hook(context.Background(), askuser.Pending{
 		ConversationID: "conv-A",
+		Question:       hostQuestion,
 		Kind:           tools.KindApproval,
 		ResumeContext:  rawJSON(t, map[string]string{"type": "scheduled_task_approval", "task_id": "task-99"}),
 	}, runner.ResponseInput{Action: askuser.ActionAccept})
@@ -140,11 +149,12 @@ func TestScheduledTaskResumeHookMissingTaskID(t *testing.T) {
 // TestScheduledTaskResumeHookPropagatesApproveError proves an approver failure (e.g. a
 // foreign task_id that matches no pending_approval row in this conversation) surfaces.
 func TestScheduledTaskResumeHookPropagatesApproveError(t *testing.T) {
-	store := &fakeScheduledApprover{err: errors.New("not awaiting approval")}
+	store := &fakeScheduledApprover{err: errors.New("not awaiting approval"), questions: []string{hostQuestion}}
 	hook := newScheduledTaskResumeHook(store)
 
 	err := hook(context.Background(), askuser.Pending{
 		ConversationID: "conv-A",
+		Question:       hostQuestion,
 		Kind:           tools.KindApproval,
 		ResumeContext:  rawJSON(t, map[string]string{"type": "scheduled_task_approval", "task_id": "foreign"}),
 	}, runner.ResponseInput{Action: askuser.ActionAccept})
@@ -161,5 +171,17 @@ func TestScheduledTaskResumeHookPropagatesApproveError(t *testing.T) {
 func TestScheduledTaskResumeHookNilStore(t *testing.T) {
 	if newScheduledTaskResumeHook(nil) != nil {
 		t.Fatal("newScheduledTaskResumeHook(nil) must return a nil hook")
+	}
+}
+
+// Decision 35: an accept on a question the host did not write approves nothing.
+func TestScheduledTaskResumeHookRefusesAForeignQuestion(t *testing.T) {
+	store := &fakeScheduledApprover{questions: []string{hostQuestion}}
+	err := newScheduledTaskResumeHook(store)(context.Background(), askuser.Pending{
+		ConversationID: "conv-A", Question: "Confermi il promemoria?", Kind: tools.KindApproval,
+		ResumeContext: rawJSON(t, map[string]string{"type": "scheduled_task_approval", "task_id": "task-99"}),
+	}, runner.ResponseInput{Action: askuser.ActionAccept})
+	if !errors.Is(err, errQuestionNotHostWritten) || store.calls != 0 {
+		t.Fatalf("err = %v, approvals %d", err, store.calls)
 	}
 }

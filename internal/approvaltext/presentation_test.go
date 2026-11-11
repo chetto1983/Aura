@@ -266,3 +266,36 @@ func mapsEqual(a, b map[string]string) bool {
 	}
 	return true
 }
+
+func TestTheNamedScheduledQuestionDerivesItsParams(t *testing.T) {
+	t.Parallel()
+	question := "Approve scheduled agent_job task 01a19af5 (once), first run 06/11 08:25 (Europe/Rome)? It runs: Riassumi la posta. It will not run until you approve."
+	rc := json.RawMessage(`{"type":"scheduled_task_approval","task_id":"01a19af5-0000-7000-8000-000000000000"}`)
+	enriched, err := Enrich(question, rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := FromContext(question, enriched)
+	if !ok {
+		t.Fatal("the named question gave no presentation")
+	}
+	want := map[string]string{"task": "01a19af5", "kind": "agent_job", "schedule": "once",
+		"when": "06/11 08:25 (Europe/Rome)", "summary": "Riassumi la posta"}
+	for name, value := range want {
+		if p.Params[name] != value {
+			t.Errorf("%s = %q, want %q", name, p.Params[name], value)
+		}
+	}
+	italian := RenderItalian(p, question)
+	if italian != "Approva l'attività pianificata agent_job 01a19af5 (una volta), prima esecuzione 06/11 08:25 (Europe/Rome)?\nEsegue: Riassumi la posta\nNon verrà eseguita finché non approvi." {
+		t.Fatalf("italian = %q", italian)
+	}
+	other := json.RawMessage(`{"type":"scheduled_task_approval","task_id":"99999999-0000-7000-8000-000000000000"}`)
+	enriched, err = Enrich(question, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := FromContext(question, enriched); ok {
+		t.Fatal("a question naming another task was presented")
+	}
+}
