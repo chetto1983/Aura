@@ -45,13 +45,15 @@ const createTask = `-- name: CreateTask :one
 INSERT INTO aura.scheduler_tasks (
     id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+ON CONFLICT (identity_id, origin_conversation_id, origin_tool_call_id)
+    WHERE origin_tool_call_id IS NOT NULL DO NOTHING
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 `
 
 type CreateTaskParams struct {
@@ -70,8 +72,11 @@ type CreateTaskParams struct {
 	IdentityID           string             `json:"identity_id"`
 	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
 	TelegramRecipients   []int64            `json:"telegram_recipients"`
+	OriginToolCallID     pgtype.Text        `json:"origin_tool_call_id"`
 }
 
+// A retried turn parks the same model call again: it must find this row, not add a second
+// (migration 0155, decision 30). No row back means GetTaskByOriginCall has it.
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error) {
 	row := q.db.QueryRow(ctx, createTask,
 		arg.ID,
@@ -89,6 +94,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		arg.IdentityID,
 		arg.OriginConversationID,
 		arg.TelegramRecipients,
+		arg.OriginToolCallID,
 	)
 	var i AuraSchedulerTasks
 	err := row.Scan(
@@ -113,6 +119,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		&i.PausedReason,
 		&i.TransientRetries,
 		&i.TelegramRecipients,
+		&i.OriginToolCallID,
 	)
 	return i, err
 }
@@ -168,7 +175,7 @@ const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -210,6 +217,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 			&i.PausedReason,
 			&i.TransientRetries,
 			&i.TelegramRecipients,
+			&i.OriginToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -225,7 +233,7 @@ const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE id = $1
 `
@@ -255,6 +263,53 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 		&i.PausedReason,
 		&i.TransientRetries,
 		&i.TelegramRecipients,
+		&i.OriginToolCallID,
+	)
+	return i, err
+}
+
+const getTaskByOriginCall = `-- name: GetTaskByOriginCall :one
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients, origin_tool_call_id
+FROM aura.scheduler_tasks
+WHERE identity_id = $1 AND origin_conversation_id = $2
+  AND origin_tool_call_id = $3
+`
+
+type GetTaskByOriginCallParams struct {
+	IdentityID           string      `json:"identity_id"`
+	OriginConversationID pgtype.UUID `json:"origin_conversation_id"`
+	OriginToolCallID     pgtype.Text `json:"origin_tool_call_id"`
+}
+
+func (q *Queries) GetTaskByOriginCall(ctx context.Context, arg GetTaskByOriginCallParams) (AuraSchedulerTasks, error) {
+	row := q.db.QueryRow(ctx, getTaskByOriginCall, arg.IdentityID, arg.OriginConversationID, arg.OriginToolCallID)
+	var i AuraSchedulerTasks
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ScheduleKind,
+		&i.CronExpr,
+		&i.EveryMinutes,
+		&i.RunAt,
+		&i.Tz,
+		&i.Payload,
+		&i.StepBudget,
+		&i.Status,
+		&i.NextRunAt,
+		&i.NotifyRoute,
+		&i.IdentityID,
+		&i.OriginConversationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ApprovalRemindedAt,
+		&i.ConsecutiveFailures,
+		&i.PausedReason,
+		&i.TransientRetries,
+		&i.TelegramRecipients,
+		&i.OriginToolCallID,
 	)
 	return i, err
 }
@@ -263,7 +318,7 @@ const listActiveTasks = `-- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -300,6 +355,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 			&i.PausedReason,
 			&i.TransientRetries,
 			&i.TelegramRecipients,
+			&i.OriginToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -315,7 +371,7 @@ const listDuePendingApprovalReminders = `-- name: ListDuePendingApprovalReminder
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -371,6 +427,7 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 			&i.PausedReason,
 			&i.TransientRetries,
 			&i.TelegramRecipients,
+			&i.OriginToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -386,7 +443,7 @@ const listLiveTasksOfKind = `-- name: ListLiveTasksOfKind :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE identity_id = $1 AND kind = $2 AND status IN ('active', 'paused')
 ORDER BY created_at, id
@@ -429,6 +486,7 @@ func (q *Queries) ListLiveTasksOfKind(ctx context.Context, arg ListLiveTasksOfKi
 			&i.PausedReason,
 			&i.TransientRetries,
 			&i.TelegramRecipients,
+			&i.OriginToolCallID,
 		); err != nil {
 			return nil, err
 		}
@@ -444,7 +502,7 @@ const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
     created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
-    telegram_recipients
+    telegram_recipients, origin_tool_call_id
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -485,6 +543,7 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 			&i.PausedReason,
 			&i.TransientRetries,
 			&i.TelegramRecipients,
+			&i.OriginToolCallID,
 		); err != nil {
 			return nil, err
 		}

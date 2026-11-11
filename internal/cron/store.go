@@ -87,6 +87,9 @@ const (
 	KindObservabilityCheck TaskKind = "observability_check"
 	KindPIMWatch           TaskKind = "pim_watch"
 	KindPIMDigest          TaskKind = "pim_digest"
+	// KindMessage sends one reviewed message to someone else at its time, with no model
+	// (migration 0155, spec 2026-11-05 Part 2).
+	KindMessage TaskKind = "message"
 
 	KindMemoryEmbedBackfill TaskKind = "memory_embed_backfill"
 	KindMemoryMentionLink   TaskKind = "memory_mention_link"
@@ -165,6 +168,9 @@ type CreateTaskParams struct {
 	IdentityID           string
 	OriginConversationID string
 	TelegramRecipients   []int64
+	// OriginToolCallID is the model call that parked the task. A second create with the same
+	// call in the same conversation returns the first row (migration 0155, decision 30).
+	OriginToolCallID string
 }
 
 // CreateTask inserts a new task at its initial Status (default "active") and returns
@@ -200,7 +206,15 @@ func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error
 		IdentityID:           identityID,
 		OriginConversationID: uuidOrNull(p.OriginConversationID),
 		TelegramRecipients:   p.TelegramRecipients,
+		OriginToolCallID:     pgtype.Text{String: p.OriginToolCallID, Valid: p.OriginToolCallID != ""},
 	})
+	if errors.Is(err, pgx.ErrNoRows) && p.OriginToolCallID != "" {
+		row, err = s.q.GetTaskByOriginCall(ctx, sqlc.GetTaskByOriginCallParams{
+			IdentityID:           identityID,
+			OriginConversationID: uuidOrNull(p.OriginConversationID),
+			OriginToolCallID:     pgtype.Text{String: p.OriginToolCallID, Valid: true},
+		})
+	}
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}

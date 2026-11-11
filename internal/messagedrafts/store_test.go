@@ -94,3 +94,37 @@ func TestClaimMatchesOnlyExactOwnerMountedToolAndArguments(t *testing.T) {
 		t.Fatal("claim authorized changed owner, tool, or destination")
 	}
 }
+
+// A scheduled draft carries both its task and its time, the time is ahead, and the review
+// outlives the send (migration 0155's CHECKs, refused before any query).
+func TestCreateRefusesAHalfScheduledDraft(t *testing.T) {
+	store := NewStore(nil)
+	sendAt := time.Now().Add(time.Hour)
+	base := DraftInput{
+		IdentityID: "11111111-1111-4111-8111-111111111111", ConversationID: "thread-1", ToolCallID: "call-1",
+		Target:             Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		RegisteredToolName: "whatsapp__send_message",
+		OriginalArgs:       json.RawMessage(`{"recipient":"10000000000","message":"hello"}`),
+		ExpiresAt:          sendAt.Add(15 * time.Minute),
+	}
+	task := "22222222-2222-4222-8222-222222222222"
+	cases := map[string]func(*DraftInput){
+		"a time without a task": func(in *DraftInput) { in.SendAt = sendAt },
+		"a task without a time": func(in *DraftInput) { in.ScheduledTaskID = task },
+		"a time in the past": func(in *DraftInput) {
+			in.ScheduledTaskID, in.SendAt = task, time.Now().Add(-time.Minute)
+		},
+		"a review that ends at the send": func(in *DraftInput) {
+			in.ScheduledTaskID, in.SendAt, in.ExpiresAt = task, sendAt, sendAt
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			input := base
+			mutate(&input)
+			if _, err := store.Create(context.Background(), input); !errors.Is(err, errInvalidDraftArgs) {
+				t.Fatalf("err = %v, want errInvalidDraftArgs", err)
+			}
+		})
+	}
+}

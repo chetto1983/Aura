@@ -533,6 +533,8 @@ type AuraMessageDrafts struct {
 	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ScheduledTaskID      pgtype.UUID        `json:"scheduled_task_id"`
+	SendAt               pgtype.Timestamptz `json:"send_at"`
 }
 
 // Short-lived Telegram code challenges for self-service Authula password reset.
@@ -807,7 +809,8 @@ type AuraSchedulerTasks struct {
 	PausedReason         pgtype.Text        `json:"paused_reason"`
 	TransientRetries     int32              `json:"transient_retries"`
 	// Migration 0145: the Telegram user ids this task's pushes (its result and its approval prompt) reach. NULL: the account seen most recently.
-	TelegramRecipients []int64 `json:"telegram_recipients"`
+	TelegramRecipients []int64     `json:"telegram_recipients"`
+	OriginToolCallID   pgtype.Text `json:"origin_tool_call_id"`
 }
 
 // Cockpit-editable runtime override layer for model-backend knobs (Settings page). MUTABLE (aura_app full DML). Overlaid onto the environment at boot by internal/settings (DB wins); applied on restart. is_secret rows are redacted in API GET responses.

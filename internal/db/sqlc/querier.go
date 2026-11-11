@@ -152,6 +152,8 @@ type Querier interface {
 	CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error)
 	CreateRetentionItem(ctx context.Context, arg CreateRetentionItemParams) (AuraRetentionOperationItems, error)
 	CreateRetentionOperation(ctx context.Context, arg CreateRetentionOperationParams) (AuraRetentionOperations, error)
+	// A retried turn parks the same model call again: it must find this row, not add a second
+	// (migration 0155, decision 30). No row back means GetTaskByOriginCall has it.
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeclineMessageDraft(ctx context.Context, arg DeclineMessageDraftParams) (AuraMessageDrafts, error)
 	DeleteBoardCard(ctx context.Context, id pgtype.UUID) (int64, error)
@@ -304,6 +306,7 @@ type Querier interface {
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
+	GetTaskByOriginCall(ctx context.Context, arg GetTaskByOriginCallParams) (AuraSchedulerTasks, error)
 	// The account seen most recently, in the order the password reset and the recovery use. With no
 	// ORDER BY the first row in the heap came back, and every update moves the writer's row to the
 	// end, so the push reached the account used least recently (measured 2026-10-28).

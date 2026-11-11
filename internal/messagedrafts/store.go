@@ -24,7 +24,9 @@ type Status string
 
 // The statuses encode the one-way draft lifecycle persisted in aura.message_drafts.
 const (
-	StatusPending     Status = "pending"
+	StatusPending Status = "pending"
+	// StatusApproved is a scheduled draft the operator reviewed, waiting for its time.
+	StatusApproved    Status = "approved"
 	StatusDispatching Status = "dispatching"
 	StatusSent        Status = "sent"
 	StatusFailed      Status = "failed"
@@ -50,6 +52,10 @@ type DraftInput struct {
 	RegisteredToolName string
 	OriginalArgs       json.RawMessage
 	ExpiresAt          time.Time
+	// ScheduledTaskID and SendAt are set together, for a message a task sends at its time
+	// (migration 0155); both zero for an immediate review.
+	ScheduledTaskID string
+	SendAt          time.Time
 }
 
 // Draft is a server-side record. API responses must build a separate owner-only
@@ -71,6 +77,8 @@ type Draft struct {
 	DispatchStartedAt    time.Time
 	ResolvedAt           time.Time
 	CreatedAt            time.Time
+	ScheduledTaskID      string
+	SendAt               time.Time
 }
 
 // MatchesDispatch confirms a claimed row authorizes these exact effective
@@ -109,6 +117,10 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 	if err != nil {
 		return Draft{}, errInvalidDraftArgs
 	}
+	task, sendAt, err := scheduledFields(input)
+	if err != nil {
+		return Draft{}, err
+	}
 	original, err := MergeApprovedArgs(input.Target, input.OriginalArgs, nil)
 	if err != nil {
 		return Draft{}, err
@@ -120,13 +132,14 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 			IdentityID: owner, ConversationID: input.ConversationID, ToolCallID: input.ToolCallID,
 			Recipe: input.Target.Recipe, ToolName: input.Target.Tool, RegisteredToolName: input.RegisteredToolName, Action: input.Target.Action,
 			OriginalArgs: original, OriginalFingerprint: fingerprint,
-			ExpiresAt: pgtype.Timestamptz{Time: input.ExpiresAt, Valid: true},
+			ExpiresAt:       pgtype.Timestamptz{Time: input.ExpiresAt, Valid: true},
+			ScheduledTaskID: task, SendAt: sendAt,
 		})
 		if errors.Is(insertErr, pgx.ErrNoRows) {
 			row, insertErr = q.GetMessageDraftByCall(ctx, sqlc.GetMessageDraftByCallParams{
 				IdentityID: owner, ConversationID: input.ConversationID, ToolCallID: input.ToolCallID,
 			})
-			if insertErr == nil && (row.OriginalFingerprint != fingerprint || row.Recipe != input.Target.Recipe || row.ToolName != input.Target.Tool || row.RegisteredToolName != input.RegisteredToolName || row.Action != input.Target.Action) {
+			if insertErr == nil && !sameDraftCall(row, input, fingerprint, task, sendAt) {
 				return ErrDuplicate
 			}
 		}
@@ -137,6 +150,32 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 		return insertErr
 	})
 	return result, err
+}
+
+// scheduledFields checks a scheduled draft's pair before any query: both or neither, a send
+// time ahead, and a review that outlives it (migration 0155's CHECKs).
+func scheduledFields(input DraftInput) (pgtype.UUID, pgtype.Timestamptz, error) {
+	if input.ScheduledTaskID == "" && input.SendAt.IsZero() {
+		return pgtype.UUID{}, pgtype.Timestamptz{}, nil
+	}
+	if input.ScheduledTaskID == "" || input.SendAt.IsZero() || !input.SendAt.After(time.Now()) ||
+		!input.ExpiresAt.After(input.SendAt) {
+		return pgtype.UUID{}, pgtype.Timestamptz{}, errInvalidDraftArgs
+	}
+	task, err := db.ParseUUID("scheduled task id", input.ScheduledTaskID)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.Timestamptz{}, errInvalidDraftArgs
+	}
+	return task, pgtype.Timestamptz{Time: input.SendAt, Valid: true}, nil
+}
+
+// sameDraftCall is whether a row found for the same call is the same draft: the same target,
+// arguments, and scheduled task and time (decision 30). Anything else is ErrDuplicate.
+func sameDraftCall(row sqlc.AuraMessageDrafts, input DraftInput, fingerprint string, task pgtype.UUID, sendAt pgtype.Timestamptz) bool {
+	return row.OriginalFingerprint == fingerprint && row.Recipe == input.Target.Recipe &&
+		row.ToolName == input.Target.Tool && row.RegisteredToolName == input.RegisteredToolName &&
+		row.Action == input.Target.Action && row.ScheduledTaskID == task &&
+		row.SendAt.Valid == sendAt.Valid && row.SendAt.Time.Equal(sendAt.Time)
 }
 
 func validRegisteredToolName(name string) bool {
@@ -387,6 +426,12 @@ func draftFromRow(row sqlc.AuraMessageDrafts) (Draft, error) {
 	}
 	if row.ResolvedAt.Valid {
 		draft.ResolvedAt = row.ResolvedAt.Time
+	}
+	if row.ScheduledTaskID.Valid {
+		draft.ScheduledTaskID = uuid.UUID(row.ScheduledTaskID.Bytes).String()
+	}
+	if row.SendAt.Valid {
+		draft.SendAt = row.SendAt.Time
 	}
 	return draft, nil
 }

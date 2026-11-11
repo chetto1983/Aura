@@ -95,3 +95,11 @@ func TestStoreFakeListManageableTasksLeavesSystemSweepsOut(t *testing.T) {
 		t.Fatalf("board = %+v, want only the reminder", got)
 	}
 }
+
+// A scheduled message is the operator's: they and the agent may cancel it (spec Part 2).
+func TestAMessageTaskIsCancellable(t *testing.T) {
+	t.Parallel()
+	if !IsCancellableKind(KindMessage) || !IsAgentStoppableKind(KindMessage) {
+		t.Fatalf("message: cancellable %v, agent-stoppable %v", IsCancellableKind(KindMessage), IsAgentStoppableKind(KindMessage))
+	}
+}

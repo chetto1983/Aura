@@ -1,0 +1,104 @@
+//go:build db_integration
+
+package messagedrafts
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/chetto1983/aura/internal/db"
+)
+
+// scheduledTask inserts the message task a scheduled draft belongs to.
+func scheduledTask(t *testing.T, pool *pgxpool.Pool, owner string) string {
+	t.Helper()
+	id := uuid.NewString()
+	err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), `INSERT INTO aura.scheduler_tasks
+(id, kind, schedule_kind, notify_route, identity_id, status) VALUES ($1, 'message', 'at', 'none', $2, 'pending_approval')`, id, owner)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("seed message task: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `DELETE FROM aura.scheduler_tasks WHERE id = $1`, id)
+			return err
+		})
+	})
+	return id
+}
+
+func scheduledInput(owner, call, taskID string, sendAt time.Time) DraftInput {
+	return DraftInput{
+		IdentityID: owner, ConversationID: "scheduled-conversation", ToolCallID: call,
+		Target:             Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		RegisteredToolName: "whatsapp__send_message",
+		OriginalArgs:       json.RawMessage(`{"recipient":"10000000000","message":"hello"}`),
+		ExpiresAt:          sendAt.Add(15 * time.Minute),
+		ScheduledTaskID:    taskID,
+		SendAt:             sendAt,
+	}
+}
+
+func TestAScheduledDraftIsCreatedBoundToItsTask(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	taskID := scheduledTask(t, pool, owner)
+	sendAt := time.Now().Add(time.Hour)
+	store := NewStore(pool)
+
+	draft, err := store.Create(context.Background(), scheduledInput(owner, "call-bound", taskID, sendAt))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := store.Get(context.Background(), owner, draft.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ScheduledTaskID != taskID || got.SendAt.Sub(sendAt).Abs() > time.Millisecond {
+		t.Fatalf("got task %q at %v, want %q at %v", got.ScheduledTaskID, got.SendAt, taskID, sendAt)
+	}
+}
+
+// Decision 30: the same call bound to another task is a different draft, not a retry.
+func TestADraftForAnotherTaskIsADuplicate(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	sendAt := time.Now().Add(time.Hour)
+	store := NewStore(pool)
+
+	if _, err := store.Create(context.Background(), scheduledInput(owner, "call-dup", scheduledTask(t, pool, owner), sendAt)); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	_, err := store.Create(context.Background(), scheduledInput(owner, "call-dup", scheduledTask(t, pool, owner), sendAt))
+	if !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("err = %v, want ErrDuplicate", err)
+	}
+}
+
+// A scheduled draft is sent by its task at its time, never by the immediate-send claim.
+func TestClaimSendRefusesAScheduledDraft(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	draft, err := store.Create(context.Background(), scheduledInput(owner, "call-claim", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.ClaimSend(context.Background(), owner, draft.ID, nil); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("ClaimSend = %v, want ErrUnavailable", err)
+	}
+	got, err := store.Get(context.Background(), owner, draft.ID)
+	if err != nil || got.Status != StatusPending {
+		t.Fatalf("after the refused claim: %v, %v; want pending", got.Status, err)
+	}
+}
