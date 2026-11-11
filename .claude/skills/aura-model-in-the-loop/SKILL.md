@@ -43,7 +43,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
    docker exec aura-postgres psql -U aura -d postgres -v ON_ERROR_STOP=1 \
      -c 'DROP DATABASE IF EXISTS aura_e2e WITH (FORCE)' -c 'CREATE DATABASE aura_e2e OWNER aura_migrate'
    go build -o $HAND/aura ./cmd/aura && go build -o $HAND/arcadedb-mcp ./cmd/arcadedb-mcp
-   HAND=$HAND source .claude/skills/aura-model-in-the-loop/env.e2e.sh
+   export HAND && source .claude/skills/aura-model-in-the-loop/env.e2e.sh
    mkdir -p $AURA_RUN_DIR $AURA_SKILL_EXPORT_DIR $HAND/llm && $HAND/aura db migrate
    ```
 4. **The hand endpoint**, in the background:
