@@ -1574,6 +1574,19 @@ What this does not show:
 The native image and the `where` filter stay with the 2026-10-17 spec, whose question on how the
 image reaches an appliance is still the operator's.
 
+cocoindex 1.1.1 in the ingestion sidecar, 2026-11-11
+([verification](docs/superpowers/verification/2026-11-11-cocoindex-1-1-1.md)).
+- **Same schema.** On ArcadeDB 26.11.1 the ingestion suite passes 273 of 273 on 1.0.26 and on 1.1.1,
+  and every database it leaves has identical types, properties, 22 indexes and record counts.
+- **Same state.** 1.1.1 resumes a CocoIndex state written by 1.0.26 with nothing re-extracted or
+  re-embedded, then reconciles a modification and a deletion as 1.0.26 does.
+- **Usage tracking, in both versions.** The sidecar reports its startup to
+  `cocoindex.gateway.scarf.sh` unless `COCOINDEX_DISABLE_USAGE_TRACKING` is set, and Aura does not
+  set it.
+
+What this does not show: the lab VM, a real corpus or a large state, the extractor matrix with 1.1.1,
+or any agent turn.
+
 ## 11. Documents and media
 
 Measured 2026-10-21 on a disposable database in the running ArcadeDB 26.10.1:
