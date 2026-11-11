@@ -37,6 +37,10 @@ func (r *Runner) turnLocation(ctx context.Context) *time.Location {
 	return r.location
 }
 
+// Location is the zone this identity reads the clock in: its own, else the deployment's. A
+// channel renders a scheduled time in it, as the turn does.
+func (r *Runner) Location(ctx context.Context) *time.Location { return r.turnLocation(ctx) }
+
 // turnProfileBlock is the operator profile for THIS turn, appended to the always-block.
 //
 // Rendered every turn rather than retrieved: a profile fact competes for rank against real

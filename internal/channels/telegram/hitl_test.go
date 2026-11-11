@@ -7,11 +7,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
@@ -37,6 +39,11 @@ type fakeResume struct {
 	pendingErr error
 
 	clearPendingOnSubmit bool
+
+	drafts     []messagedrafts.Draft
+	resolved   []resolveCall
+	resolveErr error
+	location   *time.Location
 }
 
 type submitCall struct {
