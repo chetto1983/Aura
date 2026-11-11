@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/chatgptplan"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/gateway"
@@ -491,6 +492,7 @@ func assembleChatEnv(
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
 		MessageDrafts:   messagedrafts.NewStore(pool),
+		MessageTasks:    cron.New(pool),
 		Client:          client,
 		Runtime:         llmRuntime,
 		Registry:        reg,

@@ -62,3 +62,13 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND status = 'dispatching'
   AND dispatch_started_at <= now() - interval '30 minutes'
 RETURNING *;
+
+-- A scheduled draft's review fixes what will be sent, before its time; the task sends it then
+-- (migration 0155). An immediate draft is never approved, only claimed.
+-- name: ApproveScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'approved', effective_args = sqlc.arg(effective_args),
+    effective_fingerprint = sqlc.arg(effective_fingerprint), updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
+  AND status = 'pending' AND send_at IS NOT NULL AND send_at > now() AND expires_at > now()
+RETURNING *;

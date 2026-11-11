@@ -243,3 +243,15 @@ SET transient_retries = transient_retries + 1,
 WHERE id = sqlc.arg(id) AND status = 'active'
     AND transient_retries < cardinality(sqlc.arg(delay_seconds)::integer[])
 RETURNING next_run_at, transient_retries;
+
+-- Only the draft review activates a message task (spec 2026-11-05 Part 2). Idempotent, so a
+-- review whose answer commit is retried activates again without error.
+-- name: ActivateReviewedMessageTask :execrows
+UPDATE aura.scheduler_tasks SET status = 'active', updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'message'
+  AND status IN ('pending_approval', 'active');
+
+-- name: CancelReviewedMessageTask :execrows
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'message'
+  AND status = 'pending_approval';

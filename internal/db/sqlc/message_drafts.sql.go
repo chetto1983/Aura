@@ -11,6 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveScheduledMessageDraft = `-- name: ApproveScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'approved', effective_args = $1,
+    effective_fingerprint = $2, updated_at = now()
+WHERE id = $3 AND identity_id = $4
+  AND status = 'pending' AND send_at IS NOT NULL AND send_at > now() AND expires_at > now()
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+`
+
+type ApproveScheduledMessageDraftParams struct {
+	EffectiveArgs        []byte      `json:"effective_args"`
+	EffectiveFingerprint pgtype.Text `json:"effective_fingerprint"`
+	ID                   pgtype.UUID `json:"id"`
+	IdentityID           pgtype.UUID `json:"identity_id"`
+}
+
+// A scheduled draft's review fixes what will be sent, before its time; the task sends it then
+// (migration 0155). An immediate draft is never approved, only claimed.
+func (q *Queries) ApproveScheduledMessageDraft(ctx context.Context, arg ApproveScheduledMessageDraftParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, approveScheduledMessageDraft,
+		arg.EffectiveArgs,
+		arg.EffectiveFingerprint,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScheduledTaskID,
+		&i.SendAt,
+	)
+	return i, err
+}
+
 const claimMessageDraftSend = `-- name: ClaimMessageDraftSend :one
 UPDATE aura.message_drafts
 SET status = 'dispatching', effective_args = $1,

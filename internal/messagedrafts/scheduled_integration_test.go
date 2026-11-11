@@ -102,3 +102,61 @@ func TestClaimSendRefusesAScheduledDraft(t *testing.T) {
 		t.Fatalf("after the refused claim: %v, %v; want pending", got.Status, err)
 	}
 }
+
+func TestApproveFixesTheEditedArgumentsOnce(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	draft, err := store.Create(context.Background(), scheduledInput(owner, "call-approve", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	approved, err := store.Approve(context.Background(), owner, draft.ID, json.RawMessage(`{"message":"Edited"}`))
+	if err != nil || approved.Status != StatusApproved || len(approved.EffectiveFingerprint) != 64 {
+		t.Fatalf("approve = %+v, %v", approved, err)
+	}
+	var args map[string]string
+	if err := json.Unmarshal(approved.EffectiveArgs, &args); err != nil || args["message"] != "Edited" {
+		t.Fatalf("effective args = %s, %v", approved.EffectiveArgs, err)
+	}
+	if _, err := store.Approve(context.Background(), owner, draft.ID, nil); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("second approve = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestApproveRefusesAfterTheSendTime(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	draft, err := store.Create(context.Background(), scheduledInput(owner, "call-late", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET send_at = now() - interval '1 second' WHERE id = $1`, draft.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("move send_at: %v", err)
+	}
+	if _, err := store.Approve(context.Background(), owner, draft.ID, nil); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("approve after the send time = %v, want ErrUnavailable", err)
+	}
+	if got, _ := store.Get(context.Background(), owner, draft.ID); got.Status != StatusPending {
+		t.Fatalf("status = %q, want pending", got.Status)
+	}
+}
+
+func TestApproveRefusesAnImmediateDraft(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	input := scheduledInput(owner, "call-now", "", time.Time{})
+	input.ExpiresAt = time.Now().Add(time.Hour)
+	draft, err := store.Create(context.Background(), input)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.Approve(context.Background(), owner, draft.ID, nil); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("approve an immediate draft = %v, want ErrUnavailable", err)
+	}
+}

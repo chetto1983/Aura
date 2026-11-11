@@ -498,19 +498,19 @@ The queries:
 - **anything else:** an expired draft keeps today's `message review expired without sending`. Any other state is `ErrUnavailable`.
 - **after an approval:** if activation fails, the error is returned and the draft stays `approved`, so the card's "continue" retries.
 
-- [ ] `TestReviewReadsTheEditedArgumentsFirst` (messagedrafts unit, moved from Task 10). For WhatsApp it gives `(recipient, "", message)`, from `EffectiveArgs` when set. For email it gives `(to joined by ", ", subject, body)`.
-- [ ] `TestApproveFixesTheEditedArgumentsOnce` (`db_integration`): `Approve` with `{"message":"Edited"}` gives `StatusApproved`, `EffectiveArgs.message == "Edited"` and a fingerprint of 64 characters. A second `Approve` gives `ErrUnavailable`.
-- [ ] `TestApproveRefusesAfterTheSendTime` (`db_integration`): after the admin pool sets `send_at = now() - interval '1 second'`, `Approve` gives `ErrUnavailable` and the row is still `pending`.
-- [ ] `TestApproveRefusesAnImmediateDraft` (`db_integration`): a draft without `SendAt` gives `ErrUnavailable`.
-- [ ] `TestOnlyItsOwnersMessageTaskIsActivatedByItsReview` (cron `db_integration`):
+- [x] `TestReviewReadsTheEditedArgumentsFirst` (messagedrafts unit, moved from Task 10). For WhatsApp it gives `(recipient, "", message)`, from `EffectiveArgs` when set. For email it gives `(to joined by ", ", subject, body)`.
+- [x] `TestApproveFixesTheEditedArgumentsOnce` (`db_integration`): `Approve` with `{"message":"Edited"}` gives `StatusApproved`, `EffectiveArgs.message == "Edited"` and a fingerprint of 64 characters. A second `Approve` gives `ErrUnavailable`.
+- [x] `TestApproveRefusesAfterTheSendTime` (`db_integration`): after the admin pool sets `send_at = now() - interval '1 second'`, `Approve` gives `ErrUnavailable` and the row is still `pending`.
+- [x] `TestApproveRefusesAnImmediateDraft` (`db_integration`): a draft without `SendAt` gives `ErrUnavailable`.
+- [x] `TestOnlyItsOwnersMessageTaskIsActivatedByItsReview` (cron `db_integration`):
   - a pending `reminder` gives an error;
   - a `message` of another identity gives an error;
   - the owner's `message` becomes `active`, and a second call is nil;
   - `CancelReviewedMessage` on an active task gives an error.
-- [ ] `TestApprovingAScheduledDraftActivatesItsTaskAndSendsNothing` (runner `db_integration`, the shape of `message_draft_resume_integration_test.go`). Use a fake `MessageTasks` and a registered trusted spy tool. `ResolveMessageDraft(ctx, id, "send", {"message":"Edited"})` gives `StatusApproved` and `OutcomeContinue`. The fake saw `Activate(owner, taskID)`, the spy's `Execute` count is 0, and the committed answer starts `scheduled message approved: it will be sent at `.
-- [ ] `TestDecliningAScheduledDraftCancelsItsTask`: `StatusDeclined`, the fake saw `Cancel(owner, taskID)`, and the answer is the decline content.
-- [ ] `TestAFailedActivationIsRetriedFromTheCard`: the first activation errors and the draft stays `approved`. A second `send` activates and commits.
-- [ ] Red, `make sqlc`, implement, wire `MessageTasks: cron.New(pool)` in `chat_boot.go`, and go green with race on `./internal/runner/`, plus `db_integration` on `./internal/messagedrafts/`, `./internal/cron/` and `./internal/runner/`. Commit: `feat(runner): the review approves a scheduled message and activates its task`.
+- [x] `TestApprovingAScheduledDraftActivatesItsTaskAndSendsNothing` (runner `db_integration`, the shape of `message_draft_resume_integration_test.go`). Use a fake `MessageTasks` and a registered trusted spy tool. `ResolveMessageDraft(ctx, id, "send", {"message":"Edited"})` gives `StatusApproved` and `OutcomeContinue`. The fake saw `Activate(owner, taskID)`, the spy's `Execute` count is 0, and the committed answer starts `scheduled message approved: it will be sent at `.
+- [x] `TestDecliningAScheduledDraftCancelsItsTask`: `StatusDeclined`, the fake saw `Cancel(owner, taskID)`, and the answer is the decline content.
+- [x] `TestAFailedActivationIsRetriedFromTheCard`: the first activation errors and the draft stays `approved`. A second `send` activates and commits.
+- [x] Red, `make sqlc`, implement, wire `MessageTasks: cron.New(pool)` in `chat_boot.go`, and go green with race on `./internal/runner/`, plus `db_integration` on `./internal/messagedrafts/`, `./internal/cron/` and `./internal/runner/`. Commit: `feat(runner): the review approves a scheduled message and activates its task`.
 
 ### Task 7: Only the draft review activates a message task
 

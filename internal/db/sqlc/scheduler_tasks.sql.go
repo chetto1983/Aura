@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateReviewedMessageTask = `-- name: ActivateReviewedMessageTask :execrows
+UPDATE aura.scheduler_tasks SET status = 'active', updated_at = now()
+WHERE id = $1 AND identity_id = $2 AND kind = 'message'
+  AND status IN ('pending_approval', 'active')
+`
+
+type ActivateReviewedMessageTaskParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID string      `json:"identity_id"`
+}
+
+// Only the draft review activates a message task (spec 2026-11-05 Part 2). Idempotent, so a
+// review whose answer commit is retried activates again without error.
+func (q *Queries) ActivateReviewedMessageTask(ctx context.Context, arg ActivateReviewedMessageTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateReviewedMessageTask, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const approveTaskRow = `-- name: ApproveTaskRow :execrows
 UPDATE aura.scheduler_tasks
 SET status = 'active', updated_at = now()
@@ -22,6 +43,25 @@ WHERE id = $1 AND status = 'pending_approval'
 // a task that is not awaiting approval (0).
 func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, approveTaskRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const cancelReviewedMessageTask = `-- name: CancelReviewedMessageTask :execrows
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE id = $1 AND identity_id = $2 AND kind = 'message'
+  AND status = 'pending_approval'
+`
+
+type CancelReviewedMessageTaskParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID string      `json:"identity_id"`
+}
+
+func (q *Queries) CancelReviewedMessageTask(ctx context.Context, arg CancelReviewedMessageTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelReviewedMessageTask, arg.ID, arg.IdentityID)
 	if err != nil {
 		return 0, err
 	}
