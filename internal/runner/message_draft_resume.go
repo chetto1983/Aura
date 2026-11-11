@@ -11,7 +11,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
@@ -169,7 +168,7 @@ func (r *Runner) resolveImmediateMessage(ctx context.Context, ownerID string, dr
 				return draft, "", err
 			}
 			result, executeErr := agent.ExecuteReviewedMessage(ctx, tool, r.gateway, draft, r.runDir, r.previewCap)
-			status, code := reviewedMessageOutcome(executeErr)
+			status, code := agent.ReviewedMessageOutcome(executeErr)
 			if executeErr != nil {
 				slog.Warn("message review: send did not complete",
 					"draft_id", draft.ID, "status", status, "outcome", code, "detail", reviewedSendFailureDetail(executeErr))
@@ -208,17 +207,6 @@ func (r *Runner) pendingForMessageDraft(ctx context.Context, draft messagedrafts
 		}
 	}
 	return askuser.Pending{}, messagedrafts.ErrUnavailable
-}
-
-func reviewedMessageOutcome(err error) (messagedrafts.Status, string) {
-	if err == nil {
-		return messagedrafts.StatusSent, "ok"
-	}
-	var callErr *mcp.ToolCallError
-	if errors.Is(err, agent.ErrToolNotExecuted) || (errors.As(err, &callErr) && callErr.DeterministicNoEffect()) {
-		return messagedrafts.StatusFailed, "no_effect"
-	}
-	return messagedrafts.StatusUncertain, "unknown_effect"
 }
 
 // reviewedSendFailureDetail says why a reviewed send did not complete without logging the

@@ -86,3 +86,25 @@ WHERE identity_id = sqlc.arg(identity_id) AND scheduled_task_id = sqlc.arg(sched
 UPDATE aura.message_drafts
 SET status = 'declined', resolved_at = now(), updated_at = now()
 WHERE identity_id = sqlc.arg(identity_id) AND send_at IS NOT NULL AND status IN ('pending', 'approved');
+
+-- name: GetMessageDraftByTask :one
+SELECT * FROM aura.message_drafts
+WHERE identity_id = sqlc.arg(identity_id) AND scheduled_task_id = sqlc.arg(scheduled_task_id);
+
+-- The fire-time claim: an approved draft whose time has come and whose review still stands.
+-- It is the one-send boundary of a scheduled message (approved -> dispatching).
+-- name: ClaimScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'dispatching', dispatch_started_at = now(), updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
+  AND status = 'approved' AND send_at <= now() AND expires_at > now()
+RETURNING *;
+
+-- A scheduled draft whose time came unreviewed, or whose approval outlived its review.
+-- name: ExpireScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
+  AND send_at IS NOT NULL AND send_at <= now()
+  AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))
+RETURNING *;

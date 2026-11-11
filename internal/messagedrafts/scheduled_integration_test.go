@@ -212,3 +212,115 @@ func TestDeclineForTaskDeclinesOnlyAnUnsentDraft(t *testing.T) {
 		t.Fatalf("claimed draft = %q, want dispatching", got)
 	}
 }
+
+// dueDraft makes a scheduled draft due now: its send time passes while its review still stands.
+func dueDraft(t *testing.T, pool *pgxpool.Pool, owner, draftID string) {
+	t.Helper()
+	if err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET send_at = now() - interval '1 second' WHERE id = $1`, draftID)
+		return err
+	}); err != nil {
+		t.Fatalf("make due: %v", err)
+	}
+}
+
+func TestClaimScheduledTakesOnlyAnApprovedDraftOnce(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	ctx := context.Background()
+	create := func(call string) Draft {
+		d, err := store.Create(ctx, scheduledInput(owner, call, scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		return d
+	}
+	approved := create("call-claim-once")
+	if _, err := store.Approve(ctx, owner, approved.ID, nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if _, err := store.ClaimScheduled(ctx, owner, approved.ID); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("a claim before the send time = %v, want ErrUnavailable", err)
+	}
+	dueDraft(t, pool, owner, approved.ID)
+	claimed, err := store.ClaimScheduled(ctx, owner, approved.ID)
+	if err != nil || claimed.Status != StatusDispatching {
+		t.Fatalf("first claim = %v, %v", claimed.Status, err)
+	}
+	if _, err := store.ClaimScheduled(ctx, owner, approved.ID); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("second claim = %v, want ErrUnavailable", err)
+	}
+	pending := create("call-claim-pending")
+	dueDraft(t, pool, owner, pending.ID)
+	if _, err := store.ClaimScheduled(ctx, owner, pending.ID); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("a pending claim = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestExpireScheduledLeavesAnApprovedDraftUntilItsLifetimeEnds(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	ctx := context.Background()
+	approved, err := store.Create(ctx, scheduledInput(owner, "call-expire-approved", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.Approve(ctx, owner, approved.ID, nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	dueDraft(t, pool, owner, approved.ID)
+	if _, err := store.ExpireScheduled(ctx, owner, approved.ID); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("expire inside the review = %v, want ErrUnavailable", err)
+	}
+	pending, err := store.Create(ctx, scheduledInput(owner, "call-expire-pending", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	dueDraft(t, pool, owner, pending.ID)
+	expired, err := store.ExpireScheduled(ctx, owner, pending.ID)
+	if err != nil || expired.Status != StatusExpired {
+		t.Fatalf("expire pending = %v, %v", expired.Status, err)
+	}
+}
+
+// Decisions 15 and 37: the draft's status is the one ordering point between a decline and the
+// fire-time claim.
+func TestDeactivationAndClaimOrderByDraftStatus(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	ctx := context.Background()
+	approvedDue := func(call string) Draft {
+		d, err := store.Create(ctx, scheduledInput(owner, call, scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := store.Approve(ctx, owner, d.ID, nil); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		dueDraft(t, pool, owner, d.ID)
+		return d
+	}
+	first := approvedDue("call-decline-first")
+	if err := store.DeclineScheduledForOwner(ctx, owner); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if _, err := store.ClaimScheduled(ctx, owner, first.ID); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("claim after the decline = %v, want ErrUnavailable", err)
+	}
+	if got, _ := store.Get(ctx, owner, first.ID); got.Status != StatusDeclined {
+		t.Fatalf("declined first: %s", got.Status)
+	}
+	second := approvedDue("call-claim-first")
+	if _, err := store.ClaimScheduled(ctx, owner, second.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if err := store.DeclineScheduledForOwner(ctx, owner); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if got, _ := store.Get(ctx, owner, second.ID); got.Status != StatusDispatching {
+		t.Fatalf("claimed first: %s, want dispatching", got.Status)
+	}
+}

@@ -40,6 +40,8 @@ type HandlerMeta struct {
 // Job is the plain-value input a Handler runs against (the cron-local mirror of
 // handlers.Job; the composition-root adapter translates between them).
 type Job struct {
+	// TaskID is the task this run belongs to: a message finds its reviewed draft by it.
+	TaskID     string
 	Payload    []byte
 	StepBudget int
 	RunID      string
@@ -251,7 +253,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 	defer cancel()
 	task = d.homeTask(ctx, task)
 	var told toldText
-	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID, Tell: told.tell}
+	job := Job{TaskID: task.ID, Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID, Tell: told.tell}
 	summary, runErr := h.Run(runCtx, job)
 
 	status := "completed"

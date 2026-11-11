@@ -112,10 +112,14 @@ func validateSchedule(a taskArgs) error {
 	return requireTaskPayload(a.Kind, a.Payload)
 }
 
-// HostReview parks nothing yet: a message is routed to hostReviewMessage once its handler exists
-// (decision 29), and a gated kind to its in-turn approval once that exists.
-func (t *TaskTool) HostReview(context.Context, string, string, json.RawMessage) (*ErrAwaitingUserInput, bool) {
-	return nil, false
+// HostReview parks a message for the operator's review before the task exists. Every other
+// call runs normally; a gated kind gets its in-turn approval once that exists.
+func (t *TaskTool) HostReview(ctx context.Context, conversationID, toolCallID string, raw json.RawMessage) (*ErrAwaitingUserInput, bool) {
+	var a taskArgs
+	if err := json.Unmarshal(raw, &a); err != nil || a.Action != "schedule" || a.Kind != "message" {
+		return nil, false
+	}
+	return t.hostReviewMessage(ctx, conversationID, toolCallID, a)
 }
 
 // hostReviewMessage persists a message task pending its review, with its draft, and returns the

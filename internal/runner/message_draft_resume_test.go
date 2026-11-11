@@ -30,15 +30,15 @@ func TestMessageDraftReviewRejectsUnavailableContext(t *testing.T) {
 }
 
 func TestReviewedMessageDispositionAndAnswer(t *testing.T) {
-	if status, code := reviewedMessageOutcome(nil); status != messagedrafts.StatusSent || code != "ok" {
+	if status, code := agent.ReviewedMessageOutcome(nil); status != messagedrafts.StatusSent || code != "ok" {
 		t.Fatalf("successful transport: %s %q", status, code)
 	}
-	if status, code := reviewedMessageOutcome(errors.New("connection lost")); status != messagedrafts.StatusUncertain || code != "unknown_effect" {
+	if status, code := agent.ReviewedMessageOutcome(errors.New("connection lost")); status != messagedrafts.StatusUncertain || code != "unknown_effect" {
 		t.Fatalf("unknown transport effect: %s %q", status, code)
 	}
 	// A send stopped before dispatch had no effect: the model must be told it was not sent.
 	notSent := fmt.Errorf("execute: %w", errors.Join(agent.ErrToolNotExecuted, errors.New("operation refused")))
-	if status, code := reviewedMessageOutcome(notSent); status != messagedrafts.StatusFailed || code != "no_effect" {
+	if status, code := agent.ReviewedMessageOutcome(notSent); status != messagedrafts.StatusFailed || code != "no_effect" {
 		t.Fatalf("send stopped before dispatch: %s %q", status, code)
 	}
 	for _, tc := range []struct {

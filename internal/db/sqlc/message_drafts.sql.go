@@ -114,6 +114,50 @@ func (q *Queries) ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDra
 	return i, err
 }
 
+const claimScheduledMessageDraft = `-- name: ClaimScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'dispatching', dispatch_started_at = now(), updated_at = now()
+WHERE id = $1 AND identity_id = $2
+  AND status = 'approved' AND send_at <= now() AND expires_at > now()
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+`
+
+type ClaimScheduledMessageDraftParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// The fire-time claim: an approved draft whose time has come and whose review still stands.
+// It is the one-send boundary of a scheduled message (approved -> dispatching).
+func (q *Queries) ClaimScheduledMessageDraft(ctx context.Context, arg ClaimScheduledMessageDraftParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, claimScheduledMessageDraft, arg.ID, arg.IdentityID)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScheduledTaskID,
+		&i.SendAt,
+	)
+	return i, err
+}
+
 const declineMessageDraft = `-- name: DeclineMessageDraft :one
 UPDATE aura.message_drafts
 SET status = 'declined', resolved_at = now(), updated_at = now()
@@ -229,6 +273,50 @@ func (q *Queries) ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraft
 	return i, err
 }
 
+const expireScheduledMessageDraft = `-- name: ExpireScheduledMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE id = $1 AND identity_id = $2
+  AND send_at IS NOT NULL AND send_at <= now()
+  AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+`
+
+type ExpireScheduledMessageDraftParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// A scheduled draft whose time came unreviewed, or whose approval outlived its review.
+func (q *Queries) ExpireScheduledMessageDraft(ctx context.Context, arg ExpireScheduledMessageDraftParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, expireScheduledMessageDraft, arg.ID, arg.IdentityID)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScheduledTaskID,
+		&i.SendAt,
+	)
+	return i, err
+}
+
 const getMessageDraftByCall = `-- name: GetMessageDraftByCall :one
 SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND tool_call_id = $3
@@ -242,6 +330,45 @@ type GetMessageDraftByCallParams struct {
 
 func (q *Queries) GetMessageDraftByCall(ctx context.Context, arg GetMessageDraftByCallParams) (AuraMessageDrafts, error) {
 	row := q.db.QueryRow(ctx, getMessageDraftByCall, arg.IdentityID, arg.ConversationID, arg.ToolCallID)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScheduledTaskID,
+		&i.SendAt,
+	)
+	return i, err
+}
+
+const getMessageDraftByTask = `-- name: GetMessageDraftByTask :one
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts
+WHERE identity_id = $1 AND scheduled_task_id = $2
+`
+
+type GetMessageDraftByTaskParams struct {
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	ScheduledTaskID pgtype.UUID `json:"scheduled_task_id"`
+}
+
+func (q *Queries) GetMessageDraftByTask(ctx context.Context, arg GetMessageDraftByTaskParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, getMessageDraftByTask, arg.IdentityID, arg.ScheduledTaskID)
 	var i AuraMessageDrafts
 	err := row.Scan(
 		&i.ID,

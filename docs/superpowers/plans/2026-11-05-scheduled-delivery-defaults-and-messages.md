@@ -581,8 +581,8 @@ The query: `DeclineScheduledMessageDraftsForTask :exec` sets `status = 'declined
   - the cancel is made to fail after the decline: the retry finds the draft already `declined` (no-op) and cancels the task.
   In both, the draft ends `declined`, never `pending` or `approved`, and the task `cancelled`.
 - [x] `TestCancelFailedDeclineLeavesTheTaskUncancelled` (cmd/aura `db_integration`, task tool and board paths): a failed decline leaves the task `active` and the draft `approved`; the retry declines, then cancels.
-- [ ] `TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim` (cmd/aura `db_integration`): a handler holding the loaded task claims after a cancel (task-tool path and deactivation path); the claim fails and nothing is sent. *(Lands with Task 11: the fire-time claim it races does not exist before it.)*
-- [ ] `TestDeactivationAndClaimOrderByDraftStatus` (messagedrafts `db_integration`): decline-then-claim leaves the draft `declined` and the claim fails; claim-then-decline leaves it `dispatching`. *(Lands with Task 11: the fire-time claim it races does not exist before it.)*
+- [x] `TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim` (cmd/aura `db_integration`): a handler holding the loaded task claims after a cancel (task-tool path and deactivation path); the claim fails and nothing is sent. *(Landed with Task 11, where the fire-time claim exists.)*
+- [x] `TestDeactivationAndClaimOrderByDraftStatus` (messagedrafts `db_integration`): decline-then-claim leaves the draft `declined` and the claim fails; claim-then-decline leaves it `dispatching`. *(Landed with Task 11, where the fire-time claim exists.)*
 - [x] `TestDeactivationCancelsMessageTasksAndDeclinesTheirDrafts` (cmd/aura `db_integration`): after `TerminateJobs`, the identity's reminder is `paused`, its pending and approved message tasks are `cancelled` with their drafts `declined`, and another identity's message task is untouched.
 - [x] Red, `make sqlc`, implement, wire `SetScheduledMessageCanceller(messagedrafts.NewStore(pool))` in `serve_webui.go`, and go green. `agui/server.go` and `serve_adapters.go` stay under 600 lines. Commit: `feat(scheduler): cancelling a message task declines its draft`.
 
@@ -713,7 +713,7 @@ The queries (decision 8: nothing releases a pending message task, Task 14 expire
 
 The runner calls `agent.ReviewedMessageOutcome` in place of its local copy. `AgentDeps.clockLocation` calls `jobLocation`. `serve_dispatch.go` registers `cron.KindMessage: handlers.MessageHandler{…}` with `messagedrafts.NewStore(chat.pool)`, `chat.reg`, `chat.gateway`, the run dir, the preview cap, `onboarding.NewProfileStore(chat.pool)` and `tools.LocationOrUTC(chat.cfg.Timezone)`.
 
-- [ ] Handler unit tests (fake drafts, spy trusted tool, nil gateway, frozen location):
+- [x] Handler unit tests (fake drafts, spy trusted tool, nil gateway, frozen location):
   - `TestAnApprovedMessageIsSentOnceAtItsTime`: one `Execute` with the effective args, `MarkOutcome(sent, "ok")`, and the summary `Message sent to 10000000000 at 08:25.`.
   - `TestASecondFireNeverSendsAgain`. A draft in `dispatching` or `sent` gives `Execute` count 0 and the "already handled" summary. Two concurrent `Run`s over a fake whose `ClaimScheduled` succeeds once give exactly one `Execute`.
   - `TestAPendingDraftIsNeverSent`: a pending draft gives `ExpireScheduled` once, `Execute` count 0, and the summary ending `it was not approved in time.`.
@@ -723,9 +723,9 @@ The runner calls `agent.ReviewedMessageOutcome` in place of its local copy. `Age
   - `TestAMessageIsOfferedToTheModel` (tools): `Spec()` names `message` in the enum and the description, and `HostReview` with `kind=message` parks it.
   - `TestAFailedSendIsAFailedRun`: the tool returns `agent.ErrToolNotExecuted`, which gives `MarkOutcome(failed, "no_effect")` and the `not sent` error.
   - `TestTheFireTimeSendRunsUnderTheScheduledOperation`: the shape of `TestExecuteReviewedMessageDispatchesUnderTheResolveOperation`, with `idempotency.ScopeSchedulerRun`, gives one dispatch.
-- [ ] `TestClaimScheduledTakesOnlyAnApprovedDraftOnce` (`db_integration`): the first claim gives `dispatching` and the second gives `ErrUnavailable`. A pending draft gives `ErrUnavailable`. An approved draft whose `send_at` is still ahead gives `ErrUnavailable`.
-- [ ] `TestExpireScheduledLeavesAnApprovedDraftUntilItsLifetimeEnds` (`db_integration`): an approved draft with `send_at` past but `expires_at` future is unchanged. A pending one becomes `expired`.
-- [ ] Red, `make sqlc`, implement, green with race on `./internal/cron/...`, `./internal/agent/`, `./internal/agent/tools/` and `./internal/runner/`, and with `db_integration` on `./internal/messagedrafts/`. `dispatch.go` and `task.go` stay under 600 lines. Commit: `feat(cron): a reviewed message is sent once at its time, with no model`.
+- [x] `TestClaimScheduledTakesOnlyAnApprovedDraftOnce` (`db_integration`): the first claim gives `dispatching` and the second gives `ErrUnavailable`. A pending draft gives `ErrUnavailable`. An approved draft whose `send_at` is still ahead gives `ErrUnavailable`.
+- [x] `TestExpireScheduledLeavesAnApprovedDraftUntilItsLifetimeEnds` (`db_integration`): an approved draft with `send_at` past but `expires_at` future is unchanged. A pending one becomes `expired`.
+- [x] Red, `make sqlc`, implement, green with race on `./internal/cron/...`, `./internal/agent/`, `./internal/agent/tools/` and `./internal/runner/`, and with `db_integration` on `./internal/messagedrafts/`. `dispatch.go` and `task.go` stay under 600 lines. Commit: `feat(cron): a reviewed message is sent once at its time, with no model`.
 
 ### Task 12: An `agent_job` that tried to write to someone says so
 
