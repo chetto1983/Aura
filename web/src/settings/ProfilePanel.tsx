@@ -8,12 +8,14 @@ import {
   formatList,
   parseList,
   saveProfile,
+  type DefaultNotify,
   type ProfileDoc,
 } from './profileApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
 // ProfilePanel is where the operator profile becomes editable.
@@ -63,6 +65,17 @@ const LIST_FIELDS: readonly ListField[] = [
   'goals',
   'interests',
   'people',
+];
+
+// The order the operator reads them in: "ask" first, then the channels that reach them, then
+// the two that reach no one.
+const DEFAULT_NOTIFY_ROUTES: readonly DefaultNotify[] = [
+  '',
+  'telegram',
+  'whatsapp',
+  'email',
+  'stdout',
+  'none',
 ];
 
 type ListDrafts = Record<ListField, string>;
@@ -230,6 +243,13 @@ export function ProfilePanel() {
         }}
       />
 
+      <ProfileDefaultNotify
+        value={profile.defaultNotify}
+        onChange={(next) => {
+          update({ defaultNotify: next });
+        }}
+      />
+
       <ProfileTextArea
         label={t('profile.fields.vetoes')}
         hint={t('profile.hints.vetoes')}
@@ -332,6 +352,38 @@ function ProfileTextArea({
       />
       <p id={hintId} className="text-[13px] leading-relaxed text-text-muted">
         {hint}
+      </p>
+    </div>
+  );
+}
+
+function ProfileDefaultNotify({
+  value,
+  onChange,
+}: {
+  readonly value: DefaultNotify;
+  readonly onChange: (next: DefaultNotify) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const hintId = `${id}-hint`;
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={id}>{t('profile.fields.defaultNotify')}</Label>
+      <Select
+        id={id}
+        value={value}
+        aria-describedby={hintId}
+        options={DEFAULT_NOTIFY_ROUTES.map((route) => ({
+          value: route,
+          label: t(`profile.defaultNotify.${route === '' ? 'unset' : route}`),
+        }))}
+        onValueChange={(next) => {
+          onChange(next as DefaultNotify);
+        }}
+      />
+      <p id={hintId} className="text-[13px] leading-relaxed text-text-muted">
+        {t('profile.hints.defaultNotify')}
       </p>
     </div>
   );

@@ -8,6 +8,10 @@
 // empty means the operator cleared it. (The Idempotency-Key mutations need is attached by
 // the installMutationIdempotency fetch wrapper.)
 
+// Where reminders and scheduled results go when a request names no channel. '' is "not set":
+// the agent then asks, as it always did.
+export type DefaultNotify = '' | 'none' | 'stdout' | 'telegram' | 'whatsapp' | 'email';
+
 export interface ProfileDoc {
   readonly name: string;
   readonly role: string;
@@ -18,6 +22,7 @@ export interface ProfileDoc {
   readonly tonePreference: string;
   readonly responseLength: string;
   readonly customInstructions: string;
+  readonly defaultNotify: DefaultNotify;
   readonly voiceMode?: boolean;
   readonly canProactiveMessage?: boolean;
   readonly expertise: readonly string[];
@@ -40,6 +45,7 @@ export function emptyProfile(): ProfileDoc {
     tonePreference: '',
     responseLength: '',
     customInstructions: '',
+    defaultNotify: '',
     expertise: [],
     stack: [],
     projects: [],
