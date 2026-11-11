@@ -91,23 +91,23 @@ func jsonEqual(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
-// Decision 29: until its handler exists, a message is never parked and never scheduled.
-func TestMessageIsNotOfferedYet(t *testing.T) {
+// Decision 29: the kind is offered in the same commit as its handler, and the review parks it.
+func TestAMessageIsOfferedToTheModel(t *testing.T) {
 	t.Parallel()
 	tool, store, drafts := messageTool()
+	spec := tool.Spec()
+	if !strings.Contains(string(spec.Parameters), `"message"]`) || !strings.Contains(spec.Description, "kind=message sends one fixed message") {
+		t.Fatal("the schema or the description does not offer message")
+	}
 	at := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
 	raw := json.RawMessage(`{"action":"schedule","kind":"message","schedule_kind":"at","at":"` + at + `","payload":` + whatsappPayload + `,"notify":"stdout"}`)
-	if pause, ok := tool.HostReview(context.Background(), "conv-1", "call-1", raw); ok || pause != nil {
-		t.Fatalf("HostReview parked a message: %+v", pause)
+	pause, ok := tool.HostReview(context.Background(), "conv-1", "call-1", raw)
+	if !ok || pause == nil || store.creates != 1 || len(drafts.inputs) != 1 {
+		t.Fatalf("HostReview = %+v, %v; creates %d, drafts %d", pause, ok, store.creates, len(drafts.inputs))
 	}
+	// Outside a review, Execute still refuses: a message is only ever parked.
 	if _, err := tool.Execute(context.Background(), raw); !errors.Is(err, errMessageNeedsReview) {
 		t.Fatalf("Execute = %v, want errMessageNeedsReview", err)
-	}
-	if strings.Contains(string(tool.Spec().Parameters), `"message"`) {
-		t.Error("the schema offers the message kind")
-	}
-	if store.creates != 0 || len(drafts.inputs) != 0 {
-		t.Fatalf("created %d tasks, %d drafts", store.creates, len(drafts.inputs))
 	}
 }
 

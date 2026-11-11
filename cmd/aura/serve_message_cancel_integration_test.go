@@ -5,14 +5,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
@@ -170,6 +174,54 @@ func TestDeactivationDeclineIsRetrySafe(t *testing.T) {
 			}
 			if task, draft := f.state(t, taskID, draftID); task != "cancelled" || draft != messagedrafts.StatusDeclined {
 				t.Fatalf("after the retry: task %s, draft %s", task, draft)
+			}
+		})
+	}
+}
+
+// wireSpy is the mounted WhatsApp send the fire-time handler would use.
+type wireSpy struct{ calls int }
+
+func (s *wireSpy) Spec() tools.Spec {
+	return tools.Spec{Name: "whatsapp__send_message", TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_message", Mutating: true}
+}
+
+func (s *wireSpy) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	s.calls++
+	return tools.ToolResult{}, nil
+}
+
+// Decision 15: a handler that loaded the task before the cancel claims after it, and finds the
+// draft declined; nothing is sent, on the task tool's path and on deactivation's.
+func TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim(t *testing.T) {
+	pool := bootstrapMigratedPool(t)
+	for name, cancel := range map[string]func(scheduledMessageFixture, string) error{
+		"task tool": func(f scheduledMessageFixture, taskID string) error {
+			return newCronTaskStore(f.pool, nil).CancelScheduledTask(identityctx.WithIdentityID(context.Background(), f.owner), taskID)
+		},
+		"deactivation": func(f scheduledMessageFixture, _ string) error {
+			return scheduledTaskAdapter{store: cron.New(f.pool), drafts: f.drafts}.TerminateJobs(context.Background(), f.owner)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newScheduledMessageFixture(t, pool)
+			taskID, draftID := f.message(t, "active", true)
+			if err := db.WithIdentityTxRaw(context.Background(), pool, f.owner, func(tx pgx.Tx) error {
+				_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET send_at = now() - interval '1 second' WHERE id = $1`, draftID)
+				return err
+			}); err != nil {
+				t.Fatalf("make due: %v", err)
+			}
+			if err := cancel(f, taskID); err != nil {
+				t.Fatalf("cancel: %v", err)
+			}
+			spy := &wireSpy{}
+			reg := tools.NewRegistry()
+			reg.Register(spy)
+			summary, err := handlers.MessageHandler{Drafts: f.drafts, Tools: reg}.Run(
+				identityctx.WithIdentityID(context.Background(), f.owner), handlers.Job{TaskID: taskID})
+			if err != nil || spy.calls != 0 || !strings.HasSuffix(summary, "it was declined.") {
+				t.Fatalf("handler after the cancel: %q, %v, %d sends", summary, err, spy.calls)
 			}
 		})
 	}

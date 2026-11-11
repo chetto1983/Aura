@@ -37,6 +37,7 @@ const (
 	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
 	KindPIMWatch       TaskKind = "pim_watch"
 	KindPIMDigest      TaskKind = "pim_digest"
+	KindMessage        TaskKind = "message"
 )
 
 // HandlerMeta is the per-kind static contract (Slice 0.9): the kind it serves, its
@@ -54,6 +55,8 @@ type HandlerMeta struct {
 // the agent_job_runs.step_budget row value the agent_job inherits (D-24); RunID keys
 // the ephemeral agent session (amendment #23).
 type Job struct {
+	// TaskID is the task this run belongs to: a message finds its reviewed draft by it.
+	TaskID     string
 	Payload    []byte
 	StepBudget int
 	RunID      string
@@ -136,14 +139,20 @@ type jobTimezones interface {
 // clockLocation is the zone the job's clock is rendered in, resolved as runner.turnLocation
 // resolves an interactive turn's.
 func (d AgentDeps) clockLocation(ctx context.Context) *time.Location {
-	if d.Timezones != nil {
+	return jobLocation(ctx, d.Timezones, d.Location)
+}
+
+// jobLocation is the zone of the identity on ctx, else fallback: a job's clock and a sent
+// message's time are read where the operator is.
+func jobLocation(ctx context.Context, tz jobTimezones, fallback *time.Location) *time.Location {
+	if tz != nil {
 		if id := identityctx.IdentityID(ctx); id != "" {
-			if zone := strings.TrimSpace(d.Timezones.Timezone(ctx, id)); zone != "" {
+			if zone := strings.TrimSpace(tz.Timezone(ctx, id)); zone != "" {
 				return tools.LocationOrUTC(zone)
 			}
 		}
 	}
-	return d.Location
+	return fallback
 }
 
 // childRegistry is the agent_job's tool registry: the full parent registry MINUS

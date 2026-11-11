@@ -88,6 +88,9 @@ type Querier interface {
 	ClaimPIMWatchLabelDescriptions(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	ClaimPIMWatchLabelSeed(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
+	// The fire-time claim: an approved draft whose time has come and whose review still stands.
+	// It is the one-send boundary of a scheduled message (approved -> dispatching).
+	ClaimScheduledMessageDraft(ctx context.Context, arg ClaimScheduledMessageDraftParams) (AuraMessageDrafts, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearActiveMCPProfile(ctx context.Context) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
@@ -243,6 +246,8 @@ type Querier interface {
 	// backstop, not the filter.
 	EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.UUID) error
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
+	// A scheduled draft whose time came unreviewed, or whose approval outlived its review.
+	ExpireScheduledMessageDraft(ctx context.Context, arg ExpireScheduledMessageDraftParams) (AuraMessageDrafts, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
 	// Only a label with that exact name and no description of its own: what the person wrote stays.
@@ -302,6 +307,7 @@ type Querier interface {
 	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
 	GetMediaJobForIdentity(ctx context.Context, arg GetMediaJobForIdentityParams) (AuraMediaJob, error)
 	GetMessageDraftByCall(ctx context.Context, arg GetMessageDraftByCallParams) (AuraMessageDrafts, error)
+	GetMessageDraftByTask(ctx context.Context, arg GetMessageDraftByTaskParams) (AuraMessageDrafts, error)
 	GetMessageDraftForIdentity(ctx context.Context, arg GetMessageDraftForIdentityParams) (AuraMessageDrafts, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)

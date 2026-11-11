@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -65,6 +66,20 @@ func (a *LlmAgent) withholdOutboundMessage(ctx context.Context, call llm.ToolCal
 		},
 		originalToolName: spec.Name, originalArguments: call.Function.Arguments,
 	}, true
+}
+
+// ReviewedMessageOutcome is the draft status a reviewed send ends in: sent, failed when the call
+// provably had no effect (stopped before Execute, or the server said so), else uncertain. A send
+// that may have happened is never retried. The cockpit's resolve and the scheduled send share it.
+func ReviewedMessageOutcome(err error) (messagedrafts.Status, string) {
+	if err == nil {
+		return messagedrafts.StatusSent, "ok"
+	}
+	var callErr *mcp.ToolCallError
+	if errors.Is(err, ErrToolNotExecuted) || (errors.As(err, &callErr) && callErr.DeterministicNoEffect()) {
+		return messagedrafts.StatusFailed, "no_effect"
+	}
+	return messagedrafts.StatusUncertain, "unknown_effect"
 }
 
 func safeMessageDraftError(err error) string {

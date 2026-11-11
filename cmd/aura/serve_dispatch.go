@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/plugins"
@@ -68,10 +69,17 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 	}
 	watch := chat.pimWatch()
 	real := map[cron.TaskKind]handlers.Handler{
-		cron.KindPIMWatch:       handlers.PIMWatchHandler{Watcher: watch.watcher, Locale: watch.locale},
-		cron.KindPIMDigest:      handlers.PIMDigestHandler{Digester: watch.digester, Locale: watch.locale},
-		cron.KindReminder:       handlers.ReminderHandler{},
-		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
+		cron.KindPIMWatch:  handlers.PIMWatchHandler{Watcher: watch.watcher, Locale: watch.locale},
+		cron.KindPIMDigest: handlers.PIMDigestHandler{Digester: watch.digester, Locale: watch.locale},
+		cron.KindReminder:  handlers.ReminderHandler{},
+		cron.KindAgentJob:  handlers.AgentJobHandler{Deps: agentDeps},
+		// A reviewed message is sent once at its time through the trusted tool it was reviewed
+		// against, under the same gateway and zone as a scheduled job (spec 2026-11-05 Part 2).
+		cron.KindMessage: handlers.MessageHandler{
+			Drafts: messagedrafts.NewStore(chat.pool), Tools: agentDeps.Registry, Gateway: agentDeps.Gateway,
+			RunDir: agentDeps.RunDir, PreviewCap: agentDeps.PreviewCap,
+			Timezones: agentDeps.Timezones, Location: agentDeps.Location,
+		},
 		cron.KindBackupPostgres: handlers.BackupHandler{Variant: handlers.BackupPostgres},
 		cron.KindBackupObjects:  handlers.NewObjectBackupHandler(buildObjectBackup(chat)),
 		cron.KindSkillTTLSweep: handlers.SkillTTLSweepHandler{
@@ -259,6 +267,7 @@ func (a handlerAdapter) Meta() cron.HandlerMeta {
 // Run projects the cron.Job onto handlers.Job and delegates to the real handler.
 func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 	return a.inner.Run(ctx, handlers.Job{
+		TaskID:               job.TaskID,
 		Payload:              job.Payload,
 		StepBudget:           job.StepBudget,
 		RunID:                job.RunID,
