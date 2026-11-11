@@ -10,6 +10,8 @@ export AURA_DB_MIGRATE_URL="postgres://aura_migrate:ci-test-password@127.0.0.1:5
 export AURA_DB_BOOTSTRAP_URL="postgres://aura:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 # Strict on purpose: dev and local_trusted turn the gateway into a no-op, so nothing headless is measured.
 export AURA_PROFILE=single_user_hardened
+# The operator the run bootstraps (SKILL.md step 7) and cockpit.py signs in as.
+export AURA_E2E_OPERATOR_EMAIL=operator@aura.test AURA_E2E_OPERATOR_PASSWORD='e2e-Operator-Pass-2026!'
 export AURA_AUTHULA_SECRET=00000000000000000000000000000000000000000000000000000000000000a1
 export AURA_RUN_DIR=/tmp/aura-e2e-run AURA_SKILL_EXPORT_DIR=/tmp/aura-e2e-skills
 # The model is you: the hand endpoint parks every completion until you write its answer.

@@ -58,7 +58,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
    ```bash
    curl -s -X POST http://127.0.0.1:9080/api/auth/bootstrap/operator -H 'Content-Type: application/json' \
      -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" \
-     -d '{"email":"operator@aura.test","password":"e2e-Operator-Pass-2026!","securityQuestion":"Colore preferito?","securityAnswer":"blu"}'
+     -d "{\"email\":\"$AURA_E2E_OPERATOR_EMAIL\",\"password\":\"$AURA_E2E_OPERATOR_PASSWORD\",\"securityQuestion\":\"Colore preferito?\",\"securityAnswer\":\"blu\"}"
    docker exec aura-postgres psql -U aura -d aura_e2e -At -c "select id from aura.identities where kind='user' order by created_at limit 1"
    ```
 8. **The PIM**, if the run reads mail or calendar:
@@ -76,7 +76,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
   then `$HAND/aura task run_now <id>`, which runs on the next tick, within a minute. For a chat
   turn, use `printf 'message\n' | $HAND/aura shell` in the background.
 - **A cockpit turn** goes through the daemon, its approvals and its cards, which `aura shell`
-  (an in-process agent) does not. Use `cockpit.py`, with `HAND` set:
+  (an in-process agent) does not. Use `cockpit.py`, with env.e2e.sh sourced:
   - `cockpit.py login` once, then `cockpit.py post /api/conversations '{}'` gives the thread id;
   - `cockpit.py run <thread> '<text>' > out.sse` in the background. A turn that ends on a pause
     ends its stream with `RUN_FINISHED` whose outcome is `interrupt`;

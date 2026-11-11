@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the cockpit's HTTP API as the bootstrapped operator, the way the browser does.
 
-usage (HAND set, as for every command of the run):
+usage (env.e2e.sh sourced, as for every command of the run):
   cockpit.py login                   sign in operator@aura.test
   cockpit.py get PATH                e.g. /api/approvals, /api/message-drafts?conversation_id=ID
   cockpit.py put|post PATH JSON      e.g. post /api/conversations '{}'
@@ -65,7 +65,8 @@ def login():
     # The header token pairs with the cookie set by the same response; the body's does not.
     state["csrf"] = {name: headers.get(name) or cfg.get("csrf_token", "")}
     raw, _ = call("POST", cfg.get("auth_base_path", "/auth") + "/email-password/sign-in",
-                  {"email": "operator@aura.test", "password": "e2e-Operator-Pass-2026!"})
+                  {"email": os.environ["AURA_E2E_OPERATOR_EMAIL"],
+                   "password": os.environ["AURA_E2E_OPERATOR_PASSWORD"]})
     print(raw[:300])
 
 
