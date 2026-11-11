@@ -43,7 +43,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
    docker exec aura-postgres psql -U aura -d postgres -v ON_ERROR_STOP=1 \
      -c 'DROP DATABASE IF EXISTS aura_e2e WITH (FORCE)' -c 'CREATE DATABASE aura_e2e OWNER aura_migrate'
    go build -o $HAND/aura ./cmd/aura && go build -o $HAND/arcadedb-mcp ./cmd/arcadedb-mcp
-   HAND=$HAND source .claude/skills/aura-model-in-the-loop/env.e2e.sh
+   export HAND && source .claude/skills/aura-model-in-the-loop/env.e2e.sh
    mkdir -p $AURA_RUN_DIR $AURA_SKILL_EXPORT_DIR $HAND/llm && $HAND/aura db migrate
    ```
 4. **The hand endpoint**, in the background:
@@ -58,7 +58,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
    ```bash
    curl -s -X POST http://127.0.0.1:9080/api/auth/bootstrap/operator -H 'Content-Type: application/json' \
      -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" \
-     -d '{"email":"operator@aura.test","password":"e2e-Operator-Pass-2026!","securityQuestion":"Colore preferito?","securityAnswer":"blu"}'
+     -d "{\"email\":\"$AURA_E2E_OPERATOR_EMAIL\",\"password\":\"$AURA_E2E_OPERATOR_PASSWORD\",\"securityQuestion\":\"Colore preferito?\",\"securityAnswer\":\"blu\"}"
    docker exec aura-postgres psql -U aura -d aura_e2e -At -c "select id from aura.identities where kind='user' order by created_at limit 1"
    ```
 8. **The PIM**, if the run reads mail or calendar:
@@ -75,6 +75,15 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
   `$HAND/aura task schedule --kind agent_job --cron '30 7 * * 1-5' --max-steps 20 --notify none --args '{"goal":"…","keep_results":true}'`,
   then `$HAND/aura task run_now <id>`, which runs on the next tick, within a minute. For a chat
   turn, use `printf 'message\n' | $HAND/aura shell` in the background.
+- **A cockpit turn** goes through the daemon, its approvals and its cards, which `aura shell`
+  (an in-process agent) does not. Use `cockpit.py`, with env.e2e.sh sourced
+  (`C=.claude/skills/aura-model-in-the-loop/cockpit.py`, run as `python3 $C …`):
+  - `python3 $C login` once, then `python3 $C post /api/conversations '{}'` gives the thread id;
+  - `python3 $C run <thread> '<text>' > out.sse` in the background. A turn that ends on a pause
+    ends its stream with `RUN_FINISHED` whose outcome is `interrupt`;
+  - resolve it with `python3 $C post /api/approvals/<token>/resolve '{"action":"accept"}'` or
+    `/api/message-drafts/<id>/resolve '{"action":"send"}'`. An outcome of `continue` means the
+    model has more to do: run `python3 $C resume <thread>` in the background, as the cockpit does.
 - **Find the parked request:** `N=$(bash .claude/skills/aura-model-in-the-loop/pending.sh $HAND/llm 120)`.
 - **Read it:** `python3 .claude/skills/aura-model-in-the-loop/show.py $HAND/llm/req-$N.json`. It names
   the kind of request:

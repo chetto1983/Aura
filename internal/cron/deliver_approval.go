@@ -16,6 +16,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 const (
@@ -128,7 +130,10 @@ func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 		if grace > 0 && time.Since(task.CreatedAt) < grace {
 			continue
 		}
-		token, minted, eerr := d.deps.ApprovalPauseEnsurer.EnsureApprovalPause(ctx, task.ID, task.OriginConversationID, string(task.Kind))
+		// The pause and its conversation are owner-scoped (RLS fails closed): unscoped, the ensure
+		// sees no pause and cannot find the conversation to mint one in.
+		rowCtx := identityctx.WithIdentityID(ctx, operationIdentity(task.IdentityID))
+		token, minted, eerr := d.deps.ApprovalPauseEnsurer.EnsureApprovalPause(rowCtx, task.ID, task.OriginConversationID, string(task.Kind))
 		switch {
 		case eerr != nil:
 			// Ensure failed (e.g. transient DB): still stamp (below) so a permanently-failing
@@ -138,7 +143,7 @@ func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 			// Push ONLY when the sweep created the surface (the model never relayed). A REUSED pause
 			// is already rendered on the origin channel by the model relay — a second push would
 			// duplicate it. A WebUI-origin mint returns (false,nil) here (no push channel; it pulls).
-			d.pushApproval(ctx, task, token)
+			d.pushApproval(rowCtx, task, token)
 		}
 		if merr := d.deps.ApprovalReminderStore.MarkApprovalReminded(ctx, task.ID); merr != nil {
 			slog.Warn("mark approval reminded", "task", task.ID, "err", merr)

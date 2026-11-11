@@ -1,12 +1,19 @@
 # Source this before every `aura` command of a model-in-the-loop run:
-#   HAND=<scratch dir> source .claude/skills/aura-model-in-the-loop/env.e2e.sh
+#   export HAND=<scratch dir>; source .claude/skills/aura-model-in-the-loop/env.e2e.sh
+# HAND must be exported: `HAND=… source` drops it again when the source returns, and
+# cockpit.py reads it from the environment.
 # Every value is a CI dummy (ci.yml uses the same passwords); nothing here is a real secret.
 : "${HAND:?set HAND to the scratch directory of the run}"
 export POSTGRES_PASSWORD=ci-test-password
 export AURA_DB_URL="postgres://aura_app:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
+# Without it `aura db migrate` composes the bootstrap DSN on database `aura` and fails its last
+# step ("ensure authula readable: schema authula does not exist", measured 2026-11-11).
+export AURA_DB_BOOTSTRAP_URL="postgres://aura:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 # Strict on purpose: dev and local_trusted turn the gateway into a no-op, so nothing headless is measured.
 export AURA_PROFILE=single_user_hardened
+# The operator the run bootstraps (SKILL.md step 7) and cockpit.py signs in as.
+export AURA_E2E_OPERATOR_EMAIL=operator@aura.test AURA_E2E_OPERATOR_PASSWORD='e2e-Operator-Pass-2026!'
 export AURA_AUTHULA_SECRET=00000000000000000000000000000000000000000000000000000000000000a1
 export AURA_RUN_DIR=/tmp/aura-e2e-run AURA_SKILL_EXPORT_DIR=/tmp/aura-e2e-skills
 # The model is you: the hand endpoint parks every completion until you write its answer.
