@@ -288,6 +288,26 @@ func (r *Registry) All() []Tool {
 	return out
 }
 
+// ByTrustedRecipe returns the tool the MCP bridge mounted from a managed recipe's tool, by
+// that classification and never by its registered name, which the bridge may truncate and
+// hash. Two mounts of one recipe resolve to the lowest name, so the choice does not follow
+// map order.
+func (r *Registry) ByTrustedRecipe(recipe, tool string) (Tool, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var found Tool
+	for name, t := range r.tools {
+		spec := t.Spec()
+		if spec.TrustedRecipeSource != recipe || spec.TrustedRecipeTool != tool {
+			continue
+		}
+		if found == nil || name < found.Spec().Name {
+			found = t
+		}
+	}
+	return found, found != nil
+}
+
 // Validate fails closed when no actionable (non-deferred) capability tool is
 // registered, mirroring Anthropic's hard 400. tool_search is excluded from the
 // count because it is a non-deferrable discovery hook, never an actionable tool —

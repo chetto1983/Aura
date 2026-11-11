@@ -360,9 +360,9 @@ func (r *Registry) ByTrustedRecipe(recipe, tool string) (Tool, bool) // the lowe
 ```
 The registry is a map (`spec.go:281-289`), so the helper sorts by name before it picks the first match.
 
-- [ ] `TestByTrustedRecipeIsDeterministic`: with two matching tools named `b__send_message` and `a__send_message`, it returns `a__send_message`. No match gives `false`.
-- [ ] The existing `selfSendResolver` tests stay green unchanged.
-- [ ] Red, implement, green with race on `./internal/agent/tools/` and `./cmd/aura/`. Commit: `refactor(tools): find the trusted recipe tool through one registry helper`.
+- [x] `TestByTrustedRecipeIsDeterministic`: with two matching tools named `b__send_message` and `a__send_message`, it returns `a__send_message`. No match gives `false`.
+- [x] The existing `selfSendResolver` tests stay green unchanged.
+- [x] Red, implement, green with race on `./internal/agent/tools/` and `./cmd/aura/`. Commit: `refactor(tools): find the trusted recipe tool through one registry helper`.
 
 ### Task 5b: `task` can park a message for review (not yet offered to the model)
 
