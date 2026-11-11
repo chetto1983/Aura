@@ -241,3 +241,10 @@ func TestAMessageWithoutTextIsNeverParked(t *testing.T) {
 		t.Fatal("a task was created for a message with no text")
 	}
 }
+
+func TestTheJobTextSaysItCannotWriteToOthers(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains((&TaskTool{}).Spec().Description, "An agent_job cannot send a message to anyone other than the operator; to send a fixed message later, use kind=message. ") {
+		t.Fatal("the description does not say an agent_job cannot write to others")
+	}
+}

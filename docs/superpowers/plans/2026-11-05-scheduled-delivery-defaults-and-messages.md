@@ -747,11 +747,11 @@ const outboundRefusedLine = "A message to someone else was not sent: a scheduled
 
 The `Description` sentence after the `agent_job` one, verbatim: `An agent_job cannot send a message to anyone other than the operator; to send a fixed message later, use kind=message. `
 
-- [ ] `TestAJobWhoseSendWasRefusedSaysSoInItsOutcome`. A scripted fake client calls a registered trusted `whatsapp__send_message`, then answers `Fatto, inviato.`. The summary ends with `outboundRefusedLine`, and the tool's `Execute` count is 0.
-- [ ] `TestTheLineIsAddedOnceForTwoRefusedSends`.
-- [ ] `TestAnOrdinaryRefusalAddsNoLine`: a refused non-trusted mutating tool adds no line.
-- [ ] `TestTheJobTextSaysItCannotWriteToOthers`: `Spec().Description` holds the sentence.
-- [ ] Red, implement, green with race on `./internal/cron/handlers/` and `./internal/agent/tools/`. Commit: `feat(agent_job): a refused send to someone else is reported, never promised`.
+- [x] `TestAJobWhoseSendWasRefusedSaysSoInItsOutcome`. A scripted fake client calls a registered trusted `whatsapp__send_message`, then answers `Fatto, inviato.`. The summary ends with `outboundRefusedLine`, and the tool's `Execute` count is 0.
+- [x] `TestTheLineIsAddedOnceForTwoRefusedSends`.
+- [x] `TestAnOrdinaryRefusalAddsNoLine`: a refused non-trusted mutating tool adds no line.
+- [x] `TestTheJobTextSaysItCannotWriteToOthers`: `Spec().Description` holds the sentence.
+- [x] Red, implement, green with race on `./internal/cron/handlers/` and `./internal/agent/tools/`. Commit: `feat(agent_job): a refused send to someone else is reported, never promised`.
 
 ## Part 3: every approval in the creating chat, and none left hanging
 

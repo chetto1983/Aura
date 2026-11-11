@@ -116,21 +116,32 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 		{Role: llm.RoleUser, Content: goal},
 	}
 	var summary strings.Builder
-	askedMutating := false
+	askedMutating, sendRefused := false, false
 	loc := h.Deps.clockLocation(runCtx)
+	// outcome closes the summary on every return: a job whose send to someone else was refused
+	// says so once, after whatever the model claimed.
+	outcome := func() string {
+		if sendRefused {
+			appendLine(&summary, outboundRefusedLine)
+			sendRefused = false
+		}
+		return summary.String()
+	}
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
 		worker := newAgentWorker(h.Deps, client, cfg, loc, job.RunID, job.OriginConversationID, prior)
-		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool, kept)
-		askedMutating = askedMutating || asked
+		res, runErr := drain(runCtx, worker, budget, h, kept)
+		askedMutating = askedMutating || res.askedMutating
+		sendRefused = sendRefused || res.sendRefused
 		if runErr != nil {
-			return summary.String(), runFailure(runCtx, runErr, askedMutating)
+			return outcome(), runFailure(runCtx, runErr, askedMutating)
 		}
-		if content != "" {
-			appendLine(&summary, content)
+		if res.content != "" {
+			appendLine(&summary, res.content)
 		}
+		pause := res.pause
 		if pause == nil {
-			return summary.String(), nil
+			return outcome(), nil
 		}
 		// D-25 inject-and-continue: synthesize the assistant ask_user turn + the
 		// auto-rejected RoleTool answer keyed to the pause's tool_call_id, then re-Run a
@@ -143,7 +154,7 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 		)
 	}
 	// Bounded out — the model kept asking; finalize with the marker trail (never block).
-	return summary.String(), nil
+	return outcome(), nil
 }
 
 // resolveLLM picks the client+config this run's worker(s) use, in priority
@@ -182,44 +193,54 @@ func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config
 	return nil, llm.Config{}, errAgentJobNoCredential
 }
 
-// drain runs one LlmAgent invocation to completion, returning the final assistant
-// content, the FIRST ask_user pause (nil when the run finished without one), whether the
-// model asked for a tool that mutating reports as changing state, and a terminal error. A
-// pause stops the drain so the caller can inject-and-continue; the agent's own loop
-// terminates the run on a pause (llm_agent.go emitPauses returns), so there is nothing left
-// to drain after it.
+// drainResult is what one LlmAgent invocation left: the final assistant content, the FIRST
+// ask_user pause (nil when the run finished without one), whether the model asked for a tool that
+// changes state, and whether a send to someone else was refused.
+type drainResult struct {
+	content       string
+	pause         *agent.AwaitingInput
+	askedMutating bool
+	sendRefused   bool
+}
+
+// drain runs one LlmAgent invocation to completion. A pause stops the drain so the caller can
+// inject-and-continue; the agent's own loop terminates the run on a pause (llm_agent.go
+// emitPauses returns), so there is nothing left to drain after it.
 //
 // The dispatch is unobserved: no Runner sees these events, so the gateway closes every ledger
 // row it opens. Unmarked, a job's calls stayed open and read as live runs, holding off the
 // updater's quiet-spell apply (lab VM, 2026-10-14). It is not a worker's dispatch, which would
 // also take a per-run MCP session.
-func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, mutating func(tool string) bool, kept *resultLog) (content string, pause *agent.AwaitingInput, askedMutating bool, err error) {
+func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, h AgentJobHandler, kept *resultLog) (drainResult, error) {
 	ic := agent.InvocationContext{
 		Ctx:       tools.WithUnobservedDispatch(ctx),
 		RequestID: uuid.Must(uuid.NewV7()),
 		Budget:    budget,
 	}
+	var res drainResult
 	for ev, runErr := range worker.Run(ic) {
 		if runErr != nil {
-			return content, nil, askedMutating, runErr
+			return res, runErr
 		}
 		if ev == nil {
 			continue
 		}
 		if err := kept.record(ev); err != nil {
-			return content, nil, askedMutating, err
+			return res, err
 		}
 		for _, tool := range eventTools(ev) {
-			askedMutating = askedMutating || mutating(tool)
+			res.askedMutating = res.askedMutating || h.mutatingTool(tool)
 		}
+		res.sendRefused = res.sendRefused || h.refusedOutboundSend(ev.Actions.ToolInvocation)
 		if ai := ev.Actions.AwaitingInput; ai != nil {
-			return content, ai, askedMutating, nil
+			res.pause = ai
+			return res, nil
 		}
 		if ev.LLMResponse != nil && ev.LLMResponse.Content != "" {
-			content = ev.LLMResponse.Content
+			res.content = ev.LLMResponse.Content
 		}
 	}
-	return content, nil, askedMutating, nil
+	return res, nil
 }
 
 // eventTools names the tools an event announces: a call the model asked for, or one starting.
