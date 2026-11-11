@@ -75,6 +75,14 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
   `$HAND/aura task schedule --kind agent_job --cron '30 7 * * 1-5' --max-steps 20 --notify none --args '{"goal":"…","keep_results":true}'`,
   then `$HAND/aura task run_now <id>`, which runs on the next tick, within a minute. For a chat
   turn, use `printf 'message\n' | $HAND/aura shell` in the background.
+- **A cockpit turn** goes through the daemon, its approvals and its cards, which `aura shell`
+  (an in-process agent) does not. Use `cockpit.py`, with `HAND` set:
+  - `cockpit.py login` once, then `cockpit.py post /api/conversations '{}'` gives the thread id;
+  - `cockpit.py run <thread> '<text>' > out.sse` in the background. A turn that ends on a pause
+    ends its stream with `RUN_FINISHED` whose outcome is `interrupt`;
+  - resolve it with `cockpit.py post /api/approvals/<token>/resolve '{"action":"accept"}'` or
+    `/api/message-drafts/<id>/resolve '{"action":"send"}'`. An outcome of `continue` means the
+    model has more to do: run `cockpit.py resume <thread>` in the background, as the cockpit does.
 - **Find the parked request:** `N=$(bash .claude/skills/aura-model-in-the-loop/pending.sh $HAND/llm 120)`.
 - **Read it:** `python3 .claude/skills/aura-model-in-the-loop/show.py $HAND/llm/req-$N.json`. It names
   the kind of request:

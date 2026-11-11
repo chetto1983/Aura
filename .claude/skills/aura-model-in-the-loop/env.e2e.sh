@@ -5,6 +5,9 @@
 export POSTGRES_PASSWORD=ci-test-password
 export AURA_DB_URL="postgres://aura_app:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
+# Without it `aura db migrate` composes the bootstrap DSN on database `aura` and fails its last
+# step ("ensure authula readable: schema authula does not exist", measured 2026-11-11).
+export AURA_DB_BOOTSTRAP_URL="postgres://aura:ci-test-password@127.0.0.1:5432/aura_e2e?sslmode=disable"
 # Strict on purpose: dev and local_trusted turn the gateway into a no-op, so nothing headless is measured.
 export AURA_PROFILE=single_user_hardened
 export AURA_AUTHULA_SECRET=00000000000000000000000000000000000000000000000000000000000000a1
