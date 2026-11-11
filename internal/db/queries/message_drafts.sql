@@ -72,3 +72,17 @@ SET status = 'approved', effective_args = sqlc.arg(effective_args),
 WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND status = 'pending' AND send_at IS NOT NULL AND send_at > now() AND expires_at > now()
 RETURNING *;
+
+-- Cancelling a message task declines its draft first (decision 15), so a handler already
+-- holding the task cannot claim it. A claimed draft is left as it is: it was sent, or is being.
+-- name: DeclineScheduledMessageDraftsForTask :exec
+UPDATE aura.message_drafts
+SET status = 'declined', resolved_at = now(), updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id) AND scheduled_task_id = sqlc.arg(scheduled_task_id)
+  AND status IN ('pending', 'approved');
+
+-- Deactivating an identity declines every scheduled draft it has not sent (decision 37).
+-- name: DeclineScheduledMessageDraftsForOwner :exec
+UPDATE aura.message_drafts
+SET status = 'declined', resolved_at = now(), updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id) AND send_at IS NOT NULL AND status IN ('pending', 'approved');

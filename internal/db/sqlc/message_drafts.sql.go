@@ -156,6 +156,37 @@ func (q *Queries) DeclineMessageDraft(ctx context.Context, arg DeclineMessageDra
 	return i, err
 }
 
+const declineScheduledMessageDraftsForOwner = `-- name: DeclineScheduledMessageDraftsForOwner :exec
+UPDATE aura.message_drafts
+SET status = 'declined', resolved_at = now(), updated_at = now()
+WHERE identity_id = $1 AND send_at IS NOT NULL AND status IN ('pending', 'approved')
+`
+
+// Deactivating an identity declines every scheduled draft it has not sent (decision 37).
+func (q *Queries) DeclineScheduledMessageDraftsForOwner(ctx context.Context, identityID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, declineScheduledMessageDraftsForOwner, identityID)
+	return err
+}
+
+const declineScheduledMessageDraftsForTask = `-- name: DeclineScheduledMessageDraftsForTask :exec
+UPDATE aura.message_drafts
+SET status = 'declined', resolved_at = now(), updated_at = now()
+WHERE identity_id = $1 AND scheduled_task_id = $2
+  AND status IN ('pending', 'approved')
+`
+
+type DeclineScheduledMessageDraftsForTaskParams struct {
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	ScheduledTaskID pgtype.UUID `json:"scheduled_task_id"`
+}
+
+// Cancelling a message task declines its draft first (decision 15), so a handler already
+// holding the task cannot claim it. A claimed draft is left as it is: it was sent, or is being.
+func (q *Queries) DeclineScheduledMessageDraftsForTask(ctx context.Context, arg DeclineScheduledMessageDraftsForTaskParams) error {
+	_, err := q.db.Exec(ctx, declineScheduledMessageDraftsForTask, arg.IdentityID, arg.ScheduledTaskID)
+	return err
+}
+
 const expireMessageDraft = `-- name: ExpireMessageDraft :one
 UPDATE aura.message_drafts
 SET status = 'expired', resolved_at = now(), updated_at = now()

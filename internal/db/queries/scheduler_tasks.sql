@@ -256,3 +256,11 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'mess
 UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
 WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'message'
   AND status = 'pending_approval';
+
+-- Deactivation cancels an identity's message tasks rather than pausing them: a paused message
+-- could resume, and a message is only ever cancelled (decisions 14 and 37).
+-- name: CancelIdentityMessageTasks :many
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id) AND kind = 'message'
+  AND status IN ('pending_approval', 'active')
+RETURNING id;

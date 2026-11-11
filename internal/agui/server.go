@@ -166,6 +166,7 @@ type Server struct {
 	data             DataFetcher
 	graph            GraphView
 	governance       GovernanceProviders
+	messageCanceller ScheduledMessageCanceller
 	governanceWrite  GovernanceWriteProviders
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore

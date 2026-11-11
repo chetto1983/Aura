@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -36,7 +37,7 @@ func TestDeprovisionPausesThenDeletesAnIdentitysTasks(t *testing.T) {
 
 	owner := uuid.Must(uuid.NewV7()).String()
 	id := insertOwnedTask(t, pool, owner, "reminder")
-	tasks := scheduledTaskAdapter{store: cron.New(pool)}
+	tasks := scheduledTaskAdapter{store: cron.New(pool), drafts: messagedrafts.NewStore(pool)}
 	saga := agui.NewDeprovisioner(agui.DeprovisionDeps{Jobs: tasks, ScheduledTasks: tasks})
 
 	if err := saga.Deactivate(ctx, owner); err != nil {

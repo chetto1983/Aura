@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/idroot"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
@@ -396,7 +397,7 @@ func deprovisionDeps(chat *chatEnv) agui.DeprovisionDeps {
 			TurnCapBytes: chat.cfg.ConversationTurnCapBytes,
 		})
 	}
-	tasks := scheduledTaskAdapter{store: cron.New(chat.pool)}
+	tasks := scheduledTaskAdapter{store: cron.New(chat.pool), drafts: messagedrafts.NewStore(chat.pool)}
 	return agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
