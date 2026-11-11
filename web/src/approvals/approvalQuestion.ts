@@ -65,6 +65,13 @@ export function approvalQuestion(approval: Approval, t: TFunction): string {
         : approval.question;
     case SCHEDULED_KEY:
       if (!hasParams(presentation, 'task', 'kind')) return approval.question;
+      if (hasParams(presentation, 'schedule', 'when', 'summary')) {
+        const schedule =
+          presentation.params.schedule === 'once'
+            ? t('approval.question.once')
+            : presentation.params.schedule;
+        return t('approval.question.scheduledNamed', { ...presentation.params, schedule });
+      }
       return hasParams(presentation, 'schedule', 'risk')
         ? t('approval.question.scheduledDetailed', presentation.params)
         : t('approval.question.scheduled', presentation.params);

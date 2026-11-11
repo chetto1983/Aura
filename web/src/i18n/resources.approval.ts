@@ -32,6 +32,9 @@ export const approvalEn = {
       scheduled: 'Approve scheduled {{kind}} task {{task}}? It will not run until you approve.',
       scheduledDetailed:
         'Approve scheduled {{kind}} task {{task}} ({{schedule}}, risk={{risk}})? It will not run until you approve.',
+      scheduledNamed:
+        'Approve scheduled {{kind}} task {{task}} ({{schedule}}), first run {{when}}? It runs: {{summary}}. It will not run until you approve.',
+      once: 'once',
       plugin: {
         install:
           'Approve plugin install?\nplugin: {{plugin}}\nsource: {{source}}\nskills {{skills}}\nconnectors {{connectors}}\nskipped {{skipped}}\nmcp: {{mcp}}\nnotes {{notes}}\nsha256: {{digest}}',
@@ -106,6 +109,9 @@ export const approvalIt = {
         "Approva l'attività pianificata {{kind}} {{task}}? Non verrà eseguita finché non approvi.",
       scheduledDetailed:
         "Approva l'attività pianificata {{kind}} {{task}} ({{schedule}}, rischio={{risk}})? Non verrà eseguita finché non approvi.",
+      scheduledNamed:
+        "Approvare l'attività pianificata {{kind}} {{task}} ({{schedule}}), prima esecuzione {{when}}? Esegue: {{summary}}. Non verrà eseguita finché non approvi.",
+      once: 'una volta',
       plugin: {
         install:
           "Approva l'installazione del plugin?\nplugin: {{plugin}}\norigine: {{source}}\ncompetenze {{skills}}\nconnettori {{connectors}}\nsaltati {{skipped}}\nmcp: {{mcp}}\nnote {{notes}}\nsha256: {{digest}}",

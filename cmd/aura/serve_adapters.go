@@ -31,7 +31,6 @@ import (
 	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5"
@@ -44,7 +43,7 @@ import (
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
 func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry) *tools.TaskTool {
-	t := &tools.TaskTool{AlertThreshold: scoring.Risky, DeploymentZone: deploymentZone}
+	t := &tools.TaskTool{DeploymentZone: deploymentZone}
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier

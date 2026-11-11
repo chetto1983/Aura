@@ -87,11 +87,7 @@ func TestTaskScheduleApprovalNamesTheRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
-	var payload map[string]string
-	if err := json.Unmarshal([]byte(res.Preview), &payload); err != nil {
-		t.Fatalf("approval preview is not JSON: %v", err)
-	}
-	if payload["status"] != "pending_approval" || payload["delivery"] != "Delivers via whatsapp to 393331112222." {
-		t.Fatalf("approval payload = %v, want pending_approval naming the recipient", payload)
+	if !strings.Contains(res.Preview, "status=pending_approval") || !strings.HasSuffix(res.Preview, "\nDelivers via whatsapp to 393331112222.") {
+		t.Fatalf("approval preview = %q, want pending_approval naming the recipient", res.Preview)
 	}
 }

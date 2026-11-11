@@ -158,12 +158,8 @@ func TestAGatedJobOnTheDefaultNamesItInTheApprovalDirective(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
-	var got map[string]string
-	if err := json.Unmarshal([]byte(res.Preview), &got); err != nil {
-		t.Fatalf("not a directive: %v (%s)", err, res.Preview)
-	}
-	if got["status"] != "pending_approval" || got["delivery"] != "Delivers via stdout (your default channel)." {
-		t.Fatalf("directive = %v, want pending_approval naming the default", got)
+	if !strings.Contains(res.Preview, "status=pending_approval") || !strings.HasSuffix(res.Preview, "\nDelivers via stdout (your default channel).") {
+		t.Fatalf("preview = %q, want pending_approval naming the default", res.Preview)
 	}
 }
 

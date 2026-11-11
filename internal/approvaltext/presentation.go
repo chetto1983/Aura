@@ -156,6 +156,9 @@ func deriveScheduled(question string, fields map[string]json.RawMessage) (Presen
 	if len(task) > 8 {
 		task = task[:8]
 	}
+	if p, ok := deriveScheduledNamed(question, task); ok {
+		return p, true
+	}
 	if p, ok := deriveScheduledCreated(question, task); ok {
 		return p, true
 	}
@@ -169,6 +172,33 @@ func deriveScheduled(question string, fields map[string]json.RawMessage) (Presen
 		return Presentation{}, false
 	}
 	p := Presentation{Key: ScheduledKey, Params: map[string]string{"task": task, "kind": kind}}
+	return p, valid(p)
+}
+
+// deriveScheduledNamed reads the in-turn approval question that names the cadence, the first run
+// and what the task runs (tools.ApprovalQuestion). The summary may hold anything, so it is the
+// part after the first "? It runs: ", and the fixed suffix is cut before it.
+func deriveScheduledNamed(question, task string) (Presentation, bool) {
+	rest, ok := strings.CutPrefix(question, "Approve scheduled ")
+	if !ok {
+		return Presentation{}, false
+	}
+	kind, tail, ok := strings.Cut(rest, " task "+task+" (")
+	const suffix = ". It will not run until you approve."
+	if !ok || !strings.HasSuffix(tail, suffix) {
+		return Presentation{}, false
+	}
+	schedule, rest, ok := strings.Cut(strings.TrimSuffix(tail, suffix), "), first run ")
+	if !ok {
+		return Presentation{}, false
+	}
+	when, summary, ok := strings.Cut(rest, "? It runs: ")
+	if !ok {
+		return Presentation{}, false
+	}
+	p := Presentation{Key: ScheduledKey, Params: map[string]string{
+		"task": task, "kind": kind, "schedule": schedule, "when": when, "summary": summary,
+	}}
 	return p, valid(p)
 }
 
@@ -214,7 +244,10 @@ func valid(p Presentation) bool {
 	case ShellKey:
 		limits = map[string]int{"cwd": maxArgsBytes, "command": maxCommandBytes, "digest": maxShortParamBytes}
 	case ScheduledKey:
-		limits = map[string]int{"task": maxShortParamBytes, "kind": maxShortParamBytes, "schedule": maxArgsBytes, "risk": maxShortParamBytes}
+		limits = map[string]int{
+			"task": maxShortParamBytes, "kind": maxShortParamBytes, "schedule": maxArgsBytes, "risk": maxShortParamBytes,
+			"when": maxShortParamBytes, "summary": maxArgsBytes,
+		}
 	case PluginInstallKey, PluginRemoveKey:
 		limits = pluginLimits(p.Key)
 	default:
@@ -270,6 +303,14 @@ func RenderItalian(p Presentation, fallback string) string {
 		//nolint:misspell // "comando" is the correct Italian noun, not English "commando".
 		return fmt.Sprintf("Approva il comando shell_exec?\ndirectory: %s\ncomando:\n%s\nsha256: %s", p.Params["cwd"], p.Params["command"], p.Params["digest"])
 	case ScheduledKey:
+		if p.Params["when"] != "" && p.Params["summary"] != "" {
+			schedule := p.Params["schedule"]
+			if schedule == "once" {
+				schedule = "una volta"
+			}
+			return fmt.Sprintf("Approva l'attività pianificata %s %s (%s), prima esecuzione %s?\nEsegue: %s\nNon verrà eseguita finché non approvi.",
+				p.Params["kind"], p.Params["task"], schedule, p.Params["when"], p.Params["summary"])
+		}
 		if p.Params["schedule"] != "" && p.Params["risk"] != "" {
 			return fmt.Sprintf("Approva l'attività pianificata %s %s (%s, rischio=%s)? Non verrà eseguita finché non approvi.", p.Params["kind"], p.Params["task"], p.Params["schedule"], p.Params["risk"])
 		}

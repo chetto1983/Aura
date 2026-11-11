@@ -804,29 +804,29 @@ How the pieces behave:
   - en: `scheduledNamed: 'Approve scheduled {{kind}} task {{task}} ({{schedule}}), first run {{when}}? It runs: {{summary}}. It will not run until you approve.'`, `once: 'once'`.
   - it: `scheduledNamed: "Approvare l'attività pianificata {{kind}} {{task}} ({{schedule}}), prima esecuzione {{when}}? Esegue: {{summary}}. Non verrà eseguita finché non approvi."`, `once: 'una volta'`.
 
-- [ ] `TestTheGateBeforeTheCallIsTheGateInsideIt`. The table holds: a reminder `Buy bread`; an `agent_job` whose goal `scoring.ComputeTaskTier` scores destructive (take the payload from a destructive `agent_job` case in `internal/scoring/scoring_test.go`); an ordinary `agent_job`; a `backup_postgres`; and a reminder `every` 30 minutes. No reminder is ever gated from `task`: `baseTaskTier` makes it `Safe` and the modifier bumps key on schedule kinds the tool never passes (`internal/scoring/scoring.go:91-112`). For each case, three things agree:
+- [x] `TestTheGateBeforeTheCallIsTheGateInsideIt`. The table holds: a reminder `Buy bread`; an `agent_job` whose goal `scoring.ComputeTaskTier` scores destructive (take the payload from a destructive `agent_job` case in `internal/scoring/scoring_test.go`); an ordinary `agent_job`; a `backup_postgres`; and a reminder `every` 30 minutes. No reminder is ever gated from `task`: `baseTaskTier` makes it `Safe` and the modifier bumps key on schedule kinds the tool never passes (`internal/scoring/scoring.go:91-112`). For each case, three things agree:
   - `taskNeedsApproval`'s bool;
   - whether `HostReview` (with stores and `"notify":"stdout"`) returns a pause;
   - whether a fresh tool's `Execute` on the same args creates `pending_approval`.
 
   Whenever `HostReview` parked, its own created task is `pending_approval`.
-- [ ] `TestTheApprovalQuestionNamesKindTimeAndGoal` (pure). With `kind "agent_job"`, id `01a19af5-0000-…`, an `at` spec with `TZ "Europe/Rome"`, next 2026-11-06T07:25Z and goal `Riassumi la posta`, the question equals `Approve scheduled agent_job task 01a19af5 (once), first run 06/11 08:25 (Europe/Rome)? It runs: Riassumi la posta. It will not run until you approve.`.
-- [ ] `TestARecurringQuestionNamesItsCadence`: `every 30m` and `cron "30 7 * * 1-5"` appear in the parentheses.
-- [ ] `TestTheSummaryIsOneBoundedLine`:
+- [x] `TestTheApprovalQuestionNamesKindTimeAndGoal` (pure). With `kind "agent_job"`, id `01a19af5-0000-…`, an `at` spec with `TZ "Europe/Rome"`, next 2026-11-06T07:25Z and goal `Riassumi la posta`, the question equals `Approve scheduled agent_job task 01a19af5 (once), first run 06/11 08:25 (Europe/Rome)? It runs: Riassumi la posta. It will not run until you approve.`.
+- [x] `TestARecurringQuestionNamesItsCadence`: `every 30m` and `cron "30 7 * * 1-5"` appear in the parentheses.
+- [x] `TestTheSummaryIsOneBoundedLine`:
   - a 300-rune goal with newlines gives 160 runes plus `…` and no `\n`;
   - an empty goal gives `(no goal)`;
   - a reminder gives its text;
   - `backup_postgres` gives `backup_postgres`.
-- [ ] `TestAnAgentJobIsParkedInTheChatThatCreatesIt`. `HostReview(ctx, "conv-1", "call-1", …)` for an `agent_job` at now + 2h gives `ToolCallID "call-1"` and `Kind "approval"`. Its `ResumeContext` decodes to `{"type":"scheduled_task_approval","task_id":<created id>}`. The question starts `Approve scheduled agent_job task ` and holds `It runs: `. The created task has `Status "pending_approval"` and `OriginConversationID "conv-1"`.
-- [ ] `TestAHarmlessTaskIsNotParked`: a `Buy bread` reminder gives `(nil, false)` from `HostReview`, and `Execute` creates it `active`.
-- [ ] `TestAnAgentJobWithoutAGoalIsNeverParked`: `HostReview` gives `(nil, false)` and `Execute` refuses with `requireTaskPayload`'s error; nothing is created.
-- [ ] `TestTheHookRefusesAQuestionTheHostDidNotWrite` (cmd/aura `db_integration`): an accept on a `scheduled_task_approval` pause whose question is `Confermi il promemoria?` returns the error and the `agent_job` stays `pending_approval`; the named question and the sweep's minted question both activate it.
-- [ ] `TestTheAlertThresholdIsGone`: `git grep -n 'AlertThreshold' -- internal/agent/tools cmd/aura/serve_adapters.go` is empty (asserted by `make deadcode` and the build).
-- [ ] `TestAHeadlessScheduleWaitsWithoutADirective`: `Execute` for an `agent_job` returns the `awaitingApprovalResult` copy, and the preview holds neither `resume_context` nor `Call ask_user`.
-- [ ] `TestTheNamedScheduledQuestionDerivesItsParams` (approvaltext). `Enrich(question, {"type":"scheduled_task_approval","task_id":"01a19af5-…"})` gives the five params, and `RenderItalian` gives the Italian copy above with `una volta`. A question naming another short id gives no presentation. The existing `deriveScheduledCreated` tests stay green unchanged.
-- [ ] Vitest `it('renders a named scheduled approval with its cadence, time and goal')`, in en and it.
-- [ ] Rewrite the tests that pinned the retired directive: `git grep -n 'scheduledApprovalRequiredResult\|kind=\\"approval\\"' -- '*_test.go'` lists them. Each rewritten test now pins `awaitingApprovalResult`, and the commit body says why: the behaviour changed by design (spec Part 3 item 4).
-- [ ] Red, implement, green with race on `./internal/agent/tools/`, `./internal/approvaltext/`, `./internal/agent/` and `./cmd/aura/`, with `db_integration` on `./cmd/aura/`, then the vitest file. Then the web commands of Global Constraints. Run `make deadcode` in WSL: it stays clean. `task.go` stays under 600 lines. Commit: `feat(task): a task that needs approval asks in the chat that creates it`.
+- [x] `TestAnAgentJobIsParkedInTheChatThatCreatesIt`. `HostReview(ctx, "conv-1", "call-1", …)` for an `agent_job` at now + 2h gives `ToolCallID "call-1"` and `Kind "approval"`. Its `ResumeContext` decodes to `{"type":"scheduled_task_approval","task_id":<created id>}`. The question starts `Approve scheduled agent_job task ` and holds `It runs: `. The created task has `Status "pending_approval"` and `OriginConversationID "conv-1"`.
+- [x] `TestAHarmlessTaskIsNotParked`: a `Buy bread` reminder gives `(nil, false)` from `HostReview`, and `Execute` creates it `active`.
+- [x] `TestAnAgentJobWithoutAGoalIsNeverParked`: `HostReview` gives `(nil, false)` and `Execute` refuses with `requireTaskPayload`'s error; nothing is created.
+- [x] `TestTheHookRefusesAQuestionTheHostDidNotWrite` (cmd/aura `db_integration`): an accept on a `scheduled_task_approval` pause whose question is `Confermi il promemoria?` returns the error and the `agent_job` stays `pending_approval`; the named question and the sweep's minted question both activate it.
+- [x] `TestTheAlertThresholdIsGone`: `git grep -n 'AlertThreshold' -- internal/agent/tools cmd/aura/serve_adapters.go` is empty (asserted by `make deadcode` and the build).
+- [x] `TestAHeadlessScheduleWaitsWithoutADirective`: `Execute` for an `agent_job` returns the `awaitingApprovalResult` copy, and the preview holds neither `resume_context` nor `Call ask_user`.
+- [x] `TestTheNamedScheduledQuestionDerivesItsParams` (approvaltext). `Enrich(question, {"type":"scheduled_task_approval","task_id":"01a19af5-…"})` gives the five params, and `RenderItalian` gives the Italian copy above with `una volta`. A question naming another short id gives no presentation. The existing `deriveScheduledCreated` tests stay green unchanged.
+- [x] Vitest `it('renders a named scheduled approval with its cadence, time and goal')`, in en and it.
+- [x] Rewrite the tests that pinned the retired directive: `git grep -n 'scheduledApprovalRequiredResult\|kind=\\"approval\\"' -- '*_test.go'` lists them. Each rewritten test now pins `awaitingApprovalResult`, and the commit body says why: the behaviour changed by design (spec Part 3 item 4).
+- [x] Red, implement, green with race on `./internal/agent/tools/`, `./internal/approvaltext/`, `./internal/agent/` and `./cmd/aura/`, with `db_integration` on `./cmd/aura/`, then the vitest file. Then the web commands of Global Constraints. Run `make deadcode` in WSL: it stays clean. `task.go` stays under 600 lines. Commit: `feat(task): a task that needs approval asks in the chat that creates it`.
 
 ### Task 14: A one-shot that passes its time unapproved expires, and the operator is told
 
