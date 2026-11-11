@@ -29,4 +29,9 @@ type Answers struct {
 	VoiceMode           *bool
 	CanProactiveMessage *bool
 	CustomInstructions  string
+
+	// DefaultNotify is where reminders and scheduled results go when a request names no
+	// channel: "" (not set) or a cron.ValidNotifyRoute. The editor sets it; the seed form
+	// never asks.
+	DefaultNotify string
 }

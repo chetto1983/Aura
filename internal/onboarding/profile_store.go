@@ -73,6 +73,7 @@ func (s *ProfileStore) write(ctx context.Context, identityID string, a Answers, 
 			TonePreference:      a.TonePreference,
 			ResponseLength:      a.ResponseLength,
 			CustomInstructions:  a.CustomInstructions,
+			DefaultNotify:       a.DefaultNotify,
 			VoiceMode:           optionalBool(a.VoiceMode),
 			CanProactiveMessage: optionalBool(a.CanProactiveMessage),
 			// list() on every array: pgx sends a nil Go slice as SQL NULL, and these columns
@@ -190,6 +191,23 @@ func (s *ProfileStore) mark(ctx context.Context, identityID string, write func(*
 // It never fails the caller: a clock is a display concern, and a turn that cannot read the
 // zone should render UTC rather than refuse to answer.
 func (s *ProfileStore) Timezone(ctx context.Context, identityID string) string {
+	return s.setting(ctx, identityID, (*sqlc.Queries).GetIdentityTimezone)
+}
+
+// DefaultNotify is where reminders and scheduled results go when a request names no
+// channel: a route, or "" when the operator has not set one (the task tool then asks).
+//
+// It never fails the caller, for the same reason as Timezone: an unreadable default is
+// "not set", and the tool asks rather than refusing to schedule.
+func (s *ProfileStore) DefaultNotify(ctx context.Context, identityID string) string {
+	return s.setting(ctx, identityID, (*sqlc.Queries).GetIdentityDefaultNotify)
+}
+
+// setting reads one string column of the profile, "" on any failure or when the identity
+// has no profile yet.
+func (s *ProfileStore) setting(ctx context.Context, identityID string,
+	read func(*sqlc.Queries, context.Context, pgtype.UUID) (string, error),
+) string {
 	if s == nil || s.pool == nil {
 		return ""
 	}
@@ -197,19 +215,19 @@ func (s *ProfileStore) Timezone(ctx context.Context, identityID string) string {
 	if err != nil {
 		return ""
 	}
-	var zone string
+	var value string
 	_ = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
-		found, qErr := q.GetIdentityTimezone(ctx, id)
+		found, qErr := read(q, ctx, id)
 		if qErr != nil {
 			if errors.Is(qErr, pgx.ErrNoRows) {
-				return nil // no profile yet: not an error, just no zone
+				return nil
 			}
 			return qErr
 		}
-		zone = found
+		value = found
 		return nil
 	})
-	return zone
+	return value
 }
 
 // Load returns the stored profile, and false when the identity has none.
@@ -248,6 +266,7 @@ func (s *ProfileStore) Load(ctx context.Context, identityID string) (Answers, bo
 		VoiceMode: boolOrNil(row.VoiceMode), CanProactiveMessage: boolOrNil(row.CanProactiveMessage),
 		Expertise: row.Expertise, Stack: row.Stack, Projects: row.Projects,
 		Goals: row.Goals, Interests: row.Interests, People: row.People, Vetoes: row.Vetoes,
+		DefaultNotify: row.DefaultNotify,
 	}, true, nil
 }
 

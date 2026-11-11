@@ -200,16 +200,16 @@ The profile block adds `add("Default channel for reminders and scheduled results
 
 `validateProfileDoc` refuses a `DefaultNotify` that is neither `""` nor `cron.ValidNotifyRoute` with `profile: default channel is not a delivery route`. `answersOf` trims the value.
 
-- [ ] `TestMigrate0154AddsTheDefaultChannel` (copy the shape of `migrate_0153_integration_test.go`). At 153, insert a profile row and step up. The row reads `default_notify = ''`. An update to `telegram` succeeds and one to `sms` fails. Stepping down drops the column.
-- [ ] Set the head pin in `db_unit_test.go` to 154, and add the comment line `// 0154 adds the operator's default channel for scheduled delivery.` after the 0153 one (`internal/db/db_unit_test.go:393-399` keeps one line per migration).
-- [ ] `TestTheDefaultChannelRoundTripsAndOnboardingNeverErasesIt` (`db_integration`):
+- [x] `TestMigrate0154AddsTheDefaultChannel` (copy the shape of `migrate_0153_integration_test.go`). At 153, insert a profile row and step up. The row reads `default_notify = ''`. An update to `telegram` succeeds and one to `sms` fails. Stepping down drops the column.
+- [x] Set the head pin in `db_unit_test.go` to 154, and add the comment line `// 0154 adds the operator's default channel for scheduled delivery.` after the 0153 one (`internal/db/db_unit_test.go:393-399` keeps one line per migration).
+- [x] `TestTheDefaultChannelRoundTripsAndOnboardingNeverErasesIt` (`db_integration`):
   - `Replace` with `DefaultNotify: "telegram"`: `Load` gives `"telegram"` and `DefaultNotify(ctx, id) == "telegram"`.
   - `Save` with an empty `DefaultNotify`: the value is still `"telegram"`.
   - `Replace` with `""`: `DefaultNotify(...) == ""`.
-- [ ] `TestDefaultNotifyIsEmptyWithoutAProfile`: a nil store and an identity with no row both give `""`.
-- [ ] `TestRenderProfileBlockNamesTheDefaultChannelAndWhereToChangeIt`. `Answers{Name: "A", DefaultNotify: "telegram", Vetoes: []string{"x"}}` gives a block that holds `Default channel for reminders and scheduled results: telegram` and the rule sentence, and whose last line inside the tag is still `Never do: x`. `TestRenderProfileBlockEmptyAnswersRenderNothing` stays green unchanged.
-- [ ] `TestProfileDefaultNotifyIsValidated` (agui). A PUT with `"defaultNotify":"whatsapp"` is stored and echoed. `"sms"` gives 400. `""` is accepted.
-- [ ] Run and see red. Write the migration, run `make sqlc`, implement, and go green with race on `./internal/onboarding/`, `./internal/agui/` and, under `db_integration`, `./internal/db/` and `./internal/onboarding/`. Commit: `feat(profile): the operator's default channel for scheduled delivery`.
+- [x] `TestDefaultNotifyIsEmptyWithoutAProfile`: a nil store and an identity with no row both give `""`.
+- [x] `TestRenderProfileBlockNamesTheDefaultChannelAndWhereToChangeIt`. `Answers{Name: "A", DefaultNotify: "telegram", Vetoes: []string{"x"}}` gives a block that holds `Default channel for reminders and scheduled results: telegram` and the rule sentence, and whose last line inside the tag is still `Never do: x`. `TestRenderProfileBlockEmptyAnswersRenderNothing` stays green unchanged.
+- [x] `TestProfileDefaultNotifyIsValidated` (agui). A PUT with `"defaultNotify":"whatsapp"` is stored and echoed. `"sms"` gives 400. `""` is accepted.
+- [x] Run and see red. Write the migration, run `make sqlc`, implement, and go green with race on `./internal/onboarding/`, `./internal/agui/` and, under `db_integration`, `./internal/db/` and `./internal/onboarding/`. Commit: `feat(profile): the operator's default channel for scheduled delivery`.
 
 ### Task 2: `task` applies the default and names it
 

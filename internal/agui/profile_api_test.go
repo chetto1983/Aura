@@ -146,6 +146,38 @@ func TestProfilePutClearsFieldsAndTrims(t *testing.T) {
 	}
 }
 
+// The channel is a delivery route or not set: anything else would reach the task tool as a
+// default it cannot deliver to.
+func TestProfileDefaultNotifyIsValidated(t *testing.T) {
+	for route, want := range map[string]int{"whatsapp": http.StatusOK, " telegram ": http.StatusOK, "": http.StatusOK, "sms": http.StatusBadRequest} {
+		t.Run(route, func(t *testing.T) {
+			editor := &fakeProfileEditor{}
+			s := &Server{profiles: editor}
+			rr, r := profileReq(t, http.MethodPut, ProfileDoc{DefaultNotify: route}, "op-1")
+
+			s.handleProfilePut(rr, r)
+
+			if rr.Code != want {
+				t.Fatalf("status = %d, want %d: %s", rr.Code, want, rr.Body.String())
+			}
+			if want != http.StatusOK {
+				if len(editor.saved) != 0 {
+					t.Fatalf("invalid channel persisted: %+v", editor.saved)
+				}
+				return
+			}
+			stored := strings.TrimSpace(route)
+			if len(editor.saved) != 1 || editor.saved[0].DefaultNotify != stored {
+				t.Fatalf("stored %+v, want %q", editor.saved, stored)
+			}
+			var doc ProfileDoc
+			if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil || doc.DefaultNotify != stored {
+				t.Fatalf("echo = %q, %v; want %q", doc.DefaultNotify, err, stored)
+			}
+		})
+	}
+}
+
 // Everything here rides messages[1] on every turn, so an unbounded field is a permanent
 // per-turn token cost, not a storage question.
 func TestProfilePutRejectsOversizedInput(t *testing.T) {

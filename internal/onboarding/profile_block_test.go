@@ -107,3 +107,23 @@ func TestNilProfileStoreDegradesQuietly(t *testing.T) {
 		t.Errorf("Load on a nil store = %+v, %v, %v; want empty/false/nil", answers, ok, err)
 	}
 }
+
+// The channel is a setting the turn must know, and the model must send the operator to the
+// panel rather than file a rule about it as a memory. The vetoes still close the block.
+func TestRenderProfileBlockNamesTheDefaultChannelAndWhereToChangeIt(t *testing.T) {
+	t.Parallel()
+	block := RenderProfileBlock(Answers{Name: "A", DefaultNotify: "telegram", Vetoes: []string{"x"}})
+
+	for _, want := range []string{
+		"Default channel for reminders and scheduled results: telegram",
+		"Where reminders and scheduled results go is a setting, not a memory: when the operator states a rule for it, tell them to set it in the cockpit's Profile panel.",
+	} {
+		if !strings.Contains(block, want) {
+			t.Errorf("block lacks %q:\n%s", want, block)
+		}
+	}
+	lines := strings.Split(strings.TrimSuffix(block, "\n</operator_profile>"), "\n")
+	if last := lines[len(lines)-1]; last != "Never do: x" {
+		t.Errorf("last line inside the tag = %q, want the vetoes:\n%s", last, block)
+	}
+}

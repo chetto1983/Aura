@@ -21,6 +21,9 @@ import (
 // a later reader can strip it deterministically.
 const profileBlockTag = "operator_profile"
 
+const profileChannelRule = "Where reminders and scheduled results go is a setting, not a memory: " +
+	"when the operator states a rule for it, tell them to set it in the cockpit's Profile panel."
+
 // RenderProfileBlock renders the answers into the always-block, or "" when there is nothing
 // to say. Empty fields are omitted entirely: a line reading "Company: " teaches the model
 // that the operator has no company, which is not what an unanswered form means.
@@ -52,11 +55,21 @@ func RenderProfileBlock(a Answers) string {
 	add("Tone", a.TonePreference)
 	add("Response length", a.ResponseLength)
 	add("Custom instructions", a.CustomInstructions)
+	add("Default channel for reminders and scheduled results", a.DefaultNotify)
+
+	vetoes := joinList(a.Vetoes)
+	// The channel is a setting the panel owns. Without this line a rule the operator states
+	// in chat ("always send reminders on Telegram") is filed as a memory the task tool never
+	// reads. It rides every non-empty block, set or not, because the rule is as likely to be
+	// stated before the panel is ever opened.
+	if len(lines) > 0 || vetoes != "" {
+		lines = append(lines, profileChannelRule)
+	}
 
 	// Vetoes go LAST and under their own heading. They are the only entries here that are
 	// prohibitions rather than description, and burying them in a list of interests is how
 	// a hard rule reads as a preference.
-	if vetoes := joinList(a.Vetoes); vetoes != "" {
+	if vetoes != "" {
 		lines = append(lines, "Never do: "+vetoes)
 	}
 
