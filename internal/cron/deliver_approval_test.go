@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 // The tick wires the sweep by asserting this seam on the dispatcher (scheduler.go).
@@ -47,11 +49,11 @@ type fakeEnsurer struct {
 	tokenByTask  map[string]string
 	mintedByTask map[string]bool
 	err          error
-	calls        []struct{ taskID, convID, kind string }
+	calls        []struct{ taskID, convID, kind, identity string }
 }
 
-func (f *fakeEnsurer) EnsureApprovalPause(_ context.Context, taskID, conversationID, kind string) (string, bool, error) {
-	f.calls = append(f.calls, struct{ taskID, convID, kind string }{taskID, conversationID, kind})
+func (f *fakeEnsurer) EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (string, bool, error) {
+	f.calls = append(f.calls, struct{ taskID, convID, kind, identity string }{taskID, conversationID, kind, identityctx.IdentityID(ctx)})
 	if f.err != nil {
 		return "", false, f.err
 	}
@@ -250,6 +252,26 @@ func TestSweepApprovalRemindersReusedPauseNotPushed(t *testing.T) {
 	}
 	if !remindedContains(store.reminded, "reused-11") {
 		t.Fatalf("a reused pause must still be stamped, got %v", store.reminded)
+	}
+}
+
+// The pause and its conversation are owner-scoped (RLS fails closed): an ensure run without the
+// task's identity sees no pause, mints a second one and cannot find the conversation. Measured in
+// the 2026-11-11 model-in-the-loop run as "allocate resume turn seq: conversation not found".
+func TestSweepApprovalRemindersEnsureAsTheTasksOwner(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_APPROVAL_REMINDER_SEC", "3600")
+	t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", "0")
+	const owner = "11111111-1111-4111-8111-111111111111"
+	store := &fakeApprovalReminderStore{tasks: []Task{
+		{ID: "owned-1", Kind: "agent_job", IdentityID: owner, OriginConversationID: "conv-O"},
+	}}
+	ensurer := &fakeEnsurer{mintedByTask: map[string]bool{"owned-1": false}}
+	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: ensurer, ApprovalChannel: &fakeApprovalChannel{}})
+	if err := d.sweepApprovalReminders(context.Background()); err != nil {
+		t.Fatalf("sweepApprovalReminders: %v", err)
+	}
+	if len(ensurer.calls) != 1 || ensurer.calls[0].identity != owner {
+		t.Fatalf("ensure ran as %+v, want the task's owner %s", ensurer.calls, owner)
 	}
 }
 
