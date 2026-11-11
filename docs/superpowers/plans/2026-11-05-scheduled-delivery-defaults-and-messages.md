@@ -532,17 +532,17 @@ The changes, one per path:
 - `taskSchedule` refuses `--kind message` before it writes (decision 38): `aura task schedule: kind=message is scheduled from a conversation, where the operator reviews it`, exit `exitUsage`.
 - `taskApprove` calls `cron.New(pool).ApproveTask`, which wraps `cron.ErrTaskNotFound` when no row changed (`internal/cron/store_manage.go:103-116`). On `errors.Is(err, cron.ErrTaskNotFound)` it prints `aura task approve: %s is not awaiting approval (a scheduled message is approved from its message card)` and exits `exitUsage`.
 
-- [ ] `TestTheCLINeverSchedulesAMessage` (cmd/aura unit): `aura task schedule --kind message …` exits `exitUsage` with the refusal, and the store saw no insert.
-- [ ] `TestPauseTaskIDReadsOnlyAScheduledReview`: `{"type":"message_draft","draft_id":"d","task_id":"t"}` gives `("t", true)`. Without `task_id`, or with another type, it gives `false`.
-- [ ] `TestApproveTaskRefusesAMessageTask` (cron `db_integration`): it returns the not-awaiting error, and the row is still `pending_approval`.
-- [ ] `TestTheBoardSendsAMessageTaskToItsCard` (agui): approve answers 409 with that body, and the fake provider's `ApproveTask` was not called.
-- [ ] `TestTheScheduledTaskHookNeverActivatesAMessageTask` (cmd/aura `db_integration`). The hook gets `accept` and a `scheduled_task_approval` context naming a pending `message` task. It returns an error, and the task is still `pending_approval`.
-- [ ] `TestTheSweepNeverMintsABareApprovalForAMessage` (unit, fake lister and minter):
+- [x] `TestTheCLINeverSchedulesAMessage` (cmd/aura unit): `aura task schedule --kind message …` exits `exitUsage` with the refusal, and the store saw no insert.
+- [x] `TestPauseTaskIDReadsOnlyAScheduledReview`: `{"type":"message_draft","draft_id":"d","task_id":"t"}` gives `("t", true)`. Without `task_id`, or with another type, it gives `false`.
+- [x] `TestApproveTaskRefusesAMessageTask` (cron `db_integration`): it returns the not-awaiting error, and the row is still `pending_approval`.
+- [x] `TestTheBoardSendsAMessageTaskToItsCard` (agui): approve answers 409 with that body, and the fake provider's `ApproveTask` was not called.
+- [x] `TestTheScheduledTaskHookNeverActivatesAMessageTask` (cmd/aura `db_integration`). The hook gets `accept` and a `scheduled_task_approval` context naming a pending `message` task. It returns an error, and the task is still `pending_approval`.
+- [x] `TestTheSweepNeverMintsABareApprovalForAMessage` (unit, fake lister and minter):
   - a lister holding a matching review pause gives `(its token, false, nil)`;
   - an empty lister gives `errMessageReviewMissing`;
   - the minter is never called;
   - an `agent_job` still mints as before.
-- [ ] Red, `make sqlc`, implement, and delete the dead `cronTaskStore.ApproveScheduledTask`. `deadcode` stays clean: `make deadcode` in WSL. Green with race on `./internal/agui/`, `./internal/messagedrafts/` and `./cmd/aura/`, with `db_integration` on `./internal/cron/` and `./cmd/aura/`. Commit: `fix(scheduler): a message task is activated only by its draft review`.
+- [x] Red, `make sqlc`, implement, and delete the dead `cronTaskStore.ApproveScheduledTask`. `deadcode` stays clean: `make deadcode` in WSL. Green with race on `./internal/agui/`, `./internal/messagedrafts/` and `./cmd/aura/`, with `db_integration` on `./internal/cron/` and `./cmd/aura/`. Commit: `fix(scheduler): a message task is activated only by its draft review`.
 
 ### Task 8: A message task is cancelled, never edited
 

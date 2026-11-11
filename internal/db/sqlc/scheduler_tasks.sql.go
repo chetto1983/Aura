@@ -35,12 +35,13 @@ func (q *Queries) ActivateReviewedMessageTask(ctx context.Context, arg ActivateR
 const approveTaskRow = `-- name: ApproveTaskRow :execrows
 UPDATE aura.scheduler_tasks
 SET status = 'active', updated_at = now()
-WHERE id = $1 AND status = 'pending_approval'
+WHERE id = $1 AND status = 'pending_approval' AND kind <> 'message'
 `
 
 // Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 // `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
-// a task that is not awaiting approval (0).
+// a task that is not awaiting approval (0). A message task is approved only by its draft
+// review (spec 2026-11-05 Part 2), never here.
 func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, approveTaskRow, id)
 	if err != nil {

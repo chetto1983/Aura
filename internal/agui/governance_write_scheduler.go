@@ -57,8 +57,13 @@ func (s *Server) schedulerMutable(w http.ResponseWriter, r *http.Request) (cron.
 // handleSchedulerApprove serves POST /api/governance/scheduler/{id}/approve: flips a
 // pending_approval task to active (the cockpit parity of the on-channel HITL accept).
 func (s *Server) handleSchedulerApprove(w http.ResponseWriter, r *http.Request) {
-	_, id, ok := s.schedulerMutable(w, r)
+	task, id, ok := s.schedulerMutable(w, r)
 	if !ok {
+		return
+	}
+	// A message is approved by reviewing its text, which this route never shows.
+	if task.Kind == cron.KindMessage {
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "approve it from the message card"})
 		return
 	}
 	if err := s.governance.Scheduler.ApproveTask(r.Context(), id); err != nil {

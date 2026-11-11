@@ -9,11 +9,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
@@ -36,12 +38,12 @@ func (s *cronTaskStore) ApproveScheduledTaskInConversation(ctx context.Context, 
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET status = 'active', updated_at = now()
-		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval'`, taskID, conversationID)
+		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval' AND kind <> 'message'`, taskID, conversationID)
 	if err != nil {
 		return fmt.Errorf("approve scheduled task %s: %w", taskID, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("scheduled task %s is not awaiting approval in conversation %s", taskID, conversationID)
+		return fmt.Errorf("scheduled task %s is not awaiting approval in conversation %s (a scheduled message is approved from its message card)", taskID, conversationID)
 	}
 	return nil
 }
@@ -55,12 +57,12 @@ func (s *cronTaskStore) CancelScheduledTaskInConversation(ctx context.Context, t
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET status = 'cancelled', updated_at = now()
-		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval'`, taskID, conversationID)
+		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval' AND kind <> 'message'`, taskID, conversationID)
 	if err != nil {
 		return fmt.Errorf("cancel scheduled task %s: %w", taskID, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("scheduled task %s is not awaiting approval in conversation %s", taskID, conversationID)
+		return fmt.Errorf("scheduled task %s is not awaiting approval in conversation %s (a scheduled message is approved from its message card)", taskID, conversationID)
 	}
 	return nil
 }
@@ -149,6 +151,9 @@ func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, c
 	if err != nil {
 		return "", false, fmt.Errorf("ensure approval pause: list pending: %w", err)
 	}
+	if kind == string(cron.KindMessage) {
+		return messageReviewPause(pending, taskID)
+	}
 	for _, p := range pending {
 		if p.Kind != tools.KindApproval || len(p.ResumeContext) == 0 {
 			continue
@@ -172,6 +177,22 @@ func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, c
 		askuser.ActionCancel,
 	})
 	return token, true, err
+}
+
+// errMessageReviewMissing is a message task with no review pause on its conversation: a bare
+// Si/No would approve text the operator never read, so the sweep mints nothing for it.
+var errMessageReviewMissing = errors.New("the scheduled message has no review pause; it is approved only from its message card")
+
+// messageReviewPause is the review pause a message task's draft is waiting in. The sweep never
+// mints a scheduled_task_approval for a message (decision 12); minted is always false, so it
+// pushes nothing either: the review card already went out in the turn that scheduled it.
+func messageReviewPause(pending []askuser.Pending, taskID string) (string, bool, error) {
+	for _, p := range pending {
+		if id, ok := messagedrafts.PauseTaskID(p.ResumeContext); ok && id == taskID {
+			return p.Token, false, nil
+		}
+	}
+	return "", false, errMessageReviewMissing
 }
 
 // shortTaskID renders the first 8 chars of a task id for a bounded, secret-safe prompt (the

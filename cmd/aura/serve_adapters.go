@@ -285,28 +285,6 @@ func taskIdentity(ctx context.Context) (string, error) {
 	return identityID, nil
 }
 
-// ApproveScheduledTask is the only transition out of pending_approval (T-10-13): it
-// flips status to active so the gated task can fire.
-func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) error {
-	identityID, err := taskIdentity(ctx)
-	if err != nil {
-		return err
-	}
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE aura.scheduler_tasks
-		SET status = 'active', updated_at = now()
-		WHERE id = $1::uuid
-		  AND identity_id = $2
-		  AND status = 'pending_approval'`, id, identityID)
-	if err != nil {
-		return fmt.Errorf("approve task %s: %w", id, err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("task %s is not awaiting approval", id)
-	}
-	return nil
-}
-
 // --- skill tool wiring (live `skill` tool, 11-02; adapters in internal/skilladapters) ---
 
 // taskStorePool extracts the live pool from the task-store adapter (nil-safe): the

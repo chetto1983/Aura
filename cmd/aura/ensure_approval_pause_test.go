@@ -117,3 +117,26 @@ func TestEnsureApprovalPause_ListError(t *testing.T) {
 		t.Fatal("want the list-pending error to surface")
 	}
 }
+
+// Decision 12: a message is approved by reading it, so the sweep never mints a bare Si/No for
+// one. It finds the review pause the turn left, and pushes nothing (minted=false).
+func TestTheSweepNeverMintsABareApprovalForAMessage(t *testing.T) {
+	review := askuser.Pending{Token: "review-tok", Kind: tools.KindApproval,
+		ResumeContext: rawJSON(t, map[string]string{"type": "message_draft", "draft_id": "d", "task_id": "task-7"})}
+	minter := &recordingMinter{token: "fresh-tok"}
+
+	e := approvalPauseEnsurer{pauses: fakePauseLister{pending: []askuser.Pending{review}}, minter: minter}
+	if tok, minted, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "message"); err != nil || tok != "review-tok" || minted {
+		t.Fatalf("with its review = %q, %v, %v; want review-tok, false, nil", tok, minted, err)
+	}
+	e = approvalPauseEnsurer{pauses: fakePauseLister{}, minter: minter}
+	if _, _, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "message"); !errors.Is(err, errMessageReviewMissing) {
+		t.Fatalf("without its review = %v, want errMessageReviewMissing", err)
+	}
+	if minter.calls != 0 {
+		t.Fatalf("minted %d bare approvals for a message", minter.calls)
+	}
+	if _, minted, err := e.EnsureApprovalPause(context.Background(), "task-8", "conv-A", "agent_job"); err != nil || !minted || minter.calls != 1 {
+		t.Fatalf("agent_job = minted %v, %v, calls %d; want it minted as before", minted, err, minter.calls)
+	}
+}

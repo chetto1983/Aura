@@ -50,3 +50,19 @@ func TestMessageDraftTrustedOutboundTargetUsesRawBridgeIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestPauseTaskIDReadsOnlyAScheduledReview(t *testing.T) {
+	t.Parallel()
+	if id, ok := PauseTaskID(json.RawMessage(`{"type":"message_draft","draft_id":"d","task_id":"t"}`)); !ok || id != "t" {
+		t.Fatalf("scheduled review = %q, %v", id, ok)
+	}
+	for _, raw := range []string{
+		`{"type":"message_draft","draft_id":"d"}`,
+		`{"type":"scheduled_task_approval","task_id":"t"}`,
+		`not json`,
+	} {
+		if _, ok := PauseTaskID(json.RawMessage(raw)); ok {
+			t.Errorf("%s read as a scheduled review", raw)
+		}
+	}
+}
