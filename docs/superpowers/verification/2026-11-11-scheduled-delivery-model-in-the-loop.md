@@ -87,5 +87,9 @@ The method is the `aura-model-in-the-loop` skill:
 
 - `make quality` on `fa7adbdf4`: **passed**, covering deadcode, vet, build, file-size, the
   contracts, lint, test-race and vuln.
-- `bash scripts/coverage_docker.sh` on `f1d3a6af0`: see below.
-- Mutation of `internal/messagedrafts/store_scheduled.go` under `db_integration`: see below.
+- `bash scripts/coverage_docker.sh` on `f1d3a6af0`, against a disposable `aura_cov`: **passed**.
+  - Owned surface: 53,852/61,231 = **87.9%**, against a floor of 85%.
+  - The package-local coverage policy passed.
+- Mutation of `internal/messagedrafts/store_scheduled.go` under `db_integration`, against a
+  disposable database: **22/29 = 75.86%** killed, against a target of 70%.
+  - The 7 survivors are database-error returns, which only fault injection would reach.
