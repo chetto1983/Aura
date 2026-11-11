@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -42,7 +43,7 @@ import (
 // genuine nil interface (not an interface wrapping a nil pointer), so the pool-free
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
-func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string) *tools.TaskTool {
+func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry) *tools.TaskTool {
 	t := &tools.TaskTool{AlertThreshold: scoring.Risky, DeploymentZone: deploymentZone}
 	if ts != nil {
 		t.Store = ts
@@ -51,6 +52,7 @@ func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone strin
 		profiles := onboarding.NewProfileStore(ts.pool)
 		t.Timezones = profiles
 		t.Defaults = profiles
+		t.MessageDrafts = scheduledMessageDrafts{store: messagedrafts.NewStore(ts.pool), reg: reg}
 	}
 	return t
 }
@@ -158,6 +160,7 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 		IdentityID:           identityID,
 		OriginConversationID: in.OriginConversationID,
 		TelegramRecipients:   in.TelegramRecipients,
+		OriginToolCallID:     in.OriginToolCallID,
 	})
 	if err != nil {
 		return tools.ScheduledTask{}, err

@@ -202,7 +202,7 @@ func buildBaseRegistryWithHandles(
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{Location: tools.LocationOrUTC(cfg.Timezone)})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
-	reg.Register(newTaskTool(ts, newSchedulerNotifier(cfg, reg, taskStorePool(ts)), cfg.Timezone))
+	reg.Register(newTaskTool(ts, newSchedulerNotifier(cfg, reg, taskStorePool(ts)), cfg.Timezone, reg))
 	reg.Register(newBoardTool(taskStorePool(ts)))
 	// The watch's service needs the scheduler, the PIM client and the auth service, all of which
 	// serve boot builds later: serve_pimwatch.go binds it, and every other path has no watch.

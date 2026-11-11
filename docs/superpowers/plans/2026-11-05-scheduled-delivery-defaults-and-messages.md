@@ -438,7 +438,7 @@ The schema enum, the payload description and the `Description` sentence for `mes
   - `task schedule: a message needs channel whatsapp or email, a recipient and a text.`
   - `errMessageNeedsReview`: `task schedule: a message to someone else is scheduled only in a conversation where the operator reviews it, and no review could be prepared here. Nothing was scheduled; tell the operator.`
 
-- [ ] Tools tests, with fakes for the store and the drafts. They call `hostReviewMessage` directly, since `HostReview` does not route it yet:
+- [x] Tools tests, with fakes for the store and the drafts. They call `hostReviewMessage` directly, since `HostReview` does not route it yet:
   - `TestMessageIsNotOfferedYet`: `HostReview` with `kind=message` gives `(nil, false)`, `Execute` gives `errMessageNeedsReview`, `Spec()` names no `message` kind, and nothing is created.
   - `TestAMessageIsScheduledPendingWithItsDraftAndAReviewPause`. Call `hostReviewMessage(ctx, "conv-1", "call-1", …)` with `{"channel":"whatsapp","recipient":"10000000000","text":"Ciao"}`, `at` = now + 2h and `notify` `stdout`. Expected:
     - the pause has `ToolCallID == "call-1"` and `Kind == "approval"`;
@@ -451,16 +451,16 @@ The schema enum, the payload description and the `Description` sentence for `mes
   - `TestAMessageWithNoChannelReturnsTheChoiceFirst`: with no notify and no default, `hostReviewMessage` gives `(nil, false)`.
   - `TestTheSameCallParkedTwiceCreatesOneTask`: a second `hostReviewMessage` with `call-1` creates nothing, and its pause names the same task and draft.
   - `TestAMessageWithoutTextIsNeverParked`: an empty `text` gives `(nil, false)` and the `validateSchedule` error (decision 32).
-- [ ] Agent tests:
+- [x] Agent tests:
   - `TestAHostReviewedCallParksWithoutExecuting`. With a responder, a fake `HostReviewer` tool gives one pause event with `ToolCallID == call.ID` and `OriginalToolName == "task"`, and its `Execute` count is 0.
   - `TestAHostReviewedCallWithoutAResponderRunsNormally`. With no responder, and with a responder under `tools.WithDelegatedDispatch` (`internal/agent/tools/result.go:176`), `HostReview` is not called and `Execute` is called once.
   - `TestAPolicyDeniedTaskIsNeverParked`: with the identity's policy `deny` on `task`, `HostReview` is not called, and the call reaches `execTool` and is refused by the gateway.
-- [ ] Gateway: `TestPolicyDeniesReadsTheIdentitysPolicy`: `deny` gives true; `ask`, `allow` and no policy store give false.
-- [ ] cmd/aura:
+- [x] Gateway: `TestPolicyDeniesReadsTheIdentitysPolicy`: `deny` gives true; `ask`, `allow` and no policy store give false.
+- [x] cmd/aura:
   - `TestNoMountedWhatsAppRefusesTheScheduledDraft` (unit): an empty registry gives an error holding `WhatsApp is not connected`.
   - `TestTheRegisteredTaskToolIsHostReviewed` (unit, beside `serve_notify_test.go:137`): `newTaskTool(newCronTaskStore(nil, nil), nil, "", tools.NewRegistry())` has a non-nil `MessageDrafts`, and the value registered under `task` satisfies `tools.HostReviewer`. Without a store, `MessageDrafts` is nil.
   - `TestAScheduledMessageDraftIsStoredForItsTask` (`db_integration`). With a `message` task row and a fake trusted tool `whatsapp__send_message` registered, `Store.Get` gives back `ScheduledTaskID`, `SendAt`, `ExpiresAt == SendAt + 15m` and `RegisteredToolName "whatsapp__send_message"`.
-- [ ] Red, implement, green with race on `./internal/agent/tools/`, `./internal/gateway/`, `./internal/agent/` and `./cmd/aura/`, and with `db_integration` on `./cmd/aura/ -run ScheduledMessage`. Check that `task.go` is still under 600 lines. Commit: `feat(task): a message can be parked behind a host-authored review`.
+- [x] Red, implement, green with race on `./internal/agent/tools/`, `./internal/gateway/`, `./internal/agent/` and `./cmd/aura/`, and with `db_integration` on `./cmd/aura/ -run ScheduledMessage`. Check that `task.go` is still under 600 lines. Commit: `feat(task): a message can be parked behind a host-authored review`.
 
 ### Task 6: The review approves or declines a scheduled message
 
