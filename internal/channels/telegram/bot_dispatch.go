@@ -261,6 +261,11 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
 			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
+		if out.rerender != "" && c.Bot() != nil {
+			if _, err := c.Bot().Edit(cb.Message, out.rerender, out.rerenderMarkup); err != nil {
+				slog.Warn("telegram review: card refresh failed", "err", err)
+			}
+		}
 		if !out.submitted {
 			return nil
 		}

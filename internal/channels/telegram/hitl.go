@@ -15,11 +15,13 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
@@ -30,6 +32,11 @@ import (
 type resumeRunner interface {
 	PendingFor(ctx context.Context, convID string) ([]askuser.Pending, error)
 	SubmitAnswer(ctx context.Context, token string, resp runner.ResponseInput) (runner.ResolveDirective, error)
+	// A message review is resolved through its draft, never SubmitAnswer
+	// (hitl_message_draft.go).
+	ListMessageDrafts(ctx context.Context, conversationID string) ([]messagedrafts.Draft, error)
+	ResolveMessageDraft(ctx context.Context, draftID, action string, overrides json.RawMessage) (runner.MessageDraftResolution, error)
+	Location(ctx context.Context) *time.Location
 }
 
 // resumeFunc drives a continuation turn (runner.Turn(ctx, convID, nil)) after the
@@ -70,6 +77,9 @@ type callbackOutcome struct {
 	// outcome is the runner's ResolveDirective verdict — the channel renders it, it never
 	// re-derives it (Phase A: one resolver, transports only render).
 	outcome runner.ResolveOutcome
+	// rerender, when set, replaces the pressed card: a review whose state moved under it.
+	rerender       string
+	rerenderMarkup *tele.ReplyMarkup
 }
 
 // newHitl builds the HITL surface over the Runner pause backend + the resume
@@ -94,6 +104,13 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 	}
 	p := pending[0]
 	to := tele.ChatID(chatID)
+	if messagedrafts.IsReviewPause(p.ResumeContext) {
+		draft, ok := h.reviewDraft(ctx, convID, p)
+		if !ok {
+			return nil
+		}
+		return h.send(bot, to, messageReviewText(draft, h.runner.Location(ctx)), messageReviewMarkup(p.Token, draft))
+	}
 	switch p.Kind {
 	case "approval":
 		question := localizedApprovalQuestion(p)
@@ -143,6 +160,20 @@ func (h *hitl) handleCallbackResult(
 	out := callbackOutcome{action: action}
 	// Dettagli only reveals; resolving here would answer a pause the operator has not decided on.
 	if action == actionDetails {
+		return out
+	}
+	if p, review := h.reviewPause(ctx, convID, token); review {
+		out = h.resolveReview(ctx, convID, p, action)
+		if !out.submitted {
+			return out
+		}
+		if afterSubmit != nil {
+			afterSubmit(out)
+		}
+		if out.outcome == runner.OutcomeContinue && h.resume != nil {
+			h.resume(ctx, convID)
+			out.resumed = true
+		}
 		return out
 	}
 	if action == askuser.ActionAccept {
@@ -235,6 +266,11 @@ func localizedApprovalQuestion(p askuser.Pending) string {
 func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resumed bool, err error) {
 	pending, perr := h.runner.PendingFor(ctx, convID)
 	if perr != nil || len(pending) == 0 {
+		return false, nil
+	}
+	// A typed reply never answers a review: the text is approved as written, or edited in the
+	// cockpit. The caller re-renders the card.
+	if messagedrafts.IsReviewPause(pending[0].ResumeContext) {
 		return false, nil
 	}
 	return h.submit(ctx, convID, pending[0].Token, askuser.ActionAccept, text)

@@ -645,16 +645,16 @@ Per cambiare il testo apri questa conversazione nel cockpit.
 ```
 A non-pending card shows the title line and then the status: `approved` `Approvato: partirà all'ora prevista.`, `declined` `Rifiutato: non parte nulla.`, `expired` `Scaduto: non è partito nulla.`, `sent` `Inviato.`, `failed` `Non inviato.`, `uncertain` `Consegna incerta: non verrà ritentato.`
 
-- [ ] `TestAScheduledReviewRendersTheMessageAndTheTime`. A WhatsApp draft has recipient `10000000000`, text `Ciao` and `SendAt` 2026-11-06T07:25Z, with the location `Europe/Rome`. The text holds `A: 10000000000`, `Quando: 06/11 08:25 (Europe/Rome)`, `Testo:\nCiao` and both closing sentences. The keyboard is `Approva` and `Rifiuta`.
-- [ ] `TestAnImmediateReviewHasNoTimeLine`: no `Quando:`.
-- [ ] `TestApprovaResolvesTheDraftNotTheAnswer`: the fake runner saw `ResolveMessageDraft(draftID, "send", nil)` and no `SubmitAnswer`. Its `OutcomeContinue` drove `resume` once.
-- [ ] `TestRifiutaDeclinesTheDraft`: `ResolveMessageDraft(draftID, "decline", nil)`.
-- [ ] `TestTelegramApprovaSendsUnderAStrictGateway` (runner `db_integration`, with a strict gateway and a real operation registry, the shape of `message_draft_resume_integration_test.go`): Approva on an immediate draft dispatches once and the draft is `sent`, not `failed` with "operation context missing".
-- [ ] `TestAButtonFromAnotherChatIsIgnored`: a callback whose token belongs to another chat's pause resolves nothing.
-- [ ] `TestChiudiOnADispatchingCardRerendersIt`.
-- [ ] `TestATypedReplyNeverAnswersAReview`: no `SubmitAnswer`, and the card is sent again.
-- [ ] `TestALongMessageIsCutWithAPointerToTheCockpit`: a text of 5000 runes gives a card of at most 4096 runes that holds `… (testo completo nel cockpit)`, and Approva still resolves.
-- [ ] Red, implement, green with race on `./internal/channels/telegram/`, `./internal/runner/` and `./internal/messagedrafts/`, and with `db_integration` on `./internal/runner/`. `hitl.go` stays under 600 lines. Commit: `feat(telegram): review a message to someone else from a read-only card`.
+- [x] `TestAScheduledReviewRendersTheMessageAndTheTime`. A WhatsApp draft has recipient `10000000000`, text `Ciao` and `SendAt` 2026-11-06T07:25Z, with the location `Europe/Rome`. The text holds `A: 10000000000`, `Quando: 06/11 08:25 (Europe/Rome)`, `Testo:\nCiao` and both closing sentences. The keyboard is `Approva` and `Rifiuta`.
+- [x] `TestAnImmediateReviewHasNoTimeLine`: no `Quando:`.
+- [x] `TestApprovaResolvesTheDraftNotTheAnswer`: the fake runner saw `ResolveMessageDraft(draftID, "send", nil)` and no `SubmitAnswer`. Its `OutcomeContinue` drove `resume` once.
+- [x] `TestRifiutaDeclinesTheDraft`: `ResolveMessageDraft(draftID, "decline", nil)`.
+- [ ] `TestTelegramApprovaSendsUnderAStrictGateway` (runner `db_integration`, with a strict gateway and a real operation registry, the shape of `message_draft_resume_integration_test.go`): Approva on an immediate draft dispatches once and the draft is `sent`, not `failed` with "operation context missing". *(Landed as `TestTelegramApprovaRootsAnOperationTheSendAccepts`: the operation Telegram roots is one the reviewed send derives from, at the depth of `TestExecuteReviewedMessageDispatchesUnderTheResolveOperation`. The strict gateway with a live operation registry is not built here; Task 16 measures it live.)*
+- [x] `TestAButtonFromAnotherChatIsIgnored`: a callback whose token belongs to another chat's pause resolves nothing.
+- [x] `TestChiudiOnADispatchingCardRerendersIt`.
+- [x] `TestATypedReplyNeverAnswersAReview`: no `SubmitAnswer`, and the card is sent again.
+- [x] `TestALongMessageIsCutWithAPointerToTheCockpit`: a text of 5000 runes gives a card of at most 4096 runes that holds `… (testo completo nel cockpit)`, and Approva still resolves.
+- [x] Red, implement, green with race on `./internal/channels/telegram/`, `./internal/runner/` and `./internal/messagedrafts/`, and with `db_integration` on `./internal/runner/`. `hitl.go` stays under 600 lines. Commit: `feat(telegram): review a message to someone else from a read-only card`.
 
 ### Task 11: At its time the message goes out once, with no model
 
