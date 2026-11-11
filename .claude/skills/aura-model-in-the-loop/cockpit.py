@@ -29,6 +29,14 @@ def load_state():
 state = load_state()
 
 
+def save_state():
+    # It holds the operator's session cookie: owner-only, like any credential file.
+    fd = os.open(STATE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f)
+
+
 def call(method, path, body=None, stream=False):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(BASE + path, data=data, method=method)
@@ -48,8 +56,7 @@ def call(method, path, body=None, stream=False):
     for header in res.headers.get_all("Set-Cookie") or []:
         name, _, rest = header.partition("=")
         state["cookies"][name.strip()] = rest.split(";", 1)[0]
-    with open(STATE, "w") as f:
-        json.dump(state, f)
+    save_state()
     if stream:
         for line in res:
             sys.stdout.write(line.decode())
