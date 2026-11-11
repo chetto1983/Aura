@@ -127,3 +127,13 @@ func TestRenderProfileBlockNamesTheDefaultChannelAndWhereToChangeIt(t *testing.T
 		t.Errorf("last line inside the tag = %q, want the vetoes:\n%s", last, block)
 	}
 }
+
+// A block that holds only vetoes describes nothing about the operator, so it gets no
+// channel rule: the rule rides the descriptive part, as the plan specifies.
+func TestRenderProfileBlockVetoesAloneCarryNoChannelRule(t *testing.T) {
+	t.Parallel()
+	block := RenderProfileBlock(Answers{Vetoes: []string{"x"}})
+	if block != "<operator_profile>\nNever do: x\n</operator_profile>" {
+		t.Fatalf("veto-only block = %q", block)
+	}
+}
