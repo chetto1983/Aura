@@ -4,8 +4,9 @@ Proposed on 2026-10-17. The operator asked for it ("Sì, scrivi la spec") after 
 native image for its memory ("Io passerei a native: è più lenta ma di poco, ma consuma molta meno
 RAM").
 
-**Status (2026-10-17): parked until ArcadeDB 26.11.1 ships.** The operator: "ora aspettiamo che
-esca la nuova release di ArcadeDB nelle prossime 2 settimane". It is not yet approved.
+**Status (2026-11-10): 26.11.1 has shipped; the spec waits for the operator's answer below, and is
+not yet approved.** Parked on 2026-10-17 until the release, by the operator: "ora aspettiamo che
+esca la nuova release di ArcadeDB nelle prossime 2 settimane".
 - **One question is open, the operator's to answer.** How the Aura-built ArcadeDB image (phase
   B) reaches an appliance.
   - **Proposed:** published like the other repo-built images (`AURA_ARCADEDB_IMAGE`,
@@ -22,9 +23,14 @@ esca la nuova release di ArcadeDB nelle prossime 2 settimane". It is not yet app
   ([verification](../verification/2026-10-23-cocoindex-neo4j-connector-and-arcadedb-26-10-2.md)),
   with the floor still at 26.10.1. Where this spec starts from 26.10.1 (phase A's revert,
   acceptance 8), it now starts from 26.10.2.
+- **2026-11-10: 26.11.1 shipped, and the JVM pin moved to it**
+  ([verification](../verification/2026-11-10-arcadedb-26-11-1-jvm-pin.md)), with the floor still
+  at 26.10.1. Where this spec starts from 26.10.2, it now starts from 26.11.1. The steps "On the
+  release, before the plan" above are still to do, the operator's question first.
 
-**This spec waits for ArcadeDB 26.11.1.**
-- Roberto Franchini said on 2026-10-17 that it ships "un paio di settimane" later.
+**This spec was written before ArcadeDB 26.11.1.**
+- Roberto Franchini said on 2026-10-17 that it ships "un paio di settimane" later. Its image was
+  published on 2026-11-04.
 - Nothing here lands on a snapshot. Every number below is from `26.11.1-SNAPSHOT` at `15958b48f`,
   and acceptance re-measures it on the release.
 

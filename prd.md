@@ -1545,6 +1545,35 @@ What this does not show:
 
 The native image stays with the 2026-10-17 spec, which waits for 26.11.1.
 
+ArcadeDB 26.11.1 on the JVM, 2026-11-10
+([verification](docs/superpowers/verification/2026-11-10-arcadedb-26-11-1-jvm-pin.md)).
+- **The pin and the floor.** The compose pin moves from 26.10.2 to 26.11.1. The floor in
+  `TenantClients.For` stays 26.10.1, because no statement needs 26.11.1.
+- **Aura's live tiers.** On the two release tarballs, `internal/arcadedb` and `internal/docfields`
+  give 1500 passes and the same 5 embedder skips on each; `cmd/arcadedb-mcp` gives the same results
+  test by test, its embedder tests failing or skipping alike for want of an embedder. 0 `SEVERE`
+  lines on either server.
+- **Data from 26.10.2.** A memory database written by 26.10.2 opens on 26.11.1 with the same record
+  counts, top-10 vector neighbours and distances on both vector indexes, full-text counts, index
+  validity and `DATETIME` values. The live tier then passes on it unchanged.
+- **The upgrade is one-way once 26.11.1 writes.** It stores float arrays under a type 26.10.2
+  cannot read (`SerializationException ... unknown type 36`). Opened again by 26.10.2, those
+  records still count but drop out of vector recall with no error to the caller. Going back means
+  restoring the last backup 26.10.2 took (hourly, `docker/arcadedb/backup.json`), and losing what
+  was written since.
+- **The image.** Same user (UID and GID 1000). It drops brotli-libs, libexpat, musl and
+  guava-android. netty-handler 4.1.136.Final is still shaded into `arcadedb-ha-raft`, so its
+  `.trivyignore.yaml` entry stays.
+
+What this does not show:
+- the Docker image's runtime, the embedder tests and the agent E2E, left to CI and the lab VM;
+- the lab VM's data, or the document schema of `services/ingest`, opened by 26.11.1;
+- whether #11040, closed upstream on 2026-11-02, lets `tenantOpenSlots` go;
+- any load.
+
+The native image and the `where` filter stay with the 2026-10-17 spec, whose question on how the
+image reaches an appliance is still the operator's.
+
 ## 11. Documents and media
 
 Measured 2026-10-21 on a disposable database in the running ArcadeDB 26.10.1:
