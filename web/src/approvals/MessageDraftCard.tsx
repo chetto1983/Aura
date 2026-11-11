@@ -40,7 +40,7 @@ export interface MessageDraftCardProps {
 }
 
 export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const args = draft.arguments;
   const [to, setTo] = useState(addresses(args.to).join(', '));
   const [cc, setCc] = useState(addresses(args.cc).join(', '));
@@ -55,6 +55,12 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
   const multipart = value(args.bodyFormat).toLowerCase() === 'multipart';
   const editable = draft.status === 'pending';
   const destination = email ? splitAddresses(to).join(', ') : recipient.trim();
+  const sendAt =
+    draft.send_at === undefined
+      ? undefined
+      : new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }).format(
+          new Date(draft.send_at),
+        );
 
   async function resolve(input: ResolveMessageDraft) {
     setError('');
@@ -239,6 +245,11 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
               )}
             </>
           )}
+          {sendAt !== undefined && (
+            <p className="text-xs font-medium text-text">
+              {t('messageDraft.sendAt', { time: sendAt })}
+            </p>
+          )}
           <p className="text-xs text-text-muted">{t('messageDraft.sendTo', { destination })}</p>
           <div className="flex flex-wrap justify-end gap-2">
             <Button
@@ -250,7 +261,11 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
               {t('messageDraft.decline')}
             </Button>
             <Button type="submit" disabled={busy || destination.length === 0}>
-              {busy ? t('messageDraft.sending') : t('messageDraft.send')}
+              {busy
+                ? t('messageDraft.sending')
+                : sendAt !== undefined
+                  ? t('messageDraft.approveScheduled')
+                  : t('messageDraft.send')}
             </Button>
           </div>
         </form>

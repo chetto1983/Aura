@@ -85,3 +85,22 @@ func TestMessageDraftAPIRejectsInvalidOrForeignRequests(t *testing.T) {
 		}
 	}
 }
+
+// The card says when a scheduled message goes out; an immediate one has no time to show.
+func TestAScheduledDraftCarriesItsSendTime(t *testing.T) {
+	sendAt := time.Date(2030, 1, 2, 9, 30, 0, 0, time.UTC)
+	draft := messagedrafts.Draft{
+		ID: "d", Target: messagedrafts.Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		Status: messagedrafts.StatusPending, ExpiresAt: sendAt.Add(15 * time.Minute), SendAt: sendAt,
+		OriginalArgs: json.RawMessage(`{"recipient":"10000000000","message":"hi"}`),
+	}
+	raw, err := json.Marshal(projectMessageDraft(draft))
+	if err != nil || !strings.Contains(string(raw), `"send_at":"2030-01-02T09:30:00Z"`) {
+		t.Fatalf("scheduled projection = %s, %v", raw, err)
+	}
+	draft.SendAt = time.Time{}
+	raw, _ = json.Marshal(projectMessageDraft(draft))
+	if strings.Contains(string(raw), "send_at") {
+		t.Fatalf("immediate projection = %s, want no send_at", raw)
+	}
+}
