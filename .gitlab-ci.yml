@@ -15,7 +15,7 @@ default:
   tags: [aura-ci]
 
 quality:
-  image: golang:1.27.3-bookworm
+  image: golang:1.27.4-bookworm
   timeout: 60m
   variables:
     GOPATH: $CI_PROJECT_DIR/.go
@@ -45,7 +45,7 @@ python-lint:
 # The updater, its consent channel and image homes, the publisher and the
 # installer: what an appliance runs as root, driven against stubs, as ci.yml does.
 appliance-shell:
-  image: golang:1.27.3-bookworm
+  image: golang:1.27.4-bookworm
   timeout: 15m
   before_script:
     # install_lib_test.sh merges the compose overlays with `docker compose config`, which
