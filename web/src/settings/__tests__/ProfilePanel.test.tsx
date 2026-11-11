@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n';
+import { chooseOption, shownOption } from '../../test/chooseOption';
 import { ProfilePanel } from '../ProfilePanel';
 import type { ProfileDoc } from '../profileApi';
 
@@ -10,15 +11,16 @@ import type { ProfileDoc } from '../profileApi';
 
 function storedProfile(): ProfileDoc {
   return {
-    name: 'Davide',
+    name: 'Ada',
     role: 'programmatore',
     company: 'Aura',
-    location: 'Piacenza',
+    location: 'Example Town',
     timezone: 'Europe/Rome',
     lang: 'it',
     tonePreference: 'diretto',
     responseLength: 'breve',
     customInstructions: 'cita le fonti',
+    defaultNotify: 'telegram',
     expertise: ['Go', 'Postgres'],
     stack: [],
     projects: [],
@@ -49,11 +51,11 @@ function stubProfileFetch(initial: ProfileDoc | { readonly status: number }) {
   return put;
 }
 
-// firstPut reads the body of the first PUT. The index access is guarded here once rather
-// than asserted at four call sites.
-function firstPut(put: ReturnType<typeof vi.fn>): ProfileDoc {
-  const call = put.mock.calls[0];
-  if (call === undefined) throw new Error('no PUT was sent');
+// sentProfile reads the body of a PUT, the first by default. The index access is guarded here
+// once rather than asserted at every call site.
+function sentProfile(put: ReturnType<typeof vi.fn>, index = 0): ProfileDoc {
+  const call = put.mock.calls[index];
+  if (call === undefined) throw new Error(`PUT ${String(index)} was not sent`);
   return call[0] as ProfileDoc;
 }
 
@@ -66,7 +68,7 @@ describe('ProfilePanel', () => {
     stubProfileFetch(storedProfile());
     render(<ProfilePanel />);
 
-    expect(await screen.findByDisplayValue('Davide')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Ada')).toBeTruthy();
     expect(screen.getByDisplayValue('Europe/Rome')).toBeTruthy();
     // The lists arrive as one comma-separated line each.
     expect(screen.getByDisplayValue('Go, Postgres')).toBeTruthy();
@@ -87,10 +89,10 @@ describe('ProfilePanel', () => {
     await waitFor(() => {
       expect(put).toHaveBeenCalledTimes(1);
     });
-    const sent = firstPut(put);
+    const sent = sentProfile(put);
     expect(sent.company).toBe('');
     expect(sent.vetoes).toEqual([]);
-    expect(sent.name).toBe('Davide');
+    expect(sent.name).toBe('Ada');
     expect(await screen.findByText('Profile saved.')).toBeTruthy();
   });
 
@@ -105,7 +107,7 @@ describe('ProfilePanel', () => {
     await waitFor(() => {
       expect(put).toHaveBeenCalledTimes(1);
     });
-    expect(firstPut(put).expertise).toEqual(['Go', 'ArcadeDB']);
+    expect(sentProfile(put).expertise).toEqual(['Go', 'ArcadeDB']);
   });
 
   it.each([
@@ -139,9 +141,32 @@ describe('ProfilePanel', () => {
       await waitFor(() => {
         expect(put).toHaveBeenCalledTimes(1);
       });
-      expect(firstPut(put)[field]).toEqual(want);
+      expect(sentProfile(put)[field]).toEqual(want);
     },
   );
+
+  it('saves the default channel, and "Ask me every time" as empty', async () => {
+    const put = stubProfileFetch(storedProfile());
+    render(<ProfilePanel />);
+    const label = 'Channel for reminders and scheduled results';
+
+    await screen.findByDisplayValue('Ada');
+    expect(shownOption(label)).toBe('Telegram');
+
+    await chooseOption(label, 'Ask me every time');
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+    await waitFor(() => {
+      expect(put).toHaveBeenCalledTimes(1);
+    });
+    expect(sentProfile(put).defaultNotify).toBe('');
+
+    await chooseOption(label, 'WhatsApp');
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+    await waitFor(() => {
+      expect(put).toHaveBeenCalledTimes(2);
+    });
+    expect(sentProfile(put, 1).defaultNotify).toBe('whatsapp');
+  });
 
   it('offers a retry when the profile cannot be loaded', async () => {
     stubProfileFetch({ status: 502 });

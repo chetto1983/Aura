@@ -270,9 +270,9 @@ Copy:
 - en: field `Channel for reminders and scheduled results`; hint `Used when you do not name a channel. Aura says which channel it used.`; options `Ask me every time`, `Telegram`, `WhatsApp`, `Email`, `The conversation it was scheduled from`, `No notification`.
 - it: field `Canale per promemoria e risultati pianificati`; hint `Si usa quando non indichi un canale. Aura dice quale ha usato.`; options `Chiedimi ogni volta`, `Telegram`, `WhatsApp`, `Email`, `La conversazione da cui è stato pianificato`, `Nessuna notifica`.
 
-- [ ] Vitest `it('saves the default channel, and "Ask me every time" as empty')`. Load `defaultNotify: 'telegram'`, and the select shows `Telegram`. Choose `Ask me every time` and save: `firstPut(put).defaultNotify === ''`. Choose `WhatsApp` and save: the next PUT carries `'whatsapp'`.
-- [ ] Fix on touch: `storedProfile()` uses a real first name and town. Replace them with `Ada` and `Example Town`.
-- [ ] Red, implement, green: `npx vitest run src/settings/__tests__/ProfilePanel.test.tsx`, then the web commands of Global Constraints (the i18n tests catch a key missing in it or en). Commit: `feat(cockpit): set the default channel in the Profile panel`.
+- [x] Vitest `it('saves the default channel, and "Ask me every time" as empty')`. Load `defaultNotify: 'telegram'`, and the select shows `Telegram`. Choose `Ask me every time` and save: `firstPut(put).defaultNotify === ''`. Choose `WhatsApp` and save: the next PUT carries `'whatsapp'`.
+- [x] Fix on touch: `storedProfile()` uses a real first name and town. Replace them with `Ada` and `Example Town`.
+- [x] Red, implement, green: `npx vitest run src/settings/__tests__/ProfilePanel.test.tsx`, then the web commands of Global Constraints (the i18n tests catch a key missing in it or en). Commit: `feat(cockpit): set the default channel in the Profile panel`.
 
 ## Part 2: the `message` task
 

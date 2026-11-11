@@ -1,3 +1,5 @@
+import { profileDefaultNotifyEn, profileDefaultNotifyIt } from './resources.profileDefaultNotify';
+
 export const settingsEn = {
   settings: {
     rail: {
@@ -523,13 +525,16 @@ export const profileEn = {
       people: 'People',
       customInstructions: 'Custom instructions',
       vetoes: 'Never do',
+      defaultNotify: 'Channel for reminders and scheduled results',
     },
     hints: {
       list: 'Comma-separated.',
       customInstructions: 'A sentence or two Aura should follow in every conversation.',
       vetoes:
         'Hard rules, comma-separated. These are prohibitions, not preferences — Aura is told them on every turn.',
+      defaultNotify: 'Used when you do not name a channel. Aura says which channel it used.',
     },
+    defaultNotify: profileDefaultNotifyEn,
     actions: {
       save: 'Save profile',
     },
@@ -562,13 +567,16 @@ export const profileIt = {
       people: 'Persone',
       customInstructions: 'Istruzioni personali',
       vetoes: 'Non fare mai',
+      defaultNotify: 'Canale per promemoria e risultati pianificati',
     },
     hints: {
       list: 'Separati da virgola.',
       customInstructions: 'Una o due frasi che Aura deve seguire in ogni conversazione.',
       vetoes:
         'Regole dure, separate da virgola. Sono divieti, non preferenze — Aura le legge a ogni turno.',
+      defaultNotify: 'Si usa quando non indichi un canale. Aura dice quale ha usato.',
     },
+    defaultNotify: profileDefaultNotifyIt,
     actions: {
       save: 'Salva profilo',
     },
