@@ -116,6 +116,34 @@ func (q *Queries) GetPausedStateByTokenForIdentity(ctx context.Context, arg GetP
 	return i, err
 }
 
+const hasAcceptedTaskApprovalForIdentity = `-- name: HasAcceptedTaskApprovalForIdentity :one
+SELECT EXISTS (
+    SELECT 1 FROM aura.paused_states
+    WHERE conversation_id = $1
+      AND identity_id = $2
+      AND resumed_at IS NOT NULL
+      AND resumed_answer->>'action' = 'accept'
+      AND resume_context->>'type' IN ('scheduled_task_approval', 'message_draft')
+      AND resume_context->>'task_id' = $3::text
+)::boolean AS accepted
+`
+
+type HasAcceptedTaskApprovalForIdentityParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	TaskID         string      `json:"task_id"`
+}
+
+// Whether the operator already accepted the approval of a task in this conversation: an approval
+// in flight that the hook has not yet turned into an active task (decision 36). Owner-scoped like
+// ListDeclinedGatewayToolCallIDsForIdentity.
+func (q *Queries) HasAcceptedTaskApprovalForIdentity(ctx context.Context, arg HasAcceptedTaskApprovalForIdentityParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAcceptedTaskApprovalForIdentity, arg.ConversationID, arg.IdentityID, arg.TaskID)
+	var accepted bool
+	err := row.Scan(&accepted)
+	return accepted, err
+}
+
 const insertPausedState = `-- name: InsertPausedState :exec
 INSERT INTO aura.paused_states (
     token, conversation_id, kind, question, options, priority,

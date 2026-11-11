@@ -245,6 +245,8 @@ type Querier interface {
 	// Every statement in this file names the identity as well as running under it: RLS is the
 	// backstop, not the filter.
 	EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.UUID) error
+	// The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
+	ExpireLapsedApproval(ctx context.Context, id pgtype.UUID) (int64, error)
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	// A scheduled draft whose time came unreviewed, or whose approval outlived its review.
 	ExpireScheduledMessageDraft(ctx context.Context, arg ExpireScheduledMessageDraftParams) (AuraMessageDrafts, error)
@@ -355,6 +357,10 @@ type Querier interface {
 	// Re-granting the same pair replaces the permission bits, which is what "share again with
 	// edit this time" means. created_at is left alone: it records when the share began.
 	GrantResourceToIdentity(ctx context.Context, arg GrantResourceToIdentityParams) error
+	// Whether the operator already accepted the approval of a task in this conversation: an approval
+	// in flight that the hook has not yet turned into an active task (decision 36). Owner-scoped like
+	// ListDeclinedGatewayToolCallIDsForIdentity.
+	HasAcceptedTaskApprovalForIdentity(ctx context.Context, arg HasAcceptedTaskApprovalForIdentityParams) (bool, error)
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HasGatewayApprovalGrant(ctx context.Context, arg HasGatewayApprovalGrantParams) (bool, error)
 	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
@@ -546,6 +552,9 @@ type Querier interface {
 	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
+	// A one-shot whose time passed while it waited for approval (spec 2026-11-05 Part 3, items 5-6).
+	// No age floor: a task stuck before this existed is taken on the first pass.
+	ListLapsedApprovals(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	// One identity's tasks of a kind that still fire or could be resumed.
 	ListLiveTasksOfKind(ctx context.Context, arg ListLiveTasksOfKindParams) ([]AuraSchedulerTasks, error)
 	ListMCPProfiles(ctx context.Context) ([]AuraMcpProfile, error)

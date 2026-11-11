@@ -58,6 +58,11 @@ type approvalReminderSweeper interface {
 	sweepApprovalReminders(ctx context.Context) error
 }
 
+// lapsedApprovalSweeper expires the one-shots whose time passed unapproved (deliver_lapsed.go).
+type lapsedApprovalSweeper interface {
+	ExpireLapsedApprovals(ctx context.Context) error
+}
+
 // Scheduler is the in-process tick loop owning the due-task claim lifecycle.
 type Scheduler struct {
 	// Now is the injectable clock (W8). Defaults to time.Now; tests inject a frozen
@@ -292,6 +297,12 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
 		if err := sweeper.sweepNotifications(ctx); err != nil {
 			return fmt.Errorf("tick sweep notifications: %w", err)
+		}
+	}
+	// Before the reminder sweep, so a lapsed one-shot is never reminded first.
+	if sweeper, ok := s.dispatch.(lapsedApprovalSweeper); ok {
+		if err := sweeper.ExpireLapsedApprovals(ctx); err != nil {
+			return fmt.Errorf("tick expire lapsed approvals: %w", err)
 		}
 	}
 	if sweeper, ok := s.dispatch.(approvalReminderSweeper); ok {

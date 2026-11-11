@@ -264,3 +264,20 @@ UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
 WHERE identity_id = sqlc.arg(identity_id) AND kind = 'message'
   AND status IN ('pending_approval', 'active')
 RETURNING id;
+
+-- A one-shot whose time passed while it waited for approval (spec 2026-11-05 Part 3, items 5-6).
+-- No age floor: a task stuck before this existed is taken on the first pass.
+-- name: ListLapsedApprovals :many
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries,
+    telegram_recipients, origin_tool_call_id
+FROM aura.scheduler_tasks
+WHERE status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
+ORDER BY next_run_at
+LIMIT $1;
+
+-- The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
+-- name: ExpireLapsedApproval :execrows
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE id = $1 AND status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now();

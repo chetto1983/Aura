@@ -142,6 +142,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		// serve boots (assembleChatEnv), so the sweep is live here (kill-switch is the cadence env).
 		ApprovalPauseEnsurer: approvalPauseEnsurer{pauses: chat.pause, minter: chat.run},
 		ApprovalChannel:      reg,
+		// A one-shot whose time passed unapproved is cancelled and reported, its pause closed
+		// in the conversation it was asked in (spec 2026-11-05 Part 3).
+		LapsedPauseCloser: lapsedPauseCloser{runner: chat.run},
+		LapsedMessages:    lapsedMessages{drafts: messagedrafts.NewStore(chat.pool), tasks: store},
 		// Write the outcome back where it was asked for. The push above finds an operator
 		// who is elsewhere; this answers the one who is still looking at the conversation
 		// they scheduled from. Both are wanted — measured 2026-08-26, a reminder scheduled

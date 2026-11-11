@@ -99,6 +99,9 @@ type cronTaskStore struct {
 	conv  *conversations.Store // schedule-time origin-conversation → identity resolver (Phase 20, Fork 1)
 	// drafts declines a message task's draft before the task is cancelled (decision 15).
 	drafts *messagedrafts.Store
+	// pauses closes the approval of a task cancelled while it waited (decision 36); set once
+	// the runner exists. Nil leaves the pause to the next lapsed pass.
+	pauses approvalPauseExpirer
 }
 
 // newCronTaskStore builds the adapter over the live pool. A nil pool yields an
@@ -228,12 +231,13 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 	if err != nil {
 		return err
 	}
-	var kind string
+	var kind, status string
+	var origin *string
 	err = s.pool.QueryRow(ctx, `
-		SELECT kind FROM aura.scheduler_tasks
+		SELECT kind, status, origin_conversation_id::text FROM aura.scheduler_tasks
 		WHERE id = $1::uuid
 		  AND identity_id = $2
-		  AND status IN ('active', 'pending_approval', 'paused')`, id, identityID).Scan(&kind)
+		  AND status IN ('active', 'pending_approval', 'paused')`, id, identityID).Scan(&kind, &status, &origin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("task %s is not active, paused or awaiting approval, or not owned by this identity", id)
 	}
@@ -249,6 +253,11 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 	if kind == string(cron.KindMessage) {
 		if err := s.drafts.DeclineForTask(ctx, identityID, id); err != nil {
 			return fmt.Errorf("cancel task %s: decline its message: %w", id, err)
+		}
+	}
+	if status == "pending_approval" && origin != nil && s.pauses != nil {
+		if _, err := s.pauses.ExpireApprovalPause(ctx, *origin, id, cancelledApprovalAnswer(kind, id)); err != nil {
+			return fmt.Errorf("cancel task %s: close its approval: %w", id, err)
 		}
 	}
 	if _, err := s.pool.Exec(ctx, `

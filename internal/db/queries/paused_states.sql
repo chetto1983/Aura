@@ -141,3 +141,17 @@ WHERE conversation_id = $1
   AND resume_context->>'type' = 'gateway_approval'
   AND resume_context->>'tool_call_id' <> ''
 ORDER BY created_at ASC, token ASC;
+
+-- name: HasAcceptedTaskApprovalForIdentity :one
+-- Whether the operator already accepted the approval of a task in this conversation: an approval
+-- in flight that the hook has not yet turned into an active task (decision 36). Owner-scoped like
+-- ListDeclinedGatewayToolCallIDsForIdentity.
+SELECT EXISTS (
+    SELECT 1 FROM aura.paused_states
+    WHERE conversation_id = $1
+      AND identity_id = $2
+      AND resumed_at IS NOT NULL
+      AND resumed_answer->>'action' = 'accept'
+      AND resume_context->>'type' IN ('scheduled_task_approval', 'message_draft')
+      AND resume_context->>'task_id' = sqlc.arg(task_id)::text
+)::boolean AS accepted;

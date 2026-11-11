@@ -450,6 +450,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
 	aguiServer.SetScheduledMessageCanceller(messagedrafts.NewStore(chat.pool))
+	aguiServer.SetApprovalPauseExpirer(chat.run)
 	aguiServer.SetHostUpdate(chat.cfg.UpdateStateDir)
 	// Aura's own MCP sidecars are OAuth resource servers isolated by token subject
 	// (Amendment #147), and nothing but a browser could mint them a token — so they never

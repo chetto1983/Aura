@@ -44,3 +44,30 @@ func (s *Store) MarkApprovalReminded(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// ListLapsedApprovals lists the one-shots whose time passed while they waited for approval.
+func (s *Store) ListLapsedApprovals(ctx context.Context, limit int) ([]Task, error) {
+	rows, err := s.q.ListLapsedApprovals(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list lapsed approvals: %w", err)
+	}
+	tasks := make([]Task, len(rows))
+	for i, r := range rows {
+		tasks[i] = taskFromRow(r)
+	}
+	return tasks, nil
+}
+
+// ExpireLapsedApproval cancels a lapsed one-shot still awaiting approval; false when an approval
+// landed first and the row left pending_approval.
+func (s *Store) ExpireLapsedApproval(ctx context.Context, id string) (bool, error) {
+	u, err := db.ParseUUID("uuid", id)
+	if err != nil {
+		return false, err
+	}
+	n, err := s.q.ExpireLapsedApproval(ctx, u)
+	if err != nil {
+		return false, fmt.Errorf("expire lapsed approval %q: %w", id, err)
+	}
+	return n > 0, nil
+}

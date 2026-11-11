@@ -118,3 +118,29 @@ func (s *Store) ListDeclinedGatewayToolCallIDsForIdentity(ctx context.Context, c
 	}
 	return ids, nil
 }
+
+// HasAcceptedTaskApprovalForIdentity reports whether the owner already accepted the approval of a
+// task in this conversation, so a pass that would expire it leaves an approval in flight to the
+// hook (decision 36 of docs/superpowers/plans/2026-11-05-scheduled-delivery-defaults-and-messages.md).
+func (s *Store) HasAcceptedTaskApprovalForIdentity(ctx context.Context, conversationID, identityID, taskID string) (bool, error) {
+	conv, err := db.ParseUUID("conversation_id", conversationID)
+	if err != nil {
+		return false, fmt.Errorf("accepted task approval: %w", err)
+	}
+	owner, err := db.ParseUUID("identity_id", identityID)
+	if err != nil {
+		return false, fmt.Errorf("accepted task approval: %w", err)
+	}
+	var accepted bool
+	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		var qErr error
+		accepted, qErr = q.HasAcceptedTaskApprovalForIdentity(ctx, sqlc.HasAcceptedTaskApprovalForIdentityParams{
+			ConversationID: conv, IdentityID: owner, TaskID: taskID,
+		})
+		return qErr
+	})
+	if err != nil {
+		return false, fmt.Errorf("accepted task approval for %s: %w", conversationID, err)
+	}
+	return accepted, nil
+}

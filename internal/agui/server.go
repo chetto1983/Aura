@@ -167,6 +167,7 @@ type Server struct {
 	graph            GraphView
 	governance       GovernanceProviders
 	messageCanceller ScheduledMessageCanceller
+	approvalExpirer  ApprovalPauseExpirer
 	governanceWrite  GovernanceWriteProviders
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
