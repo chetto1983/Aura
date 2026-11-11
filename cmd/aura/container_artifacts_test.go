@@ -462,6 +462,11 @@ func TestIngestSupervisorUsesExistingIdentityGarageBindings(t *testing.T) {
 	if !strings.Contains(dockerfile, `ENTRYPOINT ["aura-ingest-supervisor"]`) {
 		t.Fatalf("ingest image does not start the identity supervisor:\n%s", dockerfile)
 	}
+	// CocoIndex reports each startup to cocoindex.gateway.scarf.sh unless this is set, and
+	// the supervisor's children inherit the image environment (ingestsupervisor's launcher test).
+	if !strings.Contains(dockerfile, "ENV COCOINDEX_DISABLE_USAGE_TRACKING=1") {
+		t.Fatalf("ingest image lets CocoIndex report its usage:\n%s", dockerfile)
+	}
 }
 
 // REGRESSION GUARD — the banned names below must stay spelled out. The retired graph
