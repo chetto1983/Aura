@@ -48,7 +48,9 @@ func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone strin
 		t.Store = ts
 		t.Destinations = notifier
 		t.TelegramAccounts = taskTelegramAccounts{store: telegram.New(ts.pool)}
-		t.Timezones = onboarding.NewProfileStore(ts.pool)
+		profiles := onboarding.NewProfileStore(ts.pool)
+		t.Timezones = profiles
+		t.Defaults = profiles
 	}
 	return t
 }

@@ -244,7 +244,7 @@ Exact copy:
 - The `Description` sentence that replaces the one at `task.go:170`: `For action=schedule always honor an explicit notify choice. If the request names no channel, omit notify: the operator's default channel is applied, and when none is set a delivery_choice_required directive comes back. `
 - The `c25b96d88` paragraph at `task.go:168` keeps every clause but the channel's. The new sentence, verbatim: `Before scheduling, make sure the task has everything it will need when it fires: when (time or cadence), what (the reminder text or a self-contained job goal), and for a message the exact recipient and text; where it is delivered comes from an explicit notify, else the operator's default channel. A scheduled run starts in a fresh session and cannot ask anyone anything. If any of these is missing or ambiguous in the request, ask the operator one question about it, time first, and schedule only after the answer. Never invent a time or a recipient. `
 
-- [ ] Write `task_default_notify_test.go` with a `fakeDefaults map[string]string` and the existing `fakeTaskStore`, `fakeDestinations` and `fakeTelegramAccounts`:
+- [x] Write `task_default_notify_test.go` with a `fakeDefaults map[string]string` and the existing `fakeTaskStore`, `fakeDestinations` and `fakeTelegramAccounts`:
   - `TestAnEmptyNotifyUsesTheOperatorsDefault`, a table:
     - default `telegram` and one linked account `{1, "op"}`: `created.NotifyRoute == "telegram"`, and the preview holds `Delivers via telegram to @op (1) (your default channel).`;
     - default `stdout`: the preview holds `Delivers via stdout (your default channel).`;
@@ -255,8 +255,8 @@ Exact copy:
   - `TestAnInvalidStoredDefaultIsIgnored`: default `sms` gives the choice directive.
   - `TestAGatedJobOnTheDefaultNamesItInTheApprovalDirective`: an `agent_job` with default `stdout` gives a `pending_approval` directive whose `delivery` is `Delivers via stdout (your default channel).`.
   - `TestTheToolTextNoLongerSaysAskFirst`: `Spec().Description` does not hold `call ask_user(kind=choice) before scheduling` nor `where (the channel)`, and does hold `If the request names no channel, omit notify` and `else the operator's default channel`.
-- [ ] Extend `serve_notify_test.go:137-141`: with a store, `got.Defaults != nil`; without one, `got.Defaults == nil`.
-- [ ] Red, then do the split and implement. Green with race on `./internal/agent/tools/` and `./cmd/aura/`. The extraction into `task_delivery.go` and `task_directives.go` is mandatory in this task, whatever `task.go` measures: Task 5b adds schema text to it. Measure `wc -l internal/agent/tools/task.go`: it must be under 600. Commit: `feat(task): an empty notify uses the operator's default channel and says so`.
+- [x] Extend `serve_notify_test.go:137-141`: with a store, `got.Defaults != nil`; without one, `got.Defaults == nil`.
+- [x] Red, then do the split and implement. Green with race on `./internal/agent/tools/` and `./cmd/aura/`. The extraction into `task_delivery.go` and `task_directives.go` is mandatory in this task, whatever `task.go` measures: Task 5b adds schema text to it. Measure `wc -l internal/agent/tools/task.go`: it must be under 600. Commit: `feat(task): an empty notify uses the operator's default channel and says so`.
 
 ### Task 3: The Profile panel sets the default channel
 
