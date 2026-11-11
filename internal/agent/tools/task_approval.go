@@ -108,7 +108,7 @@ func (t *TaskTool) hostReviewApproval(ctx context.Context, conversationID, toolC
 		TelegramRecipients: TelegramRecipientIDs(plan.Recipients),
 	})
 	if err != nil {
-		slog.Warn("task: approval-gated task not created", "error_type", fmt.Sprintf("%T", err))
+		slog.Warn("task: approval-gated task not created", "error_type", errorType(err))
 		return nil, false
 	}
 	resume, err := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": task.ID})

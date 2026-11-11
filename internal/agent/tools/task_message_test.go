@@ -251,3 +251,13 @@ func TestTheJobTextSaysItCannotWriteToOthers(t *testing.T) {
 		t.Fatal("the description does not say an agent_job cannot write to others")
 	}
 }
+
+func TestErrorTypeNamesTheTypeNeverTheMessage(t *testing.T) {
+	t.Parallel()
+	secret := &json.SyntaxError{}
+	for err, want := range map[error]string{nil: "<nil>", secret: "*json.SyntaxError", errors.New("payload: ciao"): "*errors.errorString"} {
+		if got := errorType(err); got != want {
+			t.Errorf("errorType(%v) = %q, want %q", err, got, want)
+		}
+	}
+}
