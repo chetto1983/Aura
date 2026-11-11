@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,7 +17,8 @@ func (d Draft) Scheduled() bool { return !d.SendAt.IsZero() }
 
 // Approve fixes the effective arguments of a pending scheduled draft before its send time:
 // pending -> approved. The task sends exactly these at its time; an immediate draft is never
-// approved, only claimed.
+// approved, only claimed. The approving UPDATE alone decides whether the draft is still
+// approvable, so a decline racing the review cannot be overwritten.
 func (s *Store) Approve(ctx context.Context, ownerID, draftID string, overrides json.RawMessage) (Draft, error) {
 	owner, id, err := draftKey(ownerID, draftID)
 	if err != nil {
@@ -32,9 +32,6 @@ func (s *Store) Approve(ctx context.Context, ownerID, draftID string, overrides 
 		}
 		if readErr != nil {
 			return readErr
-		}
-		if row.Status != string(StatusPending) || !row.SendAt.Valid || !row.SendAt.Time.After(time.Now()) {
-			return ErrUnavailable
 		}
 		target := Target{Recipe: row.Recipe, Tool: row.ToolName, Action: row.Action}
 		effective, mergeErr := MergeApprovedArgs(target, row.OriginalArgs, overrides)
@@ -167,7 +164,7 @@ func (s *Store) ExpireForTask(ctx context.Context, ownerID, taskID string) error
 	if err != nil {
 		return err
 	}
-	if _, err := s.ExpireScheduled(ctx, ownerID, draft.ID); err != nil && !errors.Is(err, ErrUnavailable) {
+	if _, err := s.ExpireScheduled(ctx, ownerID, draft.ID); !errors.Is(err, ErrUnavailable) {
 		return err
 	}
 	return nil
