@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -152,7 +152,7 @@ func (t *TaskTool) hostReviewMessage(ctx context.Context, conversationID, toolCa
 		TelegramRecipients: TelegramRecipientIDs(plan.Recipients),
 	})
 	if err != nil {
-		slog.Warn("task: scheduled message task not created", "error_type", fmt.Sprintf("%T", err))
+		slog.Warn("task: scheduled message task not created", "error_type", errorType(err))
 		return nil, false
 	}
 	draftID, err := t.MessageDrafts.CreateScheduledMessageDraft(ctx, ScheduledMessageDraft{
@@ -160,9 +160,9 @@ func (t *TaskTool) hostReviewMessage(ctx context.Context, conversationID, toolCa
 		Channel: payload.Channel, Args: args, SendAt: spec.RunAt,
 	})
 	if err != nil {
-		slog.Warn("task: scheduled message draft not created", "task", task.ID, "error_type", fmt.Sprintf("%T", err))
+		slog.Warn("task: scheduled message draft not created", "task", task.ID, "error_type", errorType(err))
 		if cancelErr := t.Store.CancelScheduledTask(ctx, task.ID); cancelErr != nil {
-			slog.Warn("task: scheduled message task not cancelled", "task", task.ID, "error_type", fmt.Sprintf("%T", cancelErr))
+			slog.Warn("task: scheduled message task not cancelled", "task", task.ID, "error_type", errorType(cancelErr))
 		}
 		return nil, false
 	}
@@ -190,4 +190,14 @@ func (t *TaskTool) scheduleMessage(ctx context.Context, a taskArgs) (ToolResult,
 		return ToolResult{}, err
 	}
 	return ToolResult{}, errMessageNeedsReview
+}
+
+// errorType names an error's Go type for a log line; the message can quote the operator's
+// payload, so it is never logged. reflect, not Sprintf("%T"): CodeQL's taint model carries the
+// error through Sprintf whatever the verb (alerts #510-#512 on PR #244).
+func errorType(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return reflect.TypeOf(err).String()
 }
