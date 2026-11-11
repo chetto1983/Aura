@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
@@ -252,5 +253,30 @@ func TestOnlyThePolicysAnswerIsARefusal(t *testing.T) {
 	broken := New(config.ProfileSingleUserHardened, &fakeStore{reserveErr: errors.New("insert boom")})
 	if v, _ := broken.Decide(context.Background(), ordinaryWriteSpec(), write, testKey()); v.Decision != Deny || v.Refusal {
 		t.Fatalf("failed reservation = %+v, want a deny that is not a refusal", v)
+	}
+}
+
+// The host review parks a task call before Decide runs, so it asks the policy first
+// (decision 31): only deny keeps the call out of the review.
+func TestPolicyDeniesReadsTheIdentitysPolicy(t *testing.T) {
+	t.Parallel()
+	spec := tools.Spec{Name: "task", Mutating: true, Multiplexed: true}
+	raw := json.RawMessage(`{"action":"schedule"}`)
+	for policy, want := range map[Policy]bool{PolicyDeny: true, PolicyAsk: false} {
+		g, _, ctx := policyGateway(map[string]Policy{policyKey("task", "schedule"): policy})
+		if got := g.PolicyDenies(ctx, spec, raw); got != want {
+			t.Errorf("policy %q: PolicyDenies = %v, want %v", policy, got, want)
+		}
+	}
+	g, _, ctx := policyGateway(nil)
+	if g.PolicyDenies(ctx, spec, raw) {
+		t.Error("no policy row denied the call")
+	}
+	if New(config.ProfileSingleUserHardened, &fakeStore{}).PolicyDenies(identityctx.WithIdentityID(context.Background(), "op"), spec, raw) {
+		t.Error("a gateway with no policy store denied the call")
+	}
+	var nilGateway *Gateway
+	if nilGateway.PolicyDenies(ctx, spec, raw) {
+		t.Error("a nil gateway denied the call")
 	}
 }

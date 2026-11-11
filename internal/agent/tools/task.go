@@ -45,6 +45,9 @@ type TaskTool struct {
 	// AURA_TIMEZONE (task_timezone.go). Both empty leave cron.ParseSchedule's Europe/Rome.
 	Timezones      taskTimezones
 	DeploymentZone string
+	// MessageDrafts stores a scheduled message's draft against the mounted trusted tool
+	// (task_message.go). Nil parks no message.
+	MessageDrafts taskMessageDrafts
 	// Defaults is the operator's default channel, applied when a schedule names no notify
 	// (task_default_notify.go). Nil, or nothing set, leaves the delivery choice directive.
 	Defaults taskDefaults
@@ -101,6 +104,9 @@ type CreateTaskInput struct {
 	// TelegramRecipients are the Telegram accounts a notify=telegram task reaches; nil for
 	// every other route.
 	TelegramRecipients []int64
+	// OriginToolCallID is the model call that parked the task; a second create for the same
+	// call returns the first row (migration 0155). "" for a task the tool created itself.
+	OriginToolCallID string
 }
 
 // taskStore is the consumer-declared seam the task tool dispatches against
@@ -224,11 +230,11 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("task schedule args: %w", err)
 	}
-	if a.Kind == "" {
-		return ToolResult{}, fmt.Errorf("task schedule: kind is required")
-	}
-	if err := requireTaskPayload(a.Kind, a.Payload); err != nil {
+	if err := validateSchedule(a); err != nil {
 		return ToolResult{}, err
+	}
+	if a.Kind == "message" {
+		return t.scheduleMessage(ctx, a)
 	}
 	if strings.TrimSpace(a.TZ) == "" {
 		a.TZ = t.scheduleZone(ctx)

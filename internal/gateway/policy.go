@@ -10,12 +10,15 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/obs"
 )
 
@@ -86,4 +89,16 @@ func (g *Gateway) policyFor(ctx context.Context, identityID string, subject gran
 // the instruction not to retry, because a retry of a denied tool is a wasted round.
 func policyDenyReason(subject grantSubject) string {
 	return "tool \"" + subject.String() + "\" is disabled for this identity by policy: do not retry it, tell the operator"
+}
+
+// PolicyDenies reports whether Decide would refuse this call on the identity's policy alone.
+// A host review parks a call before Decide runs, so it asks first (decision 31 of
+// docs/superpowers/plans/2026-11-05-scheduled-delivery-defaults-and-messages.md): a denied
+// call then reaches Decide and is refused there, deny fact included. Under a non-strict
+// profile Decide never reads a policy, and neither does this.
+func (g *Gateway) PolicyDenies(ctx context.Context, spec tools.Spec, raw json.RawMessage) bool {
+	if g == nil || !g.profile.Strict() {
+		return false
+	}
+	return g.policyFor(ctx, identityctx.IdentityID(ctx), subjectFor(spec, raw)) == PolicyDeny
 }

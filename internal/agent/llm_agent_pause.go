@@ -49,7 +49,8 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 //
 // ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ask_user alone can pause by
 // returning its sentinel. A host-owned trusted outbound message may also pause
-// through withholdOutboundMessage; it never calls Execute. A non-ask_user tool whose Execute returns
+// through withholdOutboundMessage, and a tools.HostReviewer call (a scheduled message) through
+// withholdHostReviewedCall; neither calls Execute. A non-ask_user tool whose Execute returns
 // tools.ErrAwaitingUserInput does NOT pause; runTool renders it as a RoleTool error
 // (`error: awaiting user input`, the sentinel's Error() string) and the loop
 // continues. Spike 012b proved this: the old skill install-gate returned the
@@ -77,6 +78,8 @@ func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pause
 	}
 	for _, call := range calls {
 		if pending, ok := a.withholdOutboundMessage(ctx, call); ok {
+			out = append(out, pending)
+		} else if pending, ok := a.withholdHostReviewedCall(ctx, call); ok {
 			out = append(out, pending)
 		}
 	}

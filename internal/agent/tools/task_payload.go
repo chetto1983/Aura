@@ -17,6 +17,8 @@ func requireTaskPayload(kind string, payload json.RawMessage) error {
 		field, missing = "text", "a reminder needs payload.text, the words to deliver"
 	case "agent_job":
 		field, missing = "goal", "an agent_job needs payload.goal, a self-contained description of what to do when it runs"
+	case "message":
+		field, missing = "text", "a message needs payload.text, the words to send"
 	default:
 		return nil
 	}

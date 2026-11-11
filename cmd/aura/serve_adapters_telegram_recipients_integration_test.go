@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -41,7 +42,7 @@ func TestTaskToolPersistsTheChosenTelegramRecipients(t *testing.T) {
 	}
 
 	store := &cronTaskStore{pool: pool, store: cron.New(pool)}
-	tool := newTaskTool(store, nil, "")
+	tool := newTaskTool(store, nil, "", tools.NewRegistry())
 	ownerCtx := identityctx.WithIdentityID(ctx, owner)
 	schedule := func(extra string) string {
 		t.Helper()

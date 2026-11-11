@@ -39,10 +39,10 @@ func TestTaskToolChecksRoutesOnlyWithAStore(t *testing.T) {
 	t.Parallel()
 
 	notifier := newSchedulerNotifier(&config.Config{}, tools.NewRegistry(), nil)
-	if got := newTaskTool(nil, notifier, ""); got.Destinations != nil {
+	if got := newTaskTool(nil, notifier, "", nil); got.Destinations != nil {
 		t.Fatal("the pool-free task tool must not carry a route check")
 	}
-	if got := newTaskTool(newCronTaskStore(nil, nil), notifier, ""); got.Destinations == nil {
+	if got := newTaskTool(newCronTaskStore(nil, nil), notifier, "", tools.NewRegistry()); got.Destinations == nil {
 		t.Fatal("the live task tool must check a route before persisting")
 	}
 	owner := identityctx.WithIdentityID(context.Background(), "10000000-0000-4000-8000-000000000001")
@@ -134,10 +134,10 @@ func TestSignInEmail(t *testing.T) {
 func TestTaskToolCarriesTheZonesItSchedulesIn(t *testing.T) {
 	t.Parallel()
 
-	if got := newTaskTool(nil, nil, "Asia/Tokyo"); got.Timezones != nil || got.Defaults != nil || got.DeploymentZone != "Asia/Tokyo" {
+	if got := newTaskTool(nil, nil, "Asia/Tokyo", nil); got.Timezones != nil || got.Defaults != nil || got.DeploymentZone != "Asia/Tokyo" {
 		t.Fatalf("pool-free tool: Timezones=%v Defaults=%v DeploymentZone=%q, want no profile store and the deployment zone", got.Timezones, got.Defaults, got.DeploymentZone)
 	}
-	if got := newTaskTool(newCronTaskStore(nil, nil), nil, "Asia/Tokyo"); got.Timezones == nil || got.Defaults == nil {
+	if got := newTaskTool(newCronTaskStore(nil, nil), nil, "Asia/Tokyo", tools.NewRegistry()); got.Timezones == nil || got.Defaults == nil {
 		t.Fatal("the live task tool must read the identity's zone and default channel")
 	}
 }
