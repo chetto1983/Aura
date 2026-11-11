@@ -397,8 +397,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0151 records a refused MCP OAuth grant until a new consent replaces it.
 	// 0152 keeps the urgency centroid's shadow beside each mail verdict.
 	// 0153 keeps the decision model's answer and a label's description and discard.
-	if head != 153 {
-		t.Fatalf("MigrationHead=%d, want embedded head 153", head)
+	// 0154 adds the operator's default channel for scheduled delivery.
+	if head != 154 {
+		t.Fatalf("MigrationHead=%d, want embedded head 154", head)
 	}
 }
 

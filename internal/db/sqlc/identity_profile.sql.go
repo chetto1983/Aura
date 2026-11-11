@@ -11,8 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getIdentityDefaultNotify = `-- name: GetIdentityDefaultNotify :one
+SELECT default_notify FROM aura.identity_profiles WHERE identity_id = $1
+`
+
+// The task tool reads the operator's channel on every scheduling call, so it gets the same
+// one-string read as the clock.
+func (q *Queries) GetIdentityDefaultNotify(ctx context.Context, identityID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getIdentityDefaultNotify, identityID)
+	var default_notify string
+	err := row.Scan(&default_notify)
+	return default_notify, err
+}
+
 const getIdentityProfile = `-- name: GetIdentityProfile :one
-SELECT identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at FROM aura.identity_profiles WHERE identity_id = $1
+SELECT identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at, default_notify FROM aura.identity_profiles WHERE identity_id = $1
 `
 
 func (q *Queries) GetIdentityProfile(ctx context.Context, identityID pgtype.UUID) (AuraIdentityProfiles, error) {
@@ -43,6 +56,7 @@ func (q *Queries) GetIdentityProfile(ctx context.Context, identityID pgtype.UUID
 		&i.SeedNudgedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DefaultNotify,
 	)
 	return i, err
 }
@@ -122,14 +136,14 @@ INSERT INTO aura.identity_profiles (
     identity_id, display_name, role, company, location, timezone, lang,
     tone_preference, response_length, custom_instructions,
     voice_mode, can_proactive_message,
-    expertise, stack, projects, goals, interests, people, vetoes
+    expertise, stack, projects, goals, interests, people, vetoes, default_notify
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
     $9, $10,
     $11, $12,
     $13, $14, $15, $16,
-    $17, $18, $19
+    $17, $18, $19, $20
 )
 ON CONFLICT (identity_id) DO UPDATE SET
     display_name        = EXCLUDED.display_name,
@@ -141,6 +155,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     tone_preference     = EXCLUDED.tone_preference,
     response_length     = EXCLUDED.response_length,
     custom_instructions = EXCLUDED.custom_instructions,
+    default_notify      = EXCLUDED.default_notify,
     voice_mode            = EXCLUDED.voice_mode,
     can_proactive_message = EXCLUDED.can_proactive_message,
     expertise = EXCLUDED.expertise,
@@ -151,7 +166,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     people    = EXCLUDED.people,
     vetoes    = EXCLUDED.vetoes,
     updated_at = now()
-RETURNING identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at
+RETURNING identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at, default_notify
 `
 
 type ReplaceIdentityProfileParams struct {
@@ -174,6 +189,7 @@ type ReplaceIdentityProfileParams struct {
 	Interests           []string    `json:"interests"`
 	People              []string    `json:"people"`
 	Vetoes              []string    `json:"vetoes"`
+	DefaultNotify       string      `json:"default_notify"`
 }
 
 // The editor's write. It REPLACES every field, because the editor renders every field: a
@@ -201,6 +217,7 @@ func (q *Queries) ReplaceIdentityProfile(ctx context.Context, arg ReplaceIdentit
 		arg.Interests,
 		arg.People,
 		arg.Vetoes,
+		arg.DefaultNotify,
 	)
 	var i AuraIdentityProfiles
 	err := row.Scan(
@@ -228,6 +245,7 @@ func (q *Queries) ReplaceIdentityProfile(ctx context.Context, arg ReplaceIdentit
 		&i.SeedNudgedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DefaultNotify,
 	)
 	return i, err
 }
@@ -238,14 +256,14 @@ INSERT INTO aura.identity_profiles (
     identity_id, display_name, role, company, location, timezone, lang,
     tone_preference, response_length, custom_instructions,
     voice_mode, can_proactive_message,
-    expertise, stack, projects, goals, interests, people, vetoes
+    expertise, stack, projects, goals, interests, people, vetoes, default_notify
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
     $9, $10,
     $11, $12,
     $13, $14, $15, $16,
-    $17, $18, $19
+    $17, $18, $19, $20
 )
 ON CONFLICT (identity_id) DO UPDATE SET
     -- NULLIF on every scalar: the form submits the fields it collected, and a later save
@@ -260,6 +278,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     tone_preference     = COALESCE(NULLIF(EXCLUDED.tone_preference, ''), aura.identity_profiles.tone_preference),
     response_length     = COALESCE(NULLIF(EXCLUDED.response_length, ''), aura.identity_profiles.response_length),
     custom_instructions = COALESCE(NULLIF(EXCLUDED.custom_instructions, ''), aura.identity_profiles.custom_instructions),
+    default_notify      = COALESCE(NULLIF(EXCLUDED.default_notify, ''), aura.identity_profiles.default_notify),
     voice_mode            = COALESCE(EXCLUDED.voice_mode, aura.identity_profiles.voice_mode),
     can_proactive_message = COALESCE(EXCLUDED.can_proactive_message, aura.identity_profiles.can_proactive_message),
     expertise = CASE WHEN cardinality(EXCLUDED.expertise) > 0 THEN EXCLUDED.expertise ELSE aura.identity_profiles.expertise END,
@@ -270,7 +289,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     people    = CASE WHEN cardinality(EXCLUDED.people)    > 0 THEN EXCLUDED.people    ELSE aura.identity_profiles.people END,
     vetoes    = CASE WHEN cardinality(EXCLUDED.vetoes)    > 0 THEN EXCLUDED.vetoes    ELSE aura.identity_profiles.vetoes END,
     updated_at = now()
-RETURNING identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at
+RETURNING identity_id, display_name, role, company, location, timezone, lang, tone_preference, response_length, custom_instructions, voice_mode, can_proactive_message, expertise, stack, projects, goals, interests, people, vetoes, completed_at, skipped_at, seed_nudged_at, created_at, updated_at, default_notify
 `
 
 type UpsertIdentityProfileParams struct {
@@ -293,6 +312,7 @@ type UpsertIdentityProfileParams struct {
 	Interests           []string    `json:"interests"`
 	People              []string    `json:"people"`
 	Vetoes              []string    `json:"vetoes"`
+	DefaultNotify       string      `json:"default_notify"`
 }
 
 // Deterministic operator profile (migration 0097). It is written by onboarding and the
@@ -318,6 +338,7 @@ func (q *Queries) UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityP
 		arg.Interests,
 		arg.People,
 		arg.Vetoes,
+		arg.DefaultNotify,
 	)
 	var i AuraIdentityProfiles
 	err := row.Scan(
@@ -345,6 +366,7 @@ func (q *Queries) UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityP
 		&i.SeedNudgedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DefaultNotify,
 	)
 	return i, err
 }

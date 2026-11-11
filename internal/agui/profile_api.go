@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/onboarding"
 )
 
@@ -58,6 +59,7 @@ type ProfileDoc struct {
 	TonePreference      string   `json:"tonePreference"`
 	ResponseLength      string   `json:"responseLength"`
 	CustomInstructions  string   `json:"customInstructions"`
+	DefaultNotify       string   `json:"defaultNotify"`
 	VoiceMode           *bool    `json:"voiceMode,omitempty"`
 	CanProactiveMessage *bool    `json:"canProactiveMessage,omitempty"`
 	Expertise           []string `json:"expertise"`
@@ -137,7 +139,7 @@ func profileDocOf(a onboarding.Answers) ProfileDoc {
 		VoiceMode: a.VoiceMode, CanProactiveMessage: a.CanProactiveMessage,
 		Expertise: nonNil(a.Expertise), Stack: nonNil(a.Stack), Projects: nonNil(a.Projects),
 		Goals: nonNil(a.Goals), Interests: nonNil(a.Interests), People: nonNil(a.People),
-		Vetoes: nonNil(a.Vetoes),
+		Vetoes: nonNil(a.Vetoes), DefaultNotify: a.DefaultNotify,
 	}
 }
 
@@ -149,6 +151,7 @@ func answersOf(d ProfileDoc) onboarding.Answers {
 		TonePreference:     strings.TrimSpace(d.TonePreference),
 		ResponseLength:     strings.TrimSpace(d.ResponseLength),
 		CustomInstructions: strings.TrimSpace(d.CustomInstructions),
+		DefaultNotify:      strings.TrimSpace(d.DefaultNotify),
 		VoiceMode:          d.VoiceMode, CanProactiveMessage: d.CanProactiveMessage,
 		Expertise: cleanList(d.Expertise), Stack: cleanList(d.Stack),
 		Projects: cleanList(d.Projects), Goals: cleanList(d.Goals),
@@ -192,6 +195,10 @@ func validateProfileDoc(d ProfileDoc) error {
 	}
 	if len(d.CustomInstructions) > profileInstructionsMaxLen {
 		return errors.New("profile: custom instructions too long")
+	}
+	// "" is "not set" and stays valid: the task tool then asks, as it did before the setting.
+	if route := strings.TrimSpace(d.DefaultNotify); route != "" && !cron.ValidNotifyRoute(route) {
+		return errors.New("profile: default channel is not a delivery route")
 	}
 	for _, list := range [][]string{
 		d.Expertise, d.Stack, d.Projects, d.Goals, d.Interests, d.People, d.Vetoes,

@@ -172,6 +172,55 @@ func TestProfilePartialUpdateNeverErases(t *testing.T) {
 	}
 }
 
+// The editor owns the channel and the onboarding merge never clears it: a seed form that
+// does not ask for it must not erase what the operator chose in the panel.
+func TestTheDefaultChannelRoundTripsAndOnboardingNeverErasesIt(t *testing.T) {
+	pool := migratedPool(t)
+	store := NewProfileStore(pool)
+	id := seedIdentity(t, pool)
+	ctx := context.Background()
+
+	if err := store.Replace(ctx, id, Answers{Name: "A", DefaultNotify: "telegram"}); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	got, _, err := store.Load(ctx, id)
+	if err != nil || got.DefaultNotify != "telegram" {
+		t.Fatalf("Load = %q, %v; want telegram", got.DefaultNotify, err)
+	}
+	if route := store.DefaultNotify(ctx, id); route != "telegram" {
+		t.Fatalf("DefaultNotify = %q, want telegram", route)
+	}
+	if err := store.Save(ctx, id, Answers{Role: "r"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if route := store.DefaultNotify(ctx, id); route != "telegram" {
+		t.Errorf("onboarding erased the channel: %q", route)
+	}
+	if err := store.Replace(ctx, id, Answers{Name: "A"}); err != nil {
+		t.Fatalf("Replace clearing: %v", err)
+	}
+	if route := store.DefaultNotify(ctx, id); route != "" {
+		t.Errorf("the editor could not clear the channel: %q", route)
+	}
+}
+
+// The task tool reads the channel on every scheduling call; unknown is "not set", never an error.
+func TestDefaultNotifyIsEmptyWithoutAProfile(t *testing.T) {
+	var nilStore *ProfileStore
+	if route := nilStore.DefaultNotify(context.Background(), "id"); route != "" {
+		t.Errorf("nil store: %q, want empty", route)
+	}
+	pool := migratedPool(t)
+	store := NewProfileStore(pool)
+	id := seedIdentity(t, pool)
+	if route := store.DefaultNotify(context.Background(), id); route != "" {
+		t.Errorf("no profile row: %q, want empty", route)
+	}
+	if route := store.DefaultNotify(context.Background(), "not-a-uuid"); route != "" {
+		t.Errorf("malformed identity: %q, want empty", route)
+	}
+}
+
 // The gate: never asked → asked → answered, plus the nudge record a channel keeps here so
 // it does not keep one of its own.
 func TestOnboardingGateTransitions(t *testing.T) {

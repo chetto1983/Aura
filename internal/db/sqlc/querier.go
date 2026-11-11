@@ -269,6 +269,9 @@ type Querier interface {
 	GetGatewayToolPolicy(ctx context.Context, arg GetGatewayToolPolicyParams) (string, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	// The task tool reads the operator's channel on every scheduling call, so it gets the same
+	// one-string read as the clock.
+	GetIdentityDefaultNotify(ctx context.Context, identityID pgtype.UUID) (string, error)
 	GetIdentityLLMKey(ctx context.Context, identityID pgtype.UUID) (AuraIdentityLlmKey, error)
 	// Per-identity OAuth grants for remote MCP servers (migration 0100). Every statement is
 	// scoped by identity_id in the WHERE clause AND by the two RLS policies underneath: the

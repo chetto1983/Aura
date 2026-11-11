@@ -6,14 +6,14 @@ INSERT INTO aura.identity_profiles (
     identity_id, display_name, role, company, location, timezone, lang,
     tone_preference, response_length, custom_instructions,
     voice_mode, can_proactive_message,
-    expertise, stack, projects, goals, interests, people, vetoes
+    expertise, stack, projects, goals, interests, people, vetoes, default_notify
 ) VALUES (
     sqlc.arg(identity_id), sqlc.arg(display_name), sqlc.arg(role), sqlc.arg(company),
     sqlc.arg(location), sqlc.arg(timezone), sqlc.arg(lang), sqlc.arg(tone_preference),
     sqlc.arg(response_length), sqlc.arg(custom_instructions),
     sqlc.narg(voice_mode), sqlc.narg(can_proactive_message),
     sqlc.arg(expertise), sqlc.arg(stack), sqlc.arg(projects), sqlc.arg(goals),
-    sqlc.arg(interests), sqlc.arg(people), sqlc.arg(vetoes)
+    sqlc.arg(interests), sqlc.arg(people), sqlc.arg(vetoes), sqlc.arg(default_notify)
 )
 ON CONFLICT (identity_id) DO UPDATE SET
     -- NULLIF on every scalar: the form submits the fields it collected, and a later save
@@ -28,6 +28,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     tone_preference     = COALESCE(NULLIF(EXCLUDED.tone_preference, ''), aura.identity_profiles.tone_preference),
     response_length     = COALESCE(NULLIF(EXCLUDED.response_length, ''), aura.identity_profiles.response_length),
     custom_instructions = COALESCE(NULLIF(EXCLUDED.custom_instructions, ''), aura.identity_profiles.custom_instructions),
+    default_notify      = COALESCE(NULLIF(EXCLUDED.default_notify, ''), aura.identity_profiles.default_notify),
     voice_mode            = COALESCE(EXCLUDED.voice_mode, aura.identity_profiles.voice_mode),
     can_proactive_message = COALESCE(EXCLUDED.can_proactive_message, aura.identity_profiles.can_proactive_message),
     expertise = CASE WHEN cardinality(EXCLUDED.expertise) > 0 THEN EXCLUDED.expertise ELSE aura.identity_profiles.expertise END,
@@ -49,14 +50,14 @@ INSERT INTO aura.identity_profiles (
     identity_id, display_name, role, company, location, timezone, lang,
     tone_preference, response_length, custom_instructions,
     voice_mode, can_proactive_message,
-    expertise, stack, projects, goals, interests, people, vetoes
+    expertise, stack, projects, goals, interests, people, vetoes, default_notify
 ) VALUES (
     sqlc.arg(identity_id), sqlc.arg(display_name), sqlc.arg(role), sqlc.arg(company),
     sqlc.arg(location), sqlc.arg(timezone), sqlc.arg(lang), sqlc.arg(tone_preference),
     sqlc.arg(response_length), sqlc.arg(custom_instructions),
     sqlc.narg(voice_mode), sqlc.narg(can_proactive_message),
     sqlc.arg(expertise), sqlc.arg(stack), sqlc.arg(projects), sqlc.arg(goals),
-    sqlc.arg(interests), sqlc.arg(people), sqlc.arg(vetoes)
+    sqlc.arg(interests), sqlc.arg(people), sqlc.arg(vetoes), sqlc.arg(default_notify)
 )
 ON CONFLICT (identity_id) DO UPDATE SET
     display_name        = EXCLUDED.display_name,
@@ -68,6 +69,7 @@ ON CONFLICT (identity_id) DO UPDATE SET
     tone_preference     = EXCLUDED.tone_preference,
     response_length     = EXCLUDED.response_length,
     custom_instructions = EXCLUDED.custom_instructions,
+    default_notify      = EXCLUDED.default_notify,
     voice_mode            = EXCLUDED.voice_mode,
     can_proactive_message = EXCLUDED.can_proactive_message,
     expertise = EXCLUDED.expertise,
@@ -86,6 +88,11 @@ SELECT * FROM aura.identity_profiles WHERE identity_id = sqlc.arg(identity_id);
 -- The turn path wants one string, not a row: the clock is rendered on every request.
 -- name: GetIdentityTimezone :one
 SELECT timezone FROM aura.identity_profiles WHERE identity_id = sqlc.arg(identity_id);
+
+-- The task tool reads the operator's channel on every scheduling call, so it gets the same
+-- one-string read as the clock.
+-- name: GetIdentityDefaultNotify :one
+SELECT default_notify FROM aura.identity_profiles WHERE identity_id = sqlc.arg(identity_id);
 
 -- The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a
 -- boolean cannot, and "completed" plus "skipped" are not mutually exclusive over time --

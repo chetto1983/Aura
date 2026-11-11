@@ -384,6 +384,7 @@ type AuraIdentityProfiles struct {
 	SeedNudgedAt        pgtype.Timestamptz `json:"seed_nudged_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	DefaultNotify       string             `json:"default_notify"`
 }
 
 // Per-identity recovery question and hashed answer for Telegram password reset. Raw answers are never stored.
