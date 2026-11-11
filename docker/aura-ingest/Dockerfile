@@ -84,6 +84,11 @@ WORKDIR /app
 # The supervisor overrides this with /state/<identity>/coco.db for every child. The
 # fallback still resolves to the volume: an ephemeral path silently disables memoization.
 ENV COCOINDEX_DB=/state/coco.db
+# CocoIndex POSTs a usage event to cocoindex.gateway.scarf.sh at startup unless this is set
+# to anything but "" or "0" (rust/core/src/telemetry/mod.rs at v1.1.1; =1 also measured on
+# 1.0.26). An appliance reports to no one, and the supervisor's children inherit it with the
+# rest of the environment. docs/superpowers/verification/2026-11-11-cocoindex-1-1-1.md
+ENV COCOINDEX_DISABLE_USAGE_TRACKING=1
 VOLUME ["/state"]
 
 ENTRYPOINT ["aura-ingest-supervisor"]
