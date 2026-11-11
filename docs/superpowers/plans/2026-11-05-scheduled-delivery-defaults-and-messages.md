@@ -939,10 +939,10 @@ The new scopes:
 | `message_fire` | `internal/cron/handlers/message.go` |
 | `lapsed_approval` | `internal/cron/deliver_lapsed.go` |
 
-- [ ] Add a case to `critical_mutation_gate_test.py` that requires the four scope ids, and see it fail first.
-- [ ] Add them to `GO_SCOPES` and `REQUIRED_SCOPE_IDS`, and to a `go-mutation` matrix group: a new group `scheduled-delivery` with `scopes: task_approval task_message message_fire lapsed_approval`, its timeout set from one local measurement plus half again.
+- [x] Add a case to `critical_mutation_gate_test.py` that requires the four scope ids, and see it fail first.
+- [x] Add them to `GO_SCOPES` and `REQUIRED_SCOPE_IDS`, and to a `go-mutation` matrix group: a new group `scheduled-delivery` with `scopes: task_approval task_message message_fire lapsed_approval`, its timeout set from one local measurement plus half again. *(Landed in the `turn-reading` group instead: `scripts/mutation_workflow_test.py` caps the matrix at three runners. Its timeout is 2.7 times the group's measured total, the workflow's own convention.)*
 - [ ] Measure `internal/messagedrafts/store_scheduled.go` in WSL, which CI's mutation runners cannot do without Postgres: `GOFLAGS=-tags=db_integration go-mutesting ./internal/messagedrafts/store_scheduled.go` with the `aura_cov` DSNs of Global Constraints. Keep the score and the killed/total counts for Task 16's verification file. Below 70% killed, add the tests that kill the survivors before moving on.
-- [ ] `python3 -m pytest scripts/critical_mutation_gate_test.py` green. Push and check the CI gate measures all four scopes at 70% or more. Commit: `ci(mutation): measure the scheduled delivery's critical files`.
+- [x] `python3 -m pytest scripts/critical_mutation_gate_test.py` green. Push and check the CI gate measures all four scopes at 70% or more. Commit: `ci(mutation): measure the scheduled delivery's critical files`.
 
 ### Task 16: Live, on the lab VM
 

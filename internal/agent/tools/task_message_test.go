@@ -20,6 +20,9 @@ type messageTaskStore struct {
 }
 
 func (s *messageTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInput) (ScheduledTask, error) {
+	if s.createErr != nil {
+		return ScheduledTask{}, s.createErr
+	}
 	if row, ok := s.byCall[in.OriginToolCallID]; ok {
 		return row, nil
 	}
