@@ -186,7 +186,9 @@ recipient and text are fixed when it is scheduled.
   nothing; the send is the one-send boundary.
 - **No edits after approval.** Changing the message means cancelling and scheduling again.
 - **Deactivation cancels.** Deactivating the identity cancels its pending or approved `message` tasks and declines
-  their drafts; it never pauses them (operator, 2026-11-11, "Confermo").
+  their drafts; it never pauses them (operator, 2026-11-11, "Confermo"). The drafts are declined by owner, so a retry
+  after a failed decline still finds them. A draft already claimed for sending is left to finish its one send: the claim
+  and the decline are both compare-and-set on the draft's status, and the first one wins.
 
 ### `agent_job`
 

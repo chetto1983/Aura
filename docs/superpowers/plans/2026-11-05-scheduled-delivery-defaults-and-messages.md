@@ -129,6 +129,8 @@ Review of 2026-11-11 (three reviewers on `bdb6f0416`; each item re-checked again
     - With no pause found, the pass expires the task's pending draft by task id, so a failed pause commit (producer 3) never leaves a draft pending.
     - Cancelling a pending task on any path closes its pause the same way, with the answer `cancelled by the operator`.
 37. **Deactivating an identity cancels its message tasks** (operator, 2026-11-11, "Confermo"). `PauseIdentityTasks` runs over `personKinds` (`internal/cron/store_manage.go:24`, `pause.go:71-77`), so a paused `message` task would contradict decision 14. Deactivation (`scheduledTaskAdapter.TerminateJobs`, `cmd/aura/serve_deprovision_purgers.go:30-32`) pauses the other person kinds as today, and cancels the identity's `message` tasks with their drafts declined. The purge keeps deleting them through `personKinds`.
+    - **Retry-safe** (CodeRabbit on #242). The decline is by owner, not by the ids the cancel returned: `DeclineScheduledForOwner` declines every `pending` or `approved` draft of the identity that has a `scheduled_task_id`. If a decline fails after the cancel committed, the next `TerminateJobs` run still finds those drafts. Deactivation cancels every message task of the identity, so a broader scope declines nothing that should live.
+    - **Ordered against the claim by the draft's status.** `ClaimScheduledMessageDraft` (`approved → dispatching`) and the decline (`pending|approved → declined`) are both compare-and-set on the same row. If the decline wins, the claim fails and nothing is sent. If the claim wins, the draft is `dispatching`, the decline leaves it alone, and that one send completes, exactly as when the operator cancels at the same instant (decision 15).
 38. **`aura task schedule --kind message` is refused** (`cmd/aura/task.go:90` takes any string). A CLI row has no review and no draft. The refusal: `aura task schedule: kind=message is scheduled from a conversation, where the operator reviews it`.
 39. **The fire-time claim checks the time, and a stuck dispatch is reported honestly.** `ClaimScheduledMessageDraft` also requires `send_at <= now()`. A draft found `dispatching` with `dispatch_started_at` older than 30 minutes is marked `uncertain` and reported "delivery uncertain", as `Reconcile` does for an immediate one. When the claim fails, the handler reads the draft again before it picks the summary, so a cancel that won the race reads "declined", not "expired".
 40. **The approval question says "run"** in Go and on the web (operator, 2026-11-11, "Confermo"): `It will not run until you approve.`
@@ -550,6 +552,8 @@ The changes, one per path:
 ```go
 // DeclineForTask declines the task's draft while it is pending or approved; a claimed one is untouched.
 func (s *Store) DeclineForTask(ctx context.Context, ownerID, taskID string) error
+// DeclineScheduledForOwner declines every pending or approved scheduled draft of the owner (deactivation, decision 37).
+func (s *Store) DeclineScheduledForOwner(ctx context.Context, ownerID string) error
 // agui:
 type ScheduledMessageCanceller interface {
 	DeclineForTask(ctx context.Context, ownerID, taskID string) error
@@ -565,13 +569,15 @@ The query: `DeclineScheduledMessageDraftsForTask :exec` sets `status = 'declined
 - `cronTaskStore.CancelScheduledTask` declines after its UPDATE when `kind == "message"`. `newCronTaskStore` builds `drafts: messagedrafts.NewStore(pool)`.
 - `RunScheduledTaskNow` and `taskRunNow` add `AND kind <> 'message'` to their UPDATE.
 - `taskCancel` reads the task with `cron.Store.GetTask` and declines for a message task.
-- Deactivation (decision 37): `PauseIdentityTaskRows` takes `personKinds` without `KindMessage` (a new `pausableIdentityKinds()`); a new `CancelIdentityMessageTasks :many` cancels the identity's `message` tasks in `pending_approval` or `active` and returns their ids; `scheduledTaskAdapter.TerminateJobs` calls both, then `DeclineForTask` for each id. `DeleteIdentityTasks` keeps `personKinds`, `message` included.
+- Deactivation (decision 37): `PauseIdentityTaskRows` takes `personKinds` without `KindMessage` (a new `pausableIdentityKinds()`); a new `CancelIdentityMessageTasks :many` cancels the identity's `message` tasks in `pending_approval` or `active` and returns their ids; `scheduledTaskAdapter.TerminateJobs` calls both, then `DeclineScheduledForOwner(ownerID)` (decision 37: by owner, so a retry after a failed decline still finds the drafts). `DeleteIdentityTasks` keeps `personKinds`, `message` included.
 
 - [ ] `TestDeclineForTaskDeclinesOnlyAnUnsentDraft` (`db_integration`): pending and approved drafts become `declined`, and a `dispatching` one is unchanged.
 - [ ] `TestCancellingAMessageTaskDeclinesItsDraft` (cmd/aura `db_integration`, through the task tool's `cronTaskStore`): the task is `cancelled` and its approved draft is `declined`.
 - [ ] `TestCancellingAMessageTaskOnTheBoardDeclinesItsDraft` (agui): the fake canceller saw `(task identity, id)`. A reminder's cancel does not call it.
 - [ ] `TestAMessageTaskCannotBeRunPausedOrEdited` (agui): run and PATCH give 409 with the text above, and pause gives 403 `this task cannot be paused`.
 - [ ] `TestAMessageTaskIsNotPausable` (cron unit): `IsPausableKind(KindMessage)` is false and `IsPausableKind(KindReminder)` is true.
+- [ ] `TestDeactivationDeclineIsRetrySafe` (cmd/aura `db_integration`): the first `TerminateJobs` cancels the message task and its decline is made to fail; the second `TerminateJobs` declines the draft, which ends `declined`, never `pending` or `approved`.
+- [ ] `TestDeactivationAndClaimOrderByDraftStatus` (messagedrafts `db_integration`): decline-then-claim leaves the draft `declined` and the claim fails; claim-then-decline leaves it `dispatching`.
 - [ ] `TestDeactivationCancelsMessageTasksAndDeclinesTheirDrafts` (cmd/aura `db_integration`): after `TerminateJobs`, the identity's reminder is `paused`, its pending and approved message tasks are `cancelled` with their drafts `declined`, and another identity's message task is untouched.
 - [ ] Red, `make sqlc`, implement, wire `SetScheduledMessageCanceller(messagedrafts.NewStore(pool))` in `serve_webui.go`, and go green. `agui/server.go` and `serve_adapters.go` stay under 600 lines. Commit: `feat(scheduler): cancelling a message task declines its draft`.
 
