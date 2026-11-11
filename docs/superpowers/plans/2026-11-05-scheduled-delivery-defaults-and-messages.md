@@ -855,7 +855,7 @@ func lapsedPauseAnswer(task Task) string
 func (r *Runner) ExpireApprovalPause(ctx context.Context, conversationID, taskID, answer string) (cron.PauseClosed, error)
 // cmd/aura
 type lapsedPauseCloser struct{ runner *runner.Runner }
-func (c lapsedPauseCloser) CloseLapsedApproval(ctx context.Context, task cron.Task, answer string) error
+func (c lapsedPauseCloser) CloseLapsedApproval(ctx context.Context, task cron.Task, answer string) (cron.PauseClosed, error)
 ```
 
 The queries:
