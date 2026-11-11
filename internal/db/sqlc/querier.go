@@ -12,6 +12,9 @@ import (
 
 type Querier interface {
 	AbandonCloudflareRemoteAccess(ctx context.Context, arg AbandonCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
+	// Only the draft review activates a message task (spec 2026-11-05 Part 2). Idempotent, so a
+	// review whose answer commit is retried activates again without error.
+	ActivateReviewedMessageTask(ctx context.Context, arg ActivateReviewedMessageTaskParams) (int64, error)
 	AddCloudflareRemoteAccessAbandoned(ctx context.Context, abandoned []byte) (AuraCloudflareRemoteAccess, error)
 	// Claim an asset that was presigned before its conversation existed.
 	//
@@ -37,6 +40,9 @@ type Querier interface {
 	// orphaned starts, and the hour bound keeps one it missed from pinning live_runs above zero
 	// forever. A job run counts only while its heartbeat is fresh.
 	ApplianceWorkInFlight(ctx context.Context) (ApplianceWorkInFlightRow, error)
+	// A scheduled draft's review fixes what will be sent, before its time; the task sends it then
+	// (migration 0155). An immediate draft is never approved, only claimed.
+	ApproveScheduledMessageDraft(ctx context.Context, arg ApproveScheduledMessageDraftParams) (AuraMessageDrafts, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
@@ -60,6 +66,7 @@ type Querier interface {
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	BindMediaJobAssetDelivery(ctx context.Context, arg BindMediaJobAssetDeliveryParams) (int64, error)
+	CancelReviewedMessageTask(ctx context.Context, arg CancelReviewedMessageTaskParams) (int64, error)
 	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
 	// reason to the paused status).
 	CancelTask(ctx context.Context, id pgtype.UUID) error

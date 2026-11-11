@@ -70,6 +70,7 @@ type Runner struct {
 	turnRecall            TurnRecallStore
 	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 	messageDrafts         *messagedrafts.Store
+	messageTasks          ScheduledMessageTasks
 
 	runtime *llm.Runtime
 	// identityLLM resolves the turn identity's OWN credential (CRED-05/CRED-07). nil =>

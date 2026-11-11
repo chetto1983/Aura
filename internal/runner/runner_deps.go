@@ -77,7 +77,10 @@ type Deps struct {
 	// pool-less splitResumeCommitter (unit tests, cache_audit) with no code change.
 	ResumeCommitter ResumeCommitter
 	MessageDrafts   *messagedrafts.Store
-	Client          llm.Client
+	// MessageTasks settles the message task a scheduled draft's review answers. Nil leaves
+	// a scheduled review unavailable.
+	MessageTasks ScheduledMessageTasks
+	Client       llm.Client
 	// Runtime is the hot primary-route source shared by interactive turns and the
 	// daemon's resident workers. nil preserves hand-built callers by wrapping Client/LLM.
 	Runtime *llm.Runtime
@@ -244,6 +247,7 @@ func New(d Deps) *Runner {
 		Conv:                      d.Conv,
 		pause:                     d.Pause,
 		messageDrafts:             d.MessageDrafts,
+		messageTasks:              d.MessageTasks,
 		approvalExpiry:            d.ApprovalExpiry,
 		identity:                  d.Identity,
 		cacheMetrics:              d.CacheMetrics,

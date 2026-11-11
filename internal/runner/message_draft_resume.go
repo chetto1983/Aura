@@ -98,63 +98,15 @@ func (r *Runner) ResolveMessageDraft(ctx context.Context, draftID, action string
 	}
 
 	content := ""
-	switch action {
-	case "decline":
-		if draft.Status == messagedrafts.StatusPending {
-			draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID)
-			if err != nil {
-				return MessageDraftResolution{}, err
-			}
+	if draft.Scheduled() {
+		draft, content, err = r.resolveScheduledMessage(ctx, ownerID, draft, action, overrides)
+		if err != nil {
+			return MessageDraftResolution{}, err
 		}
-		if draft.Status != messagedrafts.StatusDeclined && draft.Status != messagedrafts.StatusExpired {
-			return MessageDraftResolution{}, messagedrafts.ErrUnavailable
-		}
-		if draft.Status == messagedrafts.StatusExpired {
-			content = "message review expired without sending"
-		} else {
-			content = "user declined to send the message"
-		}
-	case "send":
-		if draft.Status == messagedrafts.StatusPending {
-			if r.registry == nil {
-				return MessageDraftResolution{}, messagedrafts.ErrUnavailable
-			}
-			tool, ok := r.registry.Get(draft.RegisteredToolName)
-			if !ok {
-				return MessageDraftResolution{}, messagedrafts.ErrUnavailable
-			}
-			spec := tool.Spec()
-			target, trusted := messagedrafts.TrustedOutboundTarget(spec, draft.OriginalArgs)
-			if !trusted || target != draft.Target || spec.Name != draft.RegisteredToolName {
-				return MessageDraftResolution{}, messagedrafts.ErrUnavailable
-			}
-			draft, err = r.messageDrafts.ClaimSend(ctx, ownerID, draft.ID, overrides)
-			if err != nil {
-				return MessageDraftResolution{}, err
-			}
-			result, executeErr := agent.ExecuteReviewedMessage(ctx, tool, r.gateway, draft, r.runDir, r.previewCap)
-			status, code := reviewedMessageOutcome(executeErr)
-			if executeErr != nil {
-				slog.Warn("message review: send did not complete",
-					"draft_id", draft.ID, "status", status, "outcome", code, "detail", reviewedSendFailureDetail(executeErr))
-			}
-			// The HTTP request can disappear after the sidecar has sent. Preserve the
-			// disposition on a bounded detached context so retry never dispatches.
-			outcomeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			draft, err = r.messageDrafts.MarkOutcome(outcomeCtx, ownerID, draft.ID, status, code)
-			cancel()
-			if err != nil {
-				return MessageDraftResolution{}, fmt.Errorf("record message dispatch outcome: %w", err)
-			}
-			if executeErr == nil {
-				content = result.Preview
-			}
-		}
-		if draft.Status != messagedrafts.StatusSent && draft.Status != messagedrafts.StatusFailed && draft.Status != messagedrafts.StatusUncertain {
-			return MessageDraftResolution{}, messagedrafts.ErrUnavailable
-		}
-		if content == "" {
-			content = reviewedMessageAnswer(draft.Status)
+	} else {
+		draft, content, err = r.resolveImmediateMessage(ctx, ownerID, draft, action, overrides)
+		if err != nil {
+			return MessageDraftResolution{}, err
 		}
 	}
 
@@ -175,6 +127,73 @@ func (r *Runner) ResolveMessageDraft(ctx context.Context, draftID, action string
 		return MessageDraftResolution{}, err
 	}
 	return MessageDraftResolution{Status: draft.Status, Directive: classifyResolve(pending, resumeAction, remaining)}, nil
+}
+
+// resolveImmediateMessage answers the review of a draft sent now: send claims it and runs the
+// trusted tool once, decline declines it. It returns the draft and the tool answer.
+func (r *Runner) resolveImmediateMessage(ctx context.Context, ownerID string, draft messagedrafts.Draft, action string, overrides json.RawMessage) (messagedrafts.Draft, string, error) {
+	var err error
+	content := ""
+	switch action {
+	case "decline":
+		if draft.Status == messagedrafts.StatusPending {
+			draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID)
+			if err != nil {
+				return draft, "", err
+			}
+		}
+		if draft.Status != messagedrafts.StatusDeclined && draft.Status != messagedrafts.StatusExpired {
+			return draft, "", messagedrafts.ErrUnavailable
+		}
+		if draft.Status == messagedrafts.StatusExpired {
+			content = "message review expired without sending"
+		} else {
+			content = "user declined to send the message"
+		}
+	case "send":
+		if draft.Status == messagedrafts.StatusPending {
+			if r.registry == nil {
+				return draft, "", messagedrafts.ErrUnavailable
+			}
+			tool, ok := r.registry.Get(draft.RegisteredToolName)
+			if !ok {
+				return draft, "", messagedrafts.ErrUnavailable
+			}
+			spec := tool.Spec()
+			target, trusted := messagedrafts.TrustedOutboundTarget(spec, draft.OriginalArgs)
+			if !trusted || target != draft.Target || spec.Name != draft.RegisteredToolName {
+				return draft, "", messagedrafts.ErrUnavailable
+			}
+			draft, err = r.messageDrafts.ClaimSend(ctx, ownerID, draft.ID, overrides)
+			if err != nil {
+				return draft, "", err
+			}
+			result, executeErr := agent.ExecuteReviewedMessage(ctx, tool, r.gateway, draft, r.runDir, r.previewCap)
+			status, code := reviewedMessageOutcome(executeErr)
+			if executeErr != nil {
+				slog.Warn("message review: send did not complete",
+					"draft_id", draft.ID, "status", status, "outcome", code, "detail", reviewedSendFailureDetail(executeErr))
+			}
+			// The HTTP request can disappear after the sidecar has sent. Preserve the
+			// disposition on a bounded detached context so retry never dispatches.
+			outcomeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			draft, err = r.messageDrafts.MarkOutcome(outcomeCtx, ownerID, draft.ID, status, code)
+			cancel()
+			if err != nil {
+				return draft, "", fmt.Errorf("record message dispatch outcome: %w", err)
+			}
+			if executeErr == nil {
+				content = result.Preview
+			}
+		}
+		if draft.Status != messagedrafts.StatusSent && draft.Status != messagedrafts.StatusFailed && draft.Status != messagedrafts.StatusUncertain {
+			return draft, "", messagedrafts.ErrUnavailable
+		}
+		if content == "" {
+			content = reviewedMessageAnswer(draft.Status)
+		}
+	}
+	return draft, content, nil
 }
 
 func (r *Runner) pendingForMessageDraft(ctx context.Context, draft messagedrafts.Draft) (askuser.Pending, error) {
