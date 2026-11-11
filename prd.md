@@ -1580,9 +1580,9 @@ cocoindex 1.1.1 in the ingestion sidecar, 2026-11-11
   and every database it leaves has identical types, properties, 22 indexes and record counts.
 - **Same state.** 1.1.1 resumes a CocoIndex state written by 1.0.26 with nothing re-extracted or
   re-embedded, then reconciles a modification and a deletion as 1.0.26 does.
-- **Usage tracking, in both versions.** The sidecar reports its startup to
-  `cocoindex.gateway.scarf.sh` unless `COCOINDEX_DISABLE_USAGE_TRACKING` is set, and Aura does not
-  set it.
+- **Usage tracking, in both versions.** The sidecar reported its startup to
+  `cocoindex.gateway.scarf.sh` unless `COCOINDEX_DISABLE_USAGE_TRACKING` was set. The image now
+  sets it to `1`, and with it neither version makes the attempt.
 
 What this does not show: the lab VM, a real corpus or a large state, the extractor matrix with 1.1.1,
 or any agent turn.
