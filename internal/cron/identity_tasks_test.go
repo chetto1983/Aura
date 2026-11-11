@@ -32,18 +32,22 @@ func TestAnIdentityTaskTheDeactivationStopsIsOneThePersonCouldStop(t *testing.T)
 
 func TestStoreFakeIdentityTasksBindTheIdentity(t *testing.T) {
 	t.Parallel()
-	for name, call := range map[string]func(*Store) error{
-		"pause":  func(s *Store) error { return s.PauseIdentityTasks(context.Background(), "owner") },
-		"delete": func(s *Store) error { return s.DeleteIdentityTasks(context.Background(), "owner") },
+	// A deactivation pauses what can pause; its message tasks are cancelled instead (decision 37).
+	for name, c := range map[string]struct {
+		call  func(*Store) error
+		kinds []string
+	}{
+		"pause":  {func(s *Store) error { return s.PauseIdentityTasks(context.Background(), "owner") }, pausableIdentityKinds()},
+		"delete": {func(s *Store) error { return s.DeleteIdentityTasks(context.Background(), "owner") }, identityTaskKinds()},
 	} {
 		f := &cronFakeDBTX{}
-		if err := call(storeWithFake(f)); err != nil {
+		if err := c.call(storeWithFake(f)); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if len(f.gotArgs) != 2 || f.gotArgs[0] != "owner" {
 			t.Fatalf("%s bound %+v", name, f.gotArgs)
 		}
-		if !slices.Equal(f.gotArgs[1].([]string), identityTaskKinds()) {
+		if !slices.Equal(f.gotArgs[1].([]string), c.kinds) {
 			t.Fatalf("%s is not scoped to what a person scheduled: %+v", name, f.gotArgs[1])
 		}
 		if !strings.Contains(f.gotSQL, "identity_id = $1") || !strings.Contains(f.gotSQL, "kind = ANY($2") {

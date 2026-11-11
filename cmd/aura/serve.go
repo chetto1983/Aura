@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/steer"
@@ -448,6 +449,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider, memoryProvisioner))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
+	aguiServer.SetScheduledMessageCanceller(messagedrafts.NewStore(chat.pool))
 	aguiServer.SetHostUpdate(chat.cfg.UpdateStateDir)
 	// Aura's own MCP sidecars are OAuth resource servers isolated by token subject
 	// (Amendment #147), and nothing but a browser could mint them a token — so they never

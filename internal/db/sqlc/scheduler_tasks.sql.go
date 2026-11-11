@@ -50,6 +50,35 @@ func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, er
 	return result.RowsAffected(), nil
 }
 
+const cancelIdentityMessageTasks = `-- name: CancelIdentityMessageTasks :many
+UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
+WHERE identity_id = $1 AND kind = 'message'
+  AND status IN ('pending_approval', 'active')
+RETURNING id
+`
+
+// Deactivation cancels an identity's message tasks rather than pausing them: a paused message
+// could resume, and a message is only ever cancelled (decisions 14 and 37).
+func (q *Queries) CancelIdentityMessageTasks(ctx context.Context, identityID string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, cancelIdentityMessageTasks, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const cancelReviewedMessageTask = `-- name: CancelReviewedMessageTask :execrows
 UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
 WHERE id = $1 AND identity_id = $2 AND kind = 'message'

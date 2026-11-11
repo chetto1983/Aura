@@ -98,6 +98,8 @@ type cronTaskStore struct {
 	pool  *pgxpool.Pool
 	store *cron.Store
 	conv  *conversations.Store // schedule-time origin-conversation → identity resolver (Phase 20, Fork 1)
+	// drafts declines a message task's draft before the task is cancelled (decision 15).
+	drafts *messagedrafts.Store
 }
 
 // newCronTaskStore builds the adapter over the live pool. A nil pool yields an
@@ -106,7 +108,7 @@ type cronTaskStore struct {
 // conv is the conversations.Store the adapter calls to snapshot the owning identity
 // at schedule time; a nil conv leaves the origin un-resolved (identity → 'local').
 func newCronTaskStore(pool *pgxpool.Pool, conv *conversations.Store) *cronTaskStore {
-	return &cronTaskStore{pool: pool, store: cron.New(pool), conv: conv}
+	return &cronTaskStore{pool: pool, store: cron.New(pool), conv: conv, drafts: messagedrafts.NewStore(pool)}
 }
 
 // CreateScheduledTask persists a resolved task via cron.Store, honoring the tool's
@@ -245,6 +247,11 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 	if !cron.IsAgentStoppableKind(cron.TaskKind(kind)) {
 		return watchStopRefused(id)
 	}
+	if kind == string(cron.KindMessage) {
+		if err := s.drafts.DeclineForTask(ctx, identityID, id); err != nil {
+			return fmt.Errorf("cancel task %s: decline its message: %w", id, err)
+		}
+	}
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET status = 'cancelled', paused_reason = NULL, updated_at = now()
@@ -267,12 +274,13 @@ func (s *cronTaskStore) RunScheduledTaskNow(ctx context.Context, id string) erro
 		SET next_run_at = now(), updated_at = now()
 		WHERE id = $1::uuid
 		  AND identity_id = $2
-		  AND status = 'active'`, id, identityID)
+		  AND status = 'active'
+		  AND kind <> 'message'`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("run_now task %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("task %s is not active (pending_approval or cancelled tasks cannot be run now)", id)
+		return fmt.Errorf("task %s is not active (pending_approval or cancelled tasks cannot be run now, and a scheduled message runs only at its time)", id)
 	}
 	return nil
 }

@@ -5,6 +5,8 @@ package cron
 // instead of letting it fail and notify on every occurrence.
 
 import (
+	"github.com/google/uuid"
+
 	"context"
 	"errors"
 	"fmt"
@@ -32,9 +34,10 @@ const defaultPauseAfterFailures = 3
 var ErrResumePastOneShot = errors.New("its one-shot time has passed; edit it to a new time instead of resuming it")
 
 // IsPausableKind reports whether a task of this kind may be paused, by the operator or by
-// the scheduler. It is the cancel rule: a task the operator may not stop may not be paused.
+// the scheduler. It is the cancel rule: a task the operator may not stop may not be paused. A
+// message is cancelled, never paused: a resumed one would send text reviewed for another time.
 func IsPausableKind(k TaskKind) bool {
-	return IsCancellableKind(k)
+	return IsCancellableKind(k) && k != KindMessage
 }
 
 // pauseAfterFailures resolves AURA_SCHEDULER_PAUSE_AFTER_FAILURES. Like the approval reminder
@@ -68,15 +71,29 @@ func (s *Store) PauseTask(ctx context.Context, id string) error {
 	return nil
 }
 
-// PauseIdentityTasks stops what a deactivated identity scheduled from firing (personKinds). A
-// second call finds nothing active, so it changes nothing. A run already in progress still
-// finishes.
+// PauseIdentityTasks stops what a deactivated identity scheduled from firing (personKinds
+// that pause; its message tasks are cancelled instead, CancelIdentityMessageTasks). A second
+// call finds nothing active, so it changes nothing. A run already in progress still finishes.
 func (s *Store) PauseIdentityTasks(ctx context.Context, identityID string) error {
-	err := s.q.PauseIdentityTaskRows(ctx, sqlc.PauseIdentityTaskRowsParams{IdentityID: identityID, Kinds: identityTaskKinds()})
+	err := s.q.PauseIdentityTaskRows(ctx, sqlc.PauseIdentityTaskRowsParams{IdentityID: identityID, Kinds: pausableIdentityKinds()})
 	if err != nil {
 		return fmt.Errorf("pause tasks of identity %q: %w", identityID, err)
 	}
 	return nil
+}
+
+// CancelIdentityMessageTasks cancels a deactivated identity's message tasks, awaiting their
+// review or approved, and returns their ids. Their drafts are declined first, by the caller.
+func (s *Store) CancelIdentityMessageTasks(ctx context.Context, identityID string) ([]string, error) {
+	rows, err := s.q.CancelIdentityMessageTasks(ctx, identityID)
+	if err != nil {
+		return nil, fmt.Errorf("cancel message tasks of identity %q: %w", identityID, err)
+	}
+	ids := make([]string, len(rows))
+	for i, id := range rows {
+		ids[i] = uuid.UUID(id.Bytes).String()
+	}
+	return ids, nil
 }
 
 // ResumeTask reactivates a paused task and returns its next fire, computed from now so the

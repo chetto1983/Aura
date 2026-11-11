@@ -571,20 +571,20 @@ The query: `DeclineScheduledMessageDraftsForTask :exec` sets `status = 'declined
 - `taskCancel` reads the task with `cron.Store.GetTask` and, for a message task, declines before it cancels.
 - Deactivation (decision 37): `PauseIdentityTaskRows` takes `personKinds` without `KindMessage` (a new `pausableIdentityKinds()`); a new `CancelIdentityMessageTasks :many` cancels the identity's `message` tasks in `pending_approval` or `active` and returns their ids; `scheduledTaskAdapter.TerminateJobs` first calls `DeclineScheduledForOwner(ownerID)` (decision 37: by owner, so a retry still finds the drafts, and before the cancel, so a handler already running cannot claim one), then `PauseIdentityTaskRows` and `CancelIdentityMessageTasks`. The three cancel paths of decision 15 likewise call `DeclineForTask` before `CancelTask`. `DeleteIdentityTasks` keeps `personKinds`, `message` included.
 
-- [ ] `TestDeclineForTaskDeclinesOnlyAnUnsentDraft` (`db_integration`): pending and approved drafts become `declined`, and a `dispatching` one is unchanged.
-- [ ] `TestCancellingAMessageTaskDeclinesItsDraft` (cmd/aura `db_integration`, through the task tool's `cronTaskStore`): the task is `cancelled` and its approved draft is `declined`.
-- [ ] `TestCancellingAMessageTaskOnTheBoardDeclinesItsDraft` (agui): the fake canceller saw `(task identity, id)`. A reminder's cancel does not call it.
-- [ ] `TestAMessageTaskCannotBeRunPausedOrEdited` (agui): run and PATCH give 409 with the text above, and pause gives 403 `this task cannot be paused`.
-- [ ] `TestAMessageTaskIsNotPausable` (cron unit): `IsPausableKind(KindMessage)` is false and `IsPausableKind(KindReminder)` is true.
-- [ ] `TestDeactivationDeclineIsRetrySafe` (cmd/aura `db_integration`), two cases:
+- [x] `TestDeclineForTaskDeclinesOnlyAnUnsentDraft` (`db_integration`): pending and approved drafts become `declined`, and a `dispatching` one is unchanged.
+- [x] `TestCancellingAMessageTaskDeclinesItsDraft` (cmd/aura `db_integration`, through the task tool's `cronTaskStore`): the task is `cancelled` and its approved draft is `declined`.
+- [x] `TestCancellingAMessageTaskOnTheBoardDeclinesItsDraft` (agui): the fake canceller saw `(task identity, id)`. A reminder's cancel does not call it.
+- [x] `TestAMessageTaskCannotBeRunPausedOrEdited` (agui): run and PATCH give 409 with the text above, and pause gives 403 `this task cannot be paused`.
+- [x] `TestAMessageTaskIsNotPausable` (cron unit): `IsPausableKind(KindMessage)` is false and `IsPausableKind(KindReminder)` is true.
+- [x] `TestDeactivationDeclineIsRetrySafe` (cmd/aura `db_integration`), two cases:
   - the decline is made to fail: `TerminateJobs` returns the error and cancels nothing (the task stays `active`, the draft `approved`); the retry declines the draft and cancels the task;
   - the cancel is made to fail after the decline: the retry finds the draft already `declined` (no-op) and cancels the task.
   In both, the draft ends `declined`, never `pending` or `approved`, and the task `cancelled`.
-- [ ] `TestCancelFailedDeclineLeavesTheTaskUncancelled` (cmd/aura `db_integration`, task tool and board paths): a failed decline leaves the task `active` and the draft `approved`; the retry declines, then cancels.
-- [ ] `TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim` (cmd/aura `db_integration`): a handler holding the loaded task claims after a cancel (task-tool path and deactivation path); the claim fails and nothing is sent.
-- [ ] `TestDeactivationAndClaimOrderByDraftStatus` (messagedrafts `db_integration`): decline-then-claim leaves the draft `declined` and the claim fails; claim-then-decline leaves it `dispatching`.
-- [ ] `TestDeactivationCancelsMessageTasksAndDeclinesTheirDrafts` (cmd/aura `db_integration`): after `TerminateJobs`, the identity's reminder is `paused`, its pending and approved message tasks are `cancelled` with their drafts `declined`, and another identity's message task is untouched.
-- [ ] Red, `make sqlc`, implement, wire `SetScheduledMessageCanceller(messagedrafts.NewStore(pool))` in `serve_webui.go`, and go green. `agui/server.go` and `serve_adapters.go` stay under 600 lines. Commit: `feat(scheduler): cancelling a message task declines its draft`.
+- [x] `TestCancelFailedDeclineLeavesTheTaskUncancelled` (cmd/aura `db_integration`, task tool and board paths): a failed decline leaves the task `active` and the draft `approved`; the retry declines, then cancels.
+- [ ] `TestCancelDeclinesBeforeTheTaskSoARunningHandlerCannotClaim` (cmd/aura `db_integration`): a handler holding the loaded task claims after a cancel (task-tool path and deactivation path); the claim fails and nothing is sent. *(Lands with Task 11: the fire-time claim it races does not exist before it.)*
+- [ ] `TestDeactivationAndClaimOrderByDraftStatus` (messagedrafts `db_integration`): decline-then-claim leaves the draft `declined` and the claim fails; claim-then-decline leaves it `dispatching`. *(Lands with Task 11: the fire-time claim it races does not exist before it.)*
+- [x] `TestDeactivationCancelsMessageTasksAndDeclinesTheirDrafts` (cmd/aura `db_integration`): after `TerminateJobs`, the identity's reminder is `paused`, its pending and approved message tasks are `cancelled` with their drafts `declined`, and another identity's message task is untouched.
+- [x] Red, `make sqlc`, implement, wire `SetScheduledMessageCanceller(messagedrafts.NewStore(pool))` in `serve_webui.go`, and go green. `agui/server.go` and `serve_adapters.go` stay under 600 lines. Commit: `feat(scheduler): cancelling a message task declines its draft`.
 
 ### Task 9: The cockpit card shows when the message will be sent
 

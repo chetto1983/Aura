@@ -160,3 +160,55 @@ func TestApproveRefusesAnImmediateDraft(t *testing.T) {
 		t.Fatalf("approve an immediate draft = %v, want ErrUnavailable", err)
 	}
 }
+
+// A cancel declines what has not been sent; a draft already claimed is left to its outcome.
+func TestDeclineForTaskDeclinesOnlyAnUnsentDraft(t *testing.T) {
+	pool := draftTestPool(t)
+	owner := draftTestIdentity(t, pool)
+	store := NewStore(pool)
+	sendAt := time.Now().Add(time.Hour)
+	statusOf := func(id string) Status {
+		got, err := store.Get(context.Background(), owner, id)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got.Status
+	}
+	for name, prepare := range map[string]func(Draft){
+		"pending":  func(Draft) {},
+		"approved": func(d Draft) { _, _ = store.Approve(context.Background(), owner, d.ID, nil) },
+	} {
+		taskID := scheduledTask(t, pool, owner)
+		draft, err := store.Create(context.Background(), scheduledInput(owner, "call-"+name, taskID, sendAt))
+		if err != nil {
+			t.Fatalf("%s: create: %v", name, err)
+		}
+		prepare(draft)
+		if err := store.DeclineForTask(context.Background(), owner, taskID); err != nil {
+			t.Fatalf("%s: decline: %v", name, err)
+		}
+		if got := statusOf(draft.ID); got != StatusDeclined {
+			t.Fatalf("%s draft = %q, want declined", name, got)
+		}
+	}
+	taskID := scheduledTask(t, pool, owner)
+	draft, err := store.Create(context.Background(), scheduledInput(owner, "call-dispatching", taskID, sendAt))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := store.Approve(context.Background(), owner, draft.ID, nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET status = 'dispatching', dispatch_started_at = now() WHERE id = $1`, draft.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if err := store.DeclineForTask(context.Background(), owner, taskID); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if got := statusOf(draft.ID); got != StatusDispatching {
+		t.Fatalf("claimed draft = %q, want dispatching", got)
+	}
+}

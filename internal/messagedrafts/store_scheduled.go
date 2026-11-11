@@ -56,3 +56,34 @@ func (s *Store) Approve(ctx context.Context, ownerID, draftID string, overrides 
 	})
 	return approved, err
 }
+
+// DeclineForTask declines the task's draft while it is pending or approved; a claimed one is
+// untouched. Cancelling a message task calls it before the cancel (decision 15): a handler
+// already holding the task then finds its draft declined and claims nothing.
+func (s *Store) DeclineForTask(ctx context.Context, ownerID, taskID string) error {
+	owner, err := db.ParseUUID("owner id", ownerID)
+	if err != nil {
+		return ErrUnavailable
+	}
+	task, err := db.ParseUUID("task id", taskID)
+	if err != nil {
+		return ErrUnavailable
+	}
+	return db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
+		return q.DeclineScheduledMessageDraftsForTask(ctx, sqlc.DeclineScheduledMessageDraftsForTaskParams{
+			IdentityID: owner, ScheduledTaskID: task,
+		})
+	})
+}
+
+// DeclineScheduledForOwner declines every pending or approved scheduled draft of the owner, for
+// a deactivation (decision 37). It goes by owner, not by task, so a retry still finds them.
+func (s *Store) DeclineScheduledForOwner(ctx context.Context, ownerID string) error {
+	owner, err := db.ParseUUID("owner id", ownerID)
+	if err != nil {
+		return ErrUnavailable
+	}
+	return db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
+		return q.DeclineScheduledMessageDraftsForOwner(ctx, owner)
+	})
+}

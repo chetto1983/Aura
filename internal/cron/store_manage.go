@@ -23,6 +23,17 @@ import (
 // this list as a parameter, so Go and SQL cannot name two different sets.
 var personKinds = []TaskKind{KindReminder, KindAgentJob, KindPIMWatch, KindPIMDigest, KindMessage}
 
+// pausableIdentityKinds is personKinds without the one kind a deactivation cancels instead.
+func pausableIdentityKinds() []string {
+	kinds := make([]string, 0, len(personKinds))
+	for _, kind := range personKinds {
+		if IsPausableKind(kind) {
+			kinds = append(kinds, string(kind))
+		}
+	}
+	return kinds
+}
+
 func identityTaskKinds() []string {
 	kinds := make([]string, 0, len(personKinds))
 	for _, kind := range personKinds {

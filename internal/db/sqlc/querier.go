@@ -67,6 +67,9 @@ type Querier interface {
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	BindMediaJobAssetDelivery(ctx context.Context, arg BindMediaJobAssetDeliveryParams) (int64, error)
+	// Deactivation cancels an identity's message tasks rather than pausing them: a paused message
+	// could resume, and a message is only ever cancelled (decisions 14 and 37).
+	CancelIdentityMessageTasks(ctx context.Context, identityID string) ([]pgtype.UUID, error)
 	CancelReviewedMessageTask(ctx context.Context, arg CancelReviewedMessageTaskParams) (int64, error)
 	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
 	// reason to the paused status).
@@ -164,6 +167,11 @@ type Querier interface {
 	// (migration 0155, decision 30). No row back means GetTaskByOriginCall has it.
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeclineMessageDraft(ctx context.Context, arg DeclineMessageDraftParams) (AuraMessageDrafts, error)
+	// Deactivating an identity declines every scheduled draft it has not sent (decision 37).
+	DeclineScheduledMessageDraftsForOwner(ctx context.Context, identityID pgtype.UUID) error
+	// Cancelling a message task declines its draft first (decision 15), so a handler already
+	// holding the task cannot claim it. A claimed draft is left as it is: it was sent, or is being.
+	DeclineScheduledMessageDraftsForTask(ctx context.Context, arg DeclineScheduledMessageDraftsForTaskParams) error
 	DeleteBoardCard(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteBoardView(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error

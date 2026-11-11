@@ -126,6 +126,66 @@ func TestTheBoardSendsAMessageTaskToItsCard(t *testing.T) {
 	}
 }
 
+// fakeMessageCanceller records the drafts a message cancel declined.
+type fakeMessageCanceller struct {
+	declined []string
+	err      error
+}
+
+func (f *fakeMessageCanceller) DeclineForTask(_ context.Context, ownerID, taskID string) error {
+	f.declined = append(f.declined, ownerID+"/"+taskID)
+	return f.err
+}
+
+// Decision 15: the board declines a message's draft before it cancels the task, and a failed
+// decline cancels nothing.
+func TestCancellingAMessageTaskOnTheBoardDeclinesItsDraft(t *testing.T) {
+	canceller := &fakeMessageCanceller{}
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindMessage, Status: "active", IdentityID: "owner-1"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	s.SetScheduledMessageCanceller(canceller)
+	if rec := doGov(t, s, http.MethodDelete, "/api/governance/scheduler/"+schedTaskID); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	if len(canceller.declined) != 1 || canceller.declined[0] != "owner-1/"+schedTaskID || board.cancelledID != schedTaskID {
+		t.Fatalf("declined %v, cancelled %q", canceller.declined, board.cancelledID)
+	}
+
+	canceller.err = fmt.Errorf("database unavailable")
+	board.cancelledID = ""
+	if rec := doGov(t, s, http.MethodDelete, "/api/governance/scheduler/"+schedTaskID); rec.Code != http.StatusBadGateway || board.cancelledID != "" {
+		t.Fatalf("failed decline: status %d, cancelled %q", rec.Code, board.cancelledID)
+	}
+
+	reminder := &fakeMessageCanceller{}
+	board = &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindReminder, Status: "active"}}
+	s = govServer(GovernanceProviders{Scheduler: board})
+	s.SetScheduledMessageCanceller(reminder)
+	if rec := doGov(t, s, http.MethodDelete, "/api/governance/scheduler/"+schedTaskID); rec.Code != http.StatusOK || len(reminder.declined) != 0 {
+		t.Fatalf("reminder cancel: status %d, declined %v", rec.Code, reminder.declined)
+	}
+}
+
+// Decision 14: once reviewed, a message is only ever cancelled.
+func TestAMessageTaskCannotBeRunPausedOrEdited(t *testing.T) {
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindMessage, Status: "active"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	const refusal = "a scheduled message cannot be run now or edited; cancel it and schedule a new one"
+	if rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/run"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), refusal) {
+		t.Fatalf("run: %d %s", rec.Code, rec.Body.String())
+	}
+	edit := `{"schedule_kind":"at","at":"2099-01-01T09:00:00Z","notify":"none"}`
+	if rec := doGovBody(t, s, http.MethodPatch, "/api/governance/scheduler/"+schedTaskID, edit); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), refusal) {
+		t.Fatalf("edit: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/pause"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "this task cannot be paused") {
+		t.Fatalf("pause: %d %s", rec.Code, rec.Body.String())
+	}
+	if board.ranID != "" || board.updatedID != "" || board.pausedID != "" {
+		t.Fatalf("a refused change reached the store: run %q edit %q pause %q", board.ranID, board.updatedID, board.pausedID)
+	}
+}
+
 // A system-seeded sweep is never operator-mutable: the guard returns 403 BEFORE any mutate.
 func TestSchedulerApproveSystemKindForbidden(t *testing.T) {
 	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindIdentityPurge, Status: "active"}}
@@ -306,7 +366,7 @@ func TestSchedulerPauseRefusesTheBackup(t *testing.T) {
 		board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: kind, Status: "active"}}
 		s := govServer(GovernanceProviders{Scheduler: board})
 		rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/pause")
-		if rec.Code != http.StatusForbidden || board.pausedID != "" || !strings.Contains(rec.Body.String(), "a backup cannot be paused") {
+		if rec.Code != http.StatusForbidden || board.pausedID != "" || !strings.Contains(rec.Body.String(), "this task cannot be paused") {
 			t.Fatalf("pause %s = %d (store reached: %q): %s, want 403 and no store call", kind, rec.Code, board.pausedID, rec.Body.String())
 		}
 	}

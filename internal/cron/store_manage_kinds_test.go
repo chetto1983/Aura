@@ -103,3 +103,12 @@ func TestAMessageTaskIsCancellable(t *testing.T) {
 		t.Fatalf("message: cancellable %v, agent-stoppable %v", IsCancellableKind(KindMessage), IsAgentStoppableKind(KindMessage))
 	}
 }
+
+// Decision 14: a message is cancelled, never paused; a resumed one would send text reviewed
+// for another time.
+func TestAMessageTaskIsNotPausable(t *testing.T) {
+	t.Parallel()
+	if IsPausableKind(KindMessage) || !IsPausableKind(KindReminder) {
+		t.Fatalf("pausable: message %v, reminder %v", IsPausableKind(KindMessage), IsPausableKind(KindReminder))
+	}
+}

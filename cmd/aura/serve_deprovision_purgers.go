@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
 var (
@@ -24,11 +25,22 @@ var (
 // them and the purge deletes them. They are rows, so the short-lived `aura identity` process can
 // do both as well as the daemon can.
 type scheduledTaskAdapter struct {
-	store *cron.Store
+	store  *cron.Store
+	drafts *messagedrafts.Store
 }
 
+// TerminateJobs pauses what a deactivated identity scheduled and cancels its message tasks.
+// Their drafts are declined first and by owner (decision 37): a handler already running then
+// cannot claim one, and a retry after a failed cancel still finds them.
 func (a scheduledTaskAdapter) TerminateJobs(ctx context.Context, identityID string) error {
-	return a.store.PauseIdentityTasks(ctx, identityID)
+	if err := a.drafts.DeclineScheduledForOwner(ctx, identityID); err != nil {
+		return fmt.Errorf("decline the scheduled messages of identity %s: %w", identityID, err)
+	}
+	if err := a.store.PauseIdentityTasks(ctx, identityID); err != nil {
+		return err
+	}
+	_, err := a.store.CancelIdentityMessageTasks(ctx, identityID)
+	return err
 }
 
 func (a scheduledTaskAdapter) PurgeScheduledTasks(ctx context.Context, identityID string) error {

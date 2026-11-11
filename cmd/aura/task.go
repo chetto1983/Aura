@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -285,7 +286,15 @@ func taskCancel(ctx context.Context, cfg *config.Config, args []string) {
 	id := requireID("cancel", args)
 	pool := openTaskPool(ctx, cfg)
 	defer pool.Close()
-	if err := cron.New(pool).CancelTask(ctx, id); err != nil {
+	store := cron.New(pool)
+	// A message task's draft is declined before the task is cancelled (decision 15).
+	if task, err := store.GetTask(ctx, id); err == nil && task.Kind == cron.KindMessage {
+		if err := messagedrafts.NewStore(pool).DeclineForTask(ctx, task.IdentityID, id); err != nil {
+			fmt.Fprintln(os.Stderr, "aura task cancel: decline its message:", err)
+			os.Exit(exitInfra)
+		}
+	}
+	if err := store.CancelTask(ctx, id); err != nil {
 		fmt.Fprintln(os.Stderr, "aura task cancel:", err)
 		os.Exit(exitInfra)
 	}
@@ -303,13 +312,13 @@ func taskRunNow(ctx context.Context, cfg *config.Config, args []string) {
 	tag, err := pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET next_run_at = now(), updated_at = now()
-		WHERE id = $1 AND status = 'active'`, id)
+		WHERE id = $1 AND status = 'active' AND kind <> 'message'`, id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura task run_now:", err)
 		os.Exit(exitInfra)
 	}
 	if tag.RowsAffected() == 0 {
-		fmt.Fprintf(os.Stderr, "aura task run_now: %s is not an active task (pending_approval, paused or cancelled tasks cannot be run)\n", id)
+		fmt.Fprintf(os.Stderr, "aura task run_now: %s is not an active task (pending_approval, paused or cancelled tasks cannot be run, nor a scheduled message)\n", id)
 		os.Exit(exitUsage)
 	}
 	fmt.Printf("queued %s to run on the next tick\n", id)

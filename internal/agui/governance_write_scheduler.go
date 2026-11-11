@@ -13,6 +13,7 @@ package agui
 // model-facing `task` tool.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,8 +77,8 @@ func (s *Server) handleSchedulerApprove(w http.ResponseWriter, r *http.Request) 
 // handleSchedulerRun serves POST /api/governance/scheduler/{id}/run: advances an active
 // task's next fire to now so the next tick claims it.
 func (s *Server) handleSchedulerRun(w http.ResponseWriter, r *http.Request) {
-	_, id, ok := s.schedulerMutable(w, r)
-	if !ok {
+	task, id, ok := s.schedulerMutable(w, r)
+	if !ok || refuseMessageChange(w, task) {
 		return
 	}
 	if err := s.governance.Scheduler.RunTaskNow(r.Context(), id); err != nil {
@@ -95,7 +96,7 @@ func (s *Server) handleSchedulerPause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !cron.IsPausableKind(task.Kind) {
-		writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "a backup cannot be paused"})
+		writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "this task cannot be paused"})
 		return
 	}
 	if err := s.governance.Scheduler.PauseTask(r.Context(), id); err != nil {
@@ -136,6 +137,18 @@ func (s *Server) handleSchedulerCancel(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "a backup cannot be cancelled"})
 		return
 	}
+	// The draft is declined before the task is cancelled (decision 15). A failed decline
+	// cancels nothing, so the operator's retry declines, then cancels.
+	if task.Kind == cron.KindMessage {
+		if s.messageCanceller == nil {
+			writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "scheduled messages are not configured"})
+			return
+		}
+		if err := s.messageCanceller.DeclineForTask(r.Context(), task.IdentityID, id); err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
+			return
+		}
+	}
 	if err := s.governance.Scheduler.CancelTask(r.Context(), id); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 		return
@@ -160,7 +173,7 @@ type schedulerEditBody struct {
 // schedule + payload + notify route. A bad grammar → 400; a task no longer editable → 409.
 func (s *Server) handleSchedulerEdit(w http.ResponseWriter, r *http.Request) {
 	task, id, ok := s.schedulerMutable(w, r)
-	if !ok {
+	if !ok || refuseMessageChange(w, task) {
 		return
 	}
 	body, err := decodeSchedulerEditBody(w, r)
@@ -238,4 +251,22 @@ func (s *Server) writeSchedulerMutateErr(w http.ResponseWriter, err error, confl
 		return
 	}
 	writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
+}
+
+// ScheduledMessageCanceller declines a message task's draft; *messagedrafts.Store satisfies it.
+type ScheduledMessageCanceller interface {
+	DeclineForTask(ctx context.Context, ownerID, taskID string) error
+}
+
+// SetScheduledMessageCanceller wires the draft decline a message task's cancel runs first.
+func (s *Server) SetScheduledMessageCanceller(c ScheduledMessageCanceller) { s.messageCanceller = c }
+
+// refuseMessageChange answers a run-now or an edit of a message task: its text was reviewed for
+// its time, so it is cancelled and scheduled again, never moved or rewritten.
+func refuseMessageChange(w http.ResponseWriter, task cron.Task) bool {
+	if task.Kind != cron.KindMessage {
+		return false
+	}
+	writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "a scheduled message cannot be run now or edited; cancel it and schedule a new one"})
+	return true
 }
