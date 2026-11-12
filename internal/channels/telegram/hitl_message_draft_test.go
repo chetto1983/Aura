@@ -20,12 +20,25 @@ type resolveCall struct {
 	overrides json.RawMessage
 }
 
+// ListMessageDrafts lists, as the Runner does, only the drafts whose review pause is still
+// pending: a resolved review is no longer listed (measured live on 2026-11-12, when a fake that
+// listed every draft hid a card that was never redrawn).
 func (f *fakeResume) ListMessageDrafts(context.Context, string) ([]messagedrafts.Draft, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.drafts, nil
+	var listed []messagedrafts.Draft
+	for _, d := range f.drafts {
+		for _, p := range f.pending {
+			if id, ok := messagedrafts.PauseDraftID(p.ResumeContext); ok && id == d.ID {
+				listed = append(listed, d)
+			}
+		}
+	}
+	return listed, nil
 }
 
+// ResolveMessageDraft, when a resolvedStatus is scripted, moves the draft to it and closes its
+// review pause, as the Runner's resolve does.
 func (f *fakeResume) ResolveMessageDraft(_ context.Context, draftID, action string, overrides json.RawMessage) (runner.MessageDraftResolution, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -33,12 +46,22 @@ func (f *fakeResume) ResolveMessageDraft(_ context.Context, draftID, action stri
 	if f.resolveErr != nil {
 		return runner.MessageDraftResolution{}, f.resolveErr
 	}
+	if f.resolvedStatus == "" {
+		return runner.MessageDraftResolution{Directive: runner.ResolveDirective{Outcome: f.outcome}}, nil
+	}
 	for i := range f.drafts {
-		if f.drafts[i].ID == draftID && f.resolvedStatus != "" {
+		if f.drafts[i].ID == draftID {
 			f.drafts[i].Status = f.resolvedStatus
 		}
 	}
-	return runner.MessageDraftResolution{Directive: runner.ResolveDirective{Outcome: f.outcome}}, nil
+	open := f.pending[:0]
+	for _, p := range f.pending {
+		if id, ok := messagedrafts.PauseDraftID(p.ResumeContext); !ok || id != draftID {
+			open = append(open, p)
+		}
+	}
+	f.pending = open
+	return runner.MessageDraftResolution{Status: f.resolvedStatus, Directive: runner.ResolveDirective{Outcome: f.outcome}}, nil
 }
 
 func (f *fakeResume) Location(context.Context) *time.Location {
