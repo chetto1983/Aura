@@ -254,10 +254,11 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			t.revealApprovalDetails(ctx, c, chatID, token)
 			return nil
 		}
-		// Acknowledge immediately so Telegram clears the button spinner and shows a
-		// small toast before any continuation turn starts rendering.
-		_ = c.Respond(callbackToast(action, valid))
+		// The toast follows the verdict, never precedes it: measured 2026-11-12, a press on an
+		// expired card answered "Confermato ✓" while nothing was resolved. A successful press is
+		// acknowledged before any continuation turn starts rendering.
 		out := t.hitlFor(c, chatID).handleCallbackResult(ctx, cb.Data, convID(chatID), func(callbackOutcome) {
+			_ = c.Respond(callbackToast(action, valid))
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
 			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
@@ -267,6 +268,12 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			}
 		}
 		if !out.submitted {
+			if out.stale {
+				_ = c.Respond(&tele.CallbackResponse{Text: staleCallbackToast})
+				t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+				return nil
+			}
+			_ = c.Respond(callbackToast("", false))
 			return nil
 		}
 		// Render the runner's verdict — one switch for BOTH legs (in-turn relay and the
@@ -329,6 +336,10 @@ func (t *Telegram) editApprovalOutcome(bot tele.API, msg *tele.Message, outcome 
 		t.disarmCallbackKeyboard(bot, msg)
 	}
 }
+
+// staleCallbackToast answers a button whose pause is no longer pending. The expiry notice already
+// says what lapsed; the card itself is not edited at expiry, which would need its message id.
+const staleCallbackToast = "Non più attiva: già gestita o scaduta"
 
 func callbackToast(action string, valid bool) *tele.CallbackResponse {
 	return &tele.CallbackResponse{Text: callbackToastText(action, valid)}

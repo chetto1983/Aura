@@ -40,10 +40,11 @@ type fakeResume struct {
 
 	clearPendingOnSubmit bool
 
-	drafts     []messagedrafts.Draft
-	resolved   []resolveCall
-	resolveErr error
-	location   *time.Location
+	drafts         []messagedrafts.Draft
+	resolved       []resolveCall
+	resolveErr     error
+	resolvedStatus messagedrafts.Status // the status a resolve moves its draft to
+	location       *time.Location
 }
 
 type submitCall struct {

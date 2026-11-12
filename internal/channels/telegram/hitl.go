@@ -11,6 +11,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -77,9 +78,12 @@ type callbackOutcome struct {
 	// outcome is the runner's ResolveDirective verdict — the channel renders it, it never
 	// re-derives it (Phase A: one resolver, transports only render).
 	outcome runner.ResolveOutcome
-	// rerender, when set, replaces the pressed card: a review whose state moved under it.
+	// rerender, when set, replaces the pressed card: a review resolved, or whose state moved
+	// under it.
 	rerender       string
 	rerenderMarkup *tele.ReplyMarkup
+	// stale is a press on a pause that is no longer pending: resolved elsewhere, or expired.
+	stale bool
 }
 
 // newHitl builds the HITL surface over the Runner pause backend + the resume
@@ -182,7 +186,10 @@ func (h *hitl) handleCallbackResult(
 	out.content = value
 	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: value})
 	if err != nil {
-		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
+		out.stale = errors.Is(err, askuser.ErrPauseNotFound) || errors.Is(err, askuser.ErrPauseExpired)
+		if !out.stale {
+			slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
+		}
 		return out
 	}
 	out.submitted = true

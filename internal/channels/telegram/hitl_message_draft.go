@@ -159,6 +159,11 @@ func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pendi
 	}
 	out.submitted = true
 	out.outcome = res.Directive.Outcome
+	// The card becomes its outcome, keyboard gone: measured 2026-11-12, a card that only lost
+	// its buttons still read as a pending review.
+	if current, found := h.reviewDraft(ctx, convID, p); found {
+		out.rerender, out.rerenderMarkup = messageReviewText(current, h.runner.Location(ctx)), &tele.ReplyMarkup{}
+	}
 	return out
 }
 

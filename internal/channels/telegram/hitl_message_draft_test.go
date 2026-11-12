@@ -33,6 +33,11 @@ func (f *fakeResume) ResolveMessageDraft(_ context.Context, draftID, action stri
 	if f.resolveErr != nil {
 		return runner.MessageDraftResolution{}, f.resolveErr
 	}
+	for i := range f.drafts {
+		if f.drafts[i].ID == draftID && f.resolvedStatus != "" {
+			f.drafts[i].Status = f.resolvedStatus
+		}
+	}
 	return runner.MessageDraftResolution{Directive: runner.ResolveDirective{Outcome: f.outcome}}, nil
 }
 
