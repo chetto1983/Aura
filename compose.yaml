@@ -660,7 +660,8 @@ services:
     environment:
       # This default is the whole heap policy. bin/server.sh passes the variable through
       # verbatim; left empty, 26.11.1 runs ZGC with MaxRAMPercentage=75, up to 2.25 GiB
-      # under mem_limit, and ZGC keeps what it takes.
+      # under mem_limit. ZGC holds what a load took for about 10 minutes, then returns it in
+      # steps, so the container must carry that peak, not just the idle figure.
       # 768 MiB with a small initial heap, as server.sh advises for low-footprint setups:
       # on Aura's arcadedb_integration tier plus a 20,000-fact bench it passed everything,
       # with no OutOfMemoryError and latency equal to -Xms2G -Xmx2G within noise, idling at

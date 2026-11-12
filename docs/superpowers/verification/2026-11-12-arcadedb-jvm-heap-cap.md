@@ -80,6 +80,43 @@ approved it ("Sì, prepara il punto 1").
   2026-10-17, read the 7,798-passage library at a 685 MiB peak, reads only.
 - Real ingest of large documents and many identities has not been measured at any setting.
 
+## Does ZGC give the memory back
+
+Measured later the same day, after Roberto Franchini explained the image's default: the
+container's memory is meant to set the heap, at 75%. The question was whether the 2.2 GiB the
+default reaches under load stays committed.
+
+**Setup.**
+- Two JVM 26.11.1 containers ran side by side, each under `--memory 3g` with compose's
+  `JAVA_OPTS`:
+  - **A** on the image default (no `ARCADEDB_OPTS_MEMORY`);
+  - **B** on the new default `-Xms256M -Xmx768M`.
+- Both took the 3000-fact bench at the same time, then sat idle.
+- Memory was sampled from `docker stats` and the container's `memory.stat` every 30 to 60 s.
+- ZGC's flags on that image: `ZUncommit` true, `ZUncommitDelay` 300 s.
+
+| After the load ended | A, image default | B, `-Xms256M -Xmx768M` |
+|---|---|---|
+| before the load | 283 MiB | 372 MiB |
+| 0 s | 2.32 GiB | 936 MiB |
+| 0 to 9.5 min | unchanged | unchanged |
+| 13 min | 1.29 GiB | 595 MiB |
+| 22 min | 790 MiB, unchanged since 20 min | 426 MiB, still falling |
+
+**What it shows.**
+- **ZGC does return the heap, after about 10 minutes, in steps of about 200 MiB.** Earlier in
+  this file and in the native-release file, "ZGC keeps what it takes" is true only for those
+  first minutes.
+- **RSS stayed near 150 MiB throughout.** What grows and shrinks is the mapped ZGC heap.
+- **The cap still matters, for the peak.** Under load the image default commits 2.3 GiB of the
+  3 GB limit, and holds it for at least 10 minutes after each load. `-Xmx768M` keeps that peak
+  under 1 GiB.
+- **The old `-Xms2G -Xmx2G` never went below 2 GiB.** ZGC does not uncommit below `Xms`,
+  hence its 2.12 GiB idle figure above.
+
+**Not shown.** Where B settles (it was still falling at 22 minutes), behaviour under
+intermittent load, and real data.
+
 ## What this does not prove
 
 - **Not the lab VM.** It does not prove the real per-identity databases, the 7,798-passage
