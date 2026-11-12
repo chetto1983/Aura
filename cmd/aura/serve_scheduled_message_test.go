@@ -27,7 +27,7 @@ func TestNoMountedWhatsAppRefusesTheScheduledDraft(t *testing.T) {
 func TestTheRegisteredTaskToolIsHostReviewed(t *testing.T) {
 	t.Parallel()
 	reg := tools.NewRegistry()
-	live := newTaskTool(newCronTaskStore(nil, nil), nil, "", reg)
+	live := newTaskTool(newCronTaskStore(nil, nil), nil, "", reg, nil)
 	if live.MessageDrafts == nil {
 		t.Fatal("the live task tool has no drafts seam")
 	}
@@ -39,7 +39,7 @@ func TestTheRegisteredTaskToolIsHostReviewed(t *testing.T) {
 	if _, ok := registered.(tools.HostReviewer); !ok {
 		t.Fatal("the registered task tool is not a HostReviewer")
 	}
-	if got := newTaskTool(nil, nil, "", nil); got.MessageDrafts != nil {
+	if got := newTaskTool(nil, nil, "", nil, nil); got.MessageDrafts != nil {
 		t.Fatal("the pool-free task tool carries a drafts seam")
 	}
 }

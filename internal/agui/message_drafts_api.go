@@ -28,6 +28,15 @@ type messageDraftItem struct {
 	ExpiresAt      time.Time            `json:"expires_at"`
 	// SendAt is when a scheduled message goes out; absent for one sent on review.
 	SendAt *time.Time `json:"send_at,omitempty"`
+	// Sender is the account an email leaves from; absent for WhatsApp and an email naming none.
+	Sender *messageDraftSender `json:"sender,omitempty"`
+}
+
+// messageDraftSender names the sending account by the name the operator gave it, and the address the
+// PIM reported for it when the draft was made ("" when it reported none).
+type messageDraftSender struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
 }
 
 func projectMessageDraft(draft messagedrafts.Draft) messageDraftItem {
@@ -46,6 +55,9 @@ func projectMessageDraft(draft messagedrafts.Draft) messageDraftItem {
 	}
 	if draft.Scheduled() {
 		item.SendAt = &draft.SendAt
+	}
+	if name, address := draft.Sender(); name != "" {
+		item.Sender = &messageDraftSender{Name: name, Address: address}
 	}
 	return item
 }

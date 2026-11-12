@@ -22,6 +22,30 @@ const email: MessageDraft = {
 };
 
 describe('MessageDraftCard', () => {
+  // The operator asked on 2026-11-12 for the sending account's name and address, not its id.
+  it('names the sending account by its name and address', () => {
+    render(
+      <MessageDraftCard
+        draft={{ ...email, sender: { name: 'personale', address: 'someone@gmail.com' } }}
+        busy={false}
+        onResolve={vi.fn().mockResolvedValue({})}
+      />,
+    );
+    expect(screen.getByText('Account: personale <someone@gmail.com>')).toBeTruthy();
+    expect(screen.queryByText(/account-one/)).toBeNull();
+  });
+
+  it('names an account the PIM gave no address by its name alone', () => {
+    render(
+      <MessageDraftCard
+        draft={{ ...email, sender: { name: 'personale', address: '' } }}
+        busy={false}
+        onResolve={vi.fn().mockResolvedValue({})}
+      />,
+    );
+    expect(screen.getByText('Account: personale')).toBeTruthy();
+  });
+
   it('sends exactly the edited email fields and shows the new destination', async () => {
     const resolve = vi.fn<(input: ResolveMessageDraft) => Promise<unknown>>().mockResolvedValue({});
     render(<MessageDraftCard draft={email} busy={false} onResolve={resolve} />);

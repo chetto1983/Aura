@@ -491,7 +491,7 @@ func assembleChatEnv(
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
-		MessageDrafts:   messagedrafts.NewStore(pool),
+		MessageDrafts:   messagedrafts.NewStore(pool).WithSenders(newPIMSenders(cfg, reg)),
 		MessageTasks:    cron.New(pool),
 		Client:          client,
 		Runtime:         llmRuntime,

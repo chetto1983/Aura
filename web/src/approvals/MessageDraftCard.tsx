@@ -55,6 +55,11 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
   const multipart = value(args.bodyFormat).toLowerCase() === 'multipart';
   const editable = draft.status === 'pending';
   const destination = email ? splitAddresses(to).join(', ') : recipient.trim();
+  const sendingAccount = draft.sender
+    ? draft.sender.address
+      ? `${draft.sender.name} <${draft.sender.address}>`
+      : draft.sender.name
+    : value(args.accountId);
   const sendAt =
     draft.send_at === undefined
       ? undefined
@@ -126,9 +131,9 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
         >
           {email ? (
             <>
-              {value(args.accountId) && (
+              {sendingAccount && (
                 <p className="text-xs text-text-muted">
-                  {t('messageDraft.account')}: {value(args.accountId)}
+                  {t('messageDraft.account')}: {sendingAccount}
                 </p>
               )}
               {value(args.bodyFormat) && (

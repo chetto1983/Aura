@@ -42,7 +42,7 @@ import (
 // genuine nil interface (not an interface wrapping a nil pointer), so the pool-free
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
-func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry) *tools.TaskTool {
+func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry, senders messagedrafts.SenderDirectory) *tools.TaskTool {
 	t := &tools.TaskTool{DeploymentZone: deploymentZone}
 	if ts != nil {
 		t.Store = ts
@@ -51,7 +51,7 @@ func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone strin
 		profiles := onboarding.NewProfileStore(ts.pool)
 		t.Timezones = profiles
 		t.Defaults = profiles
-		t.MessageDrafts = scheduledMessageDrafts{store: messagedrafts.NewStore(ts.pool), reg: reg}
+		t.MessageDrafts = scheduledMessageDrafts{store: messagedrafts.NewStore(ts.pool).WithSenders(senders), reg: reg}
 	}
 	return t
 }

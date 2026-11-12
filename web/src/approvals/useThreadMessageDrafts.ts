@@ -14,6 +14,9 @@ export interface MessageDraft {
   readonly expires_at: string;
   // When a scheduled message goes out; absent for one sent on review.
   readonly send_at?: string;
+  // The account an email leaves from: the name the operator gave it, and the address the PIM
+  // reported ('' when none). Absent for WhatsApp and an email naming no account.
+  readonly sender?: { readonly name: string; readonly address: string };
 }
 
 export interface MessageDraftResolution {

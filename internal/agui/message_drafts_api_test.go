@@ -104,3 +104,25 @@ func TestAScheduledDraftCarriesItsSendTime(t *testing.T) {
 		t.Fatalf("immediate projection = %s, want no send_at", raw)
 	}
 }
+
+// The operator asked on 2026-11-12 for the sending account's name and address on the card, not its id.
+func TestAnEmailDraftNamesItsSender(t *testing.T) {
+	draft := messagedrafts.Draft{
+		ID: "d", Target: messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		Status: messagedrafts.StatusPending, ExpiresAt: time.Now().Add(time.Hour), SenderAddress: "someone@gmail.com",
+		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"448ddbe1__personale","to":["a@example.com"]}`),
+	}
+	raw, err := json.Marshal(projectMessageDraft(draft))
+	if err != nil || !strings.Contains(string(raw), `"sender":{"name":"personale","address":"someone@gmail.com"}`) {
+		t.Fatalf("email projection = %s, %v", raw, err)
+	}
+	whatsapp := messagedrafts.Draft{
+		ID: "w", Target: messagedrafts.Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		Status: messagedrafts.StatusPending, ExpiresAt: time.Now().Add(time.Hour),
+		OriginalArgs: json.RawMessage(`{"recipient":"10000000000","message":"hi"}`),
+	}
+	raw, _ = json.Marshal(projectMessageDraft(whatsapp))
+	if strings.Contains(string(raw), "sender") {
+		t.Fatalf("WhatsApp projection = %s, want no sender", raw)
+	}
+}

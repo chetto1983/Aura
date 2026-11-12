@@ -215,3 +215,19 @@ func TestTheReviewCardNamesTheSendingAccount(t *testing.T) {
 		t.Fatalf("a draft with no account shows one:\n%s", text)
 	}
 }
+
+// The operator asked on 2026-11-12 for the account's name and address, not its id.
+func TestTheCardShowsTheAccountsNameAndAddress(t *testing.T) {
+	email := messagedrafts.Draft{
+		ID: "draft-1", Status: messagedrafts.StatusPending, SenderAddress: "someone@gmail.com",
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"448ddbe1__personale","to":["a@example.com"],"subject":"Hi","body":"Text"}`),
+	}
+	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: personale <someone@gmail.com>\n") {
+		t.Fatalf("card lacks the name and address:\n%s", text)
+	}
+	email.SenderAddress = ""
+	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: personale\n") {
+		t.Fatalf("card without an address lacks the name:\n%s", text)
+	}
+}

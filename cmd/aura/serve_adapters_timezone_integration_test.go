@@ -30,7 +30,7 @@ func TestACronWithoutTZFiresOnTheIdentitysWallClock(t *testing.T) {
 		t.Fatalf("save the profile: %v", err)
 	}
 
-	tool := newTaskTool(&cronTaskStore{pool: pool, store: cron.New(pool)}, nil, "Asia/Tokyo", tools.NewRegistry())
+	tool := newTaskTool(&cronTaskStore{pool: pool, store: cron.New(pool)}, nil, "Asia/Tokyo", tools.NewRegistry(), nil)
 	args := `{"action":"schedule","schedule_kind":"cron","cron":"30 7 * * *","kind":"reminder","payload":{"text":"briefing"},"notify":"stdout"}`
 	if _, err := tool.Execute(identityctx.WithIdentityID(ctx, owner), json.RawMessage(args)); err != nil {
 		t.Fatalf("schedule: %v", err)

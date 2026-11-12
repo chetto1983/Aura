@@ -42,7 +42,7 @@ func TestTaskToolPersistsTheChosenTelegramRecipients(t *testing.T) {
 	}
 
 	store := &cronTaskStore{pool: pool, store: cron.New(pool)}
-	tool := newTaskTool(store, nil, "", tools.NewRegistry())
+	tool := newTaskTool(store, nil, "", tools.NewRegistry(), nil)
 	ownerCtx := identityctx.WithIdentityID(ctx, owner)
 	schedule := func(extra string) string {
 		t.Helper()
