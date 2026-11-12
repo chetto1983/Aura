@@ -111,7 +111,9 @@ func (t *TaskTool) hostReviewApproval(ctx context.Context, conversationID, toolC
 		slog.Warn("task: approval-gated task not created", "error_type", errorType(err))
 		return nil, false
 	}
-	resume, err := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": task.ID})
+	// The delivery note rides the host-written context so the APPROVED answer can repeat where the
+	// result goes: the model once confirmed a third party's address the route never reaches.
+	resume, err := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": task.ID, "delivers": plan.Note})
 	if err != nil {
 		return nil, false
 	}
