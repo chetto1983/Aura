@@ -658,10 +658,15 @@ services:
     restart: unless-stopped
     mem_limit: 3g
     environment:
-      # This default is the whole heap policy: since 26.9.1 the image no longer pins 2 GB
-      # and an empty value leaves the JVM to size itself from mem_limit (measured
-      # 2026-09-15: bin/server.sh passes this variable through verbatim, -Xms2G -Xmx2G).
-      ARCADEDB_OPTS_MEMORY: ${ARCADEDB_OPTS_MEMORY:--Xms2G -Xmx2G}
+      # This default is the whole heap policy. bin/server.sh passes the variable through
+      # verbatim; left empty, 26.11.1 runs ZGC with MaxRAMPercentage=75, up to 2.25 GiB
+      # under mem_limit, and ZGC keeps what it takes.
+      # 768 MiB with a small initial heap, as server.sh advises for low-footprint setups:
+      # on Aura's arcadedb_integration tier plus a 20,000-fact bench it passed everything,
+      # with no OutOfMemoryError and latency equal to -Xms2G -Xmx2G within noise, idling at
+      # 359 MiB and peaking at 970 MiB against 2.12 and 2.23 GiB for the fixed 2 GB heap:
+      # docs/superpowers/verification/2026-11-12-arcadedb-jvm-heap-cap.md.
+      ARCADEDB_OPTS_MEMORY: ${ARCADEDB_OPTS_MEMORY:--Xms256M -Xmx768M}
       # The EMPTY brackets are load-bearing, both of them (measured on 26.7.3, 2026-07-31):
       #   `…defaultDatabases=aura_memory`              boots clean, logs nothing, creates NOTHING.
       #   `…defaultDatabases=aura_memory[root:$pw]`    creates the database AND writes
