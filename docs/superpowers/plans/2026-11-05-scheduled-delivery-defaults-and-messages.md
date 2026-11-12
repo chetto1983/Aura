@@ -968,11 +968,11 @@ The operator's run on the lab VM (`181be7694`, Task 16) scored 7/8. These four d
   - **Measured:** the email route sent a job's markdown output as `bodyFormat:"text"`, so headings, bold and tables arrived as raw markers.
   - **Decision:** the route sends `bodyFormat:"multipart"`, with the text as `textBody` and its GFM rendering by goldmark (already a dependency, `internal/multimodal/speech_text.go`) as `htmlBody`. goldmark escapes raw HTML by default, so a job's output cannot inject markup. A `kind=message` email stays the plain text the operator approved.
 
-- [ ] F1: `TestAnEmailMessageNeedsItsSendingAccount` (refusal names `payload.account` and `list_accounts`, nothing persisted) and `TestTheReviewCardNamesTheSendingAccount` (Telegram card holds `Da: acc-1`). Red, implement, green.
-- [ ] F2: `TestTheApprovalCarriesWhereTheResultGoes` (resume context `delivers` equals the plan's note) and `TestTheApprovedAnswerNamesTheDestination` (runner). The description test asserts `reaches only the operator`. Red, implement, green.
-- [ ] F3: `TestAResolvedReviewIsRedrawnWithItsStatus` and `TestADeadButtonSaysItIsNoLongerActive`. Red, implement, green.
-- [ ] F4: `TestTheEmailRouteSendsMarkdownAsHTML` (multipart; `<h2>`, `<strong>`, `<table>`; a `<script>` in the text is escaped). Red, implement, green.
-- [ ] Gates on the touched packages (vet, build, race, lint), one commit per defect.
+- [x] F1: `TestAnEmailMessageNeedsItsSendingAccount` (refusal names `payload.account` and `list_accounts`, nothing persisted) and `TestTheReviewCardNamesTheSendingAccount` (Telegram card holds `Da: acc-1`). Red, implement, green.
+- [x] F2: `TestTheApprovalCarriesWhereTheResultGoes` (resume context `delivers` equals the plan's note) and `TestTheApprovedAnswerNamesTheDestination` (runner). The description test asserts `reaches only the operator`. Red, implement, green.
+- [x] F3: `TestAResolvedReviewIsRedrawnWithItsStatus` and `TestADeadButtonSaysItIsNoLongerActive`. Red, implement, green.
+- [x] F4: `TestTheEmailRouteSendsMarkdownAsHTML` (multipart; `<h2>`, `<strong>`, `<table>`; a `<script>` in the text is escaped). Red, implement, green.
+- [x] Gates on the touched packages (vet, build, race, lint), one commit per defect: `7963b3eaa`, `1b6cfeb3a`, `6bf156806`, `75493947d`.
 
 ### Task 16: Live, on the lab VM
 
