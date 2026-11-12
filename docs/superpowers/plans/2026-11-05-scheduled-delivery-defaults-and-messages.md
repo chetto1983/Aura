@@ -944,6 +944,36 @@ The new scopes:
 - [x] Measure `internal/messagedrafts/store_scheduled.go` in WSL, which CI's mutation runners cannot do without Postgres: `GOFLAGS=-tags=db_integration go-mutesting ./internal/messagedrafts/store_scheduled.go` with the `aura_cov` DSNs of Global Constraints. Keep the score and the killed/total counts for Task 16's verification file. Below 70% killed, add the tests that kill the survivors before moving on. *(Measured on the disposable database of the cloud session, not WSL: 11/36 = 30.56% at first. Approve's Go re-check of status and send_at duplicated the approving UPDATE's WHERE, so every mutant of it survived; it was removed and the UPDATE is the one authority. With `scheduled_edges_integration_test.go`: 22/29 = 75.86%. The 7 survivors are database-error returns that need fault injection. Re-measure in WSL for the verification file.)*
 - [x] `python3 -m pytest scripts/critical_mutation_gate_test.py` green. Push and check the CI gate measures all four scopes at 70% or more. Commit: `ci(mutation): measure the scheduled delivery's critical files`.
 
+### Task 15a: What the first live run found (2026-11-12)
+
+The operator's run on the lab VM (`181be7694`, Task 16) scored 7/8. These four defects were measured there; scenarios 3, 4 and 6 run again after them.
+
+- **F1, the sending account is chosen by nobody.**
+  - **Measured:** four `kind=message` emails had no `accountId`. The PIM's `send_email` then routes by the recipient's domain, else uses its first account (`SendEmailTool.cs:25` in aura-pim-mcp). The operator has three mail accounts, and nothing asked which one to use or showed it.
+  - **Decision:**
+    - An email message needs `payload.account`, the same as its recipient. The refusal tells the model to list the accounts and ask the operator when there is more than one.
+    - The Telegram card shows `Da: <accountId>`, as the cockpit card already shows `Account`.
+- **F2, a promise the route cannot keep.**
+  - **Measured:** "in 5 minutes … email the summary to <someone else>" became an `agent_job` with `notify=email`, and the model confirmed that the summary would go to that address. The email route reaches only the operator's sign-in address (`cmd/aura/serve_notify.go` `OwnAddress`), so nothing reached the third party. The operator was still told it would.
+  - **Decision:**
+    - The approval's resume context carries the delivery note (`Delivers via … to …`), and the APPROVED answer repeats it. The model then confirms the real destination.
+    - The tool description says that `notify` reaches only the operator. Content that exists only when the job runs cannot be sent to someone else: the model says so and offers the operator's own channel, or a fixed text with `kind=message`.
+- **F3, Telegram cards that do not say what happened.**
+  - **Measured:** after Approva or Rifiuta the card lost its buttons but kept the review text. An expired card kept live Approva and Rifiuta buttons. Pressing one showed "Confermato ✓" and resolved nothing.
+  - **Decision:**
+    - A resolved review card is redrawn as its title and status line, with no keyboard.
+    - A button whose pause is no longer pending answers "Non più attiva" and loses its keyboard. The expiry notice already reports what lapsed.
+    - Editing the card at expiry time would need the card's message id stored per draft. That is not built.
+- **F4, markdown in the operator's mailbox.**
+  - **Measured:** the email route sent a job's markdown output as `bodyFormat:"text"`, so headings, bold and tables arrived as raw markers.
+  - **Decision:** the route sends `bodyFormat:"multipart"`, with the text as `textBody` and its GFM rendering by goldmark (already a dependency, `internal/multimodal/speech_text.go`) as `htmlBody`. goldmark escapes raw HTML by default, so a job's output cannot inject markup. A `kind=message` email stays the plain text the operator approved.
+
+- [ ] F1: `TestAnEmailMessageNeedsItsSendingAccount` (refusal names `payload.account` and `list_accounts`, nothing persisted) and `TestTheReviewCardNamesTheSendingAccount` (Telegram card holds `Da: acc-1`). Red, implement, green.
+- [ ] F2: `TestTheApprovalCarriesWhereTheResultGoes` (resume context `delivers` equals the plan's note) and `TestTheApprovedAnswerNamesTheDestination` (runner). The description test asserts `reaches only the operator`. Red, implement, green.
+- [ ] F3: `TestAResolvedReviewIsRedrawnWithItsStatus` and `TestADeadButtonSaysItIsNoLongerActive`. Red, implement, green.
+- [ ] F4: `TestTheEmailRouteSendsMarkdownAsHTML` (multipart; `<h2>`, `<strong>`, `<table>`; a `<script>` in the text is escaped). Red, implement, green.
+- [ ] Gates on the touched packages (vet, build, race, lint), one commit per defect.
+
 ### Task 16: Live, on the lab VM
 
 - [ ] Run the gates in WSL: `make quality`, then `bash scripts/coverage_docker.sh`, which uses the disposable `aura_cov` database. Coverage is the combined figure, at least 85% across the tag matrix, and the package policy holds. Never `make quality-full` against the live `aura` database.
