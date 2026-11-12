@@ -974,6 +974,29 @@ The operator's run on the lab VM (`181be7694`, Task 16) scored 7/8. These four d
 - [x] F4: `TestTheEmailRouteSendsMarkdownAsHTML` (multipart; `<h2>`, `<strong>`, `<table>`; a `<script>` in the text is escaped). Red, implement, green.
 - [x] Gates on the touched packages (vet, build, race, lint), one commit per defect: `7963b3eaa`, `1b6cfeb3a`, `6bf156806`, `75493947d`.
 
+### Task 15b: The card names the sending account by name and address (2026-11-12)
+
+- **Measured** on `fb5f948b5`, after F1: the Telegram card showed `Da: 448ddbe1…__personale`. That is the raw account id, which means nothing on a phone. A resolved card also kept its review text, because the redraw re-read the draft through `ListMessageDrafts`, which lists only drafts with a pending pause. That redraw was fixed in `25178bf1e`.
+- **What exists:**
+  - The account's name is the part of the id after `__`, the name the operator gave it. `internal/pimwatch/text.go` `accountName` already extracts it.
+  - The PIM's `list_accounts` returns `accountId`, `provider`, `displayName` and `domains`, but no address. Only IMAP holds the address, as its `username`. Google and Microsoft send as `me`.
+- **The operator's decision:** the card shows the name and the email address ("nome e account email"). The PIM is ours to change ("il PIM è nostro, possiamo modificarlo").
+- **The PIM** (`D:/tmp/aura-pim-mcp`, `main`): `list_accounts` adds `email` for each account that can send mail.
+  - **Sources:** IMAP returns `username`. Google calls Gmail `users.getProfile("me")`. Microsoft 365 and Outlook.com call Graph `/me`, using `mail`, else `userPrincipalName`.
+  - **Cache:** a found address is cached per account.
+  - **Failure:** a lookup that fails leaves `email` out and never fails the listing.
+- **Aura:**
+  - **Where it is resolved:** the host resolves the sender when a draft is created, in `messagedrafts.Store.Create`, which both the immediate and the scheduled path use. A `SenderDirectory` seam reads `list_accounts` through the mounted `recipe:calendar` tool. The host, not the model, resolves it, because an address the model typed could differ from the account that actually sends.
+  - **Storage:** migration 0156 adds `aura.message_drafts.sender_address`.
+  - **Unknown account:** an `accountId` that `list_accounts` does not know refuses the draft.
+  - **Cards:** the Telegram card shows `Da: <name> <address>`, and the cockpit card shows the same in place of the id. A PIM image without `email` shows the name alone.
+  - **Shared helper:** `accountName` moves to a shared place, so the two cards and pimwatch use one helper.
+- **Out of scope:** a sending account for the operator's own email notifications, chosen in the Profile. It is offered, not decided.
+
+- [ ] PIM: `ListAccounts_IncludesEachAccountsSendingAddress`, `SendingAddresses_ImapIsItsUsername`, `…_GmailAsksTheProfile`, `…_GraphPrefersMailThenUpn`, `…_CachesAFoundAddress`, `…_AFailedLookupLeavesItOut`. Red, implement, green. PR to `main`, then publish the image and pin it in Aura.
+- [ ] Aura: migration 0156 and sqlc; `TestCreateRecordsTheSenderAddress`, `TestAnUnknownAccountIsRefused`, `TestTheCardShowsNameAndAddress` (Telegram), and the cockpit card test. Red, implement, green.
+- [ ] Live: one email from the cockpit and one from Telegram show `Da: personale <address>`; Approva redraws the card with its status.
+
 ### Task 16: Live, on the lab VM
 
 - [ ] Run the gates in WSL: `make quality`, then `bash scripts/coverage_docker.sh`, which uses the disposable `aura_cov` database. Coverage is the combined figure, at least 85% across the tag matrix, and the package policy holds. Never `make quality-full` against the live `aura` database.
