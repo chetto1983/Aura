@@ -107,7 +107,12 @@ func safeMessageDraftError(err error) string {
 // dispatch is its own single model round: deriveToolOperationContext refuses to derive a
 // child operation without one. Before the round was declared here, every approved send
 // failed there, ahead of the gateway and the transport (measured on 2026-10-05).
+//
+// No Runner reads its events, so the gateway must close the ledger row it opens: unmarked, every
+// reviewed send kept a bare `start` that the reconciler later stamped as a crash-orphaned error
+// over a delivered message (measured on 2026-11-12).
 func ExecuteReviewedMessage(ctx context.Context, tool tools.Tool, policy *gateway.Gateway, claim messagedrafts.Draft, runDir string, previewCap int) (tools.ToolResult, error) {
+	ctx = tools.WithUnobservedDispatch(ctx)
 	ctx = tools.WithRequestID(ctx, claim.ID)
 	ctx = tools.WithToolCallContext(ctx, claim.ConversationID, claim.ToolCallID, runDir, previewCap)
 	ctx = gateway.WithReviewedMessageDraft(ctx, claim)

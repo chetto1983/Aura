@@ -21,15 +21,17 @@ import (
 )
 
 type draftSpyTool struct {
-	spec  tools.Spec
-	calls int
-	args  json.RawMessage
+	spec       tools.Spec
+	calls      int
+	args       json.RawMessage
+	unobserved bool
 }
 
 func (s *draftSpyTool) Spec() tools.Spec { return s.spec }
-func (s *draftSpyTool) Execute(_ context.Context, args json.RawMessage) (tools.ToolResult, error) {
+func (s *draftSpyTool) Execute(ctx context.Context, args json.RawMessage) (tools.ToolResult, error) {
 	s.calls++
 	s.args = args
+	s.unobserved = tools.IsUnobservedDispatch(ctx)
 	return tools.ToolResult{}, nil
 }
 
@@ -195,6 +197,21 @@ func TestExecuteReviewedMessageDispatchesUnderTheResolveOperation(t *testing.T) 
 	}
 	if tool.calls != 1 || !bytes.Equal(tool.args, claim.EffectiveArgs) {
 		t.Fatal("reviewed dispatch did not execute the exact edited arguments once")
+	}
+}
+
+// No Runner reads a reviewed send's events: the cockpit's resolve, a Telegram card and the
+// scheduled fire all dispatch outside a turn. Measured on the lab VM on 2026-11-12: all six of
+// the day's reviewed sends kept their `start` row with no `end`, and the reconciler stamped the
+// delivered ones "crash-orphaned" errors. The gateway closes the row only for an unobserved
+// dispatch.
+func TestAReviewedSendIsAnUnobservedDispatch(t *testing.T) {
+	claim, tool := reviewedWhatsAppClaim(t)
+	if _, err := ExecuteReviewedMessage(identityctx.WithIdentityID(t.Context(), reviewOwner), tool, nil, claim, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if !tool.unobserved {
+		t.Fatal("a reviewed send ran as an observed dispatch, so nothing writes its ledger end row")
 	}
 }
 
