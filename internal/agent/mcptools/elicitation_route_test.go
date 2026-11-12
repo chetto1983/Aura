@@ -176,8 +176,7 @@ func TestAFormAskedWhileReadingLinksAsksTheSameRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	asker := newFakeAsker(acceptName("Ada"), 0)
 	if _, err := srv.CallToolText(elicit.WithAsker(context.Background(), asker), "lookup", nil); err != nil {

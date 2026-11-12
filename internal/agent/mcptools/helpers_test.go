@@ -109,7 +109,18 @@ func newInMemoryMounted(t *testing.T, toolDefs ...*sdkmcp.Tool) (*MountedServer,
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	mounted.Attach(session)
+	attachForTest(t, mounted, session)
 	return mounted, server
+}
+
+// attachForTest attaches session to srv for the test's lifetime. Cleanups run last
+// in, first out, so the mount closes before the session it holds and its death-watch
+// finds it closed. Closing only the session left the watch to mark the mount dead
+// and log "mcp session closed" after the test, into whatever slog default a later
+// test had installed.
+func attachForTest(t *testing.T, srv *MountedServer, session *sdkmcp.ClientSession) {
+	t.Helper()
+	t.Cleanup(func() { _ = session.Close() })
+	srv.Attach(session)
+	t.Cleanup(func() { _ = srv.Close() })
 }

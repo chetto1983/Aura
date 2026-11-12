@@ -149,8 +149,7 @@ func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	got, err := bridgeDefault(ctx, "sb", srv)
 	if err != nil {
@@ -252,8 +251,7 @@ func TestBridgedTool_Execute_PropagatesError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	got, _ := bridgeDefault(ctx, "sb", srv)
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)

@@ -253,8 +253,7 @@ func TestExecute_CarriesTheViewDescriptorOnTheResultMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	callCtx := tools.WithToolCallContext(ctx, "sess", "tc1", t.TempDir(), 2048)
 	bridged := bridgeToolsWithPolicy("fixture", srv, []*sdkmcp.Tool{tool}, 0, viewsPolicy())
