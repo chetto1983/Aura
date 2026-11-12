@@ -4801,6 +4801,42 @@ What this does not establish:
 - the threshold with 11 or more options (G1 measured 6, and 4), or snippets longer than 255 characters;
 - the speed on an appliance CPU, or the hosted model's probabilities between identical calls (they move by a few hundredths).
 
+### Scheduled delivery: default channel, scheduled messages, approval where it is asked (2026-11-12, amendment #213)
+
+Spec `docs/superpowers/specs/2026-11-05-scheduled-delivery-defaults-and-messages-design.md`; plan
+`docs/superpowers/plans/2026-11-05-scheduled-delivery-defaults-and-messages.md`. The operator's
+run on the lab VM scored 8 of 8. It ran across four builds, the last `69fbaa829`. Nothing went out
+twice (`docs/superpowers/verification/2026-11-12-scheduled-delivery-and-messages-live.md`). The
+dry run with a parked model is `2026-11-11-scheduled-delivery-model-in-the-loop.md`.
+
+| Decided | Measured |
+|---|---|
+| The profile keeps a default channel. A task with no `notify` takes it and names it, and asks only when there is none | With Telegram as the default, a reminder asked nothing, stored `notify_route=telegram` and arrived. With none, the model asked and named the Profile panel |
+| A message to someone else is a task of kind `message`: one-shot, at most 24 h − 15 min ahead. Its recipient and exact text are reviewed when it is scheduled, and it is sent at its time with no model | From the cockpit and from Telegram, the approved drafts ended `sent` once each. Five such drafts went out, with one copy each in the recipient's mailbox. A declined card, an approved task cancelled before its time, and silence sent nothing |
+| An email message needs its sending account. The host reads the account's address from the PIM's `list_accounts` when the draft is made, stores it (migration 0156), and both cards show `name <address>` | The model listed the three accounts and asked which to use. The cockpit card read `Account: personale <address>` and the Telegram card `Da: personale <address>`. Before this, the PIM chose the account by the recipient's domain, else its first account, and nothing showed which |
+| `notify` reaches only the operator. A result that exists only when a job runs is never sent to someone else; the model says so and offers the operator's channel or a fixed `message` | The first build promised "the summary goes to <a third party>" while the route could reach only the operator's sign-in address. After the approval started carrying where the result goes, the model said so before scheduling |
+| Every task that needs approval is approved in the chat that creates it, in the same turn. The model-relayed `ask_user` directive is retired | One `agent_job` from the cockpit and one from Telegram: each paused in its own turn with no `ask_user` call. The approved one fired once, and the declined one was cancelled |
+| A one-shot not approved by its time expires, and the operator is told | "agent_job for … was not approved in time and did not run." arrived on Telegram. No pause stayed pending |
+| A Telegram review card becomes its outcome. A button on a review no longer pending says so | After Approva the card read "Approvato: partirà all'ora prevista." with no keyboard. A press on an expired card answered "Non più attiva: già gestita o scaduta" and sent nothing |
+| The email notify route sends multipart: the text, and its GFM rendering with raw HTML escaped | A job's markdown had reached the mailbox as raw markers |
+| A reviewed send is an unobserved dispatch, so the gateway closes the ledger row it opens | Every reviewed send of the run kept a bare `start`, and the reconciler stamped the delivered ones as crash-orphaned errors |
+
+Gates on the closing SHA `69fbaa829`: every CI workflow green, and owned-surface coverage
+53,909/61,285 = 87.96%. The mutation scores are in the verification file. There the ledger fix is
+confirmed live: a reviewed send wrote its `end` row, `ok`.
+
+What this does not establish:
+- email at volume: at most two scheduled messages were in flight at once;
+- more than one WhatsApp mount;
+- a daemon down across the 15-minute grace period. One restart three minutes before a send was
+  seen, and that message went out once;
+- `aura task cancel` leaving a pending pause;
+- scenarios 1, 2, 5, 7 and 8 on the last build. They passed on `181be7694` and were not run again;
+- the first pass after deploy clearing stuck approvals: the lab VM had none;
+- mutation beyond five files: the four CI scopes and `store_scheduled.go`;
+- the account the operator's own email notifications leave from. The PIM still picks it. A
+  Profile choice was offered, not decided.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
