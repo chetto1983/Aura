@@ -33,6 +33,10 @@ run. Every earlier native figure came from the `26.11.1-SNAPSHOT` at `15958b48f`
     under a 3 GB limit the heap can reach 2.25 GiB.
   - ZGC keeps it: the 2.2 GiB is the `/memfd:java_heap` mapping, all dirty pages. It is not cache
     the kernel can reclaim.
+  - **Corrected later the same day:** "keeps it" holds only for about 10 minutes after a load.
+    After that, ZGC returns the heap in steps. The measurement is in
+    [`2026-11-12-arcadedb-jvm-heap-cap.md`](2026-11-12-arcadedb-jvm-heap-cap.md), section
+    "Does ZGC give the memory back".
 - **Correction, the same day: the JVM columns are not compose's configuration.**
   - Compose sets `ARCADEDB_OPTS_MEMORY` to `-Xms2G -Xmx2G` (`compose.yaml`, since 26.9.1). The
     scripts here did not pass it, so the JVM ran on the image default described above.
