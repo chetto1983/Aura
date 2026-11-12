@@ -79,6 +79,9 @@ type Draft struct {
 	CreatedAt            time.Time
 	ScheduledTaskID      string
 	SendAt               time.Time
+	// SenderAddress is the address an email draft leaves from, read from the PIM when the draft was
+	// made; empty for WhatsApp and when the PIM reports none (migration 0156).
+	SenderAddress string
 }
 
 // MatchesDispatch confirms a claimed row authorizes these exact effective
@@ -99,7 +102,10 @@ func (d Draft) MatchesDispatch(ownerID, registeredName string, target Target, ra
 
 // Store is an owner-scoped PostgreSQL store. Every query runs with the RLS
 // identity set in the transaction, in addition to an explicit identity filter.
-type Store struct{ pool *pgxpool.Pool }
+type Store struct {
+	pool    *pgxpool.Pool
+	senders SenderDirectory
+}
 
 // NewStore binds the draft store to the aura_app runtime pool.
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
@@ -126,6 +132,10 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 		return Draft{}, err
 	}
 	fingerprint := argsFingerprint(input.Target, original)
+	sender, err := resolveSender(ctx, s.senders, input.Target, original)
+	if err != nil {
+		return Draft{}, err
+	}
 	var result Draft
 	err = db.WithIdentityTx(ctx, s.pool, input.IdentityID, func(q *sqlc.Queries) error {
 		row, insertErr := q.InsertMessageDraft(ctx, sqlc.InsertMessageDraftParams{
@@ -133,7 +143,7 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 			Recipe: input.Target.Recipe, ToolName: input.Target.Tool, RegisteredToolName: input.RegisteredToolName, Action: input.Target.Action,
 			OriginalArgs: original, OriginalFingerprint: fingerprint,
 			ExpiresAt:       pgtype.Timestamptz{Time: input.ExpiresAt, Valid: true},
-			ScheduledTaskID: task, SendAt: sendAt,
+			ScheduledTaskID: task, SendAt: sendAt, SenderAddress: sender,
 		})
 		if errors.Is(insertErr, pgx.ErrNoRows) {
 			row, insertErr = q.GetMessageDraftByCall(ctx, sqlc.GetMessageDraftByCallParams{
@@ -433,5 +443,6 @@ func draftFromRow(row sqlc.AuraMessageDrafts) (Draft, error) {
 	if row.SendAt.Valid {
 		draft.SendAt = row.SendAt.Time
 	}
+	draft.SenderAddress = row.SenderAddress
 	return draft, nil
 }

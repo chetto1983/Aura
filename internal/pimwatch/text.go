@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/chetto1983/aura/internal/pimprovider"
 )
 
 // Lang is the language of the watch's fixed text: the identity's own, else English.
@@ -149,15 +151,9 @@ const (
 // reorder what the person reads.
 func plainLine(s string) string { return boundedLine(s, lineRunes) }
 
-// accountName is the name the person gave an account. The PIM's id is the tenant's hex, two
-// underscores and that name, and the hex means nothing on a phone. A record's refs keep the whole
-// id, because a tool needs it.
-func accountName(accountID string) string {
-	if _, name, ok := strings.Cut(accountID, "__"); ok && name != "" {
-		return plainLine(name)
-	}
-	return plainLine(accountID)
-}
+// accountName is the name the person gave an account, on one plain line. A record's refs keep the
+// whole id, because a tool needs it.
+func accountName(accountID string) string { return plainLine(pimprovider.AccountName(accountID)) }
 
 func boundedLine(s string, limit int) string {
 	clean := strings.Map(func(r rune) rune {

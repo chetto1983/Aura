@@ -17,7 +17,7 @@ SET status = 'approved', effective_args = $1,
     effective_fingerprint = $2, updated_at = now()
 WHERE id = $3 AND identity_id = $4
   AND status = 'pending' AND send_at IS NOT NULL AND send_at > now() AND expires_at > now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type ApproveScheduledMessageDraftParams struct {
@@ -59,6 +59,7 @@ func (q *Queries) ApproveScheduledMessageDraft(ctx context.Context, arg ApproveS
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -70,7 +71,7 @@ SET status = 'dispatching', effective_args = $1,
     dispatch_started_at = now(), updated_at = now()
 WHERE id = $3 AND identity_id = $4
   AND status = 'pending' AND expires_at > now() AND send_at IS NULL
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type ClaimMessageDraftSendParams struct {
@@ -110,6 +111,7 @@ func (q *Queries) ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDra
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -119,7 +121,7 @@ UPDATE aura.message_drafts
 SET status = 'dispatching', dispatch_started_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND status = 'approved' AND send_at <= now() AND expires_at > now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type ClaimScheduledMessageDraftParams struct {
@@ -154,6 +156,7 @@ func (q *Queries) ClaimScheduledMessageDraft(ctx context.Context, arg ClaimSched
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -163,7 +166,7 @@ UPDATE aura.message_drafts
 SET status = 'declined', resolved_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND status = 'pending' AND expires_at > now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type DeclineMessageDraftParams struct {
@@ -196,6 +199,7 @@ func (q *Queries) DeclineMessageDraft(ctx context.Context, arg DeclineMessageDra
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -236,7 +240,7 @@ UPDATE aura.message_drafts
 SET status = 'expired', resolved_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND status = 'pending' AND expires_at <= now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type ExpireMessageDraftParams struct {
@@ -269,6 +273,7 @@ func (q *Queries) ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraft
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -279,7 +284,7 @@ SET status = 'expired', resolved_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND send_at IS NOT NULL AND send_at <= now()
   AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type ExpireScheduledMessageDraftParams struct {
@@ -313,12 +318,13 @@ func (q *Queries) ExpireScheduledMessageDraft(ctx context.Context, arg ExpireSch
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
 
 const getMessageDraftByCall = `-- name: GetMessageDraftByCall :one
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND tool_call_id = $3
 `
 
@@ -353,12 +359,13 @@ func (q *Queries) GetMessageDraftByCall(ctx context.Context, arg GetMessageDraft
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
 
 const getMessageDraftByTask = `-- name: GetMessageDraftByTask :one
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts
 WHERE identity_id = $1 AND scheduled_task_id = $2
 `
 
@@ -392,12 +399,13 @@ func (q *Queries) GetMessageDraftByTask(ctx context.Context, arg GetMessageDraft
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
 
 const getMessageDraftForIdentity = `-- name: GetMessageDraftForIdentity :one
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts WHERE identity_id = $1 AND id = $2
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts WHERE identity_id = $1 AND id = $2
 `
 
 type GetMessageDraftForIdentityParams struct {
@@ -430,6 +438,7 @@ func (q *Queries) GetMessageDraftForIdentity(ctx context.Context, arg GetMessage
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -437,14 +446,14 @@ func (q *Queries) GetMessageDraftForIdentity(ctx context.Context, arg GetMessage
 const insertMessageDraft = `-- name: InsertMessageDraft :one
 INSERT INTO aura.message_drafts (
   identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action,
-  original_args, original_fingerprint, expires_at, scheduled_task_id, send_at
+  original_args, original_fingerprint, expires_at, scheduled_task_id, send_at, sender_address
 ) VALUES (
   $1, $2, $3,
   $4, $5, $6, $7, $8,
-  $9, $10, $11, $12
+  $9, $10, $11, $12, $13
 )
 ON CONFLICT (identity_id, conversation_id, tool_call_id) DO NOTHING
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type InsertMessageDraftParams struct {
@@ -460,6 +469,7 @@ type InsertMessageDraftParams struct {
 	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
 	ScheduledTaskID     pgtype.UUID        `json:"scheduled_task_id"`
 	SendAt              pgtype.Timestamptz `json:"send_at"`
+	SenderAddress       string             `json:"sender_address"`
 }
 
 func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraftParams) (AuraMessageDrafts, error) {
@@ -476,6 +486,7 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 		arg.ExpiresAt,
 		arg.ScheduledTaskID,
 		arg.SendAt,
+		arg.SenderAddress,
 	)
 	var i AuraMessageDrafts
 	err := row.Scan(
@@ -500,12 +511,13 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
 
 const listPendingMessageDrafts = `-- name: ListPendingMessageDrafts :many
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at FROM aura.message_drafts
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND status = 'pending' AND expires_at > now()
 ORDER BY created_at, id
 `
@@ -546,6 +558,7 @@ func (q *Queries) ListPendingMessageDrafts(ctx context.Context, arg ListPendingM
 			&i.UpdatedAt,
 			&i.ScheduledTaskID,
 			&i.SendAt,
+			&i.SenderAddress,
 		); err != nil {
 			return nil, err
 		}
@@ -564,7 +577,7 @@ SET status = 'uncertain', outcome_code = 'interrupted',
 WHERE id = $1 AND identity_id = $2
   AND status = 'dispatching'
   AND dispatch_started_at <= now() - interval '30 minutes'
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type MarkInterruptedMessageDraftUncertainParams struct {
@@ -597,6 +610,7 @@ func (q *Queries) MarkInterruptedMessageDraftUncertain(ctx context.Context, arg 
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }
@@ -608,7 +622,7 @@ SET status = $1, outcome_code = $2,
 WHERE id = $3 AND identity_id = $4
   AND status = 'dispatching'
   AND $1 IN ('sent', 'failed', 'uncertain')
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type MarkMessageDraftOutcomeParams struct {
@@ -648,6 +662,7 @@ func (q *Queries) MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDr
 		&i.UpdatedAt,
 		&i.ScheduledTaskID,
 		&i.SendAt,
+		&i.SenderAddress,
 	)
 	return i, err
 }

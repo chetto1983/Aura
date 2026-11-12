@@ -535,6 +535,7 @@ type AuraMessageDrafts struct {
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	ScheduledTaskID      pgtype.UUID        `json:"scheduled_task_id"`
 	SendAt               pgtype.Timestamptz `json:"send_at"`
+	SenderAddress        string             `json:"sender_address"`
 }
 
 // Short-lived Telegram code challenges for self-service Authula password reset.

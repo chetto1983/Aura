@@ -1,11 +1,11 @@
 -- name: InsertMessageDraft :one
 INSERT INTO aura.message_drafts (
   identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action,
-  original_args, original_fingerprint, expires_at, scheduled_task_id, send_at
+  original_args, original_fingerprint, expires_at, scheduled_task_id, send_at, sender_address
 ) VALUES (
   sqlc.arg(identity_id), sqlc.arg(conversation_id), sqlc.arg(tool_call_id),
   sqlc.arg(recipe), sqlc.arg(tool_name), sqlc.arg(registered_tool_name), sqlc.arg(action), sqlc.arg(original_args),
-  sqlc.arg(original_fingerprint), sqlc.arg(expires_at), sqlc.narg(scheduled_task_id), sqlc.narg(send_at)
+  sqlc.arg(original_fingerprint), sqlc.arg(expires_at), sqlc.narg(scheduled_task_id), sqlc.narg(send_at), sqlc.arg(sender_address)
 )
 ON CONFLICT (identity_id, conversation_id, tool_call_id) DO NOTHING
 RETURNING *;

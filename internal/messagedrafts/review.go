@@ -3,6 +3,8 @@ package messagedrafts
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/pimprovider"
 )
 
 // reviewArgs are the fields a review shows, from both trusted tools' arguments.
@@ -43,4 +45,14 @@ func (d Draft) SendingAccount() string {
 		return ""
 	}
 	return d.reviewed().AccountID
+}
+
+// Sender is the account an email leaves from, by the name the operator gave it and the address the PIM
+// reported when the draft was made; both empty when the draft names no account.
+func (d Draft) Sender() (name, address string) {
+	account := d.SendingAccount()
+	if account == "" {
+		return "", ""
+	}
+	return pimprovider.AccountName(account), d.SenderAddress
 }
