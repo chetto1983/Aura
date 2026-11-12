@@ -72,9 +72,7 @@ var selfSendRoutes = map[NotifyRoute]selfSendRoute{
 	}},
 	// The PIM multiplexes mail behind its one calendar tool. Without an accountId it picks
 	// the sending account itself: by the recipient's domain, else its first account.
-	RouteEmail: {recipe: "recipe:calendar", tool: "calendar", args: func(recipient, text string) map[string]any {
-		return map[string]any{"action": "send_email", "to": []string{recipient}, "subject": "Aura scheduled task", "body": text, "bodyFormat": "text"}
-	}},
+	RouteEmail: {recipe: "recipe:calendar", tool: "calendar", args: emailArgs},
 }
 
 // SelfSendResolver resolves the MCP tool mounted from a managed recipe to an executable

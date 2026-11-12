@@ -124,7 +124,7 @@ func TestNotifyEmailRidesThePIMCalendarTool(t *testing.T) {
 	got := sentArgs(t, fss)
 	to, _ := got["to"].([]any)
 	if got["action"] != "send_email" || len(to) != 1 || to[0] != "owner@example.com" ||
-		got["subject"] != "Aura scheduled task" || got["body"] != "report" || got["bodyFormat"] != "text" {
+		got["subject"] != "Aura scheduled task" || got["textBody"] != "report" || got["bodyFormat"] != "multipart" {
 		t.Fatalf("unexpected send_email args: %v", got)
 	}
 	if _, picked := got["accountId"]; picked {
