@@ -62,17 +62,17 @@ func (p messagePayload) recipeArgs() (json.RawMessage, error) {
 	case "whatsapp":
 		return json.Marshal(map[string]string{"recipient": p.Recipient, "message": p.Text})
 	case "email":
-		args := map[string]any{"action": "send_email", "to": p.To, "subject": p.Subject, "body": p.Text, "bodyFormat": "text"}
-		if p.Account != "" {
-			args["accountId"] = p.Account
-		}
-		return json.Marshal(args)
+		return json.Marshal(map[string]any{"action": "send_email", "accountId": p.Account, "to": p.To, "subject": p.Subject, "body": p.Text, "bodyFormat": "text"})
 	default:
 		return nil, errMessagePayload
 	}
 }
 
 var errMessagePayload = errors.New("task schedule: a message needs channel whatsapp or email, a recipient and a text. Nothing was scheduled")
+
+// errMessageNeedsAccount: without an accountId the PIM picks the sender itself, by the
+// recipient's domain, else its first account (measured 2026-11-12 on an operator with three).
+var errMessageNeedsAccount = errors.New("task schedule: an email message needs payload.account, the account it is sent from. List the operator's accounts with the calendar tool's list_accounts and, when there is more than one, ask the operator which to send from. Nothing was scheduled")
 
 // messageSchedule checks that a message is one send, ahead, within the review's lifetime, and
 // that its payload names a channel, a recipient and a text.
@@ -92,9 +92,13 @@ func (t *TaskTool) messageSchedule(a taskArgs, now time.Time) (resolvedSpec, mes
 		return resolvedSpec{}, messagePayload{}, errMessagePayload
 	}
 	p.Channel, p.Recipient, p.Text = strings.TrimSpace(p.Channel), strings.TrimSpace(p.Recipient), strings.TrimSpace(p.Text)
+	p.Account = strings.TrimSpace(p.Account)
 	reaches := (p.Channel == "whatsapp" && p.Recipient != "") || (p.Channel == "email" && len(p.To) > 0)
 	if !reaches || p.Text == "" {
 		return resolvedSpec{}, messagePayload{}, errMessagePayload
+	}
+	if p.Channel == "email" && p.Account == "" {
+		return resolvedSpec{}, messagePayload{}, errMessageNeedsAccount
 	}
 	spec, _, err := t.resolveSchedule(a)
 	if err != nil {

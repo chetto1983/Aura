@@ -53,6 +53,9 @@ func messageReviewText(d messagedrafts.Draft, loc *time.Location) string {
 	recipient, subject, text := d.Review()
 	var b strings.Builder
 	b.WriteString(title + "\n")
+	if account := d.SendingAccount(); account != "" {
+		fmt.Fprintf(&b, "Da: %s\n", account)
+	}
 	fmt.Fprintf(&b, "A: %s\n", recipient)
 	if email {
 		fmt.Fprintf(&b, "Oggetto: %s\n", subject)

@@ -171,3 +171,19 @@ func TestALongMessageIsCutWithAPointerToTheCockpit(t *testing.T) {
 		t.Fatal("Approva did not resolve a long message")
 	}
 }
+
+// Measured 2026-11-12: the card named the recipient but not the account the email leaves from.
+func TestTheReviewCardNamesTheSendingAccount(t *testing.T) {
+	email := messagedrafts.Draft{
+		ID: "draft-1", Status: messagedrafts.StatusPending,
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
+	}
+	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: acc-1\nA: someone@example.com") {
+		t.Fatalf("card lacks the sending account:\n%s", text)
+	}
+	email.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["someone@example.com"],"subject":"Hi","body":"Text"}`)
+	if text := messageReviewText(email, time.UTC); strings.Contains(text, "Da:") {
+		t.Fatalf("a draft with no account shows one:\n%s", text)
+	}
+}
