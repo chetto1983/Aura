@@ -90,7 +90,7 @@ func attachedMountedServer(t *testing.T, build func() *sdkmcp.Server, errs ...er
 	if err != nil {
 		t.Fatalf("initial client.Connect: %v", err)
 	}
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 	return srv, fixture
 }
 
@@ -125,8 +125,7 @@ func TestMountedServer_CallToolText_ToolErrorIsTyped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	_, callErr := srv.CallToolText(ctx, "fail", nil)
 	if _, ok := errors.AsType[*mcp.ToolCallError](callErr); !ok {
@@ -150,8 +149,7 @@ func TestMountedServer_DeathObservedWithoutCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	if srv.isDead() {
 		t.Fatal("precondition: server must not already be dead")
@@ -540,5 +538,21 @@ func TestIsSessionTransportFailure(t *testing.T) {
 				t.Errorf("isSessionTransportFailure(%v) = %v, want %v", c.err, got, c.want)
 			}
 		})
+	}
+}
+
+// A fixture's mount must be closed once its test ends. Closing only the session left
+// the death-watch to mark the mount dead and log "mcp session closed" after the test,
+// into whatever slog default a later test had installed: the race detector caught
+// that write against TestCuratedActionReconciliationIsSilentWhenTheTwoSidesAgree's
+// buffer on 2026-11-12. A closed mount's watch logs nothing.
+func TestAMountedFixtureIsClosedWhenItsTestEnds(t *testing.T) {
+	var srv *MountedServer
+	t.Run("fixture", func(t *testing.T) { srv, _ = newInMemoryMounted(t) })
+	srv.mu.Lock()
+	closed := srv.closed
+	srv.mu.Unlock()
+	if !closed {
+		t.Fatal("the fixture's mount is still open after its test ended, so its watch can log into a later test")
 	}
 }

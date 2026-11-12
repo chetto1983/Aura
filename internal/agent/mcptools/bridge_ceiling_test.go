@@ -39,8 +39,7 @@ func TestBridgedToolTakesTheCallersCeilingOverItsOwnTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 	got, err := bridgeDefault(ctx, "sb", srv)
 	if err != nil {
 		t.Fatalf("bridgeDefault: %v", err)

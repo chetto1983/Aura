@@ -64,8 +64,7 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 
 	advertised, err := advertisedTools(ctx, srv)
 	if err != nil {

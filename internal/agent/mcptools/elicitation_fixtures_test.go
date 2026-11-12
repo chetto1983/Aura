@@ -207,8 +207,7 @@ func elicitingMount(t *testing.T, opts *sdkmcp.ServerOptions, consent Elicitatio
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
-	srv.Attach(session)
+	attachForTest(t, srv, session)
 	return srv, serverSession
 }
 
