@@ -22,22 +22,29 @@ run. Every earlier native figure came from the `26.11.1-SNAPSHOT` at `15958b48f`
   - The image runs as UID 1000, so a volume moves between JVM and native in both directions.
 - **It still has no shell.** Compose's `wget` healthcheck cannot run in it.
 - **Memory is the native's real advantage:**
-  - under the same load, about 125 MiB against 2.3 GiB for the JVM as compose runs it today;
+  - under the same load, about 125 MiB against 2.3 GiB for the JVM on the image's own heap default;
   - against 690 MiB for a JVM capped at a 512 MiB heap.
 - **Latency is mixed, and close.**
   - Dense search is about 45% slower on the native.
   - Full-text is about 25% faster on the native.
   - The shipped fused statement is the same within noise.
-- **26.11.1 changed the JVM's memory baseline.**
-  - `server.sh` no longer pins `-Xms2G -Xmx2G`. It runs ZGC with `-XX:MaxRAMPercentage=75`, so
-    under compose's 3 GB limit the heap can reach 2.25 GiB.
+- **The image's own heap default is large.**
+  - With `ARCADEDB_OPTS_MEMORY` empty, the image runs ZGC with `-XX:MaxRAMPercentage=75`, so
+    under a 3 GB limit the heap can reach 2.25 GiB.
   - ZGC keeps it: the 2.2 GiB is the `/memfd:java_heap` mapping, all dirty pages. It is not cache
     the kernel can reclaim.
+- **Correction, the same day: the JVM columns are not compose's configuration.**
+  - Compose sets `ARCADEDB_OPTS_MEMORY` to `-Xms2G -Xmx2G` (`compose.yaml`, since 26.9.1). The
+    scripts here did not pass it, so the JVM ran on the image default described above.
+  - The heap of compose's own configuration is measured in
+    [`2026-11-12-arcadedb-jvm-heap-cap.md`](2026-11-12-arcadedb-jvm-heap-cap.md): it idles at
+    2.12 GiB and peaks at 2.23 GiB under the same tier and a 20,000-fact bench.
 
 ## Setup
 
 - **Host.** A cloud container, not the lab VM. Docker 29.9.2, with no other load during the runs.
-- **Servers.** Each ran in a new container with compose's settings:
+- **Servers.** Each ran in a new container with compose's settings, except the heap (see the
+  correction above):
   - `--memory 3g`;
   - root password, `aura_memory` as default database, `restoreImportAllowLocalUrls`, and the Bolt
     plugin;
@@ -115,7 +122,7 @@ from statements the tests send, not from the engine.
 - Times are client wall time over HTTP on localhost.
 - Each round started on a new volume.
 
-| Median ms (round 1 / round 2) | JVM, compose today | JVM, `-Xms512M -Xmx512M` | native |
+| Median ms (round 1 / round 2) | JVM, image heap default | JVM, `-Xms512M -Xmx512M` | native |
 |---|---|---|---|
 | 3000 edge writes, total s | 13.8 / 13.6 | 11.9 / 12.9 | 12.9 / 12.9 |
 | `vector.neighbors` | 14.7 / 14.0 | 16.6 / 13.3 | 21.0 / 20.5 |
