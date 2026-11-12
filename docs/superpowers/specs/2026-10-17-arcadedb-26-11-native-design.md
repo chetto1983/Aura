@@ -4,6 +4,11 @@ Proposed on 2026-10-17. The operator asked for it ("Sì, scrivi la spec") after 
 native image for its memory ("Io passerei a native: è più lenta ma di poco, ma consuma molta meno
 RAM").
 
+**2026-11-12: the release-day measurements are partly done.**
+- [`2026-11-12-arcadedb-26-11-1-native-release.md`](../verification/2026-11-12-arcadedb-26-11-1-native-release.md)
+  covers the tier, the two defects, memory and synthetic latency.
+- The real-library latency and the gold sets still need the lab VM.
+
 **Status (2026-11-10): 26.11.1 has shipped; the spec waits for the operator's answer below, and is
 not yet approved.** Parked on 2026-10-17 until the release, by the operator: "ora aspettiamo che
 esca la nuova release di ArcadeDB nelle prossime 2 settimane".
