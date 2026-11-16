@@ -103,7 +103,7 @@ describe('TagsEditorItem', () => {
   it('shows the tags of the card the editor hands over after mounting, and of the next one', () => {
     const onChange = vi.fn();
     const { rerender } = render(<TagsEditorItem onChange={onChange} />);
-    const input = screen.getByRole('textbox') as HTMLInputElement;
+    const input = screen.getByRole<HTMLInputElement>('textbox');
     expect(input.value).toBe('');
     rerender(<TagsEditorItem value={['billing', 'admin']} onChange={onChange} />);
     expect(input.value).toBe('billing, admin');

@@ -76,7 +76,7 @@ describe('Select', () => {
         disabled
       />,
     );
-    const trigger = screen.getByRole('combobox', { name: 'Account' }) as HTMLButtonElement;
+    const trigger = screen.getByRole<HTMLButtonElement>('combobox', { name: 'Account' });
     expect(trigger.textContent).toContain('Choose an account');
     expect(trigger.disabled).toBe(true);
   });

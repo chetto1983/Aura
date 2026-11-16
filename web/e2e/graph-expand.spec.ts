@@ -53,8 +53,9 @@ interface CytoscapeCore {
 // Cytoscape registers its instance on the container it draws into.
 async function positions(page: Page): Promise<Positions> {
   return page.evaluate(() => {
-    const container = document.querySelector('[data-testid="arcade-graph-canvas"]') as
-      (HTMLElement & { _cyreg?: { cy?: CytoscapeCore } }) | null;
+    const container = document.querySelector<HTMLElement & { _cyreg?: { cy?: CytoscapeCore } }>(
+      '[data-testid="arcade-graph-canvas"]',
+    );
     const cy = container?._cyreg?.cy;
     if (cy === undefined) return {};
     return Object.fromEntries(cy.nodes().map((n) => [n.id(), { ...n.position() }]));
@@ -136,8 +137,9 @@ test.describe('Graph expansion grows the graph in place', () => {
     await openGraph(page);
     const before = await settledPositions(page);
     const point = await page.evaluate(() => {
-      const container = document.querySelector('[data-testid="arcade-graph-canvas"]') as
-        (HTMLElement & { _cyreg?: { cy?: CytoscapeCore } }) | null;
+      const container = document.querySelector<HTMLElement & { _cyreg?: { cy?: CytoscapeCore } }>(
+        '[data-testid="arcade-graph-canvas"]',
+      );
       const alpha = container?._cyreg?.cy?.getElementById('#1:0');
       if (container === null || alpha === undefined) return null;
       const box = container.getBoundingClientRect();

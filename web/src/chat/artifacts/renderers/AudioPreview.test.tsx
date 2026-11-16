@@ -40,7 +40,7 @@ describe('AudioPreview', () => {
     if (audio === null) throw new Error('audio player did not render');
     Object.defineProperty(audio, 'duration', { configurable: true, value: 120 });
     fireEvent.loadedMetadata(audio);
-    const seek = screen.getByRole('slider', { name: 'Seek' }) as HTMLInputElement;
+    const seek = screen.getByRole<HTMLInputElement>('slider', { name: 'Seek' });
     fireEvent.change(seek, { target: { value: '15' } });
     expect(audio.currentTime).toBe(15);
     fireEvent.change(seek, { target: { value: '65' } });

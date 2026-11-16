@@ -176,13 +176,15 @@ vulnerabilities:
     statement: "zlib1g in cloudflared 2026.10.7's distroless base, the newest image; fixed upstream by a rebuild only"
     expired_at: 2027-02-08
 
-  # aura-sandbox: gh from cli.github.com. v2.103.3, the newest release, still requires
-  # golang.org/x/net v0.60.0 (the fix is v0.62.0); the box runs it on the model's behalf, inside
-  # the sandbox boundary.
+  # aura-sandbox: gh from cli.github.com. The weekly scan of 2026-11-16 (issue #261) found gh
+  # 2.104.0, the only version in the apt repo's stable index that day, built with go1.27.4 and
+  # golang.org/x/net v0.61.0 (`go version -m` on the .deb's usr/bin/gh; the fix is v0.62.0). The
+  # box runs it on the model's behalf, inside the sandbox boundary. The operator approved the
+  # move from gh 2.103.3 and x/net v0.60.0 on 2026-11-16.
   - id: CVE-2026-78661
     purls:
-      - "pkg:golang/golang.org/x/net@v0.60.0"
+      - "pkg:golang/golang.org/x/net@v0.61.0"
     paths:
       - "usr/bin/gh"
-    statement: "x/net compiled into gh 2.103.3, the newest release; only GitHub can rebuild it"
-    expired_at: 2027-02-08
+    statement: "x/net compiled into gh 2.104.0, the newest release; only GitHub can rebuild it"
+    expired_at: 2027-02-14

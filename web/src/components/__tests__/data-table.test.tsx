@@ -79,7 +79,8 @@ describe('DataTable', () => {
         onSortChange={onSortChange}
       />,
     );
-    const cards = document.querySelector('[data-slot="data-table-cards"]') as HTMLElement;
+    const cards = document.querySelector('[data-slot="data-table-cards"]');
+    if (!(cards instanceof HTMLElement)) throw new Error('expected the narrow card list');
     fireEvent.click(within(cards).getByRole('button', { name: 'Sort by File' }));
     expect(onSortChange).toHaveBeenCalledWith({ key: 'c0', direction: 'asc' });
   });
