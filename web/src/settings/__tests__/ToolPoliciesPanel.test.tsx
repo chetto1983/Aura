@@ -172,7 +172,7 @@ describe('ToolPoliciesPanel', () => {
     const calls = stubFetch({ list: [] });
     renderPanel();
     await screen.findByText(/No tool policies/);
-    const button = screen.getByRole('button', { name: 'Set policy' }) as HTMLButtonElement;
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Set policy' });
     expect(button.disabled).toBe(true);
     const form = button.closest('form');
     if (form === null) throw new Error('the submit button is outside its form');

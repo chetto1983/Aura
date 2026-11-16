@@ -21,7 +21,7 @@ async function openDialog(): Promise<HTMLElement> {
 }
 
 function button(scope: HTMLElement, name: string | RegExp): HTMLButtonElement {
-  return within(scope).getByRole('button', { name }) as HTMLButtonElement;
+  return within(scope).getByRole<HTMLButtonElement>('button', { name });
 }
 
 function deferGroup(dialog: HTMLElement): HTMLElement {

@@ -156,7 +156,7 @@ describe('renaming a label', () => {
     server.on(`PUT ${LABELS}/a`, () => ({ body: label({ name: 'Customers' }) }));
     renderWatch(<LabelsPanel />);
     const item = await startRename();
-    const field = within(item).getByLabelText('Name') as HTMLInputElement;
+    const field = within(item).getByLabelText<HTMLInputElement>('Name');
     expect(field.value).toBe('Client');
     expect(within(item).getByRole('combobox').textContent).toBe('Now');
     fireEvent.change(field, { target: { value: 'Customers' } });
@@ -220,7 +220,7 @@ describe('a label for the decision model', () => {
     renderWatch(<LabelsPanel />);
     await screen.findByText(/No labels yet/);
     fireEvent.change(nameField(), { target: { value: 'Ads' } });
-    const field = screen.getByLabelText('Description') as HTMLTextAreaElement;
+    const field = screen.getByLabelText<HTMLTextAreaElement>('Description');
     expect(field.maxLength).toBe(300);
     expect(screen.getByText(/The model reads only this/)).toBeTruthy();
     fireEvent.change(field, { target: { value: '  Offers sent to a list.  ' } });
@@ -247,7 +247,7 @@ describe('a label for the decision model', () => {
     expect(rowHolding('Ads').getByText('Discard')).toBeTruthy();
     fireEvent.click(rename);
     const item = screen.getByRole('listitem');
-    const field = within(item).getByLabelText('Description') as HTMLTextAreaElement;
+    const field = within(item).getByLabelText<HTMLTextAreaElement>('Description');
     expect(field.value).toBe('Old.');
     expect(within(item).getByRole('radio', { name: 'Discard' }).getAttribute('aria-checked')).toBe(
       'true',
