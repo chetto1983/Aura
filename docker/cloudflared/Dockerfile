@@ -9,7 +9,7 @@ COPY internal/cloudflaresupervisor ./internal/cloudflaresupervisor
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/aura-cloudflared-supervisor ./cmd/aura-cloudflared-supervisor
 
 # Official distroless runtime includes CA certificates; digest is the amd64/arm64 index.
-FROM cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+FROM cloudflare/cloudflared:2026.11.0@sha256:b94b96edf2c9c4360f8879c8580cfaa99077f19c849ec595ca2f711b27d4f344
 COPY --from=build /out/aura-cloudflared-supervisor /usr/local/bin/aura-cloudflared-supervisor
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/aura-cloudflared-supervisor"]
