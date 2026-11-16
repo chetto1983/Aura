@@ -1237,7 +1237,7 @@ services:
     # and every fresh install four times. scripts/mirror_whisper_server.sh copies
     # each new :latest to a dated tag with the same digest (on GitHub, mirror-whisper-server.yml
     # runs it and Dependabot proposes the bump).
-    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.11.09.1210@sha256:9d7a69f829f33d0030f13f88fbac7d75370093a0fdce340197437314060a3a9f}
+    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.11.15.1820@sha256:3a243c8fefca7779544ef4becfdfee470605360e6aefde6d0b9335d58a90aac9}
     container_name: aura-stt
     restart: unless-stopped
     environment:
