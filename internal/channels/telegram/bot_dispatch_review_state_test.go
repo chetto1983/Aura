@@ -30,7 +30,8 @@ func TestAResolvedReviewIsRedrawnWithItsStatus(t *testing.T) {
 	}
 	tg := dispatchChannel(t, &recordingTurn{}, func(d *Deps) { d.Resume = rs })
 	bot := &dispatchBot{}
-	cb := &tele.Callback{Message: chatMsg(77), Data: callbackData(reviewToken, askuser.ActionAccept, "yes")}
+	card := renderMessageReview(draft, time.UTC)
+	cb := &tele.Callback{Message: chatMsg(77), Data: card.markup(reviewToken).InlineKeyboard[0][0].Data}
 	if err := tg.onCallback(ownerReviewCtx())(tele.NewContext(bot, tele.Update{Callback: cb})); err != nil {
 		t.Fatalf("onCallback: %v", err)
 	}

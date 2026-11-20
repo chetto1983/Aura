@@ -113,7 +113,8 @@ func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID s
 		if !ok {
 			return nil
 		}
-		return h.send(bot, to, messageReviewText(draft, h.runner.Location(ctx)), messageReviewMarkup(p.Token, draft))
+		card := renderMessageReview(draft, h.runner.Location(ctx))
+		return h.send(bot, to, card.text, card.markup(p.Token))
 	}
 	switch p.Kind {
 	case "approval":
@@ -167,7 +168,7 @@ func (h *hitl) handleCallbackResult(
 		return out
 	}
 	if p, review := h.reviewPause(ctx, convID, token); review {
-		out = h.resolveReview(ctx, convID, p, action)
+		out = h.resolveReview(ctx, convID, p, action, value)
 		if !out.submitted {
 			return out
 		}

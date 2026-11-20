@@ -89,6 +89,24 @@ describe('MessageDraftCard', () => {
     });
   });
 
+  it.each([
+    [{ quoted_message_id: 'message-ref' }, 'Quoted message ID: message-ref'],
+    [{ quoted_sender_jid: '12000@s.whatsapp.net' }, 'Quoted sender: 12000@s.whatsapp.net'],
+  ])('shows each read-only WhatsApp reply reference without a quoted body', (quote, expected) => {
+    render(
+      <MessageDraftCard
+        draft={{
+          ...email,
+          channel: 'whatsapp',
+          arguments: { recipient: '12345', message: 'Following up', ...quote },
+        }}
+        busy={false}
+        onResolve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
   it('does not offer another send when delivery is uncertain', () => {
     render(
       <MessageDraftCard
