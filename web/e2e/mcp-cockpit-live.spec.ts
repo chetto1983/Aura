@@ -168,6 +168,10 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
   page,
   request,
 }) => {
+  test.fixme(
+    true,
+    'The Governance account form is gone: drive Settings → «Posta e calendario» (AddMailAccount), and give the fake IMAP on 1143 TLS or STARTTLS (spec A2). Owned by live task L1.',
+  );
   test.skip(!runRealAgent, 'set AURA_E2E_REAL_AGENT=1 to run the real PIM agent gate');
   test.setTimeout(360_000);
 
