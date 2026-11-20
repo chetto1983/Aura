@@ -204,10 +204,16 @@ describe('AddMailAccount', () => {
       redirectUri: 'https://example.invalid/cb',
     });
     const onCreated = renderAdd();
+    // A password typed while discovery runs is not sent once Google is found, even on Enter.
+    fireEvent.change(passwordField(), { target: { value: 'typed early' } });
     await discover('mario@gmail.com', GMAIL);
 
     const signIn = await screen.findByRole('button', { name: 'Accedi con Google' });
     expect(screen.queryByLabelText('Password')).toBeNull();
+    const form = addressField().closest('form');
+    if (form === null) throw new Error('the address is not in a form');
+    fireEvent.submit(form);
+    await new Promise((settle) => setTimeout(settle, 50));
     expect(createPimAccount).not.toHaveBeenCalled();
 
     fireEvent.click(signIn);
@@ -225,6 +231,8 @@ describe('AddMailAccount', () => {
     expect(await screen.findByRole('link', { name: 'Connetti Google' })).toBeTruthy();
     expect(pimGoogleStart).toHaveBeenCalledWith('mario-gmail-com');
     expect(onCreated).toHaveBeenCalled();
+    // The sign-in started: a second create would only collide with this account.
+    expect(screen.queryByRole('button', { name: 'Accedi con Google' })).toBeNull();
   });
 
   it('NoGoogleAppOffersAnAppPassword', async () => {

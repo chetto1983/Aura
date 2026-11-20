@@ -233,7 +233,7 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
       discover();
       return;
     }
-    if (password === '') return;
+    if (oauthKind !== null || password === '') return;
     if (missingServers.size > 0) {
       setServerOpen(true);
       return;
@@ -295,25 +295,27 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
         ) : null}
 
         {oauthKind !== null ? (
-          <OAuthSignIn
-            kind={oauthKind}
-            providerLabel={providerLabel}
-            appMissing={appMissing}
-            passwordFallback={current?.passwordFallback === true}
-            pending={oauthSignIn.isPending}
-            onSignIn={() => {
-              oauthSignIn.mutate({
-                address: trimmed,
-                provider: oauthKind,
-                providerConfig: {},
-                recheck: timedOut,
-              });
-            }}
-            onUseAppPassword={() => {
-              setAppPasswordChosen(true);
-              setAppMissing(false);
-            }}
-          />
+          signIn === null ? (
+            <OAuthSignIn
+              kind={oauthKind}
+              providerLabel={providerLabel}
+              appMissing={appMissing}
+              passwordFallback={current?.passwordFallback === true}
+              pending={oauthSignIn.isPending}
+              onSignIn={() => {
+                oauthSignIn.mutate({
+                  address: trimmed,
+                  provider: oauthKind,
+                  providerConfig: {},
+                  recheck: timedOut,
+                });
+              }}
+              onUseAppPassword={() => {
+                setAppPasswordChosen(true);
+                setAppMissing(false);
+              }}
+            />
+          ) : null
         ) : (
           <>
             <Field
