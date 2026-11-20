@@ -2,9 +2,9 @@ name: Publish Craft web apps
 
 # The Craft apps compiled from Rust cost about 35 minutes cold when they were five (pdfcraft 498 s,
 # wordcraft 388 s, deckcraft 419 s, photocraft 469 s, filmcraft 295 s on 2026-10-21); PdfCraft's and
-# WordCraft's official builds replaced Aura's on 2026-10-29, leaving three. They change only
-# when their inputs do, so they are built here, once per input hash, and the aura image copies
-# them by digest. After a run, pin the printed reference in docker/aura/Dockerfile.
+# WordCraft's official builds replaced Aura's on 2026-10-29, DeckCraft's on 2026-11-20, leaving
+# PhotoCraft and FilmCraft. They change only when their inputs do, so they are built here, once
+# per input hash, and the aura image copies them by digest. After a run, pin the printed reference in docker/aura/Dockerfile.
 
 on:
   workflow_dispatch:

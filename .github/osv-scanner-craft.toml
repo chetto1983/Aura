@@ -3,19 +3,19 @@
 # out. Measured with OSV-Scanner 2.7.0 on 2026-10-24: once ignoreUntil has passed, the finding
 # is reported again.
 
-# zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet;
-# on 2026-11-05 the pinned tags, v0.15.2, v0.15.1 and v0.16.1, still resolve it in their wasm32
-# graph).
+# zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which their engines do not
+# use yet; on 2026-11-20 the pinned tags, v0.18.1, v0.18.1 and v0.19.1, still lock it as a
+# dependency of each engine crate).
 # The operator approved the first two acceptances on 2026-10-24, the other three on 2026-11-03
 # (issue #212).
 # Every advisory concerns ZipArchive::extract() and ZipStreamReader::extract() writing to a
 # filesystem: SUID/SGID bits kept, permissions applied through symlinks, a symlink target buffer
 # sized from the declared length, file names taken from the local header instead of the central
-# directory. No source file of the three apps calls either: checked again on 2026-11-05 at the
-# pinned tags with Aura's patches, they use only ZipArchive::new, by_name, by_index and
-# ZipWriter. On wasm32-unknown-unknown, the only target these builds ship, the standard library
-# has no filesystem to extract to, and zip 3.0.0 compiles the symlink branch only for unix and
-# windows.
+# directory. No source file of the three apps calls either: checked again on 2026-11-20 at the
+# pinned tags, whose web builds are now all official, they use only ZipArchive::new, by_name,
+# by_index and ZipWriter. On wasm32-unknown-unknown, the only target these builds ship, the
+# standard library has no filesystem to extract to, and zip 3.0.0 compiles the symlink branch only
+# for unix and windows.
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0367"
 ignoreUntil = 2027-01-22
