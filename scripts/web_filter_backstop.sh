@@ -7,10 +7,16 @@
 # i.e. the filter misfired (a glob edit, base-ref quirk, or rename dodging web/**)
 # and a web change is about to merge with its gates silently skipped.
 #
+# The range is counted from the merge base of base and head, as dorny/paths-filter
+# counts a PR's files: a web commit that landed on the base branch after the PR
+# branched is not the PR's. Diffing base against head directly reported those
+# commits as the PR's and failed Go-only PRs behind master (#264, 2026-11-20).
+#
 # It is deliberately fail-OPEN on an uncomputable range (shallow clone with the
-# base SHA unfetchable, a brand-new branch's first push where BEFORE is all-zeros,
-# etc.): the goal is to catch a CONFIRMED filter miss without ever red-falsing the
-# pipeline on a range it cannot trust. Fail-CLOSED only on a verified web-path diff.
+# base SHA unfetchable, no merge base within the fetched history, a brand-new
+# branch's first push where BEFORE is all-zeros, etc.): the goal is to catch a
+# CONFIRMED filter miss without ever red-falsing the pipeline on a range it cannot
+# trust. Fail-CLOSED only on a verified web-path diff.
 #
 # Args:
 #   $1 — base SHA (PR base.sha or push `before`)
@@ -44,7 +50,21 @@ if ! git cat-file -e "${base}^{commit}" 2>/dev/null || ! git cat-file -e "${head
   exit 0
 fi
 
-changed="$(git diff --name-only "${base}" "${head}" -- 'web/**' 'internal/webui/dist/**' || true)"
+# The checkout holds one commit: deepen both ends until their merge base is in reach.
+merge_base=""
+for depth in 0 64 512 4096; do
+  if [ "${depth}" -gt 0 ]; then
+    git fetch --no-tags --depth="${depth}" origin "${base}" "${head}" 2>/dev/null || true
+  fi
+  merge_base="$(git merge-base "${base}" "${head}" 2>/dev/null || true)"
+  [ -n "${merge_base}" ] && break
+done
+if [ -z "${merge_base}" ]; then
+  echo "web-filter-backstop: no merge base of ${base} and ${head} in reach — skipping cross-check."
+  exit 0
+fi
+
+changed="$(git diff --name-only "${merge_base}" "${head}" -- 'web/**' 'internal/webui/dist/**' || true)"
 if [ -n "${changed}" ]; then
   echo "NO-SKIP-AS-GREEN VIOLATION: paths-filter reported web==false, but these web paths changed:" >&2
   echo "${changed}" >&2
