@@ -21,17 +21,18 @@ RUN npm run build
 
 # The Craft apps the cockpit frames to view and edit files, one folder each under
 # /usr/share/aura/apps (docs/superpowers/specs/2026-10-19-craft-web-apps-design.md). GridCraft's,
-# PdfCraft's and WordCraft's official web releases carry the `?host=parent` bridge and need no
-# change, so their zips go in as they are, pinned by version and SHA-256: nothing is fetched at run
-# time. The wasm and its glue are gzipped here because nothing in front of aura compresses: aura
+# PdfCraft's, WordCraft's and DeckCraft's official web releases carry the `?host=parent` bridge and
+# need no change, so their zips go in as they are, pinned by version and SHA-256: nothing is fetched
+# at run time. The wasm and its glue are gzipped here because nothing in front of aura compresses: aura
 # sends the .gz to a browser that accepts it (internal/staticapp).
 FROM alpine:3.24 AS craft-official
-ADD --checksum=sha256:496785cf8b1f406abeef8531e323961a13170be3815b6ac6809499adea598368 https://github.com/storytold/gridcraft/releases/download/v0.16.1/gridcraft-web-0.16.1.zip /tmp/gridcraft.zip
-ADD --checksum=sha256:3f2c11ae9e33d91762eaeb92a0921734a6e6cbab38c8a6a0d715fe1af73c6867 https://github.com/storytold/pdfcraft/releases/download/v0.18.2/pdfcraft-web-0.18.2.zip /tmp/pdfcraft.zip
-ADD --checksum=sha256:6c7e0f1fdda793ed29122e10c1674942b0693dca112ed748d97ea70714bdafc8 https://github.com/storytold/wordcraft/releases/download/v0.15.2/wordcraft-web-0.15.2.zip /tmp/wordcraft.zip
+ADD --checksum=sha256:48c5d1b101befebb3c5ba3b7a14914f01c3207934813ed07dc4251b7ae116a78 https://github.com/storytold/gridcraft/releases/download/v0.19.1/gridcraft-web-0.19.1.zip /tmp/gridcraft.zip
+ADD --checksum=sha256:fe9708d46af191aebb56f70eb32cf8b112b0b9452d17ae6ba3a8c4a8665fe748 https://github.com/storytold/pdfcraft/releases/download/v0.21.1/pdfcraft-web-0.21.1.zip /tmp/pdfcraft.zip
+ADD --checksum=sha256:3daa7c2d1f209a7eeb2527fcefa3fe31e875848fb1970d68f54edae55fe0bc9f https://github.com/storytold/wordcraft/releases/download/v0.18.1/wordcraft-web-0.18.1.zip /tmp/wordcraft.zip
+ADD --checksum=sha256:3196e537fcfab538aaa2e88584bc74e29bb584459b916ab584ac22fbafe32db5 https://github.com/storytold/deckcraft/releases/download/v0.18.1/deckcraft-web-0.18.1.zip /tmp/deckcraft.zip
 RUN set -eu; \
     mkdir /apps; \
-    for app in gridcraft pdfcraft wordcraft; do \
+    for app in gridcraft pdfcraft wordcraft deckcraft; do \
         unzip -q "/tmp/$app.zip" -d "/tmp/$app" && mv /tmp/$app/$app-web-* "/apps/$app"; \
         rm -f "/apps/$app/_headers" "/apps/$app/.htaccess"; \
         gzip -9 -k /apps/$app/*.wasm /apps/$app/*.js; \
@@ -171,7 +172,7 @@ ENV AURA_IN_CONTAINER=1
 
 COPY --from=payload /payload /usr/share/aura/payload
 COPY --from=craft-official /apps /usr/share/aura/apps
-# The three Craft apps compiled from Rust come prebuilt: docker/aura-craft-web, published by
+# The two Craft apps compiled from Rust come prebuilt: docker/aura-craft-web, published by
 # publish-craft-web.yml under the hash of its inputs. TestCraftWebImagePinMatchesItsInputs fails
 # when docker/craft-web/ changes and this pin does not follow.
 COPY --from=ghcr.io/chetto1983/aura-craft-web:ebf0b8add69cb12a@sha256:d975942ea74bdc8687ffeb76982131fecb017600a92f5402cef02bd12f722852 /apps /usr/share/aura/apps

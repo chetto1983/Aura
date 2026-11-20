@@ -239,21 +239,21 @@ RUN set -eu; \
             -exec cp {} "/usr/local/share/licenses/$app/" \; ; \
         rm -rf /tmp/craft /tmp/craft.tgz; \
     }; \
-    craft gridcraft 0.16.1 gridcraft-0.16.1 \
-        429e0334cdd30ed75ebff59453a644114c3cb7e3347991a81b32041d75f41fe4 \
-        f580f5c22406e3781f9dac0f6be1e08de6a6e6e59046a92c9bebe1fc8a4fbd81; \
-    craft pdfcraft 0.18.2 pdfcraft-cli-0.18.2 \
-        9666a83dbe2722f393327b0e0ee9c83e24e6232937e6b878f27fa60bb680ef9d \
-        22356a21af9cc682098eba9c3467412f7eae96671005b41f755beea7b90e51c5; \
-    craft wordcraft 0.15.2 wordcraft-0.15.2 \
-        366e54e235b4631779c0c78c0777a880de511163de9130ab78ce59583f7a0b9a \
-        645e8daa4785c3e68bfede740f55075ea60d45c9f428b26c9741e819082c0b1b; \
-    craft deckcraft 0.15.1 deckcraft-0.15.1 \
-        e2d45129d4b0f5d282232455b73b35d2dc16a4f587bf69a1db80939b0ade78cd \
-        d1205205b6dcbc9979e8da1275941cb08b94dc51920bec1fb986bbf99263bcdf; \
-    craft photocraft 0.20.2 photocraft-0.20.2 \
-        09e013d68d8313eb0b1cd6f24612f5b5fd0d993fffe3a7c12cecdfe5cd131a46 \
-        a1c3761d132d9ec162691d50f06ed98473bcdc0aed7c171a097df9adcfc38072; \
+    craft gridcraft 0.19.1 gridcraft-0.19.1 \
+        8d97bba2d5bb00fd69ed55064852c1fd914de40d5ecd55ca01c8df81b828946d \
+        c05373a366e6dded3201380cb82b3a0a137569a1b122d37c1b0ecf01cbd46b75; \
+    craft pdfcraft 0.21.1 pdfcraft-cli-0.21.1 \
+        a97b2e789d214360424f19814bc66f3eaf6d04ef5e42e472b46f7b9ddceea5c8 \
+        e41fc6d757eb6e0b4b6f6d9115a3efa530785c092fc9a5be914893416da6c9f3; \
+    craft wordcraft 0.18.1 wordcraft-0.18.1 \
+        312a057d46dd80597c12dccfd1097ce25edea40baaaeb50bcb6f01ac1aebadb5 \
+        3f4afc0598357378ad8af9b2e37a2c171f6dd474c9206c9cf0cf56ea686259ed; \
+    craft deckcraft 0.18.1 deckcraft-0.18.1 \
+        5bae7d5566638624411ef968f2532ab3358dc280884144583e497c5631db8a26 \
+        3fbd005ce382c853ad056dca7b937802fc0ef6b8564eca5a99a52b670c159e94; \
+    craft photocraft 0.23.1 photocraft-0.23.1 \
+        4383aef67a07cc370ad250a6ed60015205d3e6c463faf3ff4b0f67b8178ccfc8 \
+        fcc81c38ae62c72fa9f4fd1ec3d18396493ba261662792d6995cc35905ce71d2; \
     craft filmcraft 0.17.1 filmcraft-0.17.1 \
         397ae9fece559b37863b4b076af46a63b6e4387c35f781709e4efad14fe71ebe \
         225d6d815fad8cdfb720b5ce382196b60edd6ee10a9216660bcdabb28beaaa95
