@@ -91,8 +91,6 @@ type Service struct {
 	Decide RouteReader
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
-	// cursors replaces Store for the cursor reads of Repaired in tests.
-	cursors cursorReader
 }
 
 func (s *Service) now() time.Time {

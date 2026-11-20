@@ -7,11 +7,6 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 )
 
-// cursorReader is the part of *Store that Repaired reads.
-type cursorReader interface {
-	Cursors(ctx context.Context, identityID string) ([]Cursor, error)
-}
-
 // Repaired wakes an account's watch after the account was repaired. A watch the scheduler paused
 // after repeated failures of a kind a repair cures (provider_auth, provider_transient or a pim_*
 // code) resumes and runs now. An active watch runs now. A watch paused for another cause, such as
@@ -27,30 +22,31 @@ func (s *Service) Repaired(ctx context.Context, identityID, accountID string) er
 	if !ok {
 		return nil
 	}
-	if !watch.Paused {
-		return s.Tasks.RunNow(ctx, watch.ID)
-	}
-	if watch.PausedReason != cron.PausedByFailures {
-		return nil
-	}
-	cursors, err := s.cursorSource().Cursors(ctx, identityID)
+	cursors, err := s.Store.Cursors(ctx, identityID)
 	if err != nil {
 		return err
 	}
-	if !failedForACredential(cursors, accountID) {
-		return nil
+	resume, runNow := repairSteps(watch, cursors, accountID)
+	if resume {
+		if err := s.Tasks.Resume(ctx, watch.ID); err != nil {
+			return err
+		}
 	}
-	if err := s.Tasks.Resume(ctx, watch.ID); err != nil {
-		return err
+	if runNow {
+		return s.Tasks.RunNow(ctx, watch.ID)
 	}
-	return s.Tasks.RunNow(ctx, watch.ID)
+	return nil
 }
 
-func (s *Service) cursorSource() cursorReader {
-	if s.cursors != nil {
-		return s.cursors
+// repairSteps says what a repair does to the watch: resume it, run it now, both or neither.
+func repairSteps(watch WatchTask, cursors []Cursor, accountID string) (resume, runNow bool) {
+	if !watch.Paused {
+		return false, true
 	}
-	return s.Store
+	if watch.PausedReason != cron.PausedByFailures || !failedForACredential(cursors, accountID) {
+		return false, false
+	}
+	return true, true
 }
 
 func failedForACredential(cursors []Cursor, accountID string) bool {
