@@ -38,7 +38,7 @@ Apply the check before the store can mutate the task or its draft. Preserve exis
 
 ## Task 3 — Preserve the origin of a cockpit continuation
 
-- [ ] Reproduce the extra user turn with a searchable document catalog and a resume request carrying an empty message list. Cover a genuine user turn and the existing attachment behavior.
-- [ ] Exercise a stored catalog-only turn from the earlier lab build on a fresh runner. Preserve the approved send on that branch and exercise a later explicit cancellation.
-- [ ] Run the gateway and runner tests. In the lab, verify that the automatic continuation keeps the review answer on its branch without inserting a user message.
-- [ ] Repeat the scheduled self-email and explicit cancellation flows after deployment. Record the matching provider result and the observed conversation roles.
+- [x] Reproduce the extra user turn with a searchable document catalog and a resume request carrying an empty message list. Cover a genuine user turn and the existing attachment behavior.
+- [x] Exercise a stored catalog-only turn from the earlier lab build on a fresh runner. Preserve the approved send on that branch and exercise a later explicit cancellation.
+- [x] Run the gateway and runner tests. In the lab, verify that the automatic continuation keeps the review answer on its branch without inserting a user message.
+- [x] Repeat the scheduled self-email and explicit cancellation flows after deployment. Record the matching provider result and the observed conversation roles.
