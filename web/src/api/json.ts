@@ -12,12 +12,17 @@ export class HttpError extends Error {
    * when it sent none. */
   readonly detail: string;
 
-  constructor(status: number, reason = '', detail = '') {
+  /** The whole parsed response body, null when it was not JSON: a caller that branches on more than
+   * `{error}` (a 422 naming the failed step) reads its own fields from here. */
+  readonly body: unknown;
+
+  constructor(status: number, reason = '', detail = '', body: unknown = null) {
     super(reason === '' ? `HTTP ${String(status)}` : `HTTP ${String(status)}: ${reason}`);
     this.name = 'HttpError';
     this.status = status;
     this.reason = reason;
     this.detail = detail;
+    this.body = body;
   }
 }
 
@@ -27,7 +32,7 @@ export class HttpError extends Error {
  * worse than saying only the number. */
 export async function httpErrorFrom(res: Response): Promise<HttpError> {
   const body = await errorBody(res);
-  return new HttpError(res.status, stringField(body, 'error'), stringField(body, 'message'));
+  return new HttpError(res.status, stringField(body, 'error'), stringField(body, 'message'), body);
 }
 
 async function errorBody(res: Response): Promise<unknown> {

@@ -10,8 +10,8 @@
 // The wizard supports every provider the sidecar exposes, with two connect flows: Google = web-redirect
 // (pimGoogleStart), Microsoft/Outlook = device-code (pimDeviceStart + pimAuthStatus poll).
 
-import { getJSON, isTrue } from '../api/json';
-import { deleteJSON, postJSON, putJSON, stringValue } from './governanceApi';
+import { getJSON, HttpError, isTrue } from '../api/json';
+import { deleteJSON, patchJSON, postJSON, putJSON, stringValue } from './governanceApi';
 
 export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
 export const GOV_PIM_PROVIDERS_PATH = '/api/connect/pim/providers';
@@ -262,4 +262,92 @@ export async function savePimProviderApp(
   const app = pimProviderApp(raw);
   if (app === null) throw new Error('malformed provider app response');
   return app;
+}
+
+export const GOV_PIM_DISCOVER_PATH = '/api/connect/pim/discover';
+
+/** POST …/discover answer, the PIM's DiscoveryResult in camelCase. Only the fields a source found
+ * are present; `unknown` carries none. */
+export interface PimDiscovery {
+  readonly kind: 'google' | 'microsoft365' | 'outlook.com' | 'imap' | 'unknown';
+  readonly source?: 'preset' | 'isp' | 'ispdb' | 'preset-mx' | 'isp-mx' | 'ispdb-mx';
+  readonly imapHost?: string;
+  readonly imapPort?: number;
+  readonly imapSecurity?: 'ssl' | 'starttls';
+  readonly smtpHost?: string;
+  readonly smtpPort?: number;
+  readonly smtpSecurity?: 'ssl' | 'starttls';
+  readonly username?: string;
+  readonly appPassword?: { readonly required: boolean; readonly helpUrl?: string };
+  readonly passwordFallback?: boolean;
+}
+
+/** POST /api/connect/pim/discover {email} — what the PIM can tell about the address's mail servers. */
+export function discoverPim(email: string): Promise<PimDiscovery> {
+  return postJSON<PimDiscovery>(GOV_PIM_DISCOVER_PATH, { email });
+}
+
+/** POST …/{id}/verify — signs in to the stored account. A pass may carry an smtpWarning; a failed
+ * check rejects with a 422 HttpError that pimVerifyFailure reads. */
+export async function verifyPimAccount(id: string): Promise<{ smtpWarning?: string }> {
+  const raw = await postJSON<Record<string, unknown>>(
+    `${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/verify`,
+  );
+  const smtpWarning = optionalString(raw.smtpWarning);
+  return smtpWarning === undefined ? {} : { smtpWarning };
+}
+
+/** PATCH …/{id}/provider-config — repair an IMAP account's settings; the PIM verifies before it writes. */
+export function patchPimProviderConfig(
+  id: string,
+  providerConfig: Record<string, string>,
+): Promise<PimAccount & { smtpWarning?: string }> {
+  return patchJSON<PimAccount & { smtpWarning?: string }>(
+    `${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/provider-config`,
+    { providerConfig },
+  );
+}
+
+const VERIFY_REASONS = [
+  'auth_failed',
+  'unreachable',
+  'tls_failed',
+  'mailbox_refused',
+  'smtp_auth_failed',
+  'smtp_unreachable',
+] as const;
+
+export type PimVerifyReason = (typeof VERIFY_REASONS)[number];
+
+/** The step and reason of a 422 `verify_failed`, null for any other error. The body is the PIM's
+ * fixed vocabulary: no server text reaches the browser. */
+export function pimVerifyFailure(
+  error: unknown,
+): { step: 'imap' | 'smtp'; reason: PimVerifyReason } | null {
+  if (!(error instanceof HttpError) || error.status !== 422) return null;
+  if (error.reason !== 'verify_failed') return null;
+  const body = (error.body ?? {}) as { step?: unknown; reason?: unknown };
+  const reason = VERIFY_REASONS.find((r) => r === body.reason);
+  if ((body.step !== 'imap' && body.step !== 'smtp') || reason === undefined) return null;
+  return { step: body.step, reason };
+}
+
+/** The i18n key for a connect failure that is not a 422 verify failure. */
+export function pimErrorKey(error: unknown): string {
+  const base = 'settings.mail.error.';
+  if (
+    error instanceof DOMException &&
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
+  ) {
+    return `${base}timeout`;
+  }
+  if (!(error instanceof HttpError)) return `${base}generic`;
+  if (error.status === 502) return `${base}pimDown`;
+  if (error.status === 401) return `${base}notReady`;
+  if (error.status === 429) return `${base}tooMany`;
+  if (error.status === 400 && error.reason === 'invalid_email') return `${base}invalidAddress`;
+  if (error.status === 400 && error.reason === 'password_required')
+    return `${base}passwordRequired`;
+  if (error.status === 409 && error.reason === 'changed') return `${base}changed`;
+  return `${base}generic`;
 }

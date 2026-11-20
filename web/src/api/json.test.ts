@@ -11,6 +11,19 @@ describe('isTrue', () => {
   });
 });
 
+describe('httpErrorFrom body', () => {
+  it('keeps the whole JSON body, fields the HttpError does not name included', async () => {
+    const body = { error: 'verify_failed', step: 'smtp', reason: 'tls_failed' };
+    const err = await httpErrorFrom(new Response(JSON.stringify(body), { status: 422 }));
+    expect(err.body).toEqual(body);
+  });
+
+  it('has a null body when the response is not JSON', async () => {
+    const err = await httpErrorFrom(new Response('<html>bad gateway</html>', { status: 502 }));
+    expect(err.body).toBeNull();
+  });
+});
+
 describe('httpErrorFrom', () => {
   it("keeps the server's sentence beside its code", async () => {
     const res = new Response(
