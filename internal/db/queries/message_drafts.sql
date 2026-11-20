@@ -108,3 +108,32 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND send_at IS NOT NULL AND send_at <= now()
   AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))
 RETURNING *;
+
+-- name: IsAcceptedMessageTaskOnContinuation :one
+-- The resume transaction stamps both the pause and its tool answer with now().
+-- Walk only the selected branch, stopping at the next persisted user message.
+WITH RECURSIVE accepted AS (
+    SELECT p.tool_call_id, p.resumed_at
+    FROM aura.message_drafts d
+    JOIN aura.paused_states p ON p.identity_id = d.identity_id AND p.conversation_id::text = d.conversation_id
+        AND p.tool_call_id = d.tool_call_id AND p.resume_context->>'draft_id' = d.id::text
+    WHERE d.identity_id = sqlc.arg(identity_id) AND p.conversation_id = sqlc.arg(conversation_id)
+        AND d.scheduled_task_id = sqlc.arg(task_id) AND d.send_at IS NOT NULL
+        AND d.effective_fingerprint IS NOT NULL AND p.resume_context->>'type' = 'message_draft'
+        AND p.resumed_answer->>'action' = 'accept' AND p.resumed_at IS NOT NULL
+), path AS (
+    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    FROM aura.conversation_turns t
+    WHERE t.conversation_id = sqlc.arg(conversation_id)
+        AND t.seq = sqlc.arg(leaf_seq)
+        AND EXISTS (SELECT FROM accepted)
+    UNION ALL
+    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    FROM path JOIN aura.conversation_turns t
+        ON t.conversation_id = sqlc.arg(conversation_id) AND t.seq = path.parent_seq
+    WHERE path.role <> 'user' AND t.seq < path.seq
+)
+SELECT EXISTS (
+    SELECT FROM accepted JOIN path ON path.role = 'tool' AND path.tool_call_id = accepted.tool_call_id
+        AND path.created_at = accepted.resumed_at
+)::boolean AS protected;

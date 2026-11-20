@@ -90,6 +90,10 @@ func (f *cmdConvFake) CountTurns(_ context.Context, id string) (int, error) {
 	return len(f.turns[id]), nil
 }
 
+func (f *cmdConvFake) LatestTurnSeq(ctx context.Context, id string) (int, error) {
+	return f.CountTurns(ctx, id)
+}
+
 func (f *cmdConvFake) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

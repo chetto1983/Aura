@@ -13,7 +13,7 @@ import (
 )
 
 func (t *TaskTool) actionPause(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(raw, "pause")
+	id, err := requireTaskID(ctx, raw, "pause")
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -25,7 +25,7 @@ func (t *TaskTool) actionPause(ctx context.Context, raw json.RawMessage) (ToolRe
 }
 
 func (t *TaskTool) actionResume(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(raw, "resume")
+	id, err := requireTaskID(ctx, raw, "resume")
 	if err != nil {
 		return ToolResult{}, err
 	}

@@ -408,7 +408,7 @@ func taskPayloadPreview(payload string) string {
 }
 
 func (t *TaskTool) actionCancel(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(raw, "cancel")
+	id, err := requireTaskID(ctx, raw, "cancel")
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -420,7 +420,7 @@ func (t *TaskTool) actionCancel(ctx context.Context, raw json.RawMessage) (ToolR
 }
 
 func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(raw, "run_now")
+	id, err := requireTaskID(ctx, raw, "run_now")
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -431,7 +431,7 @@ func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolR
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
 }
 
-func requireTaskID(raw json.RawMessage, action string) (string, error) {
+func requireTaskID(ctx context.Context, raw json.RawMessage, action string) (string, error) {
 	var a taskArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", fmt.Errorf("task %s args: %w", action, err)
@@ -439,7 +439,20 @@ func requireTaskID(raw json.RawMessage, action string) (string, error) {
 	if strings.TrimSpace(a.TaskID) == "" {
 		return "", fmt.Errorf("task %s: task_id is required", action)
 	}
+	if guard, ok := ctx.Value(taskMutationGuardKey{}).(func(context.Context, string) error); ok {
+		if err := guard(ctx, a.TaskID); err != nil {
+			return "", err
+		}
+	}
 	return a.TaskID, nil
+}
+
+type taskMutationGuardKey struct{}
+
+// WithTaskMutationGuard checks the target of a model's task mutation before any
+// scheduler or draft write. The runner supplies the operator's review decisions.
+func WithTaskMutationGuard(ctx context.Context, guard func(context.Context, string) error) context.Context {
+	return context.WithValue(ctx, taskMutationGuardKey{}, guard)
 }
 
 func payloadJSON(p json.RawMessage) []byte {

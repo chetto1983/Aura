@@ -124,6 +124,10 @@ func (m *memConvStore) CountTurns(_ context.Context, id string) (int, error) {
 	return len(m.turns[id]), nil
 }
 
+func (m *memConvStore) LatestTurnSeq(ctx context.Context, id string) (int, error) {
+	return m.CountTurns(ctx, id)
+}
+
 func (m *memConvStore) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

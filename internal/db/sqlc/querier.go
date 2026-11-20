@@ -432,6 +432,9 @@ type Querier interface {
 	//   an edit SETS it;
 	//   so "was this workspace edited after its last passing verification" is one column.
 	InsertVerificationEvent(ctx context.Context, arg InsertVerificationEventParams) (InsertVerificationEventRow, error)
+	// The resume transaction stamps both the pause and its tool answer with now().
+	// Walk only the selected branch, stopping at the next persisted user message.
+	IsAcceptedMessageTaskOnContinuation(ctx context.Context, arg IsAcceptedMessageTaskOnContinuationParams) (bool, error)
 	// The per-identity half, run inside WithIdentityTx: conversations are owner-only (migration
 	// 0089), so a table-wide max from the daemon pool reads NULL. last_active_at moves with every
 	// turn (equal to the newest conversation_turns.created_at on the lab VM, 2026-09-24), so a

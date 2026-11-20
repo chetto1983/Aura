@@ -516,6 +516,55 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 	return i, err
 }
 
+const isAcceptedMessageTaskOnContinuation = `-- name: IsAcceptedMessageTaskOnContinuation :one
+WITH RECURSIVE accepted AS (
+    SELECT p.tool_call_id, p.resumed_at
+    FROM aura.message_drafts d
+    JOIN aura.paused_states p ON p.identity_id = d.identity_id AND p.conversation_id::text = d.conversation_id
+        AND p.tool_call_id = d.tool_call_id AND p.resume_context->>'draft_id' = d.id::text
+    WHERE d.identity_id = $1 AND p.conversation_id = $2
+        AND d.scheduled_task_id = $3 AND d.send_at IS NOT NULL
+        AND d.effective_fingerprint IS NOT NULL AND p.resume_context->>'type' = 'message_draft'
+        AND p.resumed_answer->>'action' = 'accept' AND p.resumed_at IS NOT NULL
+), path AS (
+    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    FROM aura.conversation_turns t
+    WHERE t.conversation_id = $2
+        AND t.seq = $4
+        AND EXISTS (SELECT FROM accepted)
+    UNION ALL
+    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    FROM path JOIN aura.conversation_turns t
+        ON t.conversation_id = $2 AND t.seq = path.parent_seq
+    WHERE path.role <> 'user' AND t.seq < path.seq
+)
+SELECT EXISTS (
+    SELECT FROM accepted JOIN path ON path.role = 'tool' AND path.tool_call_id = accepted.tool_call_id
+        AND path.created_at = accepted.resumed_at
+)::boolean AS protected
+`
+
+type IsAcceptedMessageTaskOnContinuationParams struct {
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	LeafSeq        int32       `json:"leaf_seq"`
+}
+
+// The resume transaction stamps both the pause and its tool answer with now().
+// Walk only the selected branch, stopping at the next persisted user message.
+func (q *Queries) IsAcceptedMessageTaskOnContinuation(ctx context.Context, arg IsAcceptedMessageTaskOnContinuationParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isAcceptedMessageTaskOnContinuation,
+		arg.IdentityID,
+		arg.ConversationID,
+		arg.TaskID,
+		arg.LeafSeq,
+	)
+	var protected bool
+	err := row.Scan(&protected)
+	return protected, err
+}
+
 const listPendingMessageDrafts = `-- name: ListPendingMessageDrafts :many
 SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND status = 'pending' AND expires_at > now()

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -49,6 +50,9 @@ func (r *Runner) offerConversationProjection(ctx context.Context) {
 type turnTracker struct {
 	convID string
 	paused bool
+	// Only a real user steer delivered and persisted in this run can supersede
+	// the scheduled-message decisions present in its original history.
+	operatorSteered atomic.Bool
 	// llmRuntime is the immutable route snapshot retained for this complete turn.
 	llmRuntime llm.RuntimeSnapshot
 	// userTurnSeq is the seq of the user row this run dispatched, 0 for a resumed run or a

@@ -159,6 +159,11 @@ func (t *TaskTool) hostReviewMessage(ctx context.Context, conversationID, toolCa
 		slog.Warn("task: scheduled message task not created", "error_type", errorType(err))
 		return nil, false
 	}
+	// Creation can return an existing task for this tool call. Only a pending
+	// message can open a review or be cancelled if creating its draft fails.
+	if task.Kind != "message" || task.Status != "pending_approval" {
+		return nil, false
+	}
 	draftID, err := t.MessageDrafts.CreateScheduledMessageDraft(ctx, ScheduledMessageDraft{
 		ConversationID: conversationID, ToolCallID: toolCallID, TaskID: task.ID,
 		Channel: payload.Channel, Args: args, SendAt: spec.RunAt,

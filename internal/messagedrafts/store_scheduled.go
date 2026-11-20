@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,6 +15,31 @@ import (
 
 // Scheduled reports whether a task sends this draft at its time (migration 0155).
 func (d Draft) Scheduled() bool { return !d.SendAt.IsZero() }
+
+// AcceptedOnBranch reports whether the current user turn includes a committed review
+// accepting this scheduled task, starting at the leaf the model actually saw.
+func (s *Store) AcceptedOnBranch(ctx context.Context, ownerID, conversationID, taskID string, leaf int) (bool, error) {
+	owner, task, err := ownerTaskKey(ownerID, taskID)
+	if err != nil {
+		return false, err
+	}
+	thread, err := db.ParseUUID("conversation id", conversationID)
+	if err != nil {
+		return false, err
+	}
+	if leaf < 0 || leaf > math.MaxInt32 {
+		return false, errors.New("invalid conversation branch leaf")
+	}
+	var accepted bool
+	err = db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
+		var err error
+		accepted, err = q.IsAcceptedMessageTaskOnContinuation(ctx, sqlc.IsAcceptedMessageTaskOnContinuationParams{
+			IdentityID: owner, ConversationID: thread, TaskID: task, LeafSeq: int32(leaf),
+		})
+		return err
+	})
+	return accepted, err
+}
 
 // Approve fixes the effective arguments of a pending scheduled draft before its send time:
 // pending -> approved. The task sends exactly these at its time; an immediate draft is never
