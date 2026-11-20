@@ -66,11 +66,11 @@ export function AppShell() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { surface, setSurface } = useRoutedSurface();
-  // MUSR-01 (D-03): hide the admin-only surfaces (Settings + Governance) from the nav when the
-  // signed-in identity lacks governance.write. The filtering is cosmetic — the routes are
-  // gated server-side by RequireCapability — but keeps a non-admin session from ever landing
-  // on a control it cannot use. A non-admin whose restored/deep-linked surface is admin-only
-  // is bounced back to chat once capabilities resolve (fail-closed while loading).
+  // MUSR-01 (D-03): hide the admin-only surfaces (Governance) from the nav when the signed-in
+  // identity lacks identity.create. The filtering is cosmetic — the routes are gated
+  // server-side by RequireCapability — but keeps a non-admin session from ever landing on a
+  // control it cannot use. A non-admin whose restored surface is admin-only is bounced back to
+  // chat once capabilities resolve (fail-closed while loading).
   const { isAdmin, isLoading: capabilitiesLoading, contextWindow } = useCapabilities();
   const desktopModes = visibleModes(MODES, isAdmin);
   const liveModes = visibleModes(MODES, isAdmin);
@@ -162,8 +162,8 @@ export function AppShell() {
   // `?settings=<section>` opens the Settings surface on one pane, then cleans the URL — the
   // same one-shot idiom as ?onboarding=1 (useFirstRunGate). Surfaces are not routed in this
   // shell, so the parameter hands the choice to the pane's own persisted selection rather than
-  // becoming a route; a non-admin who follows such a link is still bounced by the admin-mode
-  // guard.
+  // becoming a route. Settings is every identity's: a member who follows a link to an admin
+  // pane lands on the first pane their rail shows (useSettingsSection).
   useEffect(() => {
     const requested = searchParams.get('settings');
     if (!isSettingsSectionId(requested) || deepLinkedSettings.current) return;

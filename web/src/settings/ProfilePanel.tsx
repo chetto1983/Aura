@@ -29,8 +29,8 @@ import { Textarea } from '@/components/ui/textarea';
 // The lists are one comma-separated line each. Seven list editors would bury the four fields
 // that carry most of the meaning, and every entry here is a short phrase.
 //
-// It sits ABOVE the admin gate in the settings page on purpose: every operator has a profile,
-// only an admin has runtime settings.
+// It is the first pane of every identity's Settings rail: every operator has a profile, only an
+// admin has runtime settings.
 
 // The IANA zone list is ~400 entries and never changes — built once, and backing a <datalist>
 // so the field autocompletes while still accepting anything the server will take.

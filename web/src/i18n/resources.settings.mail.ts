@@ -1,8 +1,15 @@
-// The «Posta e calendario» connect screen: an address and a password, checked before they are saved.
+// The «Posta e calendario» Settings pane: the identity's account list, and the connect screen (an
+// address and a password, checked before they are saved).
 // `verify.<reason>` and `error.<code>` are reached through pimApi's pimErrorKey and mailConnectLogic's
 // verifyMessageKey, so every reason the PIM can answer has a sentence here.
 
 export const mailEn = {
+  heading: 'Mail and calendar',
+  loading: 'Loading accounts…',
+  offline: 'Mail and calendar accounts are unavailable or not configured on this deployment.',
+  empty: 'No accounts yet. Add one below.',
+  accountsHeading: 'Accounts',
+  removeError: "Couldn't remove the account. Try again.",
   addressLabel: 'Email address',
   passwordLabel: 'Password',
   connect: 'Connect',
@@ -59,6 +66,13 @@ export const mailEn = {
 } as const;
 
 export const mailIt = {
+  heading: 'Posta e calendario',
+  loading: 'Caricamento account…',
+  offline:
+    'Gli account di posta e calendario non sono disponibili o non sono configurati su questo deployment.',
+  empty: 'Ancora nessun account. Aggiungine uno qui sotto.',
+  accountsHeading: 'Account',
+  removeError: 'Impossibile rimuovere l’account. Riprova.',
   addressLabel: 'Indirizzo email',
   passwordLabel: 'Password',
   connect: 'Collega',

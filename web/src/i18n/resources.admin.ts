@@ -1,13 +1,8 @@
 // Admin/user-distinction strings (MUSR-01 / D-03/D-26/D-28): the capability grant/revoke
-// control, the per-user audit view, and the non-admin fallback the Settings page shows when
-// the signed-in identity lacks governance.write.
+// control and the per-user audit view.
 
 export const adminEn = {
   admin: {
-    notAuthorized: {
-      heading: 'Admin access required',
-      body: 'This page manages model settings, identities, and audit history. Your identity does not hold the governance capability, so it is hidden. Ask an administrator if you need access.',
-    },
     roster: {
       kicker: 'Access control',
       heading: 'Identities',
@@ -126,10 +121,6 @@ export const adminEn = {
 
 export const adminIt = {
   admin: {
-    notAuthorized: {
-      heading: 'Accesso amministratore richiesto',
-      body: 'Questa pagina gestisce impostazioni del modello, identità e cronologia di audit. La tua identità non ha la capability di governance, quindi è nascosta. Chiedi a un amministratore se ti serve accesso.',
-    },
     roster: {
       kicker: 'Controllo accessi',
       heading: 'Identità',

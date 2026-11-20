@@ -82,8 +82,8 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
       {/* Cockpit "Connect" — the WhatsApp device-linking section, only for the WhatsApp server. */}
       {isWhatsAppServer(server) ? <WhatsAppConnect /> : null}
 
-      {/* Cockpit "Connect" — the Google Calendar account-linking section, only for the calendar
-          (aura-pim-mcp) server. */}
+      {/* The calendar (aura-pim-mcp) server's provider OAuth apps, and the way to its accounts
+          in Settings → «Posta e calendario». */}
       {isCalendarServer(server) ? <CalendarConnect /> : null}
 
       {editingEnv ? (

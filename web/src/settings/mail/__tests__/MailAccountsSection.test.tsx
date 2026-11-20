@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import '../../i18n/i18n';
-import type { PimAccount, PimDeviceStart, PimGoogleStart } from '../pimApi';
-import { mailWatchServer } from '../../test/mailWatchServer';
+import '../../../i18n/i18n';
+import type { PimAccount, PimDeviceStart, PimGoogleStart } from '../../../governance/pimApi';
+import { chooseOption } from '../../../test/chooseOption';
+import { mailWatchServer } from '../../../test/mailWatchServer';
 
-// CalendarConnectRow test — one account's row in the calendar/PIM connect section: finishing or
-// redoing a sign-in on the same account, and removing it only once confirmed, since removing forgets
-// what the account's mail watch decided and learned.
+// MailAccountsSection: the identity's «Posta e calendario» pane in Settings. It lists the accounts,
+// each with its mail watch, and carries the add flow. One row's cases: finishing or redoing a
+// sign-in on the same account, and removing it only once confirmed, since removing forgets what the
+// account's mail watch decided and learned.
 
 const listPimAccounts = vi.fn();
 const createPimAccount = vi.fn();
@@ -19,16 +20,13 @@ const pimAuthStatus = vi.fn();
 const pimAccountLinked = vi.fn();
 const listPimProviderApps = vi.fn();
 
-vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => ({ isAdmin: false }) }));
-
-vi.mock('../pimApi', async () => {
-  const actual = await vi.importActual<typeof import('../pimApi')>('../pimApi');
+vi.mock('../../../governance/pimApi', async () => {
+  const actual = await vi.importActual<typeof import('../../../governance/pimApi')>(
+    '../../../governance/pimApi',
+  );
   return {
-    isCalendarServer: actual.isCalendarServer,
-    PIM_PROVIDERS_KEY: actual.PIM_PROVIDERS_KEY,
-    PIM_PROVIDER_NOT_CONFIGURED: actual.PIM_PROVIDER_NOT_CONFIGURED,
+    ...actual,
     listPimProviderApps: (...a: unknown[]) => listPimProviderApps(...a) as Promise<unknown>,
-    savePimProviderApp: vi.fn(),
     listPimAccounts: (...a: unknown[]) => listPimAccounts(...a) as Promise<unknown>,
     createPimAccount: (...a: unknown[]) => createPimAccount(...a) as Promise<unknown>,
     deletePimAccount: (...a: unknown[]) => deletePimAccount(...a) as Promise<void>,
@@ -39,16 +37,17 @@ vi.mock('../pimApi', async () => {
   };
 });
 
-const { CalendarConnect } = await import('../CalendarConnect');
+const { MailAccountsSection } = await import('../MailAccountsSection');
 
-function renderConnect() {
+function renderSection() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-  }
-  render(<CalendarConnect />, { wrapper: Wrapper });
+  render(
+    <QueryClientProvider client={qc}>
+      <MailAccountsSection />
+    </QueryClientProvider>,
+  );
 }
 
 const ACCOUNT: PimAccount = {
@@ -70,7 +69,7 @@ const DEVICE_START: PimDeviceStart = {
   expiresIn: 900,
 };
 
-describe('CalendarConnect account row', () => {
+describe('MailAccountsSection', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     pimAccountLinked.mockResolvedValue(false);
@@ -78,11 +77,83 @@ describe('CalendarConnect account row', () => {
   });
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('ListsTheAccountsAndTheAddFlow', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
+    renderSection();
+
+    expect(screen.getByRole('heading', { name: 'Mail and calendar' })).toBeTruthy();
+    expect(await screen.findByText('Work calendar')).toBeTruthy();
+    expect(screen.getByLabelText('Email address')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+    // IMAP is connected only through the address-and-password screen, never the full form.
+    expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
+  });
+
+  it('re-reads the list once the add flow has created an account', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockResolvedValue({ ...ACCOUNT, provider: 'ics', id: 'holidays' });
+    renderSection();
+    await screen.findByText(/No accounts yet/i);
+    const reads = listPimAccounts.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Other account type' }));
+    fireEvent.change(await screen.findByLabelText(/Account ID/i), {
+      target: { value: 'holidays' },
+    });
+    fireEvent.change(screen.getByLabelText(/Display name/i), { target: { value: 'Holidays' } });
+    await chooseOption('Provider', 'ICS feed');
+    fireEvent.change(screen.getByLabelText(/ICS URL/i), {
+      target: { value: 'https://example.com/h.ics' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => {
+      expect(listPimAccounts.mock.calls.length).toBeGreaterThan(reads);
+    });
+  });
+
+  it('carries the mail watch on each row, and its terms under the list', async () => {
+    mailWatchServer();
+    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT, { ...ACCOUNT, id: 'home' }] });
+    renderSection();
+
+    const switches = await screen.findAllByRole('switch', { name: /Mail and calendar watch for/ });
+    expect(switches.map((control) => control.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+    ]);
+    expect(await screen.findByText(/Digest at 18:00/)).toBeTruthy();
+  });
+
+  it('shows the empty note when there are no accounts', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderSection();
+    expect(await screen.findByText(/No accounts yet/i)).toBeTruthy();
+  });
+
+  it('shows the offline note when the accounts query errors (503 sidecar unconfigured)', async () => {
+    listPimAccounts.mockRejectedValue(new Error('HTTP 503'));
+    renderSection();
+    expect(await screen.findByText(/not configured on this deployment/i)).toBeTruthy();
+  });
+
+  it('says so when a removal fails', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
+    deletePimAccount.mockRejectedValue(new Error('HTTP 502'));
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove for good' }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Couldn't remove the account/);
   });
 
   it('renders the configured accounts list with provider · id', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    renderConnect();
+    renderSection();
 
     expect(await screen.findByText('Work calendar')).toBeTruthy();
     expect(screen.getByText('google · work')).toBeTruthy();
@@ -95,7 +166,7 @@ describe('CalendarConnect account row', () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
     pimGoogleStart.mockResolvedValue(GOOGLE_START);
     pimAccountLinked.mockResolvedValue(true);
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in again' }));
 
@@ -109,7 +180,7 @@ describe('CalendarConnect account row', () => {
     listPimAccounts.mockResolvedValue({ accounts: [{ ...UNFINISHED, linked: true }] });
     pimDeviceStart.mockResolvedValue(DEVICE_START);
     pimAuthStatus.mockResolvedValue({ status: 'awaiting_user', message: '' });
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in again' }));
 
@@ -120,7 +191,7 @@ describe('CalendarConnect account row', () => {
 
   it('says nothing about sign-in on a connected account', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    renderConnect();
+    renderSection();
 
     await screen.findByText('Work calendar');
     expect(screen.queryByText(/Sign-in not finished/)).toBeNull();
@@ -130,20 +201,19 @@ describe('CalendarConnect account row', () => {
   it('does not show an account whose sign-in never finished as connected', async () => {
     mailWatchServer();
     listPimAccounts.mockResolvedValue({ accounts: [{ ...UNFINISHED, id: 'home' }] });
-    renderConnect();
+    renderSection();
 
     expect(await screen.findByText(/Sign-in not finished/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sign in again' })).toBeNull();
     await screen.findByText(/Digest at 18:00/);
     expect(screen.queryByRole('switch', { name: /Mail and calendar watch for/ })).toBeNull();
-    vi.unstubAllGlobals();
   });
 
   it('Remove on an unfinished account fires the delete mutation once confirmed', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [UNFINISHED] });
     deletePimAccount.mockResolvedValue(undefined);
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove for good' }));
@@ -156,7 +226,7 @@ describe('CalendarConnect account row', () => {
     listPimAccounts.mockResolvedValue({ accounts: [UNFINISHED] });
     pimDeviceStart.mockResolvedValue(DEVICE_START);
     pimAuthStatus.mockResolvedValue({ status: 'awaiting_user', message: '' });
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
 
@@ -168,7 +238,7 @@ describe('CalendarConnect account row', () => {
   it('finishes a Google sign-in on the same account', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [{ ...UNFINISHED, provider: 'google' }] });
     pimGoogleStart.mockResolvedValue(GOOGLE_START);
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
 
@@ -183,7 +253,7 @@ describe('CalendarConnect account row', () => {
     pimDeviceStart.mockRejectedValueOnce(new Error('HTTP 502'));
     pimDeviceStart.mockResolvedValue(DEVICE_START);
     pimAuthStatus.mockResolvedValue({ status: 'awaiting_user', message: '' });
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Retry sign-in' }));
@@ -195,7 +265,7 @@ describe('CalendarConnect account row', () => {
     listPimAccounts.mockResolvedValue({
       accounts: [{ ...ACCOUNT, provider: 'imap', linked: null }],
     });
-    renderConnect();
+    renderSection();
 
     await screen.findByText('Work calendar');
     expect(screen.queryByRole('button', { name: 'Finish sign-in' })).toBeNull();
@@ -206,7 +276,7 @@ describe('CalendarConnect account row', () => {
   it('Remove asks first, and says what the watch loses', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
     deletePimAccount.mockResolvedValue(undefined);
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
 
@@ -220,7 +290,7 @@ describe('CalendarConnect account row', () => {
 
   it('Cancel keeps the account and its watch', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
-    renderConnect();
+    renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

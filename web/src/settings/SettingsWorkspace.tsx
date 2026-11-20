@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ShieldAlert } from 'lucide-react';
 import { useCapabilities } from '../admin/useAdmin';
 import { IdentityAccessPanel } from './IdentityAccessPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
@@ -11,6 +10,7 @@ import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramLinkedAccounts } from './TelegramLinkedAccounts';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
 import { TELEGRAM_ACCOUNTS_KEY } from './settingsApi';
+import { MailAccountsSection } from './mail/MailAccountsSection';
 import { RemoteAccessPanel } from './remoteAccess/RemoteAccessPanel';
 import { visibleSections, type SettingsSectionId } from './settingsSections';
 import { useSettingsSection } from './useSettingsSection';
@@ -19,13 +19,13 @@ interface SettingsWorkspaceProps {
   readonly onCreateIdentity: () => void;
 }
 
-// SettingsWorkspace is the admin surface (MUSR-01 / D-03). It used to stack every panel on one
-// scroll — nine headings, seventeen action buttons, and every panel's queries firing at once.
-// It is a rail + pane now: the rail is the map, and only the selected pane mounts, so opening
-// Settings no longer costs a roster fetch, a Telegram availability probe and a settings read
-// the operator did not ask for. The whole surface stays gated on governance.write — a
-// non-admin sees only the profile pane (defense-in-depth behind the server-side
-// RequireCapability gate on every route).
+// SettingsWorkspace is every identity's settings surface (spec A1, 2026-11-20). It used to stack
+// every panel on one scroll — nine headings, seventeen action buttons, and every panel's queries
+// firing at once. It is a rail + pane now: the rail is the map, and only the selected pane mounts,
+// so opening Settings no longer costs a roster fetch, a Telegram availability probe and a settings
+// read nobody asked for. A member's rail carries only the personal sections (profile, mail and
+// calendar); the runtime and access panes are the administrator's, dropped from the rail here and
+// gated server-side by RequireCapability on every route.
 export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspaceProps) {
   const { t } = useTranslation();
   const { isAdmin, isLoading } = useCapabilities();
@@ -40,43 +40,12 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
     );
   }
 
-  // The profile is every operator's, the runtime settings are the admin's. A non-admin gets
-  // the editor and the explanation, not a bare "not authorized" page that hides the one thing
-  // on this page they DO own — and no rail, because a one-item rail is a label, not a choice.
-  if (!isAdmin) {
-    return (
-      <div className="h-full min-h-0 overflow-y-auto bg-bg">
-        <div className="mx-auto flex w-full max-w-3xl flex-col items-start gap-6 px-4 py-10 sm:px-6">
-          <ProfilePanel />
-          <section aria-labelledby="own-chatgpt-account" className="flex w-full flex-col gap-3">
-            <h2 id="own-chatgpt-account" className="text-[20px] font-semibold text-text">
-              {t('settings.chatgpt.accountHeading')}
-            </h2>
-            <p className="text-[13px] text-text-muted">{t('settings.chatgpt.accountBody')}</p>
-            <ChatGPTPlanConnection />
-          </section>
-          <div className="flex w-full flex-col items-start gap-3 border-t border-border pt-6">
-            <span className="grid size-12 place-items-center rounded-full border border-border bg-surface text-accent-text">
-              <ShieldAlert aria-hidden="true" />
-            </span>
-            <h2 className="font-display text-[22px] font-semibold text-text">
-              {t('admin.notAuthorized.heading')}
-            </h2>
-            <p className="text-[15.5px] leading-relaxed text-text-muted">
-              {t('admin.notAuthorized.body')}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg lg:flex-row">
       <SettingsRail sections={sections} activeId={section} onSelect={setSection} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <SettingsPane section={section} onCreateIdentity={onCreateIdentity} />
+          <SettingsPane section={section} isAdmin={isAdmin} onCreateIdentity={onCreateIdentity} />
         </div>
       </div>
     </div>
@@ -85,15 +54,19 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
 
 function SettingsPane({
   section,
+  isAdmin,
   onCreateIdentity,
 }: {
   readonly section: SettingsSectionId;
+  readonly isAdmin: boolean;
   readonly onCreateIdentity: () => void;
 }) {
   const client = useQueryClient();
   switch (section) {
     case 'profile':
-      return <ProfilePanel />;
+      return isAdmin ? <ProfilePanel /> : <MemberProfile />;
+    case 'mail':
+      return <MailAccountsSection />;
     case 'model':
       return <ModelSettingsPanel groups={['routing']} />;
     case 'budget':
@@ -116,4 +89,22 @@ function SettingsPane({
     case 'remote-access':
       return <RemoteAccessPanel />;
   }
+}
+
+// A member's ChatGPT account sits on their profile: an administrator connects it in model
+// routing, the pane a member does not have.
+function MemberProfile() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-start gap-6">
+      <ProfilePanel />
+      <section aria-labelledby="own-chatgpt-account" className="flex w-full flex-col gap-3">
+        <h2 id="own-chatgpt-account" className="text-[20px] font-semibold text-text">
+          {t('settings.chatgpt.accountHeading')}
+        </h2>
+        <p className="text-[13px] text-text-muted">{t('settings.chatgpt.accountBody')}</p>
+        <ChatGPTPlanConnection />
+      </section>
+    </div>
+  );
 }

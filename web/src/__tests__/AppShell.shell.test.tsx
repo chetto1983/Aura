@@ -291,9 +291,9 @@ describe('AppShell', () => {
     expect(await screen.findByRole('dialog', { name: 'Create identity' })).toBeTruthy();
   });
 
-  it('hides the admin surfaces from the nav for a non-admin identity (MUSR-01 / D-03)', async () => {
-    // A provisioned user holds only agent.run — not governance.write — so Settings + Governance
-    // are dropped from the switcher while chat and the read surfaces remain.
+  it('hides Governance from the nav for a non-admin identity, and keeps Settings', async () => {
+    // A provisioned user does not hold identity.create, so Governance is dropped from the
+    // switcher. Settings stays: its personal sections are every identity's (spec A1).
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -314,9 +314,7 @@ describe('AppShell', () => {
     );
     renderShell();
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
-    await waitFor(() => {
-      expect(within(nav).queryByRole('button', { name: 'Settings' })).toBeNull();
-    });
+    expect(await within(nav).findByRole('button', { name: 'Settings' })).toBeTruthy();
     expect(within(nav).queryByRole('button', { name: 'Governance' })).toBeNull();
     expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
   });

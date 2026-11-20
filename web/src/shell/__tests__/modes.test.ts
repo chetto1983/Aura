@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { ADMIN_MODES, MODES, isAdminMode, visibleModes } from '../modes';
 
 describe('admin-mode gating (MUSR-01 / D-03)', () => {
-  it('marks settings + governance as admin-only', () => {
-    expect(ADMIN_MODES).toContain('settings');
-    expect(ADMIN_MODES).toContain('governance');
-    expect(isAdminMode('settings')).toBe(true);
+  it('marks only governance as admin-only', () => {
+    // Settings opened to members (spec A1, 2026-11-20): its admin panes are filtered by the
+    // section rail, not by hiding the whole surface.
+    expect(ADMIN_MODES).toEqual(['governance']);
+    expect(isAdminMode('settings')).toBe(false);
     expect(isAdminMode('governance')).toBe(true);
     expect(isAdminMode('chat')).toBe(false);
     expect(isAdminMode('documents')).toBe(false);
@@ -41,9 +42,9 @@ describe('admin-mode gating (MUSR-01 / D-03)', () => {
     expect(MODES).not.toContain('displays');
   });
 
-  it('drops the admin-only surfaces for a non-admin', () => {
+  it('drops the admin-only surfaces for a non-admin, and keeps Settings', () => {
     const desktop = visibleModes(MODES, false);
-    expect(desktop).not.toContain('settings');
+    expect(desktop).toContain('settings');
     expect(desktop).not.toContain('governance');
     expect(desktop).toContain('chat');
 

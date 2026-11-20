@@ -21,7 +21,6 @@ import {
   pimSubmitConfig,
   PIM_PROVIDERS,
   type PimAuthFlow,
-  type PimProviderDef,
 } from '../../governance/pimProviders';
 import {
   createPimAccount,
@@ -33,11 +32,15 @@ import {
 } from '../../governance/pimApi';
 import { Button } from '@/components/ui/button';
 
-// OtherAccountForm is the full account form: any provider the sidecar exposes, with a typed account
-// id, display name and every provider field. The mail screen (AddMailAccount) reveals it for an ICS
-// or JSON calendar and anything the address-and-password flow does not cover. On create it routes
-// the connect step by the provider's authFlow: Google opens the web-redirect consent, Microsoft and
-// Outlook render the device-code grant, credential and URL providers are ready immediately.
+// OtherAccountForm is the full account form: every provider the sidecar exposes but IMAP, with a
+// typed account id, display name and every provider field. The mail screen (AddMailAccount) reveals
+// it for an ICS or JSON calendar and an OAuth account on a custom domain. On create it routes the
+// connect step by the provider's authFlow: Google opens the web-redirect consent, Microsoft and
+// Outlook render the device-code grant, ICS and JSON are ready immediately.
+
+// IMAP is AddMailAccount's own path, verified before saving and never trimmed; this form would save
+// the password unchecked.
+const PROVIDERS = PIM_PROVIDERS.filter((def) => def.id !== 'imap');
 
 function parseDomains(raw: string): readonly string[] {
   return raw
@@ -61,13 +64,7 @@ function serverReason(error: unknown): string | null {
   return null;
 }
 
-export function OtherAccountForm({
-  onCreated,
-  providers = PIM_PROVIDERS,
-}: {
-  readonly onCreated: () => void;
-  readonly providers?: readonly PimProviderDef[];
-}) {
+export function OtherAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const { t } = useTranslation();
   const ids = { provider: useId(), accountId: useId(), displayName: useId() };
 
@@ -166,7 +163,7 @@ export function OtherAccountForm({
         id={ids.provider}
         value={providerId}
         onChange={selectProvider}
-        providers={providers}
+        providers={PROVIDERS}
       />
 
       <Field

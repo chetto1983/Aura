@@ -67,16 +67,12 @@ export const governanceEn = {
       },
       calendar: {
         heading: 'Connect calendar / PIM account',
-        loading: 'Loading accounts…',
-        offline: 'Calendar connect is unavailable or not configured on this deployment.',
-        empty: 'No calendar accounts yet. Add one below.',
-        accountsHeading: 'Accounts',
+        accountsInSettings: 'Accounts are connected in Settings → Mail and calendar',
         remove: 'Remove',
         removeConfirm:
           'Removing the account deletes what the mail and calendar watch decided and learned for it. To sign in to it again, use “Sign in again” instead.',
         removeForGood: 'Remove for good',
         cancel: 'Cancel',
-        removeError: "Couldn't remove the account. Try again.",
         notLinked: "Sign-in not finished: Aura can't read this account yet.",
         finishSignIn: 'Finish sign-in',
         signInAgain: 'Sign in again',
@@ -335,17 +331,12 @@ export const governanceIt = {
       },
       calendar: {
         heading: 'Collega account calendario / PIM',
-        loading: 'Caricamento account…',
-        offline:
-          'Il collegamento calendario non è disponibile o non è configurato su questo deployment.',
-        empty: 'Ancora nessun account calendario. Aggiungine uno qui sotto.',
-        accountsHeading: 'Account',
+        accountsInSettings: 'Gli account si collegano in Impostazioni → Posta e calendario',
         remove: 'Rimuovi',
         removeConfirm:
           'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui. Per accedere di nuovo usa invece «Ricollega».',
         removeForGood: 'Rimuovi definitivamente',
         cancel: 'Annulla',
-        removeError: 'Impossibile rimuovere l’account. Riprova.',
         notLinked: 'Accesso non completato: Aura non può ancora leggere questo account.',
         finishSignIn: "Completa l'accesso",
         signInAgain: 'Ricollega',

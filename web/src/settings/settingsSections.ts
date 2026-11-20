@@ -1,12 +1,14 @@
-import { Cloud, Gauge, Link2, Send, Server, UserRound, Users, Waypoints } from 'lucide-react';
+import { Cloud, Gauge, Link2, Mail, Send, Server, UserRound, Users, Waypoints } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// The Settings rail (Material's "15+ settings belong on their own screens"): seven panes in
-// three groups instead of one scroll with nine headings. `labelKey` is deliberately the
-// PANE'S OWN heading key, not a rail-only string — the entry that opens a section and the
-// section's title are then the same string by construction and cannot drift apart.
+// The Settings rail (Material's "15+ settings belong on their own screens"): nine panes in
+// three groups instead of one scroll, of which a member sees only the personal group.
+// `labelKey` is deliberately the PANE'S OWN heading key, not a rail-only string — the entry that
+// opens a section and the section's title are then the same string by construction and cannot
+// drift apart.
 export type SettingsSectionId =
   | 'profile'
+  | 'mail'
   | 'model'
   | 'budget'
   | 'backends'
@@ -22,7 +24,7 @@ export interface SettingsSectionDef {
   readonly group: SettingsGroupId;
   readonly icon: LucideIcon;
   readonly labelKey: string;
-  /** Writes behind governance.write; hidden from a non-admin rail (server gates the routes). */
+  /** An administrator's pane; hidden from a member's rail (the server gates the routes). */
   readonly adminOnly: boolean;
 }
 
@@ -34,6 +36,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     group: 'personal',
     icon: UserRound,
     labelKey: 'profile.heading',
+    adminOnly: false,
+  },
+  {
+    id: 'mail',
+    group: 'personal',
+    icon: Mail,
+    labelKey: 'settings.mail.heading',
     adminOnly: false,
   },
   {

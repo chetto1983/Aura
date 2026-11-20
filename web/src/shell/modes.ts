@@ -24,11 +24,11 @@ export const SURFACE_LOADING = {
   settings: 'settings.loading',
 } as const satisfies Record<SurfaceIntent, string>;
 
-// ADMIN_MODES are the operator/admin-only surfaces (MUSR-01 / D-03): the model Settings page
-// (governance.write-gated writes) and the Governance boards (governance.read/write-gated). A
-// non-admin identity holds neither capability, so these are hidden from the nav — a cosmetic
-// hide layered over the authoritative server-side RequireCapability gate.
-export const ADMIN_MODES = ['governance', 'settings'] as const satisfies readonly SurfaceIntent[];
+// ADMIN_MODES are the administrator-only surfaces (MUSR-01 / D-03), hidden from the nav of an
+// identity without identity.create — a cosmetic hide layered over the authoritative server-side
+// RequireCapability gate. Settings is not one since 2026-11-20 (spec A1): every identity owns its
+// profile and its mail accounts, and the section rail drops the admin panes for a member.
+export const ADMIN_MODES = ['governance'] as const satisfies readonly SurfaceIntent[];
 
 export function isAdminMode(mode: SurfaceIntent): boolean {
   return ADMIN_MODES.includes(mode as (typeof ADMIN_MODES)[number]);
