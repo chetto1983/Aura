@@ -1,4 +1,5 @@
 import { profileDefaultNotifyEn, profileDefaultNotifyIt } from './resources.profileDefaultNotify';
+import { mailEn, mailIt } from './resources.settings.mail';
 
 export const settingsEn = {
   settings: {
@@ -246,6 +247,7 @@ export const settingsEn = {
       reset: 'Reset',
       retry: 'Retry',
     },
+    mail: mailEn,
   },
 } as const;
 
@@ -496,6 +498,7 @@ export const settingsIt = {
       reset: 'Ripristina',
       retry: 'Riprova',
     },
+    mail: mailIt,
   },
 } as const;
 

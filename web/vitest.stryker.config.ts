@@ -121,6 +121,10 @@ const mutationTests = [
   'src/governance/mailWatch/__tests__/RulesPanel.test.tsx',
   'src/governance/mailWatch/__tests__/LabelsPanel.test.tsx',
   'src/governance/mailWatch/__tests__/SettingsPanel.test.tsx',
+  // Connecting a mailbox (spec 2026-11-20): the address-to-id and message rules, and the create step
+  // with its suffixes, its repair hand-back and its re-read after a timeout.
+  'src/settings/mail/__tests__/mailConnectLogic.test.ts',
+  'src/settings/mail/__tests__/AddMailAccount.test.tsx',
 ] as const;
 
 export default defineConfig({

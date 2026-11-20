@@ -10,7 +10,7 @@
 // The wizard supports every provider the sidecar exposes, with two connect flows: Google = web-redirect
 // (pimGoogleStart), Microsoft/Outlook = device-code (pimDeviceStart + pimAuthStatus poll).
 
-import { getJSON, HttpError, isTrue } from '../api/json';
+import { getJSON, HttpError, isTrue, sendJSON } from '../api/json';
 import { deleteJSON, patchJSON, postJSON, putJSON, stringValue } from './governanceApi';
 
 export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
@@ -117,9 +117,18 @@ export async function listPimAccounts(): Promise<PimAccountList> {
 /** POST /api/connect/pim/accounts — create an account. For a managed provider Aura injects the
  * admin-set OAuth client. A 409 is either a duplicate id or, with the reason
  * PIM_PROVIDER_NOT_CONFIGURED, a managed provider no admin has set up yet; a 400 carries the
- * validation reason. */
-export function createPimAccount(body: PimCreateAccountRequest): Promise<PimAccount> {
-  return postJSON<PimAccount>(GOV_PIM_ACCOUNTS_PATH, body);
+ * validation reason. An IMAP account is signed in to before it is stored: a 422 says why it failed,
+ * and a pass may carry an smtpWarning. */
+export function createPimAccount(
+  body: PimCreateAccountRequest,
+  signal?: AbortSignal,
+): Promise<PimAccount & { smtpWarning?: string }> {
+  return sendJSON<PimAccount & { smtpWarning?: string }>(
+    'POST',
+    GOV_PIM_ACCOUNTS_PATH,
+    body,
+    signal,
+  );
 }
 
 /** DELETE /api/connect/pim/accounts/{id} — remove the account (the backend appends ?logout=true so

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { accountIdFromAddress, isValidAddress, verifyMessageKey } from '../mailConnectLogic';
+import type { PimDiscovery } from '../../../governance/pimApi';
+import {
+  accountIdFromAddress,
+  httpsUrl,
+  isServerFailure,
+  isValidAddress,
+  mailProviderConfig,
+  sameAddress,
+  serverValuesFrom,
+  verifyMessageKey,
+} from '../mailConnectLogic';
 
 describe('accountIdFromAddress', () => {
   it('lowercases and turns every run of other characters into one dash', () => {
@@ -49,4 +59,110 @@ describe('isValidAddress', () => {
       expect(isValidAddress(v)).toBe(false);
     },
   );
+});
+
+describe('isServerFailure', () => {
+  it('puts every SMTP failure and an unreachable or untrusted IMAP server on the servers', () => {
+    expect(isServerFailure({ step: 'smtp', reason: 'smtp_auth_failed' })).toBe(true);
+    expect(isServerFailure({ step: 'smtp', reason: 'smtp_unreachable' })).toBe(true);
+    expect(isServerFailure({ step: 'imap', reason: 'unreachable' })).toBe(true);
+    expect(isServerFailure({ step: 'imap', reason: 'tls_failed' })).toBe(true);
+  });
+
+  it('puts a refused IMAP login or inbox on the password', () => {
+    expect(isServerFailure({ step: 'imap', reason: 'auth_failed' })).toBe(false);
+    expect(isServerFailure({ step: 'imap', reason: 'mailbox_refused' })).toBe(false);
+  });
+});
+
+describe('sameAddress', () => {
+  it('ignores case and surrounding space', () => {
+    expect(sameAddress(' Mario@Libero.it', 'mario@libero.it ')).toBe(true);
+    expect(sameAddress('mario@libero.it', 'maria@libero.it')).toBe(false);
+  });
+});
+
+const DISCOVERED: PimDiscovery = {
+  kind: 'imap',
+  imapHost: 'imap.example.com',
+  imapPort: 993,
+  imapSecurity: 'ssl',
+  smtpHost: 'smtp.example.com',
+  smtpPort: 587,
+  smtpSecurity: 'starttls',
+  username: 'me',
+};
+
+describe('serverValuesFrom', () => {
+  it('copies what discovery found, ports as text', () => {
+    expect(serverValuesFrom(DISCOVERED, 'me@example.com')).toEqual({
+      imapHost: 'imap.example.com',
+      imapPort: '993',
+      smtpHost: 'smtp.example.com',
+      smtpPort: '587',
+      username: 'me',
+    });
+  });
+
+  it('leaves an unknown domain blank and uses the address as the username', () => {
+    expect(serverValuesFrom({ kind: 'unknown' }, 'me@example.com')).toEqual({
+      imapHost: '',
+      imapPort: '',
+      smtpHost: '',
+      smtpPort: '',
+      username: 'me@example.com',
+    });
+  });
+});
+
+describe('mailProviderConfig', () => {
+  const servers = serverValuesFrom(DISCOVERED, 'me@example.com');
+
+  it('sends the servers, their discovered security and the password verbatim', () => {
+    expect(
+      mailProviderConfig({ ...servers, imapHost: ' imap.example.com ' }, ' pw ', DISCOVERED),
+    ).toEqual({
+      imapHost: 'imap.example.com',
+      imapPort: '993',
+      imapSecurity: 'ssl',
+      smtpHost: 'smtp.example.com',
+      smtpPort: '587',
+      smtpSecurity: 'starttls',
+      username: 'me',
+      password: ' pw ',
+    });
+  });
+
+  it('drops a blank field and the security of a port the person changed', () => {
+    const config = mailProviderConfig(
+      { ...servers, imapPort: '143', smtpPort: '' },
+      'pw',
+      DISCOVERED,
+    );
+    expect(config).not.toHaveProperty('imapSecurity');
+    expect(config).not.toHaveProperty('smtpSecurity');
+    expect(config).not.toHaveProperty('smtpPort');
+    expect(config.imapPort).toBe('143');
+  });
+
+  it('sends no security when discovery found none', () => {
+    const config = mailProviderConfig(
+      serverValuesFrom({ kind: 'unknown' }, 'me@example.com'),
+      'pw',
+      { kind: 'unknown' },
+    );
+    expect(config).toEqual({ username: 'me@example.com', password: 'pw' });
+    expect(config).not.toHaveProperty('imapSecurity');
+    expect(config).not.toHaveProperty('smtpSecurity');
+  });
+});
+
+describe('httpsUrl', () => {
+  it('keeps an https link only', () => {
+    expect(httpsUrl('https://help.example.com/x')).toBe('https://help.example.com/x');
+    expect(httpsUrl('http://help.example.com/x')).toBeNull();
+    expect(httpsUrl('javascript:alert(1)')).toBeNull();
+    expect(httpsUrl('not a url')).toBeNull();
+    expect(httpsUrl(undefined)).toBeNull();
+  });
 });

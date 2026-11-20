@@ -82,7 +82,8 @@
     "src/governance/mailWatchApi.ts",
     "src/governance/mailWatch/mailWatchLogic.ts",
     "src/governance/mailWatch/useMailWatch.ts",
-    "src/settings/mail/mailConnectLogic.ts"
+    "src/settings/mail/mailConnectLogic.ts",
+    "src/settings/mail/mailAccountCreate.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

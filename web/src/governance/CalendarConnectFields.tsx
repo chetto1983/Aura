@@ -221,6 +221,7 @@ export function Field({
   error,
   type = 'text',
   placeholder,
+  onBlur,
 }: {
   readonly id: string;
   readonly label: string;
@@ -230,8 +231,9 @@ export function Field({
   readonly hint?: string | undefined;
   /** Replaces the default "required" text when the field fails a rule other than emptiness. */
   readonly error?: string | undefined;
-  readonly type?: 'text' | 'password';
+  readonly type?: 'text' | 'email' | 'password';
   readonly placeholder?: string | undefined;
+  readonly onBlur?: (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   const errId = `${id}-err`;
@@ -252,6 +254,7 @@ export function Field({
           onChange={(event) => {
             onChange(event.target.value);
           }}
+          onBlur={onBlur}
           showLabel={t('secret.show', { label })}
           hideLabel={t('secret.hide', { label })}
           aria-invalid={ariaInvalid(invalid)}
@@ -267,6 +270,7 @@ export function Field({
           onChange={(event) => {
             onChange(event.target.value);
           }}
+          onBlur={onBlur}
           aria-invalid={ariaInvalid(invalid)}
           aria-describedby={describedBy === '' ? undefined : describedBy}
           className="bg-surface-3 font-mono text-[13px]"
