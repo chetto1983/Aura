@@ -760,6 +760,9 @@ Behaviour:
 
 ### Task L1: Live, on the lab VM
 
+- [ ] **Step 0: Bring the live harnesses up to the new rules (added 2026-11-20 by the W3 review).**
+  - `web/e2e/mcp-cockpit-live.spec.ts`: W3 marked "configures PIM in the cockpit…" `test.fixme`, because the Governance IMAP form it drove is gone. Rewrite it to drive Settings → «Posta e calendario» (`AddMailAccount`), and lift the `fixme`.
+  - Its fake IMAP on 1143, and the `aura-model-in-the-loop` skill's PIM mount over GreenMail, now meet `400 tls_required` (A2) and `422 unreachable` for a private host without the header (A5). Give them TLS or STARTTLS, and add accounts as an identity holding `identity.create`, or the header.
 - [ ] **Step 1: Release in this order.**
   1. Merge A1-G1 to `master`, push with the WSL recipe, and wait for CI to go green on that SHA.
   2. Merge the PIM PR (P5 step 7) and wait for `aura-publish-image.yml`.
