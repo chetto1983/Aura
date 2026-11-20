@@ -266,6 +266,7 @@ type pimTaskStore interface {
 	UpdateTask(ctx context.Context, id string, p cron.UpdateTaskParams) error
 	ResumeTask(ctx context.Context, id string, now time.Time) (time.Time, error)
 	CancelTask(ctx context.Context, id string) error
+	RunTaskNow(ctx context.Context, id string) error
 }
 
 // pimWatchTasks is the scheduler as the watch sees it.
@@ -362,6 +363,10 @@ func (t pimWatchTasks) RescheduleDigest(ctx context.Context, taskID string, spec
 func (t pimWatchTasks) Resume(ctx context.Context, taskID string) error {
 	_, err := t.store.ResumeTask(ctx, taskID, time.Now().UTC())
 	return err
+}
+
+func (t pimWatchTasks) RunNow(ctx context.Context, taskID string) error {
+	return t.store.RunTaskNow(ctx, taskID)
 }
 
 func (t pimWatchTasks) Cancel(ctx context.Context, taskID string) error {

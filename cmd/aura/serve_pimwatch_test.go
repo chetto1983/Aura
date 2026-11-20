@@ -206,6 +206,7 @@ type stubTaskStore struct {
 	updated   cron.UpdateTaskParams
 	updatedID string
 	resumed   string
+	runNow    []string
 	cancelled []string
 	err       error
 }
@@ -235,9 +236,24 @@ func (s *stubTaskStore) ResumeTask(_ context.Context, id string, _ time.Time) (t
 	return time.Time{}, s.err
 }
 
+func (s *stubTaskStore) RunTaskNow(_ context.Context, id string) error {
+	s.runNow = append(s.runNow, id)
+	return s.err
+}
+
 func (s *stubTaskStore) CancelTask(_ context.Context, id string) error {
 	s.cancelled = append(s.cancelled, id)
 	return s.err
+}
+
+func TestPimWatchTasksRunNowReachesTheStore(t *testing.T) {
+	store := &stubTaskStore{}
+	if err := (pimWatchTasks{store: store}).RunNow(context.Background(), "t1"); err != nil {
+		t.Fatalf("run now: %v", err)
+	}
+	if len(store.runNow) != 1 || store.runNow[0] != "t1" {
+		t.Fatalf("run now = %v", store.runNow)
+	}
 }
 
 func TestAWatchTaskRunsEveryIntervalInTheIdentitysZoneAndKeepsItsDelivery(t *testing.T) {

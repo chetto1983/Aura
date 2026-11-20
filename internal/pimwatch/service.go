@@ -67,6 +67,7 @@ type Tasks interface {
 	CreateDigest(ctx context.Context, identityID string, spec DigestSpec) error
 	RescheduleDigest(ctx context.Context, taskID string, spec DigestSpec) error
 	Resume(ctx context.Context, taskID string) error
+	RunNow(ctx context.Context, taskID string) error
 	Cancel(ctx context.Context, taskID string) error
 }
 
@@ -90,6 +91,8 @@ type Service struct {
 	Decide RouteReader
 	// Now overrides the clock in tests; nil is time.Now.
 	Now func() time.Time
+	// cursors replaces Store for the cursor reads of Repaired in tests.
+	cursors cursorReader
 }
 
 func (s *Service) now() time.Time {
