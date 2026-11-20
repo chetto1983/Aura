@@ -67,9 +67,15 @@ All five new tags are dated 2026-11-11. Every zip and tarball matches its releas
   patched tree passed with no warning from a patched file.
 - **PhotoCraft.** `docker/craft-web/build.sh` ran outside Docker with the Dockerfile's
   SHA-256-pinned trunk 0.21.14, wasm-bindgen 0.2.129 and wasm-opt 123, rust 1.97.0.
-- **The Craft image** now builds PhotoCraft and FilmCraft only. Its inputs changed, so its tag is
-  now `7fd07aa96dd103c5`; `publish-craft-web.yml` must publish it before
-  `TestCraftWebImagePinMatchesItsInputs` turns green and `docker/aura/Dockerfile` can pin it.
+- **The Craft image** now builds PhotoCraft and FilmCraft only. `publish-craft-web.yml` run
+  44730488310, dispatched on this branch, took 21 min and pushed
+  `aura-craft-web:7fd07aa96dd103c5@sha256:25e6cdf4…2138`, which `docker/aura/Dockerfile` now pins.
+- **The published bytes,** pulled by digest and served by the same harness:
+  - PhotoCraft 0.23.1 drew Italian for `it-IT` and inverted all 65,536 pixels of the saved
+    `photo.png`. Its wasm is 39,253,314 bytes against 39,249,384 for the local build of the same
+    inputs: as at the last bump, the two environments do not build bit for bit alike.
+  - FilmCraft 0.17.1 imported `clip.mp4` and made its sequence, saved `Untitled.fcproj` on Ctrl+S
+    and exported `edited.mp4`: H.264 + AAC, 320×180, 4.017 s (ffprobe).
 
 ## The bridge, app by app
 
@@ -127,9 +133,8 @@ build took 1,023 s here.
   `web/e2e/craft-live.spec.ts` was run; the bridge harness speaks `CraftFrame`'s protocol, and
   the CLIs were checked by `tools/list` and the native previews only. The skills were not
   re-measured against the new servers.
-- **The images.** Neither the aura image, the sandbox image nor the Craft image was built here.
-  The Craft image's published bytes have not been driven; the last bump found the runner's wasm
-  differs from a local build of the same inputs.
+- **The images.** Neither the aura image nor the sandbox image was built here; CI's sandbox job
+  is the build of record for `scripts/sandbox_image_contract_test.sh`.
 - **FilmCraft beyond the export.** Only v0.18.0's and v0.20.1's official zips were driven, for
   open, save and export; the hold rests on the H.264 refusal.
 - **Fidelity and other languages.** Round-trip fidelity of complex documents is not claimed. Only
