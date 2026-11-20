@@ -40,6 +40,8 @@ type ConversationStore interface {
 	Rename(ctx context.Context, conversationID, title string) error
 	SetTitleIfNull(ctx context.Context, conversationID, title string) error
 	CountTurns(ctx context.Context, conversationID string) (int, error)
+	LatestTurnSeq(ctx context.Context, conversationID string) (int, error)
+	MessageTaskAcceptedOnBranch(ctx context.Context, ownerID, conversationID, taskID string, leaf int) (bool, error)
 	AppendTurn(ctx context.Context, p conversations.AppendTurnParams) error
 	// AppendTurnSeq is AppendTurn returning the seq the store assigned, so the runner can
 	// address the user row it dispatched (the turn's effort decision is written back to it).
@@ -117,6 +119,8 @@ type ResumeClaim struct {
 	Answer         askuser.ResumeAnswer
 	Turn           conversations.AppendTurnParams
 	ExpectActionID string
+	// Only an operator decision changes the task. The expiry sweep closes the pause separately.
+	scheduledTask *scheduledTaskDecision
 	// A durable worker owns its tool transcript; its answer must not be appended
 	// as an orphan tool result to the originating parent conversation.
 	OwningWorkerID string

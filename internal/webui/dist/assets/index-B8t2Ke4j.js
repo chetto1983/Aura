@@ -1,0 +1,1 @@
+import{t as e}from"./web-Bndn5yXc.js";e();

@@ -1,9 +1,6 @@
 package runner
 
 import (
-	"encoding/json"
-
-	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 )
 
@@ -50,18 +47,4 @@ func classifyResolve(pending askuser.Pending, action string, remaining int) Reso
 		return ResolveDirective{Outcome: OutcomeApproved}
 	}
 	return ResolveDirective{Outcome: OutcomeContinue}
-}
-
-// isScheduledTaskApproval identifies the governance gate whose answer must tell the model
-// activation/cancellation already happened, so acknowledging it does not create another task.
-func isScheduledTaskApproval(pending askuser.Pending) bool {
-	if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 {
-		return false
-	}
-	var rc struct {
-		Type   string `json:"type"`
-		TaskID string `json:"task_id"`
-	}
-	return json.Unmarshal(pending.ResumeContext, &rc) == nil &&
-		rc.Type == "scheduled_task_approval" && rc.TaskID != ""
 }

@@ -3,9 +3,12 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
@@ -14,6 +17,26 @@ import (
 type ScheduledMessageTasks interface {
 	ActivateReviewedMessage(ctx context.Context, ownerID, taskID string) error
 	CancelReviewedMessage(ctx context.Context, ownerID, taskID string) error
+}
+
+// Both cockpit and Telegram resume in a fresh turn without a user message.
+// Look up the operator's committed decision when a model actually tries to
+// change a task, including after a restart or a runtime-only steer.
+func (r *Runner) protectReviewedMessageTasks(ctx context.Context, conversationID string, leaf int, tr *turnTracker) context.Context {
+	ownerID := identityctx.IdentityID(ctx)
+	return tools.WithTaskMutationGuard(ctx, func(ctx context.Context, taskID string) error {
+		if tr.operatorSteered.Load() {
+			return nil
+		}
+		accepted, err := r.Conv.MessageTaskAcceptedOnBranch(ctx, ownerID, conversationID, taskID, leaf)
+		if err != nil {
+			return fmt.Errorf("check scheduled message review: %w", err)
+		}
+		if accepted {
+			return errors.New("a new user request is required to change the scheduled message the operator just approved")
+		}
+		return nil
+	})
 }
 
 // resolveScheduledMessage answers the review of a draft a task sends at its time. Nothing is
@@ -30,9 +53,16 @@ func (r *Runner) resolveScheduledMessage(ctx context.Context, ownerID string, dr
 	switch {
 	case draft.Status == messagedrafts.StatusExpired:
 		return draft, "message review expired without sending", nil
-	case action == "decline" && draft.Status == messagedrafts.StatusPending:
-		if draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID); err != nil {
-			return draft, "", err
+	case action == "decline" && (draft.Status == messagedrafts.StatusPending || draft.Status == messagedrafts.StatusDeclined):
+		if draft.Status == messagedrafts.StatusPending {
+			if draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID); err != nil {
+				return draft, "", err
+			}
+		}
+		// Cleanup clears the task FK on a settled one-shot. Its review may still
+		// need the answer that failed to commit after the task was cancelled.
+		if draft.ScheduledTaskID == "" {
+			return draft, "the operator declined the scheduled message; nothing will be sent", nil
 		}
 		if err := r.messageTasks.CancelReviewedMessage(ctx, ownerID, draft.ScheduledTaskID); err != nil {
 			return draft, "", err

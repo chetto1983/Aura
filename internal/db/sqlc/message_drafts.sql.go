@@ -323,6 +323,77 @@ func (q *Queries) ExpireScheduledMessageDraft(ctx context.Context, arg ExpireSch
 	return i, err
 }
 
+const findMessageReviewBoundary = `-- name: FindMessageReviewBoundary :one
+WITH RECURSIVE accepted AS (
+    SELECT answer.seq, d.status = 'approved' AND task.status = 'active' AS live
+    FROM aura.message_drafts d
+    JOIN aura.scheduler_tasks task ON task.id = d.scheduled_task_id AND task.identity_id = d.identity_id::text
+    JOIN aura.paused_states p ON p.identity_id = d.identity_id AND p.conversation_id::text = d.conversation_id
+        AND p.tool_call_id = d.tool_call_id AND p.resume_context->>'draft_id' = d.id::text
+    JOIN aura.conversation_turns answer ON answer.conversation_id = p.conversation_id
+        AND answer.role = 'tool' AND answer.tool_call_id = p.tool_call_id AND answer.created_at = p.resumed_at
+    WHERE d.identity_id = $2 AND p.conversation_id = $1
+        AND d.scheduled_task_id = $3 AND d.send_at IS NOT NULL
+        AND d.effective_fingerprint IS NOT NULL AND p.resume_context->>'type' = 'message_draft'
+        AND p.resumed_answer->>'action' = 'accept' AND p.resumed_at IS NOT NULL
+), path AS (
+    SELECT t.seq, t.parent_seq, t.role
+    FROM aura.conversation_turns t
+    WHERE t.conversation_id = $1
+        AND t.seq = $4
+        AND t.seq >= (SELECT MIN(seq) FROM accepted)
+    UNION ALL
+    SELECT t.seq, t.parent_seq, t.role
+    FROM path JOIN aura.conversation_turns t
+        ON t.conversation_id = $1 AND t.seq = path.parent_seq
+    WHERE path.role <> 'user' AND t.seq < path.seq AND t.seq >= (SELECT MIN(seq) FROM accepted)
+)
+SELECT path.seq, path.parent_seq, (a.seq IS NOT NULL)::boolean AS reviewed,
+       COALESCE(t.content, '')::text AS content, (t.content_sidecar_path IS NOT NULL)::boolean AS spilled
+FROM path
+LEFT JOIN accepted a ON a.seq = path.seq
+JOIN aura.conversation_turns t ON t.conversation_id = $1 AND t.seq = path.seq
+WHERE a.seq IS NOT NULL OR (path.role = 'user' AND COALESCE(cardinality(t.attachment_ids), 0) = 0
+    AND EXISTS (SELECT FROM accepted WHERE live))
+ORDER BY path.seq DESC LIMIT 1
+`
+
+type FindMessageReviewBoundaryParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	LeafSeq        int32       `json:"leaf_seq"`
+}
+
+type FindMessageReviewBoundaryRow struct {
+	Seq       int32       `json:"seq"`
+	ParentSeq pgtype.Int4 `json:"parent_seq"`
+	Reviewed  bool        `json:"reviewed"`
+	Content   string      `json:"content"`
+	Spilled   bool        `json:"spilled"`
+}
+
+// The resume transaction stamps both the pause and its tool answer with now().
+// Find the first committed review or user input on this branch. For a live send
+// the caller can continue past a verified legacy catalog-only user row.
+func (q *Queries) FindMessageReviewBoundary(ctx context.Context, arg FindMessageReviewBoundaryParams) (FindMessageReviewBoundaryRow, error) {
+	row := q.db.QueryRow(ctx, findMessageReviewBoundary,
+		arg.ConversationID,
+		arg.IdentityID,
+		arg.TaskID,
+		arg.LeafSeq,
+	)
+	var i FindMessageReviewBoundaryRow
+	err := row.Scan(
+		&i.Seq,
+		&i.ParentSeq,
+		&i.Reviewed,
+		&i.Content,
+		&i.Spilled,
+	)
+	return i, err
+}
+
 const getMessageDraftByCall = `-- name: GetMessageDraftByCall :one
 SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND tool_call_id = $3

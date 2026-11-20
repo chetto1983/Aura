@@ -76,7 +76,7 @@ func TestLastUserMessage(t *testing.T) {
 		{Role: types.Role(llm.RoleAssistant), Content: "reply"},
 		{Role: types.Role(llm.RoleUser), Content: "second"},
 	}
-	got, err := lastUserMessage(msgs)
+	got, err := lastUserMessage(msgs, false)
 	if err != nil {
 		t.Fatalf("lastUserMessage returned error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestLastUserMessage(t *testing.T) {
 		t.Errorf("lastUserMessage = %v, want second", got)
 	}
 	// No user message → nil.
-	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleAssistant), Content: "x"}})
+	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleAssistant), Content: "x"}}, false)
 	if err != nil {
 		t.Fatalf("lastUserMessage(no user) error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestLastUserMessage(t *testing.T) {
 		t.Errorf("lastUserMessage(no user) = %v, want nil", got)
 	}
 	// Empty user content is skipped (not a fresh turn).
-	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleUser), Content: ""}})
+	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleUser), Content: ""}}, false)
 	if err != nil {
 		t.Fatalf("lastUserMessage(empty user) error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestLastUserMessage(t *testing.T) {
 			Type: types.InputContentTypeText,
 			Text: "hi",
 		}},
-	}})
+	}}, false)
 	if err == nil {
 		t.Fatal("lastUserMessage(multimodal) error = nil, want explicit rejection")
 	}

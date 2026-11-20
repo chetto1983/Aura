@@ -78,6 +78,22 @@ func messageTool() (*TaskTool, *messageTaskStore, *fakeMessageDrafts) {
 
 const whatsappPayload = `{"channel":"whatsapp","recipient":"10000000000","text":"Ciao"}`
 
+func TestRetryOfApprovedMessageCallCannotReopenOrCancelIt(t *testing.T) {
+	t.Parallel()
+	tool, store, drafts := messageTool()
+	store.byCall = map[string]ScheduledTask{"reviewed": {ID: "existing", Kind: "message", Status: "active"}}
+	a := messageArgs(t, time.Now().Add(time.Hour), whatsappPayload, `,"notify":"none"`)
+	pause, parked := tool.hostReviewMessage(t.Context(), "conv", "reviewed", a)
+	if parked || pause != nil || len(drafts.inputs) != 0 {
+		t.Fatal("a retry of an approved task reopened its draft")
+	}
+	drafts.err = errors.New("draft unavailable")
+	tool.hostReviewMessage(t.Context(), "conv", "reviewed", a)
+	if store.cancelled != "" {
+		t.Fatalf("draft compensation cancelled the reviewed task: %s", store.cancelled)
+	}
+}
+
 func jsonEqual(t *testing.T, got json.RawMessage, want string) {
 	t.Helper()
 	var g, w any

@@ -7,11 +7,11 @@ package cron
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -20,11 +20,15 @@ const lapsedApprovalSweepLimit = 50
 // LapsedApprovalStore lists and expires the lapsed one-shots; *Store satisfies it.
 type LapsedApprovalStore interface {
 	ListLapsedApprovals(ctx context.Context, limit int) ([]Task, error)
-	ExpireLapsedApproval(ctx context.Context, id string) (bool, error) // false when the task left pending_approval first
-	InsertRun(ctx context.Context, taskID string, stepBudget int) (Run, error)
+	ExpireLapsedApproval(ctx context.Context, task Task, homeID string, notifyAfter time.Time, origin LapsedOriginRecorder) error
 }
 
 var _ LapsedApprovalStore = (*Store)(nil)
+
+// LapsedOriginRecorder writes on the same identity-scoped transaction as the expiry.
+type LapsedOriginRecorder interface {
+	AppendAssistantTurnTx(ctx context.Context, q *sqlc.Queries, conversationID, notice string) error
+}
 
 // PauseClosed is what closing a lapsed task's pause found (decision 36).
 type PauseClosed int
@@ -34,8 +38,7 @@ const (
 	PauseNone PauseClosed = iota
 	// PauseClosedNow means this call closed the pause.
 	PauseClosedNow
-	// PauseAnswered means the conversation holds a resolved accept for the task, so the hook activates
-	// it; the pass leaves it.
+	// PauseAnswered means the conversation holds a resolved accept for the task.
 	PauseAnswered
 )
 
@@ -87,6 +90,18 @@ func (d *Dispatch) expireLapsed(ctx context.Context, task Task) {
 			return
 		}
 	}
+	home := task
+	var notifyAfter time.Time
+	if task.NotifyRoute != string(RouteNone) {
+		var err error
+		home, err = d.resolveTaskHome(ctx, task)
+		if err != nil {
+			return // Retry before closing the original conversation's pause.
+		}
+		if d.deferNotification(task, nil) {
+			notifyAfter, _ = d.deferredUntil(task)
+		}
+	}
 	closed := PauseNone
 	if d.deps.LapsedPauseCloser != nil {
 		var err error
@@ -98,7 +113,9 @@ func (d *Dispatch) expireLapsed(ctx context.Context, task Task) {
 			return
 		}
 	}
-	if closed == PauseAnswered {
+	// A reviewed message has its own grace period. An ordinary one-shot which is
+	// still pending here cannot activate, even if an older resume already saved an accept.
+	if closed == PauseAnswered && task.Kind == KindMessage {
 		return
 	}
 	if closed == PauseNone && task.Kind == KindMessage && d.deps.LapsedMessages != nil {
@@ -107,23 +124,9 @@ func (d *Dispatch) expireLapsed(ctx context.Context, task Task) {
 			return
 		}
 	}
-	expired, err := d.deps.LapsedApprovals.ExpireLapsedApproval(ctx, task.ID)
-	if err != nil || !expired {
-		if err != nil {
-			slog.Warn("lapsed approval: task not expired (retry next tick)", "task", task.ID, "err", err)
-		}
-		return
+	if err := d.deps.LapsedApprovals.ExpireLapsedApproval(ctx, task, home.OriginConversationID, notifyAfter, d.deps.LapsedOrigin); err != nil {
+		slog.Warn("lapsed approval: task not expired (retry next tick)", "task", task.ID, "err", err)
 	}
-	run, err := d.deps.LapsedApprovals.InsertRun(ctx, task.ID, 0)
-	if err != nil {
-		slog.Error("lapsed approval: run not recorded", "task", task.ID, "err", err)
-		return
-	}
-	text := lapsedApprovalText(task)
-	task = d.homeTask(ctx, task)
-	d.complete(ctx, task, run.ID, "failed", text, errors.New(text))
-	undelivered := d.notify(ctx, task, run.ID, text, nil)
-	d.recordToOrigin(ctx, task, text, nil, undelivered)
 }
 
 // lapsedApprovalText is the notice the operator reads: what did not run, and for when.

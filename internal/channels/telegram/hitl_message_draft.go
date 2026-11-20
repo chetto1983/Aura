@@ -22,11 +22,8 @@ import (
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
-// reviewTextMaxRunes keeps the card under Telegram's 4096-character message cap with room for
-// the lines around the text.
-const reviewTextMaxRunes = 3000
-
-const reviewTextCut = "… (testo completo nel cockpit)"
+// A legacy card and a generic approval push both carry "yes" without a full review.
+const fullReviewValue = "review"
 
 // reviewStatusText is a resolved card's one line.
 var reviewStatusText = map[messagedrafts.Status]string{
@@ -39,18 +36,22 @@ var reviewStatusText = map[messagedrafts.Status]string{
 	messagedrafts.StatusDispatching: "Invio in corso…",
 }
 
-// messageReviewText is the card: who, when (a scheduled draft only), and the text, or one status
-// line once the review is no longer pending.
-func messageReviewText(d messagedrafts.Draft, loc *time.Location) string {
+type messageReviewCard struct {
+	text     string
+	status   messagedrafts.Status
+	complete bool
+}
+
+func renderMessageReview(d messagedrafts.Draft, loc *time.Location) messageReviewCard {
 	email := d.Target.Recipe == "recipe:calendar"
 	title := "📨 Messaggio WhatsApp da approvare"
 	if email {
 		title = "📨 Email da approvare"
 	}
 	if d.Status != messagedrafts.StatusPending {
-		return title + "\n" + reviewStatusText[d.Status]
+		return messageReviewCard{status: d.Status, text: title + "\n" + reviewStatusText[d.Status]}
 	}
-	recipient, subject, text := d.Review()
+	content := d.InlineReview()
 	var b strings.Builder
 	b.WriteString(title + "\n")
 	if name, address := d.Sender(); address != "" {
@@ -58,9 +59,15 @@ func messageReviewText(d messagedrafts.Draft, loc *time.Location) string {
 	} else if name != "" {
 		fmt.Fprintf(&b, "Da: %s\n", name)
 	}
-	fmt.Fprintf(&b, "A: %s\n", recipient)
+	fmt.Fprintf(&b, "A: %s\n", content.Recipient)
 	if email {
-		fmt.Fprintf(&b, "Oggetto: %s\n", subject)
+		if content.CC != "" {
+			fmt.Fprintf(&b, "Cc: %s\n", content.CC)
+		}
+		fmt.Fprintf(&b, "Oggetto: %s\n", content.Subject)
+		if content.AttachmentCount > 0 {
+			fmt.Fprintf(&b, "Allegati: %d\n", content.AttachmentCount)
+		}
 	}
 	if d.Scheduled() {
 		if loc == nil {
@@ -68,24 +75,42 @@ func messageReviewText(d messagedrafts.Draft, loc *time.Location) string {
 		}
 		fmt.Fprintf(&b, "Quando: %s (%s)\n", d.SendAt.In(loc).Format("02/01 15:04"), loc.String())
 	}
-	b.WriteString("Testo:\n")
-	if runes := []rune(text); len(runes) > reviewTextMaxRunes {
-		text = string(runes[:reviewTextMaxRunes]) + reviewTextCut
+	switch content.BodyFormat {
+	case "multipart":
+		b.WriteString("Corpo in due versioni (testo e HTML).")
+	case "html":
+		b.WriteString("Corpo HTML (sorgente):\n" + content.Text)
+	default:
+		b.WriteString("Testo:\n" + content.Text)
 	}
-	b.WriteString(text)
-	b.WriteString("\n\nServe il tuo ok perché il messaggio va a un'altra persona. Senza risposta non parte nulla.\n")
-	b.WriteString("Per cambiare il testo apri questa conversazione nel cockpit.")
-	return b.String()
+	const prompt = "\n\nServe il tuo ok perché il messaggio va a un'altra persona. Senza risposta non parte nulla.\nPer cambiare il testo apri questa conversazione nel cockpit."
+	preview := b.String()
+	size := runeLen(preview)
+	if content.Complete && size <= telegramTextCap {
+		if size+runeLen(prompt) <= telegramTextCap {
+			preview += prompt
+		}
+		return messageReviewCard{status: d.Status, text: preview, complete: true}
+	}
+	const cockpit = "\n\nPer controllare il messaggio completo e approvarlo, apri questa conversazione nel cockpit."
+	if limit := telegramTextCap - runeLen(cockpit); size > limit {
+		preview = capRunes(preview, limit-1) + "…"
+	}
+	return messageReviewCard{status: d.Status, text: preview + cockpit}
 }
 
-// messageReviewMarkup is Approva/Rifiuta for a pending draft, else one Chiudi that closes the
-// review the way its status allows: decline for one that was never sent, accept otherwise.
-func messageReviewMarkup(token string, d messagedrafts.Draft) *tele.ReplyMarkup {
-	if d.Status == messagedrafts.StatusPending {
-		return approvalMarkup(token)
+func (card messageReviewCard) markup(token string) *tele.ReplyMarkup {
+	if card.status == messagedrafts.StatusPending {
+		row := approvalDecisionRow(token)
+		if card.complete {
+			row[0].Data = callbackData(token, askuser.ActionAccept, fullReviewValue)
+		} else {
+			row = row[1:]
+		}
+		return &tele.ReplyMarkup{InlineKeyboard: [][]tele.InlineButton{row}}
 	}
 	action := askuser.ActionAccept
-	if d.Status == messagedrafts.StatusDeclined || d.Status == messagedrafts.StatusExpired {
+	if card.status == messagedrafts.StatusDeclined || card.status == messagedrafts.StatusExpired {
 		action = askuser.ActionDecline
 	}
 	mk := &tele.ReplyMarkup{}
@@ -131,7 +156,7 @@ func (h *hitl) reviewPause(ctx context.Context, convID, token string) (askuser.P
 // decline and cancel decline; there are no edits on Telegram. It runs under its own approval
 // operation, keyed by the draft (decision 34): a callback carries none, and the send it may
 // start needs one before the gateway.
-func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pending, action string) callbackOutcome {
+func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pending, action, value string) callbackOutcome {
 	out := callbackOutcome{action: action}
 	draft, ok := h.reviewDraft(ctx, convID, p)
 	if !ok {
@@ -139,6 +164,13 @@ func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pendi
 	}
 	resolve := "decline"
 	if action == askuser.ActionAccept {
+		if draft.Status == messagedrafts.StatusPending {
+			card := renderMessageReview(draft, h.runner.Location(ctx))
+			if !card.complete || value != fullReviewValue {
+				out.rerender, out.rerenderMarkup = card.text, card.markup(p.Token)
+				return out
+			}
+		}
 		resolve = "send"
 	}
 	opCtx, err := reviewOperation(ctx, draft.ID)
@@ -151,7 +183,8 @@ func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pendi
 		// A card whose state moved (a send still in flight) is shown as it is now, rather than
 		// left with a button that can no longer act.
 		if current, found := h.reviewDraft(ctx, convID, p); found {
-			out.rerender, out.rerenderMarkup = messageReviewText(current, h.runner.Location(ctx)), messageReviewMarkup(p.Token, current)
+			card := renderMessageReview(current, h.runner.Location(ctx))
+			out.rerender, out.rerenderMarkup = card.text, card.markup(p.Token)
 		}
 		return out
 	}
@@ -166,7 +199,7 @@ func (h *hitl) resolveReview(ctx context.Context, convID string, p askuser.Pendi
 	// resolved review is no longer listed.
 	if res.Status != "" {
 		draft.Status = res.Status
-		out.rerender, out.rerenderMarkup = messageReviewText(draft, h.runner.Location(ctx)), &tele.ReplyMarkup{}
+		out.rerender, out.rerenderMarkup = renderMessageReview(draft, h.runner.Location(ctx)).text, &tele.ReplyMarkup{}
 	}
 	return out
 }

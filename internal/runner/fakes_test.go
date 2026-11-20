@@ -171,6 +171,14 @@ func (f *fakeConvStore) CountTurns(_ context.Context, id string) (int, error) {
 	return len(f.turns[id]), nil
 }
 
+func (f *fakeConvStore) LatestTurnSeq(ctx context.Context, id string) (int, error) {
+	return f.CountTurns(ctx, id)
+}
+
+func (*fakeConvStore) MessageTaskAcceptedOnBranch(context.Context, string, string, string, int) (bool, error) {
+	return false, nil
+}
+
 func (f *fakeConvStore) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

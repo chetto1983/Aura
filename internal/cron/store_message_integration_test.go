@@ -49,6 +49,16 @@ func TestOnlyItsOwnersMessageTaskIsActivatedByItsReview(t *testing.T) {
 	if err := s.CancelReviewedMessage(ctx, owner, mine); err == nil {
 		t.Fatal("an active message was cancelled as declined")
 	}
+	declined := create(KindMessage, owner)
+	if err := s.CancelReviewedMessage(ctx, owner, declined); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CancelReviewedMessage(ctx, owner, declined); err != nil {
+		t.Fatalf("replaying the owner's decline: %v", err)
+	}
+	if err := s.CancelReviewedMessage(ctx, other, declined); err == nil {
+		t.Fatal("a foreign owner could replay the decline")
+	}
 }
 
 // The board, the CLI and the hook all reach ApproveTask; none may activate a message.

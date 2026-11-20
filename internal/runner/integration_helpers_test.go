@@ -118,19 +118,6 @@ func seedLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 // LLM, is under test). Identity/cache-metric/tool-invocation deps stay in-memory fakes.
 func newIntegrationRunner(t *testing.T, pool *pgxpool.Pool, client llm.Client) (*Runner, *conversations.Store, *askuser.Store) {
 	t.Helper()
-	return newIntegrationRunnerWithResumeHook(t, pool, client, nil)
-}
-
-// newIntegrationRunnerWithResumeHook is newIntegrationRunner plus the post-resume side-effect
-// seam. The scheduled-approval path needs it: its whole intent is the hook (activate/cancel the
-// task), so a runner without one cannot exercise that contract end to end.
-func newIntegrationRunnerWithResumeHook(
-	t *testing.T,
-	pool *pgxpool.Pool,
-	client llm.Client,
-	hook ResumeHook,
-) (*Runner, *conversations.Store, *askuser.Store) {
-	t.Helper()
 	convStore := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
 	pauseStore := askuser.New(pool)
 	reg := tools.NewRegistry()
@@ -149,7 +136,6 @@ func newIntegrationRunnerWithResumeHook(
 		TitleTimeout:    2 * time.Second,
 		StopTimeout:     2 * time.Second,
 		ResumeCommitter: NewPoolResumeCommitter(pool, convStore, pauseStore),
-		ResumeHook:      hook,
 	})
 	return r, convStore, pauseStore
 }

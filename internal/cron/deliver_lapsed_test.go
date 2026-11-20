@@ -7,18 +7,16 @@ import (
 	"time"
 )
 
-// fakeLapsedStore serves the lapsed one-shots and records the expiry's CAS and its run.
+// fakeLapsedStore captures the sweep decision; the DB tests exercise the atomic write.
 type fakeLapsedStore struct {
-	tasks    []Task
-	cas      bool
-	expired  []string
-	runs     []string
-	casCalls int
-	limit    int
-	budget   int
-	listErr  error
-	casErr   error
-	runErr   error
+	tasks       []Task
+	cas         bool
+	expired     []string
+	casCalls    int
+	limit       int
+	notifyAfter time.Time
+	listErr     error
+	casErr      error
 }
 
 func (f *fakeLapsedStore) ListLapsedApprovals(_ context.Context, limit int) ([]Task, error) {
@@ -26,24 +24,16 @@ func (f *fakeLapsedStore) ListLapsedApprovals(_ context.Context, limit int) ([]T
 	return f.tasks, f.listErr
 }
 
-func (f *fakeLapsedStore) ExpireLapsedApproval(_ context.Context, id string) (bool, error) {
+func (f *fakeLapsedStore) ExpireLapsedApproval(_ context.Context, task Task, _ string, notifyAfter time.Time, _ LapsedOriginRecorder) error {
 	f.casCalls++
 	if f.casErr != nil {
-		return false, f.casErr
+		return f.casErr
 	}
 	if f.cas {
-		f.expired = append(f.expired, id)
+		f.expired = append(f.expired, task.ID)
+		f.notifyAfter = notifyAfter
 	}
-	return f.cas, nil
-}
-
-func (f *fakeLapsedStore) InsertRun(_ context.Context, taskID string, stepBudget int) (Run, error) {
-	if f.runErr != nil {
-		return Run{}, f.runErr
-	}
-	f.runs = append(f.runs, taskID)
-	f.budget = stepBudget
-	return Run{ID: "run-1", TaskID: taskID}, nil
+	return nil
 }
 
 // fakeCloser answers every close with result, or err.
@@ -116,8 +106,8 @@ func lapsedJob() Task {
 
 func (r *lapsedRig) quiet(t *testing.T) {
 	t.Helper()
-	if len(r.store.runs) != 0 || len(r.notifier.texts) != 0 || len(r.recorder.appended) != 0 || len(r.completer.calls) != 0 {
-		t.Fatalf("runs %v, notices %v, records %v, completions %d", r.store.runs, r.notifier.texts, r.recorder.appended, len(r.completer.calls))
+	if len(r.store.expired) != 0 || len(r.notifier.texts) != 0 || len(r.recorder.appended) != 0 || len(r.completer.calls) != 0 {
+		t.Fatalf("expired %v, notices %v, records %v, completions %d", r.store.expired, r.notifier.texts, r.recorder.appended, len(r.completer.calls))
 	}
 }
 
@@ -130,15 +120,8 @@ func TestALapsedOneShotIsExpiredReportedAndClosed(t *testing.T) {
 	if len(rig.closer.answers) != 1 || rig.closer.answers[0] != wantAnswer {
 		t.Fatalf("closer answers = %v", rig.closer.answers)
 	}
-	if len(rig.store.expired) != 1 || len(rig.store.runs) != 1 {
-		t.Fatalf("expired %v, runs %v", rig.store.expired, rig.store.runs)
-	}
-	if len(rig.completer.calls) != 1 || rig.completer.calls[0].Status != "failed" {
-		t.Fatalf("completion = %+v", rig.completer.calls)
-	}
-	const notice = "agent_job for 02/11 18:00 (Europe/Rome) was not approved in time and did not run."
-	if len(rig.recorder.appended) != 1 || rig.recorder.appended[0].text != notice {
-		t.Fatalf("recorded %+v, want %q", rig.recorder.appended, notice)
+	if len(rig.store.expired) != 1 || rig.store.expired[0] != lapsedJob().ID {
+		t.Fatalf("expired %v", rig.store.expired)
 	}
 }
 
@@ -155,6 +138,18 @@ func TestAPauseThatCannotBeClosedIsRetriedNextTick(t *testing.T) {
 	rig.quiet(t)
 }
 
+func TestAnUnavailableHomeLeavesTheApprovalPauseForRetry(t *testing.T) {
+	d, rig := newLapsedRig(lapsedJob(), true)
+	d.deps.TaskConversations = &fakeTaskConversations{existsErr: errors.New("conversation store unavailable")}
+	d.deps.TaskOrigins = &fakeTaskOrigins{}
+	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(rig.closer.answers) != 0 || rig.store.casCalls != 0 {
+		t.Fatalf("unavailable home: pause answers %v, expiry attempts %d", rig.closer.answers, rig.store.casCalls)
+	}
+}
+
 func TestALostRaceSendsNothing(t *testing.T) {
 	d, rig := newLapsedRig(lapsedJob(), false)
 	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
@@ -163,9 +158,11 @@ func TestALostRaceSendsNothing(t *testing.T) {
 	rig.quiet(t)
 }
 
-// Decision 36: an accept already given is the hook's to apply.
-func TestAnApprovalInFlightIsNotExpired(t *testing.T) {
-	d, rig := newLapsedRig(lapsedJob(), true)
+// The message approval may still finish inside the reviewed draft's grace period.
+func TestAMessageApprovalInFlightIsNotExpired(t *testing.T) {
+	message := lapsedJob()
+	message.Kind = KindMessage
+	d, rig := newLapsedRig(message, true)
 	rig.closer.result = PauseAnswered
 	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
 		t.Fatalf("pass: %v", err)
@@ -174,6 +171,17 @@ func TestAnApprovalInFlightIsNotExpired(t *testing.T) {
 		t.Fatal("an approval in flight was expired")
 	}
 	rig.quiet(t)
+}
+
+func TestAnAnsweredJobThatMissedItsActivationDeadlineExpires(t *testing.T) {
+	d, rig := newLapsedRig(lapsedJob(), true)
+	rig.closer.result = PauseAnswered
+	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(rig.store.expired) != 1 {
+		t.Fatal("answered job remained pending after its activation deadline")
+	}
 }
 
 func TestAnApprovedMessageDueNowIsActivatedNotCancelled(t *testing.T) {
@@ -198,18 +206,18 @@ func TestAMessageWithNoPauseHasItsDraftExpired(t *testing.T) {
 	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
-	if rig.messages.expired != 1 || len(rig.store.expired) != 1 || len(rig.recorder.appended) != 1 {
-		t.Fatalf("draft expired %d, task expired %v, notices %v", rig.messages.expired, rig.store.expired, rig.recorder.appended)
+	if rig.messages.expired != 1 || len(rig.store.expired) != 1 {
+		t.Fatalf("draft expired %d, task expired %v", rig.messages.expired, rig.store.expired)
 	}
 }
 
-func TestTheLapsedPassBoundsItsWorkAndRecordsAPlainRun(t *testing.T) {
+func TestTheLapsedPassBoundsItsWorkAndQueuesAnImmediatePush(t *testing.T) {
 	d, rig := newLapsedRig(lapsedJob(), true)
 	if err := d.ExpireLapsedApprovals(context.Background()); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
-	if rig.store.limit != 50 || rig.store.budget != 0 {
-		t.Fatalf("limit %d, step budget %d; want 50 and 0", rig.store.limit, rig.store.budget)
+	if rig.store.limit != 50 || !rig.store.notifyAfter.IsZero() {
+		t.Fatalf("limit %d, notify after %v", rig.store.limit, rig.store.notifyAfter)
 	}
 }
 
@@ -258,8 +266,7 @@ func TestAFailedStepLeavesTheRowForTheNextTick(t *testing.T) {
 		"the draft cannot be expired": {message, func(r *lapsedRig) {
 			r.closer.result, r.messages.expireErr = PauseNone, errors.New("x")
 		}, 0},
-		"the CAS fails":             {lapsedJob(), func(r *lapsedRig) { r.store.casErr = errors.New("x") }, 1},
-		"the run cannot be written": {lapsedJob(), func(r *lapsedRig) { r.store.runErr = errors.New("x") }, 1},
+		"the CAS fails": {lapsedJob(), func(r *lapsedRig) { r.store.casErr = errors.New("x") }, 1},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

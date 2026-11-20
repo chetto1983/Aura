@@ -109,8 +109,8 @@ func (s *Store) ListManageableTasks(ctx context.Context) ([]Task, error) {
 	return out, nil
 }
 
-// ApproveTask flips a pending_approval task to active. A task that is not awaiting
-// approval (already active, cancelled, or absent) is ErrTaskNotFound.
+// ApproveTask activates an eligible pending task. A one-shot at or past its deadline,
+// a message reserved for draft review, or a task no longer pending returns ErrTaskNotFound.
 func (s *Store) ApproveTask(ctx context.Context, id string) error {
 	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *Store) RunTaskNow(ctx context.Context, id string) error {
 }
 
 // SetTaskOrigin records the conversation a task answers in from now on (task_home.go). An
-// absent task is ErrTaskNotFound.
+// absent or cancelled task is ErrTaskNotFound.
 func (s *Store) SetTaskOrigin(ctx context.Context, id, conversationID string) error {
 	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
@@ -176,8 +176,8 @@ type UpdateTaskParams struct {
 	TelegramRecipients   []int64
 }
 
-// UpdateTask rewrites a task's schedule + payload + notify route (the cockpit edit). Only
-// an active/pending row updates; a cancelled/completed/absent task is ErrTaskNotFound.
+// UpdateTask rewrites a task's schedule, payload and notify route. Active, paused and
+// pending tasks are editable until a pending one-shot reaches its approval deadline.
 func (s *Store) UpdateTask(ctx context.Context, id string, p UpdateTaskParams) error {
 	if !ValidNotifyRoute(p.NotifyRoute) {
 		return fmt.Errorf("update task: notify route %q is not explicit", p.NotifyRoute)

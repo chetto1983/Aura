@@ -271,6 +271,17 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
+		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime, userTurnSeq: userTurnSeq}
+		if input.visibleUserMsg == nil && r.messageDrafts != nil {
+			if head <= 0 {
+				head, err = r.Conv.LatestTurnSeq(ctx, convID)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+			}
+			ctx = r.protectReviewedMessageTasks(ctx, convID, head, tr)
+		}
 		cfg := r.contextConfig(ctx, r.loadMemoryContext(ctx, input.visibleUserMsg))
 		// How far this conversation reached the memory graph. It bounds what an L2.5
 		// drop may tell the model is still readable there — see
@@ -284,7 +295,6 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		}
 		agentHistory := currentRoundModelHistory(history, input.visibleUserMsg, input.modelUserMsg)
 
-		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime, userTurnSeq: userTurnSeq}
 		turn := readTurnContext(history, input, cfg, assets.TurnAttachments(ctx))
 		tr.contextKey, tr.userText = turn.key, turn.text
 		la, ic, cancelAgent, err := r.buildAgent(

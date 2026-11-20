@@ -120,18 +120,6 @@ func TestTheTaskToolCannotStopTheWatch(t *testing.T) {
 			t.Fatalf("%s is %s after the refusals", kind, status)
 		}
 
-		// The approval path is a person's decline, and it reaches only a task awaiting approval.
-		conversation := uuid.Must(uuid.NewV7()).String()
-		if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET origin_conversation_id = $2 WHERE id = $1`, id, conversation); err != nil {
-			t.Fatalf("set origin: %v", err)
-		}
-		if err := adapter.CancelScheduledTaskInConversation(ownerCtx, id, conversation); err == nil {
-			t.Fatalf("a decline cancelled a running %s", kind)
-		}
-		if status := schedulerTaskStatus(t, pool, id); status != "active" {
-			t.Fatalf("%s is %s after a decline", kind, status)
-		}
-
 		// Starting again is not stopping: the tool still resumes what failures paused.
 		if err := adapter.store.PauseTask(ctx, id); err != nil {
 			t.Fatalf("pause %s: %v", kind, err)

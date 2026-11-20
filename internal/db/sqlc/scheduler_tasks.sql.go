@@ -33,15 +33,24 @@ func (q *Queries) ActivateReviewedMessageTask(ctx context.Context, arg ActivateR
 }
 
 const approveTaskRow = `-- name: ApproveTaskRow :execrows
-UPDATE aura.scheduler_tasks
+WITH locked AS MATERIALIZED (
+    SELECT t.id, t.schedule_kind, t.next_run_at FROM aura.scheduler_tasks AS t
+    WHERE t.id = $1 AND t.status = 'pending_approval' AND t.kind <> 'message'
+    FOR UPDATE
+)
+UPDATE aura.scheduler_tasks AS t
 SET status = 'active', updated_at = now()
-WHERE id = $1 AND status = 'pending_approval' AND kind <> 'message'
+FROM locked
+WHERE t.id = locked.id AND (locked.schedule_kind <> 'at' OR locked.next_run_at > clock_timestamp())
 `
 
 // Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 // `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 // a task that is not awaiting approval (0). A message task is approved only by its draft
 // review (spec 2026-11-05 Part 2), never here.
+// The approval may wait behind a row lock past its deadline. Check wall time after
+// acquiring the row, including when its holder only locked it without updating it.
+// https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT
 func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, approveTaskRow, id)
 	if err != nil {
@@ -82,7 +91,7 @@ func (q *Queries) CancelIdentityMessageTasks(ctx context.Context, identityID str
 const cancelReviewedMessageTask = `-- name: CancelReviewedMessageTask :execrows
 UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
 WHERE id = $1 AND identity_id = $2 AND kind = 'message'
-  AND status = 'pending_approval'
+  AND status IN ('pending_approval', 'cancelled')
 `
 
 type CancelReviewedMessageTaskParams struct {
@@ -299,18 +308,56 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 	return items, nil
 }
 
-const expireLapsedApproval = `-- name: ExpireLapsedApproval :execrows
-UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
-WHERE id = $1 AND status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
+const expireLapsedApproval = `-- name: ExpireLapsedApproval :one
+WITH expired AS (
+    UPDATE aura.scheduler_tasks AS t SET status = 'cancelled', updated_at = now(),
+        origin_conversation_id = $1::uuid
+    WHERE t.id = $2 AND t.identity_id = $3
+      AND t.status = 'pending_approval' AND t.schedule_kind = 'at'
+      AND t.next_run_at = $4 AND t.next_run_at <= now()
+      AND t.origin_conversation_id IS NOT DISTINCT FROM $5::uuid
+    RETURNING t.id, t.notify_route, t.telegram_recipients, t.origin_conversation_id
+), recorded AS (
+    INSERT INTO aura.agent_job_runs (id, task_id, status, summary, last_error, completed_with_hash, completed_at)
+    SELECT $6::uuid, expired.id, 'failed', $7::text,
+        $7::text, $6::uuid::text, now() FROM expired
+    RETURNING task_id
+)
+SELECT e.notify_route, e.telegram_recipients, e.origin_conversation_id
+FROM expired AS e JOIN recorded AS r ON r.task_id = e.id
 `
 
-// The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
-func (q *Queries) ExpireLapsedApproval(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, expireLapsedApproval, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type ExpireLapsedApprovalParams struct {
+	HomeID     pgtype.UUID        `json:"home_id"`
+	TaskID     pgtype.UUID        `json:"task_id"`
+	IdentityID string             `json:"identity_id"`
+	Deadline   pgtype.Timestamptz `json:"deadline"`
+	OriginID   pgtype.UUID        `json:"origin_id"`
+	RunID      pgtype.UUID        `json:"run_id"`
+	Notice     string             `json:"notice"`
+}
+
+type ExpireLapsedApprovalRow struct {
+	NotifyRoute          string      `json:"notify_route"`
+	TelegramRecipients   []int64     `json:"telegram_recipients"`
+	OriginConversationID pgtype.UUID `json:"origin_conversation_id"`
+}
+
+// Only the winner creates the terminal run. Return the current delivery details from
+// the cancelled row so the outbox cannot use a destination changed since the scan.
+func (q *Queries) ExpireLapsedApproval(ctx context.Context, arg ExpireLapsedApprovalParams) (ExpireLapsedApprovalRow, error) {
+	row := q.db.QueryRow(ctx, expireLapsedApproval,
+		arg.HomeID,
+		arg.TaskID,
+		arg.IdentityID,
+		arg.Deadline,
+		arg.OriginID,
+		arg.RunID,
+		arg.Notice,
+	)
+	var i ExpireLapsedApprovalRow
+	err := row.Scan(&i.NotifyRoute, &i.TelegramRecipients, &i.OriginConversationID)
+	return i, err
 }
 
 const getTask = `-- name: GetTask :one
@@ -459,6 +506,7 @@ SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
+    AND (schedule_kind <> 'at' OR next_run_at > now())
     AND (approval_reminded_at IS NULL OR approval_reminded_at <= $1)
 ORDER BY created_at ASC
 LIMIT $2
@@ -532,10 +580,13 @@ FROM aura.scheduler_tasks
 WHERE status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
 ORDER BY next_run_at
 LIMIT $1
+FOR UPDATE SKIP LOCKED
 `
 
 // A one-shot whose time passed while it waited for approval (spec 2026-11-05 Part 3, items 5-6).
 // No age floor: a task stuck before this existed is taken on the first pass.
+// An edit that acquired the row before its deadline may still be committing its
+// replacement schedule. Never close the old pause from the previous MVCC version.
 func (q *Queries) ListLapsedApprovals(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error) {
 	rows, err := q.db.Query(ctx, listLapsedApprovals, limit)
 	if err != nil {
@@ -859,7 +910,7 @@ func (q *Queries) ScheduleTransientRetry(ctx context.Context, arg ScheduleTransi
 const setTaskOriginRow = `-- name: SetTaskOriginRow :execrows
 UPDATE aura.scheduler_tasks
 SET origin_conversation_id = $2, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND status <> 'cancelled'
 `
 
 type SetTaskOriginRowParams struct {
@@ -868,7 +919,7 @@ type SetTaskOriginRowParams struct {
 }
 
 // Move a task into the conversation it answers in from now on, when the one it was
-// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
+// scheduled from was deleted. A cancelled task's outbox already targets its origin.
 func (q *Queries) SetTaskOriginRow(ctx context.Context, arg SetTaskOriginRowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setTaskOriginRow, arg.ID, arg.OriginConversationID)
 	if err != nil {
@@ -894,14 +945,21 @@ func (q *Queries) UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams
 }
 
 const updateTaskScheduleRow = `-- name: UpdateTaskScheduleRow :execrows
-UPDATE aura.scheduler_tasks
+WITH locked AS MATERIALIZED (
+    SELECT t.id, t.status, t.schedule_kind, t.next_run_at FROM aura.scheduler_tasks AS t
+    WHERE t.id = $11 AND t.status IN ('active', 'pending_approval', 'paused')
+    FOR UPDATE
+)
+UPDATE aura.scheduler_tasks AS t
 SET schedule_kind = $1, cron_expr = $2, every_minutes = $3,
     run_at = $4, tz = $5, payload = $6, notify_route = $7,
     next_run_at = $8,
     origin_conversation_id = COALESCE($9::uuid, origin_conversation_id),
     telegram_recipients = COALESCE($10::bigint[], telegram_recipients),
     updated_at = now()
-WHERE id = $11 AND status IN ('active', 'pending_approval', 'paused')
+FROM locked
+WHERE t.id = locked.id
+    AND (locked.status <> 'pending_approval' OR locked.schedule_kind <> 'at' OR locked.next_run_at > clock_timestamp())
 `
 
 type UpdateTaskScheduleRowParams struct {
@@ -923,7 +981,8 @@ type UpdateTaskScheduleRowParams struct {
 // so a cancelled/completed task is not silently revived; a paused task stays paused. A delivery
 // that names a conversation or recipients moves them with the route, and NULL keeps the task's
 // own: the cockpit edit knows neither, and a task may have opened its conversation by itself
-// (internal/cron/task_home.go). Returns rows affected.
+// (internal/cron/task_home.go). As with approval, a pending one-shot's deadline
+// closes edits while it waits for the expiry scan.
 func (q *Queries) UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateTaskScheduleRow,
 		arg.ScheduleKind,

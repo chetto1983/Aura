@@ -94,13 +94,13 @@ func payloadString(payload any) string {
 // lastUserMessage extracts the final user message from the RunAgentInput history to
 // drive the turn (OQ3). It returns nil when there is no user message (a resume-only
 // run continues over the rehydrated history without a fresh user turn).
-func lastUserMessage(msgs []types.Message) (*string, error) {
+func lastUserMessage(msgs []types.Message, includeEmpty bool) (*string, error) {
 	for _, v := range slices.Backward(msgs) {
 		if string(v.Role) != llm.RoleUser {
 			continue
 		}
 		if content, ok := v.Content.(string); ok {
-			if content != "" {
+			if content != "" || includeEmpty {
 				return &content, nil
 			}
 			continue

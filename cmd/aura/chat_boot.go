@@ -407,8 +407,6 @@ func assembleChatEnv(
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB. sandboxRouter
 	// threads onto shell_exec/fs_read/fs_write/send_file/skill (NOT web_*, D-11).
-	// Retain the task-store adapter: it backs BOTH the `task` tool (registry) AND the
-	// scheduled-task resume hook (on-channel HITL approval) below.
 	taskStore := newCronTaskStore(pool, convStore)
 	// The elicitation consent surface is created BEFORE the mount and bound AFTER
 	// the channels Registry exists (serve.go). Mounts happen here; channels do not
@@ -517,7 +515,7 @@ func assembleChatEnv(
 		AlwaysBlock:              alwaysBlockProvider(cfg, newSharedSkillReader(cfg, pool)),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
-		ResumeHook: chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newPluginResumeHook(toolHandles.Pack), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
+		ResumeHook: chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newPluginResumeHook(toolHandles.Pack), newGatewayResumeHook(gw)),
 		// The same gateway stamps a saved gateway pause with its challenge's target and
 		// withheld call id (spec 2026-10-12): the model relays neither.
 		ApprovalChallenges: gw.ApprovalChallengeDetails,

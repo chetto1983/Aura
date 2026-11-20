@@ -66,12 +66,17 @@ func taskSummary(kind string, payload json.RawMessage) string {
 }
 
 // ApprovalQuestion is the host-authored question for a task awaiting approval, in the zone the
-// task row stores. The scheduled-task hook recomputes it from the row and accepts only a pause
+// task row stores. The resume transaction recomputes it from the row and accepts only a pause
 // that asks exactly this (decision 35), so the model cannot relay an innocent question over a
 // pending job's id.
 func ApprovalQuestion(kind, taskID, scheduleKind, cronExpr string, everyMinutes int, tz string, next time.Time, payload json.RawMessage) string {
 	spec := resolvedSpec{ScheduleKind: scheduleKind, CronExpr: cronExpr, EveryMinutes: everyMinutes, TZ: tz}
 	return approvalQuestion(kind, taskID, spec, next, payload)
+}
+
+// ApprovalReminderQuestion is the bounded question minted by the approval sweep.
+func ApprovalReminderQuestion(kind, taskID string) string {
+	return fmt.Sprintf("Scheduled %s task %s needs your approval. Approve or reject it below.", kind, shortScheduledTaskID(taskID))
 }
 
 func approvalQuestion(kind, taskID string, spec resolvedSpec, next time.Time, payload json.RawMessage) string {

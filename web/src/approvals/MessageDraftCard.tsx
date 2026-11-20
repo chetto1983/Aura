@@ -243,8 +243,18 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
                   required
                 />
               </div>
+              {value(args.quoted_sender_jid) && (
+                <p className="wrap-anywhere text-xs text-text-muted">
+                  {t('messageDraft.quotedSender')}: {value(args.quoted_sender_jid)}
+                </p>
+              )}
+              {value(args.quoted_message_id) && (
+                <p className="wrap-anywhere text-xs text-text-muted">
+                  {t('messageDraft.quotedMessageId')}: {value(args.quoted_message_id)}
+                </p>
+              )}
               {value(args.quoted_content) && (
-                <p className="text-xs text-text-muted">
+                <p className="whitespace-pre-wrap wrap-anywhere text-xs text-text-muted">
                   {t('messageDraft.quoted')}: {value(args.quoted_content)}
                 </p>
               )}

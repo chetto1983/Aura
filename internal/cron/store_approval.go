@@ -5,11 +5,13 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/jackc/pgx/v5"
 )
 
 // ListDueApprovalReminders returns channel-owned pending_approval tasks whose throttle
@@ -58,16 +60,51 @@ func (s *Store) ListLapsedApprovals(ctx context.Context, limit int) ([]Task, err
 	return tasks, nil
 }
 
-// ExpireLapsedApproval cancels a lapsed one-shot still awaiting approval; false when an approval
-// landed first and the row left pending_approval.
-func (s *Store) ExpireLapsedApproval(ctx context.Context, id string) (bool, error) {
-	u, err := db.ParseUUID("uuid", id)
+// ExpireLapsedApproval commits the cancellation, terminal run, origin turn and queued
+// pushes together. A second sweep loses the task CAS before writing any of them.
+func (s *Store) ExpireLapsedApproval(ctx context.Context, task Task, homeID string, notifyAfter time.Time, origin LapsedOriginRecorder) error {
+	id, err := db.ParseUUID("task id", task.ID)
 	if err != nil {
-		return false, err
+		return err
 	}
-	n, err := s.q.ExpireLapsedApproval(ctx, u)
+	notice := lapsedApprovalText(task)
+	runID := newUUID()
+	err = db.WithIdentityTx(ctx, s.pool, operationIdentity(task.IdentityID), func(q *sqlc.Queries) error {
+		row, err := q.ExpireLapsedApproval(ctx, sqlc.ExpireLapsedApprovalParams{
+			TaskID: id, IdentityID: task.IdentityID, Deadline: tsOrNull(task.NextRunAt), RunID: runID, Notice: notice,
+			OriginID: uuidOrNull(task.OriginConversationID), HomeID: uuidOrNull(homeID),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil || row.NotifyRoute == string(RouteNone) {
+			return err
+		}
+		if row.OriginConversationID.Valid {
+			if origin == nil {
+				return errors.New("missing origin conversation recorder")
+			}
+			if err := origin.AppendAssistantTurnTx(ctx, q, row.OriginConversationID.String(), notice); err != nil {
+				return err
+			}
+		}
+		recipients := telegramRecipients(Task{NotifyRoute: row.NotifyRoute, TelegramRecipients: row.TelegramRecipients})
+		if len(recipients) == 0 {
+			recipients = []int64{0}
+		}
+		for _, recipient := range recipients {
+			_, err := insertPendingNotification(ctx, q, InsertPendingNotificationParams{
+				RunID: runID.String(), NotifyRoute: row.NotifyRoute, IdentityID: task.IdentityID,
+				Body: notice, NotifyAfter: notifyAfter, TelegramUserID: recipient,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("expire lapsed approval %q: %w", id, err)
+		return fmt.Errorf("expire lapsed approval %q: %w", task.ID, err)
 	}
-	return n > 0, nil
+	return nil
 }

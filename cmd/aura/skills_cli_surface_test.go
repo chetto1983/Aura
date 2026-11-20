@@ -40,7 +40,6 @@ func TestResumeChainIgnoresSkillApproval(t *testing.T) {
 	chain := chainResumeHooks(
 		newShellResumeHook(tools.NewShellApprovals()),
 		newGatewayResumeHook(nil),
-		newScheduledTaskResumeHook(nil),
 	)
 	err := chain(context.Background(), askuser.Pending{
 		ConversationID: "conv-legacy",

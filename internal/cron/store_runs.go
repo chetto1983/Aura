@@ -208,6 +208,10 @@ func (s *Store) ScanStaleRuns(ctx context.Context, staleSeconds float64) ([]Stal
 // pending_notifications_owner_chk CHECK (migration 0105) so a wiring bug returns a
 // named Go error rather than an opaque constraint violation.
 func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
+	return insertPendingNotification(ctx, s.q, p)
+}
+
+func insertPendingNotification(ctx context.Context, q *sqlc.Queries, p InsertPendingNotificationParams) (PendingNotification, error) {
 	if (p.RunID == "") == (p.SteerQueueID == "") {
 		return PendingNotification{}, fmt.Errorf("insert pending notification: exactly one of RunID / SteerQueueID must be set")
 	}
@@ -240,7 +244,7 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 	if notifyAfter.IsZero() {
 		notifyAfter = time.Now().UTC()
 	}
-	row, err := s.q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
+	row, err := q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
 		ID:             newUUID(),
 		RunID:          runID,
 		SteerQueueID:   steerQueueID,

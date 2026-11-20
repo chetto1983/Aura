@@ -130,6 +130,7 @@ SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
+    AND (schedule_kind <> 'at' OR next_run_at > now())
     AND (approval_reminded_at IS NULL OR approval_reminded_at <= $1)
 ORDER BY created_at ASC
 LIMIT $2;
@@ -146,9 +147,18 @@ WHERE id = $1;
 -- `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 -- a task that is not awaiting approval (0). A message task is approved only by its draft
 -- review (spec 2026-11-05 Part 2), never here.
-UPDATE aura.scheduler_tasks
+-- The approval may wait behind a row lock past its deadline. Check wall time after
+-- acquiring the row, including when its holder only locked it without updating it.
+-- https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT
+WITH locked AS MATERIALIZED (
+    SELECT t.id, t.schedule_kind, t.next_run_at FROM aura.scheduler_tasks AS t
+    WHERE t.id = $1 AND t.status = 'pending_approval' AND t.kind <> 'message'
+    FOR UPDATE
+)
+UPDATE aura.scheduler_tasks AS t
 SET status = 'active', updated_at = now()
-WHERE id = $1 AND status = 'pending_approval' AND kind <> 'message';
+FROM locked
+WHERE t.id = locked.id AND (locked.schedule_kind <> 'at' OR locked.next_run_at > clock_timestamp());
 
 -- name: RunTaskNowRow :execrows
 -- Advance an active task's next fire to now so the next tick claims it. Returns rows
@@ -159,10 +169,10 @@ WHERE id = $1 AND status = 'active';
 
 -- name: SetTaskOriginRow :execrows
 -- Move a task into the conversation it answers in from now on, when the one it was
--- scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
+-- scheduled from was deleted. A cancelled task's outbox already targets its origin.
 UPDATE aura.scheduler_tasks
 SET origin_conversation_id = $2, updated_at = now()
-WHERE id = $1;
+WHERE id = $1 AND status <> 'cancelled';
 
 -- name: UpdateTaskScheduleRow :execrows
 -- Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
@@ -170,15 +180,23 @@ WHERE id = $1;
 -- so a cancelled/completed task is not silently revived; a paused task stays paused. A delivery
 -- that names a conversation or recipients moves them with the route, and NULL keeps the task's
 -- own: the cockpit edit knows neither, and a task may have opened its conversation by itself
--- (internal/cron/task_home.go). Returns rows affected.
-UPDATE aura.scheduler_tasks
+-- (internal/cron/task_home.go). As with approval, a pending one-shot's deadline
+-- closes edits while it waits for the expiry scan.
+WITH locked AS MATERIALIZED (
+    SELECT t.id, t.status, t.schedule_kind, t.next_run_at FROM aura.scheduler_tasks AS t
+    WHERE t.id = @id AND t.status IN ('active', 'pending_approval', 'paused')
+    FOR UPDATE
+)
+UPDATE aura.scheduler_tasks AS t
 SET schedule_kind = @schedule_kind, cron_expr = @cron_expr, every_minutes = @every_minutes,
     run_at = @run_at, tz = @tz, payload = @payload, notify_route = @notify_route,
     next_run_at = @next_run_at,
     origin_conversation_id = COALESCE(sqlc.narg('origin_conversation_id')::uuid, origin_conversation_id),
     telegram_recipients = COALESCE(sqlc.narg('telegram_recipients')::bigint[], telegram_recipients),
     updated_at = now()
-WHERE id = @id AND status IN ('active', 'pending_approval', 'paused');
+FROM locked
+WHERE t.id = locked.id
+    AND (locked.status <> 'pending_approval' OR locked.schedule_kind <> 'at' OR locked.next_run_at > clock_timestamp());
 
 -- name: PauseTaskRow :execrows
 -- The operator pause: an active task stops firing until resumed. Returns rows affected so a
@@ -255,7 +273,7 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'mess
 -- name: CancelReviewedMessageTask :execrows
 UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
 WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id) AND kind = 'message'
-  AND status = 'pending_approval';
+  AND status IN ('pending_approval', 'cancelled');
 
 -- Deactivation cancels an identity's message tasks rather than pausing them: a paused message
 -- could resume, and a message is only ever cancelled (decisions 14 and 37).
@@ -275,9 +293,27 @@ SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now()
 ORDER BY next_run_at
-LIMIT $1;
+LIMIT $1
+-- An edit that acquired the row before its deadline may still be committing its
+-- replacement schedule. Never close the old pause from the previous MVCC version.
+FOR UPDATE SKIP LOCKED;
 
--- The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
--- name: ExpireLapsedApproval :execrows
-UPDATE aura.scheduler_tasks SET status = 'cancelled', updated_at = now()
-WHERE id = $1 AND status = 'pending_approval' AND schedule_kind = 'at' AND next_run_at <= now();
+-- name: ExpireLapsedApproval :one
+-- Only the winner creates the terminal run. Return the current delivery details from
+-- the cancelled row so the outbox cannot use a destination changed since the scan.
+WITH expired AS (
+    UPDATE aura.scheduler_tasks AS t SET status = 'cancelled', updated_at = now(),
+        origin_conversation_id = sqlc.narg(home_id)::uuid
+    WHERE t.id = sqlc.arg(task_id) AND t.identity_id = sqlc.arg(identity_id)
+      AND t.status = 'pending_approval' AND t.schedule_kind = 'at'
+      AND t.next_run_at = sqlc.arg(deadline) AND t.next_run_at <= now()
+      AND t.origin_conversation_id IS NOT DISTINCT FROM sqlc.narg(origin_id)::uuid
+    RETURNING t.id, t.notify_route, t.telegram_recipients, t.origin_conversation_id
+), recorded AS (
+    INSERT INTO aura.agent_job_runs (id, task_id, status, summary, last_error, completed_with_hash, completed_at)
+    SELECT sqlc.arg(run_id)::uuid, expired.id, 'failed', sqlc.arg(notice)::text,
+        sqlc.arg(notice)::text, sqlc.arg(run_id)::uuid::text, now() FROM expired
+    RETURNING task_id
+)
+SELECT e.notify_route, e.telegram_recipients, e.origin_conversation_id
+FROM expired AS e JOIN recorded AS r ON r.task_id = e.id;

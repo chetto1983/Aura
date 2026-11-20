@@ -7,9 +7,6 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 )
 
-// schedApprovalPending is defined in runner_resume_scheduled_approval_test.go (same
-// package); it produces a Kind=approval pause with the scheduled_task_approval
-// resume_context, which is all classifyResolve/isScheduledTaskApproval inspect.
 func TestClassifyResolve(t *testing.T) {
 	ordinary := askuser.Pending{Kind: "clarification"}
 	gateway := askuser.Pending{Kind: tools.KindApproval} // shell/gateway approval: no scheduled resume ctx
@@ -39,12 +36,7 @@ func TestClassifyResolve(t *testing.T) {
 	}
 }
 
-// TestIsScheduledTaskApprovalGuards covers EVERY guard of the detector, one by one. Each is
-// load-bearing: a false positive tells the model a generic approval activated a scheduled task;
-// a false negative omits the task-state answer and can cause duplicate scheduling on continuation.
-// A mutation run proved the compound condition was under-tested — only the whole-expression
-// happy path was pinned, so replacing either half with `true` survived.
-func TestIsScheduledTaskApprovalGuards(t *testing.T) {
+func TestScheduledApprovalContext(t *testing.T) {
 	ctx := func(raw string) []byte { return []byte(raw) }
 	for _, tc := range []struct {
 		name    string
@@ -82,17 +74,16 @@ func TestIsScheduledTaskApprovalGuards(t *testing.T) {
 			false,
 		},
 		{
-			// Type matches but there is nothing to activate — treating it as a gate would answer
-			// Approved while no task ever transitions.
-			"empty task id is not scheduled",
+			"scheduled type with missing id must still enter validation",
 			askuser.Pending{Kind: tools.KindApproval, ResumeContext: ctx(
 				`{"type":"scheduled_task_approval","task_id":""}`)},
-			false,
+			true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isScheduledTaskApproval(tc.pending); got != tc.want {
-				t.Fatalf("isScheduledTaskApproval = %v, want %v", got, tc.want)
+			rc := scheduledApprovalContext(tc.pending)
+			if got := rc != nil; got != tc.want {
+				t.Fatalf("scheduled approval context recognized = %v, want %v", got, tc.want)
 			}
 		})
 	}

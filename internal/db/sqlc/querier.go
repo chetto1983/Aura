@@ -47,6 +47,9 @@ type Querier interface {
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0). A message task is approved only by its draft
 	// review (spec 2026-11-05 Part 2), never here.
+	// The approval may wait behind a row lock past its deadline. Check wall time after
+	// acquiring the row, including when its holder only locked it without updating it.
+	// https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	// The keys among object_keys some row of the identity holds, in any status. A file-manager
 	// write landing on one would replace an asset's bytes under its row, hand them to the sweep
@@ -245,8 +248,9 @@ type Querier interface {
 	// Every statement in this file names the identity as well as running under it: RLS is the
 	// backstop, not the filter.
 	EnsurePIMWatchSettings(ctx context.Context, identityID pgtype.UUID) error
-	// The expiry's CAS: an approval that landed first leaves the row active and this changes nothing.
-	ExpireLapsedApproval(ctx context.Context, id pgtype.UUID) (int64, error)
+	// Only the winner creates the terminal run. Return the current delivery details from
+	// the cancelled row so the outbox cannot use a destination changed since the scan.
+	ExpireLapsedApproval(ctx context.Context, arg ExpireLapsedApprovalParams) (ExpireLapsedApprovalRow, error)
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	// A scheduled draft whose time came unreviewed, or whose approval outlived its review.
 	ExpireScheduledMessageDraft(ctx context.Context, arg ExpireScheduledMessageDraftParams) (AuraMessageDrafts, error)
@@ -260,6 +264,10 @@ type Querier interface {
 	FinalizeAsset(ctx context.Context, arg FinalizeAssetParams) (int64, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
+	// The resume transaction stamps both the pause and its tool answer with now().
+	// Find the first committed review or user input on this branch. For a live send
+	// the caller can continue past a verified legacy catalog-only user row.
+	FindMessageReviewBoundary(ctx context.Context, arg FindMessageReviewBoundaryParams) (FindMessageReviewBoundaryRow, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
@@ -554,6 +562,8 @@ type Querier interface {
 	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
 	// A one-shot whose time passed while it waited for approval (spec 2026-11-05 Part 3, items 5-6).
 	// No age floor: a task stuck before this existed is taken on the first pass.
+	// An edit that acquired the row before its deadline may still be committing its
+	// replacement schedule. Never close the old pause from the previous MVCC version.
 	ListLapsedApprovals(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	// One identity's tasks of a kind that still fire or could be resumed.
 	ListLiveTasksOfKind(ctx context.Context, arg ListLiveTasksOfKindParams) ([]AuraSchedulerTasks, error)
@@ -818,6 +828,9 @@ type Querier interface {
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
 	// resetRequired: the gap runs from the last success, which this statement reads before moving it.
 	ResetPIMWatchCursor(ctx context.Context, arg ResetPIMWatchCursorParams) error
+	// The answer and the task change share the caller's resume transaction. Return the reviewed
+	// fields under lock so a mismatched question rolls back the transition and the pause.
+	ResolveChatTaskApproval(ctx context.Context, arg ResolveChatTaskApprovalParams) (ResolveChatTaskApprovalRow, error)
 	// 51-06b (Task 3, D-08 extended to the queue row): an unanswered worker pause expires
 	// and its parked row must not be left waiting for a human who never came. `failed` (not
 	// dead_letter) is the terminal state: dead_letter means "retried to exhaustion", and a
@@ -874,7 +887,7 @@ type Querier interface {
 	SetPIMWatchCloudDecide(ctx context.Context, arg SetPIMWatchCloudDecideParams) error
 	SetPIMWatchLastDigest(ctx context.Context, arg SetPIMWatchLastDigestParams) error
 	// Move a task into the conversation it answers in from now on, when the one it was
-	// scheduled from was deleted (internal/cron/task_home.go). Returns rows affected.
+	// scheduled from was deleted. A cancelled task's outbox already targets its origin.
 	SetTaskOriginRow(ctx context.Context, arg SetTaskOriginRowParams) (int64, error)
 	// The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
 	// read and every status write, so a job finishing on it later cannot bring it back;
@@ -950,7 +963,8 @@ type Querier interface {
 	// so a cancelled/completed task is not silently revived; a paused task stays paused. A delivery
 	// that names a conversation or recipients moves them with the route, and NULL keeps the task's
 	// own: the cockpit edit knows neither, and a task may have opened its conversation by itself
-	// (internal/cron/task_home.go). Returns rows affected.
+	// (internal/cron/task_home.go). As with approval, a pending one-shot's deadline
+	// closes edits while it waits for the expiry scan.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBoardView(ctx context.Context, arg UpsertBoardViewParams) (AuraBoardViews, error)
 	// Writes the branch's summary, advancing the watermark.

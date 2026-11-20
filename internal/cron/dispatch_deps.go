@@ -64,6 +64,7 @@ type DispatchDeps struct {
 	// time passed unapproved (deliver_lapsed.go). LapsedApprovals defaults from Store; the other
 	// two may be nil: no pause to close, no message to settle.
 	LapsedApprovals   LapsedApprovalStore
+	LapsedOrigin      LapsedOriginRecorder
 	LapsedPauseCloser LapsedPauseCloser
 	LapsedMessages    LapsedMessages
 }

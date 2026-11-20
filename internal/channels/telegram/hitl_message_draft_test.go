@@ -133,8 +133,9 @@ func TestAnImmediateReviewHasNoTimeLine(t *testing.T) {
 }
 
 func TestApprovaResolvesTheDraftNotTheAnswer(t *testing.T) {
-	h, resume, _ := reviewHitl(whatsappDraft("Ciao", time.Now().Add(time.Hour)))
-	out := h.handleCallbackResult(ownerReviewCtx(), callbackData(reviewToken, askuser.ActionAccept, "yes"), "conv", nil)
+	h, resume, bot := reviewHitl(whatsappDraft("Ciao", time.Now().Add(time.Hour)))
+	h.prompt(ownerReviewCtx(), bot, 42, "conv")
+	out := h.handleCallbackResult(ownerReviewCtx(), bot.recorded()[0].markup.InlineKeyboard[0][0].Data, "conv", nil)
 	if len(resume.resolved) != 1 || resume.resolved[0].draftID != "draft-1" || resume.resolved[0].action != "send" || resume.resolved[0].overrides != nil {
 		t.Fatalf("resolved = %+v", resume.resolved)
 	}
@@ -187,16 +188,87 @@ func TestATypedReplyNeverAnswersAReview(t *testing.T) {
 	}
 }
 
-func TestALongMessageIsCutWithAPointerToTheCockpit(t *testing.T) {
-	h, resume, bot := reviewHitl(whatsappDraft(strings.Repeat("a", 5000), time.Now().Add(time.Hour)))
-	h.prompt(context.Background(), bot, 42, "conv")
-	card := bot.recorded()[0].text
-	if utf8.RuneCountInString(card) > 4096 || !strings.Contains(card, "… (testo completo nel cockpit)") {
-		t.Fatalf("card is %d runes, pointer present %v", utf8.RuneCountInString(card), strings.Contains(card, "testo completo"))
+func emailReviewDraft(args string) messagedrafts.Draft {
+	return messagedrafts.Draft{
+		ID: "draft-1", Status: messagedrafts.StatusPending,
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		OriginalArgs: json.RawMessage(args),
 	}
-	resume.outcome = runner.OutcomeContinue
-	if out := h.handleCallbackResult(ownerReviewCtx(), callbackData(reviewToken, askuser.ActionAccept, "yes"), "conv", nil); !out.submitted {
-		t.Fatal("Approva did not resolve a long message")
+}
+
+func TestImmediateEmailReviewShowsCopiesBeforeSending(t *testing.T) {
+	draft := emailReviewDraft(`{"action":"send_email","to":["to@example.com"],"subject":"Subject","body":"Body","bodyFormat":"text","cc":["first@example.com","second@example.com"],"attachments":[]}`)
+	h, resume, bot := reviewHitl(draft)
+	h.prompt(ownerReviewCtx(), bot, 42, "conv")
+	card := bot.recorded()[0]
+	for _, line := range []string{"A: to@example.com", "Cc: first@example.com, second@example.com", "Oggetto: Subject", "Testo:\nBody"} {
+		if !strings.Contains(card.text, line) {
+			t.Errorf("missing %q in %q", line, card.text)
+		}
+	}
+	// Old keyboards used the generic approval value and omitted the copies.
+	old := h.handleCallbackResult(ownerReviewCtx(), callbackData(reviewToken, askuser.ActionAccept, "yes"), "conv", nil)
+	if old.submitted || len(resume.resolved) != 0 || !strings.Contains(old.rerender, "first@example.com, second@example.com") {
+		t.Fatalf("old keyboard sent or failed to show the full card: %+v", old)
+	}
+	row := card.markup.InlineKeyboard[0]
+	if len(row) != 2 || row[0].Text != "Approva" {
+		t.Fatalf("complete card keyboard = %+v", row)
+	}
+	out := h.handleCallbackResult(ownerReviewCtx(), row[0].Data, "conv", nil)
+	if !out.submitted || len(resume.resolved) != 1 || resume.resolved[0].action != "send" {
+		t.Fatalf("full card did not send: %+v, %+v", out, resume.resolved)
+	}
+}
+
+func TestCompleteReviewFitsWithoutTheOptionalInstructions(t *testing.T) {
+	body := strings.Repeat("è", 4020)
+	h, _, bot := reviewHitl(whatsappDraft(body, time.Time{}))
+	h.prompt(ownerReviewCtx(), bot, 42, "conv")
+	card := bot.recorded()[0]
+	row := card.markup.InlineKeyboard[0]
+	if !strings.Contains(card.text, body) || utf8.RuneCountInString(card.text) > 4096 || len(row) != 2 || row[0].Text != "Approva" {
+		t.Fatal("a complete message that fits on Telegram must be readable and approvable")
+	}
+}
+
+func TestIncompleteReviewKeepsOnlyDeclineAndRefusesStaleAccept(t *testing.T) {
+	const fields = `"action":"send_email","to":["to@example.com"],"subject":"Subject","body":"Body"`
+	longRecipients := strings.Repeat(mustJSON(strings.Repeat("a", 50)+"@example.com")+",", 49)
+	quoted := whatsappDraft("Ciao", time.Time{})
+	quoted.OriginalArgs = json.RawMessage(`{"recipient":"10000000000","message":"Ciao","quoted_content":"Previous message"}`)
+	for name, draft := range map[string]messagedrafts.Draft{
+		"attachment":                emailReviewDraft(`{` + fields + `,"attachments":[{"name":"memo","base64Content":"c2VjcmV0"}]}`),
+		"multipart":                 emailReviewDraft(`{` + fields + `,"bodyFormat":"multipart","textBody":"plain","htmlBody":"<b>HTML</b>"}`),
+		"alternative body":          emailReviewDraft(`{` + fields + `,"textBody":"alternate"}`),
+		"oversize body":             whatsappDraft(strings.Repeat("ò", 5000), time.Time{}),
+		"oversize headers and body": emailReviewDraft(`{"action":"send_email","to":[` + longRecipients + `"last@example.com"],"subject":"Subject","body":` + mustJSON(strings.Repeat("b", 1600)) + `}`),
+		"quoted message":            quoted,
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Keep an accept button issued when the draft was fully visible.
+			h, resume, bot := reviewHitl(whatsappDraft("Ciao", time.Time{}))
+			h.prompt(ownerReviewCtx(), bot, 42, "conv")
+			oldAccept := bot.recorded()[0].markup.InlineKeyboard[0][0].Data
+			resume.drafts[0] = draft
+			h.prompt(ownerReviewCtx(), bot, 42, "conv")
+			card := bot.recorded()[1]
+			if utf8.RuneCountInString(card.text) > 4096 || !strings.Contains(card.text, "cockpit") || strings.Contains(card.text, "c2VjcmV0") {
+				t.Fatalf("incomplete review is oversized, missing the cockpit link or contains attachment data: %d runes", utf8.RuneCountInString(card.text))
+			}
+			row := card.markup.InlineKeyboard[0]
+			if len(row) != 1 || row[0].Text != "Rifiuta" {
+				t.Errorf("incomplete review keyboard = %+v", row)
+			}
+			out := h.handleCallbackResult(ownerReviewCtx(), oldAccept, "conv", nil)
+			if out.submitted || len(resume.resolved) != 0 || out.rerender != card.text {
+				t.Fatalf("stale accept resolved or failed to refresh the card, submitted=%v resolves=%+v", out.submitted, resume.resolved)
+			}
+			out = h.handleCallbackResult(ownerReviewCtx(), row[0].Data, "conv", nil)
+			if !out.submitted || len(resume.resolved) != 1 || resume.resolved[0].action != "decline" {
+				t.Fatalf("cannot decline an incomplete review: %+v", resume.resolved)
+			}
+		})
 	}
 }
 
@@ -207,11 +279,11 @@ func TestTheReviewCardNamesTheSendingAccount(t *testing.T) {
 		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
 		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
 	}
-	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: acc-1\nA: someone@example.com") {
+	if text := renderMessageReview(email, time.UTC).text; !strings.Contains(text, "Da: acc-1\nA: someone@example.com") {
 		t.Fatalf("card lacks the sending account:\n%s", text)
 	}
 	email.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["someone@example.com"],"subject":"Hi","body":"Text"}`)
-	if text := messageReviewText(email, time.UTC); strings.Contains(text, "Da:") {
+	if text := renderMessageReview(email, time.UTC).text; strings.Contains(text, "Da:") {
 		t.Fatalf("a draft with no account shows one:\n%s", text)
 	}
 }
@@ -223,11 +295,11 @@ func TestTheCardShowsTheAccountsNameAndAddress(t *testing.T) {
 		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
 		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"448ddbe1__personale","to":["a@example.com"],"subject":"Hi","body":"Text"}`),
 	}
-	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: personale <someone@gmail.com>\n") {
+	if text := renderMessageReview(email, time.UTC).text; !strings.Contains(text, "Da: personale <someone@gmail.com>\n") {
 		t.Fatalf("card lacks the name and address:\n%s", text)
 	}
 	email.SenderAddress = ""
-	if text := messageReviewText(email, time.UTC); !strings.Contains(text, "Da: personale\n") {
+	if text := renderMessageReview(email, time.UTC).text; !strings.Contains(text, "Da: personale\n") {
 		t.Fatalf("card without an address lacks the name:\n%s", text)
 	}
 }

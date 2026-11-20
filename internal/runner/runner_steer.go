@@ -98,6 +98,7 @@ func (r *Runner) persistSteerTurn(ctx context.Context, tr *turnTracker, ev *agen
 		}); err != nil {
 			return fmt.Errorf("persist steer turn: %w", err)
 		}
+		tr.operatorSteered.Store(true)
 	}
 	return nil
 }

@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -111,8 +110,8 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 	// NULL so the user can retry. The WHERE resumed_at IS NULL conditional update IS the
 	// idempotency key (D-06), so the old claimed-without-answer residual is now
 	// structurally impossible — no more split MarkResumed → injectAnswer.
-	claim := r.resumeClaim(token, pending, resp)
-	if err := askuser.ValidateResumeAnswer(claim.Answer); err != nil {
+	claim, err := r.operatorResumeClaim(token, pending, resp)
+	if err != nil {
 		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
 	if err := r.resumeCommitter.CommitResume(ctx, claim); err != nil {
@@ -161,8 +160,8 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 	// orphan RoleTool turns; the loser gets ErrPauseNotFound (D-04/D-06).
 	claims := make([]ResumeClaim, 0, len(answers))
 	for token, resp := range answers {
-		claim := r.resumeClaim(token, pendings[token], resp)
-		if err := askuser.ValidateResumeAnswer(claim.Answer); err != nil {
+		claim, err := r.operatorResumeClaim(token, pendings[token], resp)
+		if err != nil {
 			return 0, fmt.Errorf("submit answers: %w", err)
 		}
 		claims = append(claims, claim)
@@ -205,7 +204,7 @@ func (r *Runner) loadAndValidateResumeAnswers(ctx context.Context, answers map[s
 }
 
 func (r *Runner) applyResumeHook(ctx context.Context, pending askuser.Pending, resp ResponseInput) error {
-	if r.resumeHook == nil || len(pending.ResumeContext) == 0 {
+	if r.resumeHook == nil || len(pending.ResumeContext) == 0 || scheduledApprovalContext(pending) != nil {
 		return nil
 	}
 	return r.resumeHook(ctx, pending, resp)
@@ -244,30 +243,25 @@ func (r *Runner) answerTurn(pending askuser.Pending, resp ResponseInput) convers
 // caller keeps the ordinary answer and visible-response instruction).
 //
 // Without it, accepting a model-relayed scheduled_task_approval pause injects only the raw
-// button value ("yes"): the operator-origin activation happens in the resume hook as a
+// button value ("yes"): the operator-origin activation happens in the resume transaction as a
 // SILENT side-effect, so the resumed model — never told the task is now active — re-runs
 // task schedule and relays a fresh approval, looping on every accept (fix-plan 1.7 E2E
 // BUG-1B). The explicit answer gives the model closure: accept → active + do-not-reschedule;
 // decline → cancelled + do-not-reschedule. The short id (first 8) keeps it bounded and
 // leaks no payload.
 func scheduledApprovalAnswer(pending askuser.Pending, resp ResponseInput) string {
-	if !isScheduledTaskApproval(pending) {
+	rc := scheduledApprovalContext(pending)
+	if rc == nil || rc.TaskID == "" {
 		return ""
 	}
-	var rc struct {
-		Type     string `json:"type"`
-		TaskID   string `json:"task_id"`
-		Delivers string `json:"delivers"`
-	}
-	_ = json.Unmarshal(pending.ResumeContext, &rc)
 	short := rc.TaskID
 	if len(short) > 8 {
 		short = short[:8]
 	}
 	switch resp.Action {
 	case askuser.ActionAccept:
-		answer := fmt.Sprintf("Operator APPROVED scheduled task %s. It is now ACTIVE and will fire at its "+
-			"scheduled time — the scheduling is already complete. Confirm this to the operator and do "+
+		answer := fmt.Sprintf("Operator APPROVED scheduled task %s. It is now ACTIVE. "+
+			"Scheduling is already complete. Confirm the approval to the operator and do "+
 			"NOT call task schedule again for it.", short)
 		if rc.Delivers != "" {
 			// Measured 2026-11-12: without it the model confirmed a third party's address that
