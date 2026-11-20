@@ -1,8 +1,12 @@
-# The three Craft apps Aura builds from source, published as their own image so the aura image
+# The two Craft apps Aura builds from source, published as their own image so the aura image
 # copies them by digest instead of compiling them (docker/aura/Dockerfile). Unlike GridCraft,
-# PdfCraft and WordCraft, whose releases the aura Dockerfile takes as they are, these need a
-# change: DeckCraft, PhotoCraft and FilmCraft have no bridge upstream, and PhotoCraft draws its web
-# interface in English whatever the browser's language.
+# PdfCraft, WordCraft and DeckCraft, whose releases the aura Dockerfile takes as they are, these
+# need a change: PhotoCraft has no bridge upstream and draws its web interface in English whatever
+# the browser's language. FilmCraft has its own bridge from v0.18.0, but from v0.19.0 its web build
+# refuses every H.264 export (the encoder now fails on wasm32, where it cannot build a thread pool,
+# instead of encoding on one thread), so it stays at v0.17.1 with Aura's bridge, beside a CLI of
+# the same release, until a release fixes that
+# (docs/superpowers/verification/2026-11-20-craft-apps-upgrade.md).
 # docker/craft-web builds each from its release tag, checked against the tag's commit, with the
 # patch beside the script (that change, and the ArtCraft marks a modified build may not carry).
 # WebAssembly is the same on every platform, so it builds once, on the builder's. The tools are
@@ -35,8 +39,7 @@ RUN set -eu; \
     tool "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-$arch-linux.tar.gz" "$binaryen" binaryen-version_123/bin/wasm-opt; \
     rustup target add wasm32-unknown-unknown
 COPY docker/craft-web/ /craft-web/
-RUN /craft-web/build.sh deckcraft v0.15.1 9bac60ff53029039c82083ee574c22d74c1541f1 /apps
-RUN /craft-web/build.sh photocraft v0.20.2 7c12f647150f8e7b2e07718f7993b1fcaa57fefe /apps
+RUN /craft-web/build.sh photocraft v0.23.1 45066c48292e92229ada3459a83453439514c83d /apps
 RUN /craft-web/build.sh filmcraft v0.17.1 2fe0d0460da86621fd8b193dcc0a61f790106200 /apps
 
 FROM scratch

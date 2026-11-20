@@ -16,7 +16,8 @@ var craftRecipeActions = map[string]map[string]MCPActionClass{
 			"sort_range", "filter", "open_workbook", "save_workbook", "new_workbook", "undo", "redo"}),
 	mcp.CraftRecipeSource("wordcraft"): craftActions(
 		[]string{"list_commands", "get_text", "inspect_document", "render_page", "parity", "list_documents"},
-		[]string{"execute", "batch", "new_document", "open_document", "save_document", "type_text", "select_text"}),
+		[]string{"execute", "batch", "new_document", "open_document", "save_document", "type_text", "select_text",
+			"insert_table"}),
 	mcp.CraftRecipeSource("deckcraft"): craftActions(
 		[]string{"list_commands", "inspect_document", "inspect_slide", "render_slide"},
 		[]string{"run_command", "batch", "new_presentation", "open_presentation", "save_presentation", "export",

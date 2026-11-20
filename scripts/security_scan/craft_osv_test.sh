@@ -8,8 +8,8 @@ trap 'rm -rf -- "$fixtures"' EXIT
 
 fail() { echo "security-scan craft test: $*" >&2; exit 1; }
 
-# The pins are the ones the builds use: the three RUN lines of the Craft image, and the official
-# zips of GridCraft, PdfCraft and WordCraft.
+# The pins are the ones the builds use: the two RUN lines of the Craft image, and the official
+# zips of GridCraft, PdfCraft, WordCraft and DeckCraft.
 pins="$(bash "$here/craft_osv.sh" pins "$repo_root")"
 [[ "$(wc -l <<<"$pins")" == 6 ]] || fail "want six apps, got: $pins"
 [[ "$(awk '{ print $1 }' <<<"$pins" | sort | tr '\n' ' ')" == "deckcraft filmcraft gridcraft pdfcraft photocraft wordcraft " ]] ||
@@ -23,7 +23,7 @@ while read -r app tag commit; do
       fail "$app $tag $commit is not a build line of docker/aura-craft-web/Dockerfile"
   fi
 done <<<"$pins"
-[[ "$(grep -c ' -$' <<<"$pins")" == 3 ]] || fail "want three official zips, got: $pins"
+[[ "$(grep -c ' -$' <<<"$pins")" == 4 ]] || fail "want four official zips, got: $pins"
 
 # The filter keeps a finding only when its crate and version are in the wasm32 graph. The gate is a
 # fixed version and a CVSS score of 7.0 or more, D2's fixable HIGH or CRITICAL.

@@ -96,7 +96,7 @@
  {
   "name": "command_run",
   "title": "Command run",
-  "description": "Run an engine command by id with JSON params (see command_list). Returns the command's JSON result. Long commands (filters, Content-Aware Fill/Scale, Photomerge, brush import) wait to finish unless `wait` is false: then they run as a background job and the result is {job: id} (see jobs_list, jobs_cancel).",
+  "description": "Run an engine command by id with JSON params (see command_list). Returns the command's JSON result. Long commands (filters, Content-Aware Fill/Scale, Photomerge, brush import) wait to finish unless `wait` is false: then they run as a background job and the result is {job: id} (see jobs_list, jobs_cancel). A waited long command reports progress, cancelling the request cancels it, and other calls are served meanwhile.",
   "inputSchema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "additionalProperties": false,
@@ -238,9 +238,17 @@
       "null"
      ]
     },
+    "maximizeCompatibility": {
+     "default": null,
+     "description": "PSD/PSB: write the real merged image (Photoshop's Maximize Compatibility). false writes\nPhotoshop's white placeholder instead: a smaller file and a faster save, but readers that\nshow only the merged image see white. Bitmap, Indexed Color and Duotone documents still\nwrite the real image. Unset: the real image (in bridge mode, the app's\nPreferences \u203a File Handling decides).",
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
     "path": {
      "default": null,
-     "description": "Target beneath the configured automation write root: relative (forward slashes) or absolute.\nThe extension selects the format. Omit to write back to the document's own file, which\nworks only for a PSD, PSB or .pcraft file kept in its own format; any other save needs\n`path`, so a flattened or converted copy never replaces the opened file.",
+     "description": "Target beneath the configured automation write root: relative (forward slashes) or absolute.\nThe extension selects the format. Omit to write back to the document's own file, which\nworks only for a PSD, PSB or .pcraft file kept in its own format; any other save needs\n`path`, so a flattened or converted copy never replaces the opened file.\nA document opened from a different read capability needs an explicit path first.",
      "type": [
       "string",
       "null"
@@ -249,6 +257,14 @@
     "pcraftFullComposite": {
      "default": null,
      "description": ".pcraft: request the flattened document at its canvas size as `composite/full.png`.\nThe save may omit it; check the manifest's `full_composite` member. Off by default.",
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "pdfSpotPlates": {
+     "default": null,
+     "description": "PDF: write the spot channels as overprinting Separation plates after the flattened image\n(a Multichannel document as plates alone). On by default; false writes the image only.",
      "type": [
       "boolean",
       "null"
@@ -371,7 +387,7 @@
   "annotations": {
    "title": "Doc export data sets",
    "readOnlyHint": false,
-   "destructiveHint": true,
+   "destructiveHint": false,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -403,6 +419,14 @@
      "minimum": 0,
      "type": [
       "integer",
+      "null"
+     ]
+    },
+    "maximizeCompatibility": {
+     "default": null,
+     "description": "PSD/PSB: write the real merged image (Photoshop's Maximize Compatibility); false writes\nPhotoshop's white placeholder (Bitmap, Indexed Color and Duotone documents still write the\nreal image). Unset: the engine's Preferences \u203a File Handling decides.",
+     "type": [
+      "boolean",
       "null"
      ]
     },
@@ -440,7 +464,7 @@
   "annotations": {
    "title": "Doc export layers",
    "readOnlyHint": false,
-   "destructiveHint": true,
+   "destructiveHint": false,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -602,7 +626,7 @@
      "type": "boolean"
     },
     "path": {
-     "description": "Path beneath the configured automation read root: relative (forward slashes) or absolute.",
+     "description": "Path beneath the configured automation read roots: relative (forward slashes, searched\nin launch order) or absolute. Only a missing file tries the next root.",
      "type": "string"
     }
    },
@@ -773,7 +797,7 @@
  {
   "name": "doc_save",
   "title": "Doc save",
-  "description": "Save the document. `.pcraft` is the lossless native format (incremental); other extensions (psd, png, jpg, tif, webp, exr, \u2026) export. Without `path` only a PSD, PSB or .pcraft document is written back to its own         file. `pcraftFullComposite` requests `composite/full.png`, which may be omitted; check the manifest's `full_composite` member. Returns warnings about anything the format cannot hold.",
+  "description": "Save the document. `.pcraft` is the lossless native format (incremental); other extensions (psd, png, jpg, tif, webp, exr, \u2026) export. Without `path` only a PSD, PSB or .pcraft document is written back to its own file. `pcraftFullComposite` requests `composite/full.png`, which may be omitted; check the manifest's `full_composite` member. Returns warnings about anything the format cannot hold.",
   "inputSchema": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "additionalProperties": false,
@@ -819,9 +843,17 @@
       "null"
      ]
     },
+    "maximizeCompatibility": {
+     "default": null,
+     "description": "PSD/PSB: write the real merged image (Photoshop's Maximize Compatibility). false writes\nPhotoshop's white placeholder instead: a smaller file and a faster save, but readers that\nshow only the merged image see white. Bitmap, Indexed Color and Duotone documents still\nwrite the real image. Unset: the real image (in bridge mode, the app's\nPreferences \u203a File Handling decides).",
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
     "path": {
      "default": null,
-     "description": "Target beneath the configured automation write root: relative (forward slashes) or absolute.\nThe extension selects the format. Omit to write back to the document's own file, which\nworks only for a PSD, PSB or .pcraft file kept in its own format; any other save needs\n`path`, so a flattened or converted copy never replaces the opened file.",
+     "description": "Target beneath the configured automation write root: relative (forward slashes) or absolute.\nThe extension selects the format. Omit to write back to the document's own file, which\nworks only for a PSD, PSB or .pcraft file kept in its own format; any other save needs\n`path`, so a flattened or converted copy never replaces the opened file.\nA document opened from a different read capability needs an explicit path first.",
      "type": [
       "string",
       "null"
@@ -830,6 +862,14 @@
     "pcraftFullComposite": {
      "default": null,
      "description": ".pcraft: request the flattened document at its canvas size as `composite/full.png`.\nThe save may omit it; check the manifest's `full_composite` member. Off by default.",
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "pdfSpotPlates": {
+     "default": null,
+     "description": "PDF: write the spot channels as overprinting Separation plates after the flattened image\n(a Multichannel document as plates alone). On by default; false writes the image only.",
      "type": [
       "boolean",
       "null"
@@ -916,8 +956,8 @@
   "annotations": {
    "title": "Doc select",
    "readOnlyHint": false,
-   "destructiveHint": true,
-   "idempotentHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -961,9 +1001,9 @@
   },
   "annotations": {
    "title": "Jobs list",
-   "readOnlyHint": false,
-   "destructiveHint": true,
-   "idempotentHint": false,
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -1209,7 +1249,7 @@
    "additionalProperties": false,
    "properties": {
     "fields": {
-     "description": "Fields for the control method `ui.set`: tool, panels, dock, dockTabs, dockWidth, colorPanel\n({background: bool} picks which swatch the Color panel edits), maskTarget,\nvectorMaskTarget, filterMaskTarget (paint the active smart object's filter mask), selectionMode, zoom, center, rotation (view angle in degrees), fit, theme (pro, proMedium, studio,\nstudioLight, classic, solarizedDark, adwaita, adwaitaDark, breezeLight, breezeDark, softLight, softDark), brushSection, brushTab,\nbrushesView, brushPicker ([x, y] opens the Brush Preset picker there, null closes it),\nbrushPickerName, brushPickerStroke, brushPickerTip (the picker card's parts, at least one\non), brushPickerScale (the picker footer's card-scale slider, 0.15 to 2, 1 the standard),\nbrushSize, gradientBlendMode\n(a blend mode name, for the Gradient tool), gradientClassic (bool), eyedropperSampleSize\n(\"point\" or 1, 3, 5, 11, 31, 51, 101), eyedropperSample (current, currentAndBelow, all,\nallNoAdjustments, currentAndBelowNoAdjustments), eyedropperRing (bool), cropOverlay (thirds,\ngrid, diagonal, triangle, goldenRatio, goldenSpiral), cropOverlayShow (auto, always, never),\ncropOverlayOrientation (0..3), cropShield (an object patching show_cropped_area, enabled,\ncolor (\"matchCanvas\" or \"custom\"), custom_color ([r, g, b]), opacity (0..100),\nauto_adjust, classic_mode and auto_center_preview), cropFill (background or contentAware,\nthe Crop tool's Fill), penMode (path or shape, the Pen tools' mode), penPathOp (newLayer,\ncombine, subtract, intersect or exclude: how the next Pen path joins the selected shape\nlayer or path), shapeStroke (an object patching width, align, cap, join, miterLimit,\ndashes, dashOffset and opacity; null disables the stroke). Shape stroke fields use\n`shape.edit` names and units; colour comes from `tools.setColors`. camTransformOnDrop (bool,\nthe Content-Aware Move tool's Transform On Drop). tileGrid (bool, a developer overlay of the\nactive layer's storage tiles). layerFilter (an object patching by (\"kind\", \"name\", \"effect\",\n\"mode\", \"attribute\", \"color\", \"smartObject\" or \"artboard\", which lists the artboards that\nhold the selected layers), kinds (a list of layer kinds), name (matches part of the layer\nname), effect (\"bevelEmboss\", \"stroke\", \"innerShadow\", \"innerGlow\", \"satin\", \"overlay\",\n\"outerGlow\" or \"dropShadow\"), mode (a blend mode name), attribute (\"visible\", \"locked\",\n\"empty\", \"linked\", \"clipped\", \"layerMask\", \"vectorMask\", \"layerEffects\",\n\"advancedBlending\", or \"notVisible\" \u2026 \"noAdvancedBlending\"), color (a layer colour label,\nor \"none\") and smart (a list of \"linked\", \"missing\" and \"embedded\") for the Layers panel\nfilter). strokeTrace (true, false, \"stderr\" or \"off\": the stroke latency trace at runtime; a\nCSV file is set at launch with --stroke-trace, not over this channel). updatesOpen (bool,\nthe Help \u203a Check for Updates window).\nhistogramPanel (an object patching view (\"compact\", \"expanded\" or \"allChannels\"), channel\n(\"composite\", \"red\", \"green\", \"blue\", \"cyan\", \"magenta\", \"yellow\", \"black\", \"a\", \"b\",\n\"luminosity\" or \"colors\"), showChannelsInColor, showStatistics and source (\"entireImage\",\n\"selectedLayer\" or \"adjustmentComposite\") for the Histogram panel), histogramRange ([from,\nto] levels 0..255 whose Count and Percentile the panel shows, or null) and histogramRefresh\n(true: an Uncached Refresh); `ui.inspect` reports them and the statistics under\n`histogram`. Other fields are an error."
+     "description": "Fields for the control method `ui.set`: tool, moveShowTransform (bool, the Move tool's\nShow Transform Controls option), panels, dock, dockTabs, dockWidth, colorPanel\n({background: bool} picks which swatch the Color panel edits), maskTarget,\nvectorMaskTarget, filterMaskTarget (paint the active smart object's filter mask), selectionMode, zoom, center, rotation (view angle in degrees), fit, theme (pro, proMedium, studio,\nstudioLight, classic, solarizedDark, adwaita, adwaitaDark, breezeLight, breezeDark, softLight, softDark), brushSection, brushTab,\nbrushesView, brushPicker ([x, y] opens the Brush Preset picker there, null closes it),\nbrushPickerName, brushPickerStroke, brushPickerTip (the picker card's parts, at least one\non), brushPickerScale (the picker footer's card-scale slider, 0.15 to 2, 1 the standard),\nbrushSize, gradientBlendMode\n(a blend mode name, for the Gradient tool), gradientClassic (bool), eyedropperSampleSize\n(\"point\" or 1, 3, 5, 11, 31, 51, 101), eyedropperSample (current, currentAndBelow, all,\nallNoAdjustments, currentAndBelowNoAdjustments), eyedropperRing (bool), cropOverlay (thirds,\ngrid, diagonal, triangle, goldenRatio, goldenSpiral), cropOverlayShow (auto, always, never),\ncropOverlayOrientation (0..3), cropShield (an object patching show_cropped_area, enabled,\ncolor (\"matchCanvas\" or \"custom\"), custom_color ([r, g, b]), opacity (0..100),\nauto_adjust, classic_mode and auto_center_preview), cropFill (background or contentAware,\nthe Crop tool's Fill), penMode (path or shape, the Pen tools' mode), penPathOp (newLayer,\ncombine, subtract, intersect or exclude: how the next Pen path joins the selected shape\nlayer or path), shapeStroke (an object patching width, align, cap, join, miterLimit,\ndashes, dashOffset and opacity; null disables the stroke). Shape stroke fields use\n`shape.edit` names and units; colour comes from `tools.setColors`. frameShape (rectangle,\nellipse, triangle, polygon or custom: the Frame tool's shape), frameSides (3..100, the\npolygon's sides), frameTarget (frame, content or both: what the selected frame's handles\nedit). camTransformOnDrop (bool,\nthe Content-Aware Move tool's Transform On Drop). tileGrid (bool, a developer overlay of the\nactive layer's storage tiles). layerFilter (an object patching by (\"kind\", \"name\", \"effect\",\n\"mode\", \"attribute\", \"color\", \"smartObject\" or \"artboard\", which lists the artboards that\nhold the selected layers), kinds (a list of layer kinds), name (matches part of the layer\nname), effect (\"bevelEmboss\", \"stroke\", \"innerShadow\", \"innerGlow\", \"satin\", \"overlay\",\n\"outerGlow\" or \"dropShadow\"), mode (a blend mode name), attribute (\"visible\", \"locked\",\n\"empty\", \"linked\", \"clipped\", \"layerMask\", \"vectorMask\", \"layerEffects\",\n\"advancedBlending\", or \"notVisible\" \u2026 \"noAdvancedBlending\"), color (a layer colour label,\nor \"none\") and smart (a list of \"linked\", \"missing\" and \"embedded\") for the Layers panel\nfilter). strokeTrace (true, false, \"stderr\" or \"off\": the stroke latency trace at runtime; a\nCSV file is set at launch with --stroke-trace, not over this channel). updatesOpen (bool,\nthe Help \u203a Check for Updates window).\nhistogramPanel (an object patching view (\"compact\", \"expanded\" or \"allChannels\"), channel\n(\"composite\", \"red\", \"green\", \"blue\", \"cyan\", \"magenta\", \"yellow\", \"black\", \"a\", \"b\",\n\"luminosity\" or \"colors\"), showChannelsInColor, showStatistics and source (\"entireImage\",\n\"selectedLayer\" or \"adjustmentComposite\") for the Histogram panel), histogramRange ([from,\nto] levels 0..255 whose Count and Percentile the panel shows, or null) and histogramRefresh\n(true: an Uncached Refresh); `ui.inspect` reports them and the statistics under\n`histogram`. Other fields are an error."
     }
    },
    "required": [

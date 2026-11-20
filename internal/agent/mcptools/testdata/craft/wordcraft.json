@@ -25,7 +25,7 @@
    "readOnlyHint": false,
    "title": "Run a command"
   },
-  "description": "Run one command by id with params, e.g. {command:\"format.bold\"} or {command:\"insert.table\", params:{rows:3, cols:4}}. Commands work on the active document, or on the open document `doc` names. file.new and file.open open another document beside the open ones and make it active; view.switchWindows {id} makes another one active and file.closeDocument {id, force?} closes one.",
+  "description": "Run one command by id with params, e.g. {command:\"format.bold\"} or {command:\"insert.table\", params:{rows:3, cols:4}}. To insert a table that is already filled, use `insert_table`. Commands work on the active document, or on the open document `doc` names. file.new and file.open open another document beside the open ones and make it active; view.switchWindows {id} makes another one active and file.closeDocument {id, force?} closes one.",
   "inputSchema": {
    "properties": {
     "command": {
@@ -49,6 +49,52 @@
   },
   "name": "execute",
   "title": "Run a command"
+ },
+ {
+  "annotations": {
+   "openWorldHint": false,
+   "readOnlyHint": false,
+   "title": "Insert filled table"
+  },
+  "description": "Insert a table at the caret, filled from `values` in one call (an array of rows, each an array of cells; all rows the same length, up to 1000 rows and 63 columns). Set `header` to make the first row a repeating header row.",
+  "inputSchema": {
+   "properties": {
+    "doc": {
+     "description": "Id of the open document to work on (list_documents); the active document when left out. The active document stays active.",
+     "minimum": 0,
+     "type": "integer"
+    },
+    "header": {
+     "description": "First row is a header row that repeats on each page",
+     "type": "boolean"
+    },
+    "style": {
+     "description": "Table style name (default GridTable1Light)",
+     "type": "string"
+    },
+    "values": {
+     "description": "Rows of cells (text, numbers or booleans)",
+     "items": {
+      "items": {
+       "type": [
+        "string",
+        "number",
+        "boolean",
+        "null"
+       ]
+      },
+      "type": "array"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "values"
+   ],
+   "type": "object"
+  },
+  "name": "insert_table",
+  "title": "Insert filled table"
  },
  {
   "annotations": {
