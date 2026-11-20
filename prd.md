@@ -4809,6 +4809,12 @@ run on the lab VM scored 8 of 8. It ran across four builds, the last `69fbaa829`
 twice (`docs/superpowers/verification/2026-11-12-scheduled-delivery-and-messages-live.md`). The
 dry run with a parked model is `2026-11-11-scheduled-delivery-model-in-the-loop.md`.
 
+On 2026-11-20 the lab cockpit returned HTTP 200 for an approved scheduled email, then the
+automatic continuation cancelled that same task before its due time. The operator decided
+that an approved send must survive that continuation. A later operator message can still
+cancel it. The measured case and acceptance criteria are in the
+[scheduled send follow-up](docs/superpowers/specs/2026-11-20-preserve-approved-scheduled-send-design.md).
+
 | Decided | Measured |
 |---|---|
 | The profile keeps a default channel. A task with no `notify` takes it and names it, and asks only when there is none | With Telegram as the default, a reminder asked nothing, stored `notify_route=telegram` and arrived. With none, the model asked and named the Profile panel |
