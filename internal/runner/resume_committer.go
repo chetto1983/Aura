@@ -61,10 +61,7 @@ func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClai
 		if err := p.pause.MarkResumedFencedTx(ctx, q, claim.Token, claim.Answer, claim.ExpectActionID); err != nil {
 			return err
 		}
-		if claim.OwningWorkerID != "" {
-			return nil
-		}
-		return p.appendAnswerTx(ctx, q, claim.Turn)
+		return p.finishResumeTx(ctx, q, claim)
 	})
 }
 
@@ -94,15 +91,24 @@ func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []Re
 			return err
 		}
 		for _, c := range ordered {
-			if c.OwningWorkerID != "" {
-				continue
-			}
-			if err := p.appendAnswerTx(ctx, q, c.Turn); err != nil {
+			if err := p.finishResumeTx(ctx, q, c); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func (p *PoolResumeCommitter) finishResumeTx(ctx context.Context, q *sqlc.Queries, claim ResumeClaim) error {
+	if claim.scheduledTask != nil {
+		if err := claim.scheduledTask.apply(ctx, q, claim); err != nil {
+			return err
+		}
+	}
+	if claim.OwningWorkerID != "" {
+		return nil
+	}
+	return p.appendAnswerTx(ctx, q, claim.Turn)
 }
 
 // CommitPause writes the assistant ask_user tool_call turn + all N paused_states rows in
@@ -187,6 +193,9 @@ func newSplitResumeCommitter(conv ConversationStore, pause PauseStore) *splitRes
 }
 
 func (s *splitResumeCommitter) CommitResume(ctx context.Context, claim ResumeClaim) error {
+	if claim.scheduledTask != nil {
+		return errScheduledTaskRequiresTx
+	}
 	if err := s.pause.MarkResumed(ctx, claim.Token, claim.Answer); err != nil {
 		return err
 	}
@@ -202,6 +211,9 @@ func (s *splitResumeCommitter) CommitResumeBatch(ctx context.Context, claims []R
 	}
 	answers := make(map[string]askuser.ResumeAnswer, len(claims))
 	for _, c := range claims {
+		if c.scheduledTask != nil {
+			return errScheduledTaskRequiresTx
+		}
 		answers[c.Token] = c.Answer
 	}
 	if err := s.pause.MarkResumedBatch(ctx, answers); err != nil {

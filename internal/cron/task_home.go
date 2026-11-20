@@ -51,13 +51,24 @@ func answersInItsOwnConversation(kind TaskKind) bool {
 // A watch reporting on Telegram is the exception to moving: /clear deletes its thread, and the
 // thread comes back under the same id, the only one the person's next message reaches.
 func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
+	home, err := d.resolveTaskHome(ctx, task)
+	if err == nil && home.OriginConversationID != task.OriginConversationID {
+		if err := d.deps.TaskOrigins.SetTaskOrigin(ctx, task.ID, home.OriginConversationID); err != nil {
+			slog.Warn("cron: the task's new conversation was not recorded; this run answers there",
+				"task", task.ID, "conversation", home.OriginConversationID, "err", err)
+		}
+	}
+	return home
+}
+
+func (d *Dispatch) resolveTaskHome(ctx context.Context, task Task) (Task, error) {
 	convs := d.deps.TaskConversations
 	if convs == nil || d.deps.TaskOrigins == nil {
-		return task
+		return task, nil
 	}
 	if task.OriginConversationID == "" {
 		if !answersInItsOwnConversation(task.Kind) {
-			return task
+			return task, nil
 		}
 		return d.openTaskConversation(ctx, task, "cron: the task was scheduled outside a conversation; it answers in one of its own")
 	}
@@ -65,18 +76,19 @@ func (d *Dispatch) homeTask(ctx context.Context, task Task) Task {
 	if err != nil {
 		slog.Warn("cron: could not check the task's conversation; the run answers there anyway",
 			"task", task.ID, "conversation", task.OriginConversationID, "err", err)
-		return task
+		return task, err
 	}
 	if exists {
-		return task
+		return task, nil
 	}
 	if restorer, ok := convs.(TaskThreadRestorer); ok && keepsItsThread(task) {
 		// Best-effort: the push does not need the row, and only this run's record is lost.
 		if err := restorer.RestoreTaskConversation(ctx, task.OriginConversationID, task.IdentityID); err != nil {
 			slog.Warn("cron: the watch's thread could not be restored; this run's record is lost",
 				"task", task.ID, "conversation", task.OriginConversationID, "err", err)
+			return task, err
 		}
-		return task
+		return task, nil
 	}
 	return d.openTaskConversation(ctx, task, "cron: the task's conversation is gone; it answers in a conversation of its own")
 }
@@ -85,22 +97,18 @@ func keepsItsThread(task Task) bool {
 	return (task.Kind == KindPIMWatch || task.Kind == KindPIMDigest) && task.NotifyRoute == string(RouteTelegram)
 }
 
-// openTaskConversation opens the task's own conversation, records it as the task's origin for
-// its next runs, and returns the task answering there. A failed open leaves the task as it was.
-func (d *Dispatch) openTaskConversation(ctx context.Context, task Task, moved string) Task {
+// The caller binds the new conversation to the task. Expiry binds it in the same
+// transaction as the origin notice, after the old conversation's pause has closed.
+func (d *Dispatch) openTaskConversation(ctx context.Context, task Task, moved string) (Task, error) {
 	id, err := d.deps.TaskConversations.CreateTaskConversation(ctx, task.IdentityID, taskConversationTitle(task))
 	if err != nil {
 		slog.Warn("cron: the task needs a conversation of its own and none could be opened",
 			"task", task.ID, "conversation", task.OriginConversationID, "err", err)
-		return task
-	}
-	if err := d.deps.TaskOrigins.SetTaskOrigin(ctx, task.ID, id); err != nil {
-		slog.Warn("cron: the task's new conversation was not recorded; this run answers there",
-			"task", task.ID, "conversation", id, "err", err)
+		return task, err
 	}
 	slog.Info(moved, "task", task.ID, "previous", task.OriginConversationID, "conversation", id)
 	task.OriginConversationID = id
-	return task
+	return task, nil
 }
 
 // taskConversationTitle names a task's own conversation after what the task does: an

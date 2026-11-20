@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
@@ -23,6 +26,7 @@ type expireRig struct {
 	r      *Runner
 	pool   *pgxpool.Pool
 	pauses *askuser.Store
+	convs  *conversations.Store
 	conv   string
 }
 
@@ -31,7 +35,7 @@ func newExpireRig(t *testing.T) expireRig {
 	pool := migratedRunnerPool(t)
 	r, convStore, pauseStore := newIntegrationRunner(t, pool, agenttest.NewFakeClient())
 	r.messageDrafts = messagedrafts.NewStore(pool)
-	return expireRig{r: r, pool: pool, pauses: pauseStore, conv: newIntegrationConversation(t, pool, convStore)}
+	return expireRig{r: r, pool: pool, pauses: pauseStore, convs: convStore, conv: newIntegrationConversation(t, pool, convStore)}
 }
 
 // task inserts a task of kind awaiting approval in the rig's conversation, due at next.
@@ -158,12 +162,23 @@ func (m storeMessages) ExpireForTask(ctx context.Context, owner, task string) er
 	return m.drafts.ExpireForTask(ctx, owner, task)
 }
 
-// recorderFunc is the conversation recorder a test reads back.
-type recorderFunc func(conversationID, text string)
+type interruptedOriginAppend struct{ store *conversations.Store }
 
-func (f recorderFunc) AppendAssistantTurn(_ context.Context, conversationID, text string) error {
-	f(conversationID, text)
-	return nil
+func (f interruptedOriginAppend) AppendAssistantTurnTx(ctx context.Context, q *sqlc.Queries, conversationID, text string) error {
+	if err := f.store.AppendAssistantTurnTx(ctx, q, conversationID, text); err != nil {
+		return err
+	}
+	return errors.New("interrupted before committing expiry")
+}
+
+type replacementHome string
+
+func (replacementHome) ConversationExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+
+func (h replacementHome) CreateTaskConversation(context.Context, string, string) (string, error) {
+	return string(h), nil
 }
 
 // stdoutNotifier delivers every notice, as the stdout route does.
@@ -175,27 +190,61 @@ func (stdoutNotifier) Destination(context.Context, cron.NotifyRoute) (string, er
 }
 
 func TestAnUnapprovedMessageIsReportedAndSettles(t *testing.T) {
+	t.Run("original conversation", func(t *testing.T) { requireExpiryRecovery(t, false) })
+	t.Run("replacement conversation", func(t *testing.T) { requireExpiryRecovery(t, true) })
+}
+
+func requireExpiryRecovery(t *testing.T, replace bool) {
+	t.Helper()
 	x := newExpireRig(t)
 	id := x.task(t, cron.KindMessage, time.Now().Add(-time.Minute))
 	draft := x.scheduledDraft(t, id, time.Now().Add(time.Hour))
 	x.pause(t, `{"type":"message_draft","draft_id":"`+draft.ID+`","task_id":"`+id+`"}`)
 	store := cron.New(x.pool)
-	var notices []string
-	d := cron.NewDispatch(nil, cron.DispatchDeps{
+	deps := cron.DispatchDeps{
 		Store: store, Notifier: stdoutNotifier{},
-		ConversationRecorder: recorderFunc(func(_, text string) { notices = append(notices, text) }),
-		LapsedPauseCloser:    runnerCloser{r: x.r},
-		LapsedMessages:       storeMessages{drafts: x.r.messageDrafts, tasks: store},
-	})
-	if err := d.ExpireLapsedApprovals(ownerCtx()); err != nil {
-		t.Fatalf("pass: %v", err)
+		LapsedOrigin:      interruptedOriginAppend{x.convs},
+		LapsedPauseCloser: runnerCloser{r: x.r},
+		LapsedMessages:    storeMessages{drafts: x.r.messageDrafts, tasks: store},
 	}
-	task, err := store.GetTask(context.Background(), id)
-	if err == nil && task.Status != "cancelled" {
-		t.Fatalf("task = %s, want cancelled or settled away", task.Status)
+	home := x.conv
+	if replace {
+		home = newIntegrationConversation(t, x.pool, x.convs)
+		deps.TaskConversations = replacementHome(home)
 	}
-	if len(notices) != 1 || !strings.Contains(notices[0], "was not approved in time and did not run") {
-		t.Fatalf("notices = %v", notices)
+	if err := cron.NewDispatch(nil, deps).ExpireLapsedApprovals(ownerCtx()); err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.GetTask(ownerCtx(), id)
+	if err != nil || task.Status != "pending_approval" || task.OriginConversationID != x.conv {
+		t.Fatalf("interrupted expiry: status %q, origin %q, %v", task.Status, task.OriginConversationID, err)
+	}
+	runs, err := store.ListRunsForTask(ownerCtx(), id, 10, 0)
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("partial runs after rollback: %v, %v", runs, err)
+	}
+	deps.LapsedOrigin = x.convs
+	for range 2 {
+		if err := cron.NewDispatch(nil, deps).ExpireLapsedApprovals(ownerCtx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, err = store.GetTask(ownerCtx(), id)
+	if err != nil || task.Status != "cancelled" || task.OriginConversationID != home {
+		t.Fatalf("retried expiry: status %q, origin %q, %v", task.Status, task.OriginConversationID, err)
+	}
+	turns, err := x.convs.LoadDisplayTurns(ownerCtx(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notices int
+	for _, turn := range turns {
+		if turn.Message.Role == "assistant" && strings.Contains(turn.Message.Content, "was not approved in time and did not run") {
+			notices++
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("expected one committed expiry notice, got %d", notices)
 	}
 	got, err := x.r.messageDrafts.Get(ownerCtx(), localIdentityID, draft.ID)
 	if err != nil || got.Status != messagedrafts.StatusExpired {

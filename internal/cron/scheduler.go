@@ -294,15 +294,15 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
-		if err := sweeper.sweepNotifications(ctx); err != nil {
-			return fmt.Errorf("tick sweep notifications: %w", err)
-		}
-	}
-	// Before the reminder sweep, so a lapsed one-shot is never reminded first.
+	// Queue expired approvals before draining the outbox and issuing fresh reminders.
 	if sweeper, ok := s.dispatch.(lapsedApprovalSweeper); ok {
 		if err := sweeper.ExpireLapsedApprovals(ctx); err != nil {
 			return fmt.Errorf("tick expire lapsed approvals: %w", err)
+		}
+	}
+	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
+		if err := sweeper.sweepNotifications(ctx); err != nil {
+			return fmt.Errorf("tick sweep notifications: %w", err)
 		}
 	}
 	if sweeper, ok := s.dispatch.(approvalReminderSweeper); ok {

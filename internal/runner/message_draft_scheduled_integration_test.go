@@ -171,3 +171,46 @@ func TestAFailedActivationIsRetriedFromTheCard(t *testing.T) {
 		t.Fatalf("retry = %+v, %v; activated %v", res, err, s.tasks.activated)
 	}
 }
+
+func TestScheduledDeclineCanFinishAfterAnInterruptedAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		pruned bool
+	}{{"cancelled task", false}, {"pruned task", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newScheduledReview(t)
+			ctx := ownerCtx()
+			s.r.messageTasks = cron.New(s.pool)
+			pending, err := s.r.pendingForMessageDraft(ctx, s.draft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			committer := s.r.resumeCommitter
+			writeErr := errors.New("answer write interrupted")
+			s.r.resumeCommitter = &scriptedExpiryCommitter{errs: map[string]error{pending.Token: writeErr}}
+			if _, err = s.r.ResolveMessageDraft(ctx, s.draft.ID, "decline", nil); !errors.Is(err, writeErr) {
+				t.Fatalf("first decline = %v, want interrupted answer", err)
+			}
+			s.r.resumeCommitter = committer
+			if task, err := cron.New(s.pool).GetTask(ctx, s.taskID); err != nil || task.Status != "cancelled" {
+				t.Fatalf("task after interruption = %s, %v", task.Status, err)
+			}
+			if tc.pruned {
+				if _, err := s.pool.Exec(ctx, "DELETE FROM aura.scheduler_tasks WHERE id = $1", s.taskID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			res, err := s.r.ResolveMessageDraft(ctx, s.draft.ID, "decline", nil)
+			if err != nil || res.Status != messagedrafts.StatusDeclined {
+				t.Fatalf("retry = %v, %v", res, err)
+			}
+			reviews, err := s.r.ListMessageDrafts(ctx, s.conv)
+			if err != nil || len(reviews) != 0 || s.spy.executions != 0 {
+				t.Fatalf("outstanding reviews = %d, sends = %d, err = %v", len(reviews), s.spy.executions, err)
+			}
+			if answer := s.answer(t); !strings.Contains(answer, "nothing will be sent") {
+				t.Fatalf("answer = %q", answer)
+			}
+		})
+	}
+}

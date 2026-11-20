@@ -1,12 +1,39 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/askuser"
 )
+
+func TestScheduledApprovalRequiresTransactionalCommitter(t *testing.T) {
+	ctx := context.Background()
+	conv, pauses := newFakeConvStore(), newFakePauseStore()
+	r := &Runner{resumeCommitter: newSplitResumeCommitter(conv, pauses), pause: pauses}
+	id := newConvID(t)
+	gate, err := r.MintApprovalPause(ctx, id, "Approve?", schedApprovalPending("task-99").ResumeContext, allResumeDecisions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := r.MintApprovalPause(ctx, id, "Proceed?", nil, allResumeDecisions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accept := ResponseInput{Action: askuser.ActionAccept, Content: "yes"}
+	if _, err := r.SubmitAnswer(ctx, gate, accept); !errors.Is(err, errScheduledTaskRequiresTx) {
+		t.Fatalf("single = %v", err)
+	}
+	if _, err := r.SubmitAnswers(ctx, map[string]ResponseInput{gate: accept, ordinary: accept}); !errors.Is(err, errScheduledTaskRequiresTx) {
+		t.Fatalf("batch = %v", err)
+	}
+	if pauses.unresolvedCount(id) != 2 {
+		t.Fatal("a pool-less submit consumed a pause")
+	}
+}
 
 // schedApprovalPending builds a scheduled_task_approval ask_user pause like the model
 // relay (or the sweep mint) creates — kind=approval + resume_context carrying the task id.
@@ -22,7 +49,7 @@ func schedApprovalPending(taskID string) askuser.Pending {
 }
 
 // On accept, the resumed model MUST be told the scheduled task is now active (the
-// resume-hook activation is a silent side-effect) or it re-runs task schedule in a loop
+// task activation happens in the resume transaction) or it re-runs task schedule in a loop
 // (the E2E BUG-1B loop). The RoleTool answer must confirm activation + forbid re-scheduling
 // and stay keyed to the original tool_call_id (wire-validity).
 func TestAnswerTurn_ScheduledApprovalAccept_TellsModelTaskActive(t *testing.T) {
@@ -48,7 +75,7 @@ func TestAnswerTurn_ScheduledApprovalAccept_TellsModelTaskActive(t *testing.T) {
 	}
 }
 
-// On decline the resume hook cancels the task; the model must be told it is cancelled (and
+// On decline the resume transaction cancels the task; the model must be told it is cancelled (and
 // not re-schedule), overriding the generic "user declined to answer" marker.
 func TestAnswerTurn_ScheduledApprovalDecline_TellsModelCancelled(t *testing.T) {
 	r := &Runner{}

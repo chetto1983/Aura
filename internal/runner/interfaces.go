@@ -117,6 +117,8 @@ type ResumeClaim struct {
 	Answer         askuser.ResumeAnswer
 	Turn           conversations.AppendTurnParams
 	ExpectActionID string
+	// Only an operator decision changes the task. The expiry sweep closes the pause separately.
+	scheduledTask *scheduledTaskDecision
 	// A durable worker owns its tool transcript; its answer must not be appended
 	// as an orphan tool result to the originating parent conversation.
 	OwningWorkerID string

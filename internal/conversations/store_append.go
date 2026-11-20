@@ -241,6 +241,18 @@ func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p Append
 	return nil
 }
 
+// AppendAssistantTurnTx allocates a sequence for an out-of-band assistant turn and
+// appends it in the caller's identity-scoped transaction.
+func (s *Store) AppendAssistantTurnTx(ctx context.Context, q *sqlc.Queries, conversationID, content string) error {
+	seq, err := s.allocateTurnSeq(ctx, q, conversationID)
+	if err != nil {
+		return err
+	}
+	return s.AppendTurnTx(ctx, q, AppendTurnParams{
+		ConversationID: conversationID, Seq: seq, Role: "assistant", Content: content,
+	})
+}
+
 func (s *Store) allocateTurnSeq(ctx context.Context, q *sqlc.Queries, conversationID string) (int, error) {
 	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {

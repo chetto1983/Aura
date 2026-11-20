@@ -30,9 +30,16 @@ func (r *Runner) resolveScheduledMessage(ctx context.Context, ownerID string, dr
 	switch {
 	case draft.Status == messagedrafts.StatusExpired:
 		return draft, "message review expired without sending", nil
-	case action == "decline" && draft.Status == messagedrafts.StatusPending:
-		if draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID); err != nil {
-			return draft, "", err
+	case action == "decline" && (draft.Status == messagedrafts.StatusPending || draft.Status == messagedrafts.StatusDeclined):
+		if draft.Status == messagedrafts.StatusPending {
+			if draft, err = r.messageDrafts.Decline(ctx, ownerID, draft.ID); err != nil {
+				return draft, "", err
+			}
+		}
+		// Cleanup clears the task FK on a settled one-shot. Its review may still
+		// need the answer that failed to commit after the task was cancelled.
+		if draft.ScheduledTaskID == "" {
+			return draft, "the operator declined the scheduled message; nothing will be sent", nil
 		}
 		if err := r.messageTasks.CancelReviewedMessage(ctx, ownerID, draft.ScheduledTaskID); err != nil {
 			return draft, "", err

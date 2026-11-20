@@ -354,14 +354,12 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 	if suppressed(runErr) {
 		return nil
 	}
-	tier := d.taskTier(task)
 	text := summary
 	if runErr != nil {
 		text = failureText(task, runErr)
 	}
 
-	immediate := scoring.RequiresImmediateAlert(tier, d.deps.AlertThreshold)
-	if !immediate && runErr == nil && task.Kind != KindReminder && d.deferred(task) {
+	if d.deferNotification(task, runErr) {
 		notifyAfter := time.Now().UTC()
 		if end, ok := d.deferredUntil(task); ok {
 			notifyAfter = end
@@ -387,6 +385,11 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 		}
 	}
 	return err
+}
+
+func (d *Dispatch) deferNotification(task Task, runErr error) bool {
+	return runErr == nil && task.Kind != KindReminder &&
+		!scoring.RequiresImmediateAlert(d.taskTier(task), d.deps.AlertThreshold) && d.deferred(task)
 }
 
 // deferred reports whether a non-destructive notification should defer for this task
