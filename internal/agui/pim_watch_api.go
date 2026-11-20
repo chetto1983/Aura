@@ -24,6 +24,7 @@ type mailWatchService interface {
 	Enable(ctx context.Context, identityID, accountID string) error
 	Disable(ctx context.Context, identityID, accountID string) error
 	RemoveAccount(ctx context.Context, identityID, accountID string) error
+	Repaired(ctx context.Context, identityID, accountID string) error
 	Decisions(ctx context.Context, identityID, accountID, day string, discarded bool) (pimwatch.DayDecisions, error)
 	Correct(ctx context.Context, identityID string, c pimwatch.Correction) (pimwatch.Verdict, *pimwatch.WrittenRule, error)
 	Rules(ctx context.Context, identityID string) ([]pimwatch.Rule, error)

@@ -31,6 +31,8 @@ type mutationRouteMeta struct {
 	Scope     idempotency.Scope
 	Normalize string
 	KeyPolicy mutationKeyPolicy
+	// HidesPIMSecrets selects normalizePIMSecretMutation: the body carries a mailbox password.
+	HidesPIMSecrets bool
 }
 
 // httpMutationRoutes inventories every state-changing AG-UI route. POST endpoints
@@ -122,8 +124,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/auth/password-reset/question":                 httpMutationMeta("password_reset_question"),
 	"POST /api/auth/password-reset/verify":                   httpMutationMeta("password_reset_verify"),
 	"POST /api/auth/password-reset/complete":                 httpMutationMeta("password_reset_complete"),
-	"POST /api/connect/pim/accounts":                         httpMutationMeta("pim_account_create"),
+	"POST /api/connect/pim/accounts":                         pimSecretMutationMeta("pim_account_create"),
 	"DELETE /api/connect/pim/accounts/{id}":                  httpMutationMeta("pim_account_delete"),
+	"POST /api/connect/pim/accounts/{id}/verify":             httpMutationMeta("pim_account_verify"),
 	"POST /api/connect/pim/accounts/{id}/auth/cancel":        httpMutationMeta("pim_auth_cancel"),
 	"POST /api/connect/pim/accounts/{id}/auth/start":         httpMutationMeta("pim_auth_start"),
 	"POST /api/connect/pim/accounts/{id}/logout":             httpMutationMeta("pim_logout"),
@@ -176,6 +179,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 
 	// The owner's unlink of one linked Telegram account; a replay of its 204 is a 204.
 	"DELETE /api/settings/telegram/accounts/{telegramUserId}": httpMutationMeta("settings_telegram_unlink"),
+
+	// The partial change of a PIM account carries the new password, hidden like create's.
+	"PATCH /api/connect/pim/accounts/{id}/provider-config": pimSecretMutationMeta("pim_account_provider_config"),
 }
 
 func httpMutationMeta(normalizer string) mutationRouteMeta {
@@ -235,7 +241,15 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 			writeIdempotencyError(w, http.StatusBadRequest, "a single valid Idempotency-Key header is required")
 			return
 		}
-		intent, err := normalizeHTTPMutation(r, meta)
+		normalize := normalizeHTTPMutation
+		if meta.HidesPIMSecrets {
+			normalize = normalizePIMSecretMutation(s.idempotencySecretKey)
+		}
+		intent, err := normalize(r, meta)
+		if errors.Is(err, errNoIdempotencySecretKey) {
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation registry unavailable")
+			return
+		}
 		if err != nil {
 			status := http.StatusBadRequest
 			if strings.Contains(err.Error(), "too large") {

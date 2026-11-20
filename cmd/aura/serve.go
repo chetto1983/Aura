@@ -480,16 +480,22 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 			}
 		},
 	})
-	var resetTokenPepper []byte
+	// Without the secret there is no idempotency key either, and the PIM routes that carry a
+	// mailbox password answer 503 instead of fingerprinting it with a plain hash.
+	var resetTokenPepper, idempotencySecretKey []byte
 	if authulaProvider != nil {
 		resetTokenPepper, err = agui.DeriveResetTokenPepper(chat.cfg.AuthulaSecret)
+		if err == nil {
+			idempotencySecretKey, err = agui.DeriveIdempotencySecretKey(chat.cfg.AuthulaSecret)
+		}
 		if err != nil {
 			closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
 			chat.close()
-			return nil, fmt.Errorf("derive password-reset token pepper: %w", err)
+			return nil, fmt.Errorf("derive keys from the Authula secret: %w", err)
 		}
 	}
 	wirePasswordResetService(aguiServer, chat.pool, reg, authulaProvider, resetTokenPepper)
+	aguiServer.SetIdempotencySecretKey(idempotencySecretKey)
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider, chat.cfg.AppsDir)
 	if err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)

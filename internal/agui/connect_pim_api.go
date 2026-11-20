@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -93,6 +94,9 @@ func (s *Server) registerConnectPIMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/start", s.handlePIMDeviceStart)
 	mux.HandleFunc("GET /api/connect/pim/accounts/{id}/auth/status", s.handlePIMAuthStatus)
 	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/cancel", s.handlePIMAuthCancel)
+	mux.HandleFunc("POST /api/connect/pim/discover", s.handlePIMDiscover)
+	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/verify", s.handlePIMVerifyAccount)
+	mux.HandleFunc("PATCH /api/connect/pim/accounts/{id}/provider-config", s.handlePIMPatchProviderConfig)
 	mux.HandleFunc("GET /api/connect/pim/providers", s.handlePIMProvidersList)
 	mux.HandleFunc("PUT /api/connect/pim/providers/{provider}", s.handlePIMProviderPut)
 	mux.HandleFunc("GET "+PIMGoogleCallbackPath, s.handlePIMGoogleCallback)
@@ -117,7 +121,7 @@ func (s *Server) handlePIMListAccounts(w http.ResponseWriter, r *http.Request) {
 // handlePIMCreateAccount serves POST /api/connect/pim/accounts: forward the sidecar
 // POST /admin/accounts after injectPIMProviderApp has put the admin-set OAuth client into a
 // managed provider's providerConfig. The body is size-capped; the sidecar response carries NO
-// secrets.
+// secrets. The sidecar logs in to an IMAP account before storing it, so the call is an attempt.
 func (s *Server) handlePIMCreateAccount(w http.ResponseWriter, r *http.Request) {
 	body, ok := readCappedBody(w, r)
 	if !ok {
@@ -132,7 +136,7 @@ func (s *Server) handlePIMCreateAccount(w http.ResponseWriter, r *http.Request) 
 		writeJSONStatus(w, status, map[string]string{"error": reason})
 		return
 	}
-	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/accounts", body)
+	s.forwardPIMAttempt(w, r, http.MethodPost, "/admin/accounts", body)
 }
 
 // handlePIMDeleteAccount serves DELETE /api/connect/pim/accounts/{id}: forward the sidecar
@@ -141,7 +145,7 @@ func (s *Server) handlePIMCreateAccount(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handlePIMDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	answer := &statusCapture{ResponseWriter: w}
-	s.forwardPIMJSON(answer, r, http.MethodDelete, "/admin/accounts/"+id+"?logout=true", nil)
+	s.forwardPIMJSON(answer, r, http.MethodDelete, "/admin/accounts/"+url.PathEscape(id)+"?logout=true", nil)
 	if s.mailWatch == nil || !accountLeft(answer.status) {
 		return
 	}
@@ -176,7 +180,7 @@ func (c *statusCapture) WriteHeader(status int) {
 // tells the sidecar which origin the relay must send the browser back to, so the callback lands on
 // the address the operator is actually using — a LAN IP, a tunnel or loopback alike.
 func (s *Server) handlePIMGoogleStart(w http.ResponseWriter, r *http.Request) {
-	path := "/admin/auth/" + r.PathValue("id") + "/google/start"
+	path := "/admin/auth/" + url.PathEscape(r.PathValue("id")) + "/google/start"
 	if origin := s.pimReturnOrigin(r); origin != "" {
 		path += "?" + url.Values{"returnBase": {origin}}.Encode()
 	}
@@ -245,7 +249,7 @@ func (s *Server) handlePIMGoogleCallback(w http.ResponseWriter, r *http.Request)
 // handlePIMLogout serves POST /api/connect/pim/accounts/{id}/logout: forward the sidecar
 // POST /admin/accounts/{id}/logout (drops the linked session without deleting the account).
 func (s *Server) handlePIMLogout(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := url.PathEscape(r.PathValue("id"))
 	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/accounts/"+id+"/logout", nil)
 }
 
@@ -254,7 +258,7 @@ func (s *Server) handlePIMLogout(w http.ResponseWriter, r *http.Request) {
 // authFlow==null means no pending flow. Drives the wizard's per-account pending/linked badge across
 // every provider (no secrets are echoed).
 func (s *Server) handlePIMAccountStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := url.PathEscape(r.PathValue("id"))
 	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/accounts/"+id+"/status", nil)
 }
 
@@ -263,22 +267,22 @@ func (s *Server) handlePIMAccountStatus(w http.ResponseWriter, r *http.Request) 
 // {userCode,verificationUrl,message,expiresIn} the wizard renders (the user opens verificationUrl
 // and enters userCode). It uses the longer-timeout device client: the sidecar blocks on the IdP.
 func (s *Server) handlePIMDeviceStart(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	s.forwardPIM(w, r, http.MethodPost, "/admin/auth/"+id+"/start", nil, pimDeviceClient)
+	id := url.PathEscape(r.PathValue("id"))
+	s.forwardPIM(w, r, http.MethodPost, "/admin/auth/"+id+"/start", nil, pimDeviceClient, nil)
 }
 
 // handlePIMAuthStatus serves GET /api/connect/pim/accounts/{id}/auth/status: forward the sidecar
 // GET /admin/auth/{id}/status so the wizard can poll a pending device-code flow
 // (pending|awaiting_user|completed|failed|cancelled|not_found).
 func (s *Server) handlePIMAuthStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := url.PathEscape(r.PathValue("id"))
 	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/auth/"+id+"/status", nil)
 }
 
 // handlePIMAuthCancel serves POST /api/connect/pim/accounts/{id}/auth/cancel: forward the sidecar
 // POST /admin/auth/{id}/cancel to abort a pending device-code flow.
 func (s *Server) handlePIMAuthCancel(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := url.PathEscape(r.PathValue("id"))
 	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/auth/"+id+"/cancel", nil)
 }
 
@@ -296,16 +300,17 @@ func readCappedBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 
 // forwardPIMJSON forwards method+path (relative to the sidecar base) through the short-timeout client.
 func (s *Server) forwardPIMJSON(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {
-	s.forwardPIM(w, r, method, path, body, pimClient)
+	s.forwardPIM(w, r, method, path, body, pimClient, nil)
 }
 
 // forwardPIM forwards method+path with the identity's OAuth access token injected server-side and
 // passes the JSON response body + status code straight through. The body is size-capped and read
 // into memory so a sanitized 502 can replace a partial/hostile body. The access token is NEVER
 // written to the response. No retry is needed after a write: the sidecar reloads its account
-// registry before answering one (measured 2026-09-23, fork commit 529a101).
-func (s *Server) forwardPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) {
-	resp, ok := s.dialPIM(w, r, method, path, body, client)
+// registry before answering one (measured 2026-09-23, fork commit 529a101). header holds the
+// headers Aura itself adds; none of the browser's is ever copied.
+func (s *Server) forwardPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client, header http.Header) {
+	resp, ok := s.dialPIM(w, r, method, path, body, client, header)
 	if !ok {
 		return
 	}
@@ -325,7 +330,7 @@ func (s *Server) forwardPIM(w http.ResponseWriter, r *http.Request, method, path
 // outbound request with the identity-scoped Bearer token injected, and maps a transport failure onto a
 // sanitized 502 (the sidecar host/path/token never leaks). It returns the live response (the caller
 // closes the body) and whether the handler may proceed — mirroring dialBridge's (value, ok) shape.
-func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) (*http.Response, bool) {
+func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client, header http.Header) (*http.Response, bool) {
 	if !s.pimWired(w) {
 		return nil, false
 	}
@@ -351,6 +356,7 @@ func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path st
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "calendar sidecar request failed"})
 		return nil, false
 	}
+	maps.Copy(req.Header, header)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

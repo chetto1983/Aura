@@ -18,6 +18,7 @@ import (
 
 const recoveryAnswerHashVersion = "argon2id-v1"
 const resetTokenPepperInfo = "aura-reset-token-pepper-v1"
+const idempotencySecretFieldInfo = "aura-idempotency-secret-field-v1"
 
 // RecoveryHasher hashes and verifies normalized security-question answers.
 type RecoveryHasher struct{}
@@ -78,11 +79,21 @@ func HashLookupToken(token string, pepper []byte) string {
 // DeriveResetTokenPepper expands Authula's configured 32-byte secret into a
 // domain-separated HMAC key. Invalid input fails closed; no default key exists.
 func DeriveResetTokenPepper(secretHex string) ([]byte, error) {
-	pepper, err := secret.DeriveKey(secretHex, resetTokenPepperInfo)
+	return deriveAuthulaKey(secretHex, resetTokenPepperInfo)
+}
+
+// DeriveIdempotencySecretKey expands the same secret into the HMAC key that replaces a secret
+// field in an idempotency fingerprint (amendment A9), so the ledger holds no unkeyed hash of it.
+func DeriveIdempotencySecretKey(secretHex string) ([]byte, error) {
+	return deriveAuthulaKey(secretHex, idempotencySecretFieldInfo)
+}
+
+func deriveAuthulaKey(secretHex, info string) ([]byte, error) {
+	key, err := secret.DeriveKey(secretHex, info)
 	if err != nil {
 		return nil, fmt.Errorf("AURA_AUTHULA_SECRET: %w", err)
 	}
-	return pepper, nil
+	return key, nil
 }
 
 func hashArgon2id(secret string) (string, error) {

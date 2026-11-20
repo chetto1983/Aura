@@ -33,6 +33,7 @@ type fakeWatchService struct {
 	newLabel pimwatch.LabelInput
 	patch    pimwatch.LabelPatch
 	removed  string
+	repaired string
 	hour     int
 	cap      int
 	err      error
@@ -55,6 +56,11 @@ func (f *fakeWatchService) Disable(_ context.Context, _, accountID string) error
 
 func (f *fakeWatchService) RemoveAccount(_ context.Context, _, accountID string) error {
 	f.removed = accountID
+	return f.err
+}
+
+func (f *fakeWatchService) Repaired(_ context.Context, _, accountID string) error {
+	f.repaired = accountID
 	return f.err
 }
 

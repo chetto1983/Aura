@@ -261,6 +261,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(connectPIMAuthStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMAuthCancelRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMProvidersListRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMDiscoverRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMVerifyRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(connectPIMProviderConfigRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// Members connect accounts; only an admin sets the OAuth client they connect with.
 	mux.Handle(connectPIMProviderPutRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	// Google's consent comes back here through the aura-connect relay, on whatever origin the

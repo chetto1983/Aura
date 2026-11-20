@@ -14,9 +14,8 @@ import (
 // injectPIMProviderApp rewrites an account-create body before it reaches the sidecar. For a
 // managed provider it replaces the browser's credentials with the admin-set app, so a member
 // cannot choose the OAuth client. A non-zero status is the answer to send instead of forwarding.
-//
-// Aura mounts no account-update proxy. Any future one must run this same rewrite, because the
-// sidecar's PUT replaces providerConfig wholesale.
+// The provider-config PATCH relay drops the same owned keys; the sidecar merges it into the
+// stored config, so the injected app stays.
 func (s *Server) injectPIMProviderApp(ctx context.Context, body []byte) ([]byte, int, string) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(body, &fields); err != nil {
@@ -40,13 +39,10 @@ func (s *Server) injectPIMProviderApp(ctx context.Context, body []byte) ([]byte,
 		slog.Error("pim create: provider app read failed", "provider", provider, "err", err)
 		return nil, http.StatusServiceUnavailable, "provider apps unavailable"
 	}
-	config := map[string]string{}
-	if raw, ok := fields["providerConfig"]; ok && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &config); err != nil {
-			return nil, http.StatusBadRequest, "invalid providerConfig"
-		}
+	config, err := providerConfigWithoutOwnedKeys(fields["providerConfig"])
+	if err != nil {
+		return nil, http.StatusBadRequest, "invalid providerConfig"
 	}
-	maps.DeleteFunc(config, func(key, _ string) bool { return pimprovider.IsOwnedKey(key) })
 	maps.Copy(config, app.ProviderConfig())
 	rewritten, err := json.Marshal(config)
 	if err != nil {
@@ -58,4 +54,17 @@ func (s *Server) injectPIMProviderApp(ctx context.Context, body []byte) ([]byte,
 		return nil, http.StatusInternalServerError, "body encoding failed"
 	}
 	return out, 0, ""
+}
+
+// providerConfigWithoutOwnedKeys reads a body's providerConfig, absent or null as empty, without
+// the keys only Aura sets.
+func providerConfigWithoutOwnedKeys(raw json.RawMessage) (map[string]string, error) {
+	config := map[string]string{}
+	if len(raw) != 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &config); err != nil {
+			return nil, err
+		}
+	}
+	maps.DeleteFunc(config, func(key, _ string) bool { return pimprovider.IsOwnedKey(key) })
+	return config, nil
 }

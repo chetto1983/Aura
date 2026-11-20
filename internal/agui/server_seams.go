@@ -42,6 +42,10 @@ func (s *Server) SetSteerInbox(inbox steerPusher) { s.steer = inbox }
 // daemon protects every route inventoried by httpMutationRoutes.
 func (s *Server) SetOperationRegistry(registry idempotency.Registry) { s.operations = registry }
 
+// SetIdempotencySecretKey installs the key that hides a mailbox password in an operation's
+// fingerprint. Without it the routes that carry one answer 503 rather than store a plain hash.
+func (s *Server) SetIdempotencySecretKey(key []byte) { s.idempotencySecretKey = key }
+
 // SetAssetService wires the upload/finalize/list asset API used by web and channels.
 func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 

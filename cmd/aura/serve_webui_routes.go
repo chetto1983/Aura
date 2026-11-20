@@ -301,6 +301,11 @@ const (
 	connectPIMGoogleCallbackRoute = "GET " + agui.PIMGoogleCallbackPath
 	connectPIMProvidersListRoute  = "GET /api/connect/pim/providers"
 	connectPIMProviderPutRoute    = "PUT /api/connect/pim/providers/{provider}"
+	// A member finds, checks and repairs their own mailbox; agui alone decides whether the
+	// sidecar may reach a private host (identity.create).
+	connectPIMDiscoverRoute       = "POST /api/connect/pim/discover"
+	connectPIMVerifyRoute         = "POST /api/connect/pim/accounts/{id}/verify"
+	connectPIMProviderConfigRoute = "PATCH /api/connect/pim/accounts/{id}/provider-config"
 )
 
 const (

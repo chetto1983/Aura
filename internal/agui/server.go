@@ -137,7 +137,9 @@ type Server struct {
 	conv            ConversationStore
 	toolInvocations ToolInvocationReader
 	operations      idempotency.Registry
-	approvals       ApprovalStore
+	// idempotencySecretKey hides a mailbox password in its operation's fingerprint (A9).
+	idempotencySecretKey []byte
+	approvals            ApprovalStore
 	// approvalGrants serves the durable "always approve" grants (amendment #127). nil ⇒ the
 	// grant routes answer 503, exactly like the pending read without an ApprovalStore.
 	approvalGrants approvalGrantStore
@@ -149,6 +151,7 @@ type Server struct {
 	// board serves the work board (board_api.go); nil ⇒ its routes answer 503.
 	board             boardStore
 	mailWatch         mailWatchService
+	pimAttempts       *pimAttemptLimiter
 	documents         documentsStore
 	documentPreviews  documentPreviewer
 	documentIngestion documentIngestionReader
@@ -350,6 +353,7 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 		idgen:             NewIDGenerator(),
 		cfg:               cfg,
 		heartbeatInterval: heartbeatIntervalFromConfig(cfg.SSEHeartbeatSec),
+		pimAttempts:       newPIMAttemptLimiter(time.Now),
 		stopping:          stopping,
 		stopStreams:       stopStreams,
 	}
