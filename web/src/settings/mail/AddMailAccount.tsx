@@ -1,4 +1,4 @@
-﻿import { useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../../components/Spinner';
@@ -11,6 +11,7 @@ import {
   pimAccountIdError,
   pimMissingRequired,
   pimProviderById,
+  PIM_PROVIDERS,
   type PimAuthFlow,
   type PimProviderDef,
 } from '../../governance/pimProviders';
@@ -54,6 +55,8 @@ import { Button } from '@/components/ui/button';
 const TIMEOUT_KEY = 'settings.mail.error.timeout';
 const SMTP_WARNINGS = new Set(['smtp_unreachable', 'tls_failed']);
 const IMAP_DEF = pimProviderById('imap');
+// IMAP is this screen's own path, verified and never trimmed; the full form keeps the rest.
+const OTHER_PROVIDERS = PIM_PROVIDERS.filter((def) => def.id !== 'imap');
 const EMPTY_SERVERS: ServerValues = {
   imapHost: '',
   imapPort: '',
@@ -259,7 +262,7 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
             setOther(false);
           }}
         />
-        <OtherAccountForm onCreated={onCreated} />
+        <OtherAccountForm onCreated={onCreated} providers={OTHER_PROVIDERS} />
       </div>
     );
   }
@@ -546,7 +549,7 @@ function ExistingAccount({
   readonly onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const leftover = pimAccountFlow(account.provider) !== 'none' && account.linked !== true;
+  const leftover = pimAccountFlow(account.provider) !== 'none' && account.linked === false;
   return (
     <div role="alert" className="flex flex-col gap-2">
       <p className="text-[13px] text-warning">

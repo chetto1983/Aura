@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18n from '../../../i18n/i18n';
 import { HttpError } from '../../../api/json';
+import { optionNames } from '../../../test/chooseOption';
 import type { PimAccount, PimDiscovery } from '../../../governance/pimApi';
 
 // AddMailAccount: the address-and-password connect screen. The PIM is mocked at the pimApi seam;
@@ -532,5 +533,26 @@ describe('AddMailAccount', () => {
 
     expect(await screen.findByRole('combobox', { name: 'Provider' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Crea account' })).toBeTruthy();
+    // IMAP has one path, this screen's verified one; the OAuth providers stay for a custom domain.
+    const options = await optionNames('Provider');
+    expect(options).not.toContain('IMAP / SMTP');
+    expect(options).toEqual(expect.arrayContaining(['Google', 'Microsoft 365', 'Outlook.com']));
   });
+
+  it.each([true, null])(
+    'ConflictOnAWorkingOAuthAccountOffersNoRemoval (linked: %s)',
+    async (linked) => {
+      createPimAccount.mockRejectedValue(new HttpError(409));
+      listPimAccounts.mockResolvedValue({
+        accounts: [account({ provider: 'google', linked })],
+      });
+      renderAdd();
+      await discover('mario@libero.it', LIBERO);
+      fireEvent.change(passwordField(), { target: { value: 'secret' } });
+      connect();
+
+      expect(await screen.findByText('Questo indirizzo è già collegato')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Rimuovi' })).toBeNull();
+    },
+  );
 });

@@ -19,7 +19,9 @@ import {
   pimMissingRequired,
   pimProviderById,
   pimSubmitConfig,
+  PIM_PROVIDERS,
   type PimAuthFlow,
+  type PimProviderDef,
 } from '../../governance/pimProviders';
 import {
   createPimAccount,
@@ -59,7 +61,13 @@ function serverReason(error: unknown): string | null {
   return null;
 }
 
-export function OtherAccountForm({ onCreated }: { readonly onCreated: () => void }) {
+export function OtherAccountForm({
+  onCreated,
+  providers = PIM_PROVIDERS,
+}: {
+  readonly onCreated: () => void;
+  readonly providers?: readonly PimProviderDef[];
+}) {
   const { t } = useTranslation();
   const ids = { provider: useId(), accountId: useId(), displayName: useId() };
 
@@ -154,7 +162,12 @@ export function OtherAccountForm({ onCreated }: { readonly onCreated: () => void
         {t('governance.mcp.calendar.addHeading')}
       </p>
 
-      <ProviderSelect id={ids.provider} value={providerId} onChange={selectProvider} />
+      <ProviderSelect
+        id={ids.provider}
+        value={providerId}
+        onChange={selectProvider}
+        providers={providers}
+      />
 
       <Field
         id={ids.accountId}
