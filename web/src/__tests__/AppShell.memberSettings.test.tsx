@@ -16,7 +16,8 @@ vi.mock('../onboarding/onboardingApi', async (importOriginal) => {
   return { ...actual, fetchOnboardingStatus: vi.fn() };
 });
 
-const MEMBER_CAPABILITIES = ['agent.run', 'governance.read', 'governance.write'];
+// identity.userSet: what a provisioned member is granted.
+const MEMBER_CAPABILITIES = ['agent.run', 'governance.read', 'governance.write', 'share.public'];
 
 const ROUTES: Record<string, unknown> = {
   '/api/me': { identity_id: 'member', capabilities: MEMBER_CAPABILITIES },

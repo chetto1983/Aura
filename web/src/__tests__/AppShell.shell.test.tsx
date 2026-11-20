@@ -291,9 +291,10 @@ describe('AppShell', () => {
     expect(await screen.findByRole('dialog', { name: 'Create identity' })).toBeTruthy();
   });
 
-  it('hides Governance from the nav for a non-admin identity, and keeps Settings', async () => {
-    // A provisioned user does not hold identity.create, so Governance is dropped from the
-    // switcher. Settings stays: its personal sections are every identity's (spec A1).
+  it('keeps Settings in the nav for a non-admin identity', async () => {
+    // Settings' personal sections are every identity's (spec A1). That Governance is hidden
+    // from a member once /api/me resolves is proven in AppShell.memberSettings.test.tsx, after
+    // the member's rail has rendered.
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -315,7 +316,6 @@ describe('AppShell', () => {
     renderShell();
     const nav = await screen.findByRole('navigation', { name: 'Primary' });
     expect(await within(nav).findByRole('button', { name: 'Settings' })).toBeTruthy();
-    expect(within(nav).queryByRole('button', { name: 'Governance' })).toBeNull();
     expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
   });
 

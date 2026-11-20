@@ -45,7 +45,7 @@ const ADMIN = [
   'share.public',
 ];
 // Every identity holds governance.write; what a member lacks is identity.create.
-const MEMBER = ['agent.run', 'governance.read', 'governance.write'];
+const MEMBER = ['agent.run', 'governance.read', 'governance.write', 'share.public'];
 
 function stubFetch(capabilities: readonly string[]) {
   vi.stubGlobal(
