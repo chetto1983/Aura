@@ -24,14 +24,21 @@ Apply the check before the store can mutate the task or its draft. Preserve exis
 
 **Files.** Add the owner-scoped query in `internal/db/queries/message_drafts.sql` and regenerate its sqlc bindings. Expose the lookup in `internal/messagedrafts`. Wire it from `internal/runner` when starting a continuation. Apply it to the ID-targeted operations in `internal/agent/tools/task.go` and `task_pause.go`.
 
-- [ ] Start with a scheduled draft approved through `ResolveMessageDraft`. Drive a fresh runner continuation over the stored answer. Make the model list tasks and attempt to cancel the reviewed one. Observe the regression before implementing the check.
-- [ ] Match owner, conversation, active branch, accepted scheduled draft and requested task ID in the durable lookup. Check for later operator input when a mutation is attempted.
-- [ ] Cover all four targeted actions. Assert the task remains active, its due time is unchanged and its draft remains approved. Refuse mutation on a lookup error. Exercise a second task through its ordinary mutation path.
-- [ ] Exercise retry, branch isolation, a runtime-only update and genuine operator input. A fresh cancellation before the due time must leave the task cancelled and the draft declined.
-- [ ] Run Go tests, race checks and tagged PostgreSQL integration tests for the affected packages. Verify the Telegram callback and cockpit review still lead to a continuation with no fresh user message.
+- [x] Start with a scheduled draft approved through `ResolveMessageDraft`. Drive a fresh runner continuation over the stored answer. Make the model list tasks and attempt to cancel the reviewed one. Observe the regression before implementing the check.
+- [x] Match owner, conversation, active branch, accepted scheduled draft and requested task ID in the durable lookup. Check for later operator input when a mutation is attempted.
+- [x] Cover all four targeted actions. Assert the task remains active, its due time is unchanged and its draft remains approved. Refuse mutation on a lookup error. Exercise a second task through its ordinary mutation path.
+- [x] Exercise retry, branch isolation, a runtime-only update and genuine operator input. A fresh cancellation before the due time must leave the task cancelled and the draft declined.
+- [x] Run Go tests, race checks and tagged PostgreSQL integration tests for the affected packages. Verify the Telegram callback and cockpit review still lead to a continuation with no fresh user message.
 
 ## Task 2 — Repeat the measured delivery
 
-- [ ] Deploy the verified revision in the authorized lab. Schedule a uniquely marked email for the authenticated operator and approve it through the review card.
-- [ ] Record the review status, pending-pause count, automatic turn and status of the approved task before it fires. If the model tries a mutation, verify the persisted task and draft after that call.
-- [ ] Follow the scheduler and the provider through the due time. Verify the terminal send outcome and a single message matching the exact marker. Record deployment and live results separately in the verification report.
+- [x] Deploy the verified revision in the authorized lab. Schedule a uniquely marked email for the authenticated operator and approve it through the review card.
+- [x] Record the review status, pending-pause count, automatic turn and status of the approved task before it fires. If the model tries a mutation, verify the persisted task and draft after that call.
+- [x] Follow the scheduler and the provider through the due time. Verify the terminal send outcome and a single message matching the exact marker. Record deployment and live results separately in the verification report.
+
+## Task 3 — Preserve the origin of a cockpit continuation
+
+- [ ] Reproduce the extra user turn with a searchable document catalog and a resume request carrying an empty message list. Cover a genuine user turn and the existing attachment behavior.
+- [ ] Exercise a stored catalog-only turn from the earlier lab build on a fresh runner. Preserve the approved send on that branch and exercise a later explicit cancellation.
+- [ ] Run the gateway and runner tests. In the lab, verify that the automatic continuation keeps the review answer on its branch without inserting a user message.
+- [ ] Repeat the scheduled self-email and explicit cancellation flows after deployment. Record the matching provider result and the observed conversation roles.

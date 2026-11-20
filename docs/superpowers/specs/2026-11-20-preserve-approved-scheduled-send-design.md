@@ -8,6 +8,8 @@ On revision `4ed06afd9`, the operator approved a scheduled email whose only reci
 
 Approval therefore reached the runner. The transcript locates the cancellation in the automatic turn that followed it. Delivery of an approved message still needs its own end-to-end proof.
 
+The follow-up lab run on `268e88ebf` delivered one copy to the operator's inbox. It also showed an empty user turn after the review on two independent cockpit runs. The cockpit sent an empty message list, and the gateway constructed model text from the searchable document catalog. A request to resume must preserve the absence of user input when the account has indexed documents. The final live check inspects that part of the conversation as well as delivery.
+
 ## Operator decision
 
 After the operator approves a scheduled email or WhatsApp message, Aura may resume the conversation to acknowledge the decision. During that continuation, model calls to `task` must preserve the approved send and its schedule. This covers `cancel`, `pause`, `resume` and `run_now` for that task ID. The model may list tasks and use normal management actions on unrelated tasks.

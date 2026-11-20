@@ -193,6 +193,10 @@ func (f *steerE2EConvStore) ForkBranch(context.Context, string, int, string, str
 }
 func (f *steerE2EConvStore) LatestTurnSeq(context.Context, string) (int, error) { return 0, nil }
 
+func (*steerE2EConvStore) MessageTaskAcceptedOnBranch(context.Context, string, string, string, int) (bool, error) {
+	return false, nil
+}
+
 type steerE2EPauseStore struct{}
 
 func (steerE2EPauseStore) Insert(context.Context, askuser.InsertParams) error { return nil }

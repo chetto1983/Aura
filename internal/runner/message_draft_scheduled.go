@@ -28,7 +28,7 @@ func (r *Runner) protectReviewedMessageTasks(ctx context.Context, conversationID
 		if tr.operatorSteered.Load() {
 			return nil
 		}
-		accepted, err := r.messageDrafts.AcceptedOnBranch(ctx, ownerID, conversationID, taskID, leaf)
+		accepted, err := r.Conv.MessageTaskAcceptedOnBranch(ctx, ownerID, conversationID, taskID, leaf)
 		if err != nil {
 			return fmt.Errorf("check scheduled message review: %w", err)
 		}

@@ -4812,7 +4812,10 @@ dry run with a parked model is `2026-11-11-scheduled-delivery-model-in-the-loop.
 On 2026-11-20 the lab cockpit returned HTTP 200 for an approved scheduled email, then the
 automatic continuation cancelled that same task before its due time. The operator decided
 that an approved send must survive that continuation. A later operator message can still
-cancel it. The measured case and acceptance criteria are in the
+cancel it. A follow-up on the same account delivered one copy to Gmail and exposed a
+gateway case where the document catalog created an empty user turn during a cockpit
+resume. Receiving background catalog context must preserve the original operator decision.
+The measured case and acceptance criteria are in the
 [scheduled send follow-up](docs/superpowers/specs/2026-11-20-preserve-approved-scheduled-send-design.md).
 
 | Decided | Measured |

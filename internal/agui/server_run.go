@@ -68,10 +68,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		ctx = documents.WithSourceScopes(ctx, sourceScopes)
 	}
 
-	userMsg, err := lastUserMessage(in.Messages)
+	userMsg, err := lastUserMessage(in.Messages, len(req.Aura.AttachmentIDs) > 0 || len(sourceScopes) > 0 || req.Aura.Skill != "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if userMsg == nil && len(req.Aura.AttachmentIDs) > 0 {
+		// An attachment-only submission carries its operator input in the asset IDs.
+		userMsg = new("")
 	}
 	// Prepend per-turn context blocks (attachments + the thread's searchable-doc catalog)
 	// to the user turn; see buildTurnUserMessage (server_context.go).

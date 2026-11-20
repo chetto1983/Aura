@@ -264,6 +264,10 @@ type Querier interface {
 	FinalizeAsset(ctx context.Context, arg FinalizeAssetParams) (int64, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
+	// The resume transaction stamps both the pause and its tool answer with now().
+	// Find the first committed review or user input on this branch. For a live send
+	// the caller can continue past a verified legacy catalog-only user row.
+	FindMessageReviewBoundary(ctx context.Context, arg FindMessageReviewBoundaryParams) (FindMessageReviewBoundaryRow, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
@@ -432,9 +436,6 @@ type Querier interface {
 	//   an edit SETS it;
 	//   so "was this workspace edited after its last passing verification" is one column.
 	InsertVerificationEvent(ctx context.Context, arg InsertVerificationEventParams) (InsertVerificationEventRow, error)
-	// The resume transaction stamps both the pause and its tool answer with now().
-	// Walk only the selected branch, stopping at the next persisted user message.
-	IsAcceptedMessageTaskOnContinuation(ctx context.Context, arg IsAcceptedMessageTaskOnContinuationParams) (bool, error)
 	// The per-identity half, run inside WithIdentityTx: conversations are owner-only (migration
 	// 0089), so a table-wide max from the daemon pool reads NULL. last_active_at moves with every
 	// turn (equal to the newest conversation_turns.created_at on the lab VM, 2026-09-24), so a

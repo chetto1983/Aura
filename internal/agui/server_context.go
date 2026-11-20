@@ -22,6 +22,11 @@ import (
 // (status 0 = proceed). The attachment path keeps its strict 503/401/404 semantics; the
 // catalog path is best-effort (no docs or no identity -> no catalog, no error).
 func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, threadID string, attachmentIDs []string, userMsg *string) (context.Context, *string, int, string) {
+	// A review resumes with messages:[]. The standing document catalog can only
+	// enrich an operator submission, including an explicitly attached file.
+	if userMsg == nil {
+		return ctx, nil, 0, ""
+	}
 	identityID, identityOK := principalIdentityID(r)
 	var attachments []assets.Asset
 	if len(attachmentIDs) > 0 {
@@ -91,10 +96,7 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 	if identityOK {
 		catalogIdentity = identityID
 	}
-	text := ""
-	if userMsg != nil {
-		text = *userMsg
-	}
+	text := *userMsg
 	combined := s.assets.BuildTurnContext(ctx, catalogIdentity, threadID, attachments, mentionedFiles(ctx), text)
 	if combined == text {
 		return ctx, userMsg, 0, ""

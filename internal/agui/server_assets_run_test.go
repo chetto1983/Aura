@@ -222,6 +222,50 @@ func TestServerRunInjectsKnowledgeCatalogWithoutAttachment(t *testing.T) {
 	}
 }
 
+func TestServerRunAfterReviewWithIndexedCatalogRemainsAContinuation(t *testing.T) {
+	const thread = "aaaa5555-5555-4555-8555-555555555555"
+	for _, mode := range []string{"inline", "detached"} {
+		t.Run(mode, func(t *testing.T) {
+			run := &scriptedRunner{events: textTurn("ok")}
+			s := NewServer(run, &fakeConvStore{known: map[string]bool{thread: true}}, ServerConfig{})
+			if mode == "detached" {
+				registry := NewRunRegistry(ServerConfig{})
+				t.Cleanup(registry.Close)
+				s.SetRunRegistry(registry)
+			}
+			s.SetAssetService(&fakeAssetService{listResp: []assets.Asset{{
+				ID: "catalog-asset", IdentityID: assetAPIIdentityID, FileName: "manual.pdf",
+				Modality: assets.ModalityDocument, Status: assets.StatusComplete, DocumentID: "indexed-manual",
+			}}})
+			for _, options := range []string{"", `,"aura":{"skill":"missing","document_scope":[{"kind":"folder","path":"work"}]}`} {
+				rec := serveRunWithPrincipal(t, s, `{"threadId":"`+thread+`","messages":[]`+options+`}`)
+				if rec.Code != http.StatusOK || !run.turnCalled {
+					t.Fatalf("continue returned %d, runner called=%v", rec.Code, run.turnCalled)
+				}
+				if run.gotTurnUserMsg != nil {
+					t.Fatal("the library catalog was submitted to the runner as new operator input")
+				}
+			}
+		})
+	}
+}
+
+func TestServerRunAcceptsAnAttachmentWithoutTypedText(t *testing.T) {
+	const thread = "bbbb5555-5555-4555-8555-555555555555"
+	run := &scriptedRunner{events: textTurn("ok")}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{thread: true}}, ServerConfig{})
+	s.SetAssetService(&fakeAssetService{getResp: assets.Asset{
+		ID: "upload", IdentityID: assetAPIIdentityID, ThreadID: thread, FileName: "manual.pdf",
+		Modality: assets.ModalityDocument, Status: assets.StatusComplete, DocumentID: "indexed-manual",
+	}})
+	body := `{"threadId":"` + thread + `","messages":[{"id":"m1","role":"user","content":""}],"aura":{"attachment_ids":["upload"]}}`
+	rec := serveRunWithPrincipal(t, s, body)
+	attachments := assets.TurnAttachments(run.turnCtx)
+	if rec.Code != http.StatusOK || run.gotTurnUserMsg == nil || len(attachments) != 1 || attachments[0] != "upload" {
+		t.Fatalf("attachment-only request returned %d, user input=%v, attachments=%v", rec.Code, run.gotTurnUserMsg != nil, attachments)
+	}
+}
+
 func TestServerRunCarriesNormalizedGarageScopeOnlyInTheRunContext(t *testing.T) {
 	const tid = "66666666-6666-4666-8666-666666666666"
 	run := &scriptedRunner{events: textTurn("ok")}

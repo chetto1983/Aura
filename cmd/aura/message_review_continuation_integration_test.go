@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
@@ -41,7 +42,7 @@ func TestApprovedMessageSurvivesAutomaticContinuation(t *testing.T) {
 	if err := conversations.InitEncoder(); err != nil {
 		t.Fatal(err)
 	}
-	conv := conversations.New(pool, conversations.Config{RunDir: t.TempDir()})
+	conv := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 1024})
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: thread, IdentityID: owner, Model: "test", Metadata: []byte("{}")}); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +122,47 @@ func TestApprovedMessageSurvivesAutomaticContinuation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("review answer and pause were not stamped together: %v", err)
 	}
+	catalog := func(count int) string {
+		items := make([]assets.Asset, count)
+		indexed := map[string]bool{}
+		for i := range items {
+			id := fmt.Sprintf("document-%d", i+1)
+			items[i] = assets.Asset{ID: id, DocumentID: id, FileName: "manual.pdf", Summary: strings.Repeat("x", 100)}
+			indexed[id] = true
+		}
+		return assets.WithContextBlocks("", assets.BuildKnowledgeCatalog(items, nil, func([]string) map[string]bool { return indexed }))
+	}
+	for _, tc := range []struct {
+		name, content string
+		attachments   []string
+		protected     bool
+	}{
+		{"catalog only", catalog(1), nil, true},
+		{"ordinary mention", "I read the knowledge catalog. Cancel the message.", nil, false},
+		{"typed text after envelope", catalog(1) + "Cancel the message.", nil, false},
+		{"altered header", strings.Replace(catalog(1), "call document_search", "don't call document_search", 1), nil, false},
+		{"nonsequential document rows", strings.Replace(catalog(2), "- [2]", "- [1]", 1), nil, false},
+		{"attached file", catalog(1), []string{uuid.NewString()}, false},
+		{"spilled real text", strings.Repeat("This is my request. ", 100), nil, false},
+		{"spilled catalog only", catalog(8), nil, true},
+	} {
+		seq, err := conv.AppendTurnSeq(ctx, conversations.AppendTurnParams{
+			ConversationID: thread, Role: llm.RoleUser, Content: tc.content, AttachmentIDs: tc.attachments, ParentSeq: &reviewLeaf,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := conv.MessageTaskAcceptedOnBranch(ctx, owner, thread, task.ID, seq); err != nil || got != tc.protected {
+			t.Fatalf("%s: protected=%t, want %t, err=%v", tc.name, got, tc.protected, err)
+		}
+	}
+	head, err := conv.LatestTurnSeq(ctx, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted, err := conv.MessageTaskAcceptedOnBranch(ctx, uuid.NewString(), thread, task.ID, head); err != nil || accepted {
+		t.Fatalf("foreign owner reached review through catalog: %t, %v", accepted, err)
+	}
 	call := func(name, action, id string) agenttest.FakeTurn {
 		return agenttest.ToolCallTurn(agenttest.MakeToolCall(name, "task", fmt.Sprintf(`{"action":%q,"task_id":%q}`, action, id)))
 	}
@@ -191,10 +233,10 @@ func TestApprovedMessageSurvivesAutomaticContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := drafts.AcceptedOnBranch(ctx, owner, thread, task.ID, latest); err != nil || accepted {
+	if accepted, err := conv.MessageTaskAcceptedOnBranch(ctx, owner, thread, task.ID, latest); err != nil || accepted {
 		t.Fatalf("new user turn did not release guard: %t, %v", accepted, err)
 	}
-	if accepted, err := drafts.AcceptedOnBranch(ctx, owner, thread, task.ID, reviewLeaf); err != nil || !accepted {
+	if accepted, err := conv.MessageTaskAcceptedOnBranch(ctx, owner, thread, task.ID, reviewLeaf); err != nil || !accepted {
 		t.Fatalf("the branch with the review lost its guard: %t, %v", accepted, err)
 	}
 	parent := reviewLeaf - 1
@@ -204,7 +246,7 @@ func TestApprovedMessageSurvivesAutomaticContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := drafts.AcceptedOnBranch(ctx, owner, thread, task.ID, copyLeaf); err != nil || accepted {
+	if accepted, err := conv.MessageTaskAcceptedOnBranch(ctx, owner, thread, task.ID, copyLeaf); err != nil || accepted {
 		t.Fatalf("reused tool call ID on sibling was mistaken for a review: %t, %v", accepted, err)
 	}
 }

@@ -109,31 +109,39 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND (status = 'pending' OR (status = 'approved' AND expires_at <= now()))
 RETURNING *;
 
--- name: IsAcceptedMessageTaskOnContinuation :one
+-- name: FindMessageReviewBoundary :one
 -- The resume transaction stamps both the pause and its tool answer with now().
--- Walk only the selected branch, stopping at the next persisted user message.
+-- Find the first committed review or user input on this branch. For a live send
+-- the caller can continue past a verified legacy catalog-only user row.
 WITH RECURSIVE accepted AS (
-    SELECT p.tool_call_id, p.resumed_at
+    SELECT answer.seq, d.status = 'approved' AND task.status = 'active' AS live
     FROM aura.message_drafts d
+    JOIN aura.scheduler_tasks task ON task.id = d.scheduled_task_id AND task.identity_id = d.identity_id::text
     JOIN aura.paused_states p ON p.identity_id = d.identity_id AND p.conversation_id::text = d.conversation_id
         AND p.tool_call_id = d.tool_call_id AND p.resume_context->>'draft_id' = d.id::text
+    JOIN aura.conversation_turns answer ON answer.conversation_id = p.conversation_id
+        AND answer.role = 'tool' AND answer.tool_call_id = p.tool_call_id AND answer.created_at = p.resumed_at
     WHERE d.identity_id = sqlc.arg(identity_id) AND p.conversation_id = sqlc.arg(conversation_id)
         AND d.scheduled_task_id = sqlc.arg(task_id) AND d.send_at IS NOT NULL
         AND d.effective_fingerprint IS NOT NULL AND p.resume_context->>'type' = 'message_draft'
         AND p.resumed_answer->>'action' = 'accept' AND p.resumed_at IS NOT NULL
 ), path AS (
-    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    SELECT t.seq, t.parent_seq, t.role
     FROM aura.conversation_turns t
     WHERE t.conversation_id = sqlc.arg(conversation_id)
         AND t.seq = sqlc.arg(leaf_seq)
-        AND EXISTS (SELECT FROM accepted)
+        AND t.seq >= (SELECT MIN(seq) FROM accepted)
     UNION ALL
-    SELECT t.seq, t.parent_seq, t.role, t.tool_call_id, t.created_at
+    SELECT t.seq, t.parent_seq, t.role
     FROM path JOIN aura.conversation_turns t
         ON t.conversation_id = sqlc.arg(conversation_id) AND t.seq = path.parent_seq
-    WHERE path.role <> 'user' AND t.seq < path.seq
+    WHERE path.role <> 'user' AND t.seq < path.seq AND t.seq >= (SELECT MIN(seq) FROM accepted)
 )
-SELECT EXISTS (
-    SELECT FROM accepted JOIN path ON path.role = 'tool' AND path.tool_call_id = accepted.tool_call_id
-        AND path.created_at = accepted.resumed_at
-)::boolean AS protected;
+SELECT path.seq, path.parent_seq, (a.seq IS NOT NULL)::boolean AS reviewed,
+       COALESCE(t.content, '')::text AS content, (t.content_sidecar_path IS NOT NULL)::boolean AS spilled
+FROM path
+LEFT JOIN accepted a ON a.seq = path.seq
+JOIN aura.conversation_turns t ON t.conversation_id = sqlc.arg(conversation_id) AND t.seq = path.seq
+WHERE a.seq IS NOT NULL OR (path.role = 'user' AND COALESCE(cardinality(t.attachment_ids), 0) = 0
+    AND EXISTS (SELECT FROM accepted WHERE live))
+ORDER BY path.seq DESC LIMIT 1;
