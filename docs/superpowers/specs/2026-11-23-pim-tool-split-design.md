@@ -35,8 +35,9 @@ action-free.
 - Every behaviour the fork added to the curated tool survives on the tool it belongs to (§4.2).
 - Aura keys everything on the tool name. The `action` discriminator disappears from the bridge, the gateway,
   message drafts, display and host-built calls.
-- The upgrade keeps what operators stored: standing grants, ask/deny policies, pending and scheduled email
-  drafts, and the tables of past conversations.
+- The upgrade keeps what operators stored: per-operation grants and policies, every `deny`, pending and
+  scheduled email drafts that name their account, and the tables of past conversations. What it drops, it
+  logs, and it drops only what fails safe (§5.5).
 - Aura and the PIM image ship as a pair. Neither runs against the other's old shape.
 
 **Non-goals**
@@ -160,10 +161,14 @@ records each one, so a sync knows to keep it.
 - **`gateway_approval_grants` and `gateway_tool_policies`** (decided by the operator, 2026-11-23).
   - Only a per-action row `(<ns>__calendar, <action>)` is rewritten, to `(<ns>__<action>, '')`, for any
     namespace, so aliases are covered.
-  - A tool-wide row `(<ns>__calendar, '')` is not fanned out to the 29 tools, and a hand-typed row already
-    named `<ns>__<action>` (inert today) is not switched on. Both are listed in the upgrade log, by tool,
-    action and kind, and then deleted. Neither becomes a live rule that nobody set on the new tools.
-  - Because those rows go first, the rewrite cannot collide.
+  - A tool-wide `deny` policy `(<ns>__calendar, '')` becomes a `deny` on each of the 29 tools. It can only
+    restrict, and dropping it would let mail through that the operator had refused (operator, 2026-11-23).
+  - A tool-wide grant or `ask` policy `(<ns>__calendar, '')` is not fanned out, and a hand-typed row
+    already named `<ns>__<action>` (inert today) is not switched on. Both are listed in the upgrade log, by
+    tool, action and kind, and then deleted. Neither becomes a live permission that nobody set on the new
+    tools.
+  - Because the hand-typed rows go first, a rewritten row can collide only with a fanned-out `deny` on the
+    same tool. There `deny` wins.
   - The new names go through the bridge's `namespacedName`, which truncates and hashes a long name. The
     rewrite therefore runs in Go with that function, once, with the upgrade; plain SQL string concatenation
     would produce names the bridge never registers.
@@ -243,7 +248,8 @@ draft target, and the fork's suite against Dovecot and GreenMail.
    Sent copy lands.
 3. A briefing turn reads mail and events with no reservation error.
 4. An event is created, read and deleted through its reference.
-5. A `deny` on `calendar` / `send_email` set before the upgrade refuses `calendar__send_email` after it.
+5. A `deny` on `calendar` / `send_email` set before the upgrade refuses `calendar__send_email` after it,
+   and a tool-wide `deny` on `calendar` refuses every one of the 29 tools.
 6. A pending draft and a scheduled email draft made before the upgrade, each with an account, send after
    it. One made without an account is expired.
 7. A conversation from before the upgrade replays with its tables.
@@ -285,5 +291,5 @@ The tables that store `calendar` + action pairs are `gateway_approval_grants`, `
 - That every route in use fills the per-tool schemas correctly. That is measured in §7. One cockpit turn
   on `inkling-2-mini` after `63365df` is the only data point so far.
 - The cost of about 29 deferred entries in `tool_search`'s ranking until the eval of §5.6 runs.
-- How many operators hold a tool-wide `calendar` grant or policy. The upgrade drops them and logs them
-  (§5.5); a tool-wide `deny` set on the old tool stops applying, and the log is how the operator learns it.
+- How many operators hold a tool-wide `calendar` grant or `ask` policy. The upgrade drops them and logs
+  them (§5.5); the operator who relied on one is asked again on the next call, which fails safe.
