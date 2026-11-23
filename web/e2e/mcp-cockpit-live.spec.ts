@@ -1,17 +1,20 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
-import { chooseValue } from './support/select';
 
 const servers = ['calendar', 'memory', 'whatsapp'] as const;
 const origin = process.env.AURA_E2E_ORIGIN ?? 'http://127.0.0.1:9080';
-const fakeSmtpOrigin = process.env.AURA_E2E_FAKE_SMTP_ORIGIN ?? 'http://127.0.0.1:1080';
 const runRealAgent = process.env.AURA_E2E_REAL_AGENT === '1';
-const pimAccountId = 'pim-e2e';
+// scripts/pim_tls_mail_up.sh: GreenMail over TLS on loopback 993 (IMAPS) and 465 (SMTPS), its API
+// on 18080, and a PIM on :8093 that trusts its certificate. The form sends no security key for a
+// domain discovery does not know, so the PIM takes it from these two ports (spec A2), and the host
+// is private, which only the operator, who holds identity.create, may name (spec A5).
+const tlsMailUp = process.env.AURA_E2E_PIM_TLS_MAIL === '1';
+const fakeMailApi = process.env.AURA_E2E_FAKE_MAIL_API ?? 'http://127.0.0.1:18080';
+const fakeMailHost = '127.0.0.1';
+const recipient = 'pim-e2e-recipient@aura.test';
 
-interface MailCatcherMessage {
-  readonly id: number;
-  readonly subject: string;
-  readonly recipients: readonly string[];
+interface GreenMailMessage {
+  readonly subject?: string;
 }
 
 async function openGovernance(page: Page) {
@@ -27,58 +30,78 @@ async function closeServerDetailIfOverlay(page: Page) {
   if (await close.isVisible()) await close.click();
 }
 
-async function openCalendar(page: Page) {
-  await openGovernance(page);
-  await page
-    .getByRole('list', { name: 'MCP servers' })
-    .getByRole('button')
-    .filter({ hasText: 'calendar' })
-    .first()
-    .click();
-  await expect(page.getByRole('heading', { name: 'calendar', exact: true })).toBeVisible();
+async function openMailSettings(page: Page) {
+  await page.goto('/?settings=mail', { waitUntil: 'domcontentloaded' });
   await expect(
-    page.getByRole('heading', {
-      name: /Connect calendar \/ PIM account|Collega account calendario \/ PIM/i,
-    }),
-  ).toBeVisible();
+    page.getByRole('heading', { name: /^(Mail and calendar|Posta e calendario)$/ }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
-async function removePimAccountIfPresent(page: Page) {
-  const account = page.getByRole('listitem').filter({ hasText: pimAccountId });
-  if (!(await account.isVisible())) return;
-  await account.getByRole('button', { name: /Disconnect|Disconnetti/i }).click();
-  await expect(account).toBeHidden({ timeout: 30_000 });
+function accountRow(page: Page, address: string) {
+  return page.getByRole('listitem').filter({ hasText: address });
 }
 
-async function createPimAccount(page: Page) {
-  await chooseValue(page.getByLabel(/^(Provider)$/i), 'imap');
-  await page.getByLabel(/^(Account ID|ID account)$/i).fill(pimAccountId);
-  await page.getByLabel(/^(Display name|Nome visualizzato)$/i).fill('Aura PIM E2E');
-  await page.getByLabel(/^(IMAP host|Host IMAP)$/i).fill('aura-fake-smtp');
-  await page.getByLabel(/^(IMAP port|Porta IMAP)$/i).fill('1143');
-  await page.getByLabel(/^(SMTP host|Host SMTP)$/i).fill('aura-fake-smtp');
-  await page.getByLabel(/^(SMTP port|Porta SMTP)$/i).fill('1025');
-  await page.getByLabel(/^(Username|Nome utente)$/i).fill('aura-pim@aura.invalid');
-  await page.getByLabel(/^Password$/i).fill('local-e2e-only');
+/** Connects `address` from Settings → «Posta e calendario», as a person does: the address, then
+ * the server settings discovery could not fill, then «Collega». The PIM signs in to both servers
+ * over TLS before it stores anything. Answers the account id the PIM stored. */
+async function connectMailbox(page: Page, address: string): Promise<string> {
+  const addressField = page.getByLabel(/^(Email address|Indirizzo email)$/);
+  await addressField.fill(address);
+  const discovered = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/connect/pim/discover',
+    { timeout: 30_000 },
+  );
+  // Leaving the field asks the PIM about the domain, and its answer refills the server fields:
+  // they are typed only once it has landed.
+  await addressField.blur();
+  await discovered;
+  const serverSettings = page
+    .locator('details')
+    .filter({ hasText: /Server settings|Impostazioni server/ });
+  await expect(serverSettings).toHaveAttribute('open', '');
+  await serverSettings.getByLabel(/^(IMAP host|Host IMAP)$/).fill(fakeMailHost);
+  await serverSettings.getByLabel(/^(IMAP port|Porta IMAP)$/).fill('993');
+  await serverSettings.getByLabel(/^(SMTP host|Host SMTP)$/).fill(fakeMailHost);
+  await serverSettings.getByLabel(/^(SMTP port|Porta SMTP)$/).fill('465');
+  await expect(serverSettings.getByLabel(/^(Username|Nome utente)$/)).toHaveValue(address);
+  await page.getByLabel(/^Password$/).fill('local-e2e-only');
+
   const createdResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       new URL(response.url()).pathname === '/api/connect/pim/accounts',
-    { timeout: 30_000 },
+    { timeout: 40_000 },
   );
-  await page.getByRole('button', { name: /Create account|Crea account/i }).click();
-  const created = await createdResponse;
-  const createdBody = await created.text();
-  expect(created.ok(), createdBody).toBe(true);
-  const canonicalId = (JSON.parse(createdBody) as { readonly id?: unknown }).id;
-  expect(typeof canonicalId).toBe('string');
-  await expect(page.getByText(/Account created|Account creato/i)).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByRole('listitem').filter({ hasText: pimAccountId })).toBeVisible({
-    timeout: 30_000,
-  });
-  return canonicalId as string;
+  await page.getByRole('button', { name: /^(Connect|Collega)$/ }).click();
+  const response = await createdResponse;
+  const body = await response.text();
+  expect(response.status(), body).toBe(201);
+  // A sending server that failed its check would still be stored, with a warning (spec A4).
+  const created = JSON.parse(body) as { readonly id?: unknown; readonly smtpWarning?: unknown };
+  expect(created.smtpWarning, body).toBeUndefined();
+  expect(typeof created.id).toBe('string');
+  await expect(
+    page.getByRole('status').filter({ hasText: /^(Connected|Collegato)/ }),
+  ).toBeVisible();
+  await expect(accountRow(page, address)).toBeVisible({ timeout: 30_000 });
+  return created.id as string;
+}
+
+/** Removes a connected mailbox from its row, as a person does. Settings opens afresh, so the row is
+ * awaited while the account list loads rather than taken as absent. */
+async function removeMailbox(page: Page, address: string) {
+  await openMailSettings(page);
+  const row = accountRow(page, address);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByRole('button', { name: /^(Remove|Rimuovi)$/ }).click();
+  await row.getByRole('button', { name: /^(Remove for good|Rimuovi definitivamente)$/ }).click();
+  await expect(row).toBeHidden({ timeout: 30_000 });
+}
+
+function e2eAddress(project: string): string {
+  return `pim-e2e-${project}-${Date.now().toString()}@aura.test`;
 }
 
 async function sameOriginJSON(page: Page, path: string, method: 'POST' | 'DELETE', body?: object) {
@@ -97,21 +120,22 @@ async function sameOriginJSON(page: Page, path: string, method: 'POST' | 'DELETE
   );
 }
 
-async function waitForCapturedMail(request: APIRequestContext, subject: string) {
+/** Waits until GreenMail holds `subject` in the recipient's inbox; the mailbox exists only once
+ * the first mail to it has arrived. */
+async function waitForDeliveredMail(request: APIRequestContext, subject: string) {
   await expect
     .poll(
       async () => {
-        const response = await request.get(`${fakeSmtpOrigin}/messages`);
+        const response = await request.get(
+          `${fakeMailApi}/api/user/${encodeURIComponent(recipient)}/messages/INBOX`,
+        );
         if (!response.ok()) return undefined;
-        const messages = (await response.json()) as readonly MailCatcherMessage[];
-        return messages.find((message) => message.subject === subject);
+        const messages = (await response.json()) as readonly GreenMailMessage[];
+        return messages.find((message) => message.subject === subject)?.subject;
       },
       { timeout: 60_000, intervals: [250, 500, 1_000] },
     )
-    .toMatchObject({
-      subject,
-      recipients: expect.arrayContaining([expect.stringContaining('pim-e2e@aura.invalid')]),
-    });
+    .toBe(subject);
 }
 
 // The shipped sidecars take no consent: Aura mints their tokens itself (379f41c06,
@@ -164,30 +188,40 @@ test('runs the built-in MCP servers on credentials Aura issues itself', async ({
   }
 });
 
-test('configures PIM in the cockpit and sends through the real agent to fake SMTP', async ({
-  page,
-  request,
-}) => {
-  test.fixme(
-    true,
-    'The Governance account form is gone: drive Settings → «Posta e calendario» (AddMailAccount), and give the fake IMAP on 1143 TLS or STARTTLS (spec A2). Owned by live task L1.',
-  );
-  test.skip(!runRealAgent, 'set AURA_E2E_REAL_AGENT=1 to run the real PIM agent gate');
-  test.setTimeout(360_000);
+const tlsMailSkip = 'run scripts/pim_tls_mail_up.sh, then set AURA_E2E_PIM_TLS_MAIL=1';
+
+test('connects a mailbox over TLS from Settings, and removes it', async ({ page }, testInfo) => {
+  test.skip(!tlsMailUp, tlsMailSkip);
+  test.setTimeout(120_000);
+  const address = e2eAddress(testInfo.project.name);
 
   await gotoAuthenticated(page, '/');
-  await openCalendar(page);
-  await removePimAccountIfPresent(page);
-  const canonicalAccountId = await createPimAccount(page);
+  await openMailSettings(page);
+  await connectMailbox(page, address);
+  await removeMailbox(page, address);
+});
 
-  const subject = `Aura PIM Cockpit E2E ${Date.now().toString()}`;
-  const created = await sameOriginJSON(page, '/api/conversations', 'POST', {
-    title: `PIM live E2E ${subject}`,
-  });
-  expect(created.status, created.text).toBe(201);
-  const conversationId = (JSON.parse(created.text) as { readonly ID: string }).ID;
+test('sends through the real agent from a mailbox connected in Settings', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(!tlsMailUp, tlsMailSkip);
+  test.skip(!runRealAgent, 'set AURA_E2E_REAL_AGENT=1 to run the real PIM agent gate');
+  test.setTimeout(360_000);
+  const address = e2eAddress(testInfo.project.name);
 
+  await gotoAuthenticated(page, '/');
+  await openMailSettings(page);
+  const accountId = await connectMailbox(page, address);
+  let conversationId: string | undefined;
   try {
+    const subject = `Aura PIM Cockpit E2E ${Date.now().toString()}`;
+    const created = await sameOriginJSON(page, '/api/conversations', 'POST', {
+      title: `PIM live E2E ${subject}`,
+    });
+    expect(created.status, created.text).toBe(201);
+    conversationId = (JSON.parse(created.text) as { readonly ID: string }).ID;
+
     await page.goto(`${origin}/c/${encodeURIComponent(conversationId)}`, {
       waitUntil: 'domcontentloaded',
     });
@@ -198,8 +232,8 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
     const composer = page.getByRole('textbox', { name: 'Ask Aura' });
     await expect(composer).toBeVisible({ timeout: 30_000 });
     await composer.fill(
-      `Usa calendar__calendar con action send_email e accountId ${canonicalAccountId}. ` +
-        `Invia a pim-e2e@aura.invalid, oggetto esatto "${subject}", corpo testo "PIM cockpit live E2E green".`,
+      `Usa calendar__calendar con action send_email e accountId ${accountId}. ` +
+        `Invia a ${recipient}, oggetto esatto "${subject}", corpo testo "PIM cockpit live E2E green".`,
     );
     await composer.press('Enter');
 
@@ -241,15 +275,15 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
         timeout: 240_000,
       },
     );
-    await waitForCapturedMail(request, subject);
+    await waitForDeliveredMail(request, subject);
   } finally {
-    await sameOriginJSON(
-      page,
-      `/api/conversations/${encodeURIComponent(conversationId)}`,
-      'DELETE',
-    );
-    await page.goto(origin, { waitUntil: 'domcontentloaded' });
-    await openCalendar(page);
-    await removePimAccountIfPresent(page);
+    if (conversationId !== undefined) {
+      await sameOriginJSON(
+        page,
+        `/api/conversations/${encodeURIComponent(conversationId)}`,
+        'DELETE',
+      );
+    }
+    await removeMailbox(page, address);
   }
 });
