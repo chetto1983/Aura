@@ -113,10 +113,45 @@ to the operator's Google address, subject `[aura-misura] G7`, `accountId` passed
 - Cleaned up: the Google copy was deleted by exact id (moved to Trash). A search afterwards found
   0 copies. Nothing landed in the IMAP account.
 
+## After the fixes (same day, 15:43 UTC)
+
+Fixed and deployed through the updater:
+
+| Commit | Repository | What it fixes |
+|---|---|---|
+| `ec7d740` | PIM fork | the Sent folder is found on the server: setting, else `\Sent`, else a known name |
+| `43c49b3` | PIM fork | the same lookup for Trash and Junk |
+| `63365df` | PIM fork | the curated `send_email` requires `accountId` |
+| `d697c5ccd` | Aura | after a redial, Aura re-reads the server's tools |
+
+Results:
+
+| Check | Driver | Result |
+|---|---|---|
+| IMAP send, then `INBOX.Sent` on Aruba | PIM mounted in Claude Code | 1 copy (was 0) |
+| `delete_email` on Aruba | same | moved to `INBOX.Trash` (was `Folder '[Gmail]/Trash' was not found`) |
+| `send_email` with no `accountId` | same | refused, naming `accountId` and `list_accounts`; nothing sent |
+| a cockpit turn with the operator's own wording, on the route of the day (`inkling-2-mini`) | cockpit API | the draft reached review with `accountId` (the IMAP account) and its sender shown; approved, it was sent; 1 copy in `INBOX.Sent`, 1 at Google |
+
+- **Why the model left out `accountId`.** The curated tool told it to: "send_email (omit to match
+  the first recipient's domain…)". The first cockpit turn after the PIM update still read that text,
+  because Aura's redial no longer re-read the tools and a restarted server pushes no
+  `tools/list_changed`. With `d697c5ccd` the turn read "Requires accountId, to, subject" and passed
+  the account.
+- **The parallel session's sends of 13:34–13:36 had `accountId`; the earlier claim that this
+  afternoon's model dropped it on its own** is answered by the tool text, not by the model or the
+  driver.
+- **The VM updater holds sidecars behind a pending Aura update.** While `2ea0c0d7b` waited for an
+  admin, the new PIM images were not pulled; each Aura update needed the operator's "Aggiorna subito".
+- Cleaned up: every `[aura-misura]` mail was deleted by exact id. Aruba's two earlier copies are in
+  `INBOX.Trash`, Google's in its Trash. Searches afterwards found 0 copies in Sent and Inbox.
+
 ## What this does not show
 
 - No Microsoft 365 event, and no series on either provider: the window held one Google event.
 - No IMAP message detail, and no contacts.
 - The Microsoft scopes actually granted.
-- G1–G9: only G7 measured, and on one IMAP host (Aruba).
-- One model route. Whether another model fills `send_email` correctly was not tried.
+- G1–G9: only G7 measured, and on one IMAP host (Aruba). The Sent and Trash lookup was tested on
+  Dovecot and GreenMail in the fork's suite, not on another live host.
+- One model route, one cockpit turn after the fix. Whether the model passes `accountId` every time
+  is not measured.
