@@ -118,6 +118,17 @@ class GoMutationParserTest(unittest.TestCase):
                 self.assertEqual(critical_mutation_gate.GO_SCOPES[scope], relative)
                 self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
 
+    def test_the_mail_repair_relay_and_secret_fingerprint_are_scoped(self) -> None:
+        expected = {
+            "mail_repair": "internal/pimwatch/service_repair.go",
+            "pim_account_relay": "internal/agui/connect_pim_account_api.go",
+            "pim_secret_fingerprint": "internal/agui/idempotency_pim.go",
+        }
+        for scope, relative in expected.items():
+            with self.subTest(scope=scope):
+                self.assertEqual(critical_mutation_gate.GO_SCOPES.get(scope), relative)
+                self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
+
     def test_the_scheduled_delivery_files_are_scoped(self) -> None:
         expected = {
             "task_approval": "internal/agent/tools/task_approval.go",

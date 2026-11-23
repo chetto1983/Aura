@@ -1768,6 +1768,11 @@ jobs:
     # task_approval, task_message, message_fire and lapsed_approval (2026-11-11, the scheduled
     # delivery) ride with turn_reading: 990 s for the four, measured warm in a cloud container,
     # not on a runner, so 2003 s for the group and a 90-minute timeout until a run says otherwise.
+    # mail_repair, pim_account_relay and pim_secret_fingerprint (2026-11-20, 274 lines in all)
+    # ride with the elicitation group: it measured 708 s warm (run 44749528464) against a
+    # 4500 s timeout, while media already took 3660 s of 9000 s and turn_reading 1203 s. Not
+    # measured yet: the estimate is about 900 s for the three, so about 1600 s for the group
+    # and 80 minutes (1600 x 2.7 = 72) until a run says otherwise.
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -1784,8 +1789,8 @@ jobs:
             scopes: turn_reading task_approval task_message message_fire lapsed_approval
             timeout: 90
           - group: elicitation-boundaries
-            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire
-            timeout: 75
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire mail_repair pim_account_relay pim_secret_fingerprint
+            timeout: 80
           - group: media
             scopes: media_clamp media_watcher signin_flow signin_options signin_proxy
             timeout: 150

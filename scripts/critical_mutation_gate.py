@@ -36,6 +36,9 @@ GO_SCOPES = {
     "task_message": "internal/agent/tools/task_message.go",
     "message_fire": "internal/cron/handlers/message.go",
     "lapsed_approval": "internal/cron/deliver_lapsed.go",
+    "mail_repair": "internal/pimwatch/service_repair.go",
+    "pim_account_relay": "internal/agui/connect_pim_account_api.go",
+    "pim_secret_fingerprint": "internal/agui/idempotency_pim.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -78,6 +81,9 @@ REQUIRED_SCOPE_IDS = frozenset(
         "task_message",
         "message_fire",
         "lapsed_approval",
+        "mail_repair",
+        "pim_account_relay",
+        "pim_secret_fingerprint",
         "frontend",
         "media_frontend",
     }
