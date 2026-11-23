@@ -146,6 +146,33 @@ Results:
 - Cleaned up: every `[aura-misura]` mail was deleted by exact id. Aruba's two earlier copies are in
   `INBOX.Trash`, Google's in its Trash. Searches afterwards found 0 copies in Sent and Inbox.
 
+## Scheduled-task email notifications (same day, 16:35 UTC)
+
+`63365df` made the PIM refuse a send without `accountId`, and the scheduler's email notification
+(`internal/cron/notify_email.go`) never named one. So every email notification on an appliance
+following `:sidecar` failed from then on. `c0fe0528c` makes the host list the PIM accounts first. It
+sends from the account whose address is the recipient's, when that account may send, else from the
+first account that may send.
+
+Driven without a model: `aura task schedule --kind reminder --at <now+2 min> --notify email`, run inside
+the `aura` container on `c0fe0528c` (applied 16:32 UTC by the operator's "Aggiorna subito"). The body
+carried `[aura-misura]`; the subject is fixed by the notifier. `AURA_SCHEDULER_NOTIFY_RECIPIENT` is unset
+on the VM, so the recipient is the operator's sign-in address, which is the Google account's.
+
+| Check | Result |
+|---|---|
+| PIM log | one send, with `accountId` set to the Google account |
+| copies at Google (PIM mounted in Claude Code) | 1, sender = the Google account |
+| copies in the IMAP and Microsoft 365 accounts | 0 and 0 |
+| after deleting it by exact id | 0 left |
+
+- The PIM log also shows `Sending address of account …microsoft not found: ODataError` while listing
+  accounts. The Microsoft 365 account's address was not read, so the rule could not have matched it. That
+  is harmless here and not investigated.
+- Not shown: a recipient set through `AURA_SCHEDULER_NOTIFY_RECIPIENT` that no account owns (the
+  fall-back to the first sender is unit-tested only); an agent-job notification; WhatsApp and Telegram
+  routes, which this change does not touch.
+
 ## What this does not show
 
 - No Microsoft 365 event, and no series on either provider: the window held one Google event.
