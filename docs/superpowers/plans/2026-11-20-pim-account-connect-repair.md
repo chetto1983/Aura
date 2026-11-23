@@ -713,11 +713,11 @@ Behaviour:
 - **«Prova di nuovo»** calls `verifyPimAccount`. It shows «L'accesso funziona» (plus the SMTP warning, if any), or the reason's message, or `pimErrorKey`.
 - **«Cambia password»** opens an inline password field and the closed «Impostazioni server», whose blank fields mean "unchanged". «Salva» sends only the non-empty fields.
   - A changed server or port with no password is caught in the form, before it is sent, as `settings.mail.error.passwordRequired`.
-  - The username is shown read-only.
+  - The username is not shown (the cockpit never receives it); a note says it cannot be changed (ledger Ruling 16).
 - **After either action succeeds,** it invalidates the accounts query and the mail-watch status query and records `verifiedAt`.
-  - While the watch's `next_run_at` is later than `verifiedAt` and a resource still has `last_error`, the row says «L'accesso funziona, ma la lettura della posta non riesce ancora» (`settings.mail.repair.readStillFails`), with no buttons repeated.
+  - After a working login the row says «L'accesso funziona. Se la lettura non riprende al prossimo controllo, la password non è il problema.» (`settings.mail.repair.loginWorks`) and keeps its buttons; the stale prompt drops only while a resource's `failing_since` is the one current at that login. (Superseded 2026-11-23, ledger Ruling 20: the earlier `readStillFails` judgement on `next_run_at` could not tell a read started from a read finished.)
 - **`auth_failed` in repair** reads `settings.mail.verify.authFailedRepair`: wrong password, or the provider wants an app password.
-- **Stale wording:** `governance.mailWatch.failure.stale` = «Non riesco a leggere la posta da {{since}}. Prova di nuovo o cambia la password.», with `since` from `dayAndTime`. In English: "Aura has not been able to read this mailbox since {{since}}. Try again or change the password."
+- **Stale wording:** `governance.mailWatch.failure.stale` = «Non riesco a leggere la posta dal {{since}}. Prova di nuovo o cambia la password.», with `since` from `dayAndTime`. In English: "Aura has not been able to read this mailbox since {{since}}. Try again or change the password."
 
 - [ ] **Step 1: Write the failing tests.**
   - `staleTransient`:

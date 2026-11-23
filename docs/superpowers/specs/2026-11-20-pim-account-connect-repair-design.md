@@ -240,8 +240,12 @@ above, these win.
 - **A8. «Prova di nuovo» checks what the watch does**: the configured inbox folder and the watch's first read step,
   not only the login. Both the verifier and the watch's failure path log the server's response line (CR/LF stripped,
   trimmed), which amends the fork's rule that a provider's message is never logged: without it the next field case
-  stays unmeasured. When the login works and reading still fails, the row says so instead of offering the same
-  buttons.
+  stays unmeasured. When the login works, the row says «L'accesso funziona. Se la lettura non riprende al prossimo
+  controllo, la password non è il problema.» and keeps its buttons, and the stale prompt yields for the failure that
+  login vouched for (its `failing_since`). Amended 2026-11-23 (ledger Ruling 20): the cockpit cannot tell that reading
+  *still* fails, because the scheduler advances `next_run_at` when it claims a run, before the read
+  (`internal/cron/scheduler.go` `runOne`), and no per-resource read-finished time exists; saying so for certain would
+  need a `checked_at` field (migration + API), outside this work.
 - **A9. The relay does not leave a password's hash in Postgres.** The idempotency fingerprint of create and PATCH
   replaces secret fields with an HMAC under a key derived from the server secret, and `discover` is read-only.
 - **A10. What encryption at rest protects.** The key ring is plaintext XML in `/app/data/keys`, on the same named
