@@ -41,7 +41,7 @@ func TestMergeApprovedArgsMultipartAndWhatsApp(t *testing.T) {
 	}{
 		{
 			name: "multipart text", target: Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-			original:  json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","bodyFormat":"multipart","textBody":"old","htmlBody":"<p>old</p>"}`),
+			original:  json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","bodyFormat":"multipart","textBody":"old","htmlBody":"<p>old</p>"}`),
 			overrides: json.RawMessage(`{"textBody":"new","htmlBody":"<p>new</p>"}`), field: "textBody", want: "new",
 		},
 		{
@@ -80,8 +80,6 @@ func TestMergeApprovedArgsNamesTheFieldsToChange(t *testing.T) {
 			[]string{`"toDate"`, `"topics"`, "subject"}},
 		{"missing subject", `{"action":"send_email","to":["first@example.test"],"body":"Hi"}`, []string{`"subject"`}},
 		{"bad recipient", `{"action":"send_email","to":["secret-not-an-address"],"subject":"Hello"}`, []string{`"to"`}},
-		{"no sending account", `{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Hi"}`,
-			[]string{`"accountId"`, "list_accounts"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,7 +102,7 @@ func TestMergeApprovedArgsNamesTheFieldsToChange(t *testing.T) {
 func TestMergeApprovedArgsRejectsUnapprovedOrInvalidFields(t *testing.T) {
 	email := Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
 	whatsapp := Target{Recipe: "recipe:whatsapp", Tool: "send_message"}
-	baseEmail := json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","body":"Hi"}`)
+	baseEmail := json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Hi"}`)
 	baseWhatsApp := json.RawMessage(`{"recipient":"12345","message":"Hi"}`)
 	cases := []struct {
 		name      string
@@ -117,15 +115,15 @@ func TestMergeApprovedArgsRejectsUnapprovedOrInvalidFields(t *testing.T) {
 		{"action cannot change", email, baseEmail, json.RawMessage(`{"action":"delete_email"}`)},
 		{"empty to", email, baseEmail, json.RawMessage(`{"to":[]}`)},
 		{"empty subject", email, baseEmail, json.RawMessage(`{"subject":""}`)},
-		{"multipart body alias", email, json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","bodyFormat":"multipart","textBody":"a","htmlBody":"b"}`), json.RawMessage(`{"body":"ignored"}`)},
-		{"unexpected original field", email, json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","body":"Hi","bcc":["hidden@example.test"]}`), nil},
+		{"multipart body alias", email, json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","bodyFormat":"multipart","textBody":"a","htmlBody":"b"}`), json.RawMessage(`{"body":"ignored"}`)},
+		{"unexpected original field", email, json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Hi","bcc":["hidden@example.test"]}`), nil},
 		{"untrusted recipe", Target{Recipe: "custom", Tool: "calendar", Action: "send_email"}, baseEmail, nil},
 		{"wrong original action", email, json.RawMessage(`{"action":"delete_email","to":["first@example.test"],"subject":"Hello","body":"Hi"}`), nil},
 		{"quote context cannot change", whatsapp, baseWhatsApp, json.RawMessage(`{"quoted_message_id":"other"}`)},
 		{"empty recipient", whatsapp, baseWhatsApp, json.RawMessage(`{"recipient":""}`)},
 		{"empty message", whatsapp, baseWhatsApp, json.RawMessage(`{"message":""}`)},
 		{"duplicate override key", whatsapp, baseWhatsApp, json.RawMessage(`{"message":"first","message":"second"}`)},
-		{"duplicate nested key", email, json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","attachments":[{"attachmentId":"first","attachmentId":"second"}]}`), nil},
+		{"duplicate nested key", email, json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","attachments":[{"attachmentId":"first","attachmentId":"second"}]}`), nil},
 		{"malformed original", whatsapp, json.RawMessage(`{"recipient":`), nil},
 		{"excessive JSON depth", whatsapp, json.RawMessage(`{"recipient":"12345","message":"Hi","quoted_content":` + strings.Repeat("[", 40) + `"x"` + strings.Repeat("]", 40) + `}`), nil},
 	}

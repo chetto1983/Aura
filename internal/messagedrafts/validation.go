@@ -215,12 +215,7 @@ func validateEmail(base, edits map[string]json.RawMessage) error {
 	if strings.ContainsAny(subject, "\r\n") {
 		return fieldError("subject", "must be one line")
 	}
-	// Without an accountId the PIM picks the sender itself (recipient domain, else its first
-	// account) and the review cannot show who sends: the scheduled path refuses it for the same reason.
-	if _, ok := base["accountId"]; !ok {
-		return fieldError("accountId", "is required: list the accounts with list_accounts and, when there is more than one, ask the operator which to send from")
-	}
-	if _, err := requiredString(base, "accountId", 256); err != nil {
+	if err := optionalString(base, "accountId", 256); err != nil {
 		return err
 	}
 	format := "html"

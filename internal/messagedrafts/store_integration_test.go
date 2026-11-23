@@ -84,7 +84,7 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 		IdentityID: owner, ConversationID: "draft-conversation", ToolCallID: "call-one",
 		Target:             Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
 		RegisteredToolName: "calendar__calendar",
-		OriginalArgs:       json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","body":"Original"}`),
+		OriginalArgs:       json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Original"}`),
 		ExpiresAt:          time.Now().Add(time.Hour),
 	}
 	draft, err := store.Create(ctx, input)
@@ -99,7 +99,7 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 		t.Fatal("same call did not resolve to one draft")
 	}
 	changed := input
-	changed.OriginalArgs = json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Different","body":"Original"}`)
+	changed.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Different","body":"Original"}`)
 	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
 		t.Fatal("conflicting duplicate call accepted")
 	}
