@@ -357,7 +357,59 @@ Not taken, with the reason:
 - **Zero's vectorised mailbox; Inbox Zero's digest and message tables.** A copy of the mailbox.
 - **Call capture, meeting bots, polls, booking pages, CRMs, voiceprints, time tracking, team
   project tools.** Product or desktop surfaces outside prd.md §1, or biometric data while item 7
-  is open.
+  is open. **Amended 2026-11-23:** a CRM comes back as a source to read, never as a host
+  (§trycompai/crm below).
+
+## Read 2026-11-23: trycompai/crm and an open-source CRM comparison
+
+Asked by the operator on 2026-11-23, after the work-assistant requirements (#274,
+`2026-11-23-assistente-lavoro-requisiti.md`) brought a CRM back. The read of 2026-10-30 set CRMs
+aside as outside prd.md §1. The requirements' §14 now names one as an optional, authorised source
+of contacts, companies and relations, with HubSpot as the candidate. The question is what a CRM
+built for agents does that Aura should also do. Hosting one is not the question.
+
+- **trycompai/crm**, read at `c9473b82e` (branch `release`, 2026-10-22): `README.md` and
+  `docs/agent.md`. MIT. It is not run.
+  - It is a CRM in which an agent keeps its notes. The agent runs on Vercel's stack: eve,
+    AI Gateway, Sandbox and Blob.
+  - It is single-tenant by choice ("There are no organizations").
+  - Its agent repeats what Aura already is: a leased work queue, a sandbox with deny-all
+    egress, MCP connections whose tools are reviewed before use.
+- **"Best Open Source CRM on GitHub: 2026 Comparison"** (allgreatthings.io, 2026-06-18).
+  - It ranks six CRMs on stars, activity and search visibility. It says nothing about API, MCP,
+    mail sync or data model. The publisher sells its own index and consulting.
+  - Checked on GitHub: Twenty is AGPL-3.0 with commercial `@license Enterprise` files, and ships
+    an MCP server (`packages/twenty-server/src/engine/api/mcp`). If an operator has no CRM, Twenty
+    is the one to read.
+  - EspoCRM and Monica declare AGPL-3.0, but GitHub detects no licence. Their `LICENSE` files
+    were not read.
+
+| # | Behaviour | From | Aura today | Lands in | Gate | State |
+|---|---|---|---|---|---|---|
+| CR1 | Evidence, not confidence: a tool reports the *kind* of thing it observed (a signature block, an address the person wrote from), and a deterministic ledger prices it. Strong evidence writes to the record; weak evidence becomes a suggestion the operator settles. The model never grades its own certainty | `docs/agent.md` "Evidence, not confidence", `lib/evidence.ts` | `memory_upsert_fact` takes no confidence. Its provenance is memory ids plus a writer the host derives (D-10, `tool_memory.go`). Nothing records what kind of source a fact came from, so a fact inferred by the model and one read in a signature are equal | facts about people and companies (requirements §3 "Evidenza", §14), the fact's `source` | BASELINE OR DROP on fifty contacts from the operator's own mail, labelled by hand: precision of what reaches the record and the number of suggestions left to the operator, against writing every extracted value | not measured |
+| CR2 | One write path for a person's fields: it never overwrites a value a human set, never offers a dismissed suggestion again, and never writes without a primary source. URLs are compared as addresses, not strings | `lib/facts.ts`: `fillsBlank`, `sameValue`, `canonicalValue` | D-11 (`fact_authority.go`) keeps supersede with the parent turn and the operator, so workers only add. A parent turn can still close a fact the operator wrote. No suggestion state exists, so a dismissal leaves no trace (P3's gap, on memory) | `fact_authority.go`, plus a suggestion state beside facts if the gate fires | count, on the lab VM over two weeks of the assistant in use, operator-written facts closed by a model turn and dismissed values offered again. Amend only above zero | not measured |
+| CR3 | Every read hands back the ids of neighbouring records (the contact's company, the company's people), and name search is exact or substring, never fuzzy: "Marchetti" reaching "Marchetta" is a wrong record about a real person | `docs/agent.md` "Three records, no dead ends" | memory recall admits a candidate only if it carries every exact identifier of the query (`identifiers.go`). The PIM's `search_contacts` returns ids and the account. DAV matches by substring on the client (`DavProviderService.cs:642-650`); Google delegates to `people.searchContacts`. No contact result names its company's other contacts | the PIM contact rows K1/K2 of `2026-11-21-mailcraft-cockpit-design.md`, then requirements §14's "a chi chiedere" | turns in the §14 scenarios where the agent asks the operator for something an earlier read already returned. Amend only above zero | not measured |
+
+Smaller items, each needing demand first:
+- **A recheck says why.** `schedule_recheck` carries a reason shown to the person. Aura's
+  `agent_job` carries `payload.goal`, which says what to do, not why now. The requirements'
+  "Attesa" object decides whether that is enough.
+- **Capabilities declared at session start.** Every session states which sources this
+  install has, so the agent plans around them instead of discovering them one failed call
+  at a time. Aura's deferred-tool roster already names what is mounted.
+
+Already in Aura, no action:
+- **A newly connected mailbox imports nothing old.** An empty `pimwatch` cursor starts from now
+  (`client.go:165`).
+- **No customer text in a third-party query.** That is item 7, PII tokenization before every
+  cloud model.
+
+Not taken, with the reason:
+- **The CRM itself as a dependency.** It is bound to Vercel and single-tenant, and it is a
+  second agent platform. Requirements §14 wants a CRM read as a source, not hosted.
+- **Enrichment from data vendors** (Context, LinkedIn, Perplexity). It sends questions about a
+  named person to a third party. That waits on item 7 and on the operator's say.
+- **The other five CRMs of the comparison as hosts**, for the same reason as above.
 
 ## Process, taken now
 
