@@ -10,6 +10,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
@@ -525,7 +526,8 @@ func loadBase() *Config {
 		MCPSandboxOrigin: os.Getenv("AURA_MCP_SANDBOX_ORIGIN"),
 		MCPSandboxPort:   envutil.IntDefault("AURA_MCP_SANDBOX_PORT", 8444),
 
-		CalendarMCPURL: envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
+		// Callers append "/admin/...": a trailing slash would make it "//admin/...", a 404.
+		CalendarMCPURL: strings.TrimRight(envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"), "/"),
 		UpdateStateDir: envDefault("AURA_UPDATE_STATE_DIR", DefaultUpdateStateDir),
 
 		// Default OFF: the onboarding saga refuses a 2nd identity until an operator
