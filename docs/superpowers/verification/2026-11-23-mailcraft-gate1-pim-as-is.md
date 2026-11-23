@@ -62,10 +62,33 @@ message draft", and the gateway returns "message review required or claim mismat
 which cannot correct an error it is not told. The refused calls' arguments are not recorded in
 `aura.tool_invocations`.
 
+### Rerun on `85ad97934` (same day, afternoon)
+
+The VM ran `aura:edge` at revision `85ad97934`, which carries the refusal fix (`285d6cc8f`). Route
+unchanged (deepseek-v4.1-flash). Two G7 turns, one at a time:
+
+| Turn | Prompt | What happened | Draft |
+|---|---|---|---|
+| 1 | natural ("send from the IMAP account…") | `send_email` reached review on the first try | no `accountId`, sender empty; declined |
+| 2 | every key spelled out, `accountId` included | first call carried `toDate` and no `subject`; the refusal named `"toDate"` and listed the accepted fields; the model retried and reached review | no `accountId`, sender empty; declined |
+
+- **The refusal fix works live.** The model read the field list and corrected its call within the
+  same turn.
+- **A second gap: a send with no account reaches review with no sender.** The model's reasoning in
+  turn 2 says "Redo with exact keys: action, accountId, …", and the stored draft has no
+  `accountId`. No code between the model's stream and the draft rewrites the arguments, so the
+  model dropped it. Without `accountId` the PIM chooses the sender itself (`SendEmailTool.cs`:
+  recipient domain, else the first account, which on this VM is the IMAP one). The review card
+  shows no sender, and `accountId` is not editable in review. Scheduled email already refused
+  this case. `581c115b8` refuses it for the immediate send too, and the refusal tells the model to
+  list the accounts.
+- Nothing was sent. Both drafts were declined through `POST /api/message-drafts/{id}/resolve`.
+- G7 is still not measured. It needs `581c115b8` on the VM.
+
 ## What this does not show
 
 - No Microsoft 365 event, and no series on either provider: the window held one Google event.
 - No IMAP message detail, and no contacts.
 - The Microsoft scopes actually granted.
-- G1–G9: none measured.
+- G1–G9: none measured, G7 included after the afternoon rerun.
 - One model route. Whether another model fills `send_email` correctly was not tried.
