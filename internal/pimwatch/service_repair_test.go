@@ -67,8 +67,8 @@ func TestRepairedWithNoWatchWakesNothing(t *testing.T) {
 	if err := s.Repaired(context.Background(), repairIdentity, "home"); err != nil {
 		t.Fatalf("repaired: %v", err)
 	}
-	if len(tasks.runNow) != 0 {
-		t.Fatalf("runNow = %v, want none", tasks.runNow)
+	if len(tasks.runNow) != 0 || len(tasks.resumed) != 0 {
+		t.Fatalf("runNow = %v resumed = %v, want neither", tasks.runNow, tasks.resumed)
 	}
 }
 
@@ -77,8 +77,8 @@ func TestRepairedRunsAnActiveWatchWithoutReadingCursors(t *testing.T) {
 	if err := s.Repaired(context.Background(), repairIdentity, "home"); err != nil {
 		t.Fatalf("repaired: %v; an active watch must not read cursors", err)
 	}
-	if !slices.Equal(tasks.runNow, []string{"w-home"}) {
-		t.Fatalf("runNow = %v, want [w-home]", tasks.runNow)
+	if !slices.Equal(tasks.runNow, []string{"w-home"}) || len(tasks.resumed) != 0 {
+		t.Fatalf("runNow = %v resumed = %v, want [w-home] run and nothing resumed", tasks.runNow, tasks.resumed)
 	}
 }
 

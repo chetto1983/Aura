@@ -13,6 +13,7 @@ type fakeTasks struct {
 	digest    map[string]DigestSpec
 	created   int
 	runNow    []string
+	resumed   []string
 	err       error
 	runNowErr error
 }
@@ -64,6 +65,7 @@ func (f *fakeTasks) RescheduleDigest(_ context.Context, taskID string, spec Dige
 }
 
 func (f *fakeTasks) Resume(_ context.Context, taskID string) error {
+	f.resumed = append(f.resumed, taskID)
 	for _, tasks := range []map[string]WatchTask{f.watches, f.digests} {
 		if task, ok := tasks[taskID]; ok {
 			task.Paused = false
