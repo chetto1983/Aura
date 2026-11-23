@@ -25,6 +25,7 @@ import {
 import {
   createPimAccount,
   listPimProviderApps,
+  pimErrorKey,
   PIM_PROVIDER_NOT_CONFIGURED,
   PIM_PROVIDERS_KEY,
   type PimCreateAccountRequest,
@@ -99,6 +100,7 @@ export function OtherAccountForm({ onCreated }: { readonly onCreated: () => void
     if (error instanceof HttpError && error.reason === PIM_PROVIDER_NOT_CONFIGURED) {
       return t('governance.mcp.calendar.providerNotConfigured', { provider: providerLabel });
     }
+    if (error instanceof HttpError && error.status === 429) return t(pimErrorKey(error));
     return serverReason(error);
   }
 

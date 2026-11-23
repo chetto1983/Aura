@@ -364,6 +364,17 @@ describe('OtherAccountForm', () => {
     expect(screen.getByRole('button', { name: 'Create account' })).toHaveProperty('disabled', true);
   });
 
+  it('says to wait when the PIM refuses another try, not its raw code', async () => {
+    createPimAccount.mockRejectedValue(new HttpError(429, 'too_many_attempts'));
+    await renderForm();
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Each try signs in at the provider: wait half a minute and try again.',
+    );
+  });
+
   it('translates the provider_not_configured 409', async () => {
     createPimAccount.mockRejectedValue(new HttpError(409, 'provider_not_configured'));
     await renderForm();

@@ -84,7 +84,7 @@ describe('«Prova di nuovo»', () => {
       'too many attempts',
       429,
       { error: 'too_many_attempts' },
-      'Too many attempts. Wait a minute and try again.',
+      'Each try signs in at the provider: wait half a minute and try again.',
     ],
   ])('RetryShowsTheReason: %s', async (_case, status, body, sentence) => {
     server.on(`POST ${VERIFY}`, () => ({ status, body }));
