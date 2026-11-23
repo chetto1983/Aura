@@ -138,10 +138,13 @@ records each one, so a sync knows to keep it.
 - A scheduler notification keeps the account rule `c0fe0528c` shipped before the split (decided by the
   operator, 2026-11-23): it leaves from the account whose address is the recipient's when that account may
   send, else from the first account that may send, else it fails. Only the tool it rides changes.
-- Aura does not require `accountId` before review in this release. The fork's `send_email` requires it,
-  and an omitted account comes back from the PIM as a correctable error. Whether Aura should also refuse
-  before review is decided after §7's measurement, not before (operator, 2026-11-23; `581c115b8` refused
-  it before the model could comply and was reverted).
+- Aura does not require `accountId` before review in this release (operator, 2026-11-23; `581c115b8`
+  refused it before the model could comply and was reverted). The cost is known: Aura does not check a
+  call against the tool's `required` list before withholding it, and `validateEmail` keeps `accountId`
+  optional (`validation.go:218`). So a send without an account still reaches review with no sender, and
+  the PIM refuses it only after the operator approves, as a send with no effect. With the split, the
+  `required` list in `send_email`'s own schema is what should make the model pass the account; §7
+  check 10 measures whether it does, and that count decides Aura's own check.
 
 ### 5.4 Display and cockpit
 
@@ -166,8 +169,8 @@ records each one, so a sync knows to keep it.
     would produce names the bridge never registers.
 - **`message_drafts`.**
   - Replace the CHECK so that `(recipe:calendar, send_email, '')` is the email shape. The old shape
-    `(recipe:calendar, calendar, send_email)` stays allowed for resolved rows, which keep their old values
-    as history.
+    `(recipe:calendar, calendar, send_email)` stays allowed whatever the status: resolved rows keep their
+    old values as history, and pending rows still hold it between the SQL migration and the Go step below.
   - A pending or scheduled email draft that names an `accountId` survives and still sends after the upgrade:
     `tool_name`, `action` and `registered_tool_name` are rewritten, `action` leaves the stored args, and
     fingerprints are recomputed with `argsFingerprint` itself, in the same Go step.
@@ -206,8 +209,8 @@ So the rollout has a step before the split (decided by the operator, 2026-11-23)
    - drops `pull_policy: always` for the PIM;
    - adds `AURA_PIM_MCP_IMAGE` to the updater's `RETIRED_ENV_KEYS` (`deploy/aura-image-update.sh`) and stops
      `install_env.sh` writing it, so no appliance `.env` overrides the pin;
-   - keeps an explicit override for development, under a name the updater does not retire and appliances
-     never set.
+   - keeps `AURA_PIM_MCP_IMAGE` itself as the development override: the updater strips it only from an
+     appliance's `/opt/aura/.env`, so a developer's own `.env` can still point at a local build.
 
    This is the shape the updater already expects: its header says an MCP left at its SHA-pinned compose
    default is a no-op for the sidecar refresh. The PIM then changes on an appliance only when an Aura
@@ -246,8 +249,8 @@ draft target, and the fork's suite against Dovecot and GreenMail.
 7. A conversation from before the upgrade replays with its tables.
 8. `tool_search "manda una mail"` returns `calendar__send_email` first.
 9. A scheduled task with an email notification delivers it, from the recipient's own account.
-10. Over several cockpit sends on the route of the day, count how many carry `accountId` on the first call.
-    That count decides whether Aura adds its own pre-review requirement (§5.3).
+10. Over several cockpit sends on the route of the day, count how many drafts reach review without an
+    `accountId`. That count decides whether Aura adds its own pre-review requirement (§5.3).
 
 Before the split, the pin release is checked on its own: the PIM container runs the pinned digest, and a
 push to the fork's `main` changes nothing on the VM.
@@ -261,7 +264,6 @@ The run is recorded in one dated file in `docs/superpowers/verification/`.
 - How the Go upgrade step of §5.5 is hooked to the migration (a boot-time repair keyed on the migration
   version, or a step of the migration runner), as long as it runs once and before the first turn.
 - Wording of tool descriptions, within D-36's budget per tool.
-- The name of the development-only image override (§5.7).
 
 ## 9. Inventory summary (2026-11-23)
 
