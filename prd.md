@@ -3525,6 +3525,34 @@ them), and the `webauth_integration` tier passes on Postgres 16.
 This does not establish the browser authorize → token → refresh flow against the three
 live sidecars; the resource-server tiers in CI and a lab VM run cover that.
 
+### Mail accounts: connect and repair in Settings — measured 2026-11-23
+
+**Where accounts are managed.** Every identity adds and repairs its mailboxes in Settings → «Posta e calendario»
+(spec `2026-11-20-pim-account-connect-repair-design.md`).
+
+**What the PIM does.**
+- **Discovery.** It finds the servers from the address, the way Thunderbird does.
+- **Verify before storing.** It checks a mailbox over TLS (SSL or required STARTTLS) before storing it.
+- **Encryption.** It stores the password encrypted.
+- **Private hosts.**
+  - Each account records whether private hosts are allowed. The PIM sets this from Aura's header: the header comes only for `identity.create`, and it is set on create and on a PATCH that changes a server.
+  - Every connection the account makes goes through `HostGuard` with that permission: the watch, the pool, the send and `/verify`.
+
+**What Aura does.** It relays the calls and keeps passwords out of the idempotency ledger (HMAC fingerprint). A
+successful repair wakes the account's watch.
+
+**Measured on the lab VM** (verification `2026-11-23-pim-account-connect-repair-live.md`).
+- After the update, the stored password carried `ENC:`.
+- The Aruba mailbox was read, and sent through, over the guarded TLS socket.
+- A wrong password on a new account answered `auth_failed` with nothing stored.
+- A provider-side password change failed the watch as `provider_auth` on its next tick, and «Cambia password» with the new password was accepted.
+
+**What the run did not prove.**
+- **Aruba wrong passwords.** A wrong password at Aruba ran out of the 12 s auth budget and read as an unreachable server. The cause is likely MailKit trying each password mechanism against Dovecot's growing penalty; this is a PIM follow-up.
+- **The member path** (private host refused, Settings deep link) was not run live.
+- **Resuming the watch after a repair** was not observed, because the operator had stopped the watch first.
+- **The live Playwright spec** still skips in CI until the web-e2e job runs `scripts/pim_tls_mail_up.sh`.
+
 ### Private MCP sign-in browser — measured 2026-11-02/03
 
 Evidence: [spike and provider acceptance](docs/superpowers/verification/2026-11-02-sign-in-browser-spike.md),
