@@ -256,8 +256,15 @@ above, these win.
   which restores what upstream's own admin did; it is still not verified.
 
 **Also does not prove:** domains hosted at Aruba (MX under the customer's own domain) are not discovered, by the
-reference clients either; the person fills in the server fields. A public hostname stored for a member that later
-resolves to a private address is checked only when it is verified, not on every watch tick.
+reference clients either; the person fills in the server fields.
+
+**Amended 2026-11-23 (ledger Rulings 25, 27; operator decision «Chiudilo ora»):** the verify-time check alone could be
+bypassed, since a member could save a host that did not answer (a warning) and repoint its DNS later, and `send_email`
+connected unguarded. The stored account now records `allowPrivateHosts`, set by the PIM from the header on create and
+PATCH (a client-supplied value is refused); every connection of a stored account (the watch's IMAP, the pool, SMTP
+send) and `/verify` go through `HostGuard` with that stored permission. An account stored before this rule lacks the
+key and counts as allowed: only the operator could create accounts then. Not proven by the fixtures: TLS over the
+guarded socket on the runtime paths (the test servers are plaintext), which L1 measures.
 
 ## Constraints
 
