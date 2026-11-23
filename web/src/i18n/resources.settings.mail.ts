@@ -74,6 +74,8 @@ export const mailEn = {
     invalidAddress: 'Enter a complete email address.',
     passwordRequired: 'A change of server needs the password again.',
     changed: 'The account changed meanwhile. Reload and try again.',
+    invalidHost: 'The server name is not valid: check it under Server settings.',
+    invalidPort: 'The port is not valid: use a number between 1 and 65535.',
   },
 } as const;
 
@@ -152,5 +154,7 @@ export const mailIt = {
     invalidAddress: 'Scrivi un indirizzo email completo.',
     passwordRequired: 'Un cambio di server richiede di nuovo la password.',
     changed: "L'account è cambiato nel frattempo. Ricarica e riprova.",
+    invalidHost: 'Il nome del server non è valido: controllalo in Impostazioni server.',
+    invalidPort: 'La porta non è valida: usa un numero tra 1 e 65535.',
   },
 } as const;

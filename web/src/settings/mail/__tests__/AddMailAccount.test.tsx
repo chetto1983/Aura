@@ -422,6 +422,22 @@ describe('AddMailAccount', () => {
     expect(passwordField().getAttribute('aria-invalid')).toBeNull();
   });
 
+  it.each([
+    ['invalid_host', 'Il nome del server non è valido: controllalo in Impostazioni server.'],
+    ['invalid_port', 'La porta non è valida: usa un numero tra 1 e 65535.'],
+  ])('A refused %s opens the server fields and says so there', async (reason, sentence) => {
+    createPimAccount.mockRejectedValueOnce(new HttpError(400, reason, '', { error: reason }));
+    renderAdd();
+    await discover('mario@libero.it', LIBERO);
+    fireEvent.change(passwordField(), { target: { value: 'secret' } });
+    connect();
+
+    const message = await screen.findByText(sentence);
+    expect(serverDetails().open).toBe(true);
+    expect(serverDetails().contains(message)).toBe(true);
+    expect(passwordField().getAttribute('aria-invalid')).toBeNull();
+  });
+
   it('ConflictOnTheSameAddressOffersRepair', async () => {
     createPimAccount.mockRejectedValue(new HttpError(409));
     listPimAccounts.mockResolvedValue({ accounts: [account()] });

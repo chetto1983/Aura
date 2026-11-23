@@ -26,8 +26,8 @@ import {
 } from '../../governance/pimApi';
 import {
   accountIdFromAddress,
+  failureField,
   httpsUrl,
-  isServerFailure,
   isValidAddress,
   mailProviderConfig,
   serverValuesFrom,
@@ -149,15 +149,12 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
 
   function showFailure(error: unknown) {
     const verify = pimVerifyFailure(error);
-    if (verify === null) {
-      const key = pimErrorKey(error);
-      setTimedOut(key === TIMEOUT_KEY);
-      setFailure({ field: 'form', key });
-      return;
-    }
-    const field = isServerFailure(verify) ? 'server' : 'password';
+    const key =
+      verify === null ? pimErrorKey(error) : verifyMessageKey(verify, appPasswordRequired);
+    if (verify === null) setTimedOut(key === TIMEOUT_KEY);
+    const field = failureField(error);
     if (field === 'server') setServerOpen(true);
-    setFailure({ field, key: verifyMessageKey(verify, appPasswordRequired) });
+    setFailure({ field, key });
   }
 
   function settle(result: MailOutcome) {

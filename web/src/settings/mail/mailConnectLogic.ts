@@ -2,7 +2,8 @@
 // sentence a failed check gets and where it goes, whether an address is worth sending to the PIM, the
 // config an IMAP create or repair sends.
 
-import type { PimDiscovery, PimVerifyReason } from '../../governance/pimApi';
+import { HttpError } from '../../api/json';
+import { pimVerifyFailure, type PimDiscovery, type PimVerifyReason } from '../../governance/pimApi';
 
 /** The id an address becomes: lowercase, every run outside [a-z0-9] one dash, no dash at the ends,
  * `-<attempt>` appended from the second attempt on (the retry after a 409). The caller checks the
@@ -52,15 +53,23 @@ export function isValidAddress(address: string): boolean {
   return ADDRESS_RE.test(address.trim());
 }
 
-/** Whether a failed check is about the servers rather than the password: it then belongs under
- * «Impostazioni server», opened, not on the password field. */
-export function isServerFailure(failure: {
-  step: 'imap' | 'smtp';
-  reason: PimVerifyReason;
-}): boolean {
-  return (
-    failure.step === 'smtp' || failure.reason === 'unreachable' || failure.reason === 'tls_failed'
-  );
+/** Where a refused create or repair belongs. A fault of the servers (any SMTP step, an IMAP server
+ * that does not answer or cannot prove its identity, a host or port the PIM will not try) goes under
+ * «Impostazioni server», opened; a refused IMAP login on the password field; anything else on the
+ * form. */
+export function failureField(error: unknown): 'server' | 'password' | 'form' {
+  const verify = pimVerifyFailure(error);
+  if (verify === null) {
+    const refusedServer =
+      error instanceof HttpError &&
+      error.status === 400 &&
+      (error.reason === 'invalid_host' || error.reason === 'invalid_port');
+    return refusedServer ? 'server' : 'form';
+  }
+  if (verify.step === 'smtp' || verify.reason === 'unreachable' || verify.reason === 'tls_failed') {
+    return 'server';
+  }
+  return 'password';
 }
 
 /** Two spellings of one mailbox: the domain and, in practice, the local part ignore case. */

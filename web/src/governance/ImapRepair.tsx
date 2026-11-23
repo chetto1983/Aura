@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  isServerFailure,
+  failureField,
   repairConfig,
   repairMessageKey,
   REPAIR_SERVER_KEYS,
@@ -86,7 +86,7 @@ export function ImapRepair({
 
   function failed(error: unknown) {
     const verify = pimVerifyFailure(error);
-    if (verify !== null && isServerFailure(verify)) setServerOpen(true);
+    if (failureField(error) === 'server') setServerOpen(true);
     setOutcome({
       kind: 'failed',
       key: verify === null ? pimErrorKey(error) : repairMessageKey(verify),

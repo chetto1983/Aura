@@ -153,6 +153,21 @@ describe('«Cambia password»', () => {
     expect(screen.getByLabelText('New password')).toBeTruthy();
   });
 
+  it.each([
+    ['invalid_host', 'The server name is not valid: check it under Server settings.'],
+    ['invalid_port', 'The port is not valid: use a number between 1 and 65535.'],
+  ])('a refused %s opens the server settings and says why', async (reason, sentence) => {
+    server.on(`PATCH ${PATCH}`, () => ({ status: 400, body: { error: reason } }));
+    renderRow();
+    await openChangePassword();
+    typeInto('New password', 'pw');
+    typeInto('IMAP port', '99999');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(sentence);
+    const summary = screen.getByText('Server settings');
+    expect(summary.closest('details')?.open).toBe(true);
+  });
+
   it('TheUsernameCannotChange: it says so, and offers no username to edit or send', async () => {
     server.on(`PATCH ${PATCH}`, () => ({ body: saved }));
     renderRow();

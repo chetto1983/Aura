@@ -359,5 +359,7 @@ export function pimErrorKey(error: unknown): string {
   if (error.status === 400 && error.reason === 'password_required')
     return `${base}passwordRequired`;
   if (error.status === 409 && error.reason === 'changed') return `${base}changed`;
+  if (error.status === 400 && error.reason === 'invalid_host') return `${base}invalidHost`;
+  if (error.status === 400 && error.reason === 'invalid_port') return `${base}invalidPort`;
   return `${base}generic`;
 }

@@ -73,6 +73,8 @@ describe('pimErrorKey', () => {
       'settings.mail.error.passwordRequired',
     ],
     ['409 changed', new HttpError(409, 'changed'), 'settings.mail.error.changed'],
+    ['400 invalid_host', new HttpError(400, 'invalid_host'), 'settings.mail.error.invalidHost'],
+    ['400 invalid_port', new HttpError(400, 'invalid_port'), 'settings.mail.error.invalidPort'],
     ['400 other', new HttpError(400, 'tls_required'), 'settings.mail.error.generic'],
     ['409 other', new HttpError(409, 'duplicate'), 'settings.mail.error.generic'],
     ['503', new HttpError(503), 'settings.mail.error.generic'],

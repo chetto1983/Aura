@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { HttpError } from '../../../api/json';
 import type { PimDiscovery } from '../../../governance/pimApi';
 import {
   accountIdFromAddress,
+  failureField,
   httpsUrl,
-  isServerFailure,
   isValidAddress,
   mailProviderConfig,
   repairConfig,
@@ -119,17 +120,31 @@ describe('isValidAddress', () => {
   );
 });
 
-describe('isServerFailure', () => {
+describe('failureField', () => {
+  const verifyFailed = (step: 'imap' | 'smtp', reason: string) =>
+    new HttpError(422, 'verify_failed', '', { error: 'verify_failed', step, reason });
+
   it('puts every SMTP failure and an unreachable or untrusted IMAP server on the servers', () => {
-    expect(isServerFailure({ step: 'smtp', reason: 'smtp_auth_failed' })).toBe(true);
-    expect(isServerFailure({ step: 'smtp', reason: 'smtp_unreachable' })).toBe(true);
-    expect(isServerFailure({ step: 'imap', reason: 'unreachable' })).toBe(true);
-    expect(isServerFailure({ step: 'imap', reason: 'tls_failed' })).toBe(true);
+    expect(failureField(verifyFailed('smtp', 'smtp_auth_failed'))).toBe('server');
+    expect(failureField(verifyFailed('smtp', 'smtp_unreachable'))).toBe('server');
+    expect(failureField(verifyFailed('imap', 'unreachable'))).toBe('server');
+    expect(failureField(verifyFailed('imap', 'tls_failed'))).toBe('server');
+  });
+
+  it('puts a host or port the PIM will not try on the servers', () => {
+    expect(failureField(new HttpError(400, 'invalid_host'))).toBe('server');
+    expect(failureField(new HttpError(400, 'invalid_port'))).toBe('server');
   });
 
   it('puts a refused IMAP login or inbox on the password', () => {
-    expect(isServerFailure({ step: 'imap', reason: 'auth_failed' })).toBe(false);
-    expect(isServerFailure({ step: 'imap', reason: 'mailbox_refused' })).toBe(false);
+    expect(failureField(verifyFailed('imap', 'auth_failed'))).toBe('password');
+    expect(failureField(verifyFailed('imap', 'mailbox_refused'))).toBe('password');
+  });
+
+  it('puts anything else on the form', () => {
+    expect(failureField(new HttpError(400, 'invalid_email'))).toBe('form');
+    expect(failureField(new HttpError(429, 'too_many_attempts'))).toBe('form');
+    expect(failureField(new Error('boom'))).toBe('form');
   });
 });
 
