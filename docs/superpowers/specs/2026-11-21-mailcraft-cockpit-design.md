@@ -23,6 +23,11 @@ Evidence:
   learn.microsoft.com/graph (v1.0), developers.google.com (Gmail API, Calendar API v3, People API), and
   RFC 9051, 4315, 4731, 5321, 5322, 5545, 5546, 6047, 6154, 6350, 6352, 6578, 6638, 6851, 7162, 8474,
   9110 and 9394.
+- **Drafts (M9), added 2026-11-23.** The work-assistant requirements proposed in PR #274 rest on a
+  draft the agent leaves in the provider's Drafts for the owner to send. Pages read 2026-11-23: Gmail
+  `guides/drafts`, `guides/threads`, `users.drafts.create`/`update`; Graph `user-post-messages`,
+  `message-update`, `message-createreply`, `outlook-immutable-id`; RFC 9051 §2.3.1.1, §2.3.2, §6.3.12,
+  RFC 6154 and RFC 4315 §3.
 
 ## What changes
 
@@ -176,6 +181,7 @@ cites its page.
 | M6 | Change tracking | `mailFolders/{id}/messages/delta` | `users.history.list` (404 → full resync) | `CONDSTORE`/`QRESYNC` (RFC 7162) when offered, a UID+flags rescan otherwise |
 | M7 | Stable ids | `Prefer: IdType="ImmutableId"` on every request (survives folder moves) | `Message.id` immutable | `OBJECTID` `EMAILID` (RFC 8474) when offered; else UIDVALIDITY+UID, carried across moves by `COPYUID` (RFC 4315 §3, mandatory in IMAP4rev2) |
 | M8 | Folders | `mailFolders` (and child folders) | `users.labels.list` | `LIST` with special-use (RFC 6154) |
+| M9 | Draft: create, update, reply draft | Create: `POST /me/messages`, JSON or MIME base64 as `text/plain`, saved in Drafts (`Mail.ReadWrite`). Reply draft: `POST /me/messages/{id}/createReply`, JSON or MIME. Update: `PATCH /me/messages/{id}`, JSON only (no MIME form documented); `subject`, `body`, `toRecipients`, `ccRecipients`, `bccRecipients`, `replyTo` are "updatable only if isDraft = true". Id: the immutable id holds while the item stays in the mailbox, and the documented send workflow reads the Sent Items copy by the draft's id | Create: `users.drafts.create` with `message.raw` (base64url RFC 2822) and `message.threadId`. Update: `users.drafts.update` replaces the whole message: the **draft id is immutable**, the **message id changes on every update**, so the id map keys a draft by its draft id. Thread: `threadId`, RFC 2822 `In-Reply-To`/`References` and a matching `Subject`, all three (`guides/threads`). A draft carries only the `DRAFT` label. Scope `gmail.compose` | `APPEND` into the `\Drafts` mailbox (RFC 6154) with the `\Draft` flag (RFC 9051 §2.3.2, §6.3.12); `APPEND` never creates the mailbox. A message's text never changes (§2.3.1.1): an update is a new `APPEND`, then `\Deleted` + `UID EXPUNGE` of the old one; the new UID comes from `APPENDUID` (RFC 4315 §3). The id map keeps one stable id across the replacements |
 
 **Calendar**
 
@@ -204,7 +210,8 @@ cites its page.
 
 **Risk table:**
 - **Read:** M1, M4, M5, M8 and the K reads.
-- **Mutate:** M3, contact create and update.
+- **Mutate:** M3, M9, contact create and update. M9 sends nothing: it is the mail write the agent can
+  make without the send approval, and sending the draft stays the owner's act.
 - **Destructive:** M2, C3, C4, C5 and contact delete, with the escalate-only reasoning
   `bridge_risk.go` already applies.
 
@@ -219,7 +226,7 @@ cites its page.
 
 ## Gate 1: measured live before code
 
-The documentation leaves seven behaviours open. Each is measured on a real account and recorded in
+The documentation leaves nine behaviours open. Each is measured on a real account and recorded in
 `docs/superpowers/verification/`. The design is amended if a result contradicts it.
 
 | # | Behaviour | Where | What decides |
@@ -231,6 +238,8 @@ The documentation leaves seven behaviours open. Each is measured on a real accou
 | G5 | "this and following" in a series | Google | the method: truncate with `UNTIL` and start a new series |
 | G6 | `events.delete` on an instance id | Google | if it deletes the series: cancel with `status:"cancelled"` only |
 | G7 | the server already files sent mail | each IMAP host in use | the per-account Sent switch's default |
+| G8 | a draft's immutable id, `conversationId` and `In-Reply-To` after a `PATCH`, and for a `createReply` draft | Microsoft 365 | if the id changes: the id map re-keys on the `PATCH` answer; if the thread is lost: reply drafts are created from MIME with the headers set |
+| G9 | a `drafts.update` carrying `threadId` and the thread headers keeps the draft in its thread | Gmail | if not: an update is `drafts.delete` + `drafts.create` with the thread fields, and the id map re-keys |
 
 Also measured before code: what the PIM returns today for `get_email_details` and
 `get_calendar_events` (series, time zones), on one Gmail and one Microsoft 365 account.
@@ -252,6 +261,9 @@ checked on the provider, not in MailCraft. The results go in a dated verificatio
 - Write with an attachment; reply and reply-all keep the thread; forward.
 - Bcc delivered and absent from every header.
 - Sent copy present once.
+- A draft made through M9 shows in the provider's Drafts once; updating it twice leaves one draft; a
+  reply draft sits in the original thread; sending it from the provider leaves one Sent copy and no
+  draft.
 
 **Calendar**
 - Single event and weekly series: create, move, edit, delete.
@@ -277,4 +289,4 @@ checked on the provider, not in MailCraft. The results go in a dated verificatio
   translations.
 - A JMAP conformance suite from MailCraft's stand-in contract.
 - The patch's own tests pass in MailCraft's test suite.
-- G1–G7 recorded.
+- G1–G9 recorded.
