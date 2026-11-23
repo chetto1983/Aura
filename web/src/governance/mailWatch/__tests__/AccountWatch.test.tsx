@@ -11,7 +11,7 @@ import {
 } from '../../../test/mailWatchServer';
 import type { PimAccount } from '../../pimApi';
 import { AccountWatch } from '../AccountWatch';
-import { clockTime, dayAndTime } from '../mailWatchLogic';
+import { clockTime } from '../mailWatchLogic';
 
 // The switch on an account's row: what it says for each state, and what flipping it sends.
 
@@ -234,28 +234,27 @@ describe('a resource', () => {
     afterEach(async () => {
       await i18n.changeLanguage('en');
     });
-    const since = new Date(Date.now() - 7 * 3_600_000).toISOString();
+    // A local date, so the sentence reads the same in any zone the suite runs in.
+    const since = new Date(2026, 10, 16, 7, 40).toISOString();
     const resources = [{ ...failing, last_error: 'provider_transient', failing_since: since }];
 
-    it('asks an IMAP row for repair, with its day and time and no doubled preposition', async () => {
+    it('asks an IMAP row for repair, with its day and time, in Italian', async () => {
       await i18n.changeLanguage('it');
       statusWith(account({ resources }));
       renderWatch(<AccountWatch account={{ ...PIM, provider: 'imap' }} />);
       const line = await screen.findByText(/Non riesco a leggere la posta/);
-      expect(line.textContent).toBe(
-        `Non riesco a leggere la posta da ${dayAndTime(since, 'it')}. Prova di nuovo o cambia la password.`,
+      expect(line.closest('p')?.textContent).toBe(
+        'Non riesco a leggere la posta dal 16 nov, 07:40. Prova di nuovo o cambia la password.',
       );
-      expect(line.closest('p')?.textContent).not.toMatch(/\bdal(le)?\b/);
     });
 
     it('says it in English too', async () => {
       statusWith(account({ resources }));
       renderWatch(<AccountWatch account={{ ...PIM, provider: 'imap' }} />);
-      expect(
-        await screen.findByText(
-          `Aura has not been able to read this mailbox since ${dayAndTime(since, 'en')}. Try again or change the password.`,
-        ),
-      ).toBeTruthy();
+      const line = await screen.findByText(/Aura has not been able to read this mailbox/);
+      expect(line.closest('p')?.textContent).toBe(
+        'Aura has not been able to read this mailbox since Nov 16, 07:40 AM. Try again or change the password.',
+      );
     });
 
     it('keeps the provider wording on an OAuth row, where a password is not the remedy', async () => {
@@ -370,7 +369,8 @@ describe('the decision model on an account', () => {
     });
   });
 
-  const failedAt = '2026-11-04T08:30:00Z';
+  // A local date, so the sentence reads the same in any zone the suite runs in.
+  const failedAt = new Date(2026, 10, 4, 8, 30).toISOString();
   function failedOn(route: '' | 'local' | 'openrouter', consent: boolean) {
     server.on(`GET ${STATUS}`, () => ({
       body: watchStatus({
@@ -390,7 +390,7 @@ describe('the decision model on an account', () => {
     renderWatch(<AccountWatch account={PIM} />);
     const line = await screen.findByText(/The model has not answered since/);
     expect(line.textContent).toBe(
-      `The model has not answered since ${dayAndTime(failedAt, 'en')} (OpenRouter refused the request)`,
+      'The model has not answered since Nov 4, 08:30 AM (OpenRouter refused the request)',
     );
   });
 
@@ -401,7 +401,7 @@ describe('the decision model on an account', () => {
       renderWatch(<AccountWatch account={PIM} />);
       const line = await screen.findByText(/Il modello non risponde/);
       expect(line.textContent).toBe(
-        `Il modello non risponde da ${dayAndTime(failedAt, 'it')} (OpenRouter ha rifiutato la richiesta)`,
+        'Il modello non risponde dal 4 nov, 08:30 (OpenRouter ha rifiutato la richiesta)',
       );
     } finally {
       await i18n.changeLanguage('en');

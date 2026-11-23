@@ -33,6 +33,7 @@ export function PimAccountRow({
   const flow = pimAccountFlow(account.provider);
   const connect = useMutation({ mutationFn: () => startConnect(account.id, flow) });
   const [confirming, setConfirming] = useState(false);
+  const [loginWorks, setLoginWorks] = useState(false);
   const unfinished = account.linked === false;
   const status = useMailWatchStatus();
 
@@ -136,9 +137,12 @@ export function PimAccountRow({
         <ImapRepair
           account={account}
           watch={status.data?.accounts.find((entry) => entry.account_id === account.id)}
+          onWorked={() => {
+            setLoginWorks(true);
+          }}
         />
       ) : null}
-      <AccountWatch account={account} />
+      <AccountWatch account={account} loginWorks={loginWorks} />
     </li>
   );
 }

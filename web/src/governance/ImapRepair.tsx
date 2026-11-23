@@ -12,7 +12,7 @@ import {
   type RepairServers,
 } from '../settings/mail/mailConnectLogic';
 import { Field, ProviderConfigFields } from './CalendarConnectFields';
-import type { MailWatchAccount } from './mailWatchApi';
+import type { MailWatchAccount, MailWatchStatus } from './mailWatchApi';
 import { MAIL_WATCH_STATUS_KEY } from './mailWatch/useMailWatch';
 import {
   patchPimProviderConfig,
@@ -30,8 +30,8 @@ import { Button } from '@/components/ui/button';
 // place. «Prova di nuovo» checks the stored login the way the watch reads; «Cambia password» sends a
 // new password, and any server field typed under «Impostazioni server» (blank means unchanged). The
 // username is not offered: another mailbox is another account (A3). A working login lets the server
-// resume the watch and read at once, so the row only refreshes; when that read still fails the row
-// says so instead of offering the same buttons again (A8).
+// resume the watch and read at once, so the row only refreshes; when a read after the login still
+// fails the row says so instead of offering the same buttons again (A8).
 
 const IMAP_DEF = pimProviderById('imap');
 const SERVER_DEF: PimProviderDef = {
@@ -50,9 +50,12 @@ type Outcome =
 export function ImapRepair({
   account,
   watch,
+  onWorked,
 }: {
   readonly account: PimAccount;
   readonly watch?: MailWatchAccount | undefined;
+  /** Called once a login has been shown to work, so the row stops asking for a new password. */
+  readonly onWorked: () => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -63,7 +66,7 @@ export function ImapRepair({
   const [serverOpen, setServerOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [verifiedAt, setVerifiedAt] = useState<number | null>(null);
+  const [baseline, setBaseline] = useState<string | null>(null);
 
   function closeForm() {
     setEditing(false);
@@ -75,20 +78,30 @@ export function ImapRepair({
 
   function started() {
     setOutcome(null);
-    setVerifiedAt(null);
+    setBaseline(null);
   }
 
-  /** The outcome waits for the refetched status: judged on the cached one, whose next run is
-   * usually in the future, a working login would read as "still fails" at once. */
+  /** The next run the status shows right after the login, the server-side mark a later status is
+   * judged against. A status that cannot be read sets no mark, and the reading goes unjudged. */
+  async function nextRunAfterLogin(): Promise<string | null> {
+    try {
+      await queryClient.invalidateQueries(
+        { queryKey: MAIL_WATCH_STATUS_KEY },
+        { throwOnError: true },
+      );
+    } catch {
+      return null;
+    }
+    const status = queryClient.getQueryData<MailWatchStatus>(MAIL_WATCH_STATUS_KEY);
+    return status?.accounts.find((entry) => entry.account_id === account.id)?.next_run_at ?? null;
+  }
+
   async function worked({ smtpWarning }: { smtpWarning?: string }) {
-    const at = Date.now();
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY }),
-      queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY }),
-    ]);
-    setVerifiedAt(at);
+    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
+    setBaseline(await nextRunAfterLogin());
     setOutcome({ kind: 'works', smtpWarning });
     closeForm();
+    onWorked();
   }
 
   function failed(error: unknown) {
@@ -120,7 +133,7 @@ export function ImapRepair({
     if (config !== null) save.mutate(config);
   }
 
-  if (outcome?.kind === 'works' && readStillFails(watch, verifiedAt)) {
+  if (outcome?.kind === 'works' && readStillFails(watch, baseline)) {
     return (
       <p role="status" className="text-[13px] text-warning">
         {t('settings.mail.repair.readStillFails')}

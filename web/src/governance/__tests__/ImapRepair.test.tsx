@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
+import type { QueryClient } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import {
   account,
@@ -60,8 +61,9 @@ describe('«Prova di nuovo»', () => {
     await tryAgain();
     expect(await screen.findByText('Sign-in works')).toBeTruthy();
     expect(server.writes('POST', VERIFY)).toHaveLength(1);
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: PIM_ACCOUNTS_KEY });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: MAIL_WATCH_STATUS_KEY });
+    const invalidated = invalidate.mock.calls.map(([filters]) => filters);
+    expect(invalidated).toContainEqual({ queryKey: PIM_ACCOUNTS_KEY });
+    expect(invalidated).toContainEqual({ queryKey: MAIL_WATCH_STATUS_KEY });
   });
 
   it.each([
@@ -203,15 +205,74 @@ describe('after a working login', () => {
     }));
   }
 
-  it('ReadingStillFailsAfterAWorkingLogin: says so, with no buttons repeated', async () => {
-    watchAfterTheTick(new Date(Date.now() + 5 * 60_000).toISOString());
-    server.on(`POST ${VERIFY}`, () => ({ body: { ok: true } }));
-    renderRow();
+  const minutesFromNow = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+
+  /** A status poll after the one the login triggered. */
+  async function laterStatus(client: QueryClient) {
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY });
+    });
+  }
+
+  it('ReadingStillFailsAfterAWorkingLogin: a run after the baseline still failed, no buttons repeated', async () => {
+    watchAfterTheTick(minutesFromNow(5));
+    const baseline = minutesFromNow(-1);
+    server.on(`POST ${VERIFY}`, () => {
+      watchAfterTheTick(baseline);
+      return { body: { ok: true } };
+    });
+    const { client } = renderRow();
     await tryAgain();
+    expect(await screen.findByText('Sign-in works')).toBeTruthy();
+    watchAfterTheTick(minutesFromNow(5));
+    await laterStatus(client);
     expect(await screen.findByText('Sign-in works, but reading the mail still fails')).toBeTruthy();
     expect(screen.queryByText('Sign-in works')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Change password' })).toBeNull();
+  });
+
+  it('a refetch with the next run at or before the click says the login works, buttons kept', async () => {
+    watchAfterTheTick(minutesFromNow(5));
+    server.on(`POST ${VERIFY}`, () => {
+      watchAfterTheTick(minutesFromNow(-1));
+      return { body: { ok: true } };
+    });
+    renderRow();
+    await screen.findByText(/Aura has not been able to read this mailbox/);
+    await tryAgain();
+    expect(await screen.findByText('Sign-in works')).toBeTruthy();
+    expect(screen.queryByText(/still fails/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeTruthy();
+  });
+
+  it('does not judge the reading when the status after the login cannot be read', async () => {
+    watchAfterTheTick(minutesFromNow(5));
+    server.on(`POST ${VERIFY}`, () => {
+      server.on('GET /api/mail-watch', () => ({ status: 500, body: { error: 'boom' } }));
+      return { body: { ok: true } };
+    });
+    const { client } = renderRow();
+    await screen.findByText(/Aura has not been able to read this mailbox/);
+    await tryAgain();
+    expect(await screen.findByText('Sign-in works')).toBeTruthy();
+    watchAfterTheTick(minutesFromNow(10));
+    await laterStatus(client);
+    await settled();
+    expect(screen.queryByText(/still fails/)).toBeNull();
+    expect(screen.getByText('Sign-in works')).toBeTruthy();
+  });
+
+  it('a working login takes back the stale prompt: the line falls back to the provider sentence', async () => {
+    watchAfterTheTick(minutesFromNow(5));
+    server.on(`POST ${VERIFY}`, () => ({ body: { ok: true } }));
+    renderRow();
+    await screen.findByText(/Aura has not been able to read this mailbox/);
+    await tryAgain();
+    expect(await screen.findByText('Sign-in works')).toBeTruthy();
+    expect(screen.queryByText(/Aura has not been able to read this mailbox/)).toBeNull();
+    expect(screen.getByText(/The provider is having trouble/)).toBeTruthy();
   });
 
   it('judges the reading on the status read after the login, not the one cached before it', async () => {

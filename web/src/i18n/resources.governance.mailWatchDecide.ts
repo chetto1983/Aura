@@ -41,7 +41,7 @@ export const mailWatchDecideIt = {
     label: 'Lascia leggere questo account al modello su OpenRouter',
     hint: 'Oggetto e inizio di ogni mail vanno a OpenRouter, che li riceve con la richiesta di non conservarli.',
   },
-  failing: 'Il modello non risponde da {{since}} ({{reason}})',
+  failing: 'Il modello non risponde dal {{since}} ({{reason}})',
   error: {
     no_credential: 'manca la chiave OpenRouter',
     unreachable: 'non si riesce a raggiungerlo',

@@ -110,7 +110,9 @@ describe('serversTyped', () => {
 });
 
 describe('readStillFails', () => {
-  const verifiedAt = Date.parse('2026-11-23T12:00:00Z');
+  // The next run the status showed right after the login: both sides of the comparison are the
+  // server's clock.
+  const baseline = '2026-11-23T12:00:00Z';
   const failing = {
     resource: 'mail',
     status: 'failing',
@@ -121,29 +123,35 @@ describe('readStillFails', () => {
   const watch = (next: string | null, resources: readonly MailWatchResource[]) =>
     account({ next_run_at: next, resources });
 
-  it('is true once the watch has run after the login and the mailbox still fails', () => {
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), verifiedAt)).toBe(true);
+  it('is true once a run after the baseline still failed', () => {
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), baseline)).toBe(true);
   });
 
-  it('waits for a run later than the login', () => {
-    expect(readStillFails(watch('2026-11-23T12:00:00Z', [failing]), verifiedAt)).toBe(false);
-    expect(readStillFails(watch(null, [failing]), verifiedAt)).toBe(false);
+  it('waits for a run later than the baseline', () => {
+    expect(readStillFails(watch(baseline, [failing]), baseline)).toBe(false);
+    expect(readStillFails(watch('2026-11-23T11:59:00Z', [failing]), baseline)).toBe(false);
+    expect(readStillFails(watch(null, [failing]), baseline)).toBe(false);
+  });
+
+  it('does not judge a paused watch, whose next run a repair may never move', () => {
+    const paused = { ...watch('2026-11-23T12:05:00Z', [failing]), paused: true };
+    expect(readStillFails(paused, baseline)).toBe(false);
   });
 
   it('is false when reading works again', () => {
     const { last_error: _cleared, ...rest } = failing;
     const ok = { ...rest, status: 'ok' } as const;
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [ok]), verifiedAt)).toBe(false);
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [ok]), baseline)).toBe(false);
   });
 
   it('counts only a failing resource: a refused permission is not a reading that fails', () => {
     const refused = { ...failing, status: 'unsupported', last_error: 'permission_denied' } as const;
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [refused]), verifiedAt)).toBe(false);
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [refused]), baseline)).toBe(false);
   });
 
-  it('is false with no login checked or no watch', () => {
+  it('does not judge without a baseline or a watch', () => {
     expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), null)).toBe(false);
-    expect(readStillFails(undefined, verifiedAt)).toBe(false);
+    expect(readStillFails(undefined, baseline)).toBe(false);
   });
 });
 
