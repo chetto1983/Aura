@@ -66,10 +66,21 @@ v2 updated 2026-11-23 13:07 UTC, Java DB updated 2026-11-23 00:59 UTC.
   The other 8, from llama.cpp CUDA to docker-socket-proxy, were stopped there and left to CI.
   The run was anonymous, so it read only public images.
 
+## On GitHub
+
+| Run | Event | Commit | Started (UTC) | Wall time | Result |
+|---|---|---|---|---|---|
+| 45204704065 | schedule | — | 2026-11-23 | — | red in 1 job, #275 opened |
+| 45216611130 | dispatch | `d224f93ee` | 2026-11-23 16:26 | 12 min 22 s | green |
+
+**Verdict:** green. `d224f93ee` carries the pin (`8bb1017a5`), and the run ran Trivy
+`0.76.2@sha256:8f6bb947`. 24 of its 25 jobs passed: 20 image scans, the image list, Craft, Go and
+Dependabot. The report job was skipped, as it is on every dispatched run.
+
 ## What this does not show
 
-- **The other 8 images on 0.76.2.** Locally, they were not scanned to the end; the CI run covers
-  them.
+- **The 8 images left to CI.** They were measured only in the CI run's gate, not compared with
+  0.70.0.
 - **Every ignore entry.** The semantics were measured on one OS package and one Go binary. The
   npm, maven and apk entries were not exercised one by one under 0.76.2.
 - **The next stale week.** The cause is still open in whatsapp-mcp: its publish workflow has no
