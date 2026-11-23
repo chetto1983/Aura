@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -51,13 +52,26 @@ func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, ar
 	return verdict, true
 }
 
+// unreviewedMessageReason is what the model reads. A send whose arguments cannot become a draft
+// never reaches review, so the reason names the fields to change: told only that review was
+// required, a model retried the same call five times on 2026-11-23
+// (docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md).
+func unreviewedMessageReason(spec tools.Spec, args json.RawMessage) string {
+	if target, ok := messagedrafts.TrustedOutboundTarget(spec, args); ok {
+		if _, err := messagedrafts.MergeApprovedArgs(target, args, nil); errors.Is(err, messagedrafts.ErrInvalidArgs) {
+			return "message review required, and these arguments cannot be reviewed: " + err.Error()
+		}
+	}
+	return "message review required or claim mismatch"
+}
+
 // refuseUnreviewedMessage is the policy's answer to a send no review covers. On a strict
 // profile it is recorded like the other two refusals: a headless job has no Runner writing its
 // own row, so without the deny fact an injected send left no trace in the ledger (measured
 // 2026-10-31, docs/superpowers/verification/2026-10-31-briefing-model-in-the-loop.md).
 func (g *Gateway) refuseUnreviewedMessage(ctx context.Context, spec tools.Spec, args json.RawMessage, key ReservationKey) Verdict {
 	tier := classify(spec, args)
-	verdict := Verdict{Decision: Deny, Tier: tier, Reason: "message review required or claim mismatch", Refusal: true}
+	verdict := Verdict{Decision: Deny, Tier: tier, Reason: unreviewedMessageReason(spec, args), Refusal: true}
 	if g != nil && g.profile.Strict() {
 		g.recordDenyFact(ctx, spec, key, tier, verdict.Reason, map[string]any{"reason": "message_review"})
 	}

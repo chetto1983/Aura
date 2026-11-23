@@ -2,6 +2,7 @@ package messagedrafts
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -58,6 +59,41 @@ func TestMergeApprovedArgsMultipartAndWhatsApp(t *testing.T) {
 			var got map[string]any
 			if json.Unmarshal(effective, &got) != nil || got[tc.field] != tc.want {
 				t.Fatal("edited value is not the effective argument")
+			}
+		})
+	}
+}
+
+// The refusal is what a model reads before it retries, so it names the fields it must change and
+// never echoes a value. Measured 2026-11-23 on the lab VM: a model that sent unknown keys and no
+// subject heard only "message review required" and retried the same call five times
+// (docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md).
+func TestMergeApprovedArgsNamesTheFieldsToChange(t *testing.T) {
+	email := Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
+	cases := []struct {
+		name     string
+		original string
+		want     []string
+	}{
+		{"unknown keys, all of them",
+			`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Hi","topics":"secret-topic","toDate":null}`,
+			[]string{`"toDate"`, `"topics"`, "subject"}},
+		{"missing subject", `{"action":"send_email","to":["first@example.test"],"body":"Hi"}`, []string{`"subject"`}},
+		{"bad recipient", `{"action":"send_email","to":["secret-not-an-address"],"subject":"Hello"}`, []string{`"to"`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := MergeApprovedArgs(email, json.RawMessage(tc.original), nil)
+			if !errors.Is(err, ErrInvalidArgs) {
+				t.Fatalf("err = %v, want ErrInvalidArgs", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %q, want it to name %s", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), "secret") {
+				t.Errorf("err = %q echoes an argument value", err)
 			}
 		})
 	}

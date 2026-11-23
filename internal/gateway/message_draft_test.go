@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -59,6 +60,25 @@ func TestARefusedUnreviewedSendIsRecordedOnAStrictProfile(t *testing.T) {
 	}
 	if fact.Meta["gateway_tier"] != string(classify(reviewedEmailSpec(), reviewedEmailArgs())) {
 		t.Errorf("deny fact tier = %v, want the call's own tier", fact.Meta["gateway_tier"])
+	}
+}
+
+// A send that cannot become a draft is refused before any review, and the model reads the
+// refusal: it must say which fields to change, or the model retries the same call.
+func TestAnUnreviewableSendNamesTheFieldsToChange(t *testing.T) {
+	t.Parallel()
+	args := json.RawMessage(`{"action":"send_email","to":["first@example.test"],"body":"Hi","topics":null}`)
+	verdict, err := New(config.ProfileSingleUserHardened, &fakeStore{}).Decide(t.Context(), reviewedEmailSpec(), args, testKey())
+	if err != nil || verdict.Decision != Deny || !verdict.Refusal {
+		t.Fatalf("unreviewable send = (%+v, %v), want a refusal", verdict, err)
+	}
+	if !strings.Contains(verdict.Reason, "message review required") || !strings.Contains(verdict.Reason, `"topics"`) {
+		t.Errorf("reason = %q, want the review refusal naming the rejected field", verdict.Reason)
+	}
+
+	valid, _ := New(config.ProfileSingleUserHardened, &fakeStore{}).Decide(t.Context(), reviewedEmailSpec(), reviewedEmailArgs(), testKey())
+	if valid.Reason != "message review required or claim mismatch" {
+		t.Errorf("reason for a well-formed unreviewed send = %q, want the plain review refusal", valid.Reason)
 	}
 }
 

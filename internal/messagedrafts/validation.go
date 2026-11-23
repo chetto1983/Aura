@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/mail"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -73,10 +75,8 @@ func MergeApprovedArgs(target Target, original, overrides json.RawMessage) (json
 	default:
 		return nil, errInvalidDraftArgs
 	}
-	for key := range base {
-		if !allowedOriginal[key] {
-			return nil, errInvalidDraftArgs
-		}
+	if err := rejectUnknownFields(base, allowedOriginal); err != nil {
+		return nil, err
 	}
 	for key, value := range edits {
 		if !editable[key] {
@@ -96,6 +96,33 @@ func MergeApprovedArgs(target Target, original, overrides json.RawMessage) (json
 		return nil, errInvalidDraftArgs
 	}
 	return out, nil
+}
+
+// rejectUnknownFields names every key the send does not accept, and the ones it does: the error
+// reaches the model that made the call, which can only fix the fields it is told about.
+func rejectUnknownFields(base map[string]json.RawMessage, allowed map[string]bool) error {
+	var unknown []string
+	for key := range base {
+		if !allowed[key] {
+			unknown = append(unknown, fmt.Sprintf("%q", key))
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	slices.Sort(unknown)
+	accepted := make([]string, 0, len(allowed))
+	for key := range allowed {
+		accepted = append(accepted, key)
+	}
+	slices.Sort(accepted)
+	return fmt.Errorf("%w: fields %s are not accepted; send only %s",
+		errInvalidDraftArgs, strings.Join(unknown, ", "), strings.Join(accepted, ", "))
+}
+
+// fieldError names the field to change and never its value, since the reason reaches the model.
+func fieldError(key, problem string) error {
+	return fmt.Errorf("%w: field %q %s", errInvalidDraftArgs, key, problem)
 }
 
 func fieldSet(names ...string) map[string]bool {
@@ -175,16 +202,18 @@ func validateEmail(base, edits map[string]json.RawMessage) error {
 	if value, err := requiredString(base, "action", 32); err != nil || value != "send_email" {
 		return errInvalidDraftArgs
 	}
-	to, err := emailList(base, "to", true)
-	if err != nil || len(to) == 0 {
-		return errInvalidDraftArgs
+	if _, err := emailList(base, "to", true); err != nil {
+		return err
 	}
 	if _, err := emailList(base, "cc", false); err != nil {
 		return err
 	}
 	subject, err := requiredString(base, "subject", 998)
-	if err != nil || strings.ContainsAny(subject, "\r\n") {
-		return errInvalidDraftArgs
+	if err != nil {
+		return err
+	}
+	if strings.ContainsAny(subject, "\r\n") {
+		return fieldError("subject", "must be one line")
 	}
 	if err := optionalString(base, "accountId", 256); err != nil {
 		return err
@@ -243,18 +272,18 @@ func emailList(base map[string]json.RawMessage, key string, required bool) ([]st
 	raw, ok := base[key]
 	if !ok {
 		if required {
-			return nil, errInvalidDraftArgs
+			return nil, fieldError(key, "is required")
 		}
 		return nil, nil
 	}
 	var addresses []string
 	if json.Unmarshal(raw, &addresses) != nil || len(addresses) > 50 || (required && len(addresses) == 0) {
-		return nil, errInvalidDraftArgs
+		return nil, fieldError(key, "must be a list of 1 to 50 email addresses")
 	}
 	for _, address := range addresses {
 		parsed, err := mail.ParseAddress(address)
 		if err != nil || parsed.Address != address || len(address) > 320 || strings.ContainsAny(address, "\r\n") {
-			return nil, errInvalidDraftArgs
+			return nil, fieldError(key, "must hold bare email addresses, such as name@example.com")
 		}
 	}
 	return addresses, nil
@@ -279,11 +308,11 @@ func validateWhatsApp(base map[string]json.RawMessage) error {
 func requiredString(base map[string]json.RawMessage, key string, limit int) (string, error) {
 	raw, ok := base[key]
 	if !ok {
-		return "", errInvalidDraftArgs
+		return "", fieldError(key, "is required")
 	}
 	var value string
 	if json.Unmarshal(raw, &value) != nil || strings.TrimSpace(value) == "" || len(value) > limit {
-		return "", errInvalidDraftArgs
+		return "", fieldError(key, fmt.Sprintf("must be a non-empty string of at most %d bytes", limit))
 	}
 	return value, nil
 }
@@ -295,7 +324,7 @@ func optionalString(base map[string]json.RawMessage, key string, limit int) erro
 	}
 	var value string
 	if json.Unmarshal(raw, &value) != nil || len(value) > limit {
-		return errInvalidDraftArgs
+		return fieldError(key, fmt.Sprintf("must be a string of at most %d bytes", limit))
 	}
 	return nil
 }

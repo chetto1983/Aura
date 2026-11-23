@@ -91,6 +91,9 @@ func safeMessageDraftError(err error) string {
 		return "context deadline exceeded"
 	case errors.Is(err, messagedrafts.ErrDuplicate):
 		return "duplicate tool call"
+	case errors.Is(err, messagedrafts.ErrInvalidArgs):
+		return err.Error() // names the rejected fields, never their values
+
 	case errors.Is(err, pgx.ErrNoRows):
 		return "database row unavailable"
 	case errors.As(err, &pgErr):

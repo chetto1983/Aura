@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,6 +223,12 @@ func TestMessageDraftErrorLogOmitsMessageContent(t *testing.T) {
 	}
 	if got := safeMessageDraftError(&pgconn.PgError{Code: "23514", Detail: private}); got != "postgres SQLSTATE 23514" {
 		t.Fatal("draft error log did not retain the safe SQLSTATE")
+	}
+	// The validation names fields, never values, so the log can say which ones the model got wrong.
+	_, invalid := messagedrafts.MergeApprovedArgs(messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		json.RawMessage(`{"action":"send_email","to":["private@example.test"],"body":"private body"}`), nil)
+	if got := safeMessageDraftError(invalid); !strings.Contains(got, `"subject"`) || strings.Contains(got, "private") {
+		t.Fatalf("draft error log = %q, want the rejected field and no content", got)
 	}
 }
 
