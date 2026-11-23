@@ -14,8 +14,8 @@ import (
 var notifyMarkdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 // emailArgs sends the text with its rendering: measured 2026-11-12, a job's markdown summary
-// reached the mailbox as raw markers. The PIM's multipart format takes both bodies. The PIM
-// picks the sending account itself; the notifier does not guess one.
+// reached the mailbox as raw markers. The PIM's multipart format takes both bodies. The host's
+// PIM self-send names the sending account (cmd/aura/serve_notify_account.go).
 func emailArgs(recipient, text string) map[string]any {
 	args := map[string]any{"action": "send_email", "to": []string{recipient}, "subject": "Aura scheduled task"}
 	// The PIM refuses a multipart send whose textBody or htmlBody is empty.

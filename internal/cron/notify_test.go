@@ -128,7 +128,7 @@ func TestNotifyEmailRidesThePIMCalendarTool(t *testing.T) {
 		t.Fatalf("unexpected send_email args: %v", got)
 	}
 	if _, picked := got["accountId"]; picked {
-		t.Fatal("the PIM picks the sending account itself; the notifier must not guess one")
+		t.Fatal("the host's PIM self-send names the account from list_accounts; the notifier must not guess one")
 	}
 }
 

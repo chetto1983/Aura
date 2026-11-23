@@ -31,30 +31,52 @@ func (p pimSenders) SendingAddress(ctx context.Context, accountID string) (strin
 		return "", false, errors.New("email is not connected")
 	}
 	callID := fmt.Sprintf("pim-senders-%d", pimSendersCallSeq.Add(1))
-	ctx = tools.WithToolCallContext(ctx, pimSendersSessionID, callID, p.runDir, p.previewCap)
-	result, err := tool.Execute(ctx, json.RawMessage(`{"action":"list_accounts"}`))
+	listing, err := pimAccountListing(tools.WithToolCallContext(ctx, pimSendersSessionID, callID, p.runDir, p.previewCap), tool)
 	if err != nil {
 		return "", false, err
 	}
-	if result.Truncated {
-		return "", false, errors.New("the account listing was truncated")
-	}
-	return senderIn(result.Preview, accountID)
+	return senderIn(listing, accountID)
 }
 
-// senderIn finds an account in a list_accounts answer. An account the listing does not name is
-// unknown; a listing that cannot be read is an error, so a PIM fault never reads as "no such account".
-func senderIn(listing, accountID string) (string, bool, error) {
+// pimAccountListing runs the PIM's list_accounts. ctx must already carry a tool-call context.
+func pimAccountListing(ctx context.Context, tool tools.Tool) (string, error) {
+	result, err := tool.Execute(ctx, json.RawMessage(`{"action":"list_accounts"}`))
+	if err != nil {
+		return "", err
+	}
+	if result.Truncated {
+		return "", errors.New("the account listing was truncated")
+	}
+	return result.Preview, nil
+}
+
+type pimAccount struct {
+	AccountID   string `json:"accountId"`
+	Email       string `json:"email"`
+	Permissions struct {
+		EmailSend bool `json:"emailSend"`
+	} `json:"permissions"`
+}
+
+// pimAccountsIn reads a list_accounts answer. A listing that cannot be read is an error, so a PIM
+// fault never reads as "no such account".
+func pimAccountsIn(listing string) ([]pimAccount, error) {
 	var answer struct {
-		Accounts []struct {
-			AccountID string `json:"accountId"`
-			Email     string `json:"email"`
-		} `json:"accounts"`
+		Accounts []pimAccount `json:"accounts"`
 	}
 	if err := json.Unmarshal([]byte(listing), &answer); err != nil {
-		return "", false, fmt.Errorf("read the account listing: %w", err)
+		return nil, fmt.Errorf("read the account listing: %w", err)
 	}
-	for _, account := range answer.Accounts {
+	return answer.Accounts, nil
+}
+
+// senderIn finds an account in a list_accounts answer. An account the listing does not name is unknown.
+func senderIn(listing, accountID string) (string, bool, error) {
+	accounts, err := pimAccountsIn(listing)
+	if err != nil {
+		return "", false, err
+	}
+	for _, account := range accounts {
 		if account.AccountID == accountID {
 			return account.Email, true, nil
 		}

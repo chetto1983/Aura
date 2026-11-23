@@ -58,7 +58,11 @@ func (r selfSendResolver) Resolve(recipe, tool string) (cron.SelfSendTool, bool)
 	if !ok {
 		return nil, false
 	}
-	return selfSendTool{tool: t, runDir: r.runDir, previewCap: r.previewCap}, true
+	send := selfSendTool{tool: t, runDir: r.runDir, previewCap: r.previewCap}
+	if recipe == "recipe:calendar" {
+		return pimSelfSendTool{send}, true
+	}
+	return send, true
 }
 
 // selfSendTool executes a resolved MCP tool with the arguments the notifier built. An
@@ -70,12 +74,15 @@ type selfSendTool struct {
 }
 
 func (s selfSendTool) Send(ctx context.Context, args json.RawMessage) error {
-	callID := fmt.Sprintf("scheduler-notify-%d", schedulerNotifyCallSeq.Add(1))
-	ctx = tools.WithToolCallContext(ctx, schedulerNotifySessionID, callID, s.runDir, s.previewCap)
-	if _, err := s.tool.Execute(ctx, args); err != nil {
+	if _, err := s.tool.Execute(s.callContext(ctx), args); err != nil {
 		return fmt.Errorf("mcp self-send %q: %w", s.tool.Spec().Name, err)
 	}
 	return nil
+}
+
+func (s selfSendTool) callContext(ctx context.Context) context.Context {
+	callID := fmt.Sprintf("scheduler-notify-%d", schedulerNotifyCallSeq.Add(1))
+	return tools.WithToolCallContext(ctx, schedulerNotifySessionID, callID, s.runDir, s.previewCap)
 }
 
 // ownAddresses reads where an identity itself is reached on an external route.
