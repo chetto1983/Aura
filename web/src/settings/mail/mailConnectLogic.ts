@@ -132,15 +132,18 @@ export function repairConfig(
   return config;
 }
 
-/** After a working login the server resumes the watch and runs a read at once; once the watch has
- * run since and a resource still failed, the login was not the problem (A8). */
+/** A working login makes Aura move the watch's next run to now (wakeRepairedWatch → RunTaskNow);
+ * once that run is done, next_run_at is a whole interval later. A resource still failing then means
+ * the login was not the problem (A8). Only `failing` counts: an `unsupported` resource keeps a
+ * refused permission's code, which no read fixes. The status read must be the one fetched after the
+ * login, since the cached one's next run is usually in the future too. */
 export function readStillFails(
   watch: MailWatchAccount | undefined,
   verifiedAt: number | null,
 ): boolean {
   if (watch === undefined || verifiedAt === null || watch.next_run_at === null) return false;
   if (Date.parse(watch.next_run_at) <= verifiedAt) return false;
-  return watch.resources.some((entry) => entry.last_error !== undefined && entry.last_error !== '');
+  return watch.resources.some((entry) => entry.status === 'failing');
 }
 
 function portText(port: number | undefined): string {

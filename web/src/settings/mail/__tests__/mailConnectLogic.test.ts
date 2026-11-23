@@ -134,9 +134,11 @@ describe('readStillFails', () => {
     const { last_error: _cleared, ...rest } = failing;
     const ok = { ...rest, status: 'ok' } as const;
     expect(readStillFails(watch('2026-11-23T12:05:00Z', [ok]), verifiedAt)).toBe(false);
-    expect(
-      readStillFails(watch('2026-11-23T12:05:00Z', [{ ...ok, last_error: '' }]), verifiedAt),
-    ).toBe(false);
+  });
+
+  it('counts only a failing resource: a refused permission is not a reading that fails', () => {
+    const refused = { ...failing, status: 'unsupported', last_error: 'permission_denied' } as const;
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [refused]), verifiedAt)).toBe(false);
   });
 
   it('is false with no login checked or no watch', () => {

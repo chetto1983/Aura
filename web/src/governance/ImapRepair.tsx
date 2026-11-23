@@ -78,12 +78,17 @@ export function ImapRepair({
     setVerifiedAt(null);
   }
 
-  function worked({ smtpWarning }: { smtpWarning?: string }) {
-    setVerifiedAt(Date.now());
+  /** The outcome waits for the refetched status: judged on the cached one, whose next run is
+   * usually in the future, a working login would read as "still fails" at once. */
+  async function worked({ smtpWarning }: { smtpWarning?: string }) {
+    const at = Date.now();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY }),
+      queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY }),
+    ]);
+    setVerifiedAt(at);
     setOutcome({ kind: 'works', smtpWarning });
     closeForm();
-    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
-    void queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY });
   }
 
   function failed(error: unknown) {

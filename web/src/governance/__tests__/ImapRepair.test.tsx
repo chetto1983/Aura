@@ -3,6 +3,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import '../../i18n/i18n';
 import {
   account,
+  hang,
   mailWatchServer,
   renderWatch,
   settled,
@@ -211,6 +212,21 @@ describe('after a working login', () => {
     expect(screen.queryByText('Sign-in works')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Change password' })).toBeNull();
+  });
+
+  it('judges the reading on the status read after the login, not the one cached before it', async () => {
+    watchAfterTheTick(new Date(Date.now() + 5 * 60_000).toISOString());
+    server.on(`POST ${VERIFY}`, () => {
+      server.on('GET /api/mail-watch', hang);
+      return { body: { ok: true } };
+    });
+    renderRow();
+    await screen.findByText(/Aura has not been able to read this mailbox/);
+    await tryAgain();
+    await settled();
+    await settled();
+    expect(server.writes('POST', VERIFY)).toHaveLength(1);
+    expect(screen.queryByText(/still fails/)).toBeNull();
   });
 
   it('says only that it works while the watch has not run since', async () => {
