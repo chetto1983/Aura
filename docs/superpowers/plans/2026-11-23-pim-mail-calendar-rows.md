@@ -232,7 +232,8 @@ from `main` would conflict, branching from it would carry unreviewed work.
 - Produces: `Task<string> CreateDraftAsync(string accountId, OutboundEmail email, ReplyThread? replyTo, CancellationToken ct)` and `Task<string> UpdateDraftAsync(string accountId, string draftId, DraftChange change, CancellationToken ct)`, both returning the id to use next.
 - Gmail reads the stored draft with `users.drafts.get format=raw` (`guides/drafts`), never through `GetRawEmailAsync`, whose id is a message id.
 - Produces: `public sealed record DraftChange(IReadOnlyList<string>? To, IReadOnlyList<string>? Cc, IReadOnlyList<string>? Bcc, string? Subject, string? Body, string? BodyFormat);` (null = unchanged).
-- Produces: actions `create_draft` (the `send_email` arguments) → `{draftId}`; `update_draft` (`draftId` + `DraftChange` fields) → `{draftId}`.
+- Produces: actions `create_draft` (the `send_email` arguments, with `to` optional) → `{draftId}`; `update_draft` (`draftId` + `DraftChange` fields) → `{draftId}`.
+- A draft may have no recipient at all: the work-assistant requirements (PR #274, v0.7 §9) leave To, Cc and Bcc empty for the owner to fill.
 
 - [ ] **Step 1: Write the failing tests.**
   - `Gmail_CreateDraft_PostsRawAndThreadId` and `Gmail_UpdateDraft_PutsTheWholeMessageUnderTheSameDraftId`.
@@ -247,6 +248,8 @@ from `main` would conflict, branching from it would carry unreviewed work.
   - `UpdateDraft_KeepsTheAttachmentsOfTheStoredDraft` (Gmail fake, GreenMail): the update reads the
     stored draft through `GetRawEmailAsync`, changes only the given fields, keeps every MIME part.
   - `UpdateDraft_WithAttachments_IsRefused`: the error names `attachments`.
+  - `CreateDraft_WithoutRecipients_IsSavedEmpty` on all three providers: no `To`, `Cc` or `Bcc`
+    header in the stored draft, and no error.
   - `Drafts_MissingFolder_IsAnErrorNotACreate`: IMAP `APPEND` never creates the mailbox (RFC 9051
     §6.3.12), and neither does the PIM.
 - [ ] **Step 2: Run them.** Expected: FAIL.
