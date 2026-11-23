@@ -7,7 +7,8 @@
 #   all, is still reported.
 # Measured with Trivy 0.70.0 on 2026-10-24 against kokoro's perl-base: the exact purl hides the
 # finding, a purl with another version does not, and an expired_at in the past no longer hides
-# anything.
+# anything. Measured again with 0.70.0 and 0.76.2 on 2026-11-23 against cloudflared 2026.10.7's
+# zlib1g and x/net, with the same result on both, a path other than the binary's included.
 #
 # All entries below are third-party CRITICALs that only upstream can fix: each image is on its
 # newest release. The operator approved the first two on 2026-10-24, and brotli on 2026-11-03

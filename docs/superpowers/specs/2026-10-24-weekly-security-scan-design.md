@@ -125,7 +125,8 @@ a fixed version, at HIGH and above. The two kinds of image differ in what turns 
   needs a `statement` and an `expired_at` at most 90 days away. An entry past its `expired_at`
   stops applying (Trivy docs, *Filtering*). Our convention is the statement and the 90 days.
   - *Amended 2026-10-24, once measured.* The docs say only that an entry without `expired_at`
-    "is always valid". Trivy 0.70.0 stops applying an entry past it.
+    "is always valid". Trivy 0.70.0 stops applying an entry past it, and so does 0.76.2
+    (measured 2026-11-23, `docs/superpowers/verification/2026-11-23-weekly-security-scan-275.md`).
   - *An ID alone is too wide.* It hides the same CVE in every image, Aura's own included: kokoro's
     and `aura-egress`'s perl-base share CVEs. So each entry also names the exact `purls` Trivy
     reports. A purl at another version of the same package does not match.
@@ -207,9 +208,9 @@ Every action is pinned by commit SHA, as in the other workflows.
 
    A new service in `compose.yaml` is therefore scanned without anyone editing the workflow.
 2. **`scan`** runs a matrix over that list, `fail-fast: false`:
-   - Trivy runs from `aquasec/trivy:0.70.0@sha256:be1190af…`, with no Trivy action. The action's
-     tags were rewritten in the March 2026 compromise (CVE-2026-33634); a digest-pinned image
-     takes the action layer out of the trust path.
+   - Trivy runs from `aquasec/trivy:0.76.2@sha256:8f6bb947…` (0.70.0 until 2026-11-23), with
+     no Trivy action. The action's tags were rewritten in the March 2026 compromise
+     (CVE-2026-33634); a digest-pinned image takes the action layer out of the trust path.
    - Pass one writes SARIF (HIGH and CRITICAL, `--ignore-unfixed`, exit 0). `upload-sarif` sends
      it with `category: trivy/<image>`. GitHub's code scanning then tracks each finding, keeps it
      open week after week, and closes it when it is gone.

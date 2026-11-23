@@ -30,8 +30,10 @@ defaults:
 
 env:
   # Run from a digest-pinned image, not the Trivy action: the action's tags were rewritten in the
-  # March 2026 compromise (CVE-2026-33634).
-  TRIVY_IMAGE: aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e
+  # March 2026 compromise (CVE-2026-33634). Dependabot does not track this pin: a move checks the
+  # index digest's signature with cosign v3 (v2 finds none), signer
+  # github.com/aquasecurity/trivy/.github/workflows/...@refs/tags/v<version>.
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
 
 jobs:
   images:
