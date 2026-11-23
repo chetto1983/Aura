@@ -454,12 +454,18 @@ func (s *MountedServer) refreshSpecsLocked(advertised []*sdkmcp.Tool) {
 // ctx (the notification-dispatch context), so a slow re-list cannot be starved by
 // however that context is scoped.
 func (s *MountedServer) onToolListChanged(ctx context.Context, _ *sdkmcp.ToolListChangedRequest) {
-	listCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultMCPRedialTimeout)
-	defer cancel()
 	session, err := s.currentSession()
 	if err != nil {
 		return
 	}
+	s.rereadTools(ctx, session)
+}
+
+// rereadTools lists the server's tools on session and applies them as a list_changed push does:
+// a name-set difference marks the server sticky-dead, a same-name-set change refreshes the specs.
+func (s *MountedServer) rereadTools(ctx context.Context, session *sdkmcp.ClientSession) {
+	listCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultMCPRedialTimeout)
+	defer cancel()
 	advertised, err := mcp.DrainTools(listCtx, session)
 	if err != nil {
 		slog.Warn("mcp tool list refresh failed", "server", s.name, "error", err)

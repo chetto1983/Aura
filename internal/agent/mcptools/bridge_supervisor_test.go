@@ -194,6 +194,39 @@ func TestMountedServer_ReadOnlyRedialsAndReissues(t *testing.T) {
 	}
 }
 
+// A sidecar updated in place comes back as a new session and sends no tools/list_changed, so the
+// redial is the only moment its new descriptions can be read. Measured on 2026-11-23: the PIM's
+// send_email began to require accountId, and the model kept reading the old "omit it" text.
+func TestMountedServer_RedialRereadsTheToolDescriptions(t *testing.T) {
+	var builds atomic.Int32
+	build := func() *sdkmcp.Server {
+		description := "Old description."
+		if builds.Add(1) > 1 {
+			description = "New description."
+		}
+		server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
+		server.AddTool(mustTool("lookup", description, nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}), trivialToolHandler)
+		return server
+	}
+	srv, _ := attachedMountedServer(t, build)
+	advertised, err := advertisedTools(context.Background(), srv)
+	if err != nil {
+		t.Fatalf("advertisedTools: %v", err)
+	}
+	srv.trackAcceptedTools(advertised)
+	bridged := bridgeTools("catalog", srv, advertised, time.Second)
+	srv.trackBridgedTools(bridged)
+
+	killLiveSession(t, srv)
+	if _, err := srv.CallToolText(context.Background(), "lookup", map[string]any{"query": "x"}); err != nil {
+		t.Fatalf("CallToolText after redial: %v", err)
+	}
+
+	if got := bridged[0].Spec().Description; !strings.Contains(got, "New description.") {
+		t.Fatalf("description after redial = %q, want the restarted server's", got)
+	}
+}
+
 // killLiveSession closes the CURRENT session's underlying connection from
 // outside MountedServer's own bookkeeping, simulating a peer that vanished
 // mid-run without MountedServer having initiated the close.

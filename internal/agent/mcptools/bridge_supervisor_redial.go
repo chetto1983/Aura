@@ -24,8 +24,9 @@ import (
 // redialAfterTransport is the single-flight, breaker/backoff-bounded redial:
 // concurrent callers observing the SAME failed session collapse onto one dial
 // attempt. Ported from bridge_reconnect.go's reconnectAfterTransport, unchanged
-// in policy; it no longer re-lists tools on success (drift is now server-pushed
-// via onToolListChanged, not something a redial must verify).
+// in policy. On success it re-reads the tools: a server updated in place comes
+// back as a new session and pushes no tools/list_changed, so without the re-read
+// the model kept the old descriptions until Aura restarted (measured 2026-11-23).
 func (s *MountedServer) redialAfterTransport(ctx context.Context, failed *sdkmcp.ClientSession) (*sdkmcp.ClientSession, error) {
 	for {
 		s.mu.Lock()
@@ -99,6 +100,9 @@ func (s *MountedServer) redialAfterTransport(ctx context.Context, failed *sdkmcp
 		}
 		if closeNext != nil {
 			_ = closeNext.Close()
+		}
+		if err == nil {
+			s.rereadTools(ctx, next)
 		}
 		return next, err
 	}
