@@ -2,7 +2,9 @@ import { useMutation } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ImapRepair } from './ImapRepair';
 import { AccountWatch } from './mailWatch/AccountWatch';
+import { useMailWatchStatus } from './mailWatch/useMailWatch';
 import { startConnect } from './pimConnect';
 import { PimConnectPanel } from './PimConnectPanel';
 import { pimAccountFlow } from './pimProviders';
@@ -15,7 +17,8 @@ import { Button } from '@/components/ui/button';
 // finished offers to finish it, a connected one to sign in again, both on the same account. Removing
 // is the only way to forget the account, so it says what the mail watch loses and asks first: a
 // "Disconnect" that removed the account wiped its watch history on every re-link (2026-11-02 and
-// 2026-11-03, lab VM).
+// 2026-11-03, lab VM). An IMAP account has nothing to sign in to, so it is repaired in place instead
+// (ImapRepair), with the watch's status read from the same query AccountWatch polls.
 
 export function PimAccountRow({
   account,
@@ -31,6 +34,7 @@ export function PimAccountRow({
   const connect = useMutation({ mutationFn: () => startConnect(account.id, flow) });
   const [confirming, setConfirming] = useState(false);
   const unfinished = account.linked === false;
+  const status = useMailWatchStatus();
 
   return (
     <li className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 px-3 py-2">
@@ -126,6 +130,12 @@ export function PimAccountRow({
           onRetry={() => {
             connect.mutate();
           }}
+        />
+      ) : null}
+      {account.provider === 'imap' ? (
+        <ImapRepair
+          account={account}
+          watch={status.data?.accounts.find((entry) => entry.account_id === account.id)}
         />
       ) : null}
       <AccountWatch account={account} />

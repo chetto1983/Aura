@@ -32,6 +32,7 @@ import {
   mailProviderConfig,
   serverValuesFrom,
   SERVER_KEYS,
+  smtpWarningKey,
   verifyMessageKey,
   type ServerValues,
 } from './mailConnectLogic';
@@ -52,7 +53,6 @@ import { Button } from '@/components/ui/button';
 // on the field it concerns. Connecting does not turn the mail watch on: that is the row's switch.
 
 const TIMEOUT_KEY = 'settings.mail.error.timeout';
-const SMTP_WARNINGS = new Set(['smtp_unreachable', 'tls_failed']);
 const IMAP_DEF = pimProviderById('imap');
 const EMPTY_SERVERS: ServerValues = {
   imapHost: '',
@@ -514,6 +514,7 @@ function ConnectedNotice({
   readonly smtpWarning: string | undefined;
 }) {
   const { t } = useTranslation();
+  const warningKey = smtpWarningKey(smtpWarning);
   return (
     <div
       role="status"
@@ -523,11 +524,9 @@ function ConnectedNotice({
       <span className="break-words text-[15.5px] text-text">
         {account.displayName || account.id}
       </span>
-      {smtpWarning !== undefined && SMTP_WARNINGS.has(smtpWarning) ? (
-        <span className="text-[13px] text-warning">
-          {t(`settings.mail.verify.smtpWarning.${smtpWarning}`)}
-        </span>
-      ) : null}
+      {warningKey === null ? null : (
+        <span className="text-[13px] text-warning">{t(warningKey)}</span>
+      )}
     </div>
   );
 }

@@ -39,7 +39,7 @@ import { decisionKey, ruleOnFile, sameRule, shortDay } from './mailWatchLogic';
 
 const STATUS_POLL_MS = 30_000;
 const CORRECTION_KEY = ['mail-watch', 'correct'] as const;
-const STATUS_KEY = ['mail-watch', 'status'] as const;
+export const MAIL_WATCH_STATUS_KEY = ['mail-watch', 'status'] as const;
 const RULES_KEY = ['mail-watch', 'rules'] as const;
 const LABELS_KEY = ['mail-watch', 'labels'] as const;
 
@@ -57,7 +57,7 @@ function decisionsQuery(accountId: string, day: string | null, discarded: boolea
 
 export function useMailWatchStatus() {
   return useQuery({
-    queryKey: STATUS_KEY,
+    queryKey: MAIL_WATCH_STATUS_KEY,
     queryFn: getMailWatch,
     refetchInterval: STATUS_POLL_MS,
     retry: false,
@@ -98,7 +98,7 @@ export function useWatchToggle(accountId: string) {
   return useMutation({
     mutationFn: (on: boolean) => (on ? enableMailWatch(accountId) : disableMailWatch(accountId)),
     // Returned, so the switch stays busy until the status it shows has caught up.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY }),
   });
 }
 
@@ -106,7 +106,7 @@ export function useCloudDecide(accountId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (on: boolean) => setCloudDecide(accountId, on),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY }),
   });
 }
 
@@ -115,7 +115,7 @@ export function useSaveSettings() {
   return useMutation({
     mutationFn: saveMailWatchSettings,
     onSuccess: (settings) => {
-      queryClient.setQueryData<MailWatchStatus>(STATUS_KEY, (status) =>
+      queryClient.setQueryData<MailWatchStatus>(MAIL_WATCH_STATUS_KEY, (status) =>
         status === undefined ? status : { ...status, settings },
       );
     },

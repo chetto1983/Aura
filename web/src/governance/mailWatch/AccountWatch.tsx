@@ -6,10 +6,12 @@ import type { MailWatchAccount, MailWatchResource } from '../mailWatchApi';
 import {
   canResume,
   clockTime,
+  dayAndTime,
   errorSentence,
   failingSince,
   failureSentence,
   pausedSentence,
+  staleTransient,
 } from './mailWatchLogic';
 import { MailWatchDialog } from './MailWatchDialog';
 import { useCloudDecide, useMailWatchStatus, useWatchToggle } from './useMailWatch';
@@ -79,6 +81,7 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
         ) : (
           <WatchState
             watch={watch}
+            provider={account.provider}
             cap={settings.daily_alert_cap}
             modelAsked={decideRoute !== '' && (decideRoute !== 'openrouter' || watch.cloud_decide)}
             resuming={toggle.isPending}
@@ -121,6 +124,8 @@ export function AccountWatch({ account }: { readonly account: PimAccount }) {
 
 interface WatchStateProps {
   readonly watch: MailWatchAccount;
+  /** An IMAP failure that lasts asks for repair; other providers keep the code's sentence. */
+  readonly provider: string;
   readonly cap: number;
   /** A failure stays on the account until an answer clears it, so it shows only while the model is asked. */
   readonly modelAsked: boolean;
@@ -128,7 +133,7 @@ interface WatchStateProps {
   readonly onResume: () => void;
 }
 
-function WatchState({ watch, cap, modelAsked, resuming, onResume }: WatchStateProps) {
+function WatchState({ watch, provider, cap, modelAsked, resuming, onResume }: WatchStateProps) {
   const { t } = useTranslation();
   const failing = watch.resources.filter((entry) => entry.status === 'failing');
   const unsupported = watch.resources.filter((entry) => entry.status === 'unsupported');
@@ -158,7 +163,7 @@ function WatchState({ watch, cap, modelAsked, resuming, onResume }: WatchStatePr
         <RunningLine watch={watch} cap={cap} />
       )}
       {[...failing, ...refused].map((entry) => (
-        <FailingLine key={entry.resource} entry={entry} />
+        <FailingLine key={entry.resource} entry={entry} provider={provider} />
       ))}
       {modelAsked && watch.decide_error ? <DecideFailure watch={watch} /> : null}
       {notOffered.map((entry) => (
@@ -196,7 +201,15 @@ function RunningLine({ watch, cap }: { readonly watch: MailWatchAccount; readonl
   );
 }
 
-function FailingLine({ entry }: { readonly entry: MailWatchResource }) {
+/** A stale IMAP failure is one sentence that names the mailbox and its day and time itself, so it
+ * carries no "Posta, dal …:" head: that would say the time twice. */
+function FailingLine({
+  entry,
+  provider,
+}: {
+  readonly entry: MailWatchResource;
+  readonly provider: string;
+}) {
   const { t, i18n } = useTranslation();
   const name = t(`governance.mailWatch.resource.${entry.resource}`);
   const since = entry.failing_since;
@@ -204,12 +217,18 @@ function FailingLine({ entry }: { readonly entry: MailWatchResource }) {
   return (
     <p className="flex items-start gap-1.5 text-[13px] text-warning">
       <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-      <span>
-        <strong className="font-semibold">
-          {since === null ? name : `${name}, ${failingSince(since, now, i18n.language, t)}`}:
-        </strong>{' '}
-        {failureSentence(entry.last_error ?? '', t)}
-      </span>
+      {since !== null && staleTransient(entry, provider, now) ? (
+        <span>
+          {t('governance.mailWatch.failure.stale', { since: dayAndTime(since, i18n.language) })}
+        </span>
+      ) : (
+        <span>
+          <strong className="font-semibold">
+            {since === null ? name : `${name}, ${failingSince(since, now, i18n.language, t)}`}:
+          </strong>{' '}
+          {failureSentence(entry.last_error ?? '', t)}
+        </span>
+      )}
     </p>
   );
 }
@@ -253,8 +272,10 @@ function DecideFailure({ watch }: { readonly watch: MailWatchAccount }) {
       <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
       <span>
         {t('governance.mailWatch.decide.failing', {
-          time:
-            watch.decide_failed_at === null ? '' : clockTime(watch.decide_failed_at, i18n.language),
+          since:
+            watch.decide_failed_at === null
+              ? ''
+              : dayAndTime(watch.decide_failed_at, i18n.language),
           reason: t(`governance.mailWatch.decide.error.${reason}`, { defaultValue: reason }),
         })}
       </span>

@@ -15,7 +15,7 @@ export const mailWatchDecideEn = {
     label: 'Let the OpenRouter decision model read this account',
     hint: 'The subject and start of each mail go to OpenRouter, sent with a request not to keep them.',
   },
-  failing: 'The model has not answered since {{time}} ({{reason}})',
+  failing: 'The model has not answered since {{since}} ({{reason}})',
   error: {
     no_credential: 'no OpenRouter key is set',
     unreachable: 'it could not be reached',
@@ -41,7 +41,7 @@ export const mailWatchDecideIt = {
     label: 'Lascia leggere questo account al modello su OpenRouter',
     hint: 'Oggetto e inizio di ogni mail vanno a OpenRouter, che li riceve con la richiesta di non conservarli.',
   },
-  failing: 'Il modello non risponde dalle {{time}} ({{reason}})',
+  failing: 'Il modello non risponde da {{since}} ({{reason}})',
   error: {
     no_credential: 'manca la chiave OpenRouter',
     unreachable: 'non si riesce a raggiungerlo',

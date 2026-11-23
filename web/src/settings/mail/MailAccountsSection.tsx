@@ -4,7 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { MailWatchOverview } from '../../governance/mailWatch/MailWatchOverview';
 import { PimAccountRow } from '../../governance/PimAccountRow';
-import { deletePimAccount, listPimAccounts, type PimAccount } from '../../governance/pimApi';
+import {
+  deletePimAccount,
+  listPimAccounts,
+  PIM_ACCOUNTS_KEY,
+  type PimAccount,
+} from '../../governance/pimApi';
 import { AddMailAccount } from './AddMailAccount';
 
 // MailAccountsSection is the identity's «Posta e calendario» pane in Settings: its accounts (~10s
@@ -13,7 +18,6 @@ import { AddMailAccount } from './AddMailAccount';
 // a member's own pane: the routes it calls are gated by governance.write, which every identity
 // holds. A 503 (sidecar unconfigured) reads as a calm offline note.
 
-const ACCOUNTS_KEY = ['connect', 'pim', 'accounts'] as const;
 const ACCOUNTS_POLL_MS = 10000;
 
 export function MailAccountsSection() {
@@ -22,14 +26,14 @@ export function MailAccountsSection() {
   const headingId = useId();
 
   const accounts = useQuery({
-    queryKey: ACCOUNTS_KEY,
+    queryKey: PIM_ACCOUNTS_KEY,
     queryFn: listPimAccounts,
     refetchInterval: ACCOUNTS_POLL_MS,
     retry: false,
   });
 
   function refresh() {
-    void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
   }
 
   return (

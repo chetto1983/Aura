@@ -1,7 +1,8 @@
-// Pure rules of the mailbox connect flow: the account id an address maps to, which sentence a failed
-// check gets and where it goes, whether an address is worth sending to the PIM, and the config an
-// IMAP create sends.
+// Pure rules of the mailbox connect and repair flows: the account id an address maps to, which
+// sentence a failed check gets and where it goes, whether an address is worth sending to the PIM, the
+// config an IMAP create or repair sends, and whether reading still fails after a working login.
 
+import type { MailWatchAccount } from '../../governance/mailWatchApi';
 import type { PimDiscovery, PimVerifyReason } from '../../governance/pimApi';
 
 /** The id an address becomes: lowercase, every run outside [a-z0-9] one dash, no dash at the ends,
@@ -25,6 +26,24 @@ export function verifyMessageKey(
     return 'settings.mail.verify.appPassword';
   }
   return `settings.mail.verify.${failure.reason}`;
+}
+
+/** A refused password in repair may be a wrong one or the provider asking for an app password: the
+ * row cannot tell, since repair runs no discovery. */
+export function repairMessageKey(failure: {
+  step: 'imap' | 'smtp';
+  reason: PimVerifyReason;
+}): string {
+  if (failure.reason === 'auth_failed') return 'settings.mail.verify.authFailedRepair';
+  return verifyMessageKey(failure, false);
+}
+
+const SMTP_WARNINGS = new Set(['smtp_unreachable', 'tls_failed']);
+
+/** The sentence of a passing check's sending warning (A4), null for none or a code not ours. */
+export function smtpWarningKey(warning: string | undefined): string | null {
+  if (warning === undefined || !SMTP_WARNINGS.has(warning)) return null;
+  return `settings.mail.verify.smtpWarning.${warning}`;
 }
 
 const ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -86,6 +105,42 @@ export function mailProviderConfig(
   }
   config.password = password;
   return config;
+}
+
+export const REPAIR_SERVER_KEYS = ['imapHost', 'imapPort', 'smtpHost', 'smtpPort'] as const;
+
+export type RepairServers = Record<(typeof REPAIR_SERVER_KEYS)[number], string>;
+
+export function serversTyped(servers: RepairServers): boolean {
+  return REPAIR_SERVER_KEYS.some((key) => servers[key].trim() !== '');
+}
+
+/** The PATCH a repair sends: the password verbatim, and only the server fields typed in, since a
+ * blank one means unchanged. A changed server needs the password (A3), and a repair without one
+ * changes nothing, so no password is no PATCH. The username is never sent: it cannot change. */
+export function repairConfig(
+  servers: RepairServers,
+  password: string,
+): Record<string, string> | null {
+  if (password === '') return null;
+  const config: Record<string, string> = {};
+  for (const key of REPAIR_SERVER_KEYS) {
+    const value = servers[key].trim();
+    if (value !== '') config[key] = value;
+  }
+  config.password = password;
+  return config;
+}
+
+/** After a working login the server resumes the watch and runs a read at once; once the watch has
+ * run since and a resource still failed, the login was not the problem (A8). */
+export function readStillFails(
+  watch: MailWatchAccount | undefined,
+  verifiedAt: number | null,
+): boolean {
+  if (watch === undefined || verifiedAt === null || watch.next_run_at === null) return false;
+  if (Date.parse(watch.next_run_at) <= verifiedAt) return false;
+  return watch.resources.some((entry) => entry.last_error !== undefined && entry.last_error !== '');
 }
 
 function portText(port: number | undefined): string {

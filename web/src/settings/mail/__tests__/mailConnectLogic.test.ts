@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import type { MailWatchResource } from '../../../governance/mailWatchApi';
 import type { PimDiscovery } from '../../../governance/pimApi';
+import { account } from '../../../test/mailWatchServer';
 import {
   accountIdFromAddress,
   httpsUrl,
   isServerFailure,
   isValidAddress,
   mailProviderConfig,
+  readStillFails,
+  repairConfig,
+  repairMessageKey,
   sameAddress,
+  serversTyped,
   serverValuesFrom,
+  smtpWarningKey,
   verifyMessageKey,
 } from '../mailConnectLogic';
 
@@ -45,6 +52,96 @@ describe('verifyMessageKey', () => {
     expect(verifyMessageKey({ step: 'smtp', reason: 'tls_failed' }, true)).toBe(
       'settings.mail.verify.tls_failed',
     );
+  });
+});
+
+describe('repairMessageKey', () => {
+  it('says a refused password in repair may be wrong or need an app password', () => {
+    expect(repairMessageKey({ step: 'imap', reason: 'auth_failed' })).toBe(
+      'settings.mail.verify.authFailedRepair',
+    );
+  });
+
+  it('names any other reason as the connect screen does', () => {
+    expect(repairMessageKey({ step: 'imap', reason: 'mailbox_refused' })).toBe(
+      'settings.mail.verify.mailbox_refused',
+    );
+  });
+});
+
+describe('smtpWarningKey', () => {
+  it.each(['smtp_unreachable', 'tls_failed'])('has a sentence for %s', (warning) => {
+    expect(smtpWarningKey(warning)).toBe(`settings.mail.verify.smtpWarning.${warning}`);
+  });
+
+  it.each([undefined, '', 'smtp_auth_failed'])('has none for %s', (warning) => {
+    expect(smtpWarningKey(warning)).toBeNull();
+  });
+});
+
+describe('repairConfig', () => {
+  const blank = { imapHost: '', imapPort: '', smtpHost: '', smtpPort: '' };
+
+  it('sends the password verbatim and nothing else when no server field is typed', () => {
+    expect(repairConfig(blank, '  pass word ')).toEqual({ password: '  pass word ' });
+  });
+
+  it('adds only the server fields typed in, trimmed', () => {
+    expect(
+      repairConfig({ ...blank, imapHost: ' imap.new.example ', smtpPort: '465' }, 'pw'),
+    ).toEqual({ imapHost: 'imap.new.example', smtpPort: '465', password: 'pw' });
+  });
+
+  it('sends nothing without a password', () => {
+    expect(repairConfig(blank, '')).toBeNull();
+    expect(repairConfig({ ...blank, imapHost: 'imap.new.example' }, '')).toBeNull();
+  });
+});
+
+describe('serversTyped', () => {
+  it('is false while every server field is blank', () => {
+    expect(serversTyped({ imapHost: ' ', imapPort: '', smtpHost: '', smtpPort: '' })).toBe(false);
+  });
+
+  it.each(['imapHost', 'imapPort', 'smtpHost', 'smtpPort'] as const)('is true for %s', (key) => {
+    const servers = { imapHost: '', imapPort: '', smtpHost: '', smtpPort: '', [key]: 'x' };
+    expect(serversTyped(servers)).toBe(true);
+  });
+});
+
+describe('readStillFails', () => {
+  const verifiedAt = Date.parse('2026-11-23T12:00:00Z');
+  const failing = {
+    resource: 'mail',
+    status: 'failing',
+    last_error: 'provider_transient',
+    failing_since: '2026-11-23T02:00:00Z',
+    advanced_at: null,
+  } as const;
+  const watch = (next: string | null, resources: readonly MailWatchResource[]) =>
+    account({ next_run_at: next, resources });
+
+  it('is true once the watch has run after the login and the mailbox still fails', () => {
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), verifiedAt)).toBe(true);
+  });
+
+  it('waits for a run later than the login', () => {
+    expect(readStillFails(watch('2026-11-23T12:00:00Z', [failing]), verifiedAt)).toBe(false);
+    expect(readStillFails(watch(null, [failing]), verifiedAt)).toBe(false);
+  });
+
+  it('is false when reading works again', () => {
+    const { last_error: _cleared, ...rest } = failing;
+    const ok = { ...rest, status: 'ok' } as const;
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [ok]), verifiedAt)).toBe(false);
+    expect(
+      readStillFails(watch('2026-11-23T12:05:00Z', [{ ...ok, last_error: '' }]), verifiedAt),
+    ).toBe(false);
+  });
+
+  it('is false with no login checked or no watch', () => {
+    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), null)).toBe(false);
+    expect(readStillFails(undefined, verifiedAt)).toBe(false);
   });
 });
 

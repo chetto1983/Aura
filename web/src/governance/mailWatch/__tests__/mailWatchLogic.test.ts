@@ -26,6 +26,7 @@ import {
   rowTime,
   sameRule,
   shortDay,
+  staleTransient,
   tierCounts,
   triageAction,
   whySentence,
@@ -526,5 +527,44 @@ describe('times', () => {
     const older = new Date(2026, 9, 30, 7, 40).toISOString();
     expect(failingSince(today, now, 'en-GB', t)).toBe(`since ${clockTime(today, 'en-GB')}`);
     expect(failingSince(older, now, 'en-GB', t)).toBe('since 30 Oct');
+  });
+});
+
+describe('staleTransient', () => {
+  const now = new Date('2026-11-23T12:00:00Z');
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+  const transient = (since: string | null, code = 'provider_transient') =>
+    ({
+      resource: 'mail',
+      status: 'failing',
+      last_error: code,
+      failing_since: since,
+      advanced_at: null,
+    }) as const;
+
+  it('an IMAP mailbox failing for more than 6 h asks for repair', () => {
+    expect(staleTransient(transient(hoursAgo(7)), 'imap', now)).toBe(true);
+  });
+
+  it('5 h is still a provider outage', () => {
+    expect(staleTransient(transient(hoursAgo(5)), 'imap', now)).toBe(false);
+  });
+
+  it('6 h exactly is not yet more than 6 h', () => {
+    expect(staleTransient(transient(hoursAgo(6)), 'imap', now)).toBe(false);
+  });
+
+  it('an OAuth row keeps the provider wording: a password is not its remedy', () => {
+    expect(staleTransient(transient(hoursAgo(7)), 'google', now)).toBe(false);
+    expect(staleTransient(transient(hoursAgo(7)), undefined, now)).toBe(false);
+  });
+
+  it("the PIM's own failures keep their wording", () => {
+    expect(staleTransient(transient(hoursAgo(7), 'pim_http_503'), 'imap', now)).toBe(false);
+    expect(staleTransient(transient(hoursAgo(7), 'pim_call_failed'), 'imap', now)).toBe(false);
+  });
+
+  it('a failure with no start has no age', () => {
+    expect(staleTransient(transient(null), 'imap', now)).toBe(false);
   });
 });

@@ -12,9 +12,9 @@ import { Select } from '@/components/ui/select';
 import { SecretInput } from '@/components/ui/secret-input';
 
 // CalendarConnectFields holds the presentational form controls + result panels for the calendar/PIM
-// connect wizard, split out of CalendarConnect.tsx to keep that file under the 600-LOC cap. These are
-// pure (state-free) components driven entirely by props; the stateful AddAccountForm orchestrator
-// stays in CalendarConnect.tsx and composes them.
+// connect and repair forms. They hold no state of their own beyond their element ids, which come
+// from useId: a page can show several of these forms at once (the add form and a row's repair), so
+// a fixed id would point a label at the wrong field.
 
 export function ProviderSelect({
   id,
@@ -61,6 +61,7 @@ export function ProviderConfigFields({
   readonly missing: ReadonlySet<string>;
 }) {
   const { t } = useTranslation();
+  const idPrefix = useId();
   return (
     <>
       {def.fields.map((field) => {
@@ -69,6 +70,7 @@ export function ProviderConfigFields({
           return (
             <SelectField
               key={field.key}
+              id={`${idPrefix}-${field.key}`}
               field={field}
               value={values[field.key] ?? ''}
               onChange={(v) => {
@@ -80,7 +82,7 @@ export function ProviderConfigFields({
         return (
           <Field
             key={field.key}
-            id={`pim-${def.id}-${field.key}`}
+            id={`${idPrefix}-${field.key}`}
             label={t(field.labelKey)}
             value={values[field.key] ?? ''}
             onChange={(v) => {
@@ -97,17 +99,18 @@ export function ProviderConfigFields({
   );
 }
 
-export function SelectField({
+function SelectField({
+  id,
   field,
   value,
   onChange,
 }: {
+  readonly id: string;
   readonly field: PimFieldDef;
   readonly value: string;
   readonly onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
-  const id = `pim-select-${field.key}`;
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id} className="text-[13px] font-semibold text-text">

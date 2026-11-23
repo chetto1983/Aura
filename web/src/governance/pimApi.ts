@@ -16,6 +16,7 @@ import { deleteJSON, patchJSON, postJSON, putJSON, stringValue } from './governa
 export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
 export const GOV_PIM_PROVIDERS_PATH = '/api/connect/pim/providers';
 export const PIM_PROVIDERS_KEY = ['connect', 'pim', 'providers'] as const;
+export const PIM_ACCOUNTS_KEY = ['connect', 'pim', 'accounts'] as const;
 /** The `error` token Aura's 409 carries when a managed provider has no admin-set app yet. The
  * sidecar's own 409 means a duplicate account id, so the token is what tells the two apart. */
 export const PIM_PROVIDER_NOT_CONFIGURED = 'provider_not_configured';

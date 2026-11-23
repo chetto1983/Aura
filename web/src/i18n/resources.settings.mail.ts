@@ -1,5 +1,5 @@
 // The «Posta e calendario» Settings pane: the identity's account list, and the connect screen (an
-// address and a password, checked before they are saved).
+// address and a password, checked before they are saved), and the repair on an IMAP row.
 // `verify.<reason>` and `error.<code>` are reached through pimApi's pimErrorKey and mailConnectLogic's
 // verifyMessageKey, so every reason the PIM can answer has a sentence here.
 
@@ -36,10 +36,22 @@ export const mailEn = {
   },
   changePassword: 'Change password',
   remove: 'Remove',
+  repair: {
+    tryAgain: 'Try again',
+    works: 'Sign-in works',
+    readStillFails: 'Sign-in works, but reading the mail still fails',
+    newPassword: 'New password',
+    serverHint: 'A blank field stays as it is.',
+    usernameFixed: 'The username cannot be changed: for another mailbox, add a new account.',
+    save: 'Save',
+    cancel: 'Cancel',
+  },
   verify: {
     appPassword:
       'The password was refused. This provider wants an app password, not the one you sign in with.',
     auth_failed: 'The password was refused. Check it and try again.',
+    authFailedRepair:
+      'The password was refused: it is wrong, or the provider wants an app password instead of the one you sign in with.',
     unreachable: 'The mail server did not answer. Check the server name and port.',
     tls_failed:
       'The mail server could not prove its identity. Use the server name your provider gives, not one on your own domain.',
@@ -100,10 +112,23 @@ export const mailIt = {
   },
   changePassword: 'Cambia password',
   remove: 'Rimuovi',
+  repair: {
+    tryAgain: 'Prova di nuovo',
+    works: "L'accesso funziona",
+    readStillFails: "L'accesso funziona, ma la lettura della posta non riesce ancora",
+    newPassword: 'Nuova password',
+    serverHint: 'Un campo lasciato vuoto resta com’è.',
+    usernameFixed:
+      "Il nome utente non si può cambiare: per un'altra casella aggiungi un nuovo account.",
+    save: 'Salva',
+    cancel: 'Annulla',
+  },
   verify: {
     appPassword:
       'La password è stata rifiutata. Questo provider vuole una password per app, non quella con cui accedi.',
     auth_failed: 'La password è stata rifiutata. Controllala e riprova.',
+    authFailedRepair:
+      'La password è stata rifiutata: è sbagliata, oppure il provider vuole una password per app invece di quella con cui accedi.',
     unreachable: 'Il server di posta non ha risposto. Controlla il nome del server e la porta.',
     tls_failed:
       'Il server di posta non ha dimostrato la sua identità. Usa il nome del server che ti dà il provider, non uno sul tuo dominio.',

@@ -4,6 +4,7 @@ import {
   MAIL_WATCH_UNAVAILABLE,
   type MailWatchDecision,
   type MailWatchLabel,
+  type MailWatchResource,
   type MailWatchRule,
   type MailWatchRuleInput,
   type MailWatchTier,
@@ -225,6 +226,21 @@ export function failureSentence(code: string, t: TFunction): string {
   const http = /^pim_http_(\d+)$/.exec(code);
   if (http !== null) return t(`${FAILURE}.http`, { status: http[1] });
   return t(`${FAILURE}.${code}`, { defaultValue: t(`${FAILURE}.unknown`) });
+}
+
+const STALE_AFTER_MS = 6 * 3_600_000;
+
+/** An IMAP mailbox whose provider has "had trouble" for more than 6 h: long enough to outlast an
+ * outage, so the likelier cause is the login, and the row asks for repair. The PIM's own failures
+ * and OAuth rows keep their wording, since a password is not their remedy. */
+export function staleTransient(
+  entry: MailWatchResource,
+  provider: string | undefined,
+  now: Date,
+): boolean {
+  if (provider !== 'imap' || entry.last_error !== 'provider_transient') return false;
+  if (entry.failing_since === null) return false;
+  return now.getTime() - Date.parse(entry.failing_since) > STALE_AFTER_MS;
 }
 
 const PAUSED = 'governance.mailWatch.paused';

@@ -47,6 +47,8 @@ export const mailWatchEn = {
     invalid_items: 'The mail and calendar service refused the list of items.',
     too_many_items: 'Too many items were asked for at once.',
     provider_transient: 'The provider is having trouble. Aura tries again at the next check.',
+    stale:
+      'Aura has not been able to read this mailbox since {{since}}. Try again or change the password.',
     unsupported_resource: 'This account does not offer this.',
     pim_empty_cursor:
       'The mail and calendar service did not say where to read from. Aura tries again at the next check.',
@@ -277,6 +279,7 @@ export const mailWatchIt = {
     invalid_items: "Il servizio di posta e calendario ha rifiutato l'elenco.",
     too_many_items: 'Sono stati chiesti troppi elementi insieme.',
     provider_transient: 'Il provider ha un problema. Aura riprova al prossimo controllo.',
+    stale: 'Non riesco a leggere la posta da {{since}}. Prova di nuovo o cambia la password.',
     unsupported_resource: 'Questo account non lo offre.',
     pim_empty_cursor:
       'Il servizio di posta e calendario non ha detto da dove leggere. Aura riprova al prossimo controllo.',

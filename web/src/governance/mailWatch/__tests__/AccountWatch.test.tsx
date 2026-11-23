@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import '../../../i18n/i18n';
+import i18n from '../../../i18n/i18n';
 import {
   account,
   hang,
@@ -11,7 +11,7 @@ import {
 } from '../../../test/mailWatchServer';
 import type { PimAccount } from '../../pimApi';
 import { AccountWatch } from '../AccountWatch';
-import { clockTime } from '../mailWatchLogic';
+import { clockTime, dayAndTime } from '../mailWatchLogic';
 
 // The switch on an account's row: what it says for each state, and what flipping it sends.
 
@@ -230,6 +230,42 @@ describe('a resource', () => {
     expect(line.textContent).toContain(`Mail, since ${clockTime(since, 'en')}:`);
   });
 
+  describe('a temporary failure that has lasted too long', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+    const since = new Date(Date.now() - 7 * 3_600_000).toISOString();
+    const resources = [{ ...failing, last_error: 'provider_transient', failing_since: since }];
+
+    it('asks an IMAP row for repair, with its day and time and no doubled preposition', async () => {
+      await i18n.changeLanguage('it');
+      statusWith(account({ resources }));
+      renderWatch(<AccountWatch account={{ ...PIM, provider: 'imap' }} />);
+      const line = await screen.findByText(/Non riesco a leggere la posta/);
+      expect(line.textContent).toBe(
+        `Non riesco a leggere la posta da ${dayAndTime(since, 'it')}. Prova di nuovo o cambia la password.`,
+      );
+      expect(line.closest('p')?.textContent).not.toMatch(/\bdal(le)?\b/);
+    });
+
+    it('says it in English too', async () => {
+      statusWith(account({ resources }));
+      renderWatch(<AccountWatch account={{ ...PIM, provider: 'imap' }} />);
+      expect(
+        await screen.findByText(
+          `Aura has not been able to read this mailbox since ${dayAndTime(since, 'en')}. Try again or change the password.`,
+        ),
+      ).toBeTruthy();
+    });
+
+    it('keeps the provider wording on an OAuth row, where a password is not the remedy', async () => {
+      statusWith(account({ resources }));
+      renderWatch(<AccountWatch account={PIM} />);
+      expect(await screen.findByText(/The provider is having trouble/)).toBeTruthy();
+      expect(screen.queryByText(/change the password/)).toBeNull();
+    });
+  });
+
   it('survives a failing resource with no code', async () => {
     statusWith(account({ resources: [failing] }));
     renderWatch(<AccountWatch account={PIM} />);
@@ -354,8 +390,22 @@ describe('the decision model on an account', () => {
     renderWatch(<AccountWatch account={PIM} />);
     const line = await screen.findByText(/The model has not answered since/);
     expect(line.textContent).toBe(
-      `The model has not answered since ${clockTime(failedAt, 'en')} (OpenRouter refused the request)`,
+      `The model has not answered since ${dayAndTime(failedAt, 'en')} (OpenRouter refused the request)`,
     );
+  });
+
+  it('gives the time of the failure its day, which reads right in Italian', async () => {
+    await i18n.changeLanguage('it');
+    try {
+      failedOn('local', false);
+      renderWatch(<AccountWatch account={PIM} />);
+      const line = await screen.findByText(/Il modello non risponde/);
+      expect(line.textContent).toBe(
+        `Il modello non risponde da ${dayAndTime(failedAt, 'it')} (OpenRouter ha rifiutato la richiesta)`,
+      );
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   it.each([
