@@ -31,6 +31,7 @@ import {
   type MailWatchStatus,
   type MailWatchTier,
 } from '../mailWatchApi';
+import { PIM_ACCOUNTS_KEY } from '../pimApi';
 import { decisionKey, ruleOnFile, sameRule, shortDay } from './mailWatchLogic';
 
 // useMailWatch.ts is the watch's query state. The decisions of a day are read live from the PIM by
@@ -53,6 +54,13 @@ function decisionsQuery(accountId: string, day: string | null, discarded: boolea
     queryFn: () => getDecisions(accountId, day, discarded),
     retry: false,
   };
+}
+
+/** A repaired account signs in again: the server resumes its watch, so both its row and the watch's
+ * status change. */
+export function refreshRepairedAccount(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
+  void queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY });
 }
 
 export function useMailWatchStatus() {

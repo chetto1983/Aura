@@ -155,11 +155,6 @@ export async function pimAccountLinked(id: string): Promise<boolean | null> {
   return typeof raw.linked === 'boolean' ? raw.linked : null;
 }
 
-/** POST …/{id}/logout — drop the linked session without deleting the account. */
-export async function pimLogout(id: string): Promise<void> {
-  await postJSON<unknown>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/logout`);
-}
-
 /** POST …/{id}/auth/start — begin the Microsoft/Outlook device-code grant. The 200 carries the
  * userCode + verificationUrl the wizard renders. A missing account throws `Error("HTTP 404")`; a
  * provider that doesn't support device-code (e.g. google) throws `Error("HTTP 400")`. */

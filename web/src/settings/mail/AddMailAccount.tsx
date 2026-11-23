@@ -1,9 +1,10 @@
 import { useId, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../../components/Spinner';
 import { HttpError } from '../../api/json';
 import { Field, ProviderConfigFields } from '../../governance/CalendarConnectFields';
+import { refreshRepairedAccount } from '../../governance/mailWatch/useMailWatch';
 import { PimConnectPanel } from '../../governance/PimConnectPanel';
 import { startConnect, type PimConnectResult } from '../../governance/pimConnect';
 import {
@@ -87,6 +88,7 @@ function isNotConfigured(error: unknown): boolean {
 
 export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const ids = { address: useId(), password: useId() };
 
   const [address, setAddress] = useState('');
@@ -164,8 +166,11 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
 
   // Every input rides in the mutation's variables: onMutate re-renders before mutationFn runs, and
   // TanStack hands the running mutation that render's options, so a closure would read reset state.
+  // The variables hold the password, so gcTime 0 drops the mutation as soon as no form observes it,
+  // not five minutes later.
   const connectMail = useMutation({
     mutationFn: createMailAccount,
+    gcTime: 0,
     onMutate: () => {
       startOver(null);
     },
@@ -202,7 +207,9 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
   const changePassword = useMutation({
     mutationFn: ({ id, secret }: { id: string; secret: string }) =>
       patchPimProviderConfig(id, { password: secret }),
+    gcTime: 0,
     onSuccess: ({ smtpWarning, ...account }) => {
+      refreshRepairedAccount(queryClient);
       connected(account, smtpWarning);
     },
     onError: showFailure,

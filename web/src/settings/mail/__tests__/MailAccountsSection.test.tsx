@@ -288,6 +288,20 @@ describe('MailAccountsSection', () => {
     });
   });
 
+  it('Remove on an IMAP row points at the button the row has', async () => {
+    listPimAccounts.mockResolvedValue({
+      accounts: [{ ...ACCOUNT, provider: 'imap', linked: null }],
+    });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+
+    const warning = screen.getByText(/decided and learned/);
+    expect(warning.textContent).toContain('“Change password”');
+    expect(warning.textContent).not.toContain('Sign in again');
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeTruthy();
+  });
+
   it('Cancel keeps the account and its watch', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
     renderSection();

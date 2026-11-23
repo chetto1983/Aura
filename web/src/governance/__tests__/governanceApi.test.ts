@@ -23,7 +23,6 @@ import {
   pimAuthStatus,
   pimDeviceStart,
   pimGoogleStart,
-  pimLogout,
 } from '../pimApi';
 
 // governanceApi test — the data layer over the six Plan-02 reads. It asserts the same-origin
@@ -407,15 +406,6 @@ describe('governanceApi same-origin throwing fetch', () => {
     });
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(url).toBe('/api/connect/pim/accounts/work/google/start');
-  });
-
-  it('pimLogout POSTs the logout route', async () => {
-    const fetchMock = okJSON({ ok: true });
-    vi.stubGlobal('fetch', fetchMock);
-    await pimLogout('work');
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/connect/pim/accounts/work/logout');
-    expect(init.method).toBe('POST');
   });
 
   it('pimDeviceStart POSTs auth/start and parses the device-code grant', async () => {

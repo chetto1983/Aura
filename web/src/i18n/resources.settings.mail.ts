@@ -54,7 +54,7 @@ export const mailEn = {
       'The password was refused: it is wrong, or the provider wants an app password instead of the one you sign in with.',
     unreachable: 'The mail server did not answer. Check the server name and port.',
     tls_failed:
-      'The mail server could not prove its identity. Use the server name your provider gives, not one on your own domain.',
+      'The mail server would not set up a secure connection, or could not prove its identity. Use the server name and port your provider gives, not a name on your own domain.',
     mailbox_refused: 'The sign-in worked, but the server would not open the inbox.',
     smtp_auth_failed: 'The sending server refused the password. Check the SMTP settings.',
     smtp_unreachable: 'The sending server did not answer. Check the SMTP server name and port.',
@@ -62,7 +62,7 @@ export const mailEn = {
       smtp_unreachable:
         'Reading works, but the sending server did not answer: replies cannot be sent yet.',
       tls_failed:
-        'Reading works, but the sending server could not prove its identity: replies cannot be sent yet.',
+        'Reading works, but the sending server would not set up a secure connection, or could not prove its identity: replies cannot be sent yet.',
     },
   },
   error: {
@@ -133,7 +133,7 @@ export const mailIt = {
       'La password è stata rifiutata: è sbagliata, oppure il provider vuole una password per app invece di quella con cui accedi.',
     unreachable: 'Il server di posta non ha risposto. Controlla il nome del server e la porta.',
     tls_failed:
-      'Il server di posta non ha dimostrato la sua identità. Usa il nome del server che ti dà il provider, non uno sul tuo dominio.',
+      'Il server di posta non ha stabilito una connessione sicura, o non ha dimostrato la sua identità. Usa il nome del server e la porta che ti dà il provider, non un nome sul tuo dominio.',
     mailbox_refused: "L'accesso è riuscito, ma il server non ha aperto la posta in arrivo.",
     smtp_auth_failed: "Il server d'invio ha rifiutato la password. Controlla le impostazioni SMTP.",
     smtp_unreachable:
@@ -142,7 +142,7 @@ export const mailIt = {
       smtp_unreachable:
         "La lettura funziona, ma il server d'invio non ha risposto: per ora non si possono inviare risposte.",
       tls_failed:
-        "La lettura funziona, ma il server d'invio non ha dimostrato la sua identità: per ora non si possono inviare risposte.",
+        "La lettura funziona, ma il server d'invio non ha stabilito una connessione sicura, o non ha dimostrato la sua identità: per ora non si possono inviare risposte.",
     },
   },
   error: {

@@ -11,10 +11,9 @@ import {
   type RepairServers,
 } from '../settings/mail/mailConnectLogic';
 import { Field, ProviderConfigFields } from './CalendarConnectFields';
-import { MAIL_WATCH_STATUS_KEY } from './mailWatch/useMailWatch';
+import { refreshRepairedAccount } from './mailWatch/useMailWatch';
 import {
   patchPimProviderConfig,
-  PIM_ACCOUNTS_KEY,
   pimErrorKey,
   pimVerifyFailure,
   verifyPimAccount,
@@ -80,8 +79,7 @@ export function ImapRepair({
     setOutcome({ kind: 'works', smtpWarning });
     closeForm();
     onWorked();
-    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
-    void queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY });
+    refreshRepairedAccount(queryClient);
   }
 
   function failed(error: unknown) {
@@ -100,8 +98,10 @@ export function ImapRepair({
     onError: failed,
   });
 
+  // The config holds the password: gcTime 0 drops it as soon as the row stops observing it.
   const save = useMutation({
     mutationFn: (config: Record<string, string>) => patchPimProviderConfig(account.id, config),
+    gcTime: 0,
     onMutate: started,
     onSuccess: worked,
     onError: failed,

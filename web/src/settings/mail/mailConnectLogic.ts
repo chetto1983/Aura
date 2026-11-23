@@ -54,9 +54,10 @@ export function isValidAddress(address: string): boolean {
 }
 
 /** Where a refused create or repair belongs. A fault of the servers (any SMTP step, an IMAP server
- * that does not answer or cannot prove its identity, a host or port the PIM will not try) goes under
- * «Impostazioni server», opened; a refused IMAP login on the password field; anything else on the
- * form. */
+ * that does not answer or will not secure the connection, a host or port the PIM will not try) goes
+ * under «Impostazioni server», opened; a refused IMAP login on the password field; anything else on
+ * the form, an inbox the server would not open among them: the login worked, so the password is
+ * right. */
 export function failureField(error: unknown): 'server' | 'password' | 'form' {
   const verify = pimVerifyFailure(error);
   if (verify === null) {
@@ -69,7 +70,7 @@ export function failureField(error: unknown): 'server' | 'password' | 'form' {
   if (verify.step === 'smtp' || verify.reason === 'unreachable' || verify.reason === 'tls_failed') {
     return 'server';
   }
-  return 'password';
+  return verify.reason === 'mailbox_refused' ? 'form' : 'password';
 }
 
 /** Two spellings of one mailbox: the domain and, in practice, the local part ignore case. */

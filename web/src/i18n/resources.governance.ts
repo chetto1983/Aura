@@ -71,6 +71,8 @@ export const governanceEn = {
         remove: 'Remove',
         removeConfirm:
           'Removing the account deletes what the mail and calendar watch decided and learned for it. To sign in to it again, use “Sign in again” instead.',
+        removeConfirmImap:
+          'Removing the account deletes what the mail and calendar watch decided and learned for it. If its password changed, use “Change password” instead.',
         removeForGood: 'Remove for good',
         cancel: 'Cancel',
         notLinked: "Sign-in not finished: Aura can't read this account yet.",
@@ -335,6 +337,8 @@ export const governanceIt = {
         remove: 'Rimuovi',
         removeConfirm:
           'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui. Per accedere di nuovo usa invece «Ricollega».',
+        removeConfirmImap:
+          'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui. Se la password è cambiata, usa invece «Cambia password».',
         removeForGood: 'Rimuovi definitivamente',
         cancel: 'Annulla',
         notLinked: 'Accesso non completato: Aura non può ancora leggere questo account.',

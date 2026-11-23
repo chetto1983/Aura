@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import {
@@ -79,6 +79,12 @@ describe('«Prova di nuovo»', () => {
       422,
       { error: 'verify_failed', step: 'imap', reason: 'unreachable' },
       'The mail server did not answer. Check the server name and port.',
+    ],
+    [
+      'a server that will not secure the connection',
+      422,
+      { error: 'verify_failed', step: 'imap', reason: 'tls_failed' },
+      'The mail server would not set up a secure connection, or could not prove its identity. Use the server name and port your provider gives, not a name on your own domain.',
     ],
     [
       'too many attempts',
@@ -182,6 +188,24 @@ describe('«Cambia password»', () => {
     expect(server.writes('PATCH', PATCH).map((call) => call.body)).toEqual([
       { providerConfig: { password: 'pw' } },
     ]);
+  });
+
+  it('leaves no password in the mutation cache once the row is gone', async () => {
+    server.on(`PATCH ${PATCH}`, () => ({ body: saved }));
+    const { client, unmount } = renderRow();
+    await openChangePassword();
+    typeInto('New password', 's3cret-pw');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(LOGIN_WORKS)).toBeTruthy();
+
+    unmount();
+    await waitFor(() => {
+      const variables = client
+        .getMutationCache()
+        .getAll()
+        .map((mutation) => mutation.state.variables);
+      expect(JSON.stringify(variables)).not.toContain('s3cret-pw');
+    });
   });
 
   it('closes on «Annulla» without sending', async () => {

@@ -26,6 +26,7 @@ vi.mock('../../../governance/pimApi', async () => {
     '../../../governance/pimApi',
   );
   return {
+    PIM_ACCOUNTS_KEY: actual.PIM_ACCOUNTS_KEY,
     PIM_PROVIDERS_KEY: actual.PIM_PROVIDERS_KEY,
     PIM_PROVIDER_NOT_CONFIGURED: actual.PIM_PROVIDER_NOT_CONFIGURED,
     pimVerifyFailure: actual.pimVerifyFailure,
@@ -368,6 +369,18 @@ describe('AddMailAccount', () => {
     fireEvent.change(password, { target: { value: 'right' } });
     expect(passwordField().getAttribute('aria-invalid')).toBeNull();
     expect(screen.queryByText(i18n.t('settings.mail.verify.auth_failed'))).toBeNull();
+  });
+
+  it('AnInboxTheServerWouldNotOpenIsNotBlamedOnThePassword', async () => {
+    createPimAccount.mockRejectedValueOnce(verifyFailed('imap', 'mailbox_refused'));
+    renderAdd();
+    await discover('mario@libero.it', LIBERO);
+    fireEvent.change(passwordField(), { target: { value: 'right' } });
+    connect();
+
+    expect(await screen.findByText(i18n.t('settings.mail.verify.mailbox_refused'))).toBeTruthy();
+    expect(passwordField().getAttribute('aria-invalid')).toBeNull();
+    expect(serverDetails().open).toBe(false);
   });
 
   it('SmtpWarningIsShownAfterConnecting', async () => {

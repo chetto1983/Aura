@@ -92,7 +92,13 @@ export function PimAccountRow({
         >
           <p className="flex items-start gap-1.5 text-[13px] text-danger">
             <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span>{t('governance.mcp.calendar.removeConfirm')}</span>
+            <span>
+              {t(
+                account.provider === 'imap'
+                  ? 'governance.mcp.calendar.removeConfirmImap'
+                  : 'governance.mcp.calendar.removeConfirm',
+              )}
+            </span>
           </p>
           <span className="flex flex-wrap gap-2">
             <Button

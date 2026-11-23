@@ -136,12 +136,12 @@ describe('failureField', () => {
     expect(failureField(new HttpError(400, 'invalid_port'))).toBe('server');
   });
 
-  it('puts a refused IMAP login or inbox on the password', () => {
+  it('puts a refused IMAP login on the password', () => {
     expect(failureField(verifyFailed('imap', 'auth_failed'))).toBe('password');
-    expect(failureField(verifyFailed('imap', 'mailbox_refused'))).toBe('password');
   });
 
-  it('puts anything else on the form', () => {
+  it('puts anything else on the form, an inbox the server would not open among them', () => {
+    expect(failureField(verifyFailed('imap', 'mailbox_refused'))).toBe('form');
     expect(failureField(new HttpError(400, 'invalid_email'))).toBe('form');
     expect(failureField(new HttpError(429, 'too_many_attempts'))).toBe('form');
     expect(failureField(new Error('boom'))).toBe('form');
