@@ -77,4 +77,13 @@ func TestAPIMNotificationNamesItsSendingAccount(t *testing.T) {
 	if got := pim.calls[1]["accountId"]; got != "t__personale" {
 		t.Fatalf("send accountId = %v, want the recipient's own account", got)
 	}
+
+	pim.calls = nil
+	err = sender.Send(context.Background(), json.RawMessage(`{"action":"send_email","accountId":"t__lavoro","to":["me@gmail.example"],"subject":"s","body":"b"}`))
+	if err != nil {
+		t.Fatalf("Send with an account = %v", err)
+	}
+	if len(pim.calls) != 1 || pim.calls[0]["accountId"] != "t__lavoro" {
+		t.Fatalf("calls = %v, want the named account kept and no listing", pim.calls)
+	}
 }

@@ -18,6 +18,9 @@ func (p pimSelfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 	if err := json.Unmarshal(args, &call); err != nil {
 		return fmt.Errorf("read the email notification: %w", err)
 	}
+	if _, named := call["accountId"]; named {
+		return p.selfSendTool.Send(ctx, args)
+	}
 	var to []string
 	if raw, ok := call["to"]; ok {
 		if err := json.Unmarshal(raw, &to); err != nil {
