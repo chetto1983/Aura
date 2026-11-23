@@ -76,8 +76,12 @@ class StrykerJobTest(unittest.TestCase):
                 output = root / "github_output"
                 output.touch()
                 # `shell: bash` runs the step as bash -eo pipefail.
-                run = subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=root, capture_output=True,
-                                     env={**os.environ, "GITHUB_OUTPUT": str(output)})
+                run = subprocess.run(
+                    ["bash", "-eo", "pipefail", "-c", script],
+                    cwd=root,
+                    capture_output=True,
+                    env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                )
                 return run.returncode, output.read_text(encoding="utf-8")
 
         def bumped(package: str) -> str:
@@ -117,6 +121,12 @@ class GoGroupJobTest(unittest.TestCase):
         self.assertEqual(sorted(scopes), sorted(critical_mutation_gate.GO_SCOPES))
         self.assertEqual(len(scopes), len(set(scopes)), "a scope is measured by two groups")
         self.assertLessEqual(len(groups), 3, "each group is a runner; keep the job count small")
+
+    def test_every_group_fits_the_runner_job_cap(self) -> None:
+        timeouts = [int(value) for value in matrix_values(self.body, "timeout")]
+        self.assertEqual(len(timeouts), len(matrix_values(self.body, "scopes")))
+        for timeout in timeouts:
+            self.assertLessEqual(timeout, 360, "GitHub cancels a hosted-runner job after 360 minutes")
 
     def test_a_failing_group_does_not_cancel_its_siblings(self) -> None:
         self.assertIn("fail-fast: false", self.body)

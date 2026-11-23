@@ -33,8 +33,8 @@ def mutesting_log(killed: int = 8, survived: int = 2) -> str:
     return SUMMARY.format(score=killed / total, killed=killed, survived=survived, total=total)
 
 
-class SignInMutationExecutionTest(unittest.TestCase):
-    def run_measurement(self, outputs: list[subprocess.CompletedProcess[str]]):
+class SlowSuiteMutationExecutionTest(unittest.TestCase):
+    def run_measurement(self, path: str, outputs: list[subprocess.CompletedProcess[str]]):
         with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
             repo = pathlib.Path(tmp)
             stack.enter_context(mock.patch.object(go_mutation_cache, "go_toolchain", return_value=TOOLCHAIN))
@@ -44,25 +44,37 @@ class SignInMutationExecutionTest(unittest.TestCase):
             )
             stack.enter_context(mock.patch.object(go_mutation_cache, "candidate_commit", return_value="1" * 40))
             run = stack.enter_context(mock.patch.object(go_mutation_cache.subprocess, "run", side_effect=outputs))
-            path = "internal/agui/signin_proxy.go"
             measure = go_mutation_cache.measurer("go-mutesting", repo, repo / "logs", repo / "cache", [path])
-            measure("signin_proxy", path)
+            measure("scope", path)
             return run.call_args_list, fingerprint.call_args
 
-    def test_proxy_baseline_passes_before_native_mutations_and_timeout_is_keyed(self):
-        calls, fingerprint = self.run_measurement(
-            [
-                subprocess.CompletedProcess([], 0, "ok\n"),
-                subprocess.CompletedProcess([], 0, mutesting_log()),
-            ]
-        )
-        self.assertEqual(calls[0].args[0], ["go", "test", "-count=1", "-timeout=90s", "./internal/agui"])
-        self.assertEqual(calls[1].args[0], ["go-mutesting", "--exec-timeout=90", "internal/agui/signin_proxy.go"])
-        self.assertEqual(fingerprint.args[2]["mutation_exec_timeout_seconds"], "90")
+    def test_every_agui_scope_passes_the_baseline_before_mutations_and_keys_the_timeout(self):
+        for path in ("internal/agui/signin_proxy.go", "internal/agui/connect_pim_account_api.go"):
+            with self.subTest(path=path):
+                calls, fingerprint = self.run_measurement(
+                    path,
+                    [
+                        subprocess.CompletedProcess([], 0, "ok\n"),
+                        subprocess.CompletedProcess([], 0, mutesting_log()),
+                    ],
+                )
+                self.assertEqual(calls[0].args[0], ["go", "test", "-count=1", "-timeout=90s", "./internal/agui"])
+                self.assertEqual(calls[1].args[0], ["go-mutesting", "--exec-timeout=90", path])
+                self.assertEqual(calls[1].kwargs["timeout"], 7200)
+                self.assertEqual(fingerprint.args[2]["mutation_exec_timeout_seconds"], "90")
 
-    def test_a_failed_unmutated_proxy_suite_never_starts_mutations(self):
+    def test_a_scope_outside_agui_keeps_the_runner_defaults(self):
+        path = "internal/pimwatch/service_repair.go"
+        calls, fingerprint = self.run_measurement(path, [subprocess.CompletedProcess([], 0, mutesting_log())])
+        self.assertEqual([call.args[0] for call in calls], [["go-mutesting", path]])
+        self.assertEqual(calls[0].kwargs["timeout"], 1800)
+        self.assertNotIn("mutation_exec_timeout_seconds", fingerprint.args[2])
+
+    def test_a_failed_unmutated_agui_suite_never_starts_mutations(self):
         with self.assertRaisesRegex(RuntimeError, "unmutated.*baseline"):
-            self.run_measurement([subprocess.CompletedProcess([], 1, "baseline failure\n")])
+            self.run_measurement(
+                "internal/agui/idempotency_pim.go", [subprocess.CompletedProcess([], 1, "baseline failure\n")]
+            )
 
 
 class FakeModule:

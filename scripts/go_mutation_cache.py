@@ -55,8 +55,11 @@ INPUT_FIELDS = (
 TOOLCHAIN_ENV = ("GOFLAGS", "GOVERSION", "GOOS", "GOARCH", "GOEXPERIMENT", "CGO_ENABLED")
 MODULE_FILES = ("go.mod", "go.sum")
 GO_MUTESTING_TIMEOUT_SECONDS = 1800
-SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS = 90
-SIGNIN_PROXY_MUTATION_TIMEOUT_SECONDS = 7200
+# internal/agui's suite measures 27 s against go-mutesting's 10 s default, so every mutant there
+# would time out and count as killed: the package gets a longer exec timeout and its own budget.
+SLOW_SUITE_PACKAGE = "internal/agui"
+SLOW_SUITE_EXEC_TIMEOUT_SECONDS = 90
+SLOW_SUITE_MUTATION_TIMEOUT_SECONDS = 7200
 HARD = "hard gate"
 ADVISORY = "advisory"
 
@@ -267,24 +270,26 @@ def measurer(
 ) -> MeasureScope:
     toolchain = go_toolchain(repo, executable)
 
+    def package_of(relative_path: str) -> str:
+        return pathlib.PurePosixPath(relative_path).parent.as_posix()
+
     def fingerprint_of(relative_path: str) -> str:
-        package = "./" + pathlib.PurePosixPath(relative_path).parent.as_posix()
-        packages = decode_packages(go_output(repo, "list", "-deps", "-test", "-json", package))
+        package = package_of(relative_path)
+        packages = decode_packages(go_output(repo, "list", "-deps", "-test", "-json", "./" + package))
         scope_toolchain = toolchain
-        if relative_path == "internal/agui/signin_proxy.go":
+        if package == SLOW_SUITE_PACKAGE:
             scope_toolchain = {
                 **toolchain,
-                "mutation_exec_timeout_seconds": str(SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS),
+                "mutation_exec_timeout_seconds": str(SLOW_SUITE_EXEC_TIMEOUT_SECONDS),
             }
         return fingerprint(repo, relative_path, scope_toolchain, packages)
 
     def mutate(relative_path: str) -> tuple[int, str]:
         args = [executable, relative_path]
         timeout = GO_MUTESTING_TIMEOUT_SECONDS
-        if relative_path == "internal/agui/signin_proxy.go":
-            # The measured full-package baseline takes 27s; the runner defaults to 10s.
+        if package_of(relative_path) == SLOW_SUITE_PACKAGE:
             baseline = subprocess.run(
-                ["go", "test", "-count=1", f"-timeout={SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS}s", "./internal/agui"],
+                ["go", "test", "-count=1", f"-timeout={SLOW_SUITE_EXEC_TIMEOUT_SECONDS}s", "./" + SLOW_SUITE_PACKAGE],
                 cwd=repo,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -293,9 +298,9 @@ def measurer(
                 timeout=GO_MUTESTING_TIMEOUT_SECONDS,
             )
             if baseline.returncode != 0:
-                raise RuntimeError("unmutated sign-in proxy baseline failed: " + baseline.stdout[-4000:])
-            args = [executable, f"--exec-timeout={SIGNIN_PROXY_EXEC_TIMEOUT_SECONDS}", relative_path]
-            timeout = SIGNIN_PROXY_MUTATION_TIMEOUT_SECONDS
+                raise RuntimeError(f"unmutated {SLOW_SUITE_PACKAGE} baseline failed: " + baseline.stdout[-4000:])
+            args = [executable, f"--exec-timeout={SLOW_SUITE_EXEC_TIMEOUT_SECONDS}", relative_path]
+            timeout = SLOW_SUITE_MUTATION_TIMEOUT_SECONDS
         completed = subprocess.run(
             args,
             cwd=repo,
