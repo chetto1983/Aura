@@ -75,14 +75,14 @@ func TestRegisteredToolNameAcceptsHashedBridgeName(t *testing.T) {
 
 func TestClaimMatchesOnlyExactOwnerMountedToolAndArguments(t *testing.T) {
 	target := Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
-	args := json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
+	args := json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
 	canonical, err := MergeApprovedArgs(target, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claim := Draft{
 		IdentityID: "owner", RegisteredToolName: "pim__calendar", Target: target,
-		Status: StatusDispatching, EffectiveArgs: json.RawMessage(`{"body":"Reviewed","subject":"Hello","to":["first@example.test"],"action":"send_email"}`),
+		Status: StatusDispatching, EffectiveArgs: json.RawMessage(`{"body":"Reviewed","subject":"Hello","to":["first@example.test"],"action":"send_email","accountId":"work"}`),
 		EffectiveFingerprint: argsFingerprint(target, canonical),
 	}
 	if !claim.MatchesDispatch("owner", "pim__calendar", target, args) {
@@ -90,7 +90,7 @@ func TestClaimMatchesOnlyExactOwnerMountedToolAndArguments(t *testing.T) {
 	}
 	if claim.MatchesDispatch("other", "pim__calendar", target, args) ||
 		claim.MatchesDispatch("owner", "other__calendar", target, args) ||
-		claim.MatchesDispatch("owner", "pim__calendar", target, json.RawMessage(`{"action":"send_email","to":["second@example.test"],"subject":"Hello","body":"Reviewed"}`)) {
+		claim.MatchesDispatch("owner", "pim__calendar", target, json.RawMessage(`{"action":"send_email","accountId":"work","to":["second@example.test"],"subject":"Hello","body":"Reviewed"}`)) {
 		t.Fatal("claim authorized changed owner, tool, or destination")
 	}
 }

@@ -113,7 +113,7 @@ func TestMessageDraftGatewayChecksExactClaimBeforeReserving(t *testing.T) {
 	}{
 		{name: "other owner", ctx: identityctx.WithIdentityID(t.Context(), "other"), spec: spec, args: args, key: key, claim: claim},
 		{name: "other registered name", ctx: ownerCtx, spec: tools.Spec{Name: "other__calendar", TrustedRecipeSource: spec.TrustedRecipeSource, TrustedRecipeTool: spec.TrustedRecipeTool}, args: args, key: key, claim: claim},
-		{name: "edited destination", ctx: ownerCtx, spec: spec, args: json.RawMessage(`{"action":"send_email","to":["other@example.test"],"subject":"Hello","body":"Reviewed"}`), key: key, claim: claim},
+		{name: "edited destination", ctx: ownerCtx, spec: spec, args: json.RawMessage(`{"action":"send_email","accountId":"work","to":["other@example.test"],"subject":"Hello","body":"Reviewed"}`), key: key, claim: claim},
 		{name: "other request", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: key.ConversationID, ToolCallID: key.ToolCallID, RequestID: "other"}, claim: claim},
 		{name: "other call", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: key.ConversationID, ToolCallID: "other", RequestID: key.RequestID}, claim: claim},
 		{name: "other conversation", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: "33333333-3333-3333-3333-333333333333", ToolCallID: key.ToolCallID, RequestID: key.RequestID}, claim: claim},
@@ -224,7 +224,7 @@ func reviewedEmailSpec() tools.Spec {
 }
 
 func reviewedEmailArgs() json.RawMessage {
-	return json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
+	return json.RawMessage(`{"action":"send_email","accountId":"work","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
 }
 
 func reviewedEmailClaim(t *testing.T, key ReservationKey, args json.RawMessage) messagedrafts.Draft {
