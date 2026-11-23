@@ -76,8 +76,7 @@ unchanged (deepseek-v4.1-flash). Two G7 turns, one at a time:
   same turn.
 - **A second gap: a send with no account reaches review with no sender.** The model's reasoning in
   turn 2 says "Redo with exact keys: action, accountId, …", and the stored draft has no
-  `accountId`. No code between the model's stream and the draft rewrites the arguments, so the
-  model dropped it. Without `accountId` the PIM chooses the sender itself (`SendEmailTool.cs`:
+  `accountId`. Where the key is lost was not established. Without `accountId` the PIM chooses the sender itself (`SendEmailTool.cs`:
   recipient domain, else the first account, which on this VM is the IMAP one). The review card
   shows no sender, and `accountId` is not editable in review. Scheduled email already refused
   this case. `581c115b8` refuses it for the immediate send too, and the refusal tells the model to
@@ -85,10 +84,39 @@ unchanged (deepseek-v4.1-flash). Two G7 turns, one at a time:
 - Nothing was sent. Both drafts were declined through `POST /api/message-drafts/{id}/resolve`.
 - G7 is still not measured. It needs `581c115b8` on the VM.
 
+`581c115b8` was reverted the same day (`2ea0c0d7b`). On the next image, on the route of the day
+(`thinkingmachines/inkling-2-mini`), the cockpit turns never carried `accountId`, so every send was
+refused before review and the operator could not send at all. The missing sender on the review
+card stays open.
+
+## G7, measured on the PIM directly (same day, 14:15 UTC)
+
+Driver: Claude Code with the VM's `aura-pim-mcp` mounted through an SSH tunnel, the operator's
+OAuth login, no Aura agent in between. One `send_email` from the IMAP account `tecnico` (Aruba)
+to the operator's Google address, subject `[aura-misura] G7`, `accountId` passed explicitly.
+
+| Check | Result |
+|---|---|
+| send | ok |
+| copies at Google | 1 |
+| copies in the IMAP `INBOX.Sent`, after 45 s and again after 60 s | 0 |
+| IMAP search over the account | 0 |
+| PIM log | `Failed to APPEND sent message to [Gmail]/Sent Mail … FolderNotFoundException`, on this send and on the parallel session's IMAP send at 13:36 |
+
+- **Aruba does not file sent mail on its own.** The SMTP submission left no copy anywhere in the
+  mailbox.
+- **The PIM's own Sent copy fails on Aruba.** The account sets no `sentFolder`, so the PIM falls back
+  to `DefaultSent = "[Gmail]/Sent Mail"` (`ImapProviderService.cs:29`). The APPEND
+  (`ImapProviderService.cs:485-499`) only logs the failure. Aruba's Sent folder is `INBOX.Sent`.
+- G7's answer for this host: the PIM must write the Sent copy, into the folder the server marks
+  `\Sent` (RFC 6154), not into a Gmail default.
+- Cleaned up: the Google copy was deleted by exact id (moved to Trash). A search afterwards found
+  0 copies. Nothing landed in the IMAP account.
+
 ## What this does not show
 
 - No Microsoft 365 event, and no series on either provider: the window held one Google event.
 - No IMAP message detail, and no contacts.
 - The Microsoft scopes actually granted.
-- G1–G9: none measured, G7 included after the afternoon rerun.
+- G1–G9: only G7 measured, and on one IMAP host (Aruba).
 - One model route. Whether another model fills `send_email` correctly was not tried.
