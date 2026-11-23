@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TFunction } from 'i18next';
 import i18n from '../../../i18n/i18n';
 import { HttpError } from '../../../api/json';
-import { decision, label, rule } from '../../../test/mailWatchServer';
+import { account, decision, label, rule } from '../../../test/mailWatchServer';
 import {
   browserDay,
   canResume,
@@ -12,6 +12,7 @@ import {
   decisionKey,
   draftIsComplete,
   errorSentence,
+  failingEpisodes,
   failingSince,
   failureSentence,
   groupDecisions,
@@ -566,5 +567,34 @@ describe('staleTransient', () => {
 
   it('a failure with no start has no age', () => {
     expect(staleTransient(transient(null), 'imap', now)).toBe(false);
+  });
+});
+
+describe('failingEpisodes', () => {
+  it("keeps each failing resource's start, and nothing that is not failing", () => {
+    const watch = account({
+      resources: [
+        {
+          resource: 'mail',
+          status: 'failing',
+          last_error: 'provider_transient',
+          failing_since: '2026-11-23T02:00:00Z',
+          advanced_at: null,
+        },
+        { resource: 'calendar', status: 'failing', failing_since: null, advanced_at: null },
+        {
+          resource: 'contacts',
+          status: 'unsupported',
+          last_error: 'permission_denied',
+          failing_since: '2026-11-23T01:00:00Z',
+          advanced_at: null,
+        },
+      ],
+    });
+    expect([...failingEpisodes(watch)]).toEqual([['mail', '2026-11-23T02:00:00Z']]);
+  });
+
+  it('is empty without a watch', () => {
+    expect(failingEpisodes(undefined).size).toBe(0);
   });
 });

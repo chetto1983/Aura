@@ -26,13 +26,16 @@ import { Switch } from '@/components/ui/switch';
 // says why, once. Nor can one start on an account that never finished signing in, which has nothing
 // to read. A watch that already exists keeps its switch, because turning off still works.
 
+const NONE_VOUCHED: ReadonlyMap<string, string> = new Map();
+
 export function AccountWatch({
   account,
-  loginWorks = false,
+  vouched = NONE_VOUCHED,
 }: {
   readonly account: PimAccount;
-  /** A repair showed the login works, so a lasting failure no longer asks for a new password. */
-  readonly loginWorks?: boolean;
+  /** The failing episodes a working login vouched for, by resource: their lasting failure no
+   * longer asks for a new password. */
+  readonly vouched?: ReadonlyMap<string, string>;
 }) {
   const { t } = useTranslation();
   const switchId = useId();
@@ -89,7 +92,7 @@ export function AccountWatch({
           <WatchState
             watch={watch}
             provider={account.provider}
-            loginWorks={loginWorks}
+            vouched={vouched}
             cap={settings.daily_alert_cap}
             modelAsked={decideRoute !== '' && (decideRoute !== 'openrouter' || watch.cloud_decide)}
             resuming={toggle.isPending}
@@ -134,7 +137,7 @@ interface WatchStateProps {
   readonly watch: MailWatchAccount;
   /** An IMAP failure that lasts asks for repair; other providers keep the code's sentence. */
   readonly provider: string;
-  readonly loginWorks: boolean;
+  readonly vouched: ReadonlyMap<string, string>;
   readonly cap: number;
   /** A failure stays on the account until an answer clears it, so it shows only while the model is asked. */
   readonly modelAsked: boolean;
@@ -145,7 +148,7 @@ interface WatchStateProps {
 function WatchState({
   watch,
   provider,
-  loginWorks,
+  vouched,
   cap,
   modelAsked,
   resuming,
@@ -184,7 +187,7 @@ function WatchState({
           key={entry.resource}
           entry={entry}
           provider={provider}
-          loginWorks={loginWorks}
+          vouchedSince={vouched.get(entry.resource)}
         />
       ))}
       {modelAsked && watch.decide_error ? <DecideFailure watch={watch} /> : null}
@@ -225,15 +228,17 @@ function RunningLine({ watch, cap }: { readonly watch: MailWatchAccount; readonl
 
 /** A stale IMAP failure is one sentence that names the mailbox and its day and time itself, so it
  * carries no "Posta, dal …:" head: that would say the time twice. Once a repair showed the login
- * works, that guess is disproved and the line goes back to the code's own sentence. */
+ * works during this episode, that guess is disproved and the line goes back to the code's own
+ * sentence; a later episode, with its own `failing_since`, is judged afresh. */
 function FailingLine({
   entry,
   provider,
-  loginWorks,
+  vouchedSince,
 }: {
   readonly entry: MailWatchResource;
   readonly provider: string;
-  readonly loginWorks: boolean;
+  /** The `failing_since` a working login vouched for; that episode no longer asks for repair. */
+  readonly vouchedSince: string | undefined;
 }) {
   const { t, i18n } = useTranslation();
   const name = t(`governance.mailWatch.resource.${entry.resource}`);
@@ -242,7 +247,7 @@ function FailingLine({
   return (
     <p className="flex items-start gap-1.5 text-[13px] text-warning">
       <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-      {since !== null && !loginWorks && staleTransient(entry, provider, now) ? (
+      {since !== null && since !== vouchedSince && staleTransient(entry, provider, now) ? (
         <span>
           {t('governance.mailWatch.failure.stale', { since: dayAndTime(since, i18n.language) })}
         </span>

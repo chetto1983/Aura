@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   isServerFailure,
-  readStillFails,
   repairConfig,
   repairMessageKey,
   REPAIR_SERVER_KEYS,
@@ -12,7 +11,6 @@ import {
   type RepairServers,
 } from '../settings/mail/mailConnectLogic';
 import { Field, ProviderConfigFields } from './CalendarConnectFields';
-import type { MailWatchAccount, MailWatchStatus } from './mailWatchApi';
 import { MAIL_WATCH_STATUS_KEY } from './mailWatch/useMailWatch';
 import {
   patchPimProviderConfig,
@@ -30,8 +28,9 @@ import { Button } from '@/components/ui/button';
 // place. «Prova di nuovo» checks the stored login the way the watch reads; «Cambia password» sends a
 // new password, and any server field typed under «Impostazioni server» (blank means unchanged). The
 // username is not offered: another mailbox is another account (A3). A working login lets the server
-// resume the watch and read at once, so the row only refreshes; when a read after the login still
-// fails the row says so instead of offering the same buttons again (A8).
+// resume the watch and read at once, so the row only refreshes. Whether that read then works is not
+// judged here: the status says when a run was claimed, not when its read ended, so the sentence
+// tells the person what a failure at the next check would mean, and the buttons stay.
 
 const IMAP_DEF = pimProviderById('imap');
 const SERVER_DEF: PimProviderDef = {
@@ -49,11 +48,9 @@ type Outcome =
 
 export function ImapRepair({
   account,
-  watch,
   onWorked,
 }: {
   readonly account: PimAccount;
-  readonly watch?: MailWatchAccount | undefined;
   /** Called once a login has been shown to work, so the row stops asking for a new password. */
   readonly onWorked: () => void;
 }) {
@@ -66,7 +63,6 @@ export function ImapRepair({
   const [serverOpen, setServerOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [baseline, setBaseline] = useState<string | null>(null);
 
   function closeForm() {
     setEditing(false);
@@ -78,30 +74,14 @@ export function ImapRepair({
 
   function started() {
     setOutcome(null);
-    setBaseline(null);
   }
 
-  /** The next run the status shows right after the login, the server-side mark a later status is
-   * judged against. A status that cannot be read sets no mark, and the reading goes unjudged. */
-  async function nextRunAfterLogin(): Promise<string | null> {
-    try {
-      await queryClient.invalidateQueries(
-        { queryKey: MAIL_WATCH_STATUS_KEY },
-        { throwOnError: true },
-      );
-    } catch {
-      return null;
-    }
-    const status = queryClient.getQueryData<MailWatchStatus>(MAIL_WATCH_STATUS_KEY);
-    return status?.accounts.find((entry) => entry.account_id === account.id)?.next_run_at ?? null;
-  }
-
-  async function worked({ smtpWarning }: { smtpWarning?: string }) {
-    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
-    setBaseline(await nextRunAfterLogin());
+  function worked({ smtpWarning }: { smtpWarning?: string }) {
     setOutcome({ kind: 'works', smtpWarning });
     closeForm();
     onWorked();
+    void queryClient.invalidateQueries({ queryKey: PIM_ACCOUNTS_KEY });
+    void queryClient.invalidateQueries({ queryKey: MAIL_WATCH_STATUS_KEY });
   }
 
   function failed(error: unknown) {
@@ -131,14 +111,6 @@ export function ImapRepair({
     setSubmitted(true);
     const config = repairConfig(servers, password);
     if (config !== null) save.mutate(config);
-  }
-
-  if (outcome?.kind === 'works' && readStillFails(watch, baseline)) {
-    return (
-      <p role="status" className="text-[13px] text-warning">
-        {t('settings.mail.repair.readStillFails')}
-      </p>
-    );
   }
 
   const busy = retry.isPending || save.isPending;
@@ -247,7 +219,7 @@ export function ImapRepair({
 
       {outcome?.kind === 'works' ? (
         <p role="status" className="flex flex-col text-[13px]">
-          <span className="text-success">{t('settings.mail.repair.works')}</span>
+          <span className="text-success">{t('settings.mail.repair.loginWorks')}</span>
           {warningKey === null ? null : <span className="text-warning">{t(warningKey)}</span>}
         </p>
       ) : null}

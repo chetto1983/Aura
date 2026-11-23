@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { MailWatchResource } from '../../../governance/mailWatchApi';
 import type { PimDiscovery } from '../../../governance/pimApi';
-import { account } from '../../../test/mailWatchServer';
 import {
   accountIdFromAddress,
   httpsUrl,
   isServerFailure,
   isValidAddress,
   mailProviderConfig,
-  readStillFails,
   repairConfig,
   repairMessageKey,
   sameAddress,
@@ -106,52 +103,6 @@ describe('serversTyped', () => {
   it.each(['imapHost', 'imapPort', 'smtpHost', 'smtpPort'] as const)('is true for %s', (key) => {
     const servers = { imapHost: '', imapPort: '', smtpHost: '', smtpPort: '', [key]: 'x' };
     expect(serversTyped(servers)).toBe(true);
-  });
-});
-
-describe('readStillFails', () => {
-  // The next run the status showed right after the login: both sides of the comparison are the
-  // server's clock.
-  const baseline = '2026-11-23T12:00:00Z';
-  const failing = {
-    resource: 'mail',
-    status: 'failing',
-    last_error: 'provider_transient',
-    failing_since: '2026-11-23T02:00:00Z',
-    advanced_at: null,
-  } as const;
-  const watch = (next: string | null, resources: readonly MailWatchResource[]) =>
-    account({ next_run_at: next, resources });
-
-  it('is true once a run after the baseline still failed', () => {
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), baseline)).toBe(true);
-  });
-
-  it('waits for a run later than the baseline', () => {
-    expect(readStillFails(watch(baseline, [failing]), baseline)).toBe(false);
-    expect(readStillFails(watch('2026-11-23T11:59:00Z', [failing]), baseline)).toBe(false);
-    expect(readStillFails(watch(null, [failing]), baseline)).toBe(false);
-  });
-
-  it('does not judge a paused watch, whose next run a repair may never move', () => {
-    const paused = { ...watch('2026-11-23T12:05:00Z', [failing]), paused: true };
-    expect(readStillFails(paused, baseline)).toBe(false);
-  });
-
-  it('is false when reading works again', () => {
-    const { last_error: _cleared, ...rest } = failing;
-    const ok = { ...rest, status: 'ok' } as const;
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [ok]), baseline)).toBe(false);
-  });
-
-  it('counts only a failing resource: a refused permission is not a reading that fails', () => {
-    const refused = { ...failing, status: 'unsupported', last_error: 'permission_denied' } as const;
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [refused]), baseline)).toBe(false);
-  });
-
-  it('does not judge without a baseline or a watch', () => {
-    expect(readStillFails(watch('2026-11-23T12:05:00Z', [failing]), null)).toBe(false);
-    expect(readStillFails(undefined, baseline)).toBe(false);
   });
 });
 

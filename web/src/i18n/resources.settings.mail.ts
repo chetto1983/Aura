@@ -38,8 +38,8 @@ export const mailEn = {
   remove: 'Remove',
   repair: {
     tryAgain: 'Try again',
-    works: 'Sign-in works',
-    readStillFails: 'Sign-in works, but reading the mail still fails',
+    loginWorks:
+      'Sign-in works. If reading does not resume at the next check, the password is not the problem.',
     newPassword: 'New password',
     serverHint: 'A blank field stays as it is.',
     usernameFixed: 'The username cannot be changed: for another mailbox, add a new account.',
@@ -114,8 +114,8 @@ export const mailIt = {
   remove: 'Rimuovi',
   repair: {
     tryAgain: 'Prova di nuovo',
-    works: "L'accesso funziona",
-    readStillFails: "L'accesso funziona, ma la lettura della posta non riesce ancora",
+    loginWorks:
+      "L'accesso funziona. Se la lettura non riprende al prossimo controllo, la password non è il problema.",
     newPassword: 'Nuova password',
     serverHint: 'Un campo lasciato vuoto resta com’è.',
     usernameFixed:

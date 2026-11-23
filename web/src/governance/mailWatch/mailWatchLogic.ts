@@ -3,6 +3,7 @@ import { HttpError } from '../../api/json';
 import {
   MAIL_WATCH_UNAVAILABLE,
   type MailWatchDecision,
+  type MailWatchAccount,
   type MailWatchLabel,
   type MailWatchResource,
   type MailWatchRule,
@@ -241,6 +242,18 @@ export function staleTransient(
   if (provider !== 'imap' || entry.last_error !== 'provider_transient') return false;
   if (entry.failing_since === null) return false;
   return now.getTime() - Date.parse(entry.failing_since) > STALE_AFTER_MS;
+}
+
+/** Each failing resource's `failing_since`, by resource. A working login vouches only for the
+ * episodes open when it ran: a later failure starts a new `failing_since` and is judged afresh. */
+export function failingEpisodes(watch: MailWatchAccount | undefined): ReadonlyMap<string, string> {
+  return new Map(
+    (watch?.resources ?? []).flatMap((entry): [string, string][] =>
+      entry.status === 'failing' && entry.failing_since !== null
+        ? [[entry.resource, entry.failing_since]]
+        : [],
+    ),
+  );
 }
 
 const PAUSED = 'governance.mailWatch.paused';

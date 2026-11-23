@@ -1,8 +1,7 @@
 // Pure rules of the mailbox connect and repair flows: the account id an address maps to, which
 // sentence a failed check gets and where it goes, whether an address is worth sending to the PIM, the
-// config an IMAP create or repair sends, and whether reading still fails after a working login.
+// config an IMAP create or repair sends.
 
-import type { MailWatchAccount } from '../../governance/mailWatchApi';
 import type { PimDiscovery, PimVerifyReason } from '../../governance/pimApi';
 
 /** The id an address becomes: lowercase, every run outside [a-z0-9] one dash, no dash at the ends,
@@ -130,24 +129,6 @@ export function repairConfig(
   }
   config.password = password;
   return config;
-}
-
-/** A working login makes Aura move the watch's next run to now (wakeRepairedWatch → RunTaskNow);
- * once that run is done, next_run_at moves a whole interval on. `baseline` is the next run the
- * status showed right after the login, so both sides are the server's clock: a later status whose
- * next run is past it has read since, and a resource still failing then means the login was not the
- * problem (A8). A paused watch is not judged, since a repair may leave it paused with its old next
- * run. Only `failing` counts: an `unsupported` resource keeps a refused permission's code, which no
- * read fixes. */
-export function readStillFails(
-  watch: MailWatchAccount | undefined,
-  baseline: string | null,
-): boolean {
-  if (watch === undefined || watch.paused || baseline === null || watch.next_run_at === null) {
-    return false;
-  }
-  if (Date.parse(watch.next_run_at) <= Date.parse(baseline)) return false;
-  return watch.resources.some((entry) => entry.status === 'failing');
 }
 
 function portText(port: number | undefined): string {
