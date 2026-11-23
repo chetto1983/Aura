@@ -2,8 +2,10 @@
 # A fake mailbox over TLS and a PIM that trusts it, for web/e2e/mcp-cockpit-live.spec.ts.
 #
 # GreenMail serves IMAPS and SMTPS on loopback 993 and 465 with a throwaway self-signed
-# certificate for 127.0.0.1, and its REST API on 127.0.0.1:18080, where the spec reads what
-# arrived. The ports are not a choice: the cockpit sends no security key for a domain discovery
+# certificate for 127.0.0.1, and its REST API at AURA_E2E_FAKE_MAIL_API (default
+# http://127.0.0.1:18025), where the spec reads what arrived. Not 18080: that is where compose
+# publishes SearXNG (AURA_SEARXNG_PORT).
+# The mail ports are not a choice: the cockpit sends no security key for a domain discovery
 # does not know, so the PIM takes it from the port, ssl on 993 and 465 and required STARTTLS on
 # any other (spec amendment A2, ImapProviderInput.ForWrite in the PIM), and GreenMail offers
 # implicit TLS only, never STARTTLS (measured 2026-11-23: no STARTTLS in CAPABILITY or EHLO).
@@ -20,9 +22,9 @@
 #
 # Usage: bash scripts/pim_tls_mail_up.sh [down]
 #   AURA_PIM_MCP_IMAGE picks the PIM image, e.g. a local build of a branch not yet published.
-# The Aura under test needs AURA_PIM_MCP_URL=http://127.0.0.1:8093, with no trailing slash: with
-# one, the cockpit's calls went to //admin/... and the PIM answered 404 (measured 2026-11-23).
-# Needs Docker and openssl, and loopback 993, 465, 18080 and 8093 free: stop the compose PIM.
+#   AURA_E2E_FAKE_MAIL_API moves GreenMail's API; the spec reads the same variable.
+# The Aura under test needs AURA_PIM_MCP_URL=http://127.0.0.1:8093.
+# Needs Docker and openssl, and loopback 993, 465, the API port and 8093 free: stop the compose PIM.
 set -euo pipefail
 
 PIM_IMAGE="${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}"
@@ -31,10 +33,13 @@ MAIL=aura-e2e-tls-mail
 PIM=aura-e2e-tls-pim
 DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/aura-e2e-tls-mail"
 KEYSTORE_PASSWORD=e2e-keystore-only
+MAIL_API="${AURA_E2E_FAKE_MAIL_API:-http://127.0.0.1:18025}"
 
 docker rm -f "$MAIL" "$PIM" >/dev/null 2>&1 || true
 rm -rf "$DIR"
 [ "${1:-}" = down ] && exit 0
+# A failed bring-up leaves nothing running behind it.
+trap 'docker rm -f "$MAIL" "$PIM" >/dev/null 2>&1 || true; rm -rf "$DIR"' ERR
 
 mkdir -p "$DIR"
 openssl req -x509 -newkey rsa:2048 -noenc -keyout "$DIR/mail.key" -out "$DIR/mail.crt" -days 2 \
@@ -50,7 +55,7 @@ chmod 0644 "$DIR/mail.p12" "$DIR/ca-bundle.pem"
 # greenmail.tls.keystore.password). Without auth, any login works and a recipient's mailbox is
 # created on delivery.
 docker run -d --name "$MAIL" \
-  -p 127.0.0.1:993:3993 -p 127.0.0.1:465:3465 -p 127.0.0.1:18080:8080 \
+  -p 127.0.0.1:993:3993 -p 127.0.0.1:465:3465 -p "127.0.0.1:${MAIL_API##*:}:8080" \
   -v "$DIR/mail.p12:/run/aura-e2e/mail.p12:ro" \
   -e GREENMAIL_OPTS="-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled \
 -Dgreenmail.tls.keystore.file=/run/aura-e2e/mail.p12 -Dgreenmail.tls.keystore.password=$KEYSTORE_PASSWORD" \
@@ -71,8 +76,8 @@ docker run -d --name "$PIM" --network host \
   --entrypoint /bin/sh "$PIM_IMAGE" \
   -c 'test -s /app/data/appsettings.json || printf "%s" "$AURA_PIM_EMPTY_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll' >/dev/null
 
-for endpoint in http://127.0.0.1:18080/api/service/readiness http://127.0.0.1:8093/health; do
+for endpoint in "$MAIL_API/api/service/readiness" http://127.0.0.1:8093/health; do
   curl --retry 30 --retry-delay 2 --retry-connrefused --retry-all-errors -fsS "$endpoint" >/dev/null
 done
-echo "==> GreenMail over TLS on 127.0.0.1:993/465 (API :18080), PIM $PIM_IMAGE on :8093 trusting it"
+echo "==> GreenMail over TLS on 127.0.0.1:993/465 (API $MAIL_API), PIM $PIM_IMAGE on :8093 trusting it"
 echo "==> run the spec with AURA_E2E_PIM_TLS_MAIL=1; tear down with: bash scripts/pim_tls_mail_up.sh down"

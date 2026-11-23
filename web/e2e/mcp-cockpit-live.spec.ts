@@ -5,11 +5,11 @@ const servers = ['calendar', 'memory', 'whatsapp'] as const;
 const origin = process.env.AURA_E2E_ORIGIN ?? 'http://127.0.0.1:9080';
 const runRealAgent = process.env.AURA_E2E_REAL_AGENT === '1';
 // scripts/pim_tls_mail_up.sh: GreenMail over TLS on loopback 993 (IMAPS) and 465 (SMTPS), its API
-// on 18080, and a PIM on :8093 that trusts its certificate. The form sends no security key for a
+// at AURA_E2E_FAKE_MAIL_API (the script reads the same variable), and a PIM on :8093 that trusts its certificate. The form sends no security key for a
 // domain discovery does not know, so the PIM takes it from these two ports (spec A2), and the host
 // is private, which only the operator, who holds identity.create, may name (spec A5).
 const tlsMailUp = process.env.AURA_E2E_PIM_TLS_MAIL === '1';
-const fakeMailApi = process.env.AURA_E2E_FAKE_MAIL_API ?? 'http://127.0.0.1:18080';
+const fakeMailApi = process.env.AURA_E2E_FAKE_MAIL_API ?? 'http://127.0.0.1:18025';
 const fakeMailHost = '127.0.0.1';
 const recipient = 'pim-e2e-recipient@aura.test';
 
@@ -188,6 +188,9 @@ test('runs the built-in MCP servers on credentials Aura issues itself', async ({
   }
 });
 
+// CI does not run these two yet: the fixture needs the PIM image of PR #5 (aura-pim-mcp), which is
+// unpublished. Wiring ci.yml's web-e2e job to scripts/pim_tls_mail_up.sh belongs to task L1 step 1
+// of docs/superpowers/plans/2026-11-20-pim-account-connect-repair.md, once that image is out.
 const tlsMailSkip = 'run scripts/pim_tls_mail_up.sh, then set AURA_E2E_PIM_TLS_MAIL=1';
 
 test('connects a mailbox over TLS from Settings, and removes it', async ({ page }, testInfo) => {
@@ -284,6 +287,13 @@ test('sends through the real agent from a mailbox connected in Settings', async 
         'DELETE',
       );
     }
-    await removeMailbox(page, address);
+    // A failed clean-up must not hide why the test failed; the fixture's PIM keeps no volume, so
+    // the next `pim_tls_mail_up.sh` starts empty anyway.
+    await removeMailbox(page, address).catch((error: unknown) => {
+      testInfo.annotations.push({
+        type: 'cleanup',
+        description: `mailbox ${address} not removed: ${String(error)}`,
+      });
+    });
   }
 });
