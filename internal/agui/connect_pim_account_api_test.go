@@ -2,6 +2,7 @@ package agui
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -230,6 +231,32 @@ func TestASuccessfulVerifyWakesTheWatch(t *testing.T) {
 
 	if rec.Code != http.StatusOK || watch.repaired != "work" {
 		t.Fatalf("verify = %d, repaired %q; want 200 and the watch of work woken", rec.Code, watch.repaired)
+	}
+}
+
+func TestASuccessfulPatchWakesTheWatch(t *testing.T) {
+	p := &recordingPIM{status: http.StatusOK, answer: `{"ok":true}`}
+	s := pimAccountServer(t, p)
+	watch := &fakeWatchService{}
+	s.SetMailWatch(watch)
+
+	rec := pimAccountCall(s, http.MethodPatch, "/api/connect/pim/accounts/work/provider-config", `{"providerConfig":{"password":"n3w"}}`)
+
+	if rec.Code != http.StatusOK || watch.repaired != "work" {
+		t.Fatalf("patch = %d, repaired %q; want 200 and the watch of work woken", rec.Code, watch.repaired)
+	}
+}
+
+func TestAWakeThatFailsStillAnswersTheStoredRepair(t *testing.T) {
+	p := &recordingPIM{status: http.StatusOK, answer: `{"ok":true}`}
+	s := pimAccountServer(t, p)
+	watch := &fakeWatchService{err: errors.New("scheduler down")}
+	s.SetMailWatch(watch)
+
+	rec := pimAccountCall(s, http.MethodPatch, "/api/connect/pim/accounts/work/provider-config", `{"providerConfig":{"password":"n3w"}}`)
+
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` || watch.repaired != "work" {
+		t.Fatalf("patch = %d %q, repaired %q; want the sidecar's 200 after the wake was tried", rec.Code, rec.Body.String(), watch.repaired)
 	}
 }
 

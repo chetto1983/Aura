@@ -22,9 +22,13 @@ func (s *Service) Repaired(ctx context.Context, identityID, accountID string) er
 	if !ok {
 		return nil
 	}
-	cursors, err := s.Store.Cursors(ctx, identityID)
-	if err != nil {
-		return err
+	// Only a paused watch needs to know why it failed; a cursor read that fails must not keep an
+	// active watch from running.
+	var cursors []Cursor
+	if watch.Paused {
+		if cursors, err = s.Store.Cursors(ctx, identityID); err != nil {
+			return err
+		}
 	}
 	resume, runNow := repairSteps(watch, cursors, accountID)
 	if resume {
