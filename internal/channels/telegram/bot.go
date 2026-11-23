@@ -88,6 +88,17 @@ type botSender interface {
 	Edit(msg tele.Editable, what any, opts ...any) (*tele.Message, error)
 }
 
+// Callers reach these narrow surfaces through a type assertion on tele.API, so a
+// telebot signature change would silently switch the feature off instead of
+// failing the build: v4.0.0 changed Notify's variadic from ...int to ...interface{}.
+var (
+	_ botSender   = (*tele.Bot)(nil)
+	_ botNotifier = (*tele.Bot)(nil)
+	_ botFiler    = (*tele.Bot)(nil)
+	_ botReactor  = (*tele.Bot)(nil)
+	_ botDeleter  = (*tele.Bot)(nil)
+)
+
 // Deps are the Telegram channel's constructor inputs. Runner drives the loop;
 // Store persists onboarding/accounts; the throttles come from the channel Config.
 // Token is the Bot API credential (empty → the registry enable gate keeps the

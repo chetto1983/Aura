@@ -16,7 +16,7 @@ type recordingNotifier struct {
 	sent []tele.ChatAction
 }
 
-func (r *recordingNotifier) Notify(_ tele.Recipient, action tele.ChatAction, _ ...int) error {
+func (r *recordingNotifier) Notify(_ tele.Recipient, action tele.ChatAction, _ ...any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sent = append(r.sent, action)

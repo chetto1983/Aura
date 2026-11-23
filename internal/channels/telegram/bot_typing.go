@@ -16,7 +16,7 @@ const typingPulse = 4 * time.Second
 // (Telegram auto-clears it when the bot next sends a message). *tele.Bot satisfies
 // it; tests inject a recorder.
 type botNotifier interface {
-	Notify(to tele.Recipient, action tele.ChatAction, threadID ...int) error
+	Notify(to tele.Recipient, action tele.ChatAction, opts ...any) error
 }
 
 // keepWorking shows a persistent working indicator (the chat action, e.g. the

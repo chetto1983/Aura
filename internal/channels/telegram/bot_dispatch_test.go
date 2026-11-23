@@ -59,7 +59,7 @@ func (b *dispatchBot) Edit(_ tele.Editable, what any, opts ...any) (*tele.Messag
 	return &tele.Message{}, nil
 }
 
-func (b *dispatchBot) EditReplyMarkup(_ tele.Editable, markup *tele.ReplyMarkup) (*tele.Message, error) {
+func (b *dispatchBot) EditReplyMarkup(_ tele.Editable, markup *tele.ReplyMarkup, _ ...any) (*tele.Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.edits = append(b.edits, editCall{markup: markup})
@@ -105,7 +105,7 @@ func (b *dispatchBot) Respond(_ *tele.Callback, resp ...*tele.CallbackResponse) 
 
 // Notify records the "Aura is working" chat action (keepWorking). Overriding it
 // keeps the embedded nil tele.API from panicking when a handler shows the indicator.
-func (b *dispatchBot) Notify(_ tele.Recipient, _ tele.ChatAction, _ ...int) error {
+func (b *dispatchBot) Notify(_ tele.Recipient, _ tele.ChatAction, _ ...any) error {
 	b.mu.Lock()
 	b.notifies++
 	b.mu.Unlock()
