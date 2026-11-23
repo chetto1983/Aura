@@ -98,7 +98,8 @@ export function ImapRepair({
     onError: failed,
   });
 
-  // The config holds the password: gcTime 0 drops it as soon as the row stops observing it.
+  // The config holds the password: a save resets once it settles, so the row stops observing it, and
+  // gcTime 0 then drops it from the cache at once instead of five minutes on.
   const save = useMutation({
     mutationFn: (config: Record<string, string>) => patchPimProviderConfig(account.id, config),
     gcTime: 0,
@@ -110,7 +111,12 @@ export function ImapRepair({
   function submit() {
     setSubmitted(true);
     const config = repairConfig(servers, password);
-    if (config !== null) save.mutate(config);
+    if (config === null) return;
+    save.mutate(config, {
+      onSettled: () => {
+        save.reset();
+      },
+    });
   }
 
   const busy = retry.isPending || save.isPending;

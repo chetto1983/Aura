@@ -166,8 +166,8 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
 
   // Every input rides in the mutation's variables: onMutate re-renders before mutationFn runs, and
   // TanStack hands the running mutation that render's options, so a closure would read reset state.
-  // The variables hold the password, so gcTime 0 drops the mutation as soon as no form observes it,
-  // not five minutes later.
+  // The variables hold the password: each attempt resets its mutation once it settles, so the form
+  // stops observing it, and gcTime 0 then drops it from the cache at once instead of five minutes on.
   const connectMail = useMutation({
     mutationFn: createMailAccount,
     gcTime: 0,
@@ -242,12 +242,19 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
       setServerOpen(true);
       return;
     }
-    connectMail.mutate({
-      address: trimmed,
-      provider: 'imap',
-      providerConfig: mailProviderConfig(servers, password, current),
-      recheck: timedOut,
-    });
+    connectMail.mutate(
+      {
+        address: trimmed,
+        provider: 'imap',
+        providerConfig: mailProviderConfig(servers, password, current),
+        recheck: timedOut,
+      },
+      {
+        onSettled: () => {
+          connectMail.reset();
+        },
+      },
+    );
   }
 
   const busy = discovery.isPending || connectMail.isPending;
@@ -406,7 +413,14 @@ export function AddMailAccount({ onCreated }: { readonly onCreated: () => void }
             canChangePassword={password !== ''}
             pending={changePassword.isPending || remove.isPending}
             onChangePassword={() => {
-              changePassword.mutate({ id: outcome.account.id, secret: password });
+              changePassword.mutate(
+                { id: outcome.account.id, secret: password },
+                {
+                  onSettled: () => {
+                    changePassword.reset();
+                  },
+                },
+              );
             }}
             onRemove={() => {
               remove.mutate(outcome.account.id);

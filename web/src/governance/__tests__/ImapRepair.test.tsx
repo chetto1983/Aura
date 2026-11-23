@@ -190,15 +190,14 @@ describe('«Cambia password»', () => {
     ]);
   });
 
-  it('leaves no password in the mutation cache once the row is gone', async () => {
+  it('holds no password in the mutation cache once the save settled, the row still open', async () => {
     server.on(`PATCH ${PATCH}`, () => ({ body: saved }));
-    const { client, unmount } = renderRow();
+    const { client } = renderRow();
     await openChangePassword();
     typeInto('New password', 's3cret-pw');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText(LOGIN_WORKS)).toBeTruthy();
 
-    unmount();
     await waitFor(() => {
       const variables = client
         .getMutationCache()

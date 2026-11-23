@@ -288,18 +288,22 @@ describe('MailAccountsSection', () => {
     });
   });
 
-  it('Remove on an IMAP row points at the button the row has', async () => {
-    listPimAccounts.mockResolvedValue({
-      accounts: [{ ...ACCOUNT, provider: 'imap', linked: null }],
-    });
+  it.each<[string, PimAccount, string | null]>([
+    ['a connected sign-in', ACCOUNT, 'Sign in again'],
+    ['an unfinished sign-in', UNFINISHED, 'Finish sign-in'],
+    ['an IMAP mailbox', { ...ACCOUNT, provider: 'imap', linked: null }, 'Change password'],
+    ['a calendar feed', { ...ACCOUNT, provider: 'ics', linked: null }, null],
+  ])('Remove on %s names only a control the row has', async (_kind, acct, control) => {
+    listPimAccounts.mockResolvedValue({ accounts: [acct] });
     renderSection();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
 
+    const lost =
+      'Removing the account deletes what the mail and calendar watch decided and learned for it.';
     const warning = screen.getByText(/decided and learned/);
-    expect(warning.textContent).toContain('“Change password”');
-    expect(warning.textContent).not.toContain('Sign in again');
-    expect(screen.getByRole('button', { name: 'Change password' })).toBeTruthy();
+    expect(warning.textContent).toBe(control === null ? lost : `${lost} Use “${control}” instead.`);
+    if (control !== null) expect(screen.getByRole('button', { name: control })).toBeTruthy();
   });
 
   it('Cancel keeps the account and its watch', async () => {

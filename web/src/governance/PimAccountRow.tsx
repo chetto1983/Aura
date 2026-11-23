@@ -8,7 +8,7 @@ import { failingEpisodes } from './mailWatch/mailWatchLogic';
 import { useMailWatchStatus } from './mailWatch/useMailWatch';
 import { startConnect } from './pimConnect';
 import { PimConnectPanel } from './PimConnectPanel';
-import { pimAccountFlow } from './pimProviders';
+import { pimAccountFlow, type PimAuthFlow } from './pimProviders';
 import type { PimAccount } from './pimApi';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,17 @@ import { Button } from '@/components/ui/button';
 // 2026-11-03, lab VM). An IMAP account has nothing to sign in to, so it is repaired in place instead
 // (ImapRepair). A working login there vouches for the failures open at that moment (their
 // `failing_since`, read from the same query AccountWatch polls), so those stop asking for a password.
+
+/** The label of the control that gets the account working again without removing it, as the row
+ * shows it, or null when the row has none: the removal warning names it, so it must be on the row. */
+function keepControlKey(provider: string, flow: PimAuthFlow, unfinished: boolean): string | null {
+  if (flow !== 'none') {
+    return unfinished
+      ? 'governance.mcp.calendar.finishSignIn'
+      : 'governance.mcp.calendar.signInAgain';
+  }
+  return provider === 'imap' ? 'settings.mail.changePassword' : null;
+}
 
 export function PimAccountRow({
   account,
@@ -37,6 +48,7 @@ export function PimAccountRow({
   const [confirming, setConfirming] = useState(false);
   const [vouched, setVouched] = useState<ReadonlyMap<string, string>>(() => new Map());
   const unfinished = account.linked === false;
+  const keepControl = keepControlKey(account.provider, flow, unfinished);
   const status = useMailWatchStatus();
   const watch = status.data?.accounts.find((entry) => entry.account_id === account.id);
 
@@ -93,11 +105,10 @@ export function PimAccountRow({
           <p className="flex items-start gap-1.5 text-[13px] text-danger">
             <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              {t(
-                account.provider === 'imap'
-                  ? 'governance.mcp.calendar.removeConfirmImap'
-                  : 'governance.mcp.calendar.removeConfirm',
-              )}
+              {t('governance.mcp.calendar.removeConfirm')}
+              {keepControl === null
+                ? null
+                : ` ${t('governance.mcp.calendar.removeInstead', { control: t(keepControl) })}`}
             </span>
           </p>
           <span className="flex flex-wrap gap-2">

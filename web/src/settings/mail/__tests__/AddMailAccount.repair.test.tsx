@@ -8,7 +8,7 @@ import { AddMailAccount } from '../AddMailAccount';
 
 // «Cambia password» on AddMailAccount's "already connected" notice repairs the account the address
 // maps to, so it must do what the row's repair (ImapRepair) does: refresh the accounts and the
-// watch, and leave no password in the mutation cache once the form is gone. It runs through the
+// watch, and leave no password in the mutation cache once an attempt settles. It runs through the
 // real pimApi at the fetch boundary.
 
 const ACCOUNTS = '/api/connect/pim/accounts';
@@ -71,11 +71,10 @@ describe('«Cambia password» on the already-connected notice', () => {
     expect(invalidated).toContainEqual({ queryKey: MAIL_WATCH_STATUS_KEY });
   });
 
-  it('leaves no password in the mutation cache once the form is gone', async () => {
-    const { client, unmount } = renderWatch(<AddMailAccount onCreated={() => undefined} />);
+  it('holds no password in the mutation cache once each attempt settled, the form still open', async () => {
+    const { client } = renderWatch(<AddMailAccount onCreated={() => undefined} />);
     await changePasswordOnTheNotice('s3cret-pw');
 
-    unmount();
     await waitFor(() => {
       const variables = client
         .getMutationCache()

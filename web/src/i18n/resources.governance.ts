@@ -70,9 +70,8 @@ export const governanceEn = {
         accountsInSettings: 'Accounts are connected in Settings → Mail and calendar',
         remove: 'Remove',
         removeConfirm:
-          'Removing the account deletes what the mail and calendar watch decided and learned for it. To sign in to it again, use “Sign in again” instead.',
-        removeConfirmImap:
-          'Removing the account deletes what the mail and calendar watch decided and learned for it. If its password changed, use “Change password” instead.',
+          'Removing the account deletes what the mail and calendar watch decided and learned for it.',
+        removeInstead: 'Use “{{control}}” instead.',
         removeForGood: 'Remove for good',
         cancel: 'Cancel',
         notLinked: "Sign-in not finished: Aura can't read this account yet.",
@@ -336,9 +335,8 @@ export const governanceIt = {
         accountsInSettings: 'Gli account si collegano in Impostazioni → Posta e calendario',
         remove: 'Rimuovi',
         removeConfirm:
-          'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui. Per accedere di nuovo usa invece «Ricollega».',
-        removeConfirmImap:
-          'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui. Se la password è cambiata, usa invece «Cambia password».',
+          'Rimuovere l’account cancella quello che il controllo di posta e calendario ha deciso e imparato per lui.',
+        removeInstead: 'Usa invece «{{control}}».',
         removeForGood: 'Rimuovi definitivamente',
         cancel: 'Annulla',
         notLinked: 'Accesso non completato: Aura non può ancora leggere questo account.',
