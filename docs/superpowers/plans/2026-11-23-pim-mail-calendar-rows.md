@@ -19,16 +19,19 @@ organizer receives. Each Gate 1 behaviour (G1-G3, G5-G9) is measured on real acc
 the code it tests is deployed.
 
 **Architecture:**
-- **One outbound path.** `OutboundMime` builds the one `MimeMessage` every provider sends or files
-  as a draft. `SendEmailAsync` becomes `SendMimeAsync` on every provider: Gmail `messages.send raw`
-  with `threadId`, Graph `POST /me/sendMail` with the MIME base64 as `text/plain`, IMAP SMTP plus
-  `APPEND` to Sent. Microsoft 365 and Outlook.com move from the JSON body to MIME.
+- **One send method, two wire forms.** `SendEmailAsync` becomes
+  `SendAsync(accountId, OutboundEmail, ReplyThread?)` on every provider. Gmail and IMAP send the
+  `MimeMessage` that `OutboundMime` builds: Gmail `messages.send raw` with `threadId`, IMAP SMTP
+  plus `APPEND` to Sent. Microsoft 365 and Outlook.com keep Graph's JSON body, which they already
+  send with attachments: Bcc goes in `bccRecipients`, and a reply is `createReply`, then `PATCH`,
+  then `send` on that draft (see Decisions 1).
 - **Replies are resolved by the PIM.** `send_email`, `create_draft` and `update_draft` take
   `replyToEmailId`. The PIM reads the original through `GetRawEmailAsync` (M1) and sets
   `In-Reply-To`, `References` and the provider thread id. The model never writes a header.
 - **Drafts.** `create_draft` / `update_draft` take the same fields as `send_email`. Gmail
-  `users.drafts.create`/`update`, Graph `POST /me/messages` (MIME) then `PATCH` (JSON), IMAP
-  `APPEND` with `\Draft` into the special-use `\Drafts`, replaced on update.
+  `users.drafts.create`/`update`, reading the stored draft with `drafts.get format=raw`; Graph
+  `POST /me/messages` (JSON) or `createReply`, then `PATCH`; IMAP `APPEND` with `\Draft` into the
+  special-use `\Drafts`, replaced on update.
 - **Calendar.** `create_event`/`update_event` gain `recurrence` (one RRULE, RFC 5545),
   `reminderMinutes`, `showAs`, `isPrivate` and `categories`. `update_event`/`delete_event` gain
   `scope` (`occurrence`, `series`, `following`). Listings carry `seriesId` and
@@ -55,8 +58,12 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
   its page or RFC section. A behaviour the page does not state is a Gate 1 row, not a guess.
 - **Ids.** IMAP email ids keep `ImapProviderService.FormatEmailId(folder, uidValidity, uid)`. A
   Gmail draft is addressed by its draft id (immutable), never by its message id, which changes on
-  every update (`guides/drafts`). Graph requests carry `Prefer: IdType="ImmutableId"` (M7) on
-  every new call this plan adds.
+  every update (`guides/drafts`). Graph calls keep today's default ids: this plan adds no
+  `Prefer: IdType="ImmutableId"` (see Decisions 9).
+- **Release order: the PIM first, then Aura.** The PIM binds arguments by parameter name, so an
+  older PIM drops a `bcc` it does not know and the mail leaves without it. Aura must not accept
+  `bcc` on a reviewed send before the VM runs a PIM that has it. A new action reaching an older
+  Aura is harmless: `classifyToolRisk` tiers an unlisted action destructive (fail-closed).
 - **Bcc.** Delivered copies never carry a `Bcc:` header. The Sent copy and a draft keep it, as
   mail clients do, so the owner sees whom they blind-copied. (This reads spec Acceptance "Bcc
   delivered and absent from every header" as every *delivered* copy; see Decisions.)
@@ -87,9 +94,11 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
 
 ## Review Focus
 
-1. **A Bcc recipient shows in a delivered copy.** On SMTP the header must leave the wire bytes; on
-   Graph and Gmail the provider strips it from MIME (G2, and Graph in L1). Pinned by
-   `Smtp_Bcc_IsDeliveredWithoutTheHeader` (P1, GreenMail) and the L1 rows.
+1. **A Bcc recipient shows in a delivered copy, or is dropped.** On SMTP the header must leave the
+   wire bytes; Gmail must strip it from the raw MIME (G2); Graph takes it as `bccRecipients`. An
+   older PIM drops an unknown `bcc` (Global Constraints, release order). Pinned by
+   `Smtp_Bcc_IsDeliveredWithoutTheHeader` (P1, GreenMail), `Graph_Send_PutsBccInBccRecipients`
+   (P3) and the L1 rows.
 2. **A draft update drops an attachment.** Gmail and IMAP replace the whole message. Pinned by
    `UpdateDraft_KeepsTheAttachmentsOfTheStoredDraft` (P4, Gmail fake and GreenMail).
 3. **A recurrence half-written.** Graph creates the event, then the series fails. Pinned by
@@ -108,8 +117,8 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
 |---|---|---|
 | PIM Core | `Models/OutboundEmail.cs` (new) | `OutboundEmail` record: the fields of a send or a draft |
 | PIM Core | `Providers/OutboundMime.cs` (new) | `Build(OutboundEmail, MailboxAddress from, ReplyThread?) -> MimeMessage`; the only MIME builder (replaces the two in Google and IMAP send) |
-| PIM Core | `Providers/ReplyThread.cs` (new) | `ReplyThread.From(RawEmail)`: Message-ID, References, Subject, provider thread id |
-| PIM Core | `Providers/{Google,M365,OutlookCom,Imap}ProviderService.Mail.cs` (new) | `GetRawEmailAsync`, `SendMimeAsync` per provider |
+| PIM Core | `Providers/ReplyThread.cs` (new) | `ReplyThread.From(RawEmail)`: Message-ID, References, Subject, provider thread id, and the original's email id (Graph's `createReply` needs it) |
+| PIM Core | `Providers/{Google,M365,OutlookCom,Imap}ProviderService.Mail.cs` (new) | `GetRawEmailAsync`, `SendAsync` per provider; Graph's JSON message builder moves here from the 1.5k-LOC files |
 | PIM Core | `Providers/{Google,M365,OutlookCom,Imap}ProviderService.Drafts.cs` (new) | `CreateDraftAsync`, `UpdateDraftAsync` |
 | PIM Core | `Providers/RRuleToGraph.cs` (new) | RRULE → `PatternedRecurrence`, refusing what Graph cannot hold |
 | PIM Core | `Models/EventWrite.cs` (new) | `EventWrite` record: the C1 fields shared by create and update |
@@ -164,13 +173,12 @@ from `main` would conflict, branching from it would carry unreviewed work.
 
 **Interfaces:**
 - Produces: `Task<RawEmail?> GetRawEmailAsync(string accountId, string emailId, CancellationToken ct)`; `public sealed record RawEmail(byte[] Mime, string? ThreadId);` (`null` when the message is gone).
-- Produces: `public sealed record ReplyThread(string MessageId, IReadOnlyList<string> References, string Subject, string? ThreadId) { public static ReplyThread From(RawEmail raw); }`.
+- Produces: `public sealed record ReplyThread(string EmailId, string MessageId, IReadOnlyList<string> References, string Subject, string? ThreadId) { public static ReplyThread From(string emailId, RawEmail raw); }`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `Gmail_RawEmail_DecodesRawAndKeepsThreadId`: `GmailFixtures` answers
     `messages.get format=raw` with a base64url MIME and `threadId`.
-  - `Graph_RawEmail_ReadsValue`: `GraphFixtures` answers `GET /me/messages/{id}/$value` with
-    `Prefer: IdType="ImmutableId"` asserted on the request.
+  - `Graph_RawEmail_ReadsValue`: `GraphFixtures` answers `GET /me/messages/{id}/$value`.
   - `Imap_RawEmail_FetchesTheWholeMessage` (GreenMail): bytes equal what was appended.
   - `ReplyThread_From_AppendsMessageIdToReferences`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
@@ -179,35 +187,38 @@ from `main` would conflict, branching from it would carry unreviewed work.
 - [ ] **Step 4: Run them.** Expected: PASS.
 - [ ] **Step 5: Commit** "Read a message whole, for the reply that follows it".
 
-### Task P3: One send path for every provider, with Bcc and replies (M2)
+### Task P3: One send method for every provider, with Bcc and replies (M2)
 
 **Files:**
-- Modify: `Services/IProviderService.cs` (`SendEmailAsync` → `SendMimeAsync`), the four `*.Mail.cs`, `Tools/SendEmailTool.cs`, `Tools/CalendarActionArguments.cs`, `Tools/CalendarActionTool.cs` (description), `AURA-FORK.md`
-- Delete: the four old `SendEmailAsync` bodies (M365's JSON `SendMailPostRequestBody` path included)
-- Test: `Tools/SendEmailToolReplyTests.cs`, `Providers/SendMimeTests.cs`
+- Modify: `Services/IProviderService.cs` (`SendEmailAsync` → `SendAsync`), the four `*.Mail.cs`, `Tools/SendEmailTool.cs`, `Tools/CalendarActionArguments.cs`, `Tools/CalendarActionTool.cs` (description), `AURA-FORK.md`
+- Delete: the four old `SendEmailAsync` bodies; Graph's JSON message builder moves into the `M365`/`OutlookCom` `*.Mail.cs`, unchanged but for `bccRecipients`
+- Test: `Tools/SendEmailToolReplyTests.cs`, `Providers/SendTests.cs`
 
 **Interfaces:**
 - Consumes: `OutboundMime.Build` (P1), `GetRawEmailAsync`, `ReplyThread.From` (P2).
-- Produces: `Task<string> SendMimeAsync(string accountId, MimeMessage message, string? threadId, CancellationToken ct)`.
+- Produces: `Task<string> SendAsync(string accountId, OutboundEmail email, ReplyThread? replyTo, CancellationToken ct)`.
 - Produces: `send_email` arguments `bcc: string[]?` and `replyToEmailId: string?`.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `Gmail_SendMime_PostsRawWithThreadId`: the request body has `raw` and the reply's `threadId`.
-  - `Graph_SendMime_PostsBase64AsTextPlain`: `POST /me/sendMail`, `Content-Type: text/plain`, body
-    is the base64 of the MIME (createMessage/sendMail MIME pages).
-  - `Imap_SendMime_SendsThenFilesOneSentCopy` (GreenMail).
-  - `ReplyToEmailId_SetsInReplyToAndReferences`: the built message carries the original's
-    Message-ID in `In-Reply-To` and at the end of `References`.
+  - `Gmail_Send_PostsRawWithThreadId`: the request body has `raw` and the reply's `threadId`, and
+    the MIME carries `In-Reply-To`, `References` and the caller's `Subject` (`guides/threads`: all
+    three are required).
+  - `Graph_Send_PutsBccInBccRecipients`: `POST /me/sendMail`, JSON, `bccRecipients` holds the Bcc.
+  - `Graph_Reply_CreatesReplyThenPatchesThenSends`: `POST /me/messages/{id}/createReply`, then
+    `PATCH` of `toRecipients`, `ccRecipients`, `bccRecipients`, `subject`, `body`, then
+    `POST /me/messages/{draftId}/send`, in that order (message-createreply, message-update,
+    message-send pages).
+  - `Graph_Reply_AttachmentsAreAddedToTheReplyDraft`: the draft gets them before `send`, with the
+    existing 3 MB per-attachment rule.
+  - `Imap_Send_SendsThenFilesOneSentCopy` (GreenMail).
   - `ReplyToEmailId_FromAnotherAccount_IsRefused`: the error names `replyToEmailId`; no provider
     call is made.
   - `ReplyToEmailId_Gone_IsRefused`: `GetRawEmailAsync` returns null; the error names the argument.
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement** `SendMimeAsync` per spec D4 M2. Graph sends through a Kiota
-  `RequestInformation` on `/me/sendMail`, since the SDK's `SendMail.PostAsync` takes only JSON.
-  A reply keeps the subject the caller gives.
+- [ ] **Step 3: Implement** `SendAsync` per spec D4 M2, Graph as Decisions 1 says.
 - [ ] **Step 4: Run them, then the whole suite.** Expected: PASS; no `SendEmailAsync` left
   (`git grep -n SendEmailAsync src` is empty).
-- [ ] **Step 5: Commit** "Send every message as MIME, with Bcc and the reply's thread".
+- [ ] **Step 5: Commit** "Send with Bcc and in the reply's thread on every provider".
 
 ### Task P4: Drafts in the provider's Drafts (M9)
 
@@ -217,15 +228,19 @@ from `main` would conflict, branching from it would carry unreviewed work.
 - Test: `Providers/GmailDraftsTests.cs`, `Providers/GraphDraftsTests.cs`, `Providers/ImapDraftsTests.cs`, `Tools/DraftToolsTests.cs`
 
 **Interfaces:**
-- Consumes: `OutboundMime.Build`, `ReplyThread`, `GetRawEmailAsync`.
-- Produces: `Task<string> CreateDraftAsync(string accountId, MimeMessage message, string? threadId, CancellationToken ct)` and `Task<string> UpdateDraftAsync(string accountId, string draftId, DraftChange change, CancellationToken ct)`, both returning the id to use next.
+- Consumes: `OutboundMime.Build`, `ReplyThread`, `GetRawEmailAsync` (IMAP drafts are messages), Graph's JSON message builder (P3).
+- Produces: `Task<string> CreateDraftAsync(string accountId, OutboundEmail email, ReplyThread? replyTo, CancellationToken ct)` and `Task<string> UpdateDraftAsync(string accountId, string draftId, DraftChange change, CancellationToken ct)`, both returning the id to use next.
+- Gmail reads the stored draft with `users.drafts.get format=raw` (`guides/drafts`), never through `GetRawEmailAsync`, whose id is a message id.
 - Produces: `public sealed record DraftChange(IReadOnlyList<string>? To, IReadOnlyList<string>? Cc, IReadOnlyList<string>? Bcc, string? Subject, string? Body, string? BodyFormat);` (null = unchanged).
 - Produces: actions `create_draft` (the `send_email` arguments) → `{draftId}`; `update_draft` (`draftId` + `DraftChange` fields) → `{draftId}`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `Gmail_CreateDraft_PostsRawAndThreadId` and `Gmail_UpdateDraft_PutsTheWholeMessageUnderTheSameDraftId`.
-  - `Graph_CreateDraft_PostsMimeToMessages` and `Graph_UpdateDraft_PatchesOnlyTheChangedProperties`
-    (`subject`, `body`, `toRecipients`, `ccRecipients`, `bccRecipients`; message-update page).
+  - `Graph_CreateDraft_PostsJsonToMessages`, `Graph_ReplyDraft_UsesCreateReply` and
+    `Graph_UpdateDraft_PatchesOnlyTheChangedProperties` (`subject`, `body`, `toRecipients`,
+    `ccRecipients`, `bccRecipients`: "updatable only if isDraft = true", message-update page).
+  - `Gmail_UpdateDraft_ReadsTheDraftByDraftId`: the fake answers `drafts.get format=raw`; no
+    `messages.get` is made.
   - `Imap_CreateDraft_AppendsWithDraftFlagIntoDrafts` and
     `Imap_UpdateDraft_AppendsTheNewOneAndExpungesTheOld` (GreenMail; the new id from `APPENDUID`,
     RFC 4315 §3).
@@ -327,8 +342,9 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
   - `Graph_Respond_SendsComment` (already the behaviour; pin it).
   - `Dav_Respond_AutoSchedule_PutsPartstat`: the server advertises `calendar-auto-schedule`, so
     the PUT changes `PARTSTAT` and carries a `COMMENT` (RFC 6638 §3.2, read before writing).
-  - `Dav_Respond_NoAutoSchedule_SendsAnImipReply`: an RFC 5546 §3.2.3 `REPLY` through
-    `SendMimeAsync` on the same account, `METHOD:REPLY`, as `text/calendar` (RFC 6047).
+  - `Dav_Respond_NoAutoSchedule_SavesTheAnswerAndWarns`: the PUT changes `PARTSTAT`, and the
+    result's `warnings` says the organizer is not notified. A DAV account has no mail transport, so
+    the spec's iMIP `REPLY` "through M2 on the same account" cannot leave it (Decisions 11).
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them.** Expected: PASS.
@@ -361,14 +377,17 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
 
 ### Task L1: Wave A on the lab VM (after P1-P4 and A1)
 
-- [ ] **Step 1: Release.** Merge the fork branch to `main`; the fork's
-  `aura-publish-image.yml` publishes the image. Push Aura (WSL recipe), CI green on the SHA. The VM
-  updater applies both; no manual step on the VM.
+- [ ] **Step 1: Release the PIM, and only then Aura.** Merge the fork branch to `main`; the fork's
+  `aura-publish-image.yml` publishes the image; the VM updater applies it. Check on the VM that the
+  running PIM lists `bcc`, `replyToEmailId`, `create_draft` and `update_draft` in the `calendar`
+  tool's schema (`docker exec aura aura mcp tools calendar`). Then push Aura with A1 (WSL recipe),
+  CI green on the SHA, and let the updater apply it. No manual step on the VM.
 - [ ] **Step 2: Measure** on the VM's Gmail, Microsoft 365 and IMAP accounts, driving the agent
   through the cockpit API, with the rules the operator set on 2026-11-23: mail only between the
   operator's own accounts, subject prefix `[aura-misura]`, one measurement at a time, everything
   deleted after.
-  - G1: a reply sent with `replyToEmailId` from Microsoft 365 arrives in the original thread.
+  - G1: a reply sent with `replyToEmailId` from Microsoft 365 (`createReply` → `PATCH` → `send`)
+    arrives in the original thread, read on the recipient's side.
   - G2: Gmail Bcc delivered; no `Bcc` in the delivered copy; whether the Sent copy keeps it.
   - Graph Bcc: the same on Microsoft 365.
   - G7: IMAP Sent holds one copy, or two.
@@ -392,9 +411,14 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
 
 ## Decisions taken while writing this plan
 
-1. **One send path.** `SendMimeAsync` replaces `SendEmailAsync` everywhere instead of sitting beside
-   it, so Microsoft 365 and Outlook.com leave the JSON `sendMail` body. The spec chose MIME for
-   Graph (D4 M2); two paths would be dead code waiting to diverge.
+1. **One send method; Graph keeps JSON.** `SendAsync` replaces `SendEmailAsync` everywhere. The
+   spec's D4 M2 sends MIME on Graph, but read on 2026-11-23 neither the `user-sendmail` nor the
+   `outlook-send-mime-message` page states a size limit for a MIME send or says whether a `Bcc:`
+   header in MIME is honoured, while the JSON path already sends attachments today. JSON carries
+   Bcc in `bccRecipients` (documented), and a reply goes through `createReply`, which keeps the
+   thread on the server. Spec G1 becomes "does a `createReply` reply arrive in the thread" (its own
+   fallback). Raw MIME on Graph is left to the MailCraft facade's plan, which needs it for JMAP
+   `EmailSubmission` and must measure the limit first.
 2. **The Sent copy and drafts keep Bcc; delivered copies never.** Every mail client keeps the Bcc in
    the sender's copy. The spec's Acceptance line "Bcc delivered and absent from every header" is
    read as every delivered copy. To confirm with the operator, and amend the spec if confirmed.
@@ -413,3 +437,13 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
    code.
 8. **The large provider files are not split here.** New code goes into new partial files and the
    rewritten code leaves the old ones, as the 2026-11-20 plan did.
+9. **No immutable ids yet.** The `outlook-immutable-id` page does not say whether an API accepts a
+   default id in a request that asks for immutable ones, or the reverse. Adding the header to new
+   calls only would let a default id from `get_emails` meet an immutable one from `create_draft`.
+   Spec M7 switches every call at once, with `translateExchangeIds`, in the facade's plan.
+10. **The release order is part of the plan**, not of the code (Global Constraints): the PIM ships
+    `bcc` before Aura lets a reviewed send carry it.
+11. **A CalDAV answer without server scheduling only warns.** Spec D4 C3 sends an iMIP `REPLY`
+    through M2 "on the same account", but a `dav` account has no SMTP. Pairing it with a mail
+    account is a design question for the operator, not a guess here; until then the answer is
+    saved and the result says the organizer was not told.

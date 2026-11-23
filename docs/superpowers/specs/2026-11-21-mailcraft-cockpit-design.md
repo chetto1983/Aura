@@ -244,6 +244,13 @@ The documentation leaves nine behaviours open. Each is measured on a real accoun
 Also measured before code: what the PIM returns today for `get_email_details` and
 `get_calendar_events` (series, time zones), on one Gmail and one Microsoft 365 account.
 
+**2026-11-23: G1–G3 and G5–G9 cannot be measured before code.** Today's PIM has no MIME send,
+Bcc, draft or series operation, and drops a Google response comment
+(`docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md`). They are measured
+right after the rows they test are deployed, in the two live waves of
+`docs/superpowers/plans/2026-11-23-pim-mail-calendar-rows.md`. That plan also keeps Graph sends
+on JSON (its Decisions 1), since the MIME-send pages state no size limit and nothing about Bcc.
+
 ## Not in scope
 
 - **Providers the PIM does not connect today.** Google, Microsoft 365, Outlook.com and IMAP/SMTP +
