@@ -109,11 +109,16 @@ func parkWorkerPause(t *testing.T, pool *pgxpool.Pool, store *documents.Postgres
 	}); err != nil {
 		t.Fatalf("insert pause: %v", err)
 	}
-	n, err := store.ParkIngestionJobAwaitingInput(ctx, documents.ParkAwaitingInputRequest{
-		IdentityID: localIdentityID, JobID: row.ID, WorkerID: "w-" + key, LeaseGeneration: row.LeaseGeneration,
-		Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": fanoutKey, "resume": map[string]any{
-			"pause_token": token, "pending_action_id": fence, "worker_id": job.ID,
-		}},
+	var n int64
+	err = db.WithIdentityTx(ctx, pool, localIdentityID, func(q *sqlc.Queries) error {
+		var parkErr error
+		n, parkErr = store.ParkIngestionJobAwaitingInputTx(ctx, q, documents.ParkAwaitingInputRequest{
+			IdentityID: localIdentityID, JobID: row.ID, WorkerID: "w-" + key, LeaseGeneration: row.LeaseGeneration,
+			Payload: map[string]any{"goal": "g", "conversation_id": convID, "fanout_key": fanoutKey, "resume": map[string]any{
+				"pause_token": token, "pending_action_id": fence, "worker_id": job.ID,
+			}},
+		})
+		return parkErr
 	})
 	if err != nil || n != 1 {
 		t.Fatalf("park: %v (rows %d)", err, n)
