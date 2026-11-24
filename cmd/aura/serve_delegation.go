@@ -385,7 +385,7 @@ func newRuntimeDelegationWorker(chat *chatEnv, delivery *swarm.DelegationDeliver
 		workerIDPrefix: runtimeDelegationWorkerIDPrefix,
 		retainWorkers:  true,
 		worker: func(identityID, workerID string) runtimeIngestionProcessor {
-			loop := swarm.NewDelegationClaimLoop(store, delivery, pauseParker, identityID, workerTemplate, leaseDuration, pollInterval)
+			loop := swarm.NewDelegationClaimLoop(store, delivery, pauseParker, identityID, workerTemplate, leaseDuration)
 			loop.WorkerID = workerID
 			loop.BatchSize = max(chat.cfg.MaxSwarmConcurrent, 1)
 			return loop

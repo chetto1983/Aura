@@ -286,34 +286,6 @@ func (f *fakeSteerNudgeStore) ListUnnudgedDelegationResults(_ context.Context, _
 	return append([]UndrainedResult(nil), f.rows...), nil
 }
 
-// MarkFanoutNudged (51-11 Task 3) claims every row of one (identityID,
-// fanoutKey) group not already in the claimed map. Locked so a real concurrency
-// test (two goroutines racing the SAME fan-out) exercises MarkFanoutNudged's
-// documented one-winner contract rather than a data race in the fake itself.
-func (f *fakeSteerNudgeStore) MarkFanoutNudged(_ context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.markErr != nil {
-		return nil, f.markErr
-	}
-	if f.claimed == nil {
-		f.claimed = map[string]bool{}
-	}
-	if len(f.rowsOnMark) > 0 {
-		f.rows = append(f.rows, f.rowsOnMark...)
-		f.rowsOnMark = nil
-	}
-	var claimedRows []UndrainedResult
-	for _, row := range f.rows {
-		if row.IdentityID != identityID || row.FanoutKey != fanoutKey || f.claimed[row.ID] {
-			continue
-		}
-		f.claimed[row.ID] = true
-		claimedRows = append(claimedRows, row)
-	}
-	return claimedRows, nil
-}
-
 // fakePendingNotificationStore makes the claim and outbox insert one locked step.
 type fakePendingNotificationStore struct {
 	mu        sync.Mutex
@@ -522,6 +494,6 @@ func TestFanoutOfOneUndecodableBodySendsTheNoReportShape(t *testing.T) {
 	}
 }
 
-// --- DeliverReport's own tests moved to delegation_delivery_report_test.go
+// --- DeliverPreparedReport's own tests live in delegation_delivery_report_test.go
 // (CLAUDE.md's 600-LOC ceiling, mirroring this package's own
 // report.go/brief.go/delegation_enqueue.go split precedent). ---

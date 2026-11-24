@@ -11,7 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/steer"
 )
 
-// delegation_delivery_report_test.go is DeliverReport's own daemon-free coverage
+// delegation_delivery_report_test.go is DeliverPreparedReport's daemon-free coverage
 // (51-11 Task 1, extended by Task 3's fan-out key assertion) -- split out of
 // delegation_delivery_test.go (which also carries Deliver and NudgeUndrained,
 // CLAUDE.md's 600-LOC ceiling) rather than grown inline, mirroring this
@@ -33,30 +33,25 @@ func successfulReportArchiver() ReportArchiver {
 	})
 }
 
-// TestDeliverReportArchivesRecordsThenPushes pins DeliverReport's own
-// load-bearing order: archive (so the card's artifact line has a filename to
-// point to), THEN record (the durable copy), THEN push (the courtesy) --
-// mirroring TestDeliveryRecordsBeforePush's record-before-push assertion for
-// Deliver, extended one step earlier.
-func TestDeliverReportArchivesRecordsThenPushes(t *testing.T) {
+// TestDeliverPreparedReportRecordsThenPushes pins the terminal delivery's own
+// load-bearing order: record (the durable copy) THEN push (the courtesy) --
+// mirroring TestDeliveryRecordsBeforePush for Deliver. The archive already ran
+// (deliverPending), so the card names the artifact it was handed.
+func TestDeliverPreparedReportRecordsThenPushes(t *testing.T) {
 	var order []string
-	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
-		order = append(order, "archive")
-		return "asset-1", nil
-	})
 	recorder := &orderedConversationRecorder{order: &order}
 	pub := &orderedSteerPublisher{order: &order}
-	d := &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: archiver}
+	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
 
 	report := ChildReport{ChildID: "w1-abc", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-9", FanoutKey: "f-test"}, report, 90*time.Second)
+	recorded, err := d.DeliverPreparedReport(context.Background(), DelegationPayload{ConversationID: "conv-9", FanoutKey: "f-test"}, report, 90*time.Second, "w1-abc.md", "dk-1")
 	if err != nil {
-		t.Fatalf("DeliverReport = %v", err)
+		t.Fatalf("DeliverPreparedReport = %v", err)
 	}
 	if !recorded {
 		t.Fatal("recorded = false, want true")
 	}
-	want := []string{"archive", "record", "push"}
+	want := []string{"record", "push"}
 	if len(order) != len(want) {
 		t.Fatalf("order = %v, want %v", order, want)
 	}
@@ -71,8 +66,8 @@ func TestDeliverReportArchivesRecordsThenPushes(t *testing.T) {
 }
 
 // orderedConversationRecorder/orderedSteerPublisher append to a shared *order
-// slice so archive-then-record-then-push is asserted as ONE sequence, not
-// three independent side effects that could still interleave.
+// slice so record-then-push is asserted as ONE sequence, not two independent
+// side effects that could still interleave.
 type orderedConversationRecorder struct {
 	order    *[]string
 	lastText string
@@ -84,6 +79,10 @@ func (r *orderedConversationRecorder) AppendAssistantTurn(_ context.Context, _, 
 	return nil
 }
 
+func (r *orderedConversationRecorder) AppendAssistantTurnIdempotent(ctx context.Context, conversationID, _, text string) error {
+	return r.AppendAssistantTurn(ctx, conversationID, text)
+}
+
 type orderedSteerPublisher struct{ order *[]string }
 
 func (p *orderedSteerPublisher) Push(_, _, _ string) error {
@@ -91,25 +90,20 @@ func (p *orderedSteerPublisher) Push(_, _, _ string) error {
 	return nil
 }
 
-func (p *orderedSteerPublisher) PushDelegationResult(_, _, _, _ string) error {
+func (p *orderedSteerPublisher) PushDelegationResultIdempotent(_, _, _, _, _ string) error {
 	*p.order = append(*p.order, "push")
 	return nil
 }
 
-// TestDeliverReportBoundsSteerCopyButArchivesFullReport is Amendment #178's
-// measured regression: a model can return more than steer's 32 KiB message
-// cap even though the full Markdown archive succeeds. The courtesy steer
-// copy must remain structured and useful without making the completed job
-// retry solely because its report is long.
-func TestDeliverReportBoundsSteerCopyButArchivesFullReport(t *testing.T) {
+// TestDeliverPreparedReportBoundsSteerCopy is Amendment #178's measured
+// regression: a model can return more than steer's 32 KiB message cap even
+// though the full Markdown archive succeeds. The courtesy steer copy must
+// remain structured and useful without making the completed job retry solely
+// because its report is long.
+func TestDeliverPreparedReportBoundsSteerCopy(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	pub := &fakeSteerPublisher{maxBytes: 32768}
-	var archivedMarkdown string
-	archiver := archiverFunc(func(_ context.Context, _, _, _, _, markdown string) (string, error) {
-		archivedMarkdown = markdown
-		return "asset-1", nil
-	})
-	d := &DelegationDelivery{Recorder: recorder, Steer: pub, Archiver: archiver}
+	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
 
 	fullSummary := strings.Repeat("long worker result with quoted JSON: {\"ok\":true}\n", 2500)
 	report := ChildReport{
@@ -120,8 +114,8 @@ func TestDeliverReportBoundsSteerCopyButArchivesFullReport(t *testing.T) {
 		Summary:   fullSummary,
 		Attempts:  2,
 	}
-	if _, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-3", FanoutKey: "f-test"}, report, 30*time.Second); err != nil {
-		t.Fatalf("DeliverReport = %v", err)
+	if _, err := d.DeliverPreparedReport(context.Background(), DelegationPayload{ConversationID: "conv-3", FanoutKey: "f-test"}, report, 30*time.Second, "w2.md", "dk-1"); err != nil {
+		t.Fatalf("DeliverPreparedReport = %v", err)
 	}
 	if len(pub.pushes) != 1 {
 		t.Fatalf("pushes = %d, want 1", len(pub.pushes))
@@ -144,28 +138,25 @@ func TestDeliverReportBoundsSteerCopyButArchivesFullReport(t *testing.T) {
 	if got.Summary == fullSummary || !strings.HasSuffix(got.Summary, "…") {
 		t.Fatalf("pushed summary must be rune-bounded with an ellipsis, got %d bytes", len([]byte(got.Summary)))
 	}
-	if !strings.Contains(archivedMarkdown, fullSummary) {
-		t.Fatal("archived Markdown must retain the complete uncapped summary")
-	}
 }
 
-// TestDeliverReportWritesTheFanoutKey (51-11 Task 3, acceptance criteria's own
-// named check): DeliverReport is the ONLY producer of a non-empty fanout_key
+// TestDeliverPreparedReportWritesTheFanoutKey (51-11 Task 3, acceptance criteria's own
+// named check): the terminal delivery is the ONLY producer of a non-empty fanout_key
 // -- this asserts the fake publisher's recorded key equals payload.FanoutKey
 // by value, the assertion this task's own action text calls "the step that
 // makes the whole task real". Without it every aura.steer_queue.fanout_key
 // would violate the explicit fan-out invariant and make grouped delivery impossible
 // regardless of how many workers a swarm_spawn call
 // dispatched -- the exact defect D-15/Amendment #172 point 2 forbid.
-func TestDeliverReportWritesTheFanoutKey(t *testing.T) {
+func TestDeliverPreparedReportWritesTheFanoutKey(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	pub := &fakeSteerPublisher{}
 	d := &DelegationDelivery{Recorder: recorder, Steer: pub}
 
 	report := ChildReport{ChildID: "w2-abc", Status: StatusOK, Goal: "goal", Summary: "summary"}
 	payload := DelegationPayload{ConversationID: "conv-fanout", FanoutKey: "f-deadbeefcafef00d"}
-	if _, err := d.DeliverReport(context.Background(), payload, report, time.Minute); err != nil {
-		t.Fatalf("DeliverReport = %v", err)
+	if _, err := d.DeliverPreparedReport(context.Background(), payload, report, time.Minute, "w2-abc.md", "dk-1"); err != nil {
+		t.Fatalf("DeliverPreparedReport = %v", err)
 	}
 	if len(pub.fanoutKeys) != 1 {
 		t.Fatalf("fanoutKeys = %d, want 1", len(pub.fanoutKeys))
@@ -175,65 +166,44 @@ func TestDeliverReportWritesTheFanoutKey(t *testing.T) {
 	}
 }
 
-// TestDeliverReportNilArchiverDegradesToNoArtifactPointer: a nil Archiver
-// (a pool-less boot, matching newDelegationDelivery's other nil-safe
-// collaborators) must never fail the delivery -- the card simply carries no
-// artifact line.
-func TestDeliverReportNilArchiverDegradesToNoArtifactPointer(t *testing.T) {
-	recorder := &fakeConversationRecorder{}
-	d := &DelegationDelivery{Recorder: recorder}
-	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-4", FanoutKey: "f-test"}, report, time.Minute)
-	if err != nil || !recorded {
-		t.Fatalf("DeliverReport = (%v, %v), want (true, nil)", recorded, err)
-	}
-	if strings.Contains(recorder.appended[0].text, "Report completo") {
-		t.Fatalf("card must carry no artifact line when Archiver is nil: %q", recorder.appended[0].text)
-	}
-}
-
-// TestDeliverReportArchiveErrorDegradesToNoArtifactPointer: an ArchiveReport
-// error is a best-effort WARN, never a delivery failure -- a Garage/object-
-// store hiccup must not block SC#1's own write.
-func TestDeliverReportArchiveErrorDegradesToNoArtifactPointer(t *testing.T) {
-	recorder := &fakeConversationRecorder{}
-	archiver := archiverFunc(func(context.Context, string, string, string, string, string) (string, error) {
-		return "", errors.New("garage down")
-	})
-	d := &DelegationDelivery{Recorder: recorder, Archiver: archiver}
-	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-5", FanoutKey: "f-test"}, report, time.Minute)
-	if err != nil || !recorded {
-		t.Fatalf("DeliverReport = (%v, %v), want (true, nil): an archive failure must never fail delivery", recorded, err)
-	}
-	if strings.Contains(recorder.appended[0].text, "Report completo") {
-		t.Fatal("card must carry no artifact line when the archive call errors")
-	}
-}
-
-// TestDeliverReportRecordFailureReturnsFalse mirrors Deliver's own record-
+// TestDeliverPreparedReportRecordFailureReturnsFalse mirrors Deliver's own record-
 // failure contract: a WARN, never a hard Go error, reflected solely through
 // recorded=false so the caller's succeeded transition stays gated.
-func TestDeliverReportRecordFailureReturnsFalse(t *testing.T) {
+func TestDeliverPreparedReportRecordFailureReturnsFalse(t *testing.T) {
 	recorder := &fakeConversationRecorder{err: errors.New("db down")}
 	d := &DelegationDelivery{Recorder: recorder}
 	report := ChildReport{ChildID: "w1", Status: StatusOK, Goal: "goal", Summary: "summary"}
-	recorded, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-6", FanoutKey: "f-test"}, report, time.Minute)
+	recorded, err := d.DeliverPreparedReport(context.Background(), DelegationPayload{ConversationID: "conv-6", FanoutKey: "f-test"}, report, time.Minute, "w1.md", "dk-1")
 	if err != nil {
-		t.Fatalf("DeliverReport = %v, want no hard error on a record failure", err)
+		t.Fatalf("DeliverPreparedReport = %v, want no hard error on a record failure", err)
 	}
 	if recorded {
 		t.Fatal("recorded = true, want false on a conversation-append failure")
 	}
 }
 
-// TestDeliverReportNoRecorderIsAWiringError mirrors Deliver's own guard: SC#1
-// cannot be satisfied without a Recorder, so DeliverReport refuses rather
+// TestDeliverPreparedReportNoRecorderIsAWiringError mirrors Deliver's own guard:
+// SC#1 cannot be satisfied without a Recorder, so the delivery refuses rather
 // than silently dropping the write.
-func TestDeliverReportNoRecorderIsAWiringError(t *testing.T) {
+func TestDeliverPreparedReportNoRecorderIsAWiringError(t *testing.T) {
 	d := &DelegationDelivery{}
-	_, err := d.DeliverReport(context.Background(), DelegationPayload{ConversationID: "conv-1"}, ChildReport{Status: StatusOK}, time.Minute)
+	_, err := d.DeliverPreparedReport(context.Background(), DelegationPayload{ConversationID: "conv-1"}, ChildReport{Status: StatusOK}, time.Minute, "", "dk-1")
 	if err == nil {
-		t.Fatal("DeliverReport with no Recorder configured = nil error, want a wiring error")
+		t.Fatal("DeliverPreparedReport with no Recorder configured = nil error, want a wiring error")
+	}
+}
+
+// TestDeliverPreparedReportRequiresADeliveryKey: the key is what makes the staged
+// delivery idempotent across retries, so a delivery without one is refused before
+// anything is recorded.
+func TestDeliverPreparedReportRequiresADeliveryKey(t *testing.T) {
+	recorder := &fakeConversationRecorder{}
+	d := &DelegationDelivery{Recorder: recorder}
+	_, err := d.DeliverPreparedReport(context.Background(), DelegationPayload{ConversationID: "conv-1", FanoutKey: "f-test"}, ChildReport{Status: StatusOK}, time.Minute, "", " ")
+	if err == nil {
+		t.Fatal("DeliverPreparedReport with a blank delivery key = nil error, want a refusal")
+	}
+	if len(recorder.appended) != 0 {
+		t.Fatal("a refused delivery must record nothing")
 	}
 }

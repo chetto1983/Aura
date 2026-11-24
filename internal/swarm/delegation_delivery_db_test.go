@@ -260,7 +260,7 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 
 // TestDeliverReportWritesFanoutKeyUnderRealRLS is the db_integration
 // counterpart to TestDeliverReportWritesTheFanoutKey's fake-based proof
-// (51-11 Task 3, acceptance criteria's own named case): DeliverReport pushes
+// (51-11 Task 3, acceptance criteria's own named case): DeliverPreparedReport pushes
 // through a REAL steer.PostgresStore.PushDelegationResult, and the row read
 // back from aura.steer_queue carries fanout_key set, non-NULL, equal to the
 // payload's key -- as aura_app, never the superuser aura role, which is
@@ -275,8 +275,8 @@ func TestDeliverReportWritesFanoutKeyUnderRealRLS(t *testing.T) {
 	report := ChildReport{ChildID: "w1-real", Status: StatusOK, Goal: "goal", Summary: "summary"}
 	payload := DelegationPayload{ConversationID: convID, FanoutKey: "f-realkey0123456"}
 	bound := identityctx.WithIdentityID(context.Background(), identityID)
-	if _, err := d.DeliverReport(bound, payload, report, time.Minute); err != nil {
-		t.Fatalf("DeliverReport = %v", err)
+	if _, err := d.DeliverPreparedReport(bound, payload, report, time.Minute, "w1.md", "dk-realdb"); err != nil {
+		t.Fatalf("DeliverPreparedReport = %v", err)
 	}
 
 	var fanoutKey pgtype.Text
