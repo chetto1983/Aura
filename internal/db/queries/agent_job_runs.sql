@@ -18,11 +18,6 @@ WHERE task_id = $1
 ORDER BY started_at DESC
 LIMIT $2 OFFSET $3;
 
--- name: UpdateHeartbeat :exec
-UPDATE aura.agent_job_runs
-SET last_heartbeat_at = now()
-WHERE id = $1;
-
 -- name: CompleteRun :exec
 UPDATE aura.agent_job_runs
 SET status = $2, summary = $3, last_error = $4, completed_with_hash = $5, completed_at = now()
