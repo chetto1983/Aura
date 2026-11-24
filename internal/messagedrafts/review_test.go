@@ -63,3 +63,50 @@ func TestInlineReviewIsCompleteOnlyForTheSendEmailTool(t *testing.T) {
 		t.Fatal("a draft in the retired multiplexed shape is complete")
 	}
 }
+
+// A draft resolved before the PIM split keeps its "action" key, and jsonb orders keys shortest first,
+// so a strict decode stopped after to and body: its history lost the subject and the sender.
+func TestLegacyDraftHistoryShowsSubjectAndSender(t *testing.T) {
+	t.Parallel()
+	legacy := Draft{
+		Target:        LegacyEmailTarget(),
+		Status:        StatusSent,
+		SenderAddress: "me@example.com",
+		OriginalArgs: json.RawMessage(`{"cc": ["c@example.com"], "to": ["a@example.com"], "body": "Text", ` +
+			`"action": "send_email", "subject": "Hi", "accountId": "acc-1", "bodyFormat": "text"}`),
+	}
+	if _, err := legacy.reviewed(); err != nil {
+		t.Fatalf("a legacy draft's arguments do not decode: %v", err)
+	}
+	content := legacy.InlineReview()
+	if content.Recipient != "a@example.com" || content.CC != "c@example.com" || content.Subject != "Hi" ||
+		content.Text != "Text" || content.BodyFormat != "text" {
+		t.Fatalf("legacy review = %+v", content)
+	}
+	if got := legacy.SendingAccount(); got != "acc-1" {
+		t.Fatalf("SendingAccount = %q, want acc-1", got)
+	}
+	if name, address := legacy.Sender(); name == "" || address != "me@example.com" {
+		t.Fatalf("Sender = %q %q", name, address)
+	}
+}
+
+// Only "action" is forgiven, and only on the legacy target: any other unknown key still fails.
+func TestLegacyDraftStillRefusesAnUnknownKey(t *testing.T) {
+	t.Parallel()
+	legacy := Draft{
+		Target:       LegacyEmailTarget(),
+		OriginalArgs: json.RawMessage(`{"to": ["a@example.com"], "action": "send_email", "subject": "Hi", "replyTo": "x"}`),
+	}
+	if _, err := legacy.reviewed(); err == nil {
+		t.Fatal("a legacy draft with an unknown key decoded")
+	}
+	current := Draft{Target: emailSend, OriginalArgs: json.RawMessage(`{"to": ["a@example.com"], "action": "send_email"}`)}
+	if _, err := current.reviewed(); err == nil {
+		t.Fatal("a send_email draft carrying action decoded")
+	}
+	broken := Draft{Target: LegacyEmailTarget(), OriginalArgs: json.RawMessage(`[1]`)}
+	if _, err := broken.reviewed(); err == nil {
+		t.Fatal("a legacy draft whose arguments are not an object decoded")
+	}
+}

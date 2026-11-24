@@ -241,6 +241,12 @@ type AuraConversations struct {
 	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
+// One row per Go data upgrade that has run (migration 0158), written in the upgrade's own transaction so it runs once. Migrate role only.
+type AuraDataUpgrades struct {
+	Name   string             `json:"name"`
+	DoneAt pgtype.Timestamptz `json:"done_at"`
+}
+
 // Durable "always approve" grants per identity + tool + multiplexed action (amendment #127). Revoked with `aura gateway grants revoke`.
 type AuraGatewayApprovalGrants struct {
 	IdentityID pgtype.UUID        `json:"identity_id"`

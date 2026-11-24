@@ -401,8 +401,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.
 	// 0156 records the address an email draft leaves from.
 	// 0157 lets an email draft target the PIM's send_email tool, beside the multiplexed shape.
-	if head != 157 {
-		t.Fatalf("MigrationHead=%d, want embedded head 157", head)
+	// 0158 adds aura.data_upgrades, so the PIM split's Go rewrite runs once.
+	if head != 158 {
+		t.Fatalf("MigrationHead=%d, want embedded head 158", head)
 	}
 }
 

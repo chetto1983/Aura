@@ -36,9 +36,17 @@ type Target struct {
 }
 
 var (
-	emailTarget    = Target{Recipe: "recipe:calendar", Tool: "send_email"}
-	whatsAppTarget = Target{Recipe: "recipe:whatsapp", Tool: "send_message"}
+	emailTarget       = Target{Recipe: "recipe:calendar", Tool: "send_email"}
+	legacyEmailTarget = Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
+	whatsAppTarget    = Target{Recipe: "recipe:whatsapp", Tool: "send_message"}
 )
+
+// EmailTarget is the PIM's send_email tool, the target of every email draft.
+func EmailTarget() Target { return emailTarget }
+
+// LegacyEmailTarget is the multiplexed calendar tool's send_email action, the target email drafts
+// stored before the PIM split its tools. Resolved drafts keep it as history.
+func LegacyEmailTarget() Target { return legacyEmailTarget }
 
 // TrustedOutboundTarget matches only the managed bridge's host-owned recipe and
 // raw MCP tool identity. The registered name may be truncated with a hash.

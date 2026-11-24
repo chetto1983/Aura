@@ -8,12 +8,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"text/tabwriter"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/pimsplit"
 )
 
 func runDB(args []string) {
@@ -65,6 +69,9 @@ func dbMigrate(ctx context.Context, cfg *config.Config) {
 		if err := db.CheckMigrationHead(ctx, cfg.DB.MigrateURL); err != nil {
 			return err
 		}
+		if err := upgradePIMSplit(ctx, cfg.DB.MigrateURL); err != nil {
+			return err
+		}
 		if bootstrap {
 			if err := db.EnsureAuthulaReadable(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
 				return fmt.Errorf("ensure authula readable: %w", err)
@@ -81,6 +88,19 @@ func dbMigrate(ctx context.Context, cfg *config.Config) {
 		return
 	}
 	fmt.Printf("ok: %d migration(s) applied\n", applied)
+}
+
+// upgradePIMSplit carries the stored approvals, policies and drafts across the PIM tool split. It is
+// data the SQL migrations cannot rewrite, since the new tool names are hashed in Go; it runs under
+// the migration lock, as the migrate role, and only once per database (migration 0158).
+func upgradePIMSplit(ctx context.Context, migrateURL string) error {
+	conn, err := pgx.Connect(ctx, migrateURL)
+	if err != nil {
+		return fmt.Errorf("pim tool split: connect as the migrate role: %w", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	_, err = pimsplit.Upgrade(ctx, conn, slog.Default())
+	return err
 }
 
 func dbPing(ctx context.Context, cfg *config.Config) {

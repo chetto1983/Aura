@@ -28,6 +28,12 @@ func (d Draft) reviewed() (reviewArgs, error) {
 	if len(raw) == 0 {
 		raw = d.OriginalArgs
 	}
+	if d.Target == legacyEmailTarget {
+		var err error
+		if raw, err = withoutAction(raw); err != nil {
+			return reviewArgs{}, err
+		}
+	}
 	var args reviewArgs
 	// Additional fields (such as multipart alternatives and WhatsApp quote metadata)
 	// cannot be approved on a surface that only shows these fields.
@@ -35,6 +41,18 @@ func (d Draft) reviewed() (reviewArgs, error) {
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(&args)
 	return args, err
+}
+
+// withoutAction removes the multiplexed tool's "action" key from a draft stored before the PIM split.
+// The strict decode would otherwise stop at it, and jsonb orders keys shortest first, so it stops
+// after to, cc and body but before subject and accountId: the history would lose both.
+func withoutAction(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "action")
+	return json.Marshal(fields)
 }
 
 // InlineContent contains the fields an operator can review on a text-only card.
