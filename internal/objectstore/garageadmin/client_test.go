@@ -180,9 +180,6 @@ func TestDeleteInversesIdempotentOn404(t *testing.T) {
 	if err := c.DeleteKey(ctx, "GKgone"); err != nil {
 		t.Errorf("DeleteKey(404) = %v, want nil (idempotent)", err)
 	}
-	if err := c.DenyBucketKey(ctx, "bkt-gone", "GKgone", ReadWrite); err != nil {
-		t.Errorf("DenyBucketKey(404) = %v, want nil (idempotent)", err)
-	}
 }
 
 // TestDeleteSuccessAndBearer: a 2xx delete succeeds and carries the bearer token.

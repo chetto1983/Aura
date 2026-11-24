@@ -295,21 +295,6 @@ func (c *Client) AllowBucketKey(ctx context.Context, bucketID, accessKeyID strin
 	return nil
 }
 
-// DenyBucketKey revokes perms from accessKeyID on bucketID. Idempotent: a missing
-// bucket or key (404) is treated as already-denied.
-func (c *Client) DenyBucketKey(ctx context.Context, bucketID, accessKeyID string, perms Permissions) error {
-	status, raw, err := c.post(ctx, "/v2/DenyBucketKey", nil, bucketKeyRequest{
-		BucketID: bucketID, AccessKeyID: accessKeyID, Permissions: perms,
-	})
-	if err != nil {
-		return err
-	}
-	if is2xx(status) || status == http.StatusNotFound {
-		return nil
-	}
-	return statusErr("DenyBucketKey", status, raw)
-}
-
 // DeleteBucket deletes the bucket by id. Idempotent (404-missing = success) so the
 // de-provisioning saga can re-run.
 func (c *Client) DeleteBucket(ctx context.Context, bucketID string) error {

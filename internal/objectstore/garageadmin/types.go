@@ -16,7 +16,7 @@
 package garageadmin
 
 // Permissions is the Garage read/write/owner grant triple carried by
-// AllowBucketKey / DenyBucketKey. A per-identity key is granted read+write with
+// AllowBucketKey. A per-identity key is granted read+write with
 // owner=false on ONLY its own bucket (never owner — an identity must not be able
 // to re-grant or delete its bucket via the S3 data plane).
 type Permissions struct {
@@ -57,7 +57,7 @@ type importKeyRequest struct {
 	Name            string `json:"name"`
 }
 
-// bucketKeyRequest is the POST /v2/AllowBucketKey and /v2/DenyBucketKey body: the
+// bucketKeyRequest is the POST /v2/AllowBucketKey body: the
 // target bucket id, the access key id, and the permission triple.
 type bucketKeyRequest struct {
 	BucketID    string      `json:"bucketId"`
