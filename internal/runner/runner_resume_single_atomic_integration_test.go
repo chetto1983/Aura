@@ -17,7 +17,7 @@ var errInjectedAppendFailure = errors.New("injected append failure after claim")
 // TestSubmitAnswer_AppendFailureAfterClaimRollsBack_Integration proves LOOP-03/F-029: an
 // append failure AFTER the claim rolls the whole cross-store tx back, leaving the pause
 // pending (resumed_at IS NULL) and retryable. The transient failure is injected by running
-// the REAL claim (MarkResumedTx) + a forced error in ONE db.WithTx — db.WithTx rolls the
+// the REAL claim (MarkResumedFencedTx, the committer's own) + a forced error in ONE db.WithTx — db.WithTx rolls the
 // claim back on any fn error, exactly as a real AppendTurnTx failure inside CommitResume
 // would. The retry then succeeds through the real Runner API (the pool-owning committer),
 // leaving a durable, wire-valid answer.
@@ -40,10 +40,10 @@ func TestResumeSingle_AppendFailureAfterClaimRollsBack_Integration(t *testing.T)
 	}
 	token := pending[0].Token
 
-	// Fault injection: the REAL MarkResumedTx claim + a forced append failure in ONE tx.
+	// Fault injection: the REAL MarkResumedFencedTx claim + a forced append failure in ONE tx.
 	answer := askuser.ResumeAnswer{Action: askuser.ActionAccept, Content: "Rome"}
 	injErr := db.WithCallerIdentityTx(ctx, pool, func(q *sqlc.Queries) error {
-		if err := pauseStore.MarkResumedTx(ctx, q, token, answer); err != nil {
+		if err := pauseStore.MarkResumedFencedTx(ctx, q, token, answer, ""); err != nil {
 			return err
 		}
 		return errInjectedAppendFailure

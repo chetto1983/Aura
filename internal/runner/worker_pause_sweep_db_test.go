@@ -293,7 +293,9 @@ func TestExpireWorkerPausesSkipsAPauseTheOperatorAnsweredFirst(t *testing.T) {
 	ttl := time.Hour
 	due := parkWorkerPause(t, pool, store, pauseStore, convID, "sweep-answered", "Which inbox?", now.Add(-2*ttl))
 	human := askuser.ResumeAnswer{Action: askuser.ActionAccept, Content: "the shared one"}
-	if err := pauseStore.MarkResumedFenced(ctx, due.token, human, due.fence); err != nil {
+	if err := db.WithCallerIdentityTx(ctx, pool, func(q *sqlc.Queries) error {
+		return pauseStore.MarkResumedFencedTx(ctx, q, due.token, human, due.fence)
+	}); err != nil {
 		t.Fatalf("operator answer: %v", err)
 	}
 

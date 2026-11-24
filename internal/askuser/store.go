@@ -349,35 +349,9 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
 	return out, nil
 }
 
-// MarkResumedTx resolves one pause with the AM-02 {action, content} answer using the
-// caller-supplied Queries (bound to the caller's transaction — it opens NO transaction
-// of its own). It maps a rows-affected==0 claim (an unknown / already-resumed token —
-// the WHERE resumed_at IS NULL predicate matched no row) to ErrPauseNotFound via the
-// regenerated MarkPausedStateResumed (:execrows). The 34-06 ResumeCommitter calls it to
-// claim a pause in the SAME tx as the resume-answer turn append (D-03), so a claim and
-// its answer commit all-or-nothing.
-func (s *Store) MarkResumedTx(ctx context.Context, q *sqlc.Queries, token string, ans ResumeAnswer) error {
-	id, err := db.ParseUUID("token", token)
-	if err != nil {
-		return fmt.Errorf("mark resumed: %w", err)
-	}
-	answer, err := encodeAnswer(ans)
-	if err != nil {
-		return fmt.Errorf("mark resumed %s: %w", token, err)
-	}
-	n, err := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{Token: id, ResumedAnswer: answer})
-	if err != nil {
-		return fmt.Errorf("mark resumed %s: %w", token, err)
-	}
-	if n == 0 {
-		return fmt.Errorf("mark resumed %s: %w", token, ErrPauseNotFound)
-	}
-	return nil
-}
-
 // MarkResumed resolves one pause with the AM-02 {action, content} answer, in a transaction
-// scoped to the identity on ctx. A thin wrapper over MarkResumedTx; the parse/encode guards
-// short-circuit malformed input before any pool round-trip. An unknown, already-resumed, or
+// scoped to the identity on ctx. The parse/encode guards short-circuit malformed input
+// before any pool round-trip. An unknown, already-resumed, or
 // foreign token all return ErrPauseNotFound — under fail-closed RLS the conditional UPDATE
 // matches 0 rows in every one of those cases, which is the same answer for the same reason.
 func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer) error {
@@ -456,8 +430,8 @@ func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers
 // resolution). An empty map is a no-op that opens no transaction. This is the UNFENCED
 // public entry point (PauseStore's shape, unchanged since before 51-06a): every claim
 // carries an empty ExpectActionID, so it resolves a NULL-fenced pause but never a fenced
-// one — a fenced resume goes through MarkResumedFenced (store_fencing.go) or the
-// runner's PoolResumeCommitter.
+// one — a fenced resume goes through the runner's PoolResumeCommitter
+// (MarkResumedFencedTx, store_fencing.go).
 func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeAnswer) error {
 	if len(answers) == 0 {
 		return nil
