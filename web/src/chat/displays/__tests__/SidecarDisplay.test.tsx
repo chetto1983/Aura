@@ -24,7 +24,7 @@ describe('trusted sidecar read tables', () => {
         rows: [['<event-ref>', 'a1', 'Riunione', '2026-09-28 10:00', '2026-09-28 11:00']],
       },
     } as DisplayPayload;
-    render(<DisplayRouter payload={payload} toolName="pim__calendar" result="raw" />);
+    render(<DisplayRouter payload={payload} toolName="pim__get_calendar_events" result="raw" />);
     const table = screen.getByRole('table', { name: 'Eventi del calendario' });
     expect(within(table).getByText('<event-ref>')).toBeTruthy();
     expect(document.querySelector('event-ref')).toBeNull();
@@ -53,7 +53,9 @@ describe('trusted sidecar read tables', () => {
       tool_call_id: 'cal-2',
       table: { columns: ['Event'], rows: [['<script>']] },
     } as DisplayPayload;
-    render(<DisplayRouter payload={payload} toolName="pim__calendar" result="raw event" />);
+    render(
+      <DisplayRouter payload={payload} toolName="pim__get_calendar_events" result="raw event" />,
+    );
     expect(screen.getByText('raw event').tagName.toLowerCase()).toBe('pre');
   });
 });

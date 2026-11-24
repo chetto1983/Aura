@@ -113,10 +113,23 @@ func TestMCPDisplaySnapshotRequiresMatchingOwnerFact(t *testing.T) {
 }
 
 func TestMCPViewAndReadCardReplayTogether(t *testing.T) {
+	assertReadCardReplaysWithView(t, "pim__list_accounts", `{}`,
+		map[string]any{"recipe": "recipe:calendar", "tool": "list_accounts"})
+}
+
+// A conversation from before the PIM split stored the multiplexed call and its 3-key
+// marker, and tool_invocations keeps both forever.
+func TestLegacyCalendarMarkerReplaysItsReadCard(t *testing.T) {
+	assertReadCardReplaysWithView(t, "pim__calendar", `{"action":"list_accounts"}`,
+		map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "list_accounts"})
+}
+
+func assertReadCardReplaysWithView(t *testing.T, toolName, arguments string, source map[string]any) {
+	t.Helper()
 	const convID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	call := llm.ToolCall{ID: "cal-1", Type: "function"}
-	call.Function.Name = "pim__calendar"
-	call.Function.Arguments = `{"action":"list_accounts"}`
+	call.Function.Name = toolName
+	call.Function.Arguments = arguments
 	preview := `{"accounts":[{"accountId":"a1","provider":"google","displayName":"Work"}]}`
 	history := []llm.Message{
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
@@ -126,7 +139,7 @@ func TestMCPViewAndReadCardReplayTogether(t *testing.T) {
 		ConversationID: convID, ToolCallID: call.ID, ToolName: call.Function.Name,
 		Event: toolinvocations.EventEnd, Status: "ok", ResultPreview: preview,
 		Meta: map[string]any{
-			"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "list_accounts"},
+			"aura_display_source": source,
 			"mcp_view":            map[string]any{"server": "pim", "resource_uri": "ui://calendar/view.html", "text_content": preview},
 		},
 	}

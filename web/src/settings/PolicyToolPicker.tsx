@@ -46,7 +46,8 @@ interface PolicyToolPickerProps {
 
 // PolicyToolPicker is the tool half of a policy: a searchable list of what the agent can
 // call, so the operator picks a name instead of recalling one. A typed name could miss the
-// gateway's subject entirely, as "calendar__send_email" did on the lab VM (2026-10-10).
+// gateway's subject entirely, as "calendar__send_email" did on the lab VM (2026-10-10),
+// before the PIM split its one multiplexed tool into one tool per operation.
 export function PolicyToolPicker({ id, tools, value, onChange }: PolicyToolPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);

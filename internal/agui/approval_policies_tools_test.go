@@ -35,7 +35,7 @@ func TestPolicyToolsListEveryToolWithTheActionsTheGatewayReads(t *testing.T) {
 	s := NewServer(nil, nil, ServerConfig{})
 	s.SetPolicyTools(registeredTools{
 		specTool{Name: "web_search", Summary: "Search the web."},
-		specTool{Name: "calendar__calendar", Summary: "Mail and calendar.", Multiplexed: true, Parameters: actionSchema("list_accounts", "send_email")},
+		specTool{Name: "calendar__send_email", Summary: "Send an email.", Parameters: json.RawMessage(`{"type":"object","properties":{"accountId":{"type":"string"}}}`)},
 		specTool{Name: "skill", Summary: "Use a skill.", Parameters: actionSchema("list", "info", "use")},
 		specTool{Name: "board", Summary: "The work board.", Multiplexed: true, Parameters: actionSchema("list", "delete")},
 		specTool{Name: "swarm_spawn", Summary: "Spawn workers.", Multiplexed: true, Parameters: json.RawMessage(`{"type":"object"}`)},
@@ -50,7 +50,7 @@ func TestPolicyToolsListEveryToolWithTheActionsTheGatewayReads(t *testing.T) {
 	}
 	want := []policyToolItem{
 		{Name: "board", Summary: "The work board.", Actions: []string{"list", "delete"}},
-		{Name: "calendar__calendar", Summary: "Mail and calendar.", Actions: []string{"list_accounts", "send_email"}},
+		{Name: "calendar__send_email", Summary: "Send an email."},
 		{Name: "skill", Summary: "Use a skill."},
 		{Name: "swarm_spawn", Summary: "Spawn workers."},
 		{Name: "web_search", Summary: "Search the web."},

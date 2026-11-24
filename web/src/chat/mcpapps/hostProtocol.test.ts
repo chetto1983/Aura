@@ -116,7 +116,7 @@ describe('tools/call', () => {
         jsonrpc: '2.0',
         id: 9,
         method: 'tools/call',
-        params: { name: 'calendar', arguments: { action: 'get_emails' } },
+        params: { name: 'get_emails', arguments: { accountId: 'a1' } },
       },
     });
     await vi.waitFor(() => {

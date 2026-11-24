@@ -118,7 +118,7 @@ describe('snapshotToThreadMessages — tool calls + results', () => {
           toolCalls: [
             {
               id: 'c1',
-              function: { name: 'pim__calendar', arguments: '{"action":"list_accounts"}' },
+              function: { name: 'pim__list_accounts', arguments: '{}' },
               display,
               mcpView,
             },

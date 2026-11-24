@@ -25,11 +25,7 @@ interface Call {
 // included, with actions only on the multiplexed tools the gateway keys by action.
 const TOOLS = [
   { name: 'board', summary: 'The work board.', actions: ['list', 'add', 'delete'] },
-  {
-    name: 'calendar__calendar',
-    summary: 'Mail and calendar.',
-    actions: ['list_accounts', 'send_email'],
-  },
+  { name: 'calendar__send_email', summary: 'Send an email.' },
   { name: 'shell_exec', summary: 'Run a shell command.' },
   { name: 'browser__agent_browser_open', summary: 'Open a page.' },
 ];
@@ -70,9 +66,9 @@ function renderPanel() {
 
 const POLICIES = [
   {
-    tool: 'calendar',
-    action: 'send_email',
-    subject: 'calendar send_email',
+    tool: 'board',
+    action: 'delete',
+    subject: 'board delete',
     policy: 'deny',
     set_at: '2026-10-09T18:00:00Z',
   },
@@ -100,8 +96,8 @@ describe('ToolPoliciesPanel', () => {
   it('lists each policy under its own word', async () => {
     stubFetch({ list: POLICIES });
     renderPanel();
-    expect(await screen.findByText('calendar send_email')).toBeTruthy();
-    const deny = screen.getByText('calendar send_email').closest('li');
+    expect(await screen.findByText('board delete')).toBeTruthy();
+    const deny = screen.getByText('board delete').closest('li');
     const ask = screen.getByText('shell_exec', { selector: 'span' }).closest('li');
     expect(deny?.textContent).toContain('Never run it');
     expect(ask?.textContent).toContain('Always ask me');
@@ -117,8 +113,8 @@ describe('ToolPoliciesPanel', () => {
     const calls = stubFetch({ list: [] });
     renderPanel();
     await screen.findByText(/No tool policies/);
-    await pickTool('calendar__calendar');
-    await chooseOption('Action (optional)', 'send_email');
+    await pickTool('board');
+    await chooseOption('Action (optional)', 'delete');
     await chooseOption('Policy', 'Never run it');
     fireEvent.click(screen.getByRole('button', { name: 'Set policy' }));
     await waitFor(() => {
@@ -126,7 +122,24 @@ describe('ToolPoliciesPanel', () => {
     });
     const put = calls.find((c) => c.method === 'PUT');
     expect(put?.url).toBe('/api/approvals/policies');
-    expect(put?.body).toEqual({ tool: 'calendar__calendar', action: 'send_email', policy: 'deny' });
+    expect(put?.body).toEqual({ tool: 'board', action: 'delete', policy: 'deny' });
+  });
+
+  it('sets a PIM tool as a plain tool, with no action list', async () => {
+    const calls = stubFetch({ list: [] });
+    renderPanel();
+    await screen.findByText(/No tool policies/);
+    await pickTool('calendar__send_email');
+    const action = screen.getByRole('combobox', { name: 'Action (optional)' });
+    expect(action.hasAttribute('disabled')).toBe(true);
+    expect(action.textContent).toContain('This tool has no actions');
+    await chooseOption('Policy', 'Never run it');
+    fireEvent.click(screen.getByRole('button', { name: 'Set policy' }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'PUT')).toBe(true);
+    });
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put?.body).toEqual({ tool: 'calendar__send_email', action: '', policy: 'deny' });
   });
 
   it('groups the tools under Aura and under each MCP server', async () => {
@@ -183,8 +196,8 @@ describe('ToolPoliciesPanel', () => {
   it('clears one policy by its two coordinates', async () => {
     const calls = stubFetch({ list: POLICIES });
     renderPanel();
-    await screen.findByText('calendar send_email');
-    const clear = screen.getByText('calendar send_email').closest('li')?.querySelector('button');
+    await screen.findByText('board delete');
+    const clear = screen.getByText('board delete').closest('li')?.querySelector('button');
     if (clear == null) throw new Error('the policy row has no clear button');
     fireEvent.click(clear);
     await waitFor(() => {
@@ -192,7 +205,7 @@ describe('ToolPoliciesPanel', () => {
     });
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.url).toBe('/api/approvals/policies/clear');
-    expect(post?.body).toEqual({ tool: 'calendar', action: 'send_email' });
+    expect(post?.body).toEqual({ tool: 'board', action: 'delete' });
   });
 
   it('shows a failed save instead of pretending it worked', async () => {

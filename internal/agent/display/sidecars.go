@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// These field lists follow the pinned curated sidecar result builders. Only
-// completed reads whose host marker, action and result shape all match become
-// tables. Views, details, attachments and writes keep their raw receipts.
+// These field lists follow the pinned curated sidecar result builders, keyed by the
+// sidecar's tool name. Only completed reads whose host marker, tool and result shape
+// all match become tables. Views, details, attachments and writes keep their raw receipts.
 type sidecarField struct {
 	key, label       string
 	optional, joined bool
@@ -91,16 +91,7 @@ func normalizeSidecarPreview(in PreviewInput) (Payload, bool) {
 	var ok bool
 	switch marker.Recipe {
 	case "recipe:calendar":
-		if marker.Tool != "calendar" {
-			return Payload{}, false
-		}
-		var arguments struct {
-			Action string `json:"action"`
-		}
-		if json.Unmarshal([]byte(in.Arguments), &arguments) != nil || arguments.Action != marker.Action {
-			return Payload{}, false
-		}
-		spec, ok = calendarReadSpecs[marker.Action]
+		spec, ok = calendarReadSpec(marker, in.Arguments)
 	case "recipe:whatsapp":
 		if marker.Action != "" {
 			return Payload{}, false
@@ -157,6 +148,22 @@ func normalizeSidecarPreview(in PreviewInput) (Payload, bool) {
 	return Payload{Type: KindTable, ToolCallID: in.ToolCallID, Title: spec.title, Table: &Table{
 		Columns: columns, Rows: rows, OmittedRows: max(0, len(rawRows)-len(rows)),
 	}}, true
+}
+
+// calendarReadSpec keys the PIM's read tables by its tool name, or by the action of a
+// pre-split call through the multiplexed tool. A marker is one shape or the other, never both.
+func calendarReadSpec(marker *TrustedMCP, arguments string) (sidecarSpec, bool) {
+	name := marker.Tool
+	if marker.Tool == legacyCalendarTool {
+		if marker.Action == "" || calendarArgumentsAction(arguments) != marker.Action {
+			return sidecarSpec{}, false
+		}
+		name = marker.Action
+	} else if marker.Action != "" {
+		return sidecarSpec{}, false
+	}
+	spec, ok := calendarReadSpecs[name]
+	return spec, ok
 }
 
 func sidecarCell(raw json.RawMessage, field sidecarField) (string, bool) {
