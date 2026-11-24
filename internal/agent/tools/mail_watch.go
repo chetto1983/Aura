@@ -44,7 +44,7 @@ const mailWatchParamsSchema = `{
   "type": "object",
   "properties": {
     "action": {"type": "string", "enum": ["status", "enable", "disable", "correct", "add_rule", "remove_rule", "list_rules", "list_labels", "list_decisions"], "description": "status (watched accounts, what failed, digest hour, daily cap), enable (watch an account from now on), disable (stop watching it; asks the operator first), correct (change what was decided about one item; only with the operator in the conversation), add_rule (always treat a sender or domain this way; only with the operator in the conversation), remove_rule (asks the operator first), list_rules, list_labels, list_decisions (one account's day: what was decided and why, with the ids correct takes)."},
-    "account_id": {"type": "string", "description": "Required for enable, disable, correct and list_decisions: the PIM account id, as status, a notification record or the calendar tool names it."},
+    "account_id": {"type": "string", "description": "Required for enable, disable, correct and list_decisions: the PIM account id, as status, a notification record or calendar__list_accounts names it."},
     "item_id": {"type": "string", "description": "Required for correct: the id a notification record or list_decisions gives."},
     "day": {"type": "string", "description": "For list_decisions: YYYY-MM-DD in the operator's zone. Empty means today."},
     "resource": {"type": "string", "enum": ["mail", "calendar"], "description": "Optional for correct; default mail."},

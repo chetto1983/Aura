@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/cron"
 )
 
 const notifyListing = `{"accounts":[
@@ -37,53 +39,91 @@ func TestTheNotificationLeavesFromTheRecipientsOwnAccount(t *testing.T) {
 	}
 }
 
-// pimTool answers list_accounts with a listing and records every call, as the bridged PIM tool does.
+// pimTool is one tool the bridge mounted from the PIM recipe. It records every call's raw
+// arguments and answers each with the same text.
 type pimTool struct {
-	listing string
-	calls   []map[string]any
+	tool, answer string
+	calls        []json.RawMessage
 }
 
 func (p *pimTool) Spec() tools.Spec {
-	return tools.Spec{Name: "calendar__calendar", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar"}
+	return tools.Spec{Name: "calendar__" + p.tool, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: p.tool}
 }
 
 func (p *pimTool) Execute(ctx context.Context, args json.RawMessage) (tools.ToolResult, error) {
-	var call map[string]any
-	_ = json.Unmarshal(args, &call)
-	p.calls = append(p.calls, call)
-	if call["action"] == "list_accounts" {
-		return tools.NewResult(ctx, p.listing)
-	}
-	return tools.NewResult(ctx, `{"success":true}`)
+	p.calls = append(p.calls, args)
+	return tools.NewResult(ctx, p.answer)
 }
 
-func TestAPIMNotificationNamesItsSendingAccount(t *testing.T) {
-	reg := tools.NewRegistry()
-	pim := &pimTool{listing: notifyListing}
-	reg.Register(pim)
-	sender, ok := selfSendResolver{reg: reg, runDir: t.TempDir(), previewCap: 4096}.Resolve("recipe:calendar", "calendar")
-	if !ok {
-		t.Fatal("the PIM tool did not resolve")
+func (p *pimTool) call(t *testing.T, i int) map[string]any {
+	t.Helper()
+	var call map[string]any
+	if err := json.Unmarshal(p.calls[i], &call); err != nil {
+		t.Fatalf("%s call %d: %v", p.tool, i, err)
 	}
+	return call
+}
 
-	err := sender.Send(context.Background(), json.RawMessage(`{"action":"send_email","to":["me@gmail.example"],"subject":"Aura scheduled task","body":"fatto","bodyFormat":"text"}`))
-	if err != nil {
+// mountedPIM registers the given PIM tools and resolves the email route's sender over them.
+func mountedPIM(t *testing.T, mounted ...*pimTool) cron.SelfSendTool {
+	t.Helper()
+	reg := tools.NewRegistry()
+	for _, tool := range mounted {
+		reg.Register(tool)
+	}
+	sender, ok := selfSendResolver{reg: reg, runDir: t.TempDir(), previewCap: 4096}.Resolve("recipe:calendar", "send_email")
+	if !ok {
+		t.Fatal("the send_email tool did not resolve")
+	}
+	return sender
+}
+
+const notificationEmail = `{"to":["me@gmail.example"],"subject":"Aura scheduled task","body":"fatto","bodyFormat":"text"}`
+
+func TestNotificationListsAccountsThroughItsOwnTool(t *testing.T) {
+	accounts := &pimTool{tool: "list_accounts", answer: notifyListing}
+	send := &pimTool{tool: "send_email", answer: `{"success":true}`}
+	sender := mountedPIM(t, accounts, send)
+
+	if err := sender.Send(context.Background(), json.RawMessage(notificationEmail)); err != nil {
 		t.Fatalf("Send = %v", err)
 	}
 
-	if len(pim.calls) != 2 || pim.calls[0]["action"] != "list_accounts" {
-		t.Fatalf("calls = %v, want list_accounts then the send", pim.calls)
+	if len(accounts.calls) != 1 || string(accounts.calls[0]) != `{}` {
+		t.Fatalf("list_accounts calls = %s, want one call with {}", accounts.calls)
 	}
-	if got := pim.calls[1]["accountId"]; got != "t__personale" {
-		t.Fatalf("send accountId = %v, want the recipient's own account", got)
+	if len(send.calls) != 1 {
+		t.Fatalf("send_email calls = %s, want one", send.calls)
+	}
+	got := send.call(t, 0)
+	if got["accountId"] != "t__personale" {
+		t.Fatalf("send accountId = %v, want the recipient's own account", got["accountId"])
+	}
+	if _, multiplexed := got["action"]; multiplexed {
+		t.Fatalf("send_email args carry an action: %v", got)
 	}
 
-	pim.calls = nil
-	err = sender.Send(context.Background(), json.RawMessage(`{"action":"send_email","accountId":"t__lavoro","to":["me@gmail.example"],"subject":"s","body":"b"}`))
-	if err != nil {
+	accounts.calls, send.calls = nil, nil
+	named := `{"accountId":"t__lavoro","to":["me@gmail.example"],"subject":"s","body":"b"}`
+	if err := sender.Send(context.Background(), json.RawMessage(named)); err != nil {
 		t.Fatalf("Send with an account = %v", err)
 	}
-	if len(pim.calls) != 1 || pim.calls[0]["accountId"] != "t__lavoro" {
-		t.Fatalf("calls = %v, want the named account kept and no listing", pim.calls)
+	if len(accounts.calls) != 0 || len(send.calls) != 1 || send.call(t, 0)["accountId"] != "t__lavoro" {
+		t.Fatalf("list_accounts %s, send_email %s; want the named account kept and no listing", accounts.calls, send.calls)
+	}
+}
+
+// Review Focus 5: a partial mount carries send_email without list_accounts. The notification
+// cannot name its account, so it fails and sends nothing.
+func TestNotificationWithoutListAccountsToolFails(t *testing.T) {
+	send := &pimTool{tool: "send_email", answer: `{"success":true}`}
+	sender := mountedPIM(t, send)
+
+	err := sender.Send(context.Background(), json.RawMessage(notificationEmail))
+	if err == nil || !strings.Contains(err.Error(), "list_accounts") {
+		t.Fatalf("Send = %v, want an error naming list_accounts", err)
+	}
+	if len(send.calls) != 0 {
+		t.Fatalf("send_email calls = %s, want none", send.calls)
 	}
 }

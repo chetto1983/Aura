@@ -133,7 +133,7 @@ func TestByTrustedRecipeIsDeterministic(t *testing.T) {
 			t.Fatalf("ByTrustedRecipe = %v, %v; want a__send_message", got, ok)
 		}
 	}
-	if _, ok := reg.ByTrustedRecipe("recipe:calendar", "calendar"); ok {
+	if _, ok := reg.ByTrustedRecipe("recipe:calendar", "send_email"); ok {
 		t.Fatal("an unmounted recipe resolved")
 	}
 }

@@ -66,7 +66,7 @@ func TestSelfSendResolverMatchesTheManagedRecipe(t *testing.T) {
 	if !ok || got.(selfSendTool).tool != trusted {
 		t.Fatalf("Resolve(recipe:whatsapp send_message) = %v, %v; want the recipe-mounted tool", got, ok)
 	}
-	if _, ok := r.Resolve("recipe:calendar", "calendar"); ok {
+	if _, ok := r.Resolve("recipe:calendar", "send_email"); ok {
 		t.Fatal("an unmounted recipe resolved")
 	}
 	if _, ok := (selfSendResolver{}).Resolve("recipe:whatsapp", "send_message"); ok {

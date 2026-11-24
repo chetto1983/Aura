@@ -11,7 +11,7 @@ package cron
 // consults the scheduler's Now-based DuringQuietHours predicate before delivering a
 // non-destructive notification.
 //
-// The MCP self-send tools (WhatsApp send_message, the PIM calendar tool) are resolved
+// The MCP self-send tools (WhatsApp send_message, the PIM's send_email) are resolved
 // through a cron-local SelfSendResolver interface, NOT a concrete *tools.Registry import: that
 // keeps package cron free of an internal/agent/tools import (tools/task.go already
 // imports cron — the reverse import would be a cycle). The composition root (cmd/aura,
@@ -70,9 +70,7 @@ var selfSendRoutes = map[NotifyRoute]selfSendRoute{
 	RouteWhatsApp: {recipe: "recipe:whatsapp", tool: "send_message", args: func(recipient, text string) map[string]any {
 		return map[string]any{"recipient": recipient, "message": text}
 	}},
-	// The PIM multiplexes mail behind its one calendar tool. Without an accountId it picks
-	// the sending account itself: by the recipient's domain, else its first account.
-	RouteEmail: {recipe: "recipe:calendar", tool: "calendar", args: emailArgs},
+	RouteEmail: {recipe: "recipe:calendar", tool: "send_email", args: emailArgs},
 }
 
 // SelfSendResolver resolves the MCP tool mounted from a managed recipe to an executable

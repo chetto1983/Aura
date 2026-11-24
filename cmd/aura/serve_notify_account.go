@@ -6,12 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 // pimSelfSendTool names the account a scheduler email leaves from: the PIM refuses a send
 // without accountId (aura-pim-mcp 63365df, 2026-11-23). A notification goes to the identity's
-// own address, so it leaves from that same mailbox when one of the accounts owns it.
-type pimSelfSendTool struct{ selfSendTool }
+// own address, so it leaves from that same mailbox when one of the accounts owns it. The listing
+// is looked up per send: a mount without list_accounts fails the send, naming the missing tool.
+type pimSelfSendTool struct {
+	send selfSendTool
+	reg  *tools.Registry
+}
 
 func (p pimSelfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 	var call map[string]json.RawMessage
@@ -19,7 +25,7 @@ func (p pimSelfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 		return fmt.Errorf("read the email notification: %w", err)
 	}
 	if _, named := call["accountId"]; named {
-		return p.selfSendTool.Send(ctx, args)
+		return p.send.Send(ctx, args)
 	}
 	var to []string
 	if raw, ok := call["to"]; ok {
@@ -27,7 +33,7 @@ func (p pimSelfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 			return fmt.Errorf("read the notification's recipients: %w", err)
 		}
 	}
-	listing, err := pimAccountListing(p.callContext(ctx), p.tool)
+	listing, err := pimAccountListing(p.send.callContext(ctx), p.reg)
 	if err != nil {
 		return fmt.Errorf("list the PIM accounts: %w", err)
 	}
@@ -44,7 +50,7 @@ func (p pimSelfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	return p.selfSendTool.Send(ctx, named)
+	return p.send.Send(ctx, named)
 }
 
 // sendingAccountFor is the account whose address is the recipient's, when it may send; else the

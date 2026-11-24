@@ -59,8 +59,8 @@ func (r selfSendResolver) Resolve(recipe, tool string) (cron.SelfSendTool, bool)
 		return nil, false
 	}
 	send := selfSendTool{tool: t, runDir: r.runDir, previewCap: r.previewCap}
-	if recipe == "recipe:calendar" {
-		return pimSelfSendTool{send}, true
+	if recipe == "recipe:calendar" && tool == "send_email" {
+		return pimSelfSendTool{send: send, reg: r.reg}, true
 	}
 	return send, true
 }

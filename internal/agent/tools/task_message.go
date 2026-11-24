@@ -70,9 +70,9 @@ func (p messagePayload) recipeArgs() (json.RawMessage, error) {
 
 var errMessagePayload = errors.New("task schedule: a message needs channel whatsapp or email, a recipient and a text. Nothing was scheduled")
 
-// errMessageNeedsAccount: without an accountId the PIM picks the sender itself, by the
-// recipient's domain, else its first account (measured 2026-11-12 on an operator with three).
-var errMessageNeedsAccount = errors.New("task schedule: an email message needs payload.account, the account it is sent from. List the operator's accounts with the calendar tool's list_accounts and, when there is more than one, ask the operator which to send from. Nothing was scheduled")
+// errMessageNeedsAccount: the PIM refuses a send without accountId (aura-pim-mcp 63365df,
+// 2026-11-23), and with several accounts only the operator knows which one a message leaves from.
+var errMessageNeedsAccount = errors.New("task schedule: an email message needs payload.account, the account it is sent from. List the operator's accounts with calendar__list_accounts and, when there is more than one, ask the operator which to send from. Nothing was scheduled")
 
 // messageSchedule checks that a message is one send, ahead, within the review's lifetime, and
 // that its payload names a channel, a recipient and a text.

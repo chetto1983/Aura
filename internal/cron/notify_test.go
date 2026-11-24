@@ -108,18 +108,18 @@ func TestNotifyDefaultsToTheIdentitysOwnAddress(t *testing.T) {
 	}
 }
 
-// TestNotifyEmailRidesThePIMCalendarTool: the PIM multiplexes mail behind its calendar
-// tool, so an email notification is that tool's send_email action. Measured 2026-10-05,
-// the old bare "send_email" name matched no mounted tool and every email route failed.
-func TestNotifyEmailRidesThePIMCalendarTool(t *testing.T) {
+// TestEmailNotificationRidesSendEmail: the PIM advertises one tool per operation, so an
+// email notification is the send_email tool the calendar recipe mounted, called without
+// the retired action discriminator.
+func TestEmailNotificationRidesSendEmail(t *testing.T) {
 	t.Setenv("AURA_SCHEDULER_NOTIFY_RECIPIENT", "")
 	fss := &fakeSelfSend{}
 	n := NewNotifier(fss, ownAddressBook())
 	if err := n.Notify(ownerCtx(), RouteEmail, "report"); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
-	if len(fss.resolved) != 1 || fss.resolved[0] != "recipe:calendar calendar" {
-		t.Fatalf("email must resolve the calendar recipe's calendar tool, got %v", fss.resolved)
+	if len(fss.resolved) != 1 || fss.resolved[0] != "recipe:calendar send_email" {
+		t.Fatalf("email must resolve the calendar recipe's send_email tool, got %v", fss.resolved)
 	}
 	got := sentArgs(t, fss)
 	to, _ := got["to"].([]any)
@@ -254,7 +254,7 @@ func TestDestinationResolvesWithoutSending(t *testing.T) {
 		t.Fatal("a route that addresses no one resolved an MCP tool")
 	}
 
-	unmounted := &compositeNotifier{resolver: &fakeSelfSend{missing: map[string]bool{"recipe:calendar calendar": true}}, own: ownAddressBook()}
+	unmounted := &compositeNotifier{resolver: &fakeSelfSend{missing: map[string]bool{"recipe:calendar send_email": true}}, own: ownAddressBook()}
 	if _, err := unmounted.Destination(ownerCtx(), RouteEmail); err == nil || !strings.Contains(err.Error(), "no MCP tool mounted for route email") {
 		t.Fatalf("Destination(email) with no PIM mounted = %v, want the missing-tool reason", err)
 	}

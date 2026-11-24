@@ -17,8 +17,8 @@ const pimSendersSessionID = "00000000-0000-0000-0000-000000000045"
 
 var pimSendersCallSeq atomic.Uint64
 
-// pimSenders is the drafts store's SenderDirectory: it asks the PIM mounted from the calendar recipe,
-// found by recipe and never by name, which address an account sends from.
+// pimSenders is the drafts store's SenderDirectory: it asks the PIM mounted from the calendar recipe
+// which address an account sends from.
 type pimSenders struct {
 	reg        *tools.Registry
 	runDir     string
@@ -26,21 +26,22 @@ type pimSenders struct {
 }
 
 func (p pimSenders) SendingAddress(ctx context.Context, accountID string) (string, bool, error) {
-	tool, ok := p.reg.ByTrustedRecipe("recipe:calendar", "calendar")
-	if !ok {
-		return "", false, errors.New("email is not connected")
-	}
 	callID := fmt.Sprintf("pim-senders-%d", pimSendersCallSeq.Add(1))
-	listing, err := pimAccountListing(tools.WithToolCallContext(ctx, pimSendersSessionID, callID, p.runDir, p.previewCap), tool)
+	listing, err := pimAccountListing(tools.WithToolCallContext(ctx, pimSendersSessionID, callID, p.runDir, p.previewCap), p.reg)
 	if err != nil {
 		return "", false, err
 	}
 	return senderIn(listing, accountID)
 }
 
-// pimAccountListing runs the PIM's list_accounts. ctx must already carry a tool-call context.
-func pimAccountListing(ctx context.Context, tool tools.Tool) (string, error) {
-	result, err := tool.Execute(ctx, json.RawMessage(`{"action":"list_accounts"}`))
+// pimAccountListing runs the list_accounts tool the calendar recipe mounted, found by recipe and
+// never by name. ctx must already carry a tool-call context.
+func pimAccountListing(ctx context.Context, reg *tools.Registry) (string, error) {
+	tool, ok := reg.ByTrustedRecipe("recipe:calendar", "list_accounts")
+	if !ok {
+		return "", errors.New("the PIM's list_accounts tool is not mounted")
+	}
+	result, err := tool.Execute(ctx, json.RawMessage(`{}`))
 	if err != nil {
 		return "", err
 	}
