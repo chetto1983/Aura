@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Columns3, SlidersHorizontal } from 'lucide-react';
 import {
+  CardActionMenu,
   Editor,
   getEditorItems,
   Kanban,
@@ -51,7 +52,8 @@ interface BoardWorkspaceProps {
 }
 
 // The card flags that matter with a custom template: the menu, which the template's button
-// opens. An identity's board has one user and no cover images, so the rest stay off.
+// opens through the CardActionMenu around the board. An identity's board has one user and
+// no cover images, so the rest stay off.
 const CARD_SHAPE: CardShape = { menu: true };
 const MINUTE_MS = 60_000;
 
@@ -339,14 +341,16 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
           <Theme fonts={false}>
             <Locale words={boardWords(i18n.language)}>
               <BoardCardContext.Provider value={cardContext}>
-                <Kanban
-                  cards={cards}
-                  columns={columns}
-                  card={CARD_SHAPE}
-                  cardContent={BoardCardContent}
-                  render={{ fixedColumnWidth: false }}
-                  init={init}
-                />
+                <CardActionMenu api={api}>
+                  <Kanban
+                    cards={cards}
+                    columns={columns}
+                    card={CARD_SHAPE}
+                    cardContent={BoardCardContent}
+                    render={{ fixedColumnWidth: false }}
+                    init={init}
+                  />
+                </CardActionMenu>
               </BoardCardContext.Provider>
               {api !== null && (
                 <Editor

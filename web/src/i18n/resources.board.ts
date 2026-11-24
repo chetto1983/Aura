@@ -36,7 +36,6 @@ export const boardEn = {
       3: 'High priority',
     },
     card: {
-      menu: 'Card menu',
       progress: 'Progress',
       tags: 'Tags',
       overdue: 'overdue',
@@ -132,7 +131,6 @@ export const boardIt = {
       3: 'Priorità alta',
     },
     card: {
-      menu: 'Menu della scheda',
       progress: 'Avanzamento',
       tags: 'Tag',
       overdue: 'scaduta',

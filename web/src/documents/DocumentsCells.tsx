@@ -10,15 +10,7 @@ import {
 } from './documentsCellContext';
 import { displayDate, PROPOSED_PREFIX, valuesFor } from './documentsModel';
 
-type CellAction = ICellProps['onaction'];
-
-/** A cell's props as @svar-ui/react-grid 2.7.6 passes them: its runtime hands a body cell
- * `onAction` (dist/index.es.js), while its published types still declare `onaction`. */
-type CellProps = ICellProps & { readonly onAction?: CellAction };
-
-function cellAction(props: CellProps): CellAction {
-  return props.onAction ?? props.onaction;
-}
+type CellAction = ICellProps['onAction'];
 
 function SourceMark({ value }: { readonly value: FieldValue }) {
   const { t } = useTranslation();
@@ -38,11 +30,11 @@ function SourceMark({ value }: { readonly value: FieldValue }) {
 function LabelValue({
   value,
   field,
-  onaction,
+  onAction,
 }: {
   readonly value: FieldValue;
   readonly field: FilterField;
-  readonly onaction: CellAction;
+  readonly onAction: CellAction;
 }) {
   const { t } = useTranslation();
   const names = useContext(DocumentsCellContext);
@@ -61,7 +53,7 @@ function LabelValue({
         data-action="ignore-click"
         className="truncate text-left text-info underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
         onClick={() => {
-          onaction({ action: FILTER_VALUE_ACTION, data: { field, id: value.value_key } });
+          onAction({ action: FILTER_VALUE_ACTION, data: { field, id: value.value_key } });
         }}
       >
         {name}
@@ -72,16 +64,15 @@ function LabelValue({
 }
 
 /** The document's name, which opens its detail. */
-export function NameCell(props: CellProps) {
-  const doc = props.row as unknown as DocumentRow;
-  const onaction = cellAction(props);
+export function NameCell({ row, onAction }: ICellProps) {
+  const doc = row as unknown as DocumentRow;
   return (
     <button
       type="button"
       data-action="ignore-click"
       className="truncate text-left font-semibold text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
       onClick={() => {
-        onaction({ action: OPEN_DOCUMENT_ACTION, data: { id: doc.id } });
+        onAction({ action: OPEN_DOCUMENT_ACTION, data: { id: doc.id } });
       }}
     >
       {doc.file_name}
@@ -90,21 +81,19 @@ export function NameCell(props: CellProps) {
 }
 
 /** The type or the counterparty, as the column's id names it. */
-export function FieldCell(props: CellProps) {
-  const field = props.column.id as FilterField;
-  const [value] = valuesFor(props.row as unknown as DocumentRow, field);
+export function FieldCell({ row, column, onAction }: ICellProps) {
+  const field = column.id as FilterField;
+  const [value] = valuesFor(row as unknown as DocumentRow, field);
   if (value === undefined) return <span className="text-text-muted">—</span>;
-  return <LabelValue value={value} field={field} onaction={cellAction(props)} />;
+  return <LabelValue value={value} field={field} onAction={onAction} />;
 }
 
-export function TagsCell(props: CellProps) {
-  const { row } = props;
-  const onaction = cellAction(props);
+export function TagsCell({ row, onAction }: ICellProps) {
   return (
     <span className="flex min-w-0 flex-wrap gap-1">
       {valuesFor(row as unknown as DocumentRow, 'tags').map((value) => (
         <span key={value.value_key} className="rounded-md bg-surface-3 px-1.5">
-          <LabelValue value={value} field="tags" onaction={onaction} />
+          <LabelValue value={value} field="tags" onAction={onAction} />
         </span>
       ))}
     </span>

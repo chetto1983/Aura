@@ -56,10 +56,11 @@ describe('BoardCardContent', () => {
     expect(screen.getByText('Pay the invoice')).toBeTruthy();
     expect(screen.getByText('Aura in chat')).toBeTruthy();
     expect(screen.getByText('High priority')).toBeTruthy();
-    // The widget's context menu finds its trigger by this attribute, nothing else.
-    expect(container.querySelector('[data-action="menu"]')?.getAttribute('aria-label')).toBe(
-      'Card menu',
-    );
+    // The widget's CardActionMenu finds the card by data-card-menu, and the click on it must
+    // not open the editor, which data-action="menu" prevents.
+    const trigger = container.querySelector('[data-action="menu"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('Card menu');
+    expect(trigger?.hasAttribute('data-card-menu')).toBe(true);
   });
 
   it('marks a passed due date, the conversation and the task status', async () => {

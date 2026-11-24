@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 import { Bot, CalendarClock, MessageSquareText, Moon, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { KanbanCard } from '@svar-ui/react-kanban';
+import { CardMenuButton, type KanbanCard } from '@svar-ui/react-kanban';
 import type { CardSource, WidgetCard } from './boardApi';
 import { BoardCardContext } from './boardCardContext';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
@@ -29,7 +29,9 @@ function tagTone(tag: string) {
  * The Aura card, rendered inside the widget's own card shell. Nothing on it is a link: the
  * widget handles clicks on the board element itself, so any click a card does not mark as
  * `data-action="menu"` opens the editor, and the conversation and task live there instead.
- * The menu button keeps the widget's attribute, which is how its context menu finds it.
+ * The menu button is the widget's own CardMenuButton: since @svar-ui/react-kanban 2.7.0 the
+ * outer CardActionMenu finds the card by the button's `data-card-menu`, in the widget's id
+ * encoding.
  */
 export function BoardCardContent(props: { readonly card: KanbanCard }) {
   // The widget types a card as an id plus anything; this board's cards are the ones it loaded.
@@ -61,14 +63,10 @@ export function BoardCardContent(props: { readonly card: KanbanCard }) {
             {overdue && <span className="sr-only">{t('board.card.overdue')}</span>}
           </span>
         )}
-        <button
-          type="button"
-          data-action="menu"
-          aria-label={t('board.card.menu')}
-          className="-mr-1 ml-auto grid h-7 w-7 shrink-0 place-items-center rounded text-text-muted hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          <i className="wx-icon wxi-dots-h" aria-hidden="true" />
-        </button>
+        <CardMenuButton
+          card={props.card}
+          css="-mr-1 ml-auto grid h-7 w-7 shrink-0 place-items-center rounded text-text-muted hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        />
       </div>
       <p className="min-w-0 text-[14px] leading-snug font-semibold break-words text-text">
         {card.label}
