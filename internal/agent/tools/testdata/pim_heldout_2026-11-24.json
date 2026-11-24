@@ -1,0 +1,423 @@
+{
+  "cases": [
+    {
+      "query": "ho nuove mail?",
+      "lang": "it",
+      "gold": [
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "anything new in my inbox this morning?",
+      "lang": "en",
+      "gold": [
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "mi ha scritto Marco per la fattura?",
+      "lang": "it",
+      "gold": [
+        "calendar__search_emails",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "did Giulia answer about the invoice?",
+      "lang": "en",
+      "gold": [
+        "calendar__search_emails",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "trovami la mail del commercialista col 730",
+      "lang": "it",
+      "gold": [
+        "calendar__search_emails",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "find that message from the landlord about the rent going up",
+      "lang": "en",
+      "gold": [
+        "calendar__search_emails",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "leggimi per intero la mail di Luca sul preventivo",
+      "lang": "it",
+      "gold": [
+        "calendar__get_email_details",
+        "calendar__search_emails"
+      ]
+    },
+    {
+      "query": "show me the whole text of Paolo's last email",
+      "lang": "en",
+      "gold": [
+        "calendar__get_email_details",
+        "calendar__search_emails"
+      ]
+    },
+    {
+      "query": "riassumimi la posta di oggi",
+      "lang": "it",
+      "gold": [
+        "calendar__get_contextual_email_summary",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "give me a quick rundown of what's in my mail",
+      "lang": "en",
+      "gold": [
+        "calendar__get_contextual_email_summary",
+        "calendar__get_emails"
+      ]
+    },
+    {
+      "query": "c'è qualcosa di urgente nella posta?",
+      "lang": "it",
+      "gold": [
+        "calendar__get_emails",
+        "calendar__get_contextual_email_summary"
+      ]
+    },
+    {
+      "query": "what's the back and forth with Sara about the wedding venue been about so far?",
+      "lang": "en",
+      "gold": [
+        "calendar__get_contextual_email_summary",
+        "calendar__search_emails"
+      ]
+    },
+    {
+      "query": "rispondi a Marco che giovedì mi va bene",
+      "lang": "it",
+      "gold": [
+        "calendar__send_email",
+        "calendar__get_email_details"
+      ]
+    },
+    {
+      "query": "reply to Elena and tell her I'll send the documents tomorrow",
+      "lang": "en",
+      "gold": [
+        "calendar__send_email",
+        "calendar__get_email_details"
+      ]
+    },
+    {
+      "query": "scrivi due righe a Chiara per dirle che arrivo in ritardo",
+      "lang": "it",
+      "gold": [
+        "calendar__send_email"
+      ]
+    },
+    {
+      "query": "shoot Tom a quick note that the meeting moved",
+      "lang": "en",
+      "gold": [
+        "calendar__send_email"
+      ]
+    },
+    {
+      "query": "inoltra a Franco la mail della banca col PDF",
+      "lang": "it",
+      "gold": [
+        "calendar__send_email",
+        "calendar__search_emails"
+      ]
+    },
+    {
+      "query": "write to the plumber and ask him for a quote",
+      "lang": "en",
+      "gold": [
+        "calendar__send_email"
+      ]
+    },
+    {
+      "query": "butta via quella mail del casinò, è spam",
+      "lang": "it",
+      "gold": [
+        "calendar__delete_email"
+      ]
+    },
+    {
+      "query": "trash all the newsletters from last week",
+      "lang": "en",
+      "gold": [
+        "calendar__bulk_delete_emails"
+      ]
+    },
+    {
+      "query": "metti la mail dell'assicurazione nella cartella Casa",
+      "lang": "it",
+      "gold": [
+        "calendar__move_email"
+      ]
+    },
+    {
+      "query": "file everything from the gym into my Receipts folder",
+      "lang": "en",
+      "gold": [
+        "calendar__bulk_move_emails"
+      ]
+    },
+    {
+      "query": "segna come lette tutte le promozioni",
+      "lang": "it",
+      "gold": [
+        "calendar__bulk_mark_emails_read"
+      ]
+    },
+    {
+      "query": "I've already seen Anna's note, clear the unread dot",
+      "lang": "en",
+      "gold": [
+        "calendar__mark_email_read"
+      ]
+    },
+    {
+      "query": "non voglio più ricevere la newsletter di quel negozio",
+      "lang": "it",
+      "gold": [
+        "calendar__unsubscribe_from_email",
+        "calendar__get_unsubscribe_info"
+      ]
+    },
+    {
+      "query": "how do I stop getting these marketing mails from the airline?",
+      "lang": "en",
+      "gold": [
+        "calendar__get_unsubscribe_info",
+        "calendar__unsubscribe_from_email"
+      ]
+    },
+    {
+      "query": "scaricami il contratto che Roberto mi ha mandato in allegato",
+      "lang": "it",
+      "gold": [
+        "calendar__get_email_attachment"
+      ]
+    },
+    {
+      "query": "grab the PDF Laura sent me",
+      "lang": "en",
+      "gold": [
+        "calendar__get_email_attachment",
+        "calendar__search_emails"
+      ]
+    },
+    {
+      "query": "c'era un file nella mail del notaio? aprilo",
+      "lang": "it",
+      "gold": [
+        "calendar__get_email_attachment",
+        "calendar__get_email_details"
+      ]
+    },
+    {
+      "query": "cosa ho domani?",
+      "lang": "it",
+      "gold": [
+        "calendar__get_calendar_events"
+      ]
+    },
+    {
+      "query": "what's on my plate this week?",
+      "lang": "en",
+      "gold": [
+        "calendar__get_calendar_events"
+      ]
+    },
+    {
+      "query": "sono libero venerdì pomeriggio?",
+      "lang": "it",
+      "gold": [
+        "calendar__get_calendar_events"
+      ]
+    },
+    {
+      "query": "where's the dentist appointment and who else is coming?",
+      "lang": "en",
+      "gold": [
+        "calendar__get_calendar_event_details",
+        "calendar__get_calendar_events"
+      ]
+    },
+    {
+      "query": "a che ora è la riunione col commercialista e dove?",
+      "lang": "it",
+      "gold": [
+        "calendar__get_calendar_event_details",
+        "calendar__get_calendar_events"
+      ]
+    },
+    {
+      "query": "which agendas are you looking at, work and personal?",
+      "lang": "en",
+      "gold": [
+        "calendar__list_calendars"
+      ]
+    },
+    {
+      "query": "fissami un appuntamento dal dentista martedì alle 15",
+      "lang": "it",
+      "gold": [
+        "calendar__create_event"
+      ]
+    },
+    {
+      "query": "put lunch with Sofia on Thursday at noon",
+      "lang": "en",
+      "gold": [
+        "calendar__create_event"
+      ]
+    },
+    {
+      "query": "sposta la call con Matteo a lunedì prossimo",
+      "lang": "it",
+      "gold": [
+        "calendar__update_event"
+      ]
+    },
+    {
+      "query": "push the team sync back an hour",
+      "lang": "en",
+      "gold": [
+        "calendar__update_event"
+      ]
+    },
+    {
+      "query": "annulla la cena di sabato",
+      "lang": "it",
+      "gold": [
+        "calendar__delete_event"
+      ]
+    },
+    {
+      "query": "cancel my haircut on Friday",
+      "lang": "en",
+      "gold": [
+        "calendar__delete_event"
+      ]
+    },
+    {
+      "query": "accetta l'invito di Giorgio per la presentazione",
+      "lang": "it",
+      "gold": [
+        "calendar__respond_to_event"
+      ]
+    },
+    {
+      "query": "decline the Monday standup invite, I'm on holiday",
+      "lang": "en",
+      "gold": [
+        "calendar__respond_to_event"
+      ]
+    },
+    {
+      "query": "qual è il numero di Federica?",
+      "lang": "it",
+      "gold": [
+        "calendar__search_contacts",
+        "calendar__get_contact_details"
+      ]
+    },
+    {
+      "query": "what's Ben's email address?",
+      "lang": "en",
+      "gold": [
+        "calendar__search_contacts",
+        "calendar__get_contact_details"
+      ]
+    },
+    {
+      "query": "aggiungi in rubrica Sergio l'idraulico col suo cellulare",
+      "lang": "it",
+      "gold": [
+        "calendar__create_contact"
+      ]
+    },
+    {
+      "query": "add Nina to my address book",
+      "lang": "en",
+      "gold": [
+        "calendar__create_contact"
+      ]
+    },
+    {
+      "query": "Paola ha traslocato, aggiorna il suo indirizzo",
+      "lang": "it",
+      "gold": [
+        "calendar__update_contact"
+      ]
+    },
+    {
+      "query": "take Greg out of my address book",
+      "lang": "en",
+      "gold": [
+        "calendar__delete_contact"
+      ]
+    },
+    {
+      "query": "fammi vedere tutta la rubrica",
+      "lang": "it",
+      "gold": [
+        "calendar__get_contacts"
+      ]
+    },
+    {
+      "query": "quali caselle di posta hai collegato?",
+      "lang": "it",
+      "gold": [
+        "calendar__list_accounts"
+      ]
+    },
+    {
+      "query": "which mailboxes are hooked up?",
+      "lang": "en",
+      "gold": [
+        "calendar__list_accounts"
+      ]
+    }
+  ],
+  "out_of_scope": [
+    {
+      "query": "ricordami tra 10 minuti di scolare la pasta",
+      "lang": "it"
+    },
+    {
+      "query": "what's the weather in Turin tomorrow?",
+      "lang": "en"
+    },
+    {
+      "query": "search the web for cheap flights to Lisbon",
+      "lang": "en"
+    },
+    {
+      "query": "quanto fa il 22% di 2.400 euro?",
+      "lang": "it"
+    },
+    {
+      "query": "translate this sentence into Spanish",
+      "lang": "en"
+    },
+    {
+      "query": "cerca su internet gli orari del museo",
+      "lang": "it"
+    },
+    {
+      "query": "remember that I'm allergic to peanuts",
+      "lang": "en"
+    },
+    {
+      "query": "fammi la lista della spesa per la settimana",
+      "lang": "it"
+    }
+  ]
+}
