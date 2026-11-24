@@ -114,8 +114,8 @@ func TestNudgeSkipsDrained(t *testing.T) {
 	_, convID := seedDelegationDeliveryConversation(t, pool)
 	store := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
 
-	if err := store.PushDelegationResult(convID, steer.SourceWorker, "the report", "f-drained"); err != nil {
-		t.Fatalf("PushDelegationResult: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, steer.SourceWorker, "the report", "f-drained", "dk-1"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent: %v", err)
 	}
 	// The operator's turn drains it -- the present-operator rail already
 	// delivered it (D-04), so it must never be nudged.
@@ -147,8 +147,8 @@ func TestNudgeOnceUnderConcurrency(t *testing.T) {
 	_, convID := seedDelegationDeliveryConversation(t, pool)
 	store := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384})
 
-	if err := store.PushDelegationResult(convID, steer.SourceWorker, "the report", "f-concurrent"); err != nil {
-		t.Fatalf("PushDelegationResult: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, steer.SourceWorker, "the report", "f-concurrent", "dk-2"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent: %v", err)
 	}
 
 	var mu sync.Mutex
@@ -261,7 +261,7 @@ func TestDeliverSuccessRecordsUnderRealRLSAsAuraApp(t *testing.T) {
 // TestDeliverReportWritesFanoutKeyUnderRealRLS is the db_integration
 // counterpart to TestDeliverReportWritesTheFanoutKey's fake-based proof
 // (51-11 Task 3, acceptance criteria's own named case): DeliverPreparedReport pushes
-// through a REAL steer.PostgresStore.PushDelegationResult, and the row read
+// through a REAL steer.PostgresStore.PushDelegationResultIdempotent, and the row read
 // back from aura.steer_queue carries fanout_key set, non-NULL, equal to the
 // payload's key -- as aura_app, never the superuser aura role, which is
 // BYPASSRLS and would give a false green on this exact write path.
@@ -320,10 +320,10 @@ func TestFanoutRealDBSkipsWhileUnfinishedThenDeliversOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshalReports: %v", err)
 	}
-	if err := steerStore.PushDelegationResult(convID, steer.SourceWorker, report1, fanoutKey); err != nil {
+	if err := steerStore.PushDelegationResultIdempotent(convID, steer.SourceWorker, report1, fanoutKey, "dk-3"); err != nil {
 		t.Fatalf("push 1: %v", err)
 	}
-	if err := steerStore.PushDelegationResult(convID, steer.SourceWorker, report2, fanoutKey); err != nil {
+	if err := steerStore.PushDelegationResultIdempotent(convID, steer.SourceWorker, report2, fanoutKey, "dk-4"); err != nil {
 		t.Fatalf("push 2: %v", err)
 	}
 

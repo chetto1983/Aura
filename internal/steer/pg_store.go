@@ -18,7 +18,7 @@ import (
 
 // QueueKind discriminates aura.steer_queue rows (D-07): one table, rows typed by kind,
 // each deriving its TTL from its own configured knob. Push creates KindSteer rows;
-// PushDelegationResult creates KindDelegationResult rows and requires a fan-out key.
+// PushDelegationResultIdempotent creates KindDelegationResult rows and requires a fan-out key.
 type QueueKind string
 
 // The two kinds aura.steer_queue accepts. These literals are duplicated in migration
@@ -77,24 +77,12 @@ func (s *PostgresStore) Push(conv, source, text string) error {
 	return s.push(conv, source, text, KindSteer, "", "")
 }
 
-// PushDelegationResult is Push's fan-out-aware counterpart (51-11 Task 3, CONTEXT D-15):
-// the SAME guarded INSERT, capacity cap, TTL derivation and sentinel errors, with one
-// additional value written -- the fanout_key every row of one swarm_spawn call shares, so
-// the absent-operator nudge sweep can claim and deliver the whole fan-out in one message.
-// It shares this method's body with Push through the unexported push helper below rather
-// than duplicating the validation ladder or the transaction; Push itself keeps its own
-// locked, unwidenable (conv, source, text string) error signature untouched (this doc's
-// own paragraph above), so a fourth argument was never an option there -- this is a
-// second, additive method instead of a fifth Push argument.
-func (s *PostgresStore) PushDelegationResult(conv, source, text, fanoutKey string) error {
-	if strings.TrimSpace(fanoutKey) == "" {
-		return fmt.Errorf("steer: push delegation result: fan-out key is required")
-	}
-	return s.push(conv, source, text, KindDelegationResult, fanoutKey, "")
-}
-
-// PushDelegationResultIdempotent publishes one job-keyed terminal projection.
-// Repeating the same conversation/key pair preserves the first body and fan-out.
+// PushDelegationResultIdempotent is Push's fan-out-aware counterpart for a terminal
+// worker report (51-11 Task 3, CONTEXT D-15): the SAME guarded INSERT, capacity cap, TTL
+// derivation and sentinel errors through the shared push helper, plus the fanout_key every
+// row of one swarm_spawn call shares (so the absent-operator nudge sweep can claim and
+// deliver the whole fan-out in one message) and a delivery key. Repeating the same
+// conversation/key pair preserves the first body and fan-out.
 func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error {
 	if strings.TrimSpace(fanoutKey) == "" {
 		return fmt.Errorf("steer: push delegation result: fan-out key is required")
@@ -105,9 +93,9 @@ func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanou
 	return s.push(conv, source, text, KindDelegationResult, fanoutKey, deliveryKey)
 }
 
-// push is Push and PushDelegationResult's shared body: identical validation ladder,
+// push is Push and PushDelegationResultIdempotent's shared body: identical validation ladder,
 // guarded INSERT and disambiguation probe. Its callers select the explicit row kind;
-// only PushDelegationResult can provide a fan-out key.
+// only PushDelegationResultIdempotent can provide a fan-out key.
 func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey, deliveryKey string) error {
 	return s.pushScoped(context.Background(), conv, source, text, kind, fanoutKey, deliveryKey, workerScope{})
 }

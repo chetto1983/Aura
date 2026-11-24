@@ -37,7 +37,7 @@ type fanoutGroup struct {
 }
 
 // groupByFanout partitions candidates by their explicit identity, conversation and
-// fan-out key. Migration 0109 and PushDelegationResult enforce the key; a malformed
+// fan-out key. Migration 0109 and PushDelegationResultIdempotent enforce the key; a malformed
 // projection fails loud instead of activating a second per-row delivery mode.
 func groupByFanout(rows []UndrainedResult) ([]fanoutGroup, error) {
 	groups := make([]fanoutGroup, 0, len(rows))

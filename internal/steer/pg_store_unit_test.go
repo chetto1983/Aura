@@ -99,25 +99,25 @@ func TestExpiryReasonForNamesTheKind(t *testing.T) {
 }
 
 // TestPushDelegationResultSharesPushValidation (51-11 Task 3) pins that
-// PushDelegationResult runs through the SAME unexported push helper Push
+// PushDelegationResultIdempotent runs through the SAME unexported push helper Push
 // itself calls -- empty/oversize rejection happens identically for both
 // entry points, never re-implemented a second time.
 func TestPushDelegationResultSharesPushValidation(t *testing.T) {
 	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
-	if err := s.PushDelegationResult("conv", SourceWorker, "", "f-key"); !errors.Is(err, ErrEmpty) {
-		t.Fatalf(`PushDelegationResult(text="") = %v, want ErrEmpty`, err)
+	if err := s.PushDelegationResultIdempotent("conv", SourceWorker, "", "f-key", "dk-1"); !errors.Is(err, ErrEmpty) {
+		t.Fatalf(`PushDelegationResultIdempotent(text="") = %v, want ErrEmpty`, err)
 	}
 	body := strings.Repeat("x", 65)
-	if err := s.PushDelegationResult("conv", SourceWorker, body, "f-key"); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("PushDelegationResult(oversize) = %v, want ErrTooLarge", err)
+	if err := s.PushDelegationResultIdempotent("conv", SourceWorker, body, "f-key", "dk-2"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("PushDelegationResultIdempotent(oversize) = %v, want ErrTooLarge", err)
 	}
 }
 
 func TestPushDelegationResultRequiresFanoutKey(t *testing.T) {
 	s := NewPostgresStore(nil, Config{Max: 8, MaxBytes: 64})
 	for _, key := range []string{"", "   "} {
-		if err := s.PushDelegationResult("conv", SourceWorker, "report", key); err == nil || !strings.Contains(err.Error(), "fan-out key is required") {
-			t.Fatalf("PushDelegationResult(key=%q) = %v, want explicit key error", key, err)
+		if err := s.PushDelegationResultIdempotent("conv", SourceWorker, "report", key, "dk-3"); err == nil || !strings.Contains(err.Error(), "fan-out key is required") {
+			t.Fatalf("PushDelegationResultIdempotent(key=%q) = %v, want explicit key error", key, err)
 		}
 	}
 }
@@ -127,8 +127,8 @@ func TestPushDelegationResultRequiresFanoutKey(t *testing.T) {
 // non-nil interface wrapping a nil pointer).
 func TestPushDelegationResultNilReceiverSafe(t *testing.T) {
 	var s *PostgresStore
-	if err := s.PushDelegationResult("conv", SourceWorker, "hi", "f-key"); err == nil {
-		t.Fatal("PushDelegationResult on a nil *PostgresStore = nil, want a non-nil wiring error")
+	if err := s.PushDelegationResultIdempotent("conv", SourceWorker, "hi", "f-key", "dk-4"); err == nil {
+		t.Fatal("PushDelegationResultIdempotent on a nil *PostgresStore = nil, want a non-nil wiring error")
 	}
 }
 

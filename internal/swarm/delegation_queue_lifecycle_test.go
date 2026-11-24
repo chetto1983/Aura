@@ -26,7 +26,7 @@ import (
 // fakeSteerPublisher records the pushes deliverSuccess/DeliverPreparedReport make, and
 // can fail one, so the ordering contract (push attempted BEFORE the row is
 // transitioned) is observable without a queue. fanoutKeys is parallel to
-// pushes (51-11 Task 3): index i is the fanout key PushDelegationResult was
+// pushes (51-11 Task 3): index i is the fanout key PushDelegationResultIdempotent was
 // called with at pushes[i], or "" for a plain Push -- so a test can assert
 // DeliverPreparedReport wrote payload.FanoutKey without disturbing the many existing
 // assertions against pushes' own "conv|source|text" shape.

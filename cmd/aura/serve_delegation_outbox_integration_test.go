@@ -34,7 +34,7 @@ func TestDelegationFanoutClaimRollsBackWithoutOutbox(t *testing.T) {
 	}
 
 	steerStore := steer.NewPostgresStore(pool, steer.Config{Max: 8, MaxBytes: 16384, DelegationResultTTL: time.Hour})
-	if err := steerStore.PushDelegationResult(conversationID, steer.SourceWorker, `[{"goal_index":0,"status":"ok"}]`, "f-atomic"); err != nil {
+	if err := steerStore.PushDelegationResultIdempotent(conversationID, steer.SourceWorker, `[{"goal_index":0,"status":"ok"}]`, "f-atomic", "dk-1"); err != nil {
 		t.Fatalf("seed delegation result: %v", err)
 	}
 	rows, err := steerStore.ListUnnudgedDelegationResults(t.Context(), time.Now().Add(time.Minute), 10)
