@@ -293,7 +293,7 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Clas
 }
 
 func (c *ReasoningClassifier) buildAnchors(ctx context.Context) (*semindex.Classifier, error) {
-	cls := semindex.NewClassifier(c.embed)
+	cls := semindex.NewClassifier()
 	// Per-tier vectors start from the curated def+seeds (always authoritative).
 	for _, t := range classifierTierOrder {
 		texts := append([]string{reasoningTierDefs[t]}, reasoningTierSeeds[t]...)

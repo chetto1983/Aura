@@ -197,7 +197,7 @@ func TestAnExampleWeighsAsMuchAsSixSeeds(t *testing.T) {
 	}
 	got := warmed(t, b, d, "s1")
 
-	want := semindex.NewClassifier(&fakeEmbedder{})
+	want := semindex.NewClassifier()
 	want.AddVecs("a", []float64{1, 0, 0})
 	want.AddVecs("b", []float64{0, 1, 0}, v, v, v, v, v, v)
 	for _, query := range [][]float64{{1, 0, 0}, {0, 1, 0}, {0.7, 0, 0.7}} {
@@ -293,7 +293,7 @@ func TestClassifierLeavesOutAndForgetsOrphanOwners(t *testing.T) {
 	d := twoSeedDomain()
 	got := warmed(t, b, d, "s1")
 
-	want := semindex.NewClassifier(&fakeEmbedder{})
+	want := semindex.NewClassifier()
 	want.AddVecs("a", []float64{1, 0, 0})
 	a := []float64{0, 0.6, 0.8}
 	want.AddVecs("b", []float64{0, 1, 0}, a, a, a, a, a, a)

@@ -1,7 +1,7 @@
 // Package semindex is Aura's reusable embedding-index core: one shared
 // lock-free pure-math layer (cosine/centroid/margin/bank ops over [][]float64)
 // plus the Classifier (Centroid mode: argmax over per-group means → best label +
-// top-2 Margin), which holds the Embedder seam and one sync.RWMutex; the math core
+// top-2 Margin), which holds one sync.RWMutex; the math core
 // stays pure (no ctx, no I/O, no lock). Brute-force cosine only — no ANN/HNSW
 // (Req-8): the immutable, small banks make a naive O(N) scan sub-millisecond.
 package semindex
