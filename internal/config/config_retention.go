@@ -33,21 +33,6 @@ type RetentionConfig struct {
 	DiskStopOptionalPercent        int
 }
 
-// ReasoningTTL returns the terminal retention class for a persisted status.
-func (c RetentionConfig) ReasoningTTL(status string) (time.Duration, error) {
-	if c.ReasoningSuccessTTL <= 0 || c.ReasoningFailedTTL <= 0 {
-		return 0, fmt.Errorf("reasoning retention TTLs must be positive")
-	}
-	switch status {
-	case "succeeded":
-		return c.ReasoningSuccessTTL, nil
-	case "failed", "cancelled":
-		return c.ReasoningFailedTTL, nil
-	default:
-		return 0, fmt.Errorf("reasoning status %q is not terminal", status)
-	}
-}
-
 func loadRetentionConfig(_ RuntimeProfile) RetentionConfig {
 	return RetentionConfig{
 		PolicyVersion:                  retentionPolicyVersion,
