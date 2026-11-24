@@ -32,22 +32,6 @@ func approvalKey(sessionID, digest string) string {
 	return sessionID + "\x00" + digest
 }
 
-// Approve grants a one-shot approval for the digest and clears any pending challenge for it,
-// without the question check ApproveChallenge makes.
-func (a *ApprovalStore[T]) Approve(sessionID, digest string) {
-	if a == nil || sessionID == "" || digest == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.approved == nil {
-		a.approved = map[string]struct{}{}
-	}
-	key := approvalKey(sessionID, digest)
-	a.approved[key] = struct{}{}
-	delete(a.pending, key)
-}
-
 // Consume redeems an approval, reporting whether one was present, and deletes it.
 func (a *ApprovalStore[T]) Consume(sessionID, digest string) bool {
 	if a == nil || sessionID == "" || digest == "" {
