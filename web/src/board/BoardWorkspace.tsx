@@ -123,7 +123,10 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
   );
 
   const cards = useMemo(() => withDates(board.data?.cards ?? []), [board.data?.cards]);
-  const columns = useMemo(() => (board.data?.columns ?? []).map(widgetColumn), [board.data?.columns]);
+  const columns = useMemo(
+    () => (board.data?.columns ?? []).map(widgetColumn),
+    [board.data?.columns],
+  );
   const tags = useMemo(() => boardTags(cards), [cards]);
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined).length;
   const linksTasks = cards.some((card) => card.task_id !== undefined);

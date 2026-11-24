@@ -95,7 +95,14 @@ describe('board helpers', () => {
 describe('column limit', () => {
   const cards = (n: number) => Array.from({ length: n }, (_, i) => card({ id: String(i) }));
   const limited = widgetColumn({ id: 'done', label: 'Done', cardLimit: 1 });
-  const view = { ...limited, cards: [], summaries: [], dataStatus: 'loaded', addCard: true, collapsed: false };
+  const view = {
+    ...limited,
+    cards: [],
+    summaries: [],
+    dataStatus: 'loaded',
+    addCard: true,
+    collapsed: false,
+  };
 
   it('marks a column holding more cards than its limit', () => {
     expect(overLimitCss(cards(2), view as never)).toBe('wx-over-limit');
