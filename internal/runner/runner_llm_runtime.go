@@ -34,8 +34,8 @@ type identityLLMSnapshotter interface {
 var ErrTurnIdentityUnknown = errors.New("runner: turn has no identity to resolve an LLM credential for")
 
 // turnLLMSnapshot resolves the snapshot one turn runs on. A snapshot already on ctx wins:
-// a caller that scoped it deliberately (ScopeContextToIdentitySnapshot, or a nested
-// resume) has already made the decision. Otherwise the turn's own identity decides, and
+// a caller that scoped it deliberately (a nested resume re-entering the turn) has
+// already made the decision. Otherwise the turn's own identity decides, and
 // only a Runner with no resolver at all falls through to the process-wide snapshot.
 func (r *Runner) turnLLMSnapshot(ctx context.Context) (llm.RuntimeSnapshot, error) {
 	if snapshot, ok := ctx.Value(llmRuntimeSnapshotContextKey{}).(llm.RuntimeSnapshot); ok {

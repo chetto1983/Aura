@@ -3,8 +3,8 @@
 // instead of the process-wide deployment credential runner_llm_runtime.go's
 // llmSnapshot falls back to. Deliberately its own file rather than added to
 // runner_llm_runtime.go (32 lines, the unchanged seam): the resolver sits ABOVE that
-// seam, publishing its result through the same withLLMRuntimeSnapshot context key, not
-// woven into llmSnapshot's body.
+// seam — turnLLMSnapshot asks it and the turn publishes the answer through the same
+// withLLMRuntimeSnapshot context key — not woven into llmSnapshot's body.
 package runner
 
 import (
@@ -204,15 +204,4 @@ func (rs *IdentityLLMResolver) Invalidate(identityID string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	delete(rs.cache, identityID)
-}
-
-// ScopeContextToIdentitySnapshot resolves identityID's snapshot and returns a context
-// carrying it via withLLMRuntimeSnapshot — the same context key runner_llm_runtime.go's
-// llmSnapshot reads from, so a caller that wraps ctx this way needs no other wiring.
-func (rs *IdentityLLMResolver) ScopeContextToIdentitySnapshot(ctx context.Context, identityID string) (context.Context, error) {
-	snapshot, err := rs.SnapshotFor(ctx, identityID)
-	if err != nil {
-		return ctx, err
-	}
-	return withLLMRuntimeSnapshot(ctx, snapshot), nil
 }
