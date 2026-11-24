@@ -39,8 +39,8 @@ func TestMessageDraftAPIReviewProjectionAndResolve(t *testing.T) {
 	conversationID := "11111111-1111-4111-8111-111111111111"
 	draftID := "22222222-2222-4222-8222-222222222222"
 	fake := &messageDraftAPIRunner{scriptedRunner: &scriptedRunner{}, drafts: []messagedrafts.Draft{{
-		ID: draftID, ConversationID: conversationID, Target: messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","to":["person@example.test"],"subject":"Private subject","body":"Private body","attachments":[{"name":"report.pdf","base64Content":"secret-file-bytes","attachmentId":"private-asset"}]}`),
+		ID: draftID, ConversationID: conversationID, Target: messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
+		OriginalArgs: json.RawMessage(`{"to":["person@example.test"],"subject":"Private subject","body":"Private body","attachments":[{"name":"report.pdf","base64Content":"secret-file-bytes","attachmentId":"private-asset"}]}`),
 		Status:       messagedrafts.StatusPending, ExpiresAt: time.Now().Add(time.Hour),
 	}}}
 	server := NewServer(fake, &fakeConvStore{known: map[string]bool{conversationID: true}}, ServerConfig{})
@@ -108,9 +108,9 @@ func TestAScheduledDraftCarriesItsSendTime(t *testing.T) {
 // The operator asked on 2026-11-12 for the sending account's name and address on the card, not its id.
 func TestAnEmailDraftNamesItsSender(t *testing.T) {
 	draft := messagedrafts.Draft{
-		ID: "d", Target: messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		ID: "d", Target: messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
 		Status: messagedrafts.StatusPending, ExpiresAt: time.Now().Add(time.Hour), SenderAddress: "someone@gmail.com",
-		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"448ddbe1__personale","to":["a@example.com"]}`),
+		OriginalArgs: json.RawMessage(`{"accountId":"448ddbe1__personale","to":["a@example.com"]}`),
 	}
 	raw, err := json.Marshal(projectMessageDraft(draft))
 	if err != nil || !strings.Contains(string(raw), `"sender":{"name":"personale","address":"someone@gmail.com"}`) {

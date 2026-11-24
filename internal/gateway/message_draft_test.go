@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -16,16 +14,20 @@ import (
 )
 
 func TestMessageDraftGatewayRequiresReviewInEveryProfile(t *testing.T) {
-	spec := reviewedEmailSpec()
+	plain := reviewedEmailSpec()
+	plain.Name = "calendar__send_email"
 	args := reviewedEmailArgs()
-	for _, profile := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted, config.ProfileSingleUserHardened} {
-		store := &fakeStore{}
-		gateway := New(profile, store)
-		verdict, err := gateway.Decide(context.Background(), spec, args, testKey())
-		if err != nil || verdict.Decision != Deny || len(store.reserves()) != 0 {
-			t.Fatalf("%s: unreviewed send = (%+v, %v), reserves=%d", profile, verdict, err, len(store.reserves()))
+	for _, spec := range []tools.Spec{plain, reviewedEmailSpec()} {
+		for _, profile := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted, config.ProfileSingleUserHardened} {
+			store := &fakeStore{}
+			gateway := New(profile, store)
+			verdict, err := gateway.Decide(context.Background(), spec, args, testKey())
+			if err != nil || verdict.Decision != Deny || verdict.Reason != "message review required or claim mismatch" || len(store.reserves()) != 0 {
+				t.Fatalf("%s %s: unreviewed send = (%+v, %v), reserves=%d; want the message-review refusal", spec.Name, profile, verdict, err, len(store.reserves()))
+			}
 		}
 	}
+	spec := reviewedEmailSpec()
 	var absent *Gateway
 	verdict, err := absent.Decide(context.Background(), spec, args, testKey())
 	if err != nil || verdict.Decision != Deny {
@@ -67,7 +69,7 @@ func TestARefusedUnreviewedSendIsRecordedOnAStrictProfile(t *testing.T) {
 // refusal: it must say which fields to change, or the model retries the same call.
 func TestAnUnreviewableSendNamesTheFieldsToChange(t *testing.T) {
 	t.Parallel()
-	args := json.RawMessage(`{"action":"send_email","to":["first@example.test"],"body":"Hi","topics":null}`)
+	args := json.RawMessage(`{"to":["first@example.test"],"body":"Hi","topics":null}`)
 	verdict, err := New(config.ProfileSingleUserHardened, &fakeStore{}).Decide(t.Context(), reviewedEmailSpec(), args, testKey())
 	if err != nil || verdict.Decision != Deny || !verdict.Refusal {
 		t.Fatalf("unreviewable send = (%+v, %v), want a refusal", verdict, err)
@@ -112,8 +114,8 @@ func TestMessageDraftGatewayChecksExactClaimBeforeReserving(t *testing.T) {
 		claim messagedrafts.Draft
 	}{
 		{name: "other owner", ctx: identityctx.WithIdentityID(t.Context(), "other"), spec: spec, args: args, key: key, claim: claim},
-		{name: "other registered name", ctx: ownerCtx, spec: tools.Spec{Name: "other__calendar", TrustedRecipeSource: spec.TrustedRecipeSource, TrustedRecipeTool: spec.TrustedRecipeTool}, args: args, key: key, claim: claim},
-		{name: "edited destination", ctx: ownerCtx, spec: spec, args: json.RawMessage(`{"action":"send_email","to":["other@example.test"],"subject":"Hello","body":"Reviewed"}`), key: key, claim: claim},
+		{name: "other registered name", ctx: ownerCtx, spec: tools.Spec{Name: "other__send_email", TrustedRecipeSource: spec.TrustedRecipeSource, TrustedRecipeTool: spec.TrustedRecipeTool}, args: args, key: key, claim: claim},
+		{name: "edited destination", ctx: ownerCtx, spec: spec, args: json.RawMessage(`{"to":["other@example.test"],"subject":"Hello","body":"Reviewed"}`), key: key, claim: claim},
 		{name: "other request", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: key.ConversationID, ToolCallID: key.ToolCallID, RequestID: "other"}, claim: claim},
 		{name: "other call", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: key.ConversationID, ToolCallID: "other", RequestID: key.RequestID}, claim: claim},
 		{name: "other conversation", ctx: ownerCtx, spec: spec, args: args, key: ReservationKey{ConversationID: "33333333-3333-3333-3333-333333333333", ToolCallID: key.ToolCallID, RequestID: key.RequestID}, claim: claim},
@@ -220,41 +222,27 @@ func TestAReviewedSendGoesThroughTheOperationRegistry(t *testing.T) {
 }
 
 func reviewedEmailSpec() tools.Spec {
-	return tools.Spec{Name: "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar", Mutating: true}
+	return tools.Spec{Name: "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "send_email", Mutating: true}
 }
 
 func reviewedEmailArgs() json.RawMessage {
-	return json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
+	return json.RawMessage(`{"to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
 }
 
 func reviewedEmailClaim(t *testing.T, key ReservationKey, args json.RawMessage) messagedrafts.Draft {
 	t.Helper()
-	var canonical json.RawMessage
-	if err := json.Unmarshal(args, &canonical); err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(canonical, &fields); err != nil {
-		t.Fatal(err)
-	}
-	canonical, err := json.Marshal(fields)
+	target := messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"}
+	canonical, err := messagedrafts.MergeApprovedArgs(target, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
-	bound, err := json.Marshal(struct {
-		Recipe string          `json:"recipe"`
-		Tool   string          `json:"tool"`
-		Action string          `json:"action"`
-		Args   json.RawMessage `json:"args"`
-	}{Recipe: target.Recipe, Tool: target.Tool, Action: target.Action, Args: canonical})
+	fingerprint, err := messagedrafts.Fingerprint(target, canonical)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(bound)
 	return messagedrafts.Draft{
 		ID: key.RequestID, IdentityID: "11111111-1111-4111-8111-111111111111", ConversationID: key.ConversationID,
 		ToolCallID: key.ToolCallID, RegisteredToolName: reviewedEmailSpec().Name, Target: target,
-		Status: messagedrafts.StatusDispatching, EffectiveArgs: canonical, EffectiveFingerprint: hex.EncodeToString(sum[:]),
+		Status: messagedrafts.StatusDispatching, EffectiveArgs: canonical, EffectiveFingerprint: fingerprint,
 	}
 }

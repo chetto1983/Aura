@@ -191,13 +191,13 @@ func TestATypedReplyNeverAnswersAReview(t *testing.T) {
 func emailReviewDraft(args string) messagedrafts.Draft {
 	return messagedrafts.Draft{
 		ID: "draft-1", Status: messagedrafts.StatusPending,
-		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
 		OriginalArgs: json.RawMessage(args),
 	}
 }
 
 func TestImmediateEmailReviewShowsCopiesBeforeSending(t *testing.T) {
-	draft := emailReviewDraft(`{"action":"send_email","to":["to@example.com"],"subject":"Subject","body":"Body","bodyFormat":"text","cc":["first@example.com","second@example.com"],"attachments":[]}`)
+	draft := emailReviewDraft(`{"to":["to@example.com"],"subject":"Subject","body":"Body","bodyFormat":"text","cc":["first@example.com","second@example.com"],"attachments":[]}`)
 	h, resume, bot := reviewHitl(draft)
 	h.prompt(ownerReviewCtx(), bot, 42, "conv")
 	card := bot.recorded()[0]
@@ -233,7 +233,7 @@ func TestCompleteReviewFitsWithoutTheOptionalInstructions(t *testing.T) {
 }
 
 func TestIncompleteReviewKeepsOnlyDeclineAndRefusesStaleAccept(t *testing.T) {
-	const fields = `"action":"send_email","to":["to@example.com"],"subject":"Subject","body":"Body"`
+	const fields = `"to":["to@example.com"],"subject":"Subject","body":"Body"`
 	longRecipients := strings.Repeat(mustJSON(strings.Repeat("a", 50)+"@example.com")+",", 49)
 	quoted := whatsappDraft("Ciao", time.Time{})
 	quoted.OriginalArgs = json.RawMessage(`{"recipient":"10000000000","message":"Ciao","quoted_content":"Previous message"}`)
@@ -242,7 +242,7 @@ func TestIncompleteReviewKeepsOnlyDeclineAndRefusesStaleAccept(t *testing.T) {
 		"multipart":                 emailReviewDraft(`{` + fields + `,"bodyFormat":"multipart","textBody":"plain","htmlBody":"<b>HTML</b>"}`),
 		"alternative body":          emailReviewDraft(`{` + fields + `,"textBody":"alternate"}`),
 		"oversize body":             whatsappDraft(strings.Repeat("ò", 5000), time.Time{}),
-		"oversize headers and body": emailReviewDraft(`{"action":"send_email","to":[` + longRecipients + `"last@example.com"],"subject":"Subject","body":` + mustJSON(strings.Repeat("b", 1600)) + `}`),
+		"oversize headers and body": emailReviewDraft(`{"to":[` + longRecipients + `"last@example.com"],"subject":"Subject","body":` + mustJSON(strings.Repeat("b", 1600)) + `}`),
 		"quoted message":            quoted,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -276,13 +276,13 @@ func TestIncompleteReviewKeepsOnlyDeclineAndRefusesStaleAccept(t *testing.T) {
 func TestTheReviewCardNamesTheSendingAccount(t *testing.T) {
 	email := messagedrafts.Draft{
 		ID: "draft-1", Status: messagedrafts.StatusPending,
-		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
+		OriginalArgs: json.RawMessage(`{"accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
 	}
 	if text := renderMessageReview(email, time.UTC).text; !strings.Contains(text, "Da: acc-1\nA: someone@example.com") {
 		t.Fatalf("card lacks the sending account:\n%s", text)
 	}
-	email.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["someone@example.com"],"subject":"Hi","body":"Text"}`)
+	email.OriginalArgs = json.RawMessage(`{"to":["someone@example.com"],"subject":"Hi","body":"Text"}`)
 	if text := renderMessageReview(email, time.UTC).text; strings.Contains(text, "Da:") {
 		t.Fatalf("a draft with no account shows one:\n%s", text)
 	}
@@ -292,8 +292,8 @@ func TestTheReviewCardNamesTheSendingAccount(t *testing.T) {
 func TestTheCardShowsTheAccountsNameAndAddress(t *testing.T) {
 	email := messagedrafts.Draft{
 		ID: "draft-1", Status: messagedrafts.StatusPending, SenderAddress: "someone@gmail.com",
-		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"448ddbe1__personale","to":["a@example.com"],"subject":"Hi","body":"Text"}`),
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
+		OriginalArgs: json.RawMessage(`{"accountId":"448ddbe1__personale","to":["a@example.com"],"subject":"Hi","body":"Text"}`),
 	}
 	if text := renderMessageReview(email, time.UTC).text; !strings.Contains(text, "Da: personale <someone@gmail.com>\n") {
 		t.Fatalf("card lacks the name and address:\n%s", text)

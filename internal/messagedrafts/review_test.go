@@ -21,8 +21,8 @@ func TestReviewReadsTheEditedArgumentsFirst(t *testing.T) {
 		t.Fatalf("unedited review text = %q", x)
 	}
 	email := Draft{
-		Target:       Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","to":["a@example.com","b@example.com"],"subject":"Hi","body":"Text"}`),
+		Target:       emailSend,
+		OriginalArgs: json.RawMessage(`{"to":["a@example.com","b@example.com"],"subject":"Hi","body":"Text"}`),
 	}
 	if r, s, x := email.Review(); r != "a@example.com, b@example.com" || s != "Hi" || x != "Text" {
 		t.Fatalf("email review = %q %q %q", r, s, x)
@@ -34,9 +34,9 @@ func TestReviewReadsTheEditedArgumentsFirst(t *testing.T) {
 func TestReviewNamesTheSendingAccount(t *testing.T) {
 	t.Parallel()
 	email := Draft{
-		Target:        Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs:  json.RawMessage(`{"action":"send_email","accountId":"acc-1","to":["a@example.com"],"body":"Text"}`),
-		EffectiveArgs: json.RawMessage(`{"action":"send_email","accountId":"acc-2","to":["a@example.com"],"body":"Text"}`),
+		Target:        emailSend,
+		OriginalArgs:  json.RawMessage(`{"accountId":"acc-1","to":["a@example.com"],"body":"Text"}`),
+		EffectiveArgs: json.RawMessage(`{"accountId":"acc-2","to":["a@example.com"],"body":"Text"}`),
 	}
 	if got := email.SendingAccount(); got != "acc-2" {
 		t.Fatalf("SendingAccount = %q, want the edited acc-2", got)
@@ -44,5 +44,22 @@ func TestReviewNamesTheSendingAccount(t *testing.T) {
 	whatsapp := Draft{Target: Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, OriginalArgs: json.RawMessage(`{"recipient":"1","message":"m","accountId":"x"}`)}
 	if got := whatsapp.SendingAccount(); got != "" {
 		t.Fatalf("a WhatsApp draft names an account: %q", got)
+	}
+}
+
+// Completeness is keyed on the send_email tool: a resolved draft kept in the multiplexed shape
+// from before the split is history and is never offered for an inline send.
+func TestInlineReviewIsCompleteOnlyForTheSendEmailTool(t *testing.T) {
+	t.Parallel()
+	email := Draft{Target: emailSend, OriginalArgs: json.RawMessage(`{"to":["a@example.com"],"subject":"Hi","body":"Text","bodyFormat":"text"}`)}
+	if !email.InlineReview().Complete {
+		t.Fatal("a plain send_email draft is not complete")
+	}
+	retired := Draft{
+		Target:       Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		OriginalArgs: json.RawMessage(`{"to":["a@example.com"],"subject":"Hi","body":"Text","bodyFormat":"text"}`),
+	}
+	if retired.InlineReview().Complete {
+		t.Fatal("a draft in the retired multiplexed shape is complete")
 	}
 }

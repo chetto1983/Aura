@@ -159,7 +159,7 @@ func (r *Runner) resolveImmediateMessage(ctx context.Context, ownerID string, dr
 				return draft, "", messagedrafts.ErrUnavailable
 			}
 			spec := tool.Spec()
-			target, trusted := messagedrafts.TrustedOutboundTarget(spec, draft.OriginalArgs)
+			target, trusted := messagedrafts.TrustedOutboundTarget(spec)
 			if !trusted || target != draft.Target || spec.Name != draft.RegisteredToolName {
 				return draft, "", messagedrafts.ErrUnavailable
 			}

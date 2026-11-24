@@ -144,7 +144,7 @@ func (h MessageHandler) trustedTool(draft messagedrafts.Draft) (tools.Tool, bool
 		return nil, false
 	}
 	spec := tool.Spec()
-	target, trusted := messagedrafts.TrustedOutboundTarget(spec, draft.OriginalArgs)
+	target, trusted := messagedrafts.TrustedOutboundTarget(spec)
 	if !trusted || target != draft.Target || spec.Name != draft.RegisteredToolName {
 		return nil, false
 	}

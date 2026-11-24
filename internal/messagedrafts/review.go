@@ -10,7 +10,6 @@ import (
 
 // reviewArgs are the fields a review shows, from both trusted tools' arguments.
 type reviewArgs struct {
-	Action      string            `json:"action"`
 	Recipient   string            `json:"recipient"`
 	Message     string            `json:"message"`
 	AccountID   string            `json:"accountId"`
@@ -58,7 +57,7 @@ func (d Draft) InlineReview() InlineContent {
 	return InlineContent{
 		Recipient: strings.Join(args.To, ", "), CC: strings.Join(args.CC, ", "), Subject: args.Subject,
 		Text: args.Body, BodyFormat: format, AttachmentCount: len(args.Attachments),
-		Complete: err == nil && d.Target.Recipe == "recipe:calendar" && args.Action == "send_email" &&
+		Complete: err == nil && d.Target == emailTarget &&
 			len(args.To) > 0 && (format == "text" || format == "html") && len(args.Attachments) == 0,
 	}
 }

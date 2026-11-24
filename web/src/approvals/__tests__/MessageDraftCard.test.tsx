@@ -10,7 +10,6 @@ const email: MessageDraft = {
   channel: 'email',
   status: 'pending',
   arguments: {
-    action: 'send_email',
     accountId: 'account-one',
     to: ['first@example.test'],
     cc: ['copy@example.test'],

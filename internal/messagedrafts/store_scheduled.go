@@ -38,9 +38,13 @@ func (s *Store) Approve(ctx context.Context, ownerID, draftID string, overrides 
 		if mergeErr != nil {
 			return mergeErr
 		}
+		fp, fpErr := Fingerprint(target, effective)
+		if fpErr != nil {
+			return fpErr
+		}
 		row, readErr = q.ApproveScheduledMessageDraft(ctx, sqlc.ApproveScheduledMessageDraftParams{
 			ID: id, IdentityID: owner, EffectiveArgs: effective,
-			EffectiveFingerprint: pgtype.Text{String: argsFingerprint(target, effective), Valid: true},
+			EffectiveFingerprint: pgtype.Text{String: fp, Valid: true},
 		})
 		if errors.Is(readErr, pgx.ErrNoRows) {
 			return ErrUnavailable

@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
-
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 )
@@ -23,6 +21,6 @@ func (h AgentJobHandler) refusedOutboundSend(inv *agent.ToolInvocation) bool {
 	if !ok {
 		return false
 	}
-	_, outbound := messagedrafts.TrustedOutboundTarget(tool.Spec(), json.RawMessage(inv.Arguments))
+	_, outbound := messagedrafts.TrustedOutboundTarget(tool.Spec())
 	return outbound
 }

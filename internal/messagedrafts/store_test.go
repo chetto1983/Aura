@@ -2,6 +2,8 @@ package messagedrafts
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -9,13 +11,54 @@ import (
 	"time"
 )
 
-func TestArgsFingerprintBindsTargetAndEdits(t *testing.T) {
-	email := Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
-	first := argsFingerprint(email, json.RawMessage(`{"to":["first@example.test"],"subject":"Hello"}`))
-	second := argsFingerprint(email, json.RawMessage(`{"to":["second@example.test"],"subject":"Hello"}`))
-	otherTool := argsFingerprint(Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, json.RawMessage(`{"to":["first@example.test"],"subject":"Hello"}`))
-	if len(first) != 64 || first == second || first == otherTool {
+func mustFingerprint(t *testing.T, target Target, raw string) string {
+	t.Helper()
+	fp, err := Fingerprint(target, json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("Fingerprint(%s) = %v", raw, err)
+	}
+	return fp
+}
+
+func TestFingerprintBindsTargetAndEdits(t *testing.T) {
+	first := mustFingerprint(t, emailSend, `{"to":["first@example.test"],"subject":"Hello"}`)
+	second := mustFingerprint(t, emailSend, `{"to":["second@example.test"],"subject":"Hello"}`)
+	otherTool := mustFingerprint(t, Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, `{"to":["first@example.test"],"subject":"Hello"}`)
+	retired := mustFingerprint(t, Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}, `{"to":["first@example.test"],"subject":"Hello"}`)
+	if len(first) != 64 || first == second || first == otherTool || first == retired {
 		t.Fatal("draft fingerprint is not bound to tool and effective arguments")
+	}
+}
+
+// Stored drafts keep the fingerprints they were made with, so the envelope the hash covers may
+// not change: the WhatsApp rows were hashed with an empty "action" key.
+func TestFingerprintHashesTheStoredEnvelope(t *testing.T) {
+	args := `{"message":"m","recipient":"1"}`
+	sum := sha256.Sum256([]byte(`{"recipe":"recipe:whatsapp","tool":"send_message","action":"","args":` + args + `}`))
+	if got := mustFingerprint(t, Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, args); got != hex.EncodeToString(sum[:]) {
+		t.Fatalf("fingerprint = %s, want the hash of the stored envelope", got)
+	}
+	if _, err := Fingerprint(emailSend, json.RawMessage(`{`)); err == nil {
+		t.Fatal("malformed arguments were fingerprinted")
+	}
+}
+
+// Fingerprint hashes the bytes it is given; MergeApprovedArgs is what makes JSONB's reordered keys
+// and the model's order the same bytes, so the pair is what a stored fingerprint is checked with.
+func TestFingerprintIsStableAcrossKeyOrder(t *testing.T) {
+	var fps []string
+	for _, raw := range []string{
+		`{"to":["first@example.test"],"subject":"Hello","body":"Hi","accountId":"t__personale"}`,
+		`{"accountId":"t__personale","body":"Hi","subject":"Hello","to":["first@example.test"]}`,
+	} {
+		canonical, err := MergeApprovedArgs(emailSend, json.RawMessage(raw), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fps = append(fps, mustFingerprint(t, emailSend, string(canonical)))
+	}
+	if fps[0] != fps[1] {
+		t.Fatalf("fingerprints differ by key order: %s, %s", fps[0], fps[1])
 	}
 }
 
@@ -74,23 +117,23 @@ func TestRegisteredToolNameAcceptsHashedBridgeName(t *testing.T) {
 }
 
 func TestClaimMatchesOnlyExactOwnerMountedToolAndArguments(t *testing.T) {
-	target := Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
-	args := json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
+	target := emailSend
+	args := json.RawMessage(`{"to":["first@example.test"],"subject":"Hello","body":"Reviewed"}`)
 	canonical, err := MergeApprovedArgs(target, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claim := Draft{
-		IdentityID: "owner", RegisteredToolName: "pim__calendar", Target: target,
-		Status: StatusDispatching, EffectiveArgs: json.RawMessage(`{"body":"Reviewed","subject":"Hello","to":["first@example.test"],"action":"send_email"}`),
-		EffectiveFingerprint: argsFingerprint(target, canonical),
+		IdentityID: "owner", RegisteredToolName: "pim__send_email", Target: target,
+		Status: StatusDispatching, EffectiveArgs: json.RawMessage(`{"body":"Reviewed","subject":"Hello","to":["first@example.test"]}`),
+		EffectiveFingerprint: mustFingerprint(t, target, string(canonical)),
 	}
-	if !claim.MatchesDispatch("owner", "pim__calendar", target, args) {
+	if !claim.MatchesDispatch("owner", "pim__send_email", target, args) {
 		t.Fatal("claimed draft rejected identical effective arguments after JSONB reordering")
 	}
-	if claim.MatchesDispatch("other", "pim__calendar", target, args) ||
-		claim.MatchesDispatch("owner", "other__calendar", target, args) ||
-		claim.MatchesDispatch("owner", "pim__calendar", target, json.RawMessage(`{"action":"send_email","to":["second@example.test"],"subject":"Hello","body":"Reviewed"}`)) {
+	if claim.MatchesDispatch("other", "pim__send_email", target, args) ||
+		claim.MatchesDispatch("owner", "other__send_email", target, args) ||
+		claim.MatchesDispatch("owner", "pim__send_email", target, json.RawMessage(`{"to":["second@example.test"],"subject":"Hello","body":"Reviewed"}`)) {
 		t.Fatal("claim authorized changed owner, tool, or destination")
 	}
 }

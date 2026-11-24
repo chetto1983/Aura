@@ -24,17 +24,13 @@ type MessageDraftCreator interface {
 	Create(context.Context, messagedrafts.DraftInput) (messagedrafts.Draft, error)
 }
 
-func outboundMessageTarget(spec tools.Spec, raw json.RawMessage) (messagedrafts.Target, bool) {
-	return messagedrafts.TrustedOutboundTarget(spec, raw)
-}
-
 func (a *LlmAgent) withholdOutboundMessage(ctx context.Context, call llm.ToolCall) (pauseCall, bool) {
 	tool, ok := a.registry.Get(call.Function.Name)
 	if !ok {
 		return pauseCall{}, false
 	}
 	spec := tool.Spec()
-	target, outbound := outboundMessageTarget(spec, json.RawMessage(call.Function.Arguments))
+	target, outbound := messagedrafts.TrustedOutboundTarget(spec)
 	if !outbound || a.messageDrafts == nil || !gateway.HasResponder(ctx) {
 		return pauseCall{}, false
 	}

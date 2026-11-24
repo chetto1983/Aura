@@ -62,7 +62,7 @@ func (p messagePayload) recipeArgs() (json.RawMessage, error) {
 	case "whatsapp":
 		return json.Marshal(map[string]string{"recipient": p.Recipient, "message": p.Text})
 	case "email":
-		return json.Marshal(map[string]any{"action": "send_email", "accountId": p.Account, "to": p.To, "subject": p.Subject, "body": p.Text, "bodyFormat": "text"})
+		return json.Marshal(map[string]any{"accountId": p.Account, "to": p.To, "subject": p.Subject, "body": p.Text, "bodyFormat": "text"})
 	default:
 		return nil, errMessagePayload
 	}

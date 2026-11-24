@@ -22,15 +22,15 @@ func (f *fakeSenders) SendingAddress(_ context.Context, accountID string) (strin
 	return address, known, nil
 }
 
-var calendarSend = Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
+var emailSend = Target{Recipe: "recipe:calendar", Tool: "send_email"}
 
 // Measured 2026-11-12: the review showed only the account id. The host reads the address the
 // account sends from when the draft is created; the model's word is never taken for it.
 func TestTheSenderIsTheAccountsOwnAddress(t *testing.T) {
 	t.Parallel()
 	senders := &fakeSenders{addresses: map[string]string{"t__personale": "someone@gmail.com"}}
-	args := json.RawMessage(`{"action":"send_email","accountId":"t__personale","to":["a@example.com"]}`)
-	got, err := resolveSender(context.Background(), senders, calendarSend, args)
+	args := json.RawMessage(`{"accountId":"t__personale","to":["a@example.com"]}`)
+	got, err := resolveSender(context.Background(), senders, emailSend, args)
 	if err != nil || got != "someone@gmail.com" {
 		t.Fatalf("resolveSender = %q, %v", got, err)
 	}
@@ -39,8 +39,8 @@ func TestTheSenderIsTheAccountsOwnAddress(t *testing.T) {
 func TestAnAccountThePIMDoesNotKnowIsRefused(t *testing.T) {
 	t.Parallel()
 	senders := &fakeSenders{addresses: map[string]string{"t__personale": "someone@gmail.com"}}
-	args := json.RawMessage(`{"action":"send_email","accountId":"t__invented","to":["a@example.com"]}`)
-	if _, err := resolveSender(context.Background(), senders, calendarSend, args); !errors.Is(err, ErrUnknownAccount) {
+	args := json.RawMessage(`{"accountId":"t__invented","to":["a@example.com"]}`)
+	if _, err := resolveSender(context.Background(), senders, emailSend, args); !errors.Is(err, ErrUnknownAccount) {
 		t.Fatalf("err = %v, want ErrUnknownAccount", err)
 	}
 }
@@ -49,16 +49,16 @@ func TestAnAccountThePIMDoesNotKnowIsRefused(t *testing.T) {
 // shows the account's name alone, as before.
 func TestNoSenderIsLookedUpWhenNothingCanBeFound(t *testing.T) {
 	t.Parallel()
-	email := json.RawMessage(`{"action":"send_email","accountId":"t__personale","to":["a@example.com"]}`)
+	email := json.RawMessage(`{"accountId":"t__personale","to":["a@example.com"]}`)
 	cases := map[string]struct {
 		senders SenderDirectory
 		target  Target
 		args    json.RawMessage
 	}{
-		"no directory":           {nil, calendarSend, email},
+		"no directory":           {nil, emailSend, email},
 		"WhatsApp":               {&fakeSenders{}, Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, json.RawMessage(`{"recipient":"1","message":"m"}`)},
-		"no account named":       {&fakeSenders{}, calendarSend, json.RawMessage(`{"action":"send_email","to":["a@example.com"]}`)},
-		"the PIM is unreachable": {&fakeSenders{err: errors.New("dial tcp: refused")}, calendarSend, email},
+		"no account named":       {&fakeSenders{}, emailSend, json.RawMessage(`{"to":["a@example.com"]}`)},
+		"the PIM is unreachable": {&fakeSenders{err: errors.New("dial tcp: refused")}, emailSend, email},
 	}
 	for name, tc := range cases {
 		got, err := resolveSender(context.Background(), tc.senders, tc.target, tc.args)

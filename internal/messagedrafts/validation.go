@@ -26,24 +26,26 @@ var ErrInvalidArgs = errInvalidDraftArgs
 
 // Target is host-owned provenance, copied from the trusted managed recipe after
 // the bridge has selected the exact server tool. The client never supplies it.
+// Action is empty for every target made since the PIM split its tools; it still
+// carries "send_email" on drafts stored in the multiplexed shape, which the
+// message_drafts CHECK keeps (migration 0157) and no send accepts.
 type Target struct {
 	Recipe string
 	Tool   string
 	Action string
 }
 
+var (
+	emailTarget    = Target{Recipe: "recipe:calendar", Tool: "send_email"}
+	whatsAppTarget = Target{Recipe: "recipe:whatsapp", Tool: "send_message"}
+)
+
 // TrustedOutboundTarget matches only the managed bridge's host-owned recipe and
 // raw MCP tool identity. The registered name may be truncated with a hash.
-func TrustedOutboundTarget(spec tools.Spec, raw json.RawMessage) (Target, bool) {
-	switch {
-	case spec.TrustedRecipeSource == "recipe:whatsapp" && spec.TrustedRecipeTool == "send_message":
-		return Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, true
-	case spec.TrustedRecipeSource == "recipe:calendar" && spec.TrustedRecipeTool == "calendar":
-		var action struct {
-			Action string `json:"action"`
-		}
-		if json.Unmarshal(raw, &action) == nil && action.Action == "send_email" {
-			return Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}, true
+func TrustedOutboundTarget(spec tools.Spec) (Target, bool) {
+	for _, target := range []Target{emailTarget, whatsAppTarget} {
+		if spec.TrustedRecipeSource == target.Recipe && spec.TrustedRecipeTool == target.Tool {
+			return target, true
 		}
 	}
 	return Target{}, false
@@ -66,10 +68,10 @@ func MergeApprovedArgs(target Target, original, overrides json.RawMessage) (json
 	}
 	var allowedOriginal, editable map[string]bool
 	switch target {
-	case Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}:
-		allowedOriginal = fieldSet("action", "accountId", "to", "cc", "subject", "body", "bodyFormat", "textBody", "htmlBody", "attachments")
+	case emailTarget:
+		allowedOriginal = fieldSet("accountId", "to", "cc", "subject", "body", "bodyFormat", "textBody", "htmlBody", "attachments")
 		editable = fieldSet("to", "cc", "subject", "body", "textBody", "htmlBody")
-	case Target{Recipe: "recipe:whatsapp", Tool: "send_message"}:
+	case whatsAppTarget:
 		allowedOriginal = fieldSet("recipient", "message", "quoted_message_id", "quoted_sender_jid", "quoted_content")
 		editable = fieldSet("recipient", "message")
 	default:
@@ -84,7 +86,7 @@ func MergeApprovedArgs(target Target, original, overrides json.RawMessage) (json
 		}
 		base[key] = value
 	}
-	if target.Recipe == "recipe:calendar" {
+	if target == emailTarget {
 		if err := validateEmail(base, edits); err != nil {
 			return nil, err
 		}
@@ -199,9 +201,6 @@ func checkValue(dec *json.Decoder, depth int) error {
 }
 
 func validateEmail(base, edits map[string]json.RawMessage) error {
-	if value, err := requiredString(base, "action", 32); err != nil || value != "send_email" {
-		return errInvalidDraftArgs
-	}
 	if _, err := emailList(base, "to", true); err != nil {
 		return err
 	}

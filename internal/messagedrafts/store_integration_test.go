@@ -82,9 +82,9 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	ctx := context.Background()
 	input := DraftInput{
 		IdentityID: owner, ConversationID: "draft-conversation", ToolCallID: "call-one",
-		Target:             Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		RegisteredToolName: "calendar__calendar",
-		OriginalArgs:       json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Original"}`),
+		Target:             emailSend,
+		RegisteredToolName: "calendar__send_email",
+		OriginalArgs:       json.RawMessage(`{"to":["first@example.test"],"subject":"Hello","body":"Original"}`),
 		ExpiresAt:          time.Now().Add(time.Hour),
 	}
 	draft, err := store.Create(ctx, input)
@@ -99,12 +99,12 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 		t.Fatal("same call did not resolve to one draft")
 	}
 	changed := input
-	changed.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Different","body":"Original"}`)
+	changed.OriginalArgs = json.RawMessage(`{"to":["first@example.test"],"subject":"Different","body":"Original"}`)
 	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
 		t.Fatal("conflicting duplicate call accepted")
 	}
 	changed = input
-	changed.RegisteredToolName = "other__calendar"
+	changed.RegisteredToolName = "other__send_email"
 	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
 		t.Fatal("a duplicate call changed its registered server")
 	}

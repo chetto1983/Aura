@@ -27,7 +27,7 @@ func reviewedMessageClaim(ctx context.Context) (messagedrafts.Draft, bool) {
 // reviewed send skips generic standing approvals, but still enters the normal
 // operation registry and reservation ledger under a strict profile.
 func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, args json.RawMessage, key ReservationKey) (Verdict, bool) {
-	target, protected := messagedrafts.TrustedOutboundTarget(spec, args)
+	target, protected := messagedrafts.TrustedOutboundTarget(spec)
 	claim, present := reviewedMessageClaim(ctx)
 	if !protected && !present {
 		return Verdict{}, false
@@ -57,7 +57,7 @@ func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, ar
 // required, a model retried the same call five times on 2026-11-23
 // (docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md).
 func unreviewedMessageReason(spec tools.Spec, args json.RawMessage) string {
-	if target, ok := messagedrafts.TrustedOutboundTarget(spec, args); ok {
+	if target, ok := messagedrafts.TrustedOutboundTarget(spec); ok {
 		if _, err := messagedrafts.MergeApprovedArgs(target, args, nil); errors.Is(err, messagedrafts.ErrInvalidArgs) {
 			return "message review required, and these arguments cannot be reviewed: " + err.Error()
 		}

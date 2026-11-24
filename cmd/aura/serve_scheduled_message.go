@@ -22,7 +22,7 @@ type scheduledMessageDrafts struct {
 // the words the operator reads when that tool is not mounted.
 var scheduledMessageChannels = map[string]struct{ recipe, tool, missing string }{
 	"whatsapp": {"recipe:whatsapp", "send_message", "WhatsApp is not connected"},
-	"email":    {"recipe:calendar", "calendar", "email is not connected"},
+	"email":    {"recipe:calendar", "send_email", "email is not connected"},
 }
 
 func (d scheduledMessageDrafts) CreateScheduledMessageDraft(ctx context.Context, in tools.ScheduledMessageDraft) (string, error) {
@@ -35,7 +35,7 @@ func (d scheduledMessageDrafts) CreateScheduledMessageDraft(ctx context.Context,
 		return "", errors.New(channel.missing)
 	}
 	spec := tool.Spec()
-	target, ok := messagedrafts.TrustedOutboundTarget(spec, in.Args)
+	target, ok := messagedrafts.TrustedOutboundTarget(spec)
 	if !ok {
 		return "", fmt.Errorf("scheduled message: %s does not send these arguments", spec.Name)
 	}

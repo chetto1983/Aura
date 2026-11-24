@@ -160,7 +160,7 @@ func TestAMessageIsScheduledPendingWithItsDraftAndAReviewPause(t *testing.T) {
 	jsonEqual(t, draft.Args, `{"recipient":"10000000000","message":"Ciao"}`)
 }
 
-func TestAnEmailMessageMapsToTheCalendarSend(t *testing.T) {
+func TestAnEmailMessageMapsToTheSendEmailTool(t *testing.T) {
 	t.Parallel()
 	tool, _, drafts := messageTool()
 	payload := `{"channel":"email","account":"acc-1","to":["someone@example.com"],"subject":"Hi","text":"Text"}`
@@ -168,7 +168,7 @@ func TestAnEmailMessageMapsToTheCalendarSend(t *testing.T) {
 		t.Fatal("the email was not parked")
 	}
 	jsonEqual(t, drafts.inputs[0].Args,
-		`{"action":"send_email","accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text","bodyFormat":"text"}`)
+		`{"accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text","bodyFormat":"text"}`)
 }
 
 func TestAMessageRefusesRecurrenceTheFarFutureAndThePast(t *testing.T) {

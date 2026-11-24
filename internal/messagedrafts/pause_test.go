@@ -25,25 +25,36 @@ func TestMessageDraftPauseContextRequiresTypeAndID(t *testing.T) {
 	}
 }
 
+const hashedBridgeName = "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab"
+
+// The PIM advertises one tool per operation since the split, so the email target is the bridge's
+// raw send_email tool, under any registered name, and nothing in the arguments selects it.
+func TestEmailTargetIsTheSendEmailTool(t *testing.T) {
+	got, ok := TrustedOutboundTarget(tools.Spec{Name: hashedBridgeName, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "send_email"})
+	if !ok || got != (Target{Recipe: "recipe:calendar", Tool: "send_email", Action: ""}) {
+		t.Fatalf("target = (%+v, %v), want the send_email tool", got, ok)
+	}
+	for _, raw := range []string{"calendar", "get_emails", "reply_to_email"} {
+		if got, ok := TrustedOutboundTarget(tools.Spec{Name: "calendar__" + raw, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: raw}); ok {
+			t.Errorf("PIM tool %q is a message target: %+v", raw, got)
+		}
+	}
+}
+
 func TestMessageDraftTrustedOutboundTargetUsesRawBridgeIdentity(t *testing.T) {
-	longName := "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab"
 	cases := []struct {
 		name string
 		spec tools.Spec
-		args json.RawMessage
 		want Target
 		ok   bool
 	}{
-		{"hashed calendar", tools.Spec{Name: longName, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar"}, json.RawMessage(`{"action":"send_email"}`), Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}, true},
-		{"whatsapp", tools.Spec{Name: longName, TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_message"}, json.RawMessage(`{"recipient":"123","message":"hello"}`), Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, true},
-		{"calendar read", tools.Spec{Name: longName, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar"}, json.RawMessage(`{"action":"get_emails"}`), Target{}, false},
-		{"invalid calendar JSON", tools.Spec{Name: longName, TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar"}, json.RawMessage(`{`), Target{}, false},
-		{"spoofed source", tools.Spec{Name: longName, TrustedRecipeSource: "custom", TrustedRecipeTool: "calendar"}, json.RawMessage(`{"action":"send_email"}`), Target{}, false},
-		{"wrong raw tool", tools.Spec{Name: longName, TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_file"}, json.RawMessage(`{}`), Target{}, false},
+		{"whatsapp", tools.Spec{Name: hashedBridgeName, TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_message"}, Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, true},
+		{"spoofed source", tools.Spec{Name: hashedBridgeName, TrustedRecipeSource: "custom", TrustedRecipeTool: "send_email"}, Target{}, false},
+		{"wrong raw tool", tools.Spec{Name: hashedBridgeName, TrustedRecipeSource: "recipe:whatsapp", TrustedRecipeTool: "send_file"}, Target{}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := TrustedOutboundTarget(tc.spec, tc.args)
+			got, ok := TrustedOutboundTarget(tc.spec)
 			if got != tc.want || ok != tc.ok {
 				t.Fatalf("target = (%+v, %v), want (%+v, %v)", got, ok, tc.want, tc.ok)
 			}

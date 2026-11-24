@@ -21,8 +21,8 @@ func TestAResolvedReviewIsRedrawnWithItsStatus(t *testing.T) {
 	t.Parallel()
 	draft := messagedrafts.Draft{
 		ID: "draft-1", Status: messagedrafts.StatusPending, SendAt: time.Now().Add(time.Hour),
-		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
+		Target:       messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
+		OriginalArgs: json.RawMessage(`{"accountId":"acc-1","to":["someone@example.com"],"subject":"Hi","body":"Text"}`),
 	}
 	rs := &fakeResume{
 		pending: []askuser.Pending{reviewPending(draft.ID)}, drafts: []messagedrafts.Draft{draft},

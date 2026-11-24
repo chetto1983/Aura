@@ -29,7 +29,7 @@ func (s *Store) WithSenders(senders SenderDirectory) *Store {
 // resolveSender is the address an email draft leaves from, "" when there is nothing to look up or the
 // PIM cannot be asked, in which case the review shows the account's name alone.
 func resolveSender(ctx context.Context, senders SenderDirectory, target Target, args json.RawMessage) (string, error) {
-	if senders == nil || target.Recipe != "recipe:calendar" {
+	if senders == nil || target != emailTarget {
 		return "", nil
 	}
 	var named struct {

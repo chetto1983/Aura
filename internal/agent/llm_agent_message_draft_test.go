@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -54,7 +53,7 @@ func TestMessageDraftTrustedCallsParkBeforeExecute(t *testing.T) {
 		name, source, args string
 		want               messagedrafts.Target
 	}{
-		{"pim__calendar", "recipe:calendar", `{"action":"send_email","to":["a@example.test"],"subject":"Hi","body":"Secret body"}`, messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}},
+		{"calendar__send_email", "recipe:calendar", `{"to":["a@example.test"],"subject":"Hi","body":"Secret body"}`, messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"}},
 		{"wa__send_message", "recipe:whatsapp", `{"recipient":"12345","message":"Secret body"}`, messagedrafts.Target{Recipe: "recipe:whatsapp", Tool: "send_message"}},
 	}
 	for _, tc := range cases {
@@ -87,14 +86,14 @@ func TestMessageDraftTrustedCallsParkBeforeExecute(t *testing.T) {
 }
 
 func TestMessageDraftSendFailsClosedWithoutReview(t *testing.T) {
-	tool := &draftSpyTool{spec: tools.Spec{Name: "pim__calendar", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar", Mutating: true}}
+	tool := &draftSpyTool{spec: tools.Spec{Name: "calendar__send_email", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "send_email", Mutating: true}}
 	agent := &LlmAgent{}
-	_, err := agent.execTool(context.Background(), tool, true, json.RawMessage(`{"action":"send_email","to":["a@example.test"],"subject":"Hi"}`))
+	_, err := agent.execTool(context.Background(), tool, true, json.RawMessage(`{"to":["a@example.test"],"subject":"Hi"}`))
 	if err == nil || tool.calls != 0 {
 		t.Fatal("unreviewed email reached transport")
 	}
 	tool.spec.TrustedRecipeSource = ""
-	if _, outbound := outboundMessageTarget(tool.Spec(), json.RawMessage(`{"action":"send_email"}`)); outbound {
+	if _, outbound := messagedrafts.TrustedOutboundTarget(tool.Spec()); outbound {
 		t.Fatal("untrusted server impersonated a managed send")
 	}
 }
@@ -121,17 +120,6 @@ func TestExecToolMarksOnlyFailuresBeforeExecute(t *testing.T) {
 	}
 }
 
-func TestMessageDraftHashedRegisteredNameStillMatches(t *testing.T) {
-	spec := tools.Spec{
-		Name:                "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab",
-		TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar",
-	}
-	target, ok := outboundMessageTarget(spec, json.RawMessage(`{"action":"send_email"}`))
-	if !ok || target.Tool != "calendar" {
-		t.Fatal("hash-suffixed registered name lost the trusted raw tool identity")
-	}
-}
-
 const reviewOwner = "11111111-1111-4111-8111-111111111111"
 
 // reviewedWhatsAppClaim builds the dispatching claim the review endpoint hands the agent
@@ -144,21 +132,15 @@ func reviewedWhatsAppClaim(t *testing.T) (messagedrafts.Draft, *draftSpyTool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bound, err := json.Marshal(struct {
-		Recipe string          `json:"recipe"`
-		Tool   string          `json:"tool"`
-		Action string          `json:"action"`
-		Args   json.RawMessage `json:"args"`
-	}{Recipe: target.Recipe, Tool: target.Tool, Args: effective})
+	fingerprint, err := messagedrafts.Fingerprint(target, effective)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(bound)
 	claim := messagedrafts.Draft{
 		ID: "22222222-2222-4222-8222-222222222222", IdentityID: reviewOwner,
 		ConversationID: "thread-one", ToolCallID: "call-one", Target: target,
 		RegisteredToolName: "wa__send_message", Status: messagedrafts.StatusDispatching,
-		EffectiveArgs: effective, EffectiveFingerprint: hex.EncodeToString(sum[:]),
+		EffectiveArgs: effective, EffectiveFingerprint: fingerprint,
 	}
 	// The operation metadata mcptools.applyMCPOperationMetadata gives every mutating MCP tool.
 	tool := &draftSpyTool{spec: tools.Spec{
@@ -225,8 +207,8 @@ func TestMessageDraftErrorLogOmitsMessageContent(t *testing.T) {
 		t.Fatal("draft error log did not retain the safe SQLSTATE")
 	}
 	// The validation names fields, never values, so the log can say which ones the model got wrong.
-	_, invalid := messagedrafts.MergeApprovedArgs(messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		json.RawMessage(`{"action":"send_email","to":["private@example.test"],"body":"private body"}`), nil)
+	_, invalid := messagedrafts.MergeApprovedArgs(messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"},
+		json.RawMessage(`{"to":["private@example.test"],"body":"private body"}`), nil)
 	if got := safeMessageDraftError(invalid); !strings.Contains(got, `"subject"`) || strings.Contains(got, "private") {
 		t.Fatalf("draft error log = %q, want the rejected field and no content", got)
 	}
@@ -240,14 +222,14 @@ func TestMessageDraftCreateFailureIsLoggedWithoutContent(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(&draftSpyTool{spec: tools.Spec{
-		Name: "pim__calendar", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "calendar",
+		Name: "calendar__send_email", TrustedRecipeSource: "recipe:calendar", TrustedRecipeTool: "send_email",
 	}})
 	creator := &draftSpyCreator{err: &pgconn.PgError{Code: "23514", Detail: "private recipient and body"}}
 	agent := newBareAgent(t, registry)
 	agent.messageDrafts = creator
 	ctx := gateway.WithResponder(identityctx.WithIdentityID(t.Context(), "11111111-1111-4111-8111-111111111111"))
-	_, parked := agent.withholdOutboundMessage(ctx, toolCall("call-one", "pim__calendar",
-		`{"action":"send_email","to":["private@example.test"],"subject":"Hello","body":"private body"}`))
+	_, parked := agent.withholdOutboundMessage(ctx, toolCall("call-one", "calendar__send_email",
+		`{"to":["private@example.test"],"subject":"Hello","body":"private body"}`))
 	if parked || len(creator.inputs) != 1 {
 		t.Fatal("failed draft write was parked as an actionable message")
 	}

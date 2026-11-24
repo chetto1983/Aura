@@ -92,12 +92,17 @@ func (d Draft) MatchesDispatch(ownerID, registeredName string, target Target, ra
 		d.RegisteredToolName != registeredName || d.Target != target || d.EffectiveFingerprint == "" {
 		return false
 	}
-	stored, err := MergeApprovedArgs(target, d.EffectiveArgs, nil)
-	if err != nil || argsFingerprint(target, stored) != d.EffectiveFingerprint {
+	return canonicalFingerprintIs(target, d.EffectiveArgs, d.EffectiveFingerprint) &&
+		canonicalFingerprintIs(target, raw, d.EffectiveFingerprint)
+}
+
+func canonicalFingerprintIs(target Target, raw json.RawMessage, want string) bool {
+	canonical, err := MergeApprovedArgs(target, raw, nil)
+	if err != nil {
 		return false
 	}
-	effective, err := MergeApprovedArgs(target, raw, nil)
-	return err == nil && argsFingerprint(target, effective) == d.EffectiveFingerprint
+	fp, err := Fingerprint(target, canonical)
+	return err == nil && fp == want
 }
 
 // Store is an owner-scoped PostgreSQL store. Every query runs with the RLS
@@ -131,7 +136,10 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
-	fingerprint := argsFingerprint(input.Target, original)
+	fingerprint, err := Fingerprint(input.Target, original)
+	if err != nil {
+		return Draft{}, err
+	}
 	sender, err := resolveSender(ctx, s.senders, input.Target, original)
 	if err != nil {
 		return Draft{}, err
@@ -322,7 +330,10 @@ func (s *Store) ClaimSend(ctx context.Context, ownerID, draftID string, override
 		if mergeErr != nil {
 			return mergeErr
 		}
-		fp := argsFingerprint(target, effective)
+		fp, fpErr := Fingerprint(target, effective)
+		if fpErr != nil {
+			return fpErr
+		}
 		row, readErr = q.ClaimMessageDraftSend(ctx, sqlc.ClaimMessageDraftSendParams{
 			ID: id, IdentityID: owner, EffectiveArgs: effective,
 			EffectiveFingerprint: pgtype.Text{String: fp, Valid: true},
@@ -401,15 +412,21 @@ func draftKey(ownerID, draftID string) (pgtype.UUID, pgtype.UUID, error) {
 	return owner, id, err
 }
 
-func argsFingerprint(target Target, raw json.RawMessage) string {
-	bound, _ := json.Marshal(struct {
+// Fingerprint binds a draft's target to the exact argument bytes it was given; callers pass
+// MergeApprovedArgs's output, so JSONB key order cannot change it. The envelope keeps its "action"
+// key, empty for current targets, because stored drafts were hashed with it.
+func Fingerprint(target Target, raw json.RawMessage) (string, error) {
+	bound, err := json.Marshal(struct {
 		Recipe string          `json:"recipe"`
 		Tool   string          `json:"tool"`
 		Action string          `json:"action"`
 		Args   json.RawMessage `json:"args"`
 	}{Recipe: target.Recipe, Tool: target.Tool, Action: target.Action, Args: raw})
+	if err != nil {
+		return "", errInvalidDraftArgs
+	}
 	sum := sha256.Sum256(bound)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func draftFromRow(row sqlc.AuraMessageDrafts) (Draft, error) {

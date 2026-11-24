@@ -20,9 +20,9 @@ func TestCreateRecordsTheSenderAddress(t *testing.T) {
 	ctx := context.Background()
 	input := DraftInput{
 		IdentityID: owner, ConversationID: "sender-conversation", ToolCallID: "call-sender",
-		Target:             calendarSend,
-		RegisteredToolName: "calendar__calendar",
-		OriginalArgs:       json.RawMessage(`{"action":"send_email","accountId":"t__personale","to":["first@example.test"],"subject":"Hello","body":"Text"}`),
+		Target:             emailSend,
+		RegisteredToolName: "calendar__send_email",
+		OriginalArgs:       json.RawMessage(`{"accountId":"t__personale","to":["first@example.test"],"subject":"Hello","body":"Text"}`),
 		ExpiresAt:          time.Now().Add(time.Hour),
 	}
 	draft, err := store.Create(ctx, input)
@@ -35,7 +35,7 @@ func TestCreateRecordsTheSenderAddress(t *testing.T) {
 	}
 	unknown := input
 	unknown.ToolCallID = "call-unknown"
-	unknown.OriginalArgs = json.RawMessage(`{"action":"send_email","accountId":"t__invented","to":["first@example.test"],"subject":"Hello","body":"Text"}`)
+	unknown.OriginalArgs = json.RawMessage(`{"accountId":"t__invented","to":["first@example.test"],"subject":"Hello","body":"Text"}`)
 	if _, err := store.Create(ctx, unknown); !errors.Is(err, ErrUnknownAccount) {
 		t.Fatalf("an unknown account made a draft: %v", err)
 	}

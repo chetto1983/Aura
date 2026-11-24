@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -115,17 +114,14 @@ func approvedDraft(t *testing.T) messagedrafts.Draft {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bound, _ := json.Marshal(struct {
-		Recipe string          `json:"recipe"`
-		Tool   string          `json:"tool"`
-		Action string          `json:"action"`
-		Args   json.RawMessage `json:"args"`
-	}{Recipe: target.Recipe, Tool: target.Tool, Args: effective})
-	sum := sha256.Sum256(bound)
+	fingerprint, err := messagedrafts.Fingerprint(target, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return messagedrafts.Draft{
 		ID: "22222222-2222-4222-8222-222222222222", IdentityID: messageOwner, ConversationID: "conv", ToolCallID: "call-1",
 		Target: target, RegisteredToolName: "wa__send_message", Status: messagedrafts.StatusApproved,
-		OriginalArgs: original, EffectiveArgs: effective, EffectiveFingerprint: hex.EncodeToString(sum[:]),
+		OriginalArgs: original, EffectiveArgs: effective, EffectiveFingerprint: fingerprint,
 		SendAt: time.Now(), ScheduledTaskID: "task-1",
 	}
 }
@@ -338,7 +334,7 @@ func TestADispatchWithoutAStartIsNotStale(t *testing.T) {
 // The tool must be the one the draft was reviewed against: same recipe and target.
 func TestADifferentToolIsNotTheReviewedOne(t *testing.T) {
 	draft := approvedDraft(t)
-	draft.Target = messagedrafts.Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}
+	draft.Target = messagedrafts.Target{Recipe: "recipe:calendar", Tool: "send_email"}
 	drafts := &fakeMessageDrafts{draft: draft, claimOK: 1}
 	if _, err := messageHandler(drafts, &sendSpy{}).Run(scheduledRunCtx(t), Job{TaskID: "task-1"}); err == nil || drafts.claims != 0 {
 		t.Fatalf("err = %v, claims %d", err, drafts.claims)
