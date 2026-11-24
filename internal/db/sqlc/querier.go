@@ -547,13 +547,6 @@ type Querier interface {
 	ListGatewayToolPolicies(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayToolPolicies, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
-	// Deliberately selects NO ciphertext (mirrors internal/db/sqlc/identity_mcp_oauth.sql.go's
-	// ListIdentityMCPOAuthServers): the admin roster needs the cap and the hash, never the key.
-	// RLS-scoped like every other query here (0087 fail-closed floor); the identity_id
-	// parameter is redundant with app.current_identity today (the table's PK means at most
-	// one row per identity) but keeps this query's shape identical to its ListIdentityMCPOAuthServers
-	// precedent for when a later plan adds an admin-bypass role.
-	ListIdentityLLMKeys(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityLLMKeysRow, error)
 	// The names an identity has authorized, for `aura mcp login --status` and the cockpit's
 	// connector list. Deliberately selects NO ciphertext: a listing must not pull three
 	// credentials into memory to render a name and an expiry.

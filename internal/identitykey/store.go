@@ -63,19 +63,6 @@ type Record struct {
 	UpdatedAt  time.Time
 }
 
-// Summary is one entry in the key roster — the admin-facing projection that carries no
-// ciphertext AND no plaintext key, only what a roster needs to decide "does this
-// identity have a key, and what does OpenRouter call it".
-type Summary struct {
-	IdentityID string
-	Hash       string
-	Label      string
-	// LimitUSD is the spending cap; nil is a key with no limit (the admin's own).
-	LimitUSD   *float64
-	LimitReset string
-	UpdatedAt  time.Time
-}
-
 // Store reads and writes the OpenRouter key for the identity carried on the request
 // context.
 type Store struct {
@@ -195,43 +182,6 @@ func classifyLoadErr(err error) error {
 		return ErrNoKey
 	}
 	return fmt.Errorf("identitykey: load: %w", err)
-}
-
-// List returns the key roster for the identity on ctx, ordered by identity id. The
-// table's primary key is identity_id alone, so under today's RLS scoping this returns
-// at most one row — the caller's own — mirroring internal/mcpoauth's List shape (and
-// its ListIdentityMCPOAuthServers precedent) exactly, ready for an admin-bypass role a
-// later plan may add.
-func (s *Store) List(ctx context.Context) ([]Summary, error) {
-	identity, err := requireIdentity(ctx)
-	if err != nil {
-		return nil, err
-	}
-	id, err := parseUUID(identity)
-	if err != nil {
-		return nil, err
-	}
-	var rows []sqlc.ListIdentityLLMKeysRow
-	err = db.WithIdentityTx(ctx, s.pool, identity, func(q *sqlc.Queries) error {
-		var qerr error
-		rows, qerr = q.ListIdentityLLMKeys(ctx, id)
-		return qerr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("identitykey: list: %w", err)
-	}
-	out := make([]Summary, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, Summary{
-			IdentityID: r.IdentityID.String(),
-			Hash:       r.KeyHash,
-			Label:      r.KeyLabel,
-			LimitUSD:   pgnumeric.NullableFloat(r.LimitUsd),
-			LimitReset: r.LimitReset,
-			UpdatedAt:  r.UpdatedAt.Time,
-		})
-	}
-	return out, nil
 }
 
 func (s *Store) decodeRow(row sqlc.AuraIdentityLlmKey) (Record, error) {

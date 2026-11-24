@@ -7,14 +7,12 @@ package identitykey
 import (
 	"context"
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/secret"
 )
@@ -140,26 +138,6 @@ func TestKeyDerivationInfoIsDomainSeparated(t *testing.T) {
 	}
 }
 
-// TestListSelectsNoCiphertext (source-level): the generated listing row carries the
-// hash, the label and the reset interval, and does NOT carry the ciphertext field —
-// the admin roster needs the cap and the hash, never the key.
-func TestListSelectsNoCiphertext(t *testing.T) {
-	t.Parallel()
-	typ := reflect.TypeFor[sqlc.ListIdentityLLMKeysRow]()
-	names := make(map[string]bool, typ.NumField())
-	for field := range typ.Fields() {
-		names[field.Name] = true
-	}
-	for _, want := range []string{"KeyHash", "KeyLabel", "LimitUsd", "LimitReset"} {
-		if !names[want] {
-			t.Errorf("ListIdentityLLMKeysRow missing field %s", want)
-		}
-	}
-	if names["KeyCiphertext"] {
-		t.Error("ListIdentityLLMKeysRow carries KeyCiphertext — the listing query must never select ciphertext")
-	}
-}
-
 // No principal on the context must never resolve to somebody's key. Unlike
 // internal/objectstore, this store has no `local` fallback on purpose.
 func TestEveryOperationFailsClosedWithNoIdentityOnContext(t *testing.T) {
@@ -172,9 +150,6 @@ func TestEveryOperationFailsClosedWithNoIdentityOnContext(t *testing.T) {
 	}
 	if err := s.Save(ctx, Record{Key: "k"}); err == nil {
 		t.Error("Save succeeded with no identity on the context")
-	}
-	if _, err := s.List(ctx); err == nil {
-		t.Error("List succeeded with no identity on the context")
 	}
 }
 

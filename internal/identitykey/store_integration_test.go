@@ -132,9 +132,6 @@ func TestIdentityLLMKeyRLSAndCascade(t *testing.T) {
 	if gotBob.Hash != "hash-bob" {
 		t.Fatalf("bob's own key hash = %q, want hash-bob (bob must never see alice's row)", gotBob.Hash)
 	}
-	if list, err := store.List(bobCtx); err != nil || len(list) != 1 || list[0].Hash != "hash-bob" {
-		t.Fatalf("bob's list = %+v (err=%v), want exactly [hash-bob]", list, err)
-	}
 
 	gotAlice, err := store.Load(aliceCtx)
 	if err != nil {
@@ -175,10 +172,6 @@ func TestIdentityLLMKeyNoLimitRoundTrips(t *testing.T) {
 	}
 	if got.LimitUSD != nil {
 		t.Fatalf("LimitUSD = %v, want nil (no limit)", *got.LimitUSD)
-	}
-	list, err := store.List(ctx)
-	if err != nil || len(list) != 1 || list[0].LimitUSD != nil {
-		t.Fatalf("List = %+v (err %v), want one summary with no limit", list, err)
 	}
 }
 
