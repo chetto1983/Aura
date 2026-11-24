@@ -264,8 +264,8 @@ ensure_embed_provenance() {
 
 # An :edge install tracks the image home continuously (deploy/aura-image-update.*): compose
 # must re-pull the moving tag on every up, and each MCP sidecar the machine runs
-# (the PIM excepted: it rides its compose pin) needs its own moving tag — a SHA-pinned default would make the update timer a
-# no-op. Idempotent like the rest: explicit operator choices are preserved.
+# (the PIM excepted: it rides its compose pin) needs its own moving tag — a SHA-pinned
+# default would make the update timer a no-op. Idempotent like the rest: explicit operator choices are preserved.
 ensure_edge_channel_env() {
   case "$(env_value AURA_IMAGE)" in
     *:edge)

@@ -130,7 +130,7 @@ func TestThePIMImageIsPinnedEverywhere(t *testing.T) {
 	if !regexp.MustCompile(`^ghcr\.io/chetto1983/aura-pim-mcp:[0-9a-f]{40}$`).MatchString(ref) {
 		t.Fatalf("compose.yaml runs the PIM as %q, want ghcr.io/chetto1983/aura-pim-mcp:<40-hex sha>", ref)
 	}
-	for _, rel := range []string{".github/workflows/ci.yml", "scripts/pim_mail_e2e.sh", "scripts/pim_tls_mail_up.sh"} {
+	for _, rel := range []string{".github/workflows/ci.yml", "scripts/pim_mail_e2e.sh", "scripts/pim_tls_mail_up.sh", ".claude/skills/aura-model-in-the-loop/pim_up.sh"} {
 		contents := readProjectFile(t, root, rel)
 		if !strings.Contains(contents, ref) {
 			t.Errorf("%s does not name the pinned PIM image %s", rel, ref)

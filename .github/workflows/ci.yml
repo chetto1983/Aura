@@ -1487,10 +1487,8 @@ jobs:
       # The job runs the sidecar via `docker run` (NOT `docker compose`): compose would
       # interpolate the WHOLE compose.yaml and fail on the unrelated `aura` service's
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
-      # :latest is what appliances run: the fork publishes :latest and :sidecar together,
-      # and compose.yaml defaults to :latest. The pin this replaced (5909c808, 2026-08-28)
-      # still let a tenant seed a local JSON account through /admin; production refuses
-      # that, so the tier had been proving an image no appliance runs.
+      # The same sha compose.yaml pins, so the tier proves the image appliances run;
+      # TestThePIMImageIsPinnedEverywhere keeps the two equal.
       AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
