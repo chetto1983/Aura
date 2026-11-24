@@ -29,4 +29,9 @@ if [ -z "$bin" ]; then
 fi
 
 bash scripts/deadcode_gate.sh "$bin" -test $(bash scripts/go_packages.sh)
-exec bash scripts/deadcode_production_gate.sh "$bin"
+
+# tools/deadexport is this repository's own module: build it from the tree being pushed.
+tmp="$(mktemp -d)"
+trap 'rm -rf -- "$tmp"' EXIT
+go build -C tools/deadexport -o "$tmp/deadexport" .
+bash scripts/deadcode_production_gate.sh "$bin" "$tmp/deadexport"

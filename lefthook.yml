@@ -121,6 +121,7 @@ pre-push:
               - "internal/**"
               - "cmd/**"
               - "scripts/**"
+              - "tools/**"
               - "lefthook.yml"
             run: bash scripts/pushed_tree.sh bash -c 'go build $(bash scripts/go_packages.sh)'
           # No inner quotes, and no arguments: same hazard deadcode documents below. The cd,

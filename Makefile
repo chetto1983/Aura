@@ -25,7 +25,7 @@ help:
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
 	@echo "make sqlc          — regenerate internal/db/sqlc/ from queries/"
 	@echo "make lint          — golangci-lint run ./... (incl. dupl)"
-	@echo "make deadcode      — deadcode -test ./..., then without -test against the allowlist (unreachable Go code scan)"
+	@echo "make deadcode      — deadcode -test ./..., then deadcode without -test + tools/deadexport against the allowlist"
 	@echo "make vet           — go vet ./..."
 	@echo "make vuln          — govulncheck ./... (supply-chain CVE scan)"
 	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs the stack up)"
@@ -95,8 +95,11 @@ py-lint:
 
 deadcode:
 	bash scripts/deadcode_gate.sh "$(GOBIN)/deadcode" -test $(GO_PACKAGES)
-	DEADCODE_BIN="$(GOBIN)/deadcode" bash scripts/deadcode_production_gate_test.sh
-	bash scripts/deadcode_production_gate.sh "$(GOBIN)/deadcode"
+	go vet -C tools/deadexport .
+	go test -C tools/deadexport -race -count=1 .
+	go build -C tools/deadexport -o "$(GOBIN)/deadexport" .
+	DEADCODE_BIN="$(GOBIN)/deadcode" DEADEXPORT_BIN="$(GOBIN)/deadexport" bash scripts/deadcode_production_gate_test.sh
+	bash scripts/deadcode_production_gate.sh "$(GOBIN)/deadcode" "$(GOBIN)/deadexport"
 
 vuln:
 	$(GOBIN)/govulncheck $(GO_PACKAGES)

@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# deadcode_production_gate.sh <deadcode-binary> — what no production binary can reach.
+# deadcode_production_gate.sh <deadcode-binary> <deadexport-binary> — what no production
+# binary can reach.
 #
 # deadcode_gate.sh runs deadcode with -test, so every test is a root and a function only a
 # test calls reads as live. That run stays (it catches code nothing calls at all); this one
 # runs WITHOUT -test, so the roots are the module's main packages only, and reports what
 # nothing shipped can reach. Measured 2026-11-24: the -test gate printed nothing while this
 # run found production functions kept alive by their own tests alone.
+#
+# deadcode alone still cannot see an exported method nobody calls on a type that reaches an
+# interface: its RTA keeps every exported method of such a type alive, since reflection
+# might call it (go/callgraph/rta). tools/deadexport counts type-checked references from
+# non-test code instead and covers that half; on 2026-11-24 it found 49 of the 55
+# functions removed that day, none of which deadcode reported. This gate takes the union.
 #
 # A function is reported only when it is dead on BOTH linux and windows: a helper called
 # only from a _windows.go file is live there (retention ratioFromCapacity), not dead.
@@ -14,19 +21,16 @@
 # either by symbol (<package path>.<Func> or <package path>.<Type>.<Method>) or by package
 # path (a test-support package, live only for tests by design). The list fails closed both
 # ways: an unlisted finding fails, and so does a listed symbol or package that no longer
-# produces a finding, so the list cannot outlive the code it excuses.
-#
-# What this cannot see: deadcode's RTA treats every exported method of a type that reaches
-# an interface as reachable (go/callgraph/rta: "all exported methods of any runtime type,
-# since they may be called via reflection"), so an exported method nobody calls on a type
-# stored in an interface stays invisible here.
+# produces a finding, so the list cannot outlive the code it excuses. A method called only
+# by reflection (a template, MethodByName) would be a finding too, and belongs on the list.
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <deadcode-binary>" >&2
+if [ "$#" -ne 2 ]; then
+  echo "usage: $0 <deadcode-binary> <deadexport-binary>" >&2
   exit 2
 fi
 bin="$1"
+deadexport="$2"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The self-test (deadcode_production_gate_test.sh) points the gate at a fixture module.
 source_root="${AURA_DEADCODE_SOURCE_ROOT:-$repo_root}"
@@ -37,20 +41,33 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 mapfile -t packages < <(bash "$repo_root/scripts/go_packages.sh")
-format='{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}'
-for goos in linux windows; do
-  if ! GOOS="$goos" "$bin" -f "$format" "${packages[@]}" >"$work/raw.$goos" 2>"$work/err.$goos"; then
+# scan <goos> writes $work/dead.<goos>: the union of both tools' findings for that GOOS.
+# A tool that fails, or a deadcode that prints load errors, fails the scan: a partial
+# program would make every function whose callers did not load read as dead.
+scan() {
+  local goos="$1"
+  local format='{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}'
+  if ! GOOS="$goos" "$bin" -f "$format" "${packages[@]}" >"$work/raw.$goos" 2>"$work/err.$goos" ||
+    [ -s "$work/err.$goos" ]; then
     cat "$work/err.$goos" >&2
-    echo "FATAL: deadcode failed for GOOS=$goos" >&2
-    exit 2
+    echo "FATAL: deadcode failed or reported load errors for GOOS=$goos" >&2
+    return 2
   fi
-  if [ -s "$work/err.$goos" ]; then
-    cat "$work/err.$goos" >&2
-    echo "FATAL: deadcode reported load errors for GOOS=$goos" >&2
-    exit 2
+  if ! GOOS="$goos" "$deadexport" "${packages[@]}" >"$work/exported.$goos"; then
+    echo "FATAL: deadexport failed for GOOS=$goos" >&2
+    return 2
   fi
+  cut -f1 "$work/exported.$goos" >>"$work/raw.$goos"
   grep -v '^$' "$work/raw.$goos" | sort -u >"$work/dead.$goos" || true
-done
+}
+scan linux &
+linux_scan=$!
+scan windows &
+windows_scan=$!
+scan_status=0
+wait "$linux_scan" || scan_status=$?
+wait "$windows_scan" || scan_status=$?
+[ "$scan_status" -eq 0 ] || exit "$scan_status"
 comm -12 "$work/dead.linux" "$work/dead.windows" >"$work/findings"
 
 awk -v file="$allowlist" '

@@ -8,10 +8,17 @@ gate="$repo_root/scripts/deadcode_production_gate.sh"
 bin="${DEADCODE_BIN:-$(command -v deadcode || echo "$(go env GOPATH)/bin/deadcode")}"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
+deadexport="${DEADEXPORT_BIN:-}"
+if [ -z "$deadexport" ]; then
+  deadexport="$work/deadexport"
+  go build -C "$repo_root/tools/deadexport" -o "$deadexport" .
+fi
 
 # fixture <name> <allowlist body>: a module whose main calls lib.Used; lib.TestOnly is called
-# only by a test, and lib.ratio, compiled everywhere, is called only from a _windows.go file
-# (the shape of retention's ratioFromCapacity): dead on linux, live on windows.
+# only by a test; lib.ratio, compiled everywhere, is called only from a _windows.go file
+# (the shape of retention's ratioFromCapacity): dead on linux, live on windows; and
+# lib.Thing reaches an interface through fmt.Println, so deadcode keeps its uncalled Spare
+# alive and only deadexport reports it.
 fixture() {
   local root="$work/$1"
   mkdir -p "$root/cmd/app" "$root/lib" "$root/scripts"
@@ -19,9 +26,13 @@ fixture() {
   cat >"$root/cmd/app/main.go" <<'GO'
 package main
 
-import "example.test/fixture/lib"
+import (
+	"fmt"
 
-func main() { lib.Used(); lib.Platform() }
+	"example.test/fixture/lib"
+)
+
+func main() { lib.Used(); lib.Platform(); fmt.Println(lib.Thing{}) }
 GO
   cat >"$root/lib/lib.go" <<'GO'
 package lib
@@ -31,6 +42,12 @@ func Used() {}
 func TestOnly() {}
 
 func ratio() {}
+
+type Thing struct{}
+
+func (Thing) String() string { return "thing" }
+
+func (Thing) Spare() {}
 GO
   cat >"$root/lib/platform_windows.go" <<'GO'
 package lib
@@ -60,7 +77,7 @@ GO
 expect() {
   local root rc=0
   root="$(fixture "$1" "$4")"
-  AURA_DEADCODE_SOURCE_ROOT="$root" bash "$gate" "$bin" >"$work/$1.out" 2>"$work/$1.err" || rc=$?
+  AURA_DEADCODE_SOURCE_ROOT="$root" bash "$gate" "$bin" "$deadexport" >"$work/$1.out" 2>"$work/$1.err" || rc=$?
   if [ "$rc" -ne "$2" ]; then
     echo "FAIL $1: rc=$rc, want $2" >&2
     cat "$work/$1.err" >&2
@@ -76,15 +93,20 @@ expect() {
 
 # A function only a test calls is dead to production: -test would have hidden it.
 expect test-only-is-dead 1 "unreachable from every main package: example.test/fixture/lib.TestOnly" ""
-# Named with a reason, it passes, and ratio (live on windows) is never reported: were it,
+# deadcode keeps Spare alive (Thing reaches fmt.Stringer); deadexport reports it.
+expect exported-method-on-interface-type-is-dead 1 "unreachable from every main package: example.test/fixture/lib.Thing.Spare" "example.test/fixture/lib.TestOnly   called by tests only
+"
+# Named with a reason, they pass, and ratio (live on windows) is never reported: were it,
 # the gate would fail on an unlisted finding.
 expect allowlisted-passes 0 "" "example.test/fixture/lib.TestOnly   called by tests only
+example.test/fixture/lib.Thing.Spare   kept for the fixture
 "
 # A package entry excuses everything in the package.
 expect package-entry-passes 0 "" "example.test/fixture/lib   fixture package
 "
 # An entry that no longer matches a finding fails: the list cannot outlive the code.
 expect stale-entry-fails 1 "stale allowlist entry (no longer dead): example.test/fixture/lib.Gone" "example.test/fixture/lib.TestOnly   called by tests only
+example.test/fixture/lib.Thing.Spare   kept for the fixture
 example.test/fixture/lib.Gone   removed long ago
 "
 # An entry without a reason fails.
