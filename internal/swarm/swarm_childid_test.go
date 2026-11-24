@@ -30,7 +30,7 @@ func TestRunChildChildID(t *testing.T) {
 		r := newRouter().route("alpha", outcome{kind: "ok", text: "A"})
 		rc := testRunConfig(t, r, 25)
 		rc.ChildID = "w1-custom9"
-		budget := rc.ParentBudget.Child(1)
+		budget := rc.ParentBudget.Child()
 
 		report, _ := runChild(context.Background(), rc, budget, 0, "alpha task")
 		if report.ChildID != "w1-custom9" {
@@ -45,7 +45,7 @@ func TestRunChildChildID(t *testing.T) {
 	t.Run("falls back to the flat wN id when unset", func(t *testing.T) {
 		r := newRouter().route("alpha", outcome{kind: "ok", text: "A"})
 		rc := testRunConfig(t, r, 25) // rc.ChildID left at its zero value
-		budget := rc.ParentBudget.Child(1)
+		budget := rc.ParentBudget.Child()
 
 		report, _ := runChild(context.Background(), rc, budget, 0, "alpha task")
 		if report.ChildID != "w1" {
@@ -65,7 +65,7 @@ func TestRunChildWritesTerminalMarker(t *testing.T) {
 	r := newRouter().route("alpha", outcome{kind: "ok", text: "A"})
 	rc := testRunConfig(t, r, 25)
 	rc.ChildID = "w1-marker"
-	budget := rc.ParentBudget.Child(1)
+	budget := rc.ParentBudget.Child()
 
 	report, _ := runChild(context.Background(), rc, budget, 0, "alpha task")
 
@@ -94,7 +94,7 @@ func TestRunChildWritesTerminalMarkerOnCancel(t *testing.T) {
 	r := newRouter().route("alpha", outcome{kind: "block"})
 	rc := testRunConfig(t, r, 25)
 	rc.ChildID = "w1-cancelled"
-	budget := rc.ParentBudget.Child(1)
+	budget := rc.ParentBudget.Child()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan ChildReport, 1)

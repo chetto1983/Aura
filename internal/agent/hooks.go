@@ -13,12 +13,12 @@ import (
 // FailOpen contains the fault — log + metric + allow the turn to proceed —
 // while FailClosed aborts the turn with a clear reason. Security-gating hooks
 // should register FailClosed; everything else defaults to FailOpen at the
-// command-hook constructor. Bare NewHookManager/Register keep FailClosed so the
+// command-hook constructor. Bare NewHookManager keeps FailClosed so the
 // historical turn-fatal contract for in-process hooks is unchanged.
 type FailPolicy int
 
 const (
-	// FailClosed aborts the turn when a hook faults (default for Register).
+	// FailClosed aborts the turn when a hook faults (default for NewHookManager).
 	FailClosed FailPolicy = iota
 	// FailOpen contains a hook fault and allows the turn to continue.
 	FailOpen
@@ -98,11 +98,6 @@ func NewHookManagerWithPolicy(policy FailPolicy, hooks ...Hook) *HookManager {
 		m.RegisterWithPolicy(h, policy)
 	}
 	return m
-}
-
-// Register appends h when non-nil with the default FailClosed policy.
-func (m *HookManager) Register(h Hook) {
-	m.RegisterWithPolicy(h, FailClosed)
 }
 
 // RegisterWithPolicy appends h when non-nil with an explicit failure policy.

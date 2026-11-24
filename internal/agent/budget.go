@@ -16,7 +16,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -32,7 +31,6 @@ const (
 	envMaxSteps           = "AURA_LOOP_MAX_STEPS"
 	envMaxWallclockSec    = "AURA_LOOP_MAX_WALLCLOCK_SEC"
 	envDedupWindow        = "AURA_LOOP_DEDUP_WINDOW" //nolint:gosec // G101 false positive: env var NAME, not a credential
-	envBranchSoftFraction = "AURA_LOOP_BRANCH_SOFT_FRACTION"
 	envNodeTimeoutSec     = "AURA_LOOP_NODE_TIMEOUT_SEC"
 	envDedupExemptTools   = "AURA_LOOP_DEDUP_EXEMPT_TOOLS"
 	envDedupResultCap     = "AURA_LOOP_DEDUP_RESULT_CAP"
@@ -45,7 +43,6 @@ const (
 	defaultBudgetMaxSteps     = 25   // AURA_LOOP_MAX_STEPS
 	defaultBudgetWallclockSec = 300  // AURA_LOOP_MAX_WALLCLOCK_SEC
 	defaultDedupWindow        = 3    // AURA_LOOP_DEDUP_WINDOW (D-20)
-	defaultBranchSoftFrac     = 1.0  // AURA_LOOP_BRANCH_SOFT_FRACTION: 1.0 → softCap = ceil(remaining/fanout)
 	defaultDedupResultCap     = 2048 // AURA_LOOP_DEDUP_RESULT_CAP: result-preview byte cap (A7)
 	// AURA_LOOP_BACKGROUND_AFTER_SEC: how long a turn waits on one tool call before moving
 	// it to the background -- the 60 s an MCP call used to be cut at (prd.md §15).
@@ -71,12 +68,10 @@ type Budget struct {
 	now            func() time.Time    // injectable clock (W8): tests drive the deadline deterministically; default time.Now
 	dedupWindow    int                 // consecutive-repeat threshold (default 3, D-20)
 	dedupRing      *dedupRing          // per-branch two-phase dedup state (budget_dedup.go); distinct per Child (D-09)
-	branchSoftCap  int                 // passive per-branch fair-share advisory (D-12); 0 = unset (root)
-	branchConsumed atomic.Int32        // steps this branch has consumed, for the passive soft-cap check (D-12)
+	branchConsumed atomic.Int32        // steps this branch has consumed: the <budget> "used" count
 	exemptTools    map[string]struct{} // AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist (D-19)
 	resultCap      int                 // dedup result-preview byte cap (A7)
 	nodeTimeout    time.Duration       // optional per-node soft timeout (D-13); 0 = disabled
-	softFrac       float64             // AURA_LOOP_BRANCH_SOFT_FRACTION, feeds Child's softCap (D-12)
 	// backgroundAfter and backgroundMax are the window a tool call holds its turn for and
 	// the ceiling it runs under once moved to the background (tools.BackgroundCalls).
 	backgroundAfter time.Duration
@@ -171,13 +166,6 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 	if err != nil {
 		return nil, err
 	}
-	softFrac, err := envFloatFailFast(envBranchSoftFraction, defaultBranchSoftFrac)
-	if err != nil {
-		return nil, err
-	}
-	if softFrac <= 0 || softFrac > 1 {
-		return nil, fmt.Errorf("%s=%q: must be in (0,1]", envBranchSoftFraction, os.Getenv(envBranchSoftFraction))
-	}
 	resultCap, err := envIntFailFast(envDedupResultCap, defaultDedupResultCap)
 	if err != nil {
 		return nil, err
@@ -219,7 +207,6 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 		exemptTools:       exempt,
 		resultCap:         resultCap,
 		nodeTimeout:       time.Duration(nodeTimeoutSec) * time.Second,
-		softFrac:          softFrac,
 		backgroundAfter:   backgroundAfter,
 		backgroundMax:     backgroundMax,
 	}
@@ -278,25 +265,11 @@ func envIntFailFast(key string, fallback int) (int, error) {
 	return n, nil
 }
 
-// envFloatFailFast reads key as a float, fail-fast on a set-but-unparseable value.
-func envFloatFailFast(key string, fallback float64) (float64, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return 0, errMalformed(key, v)
-	}
-	return f, nil
-}
-
 // ConsumeStep is the TOCTOU-safe (D-11) gate every agent step passes through.
 // It checks the wallclock FIRST (D-13), then does an atomic
 // decrement-then-check-then-restore so N concurrent goroutines can never
 // over-spend the shared cap: the goroutines that overshoot below zero all add 1
-// back. Only HARD terminal reasons are returned ("max_steps" | "wallclock") —
-// the per-branch soft cap is NON-terminal and surfaced via SoftCapExceeded (D-12).
+// back. Only HARD terminal reasons are returned ("max_steps" | "wallclock").
 func (b *Budget) ConsumeStep() (ok bool, reason string) {
 	if b.now().After(b.deadlineWallclock.Add(b.clock.Held())) {
 		return false, "wallclock"
@@ -357,40 +330,13 @@ func (b *Budget) BranchConsumed() int { return int(b.branchConsumed.Load()) }
 // source so prompt hints and wallclock gates agree in tests and production.
 func (b *Budget) Now() time.Time { return b.now() }
 
-// SetMaxSteps overrides the shared step counter (CLI flag precedence, D-06).
-// It resets the WHOLE tree's remaining budget; intended only at boot before any
-// child is spawned.
-func (b *Budget) SetMaxSteps(n int32) {
-	b.steps.Store(n)
-}
-
-// SoftCapExceeded reports whether THIS branch has consumed at least its passive
-// fair-share soft cap (D-12). It is a non-terminal scheduling/fairness signal:
-// the hard total bound (steps) stays authoritative, the branch may still consume
-// against the shared pool. A root budget (branchSoftCap==0) never reports true.
-func (b *Budget) SoftCapExceeded() bool {
-	if b.branchSoftCap <= 0 {
-		return false
-	}
-	return int(b.branchConsumed.Load()) >= b.branchSoftCap
-}
-
 // Child forks a budget for a PARALLEL branch (D-09): it shares the SAME
 // *atomic.Int32 step counter and the same wallclock + clock (so the hard total
 // bound is preserved across the tree), but gets a DISTINCT dedup ring (no
-// cross-branch false positives) and a PASSIVE per-branch soft cap (D-12).
+// cross-branch false positives) and its own consumed-steps counter.
 // Loop sub-agents instead use InvocationContext.WithSubAgent, which
 // shares the ring for cross-iteration repeat detection.
-//
-// IN-04 — the soft cap is a SPAWN-TIME SNAPSHOT and therefore TIMING-DEPENDENT BY
-// DESIGN: it is computed off b.Remaining() at the instant Child is called. When a
-// swarm spawns siblings in a loop, a later sibling reads an already-depleted
-// pool and so gets a SMALLER advisory share than an earlier one. This is intentional
-// and consistent with the non-terminal "passive advisory" framing (D-12) — the soft
-// cap never bounds correctness, only fairness hints — so siblings are NOT guaranteed
-// equal shares. A caller that wants equal sibling shares must snapshot Remaining()
-// once before the fan-out loop and reuse it across every Child call.
-func (b *Budget) Child(fanout int) *Budget {
+func (b *Budget) Child() *Budget {
 	c := &Budget{
 		steps:             b.steps, // SHARED pointer (D-10) — total bound preserved
 		deadlineWallclock: b.deadlineWallclock,
@@ -398,26 +344,13 @@ func (b *Budget) Child(fanout int) *Budget {
 		clock:             b.clock, // SHARED pointer: a hold anywhere in the tree stops every branch's wallclock
 		dedupWindow:       b.dedupWindow,
 		dedupRing:         newDedupRing(b.dedupWindow), // DISTINCT ring (D-09)
-		branchSoftCap:     softCap(b.Remaining(), fanout, b.softFrac),
 		exemptTools:       b.exemptTools,
 		resultCap:         b.resultCap,
 		nodeTimeout:       b.nodeTimeout,
-		softFrac:          b.softFrac,
 		backgroundAfter:   b.backgroundAfter,
 		backgroundMax:     b.backgroundMax,
 	}
 	return c
-}
-
-// softCap computes a passive per-branch fair share: ceil(remaining * frac / fanout),
-// at least 1 (D-12). frac (AURA_LOOP_BRANCH_SOFT_FRACTION) defaults to 1.0, so the
-// default cap is ceil(remaining/fanout) — a branch's even slice of the shared pool.
-func softCap(remaining, fanout int, frac float64) int {
-	if fanout <= 0 {
-		fanout = 1
-	}
-	share := max(int(math.Ceil(float64(remaining)*frac/float64(fanout))), 1)
-	return share
 }
 
 // WithDeadline derives a context bounded by the budget's wallclock deadline so

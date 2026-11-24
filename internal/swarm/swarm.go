@@ -188,14 +188,13 @@ func preflight(rc RunConfig, goals []string) (string, bool) {
 // per-child deadline this comment used to describe is gone (D-03) — runChild owns
 // the inactivity-based staleness timer instead (child_staleness.go).
 func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildReport, start, end int) {
-	width := end - start
 	eg, egCtx := errgroup.WithContext(ctx)
 	egCtx, cancel := context.WithCancel(egCtx)
 	defer cancel()
 
 	for i := start; i < end; i++ {
 		idx := i
-		childBudget := rc.ParentBudget.Child(width)
+		childBudget := rc.ParentBudget.Child()
 		eg.Go(func() error {
 			defer func() {
 				if r := recover(); r != nil {

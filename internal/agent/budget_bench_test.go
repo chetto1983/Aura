@@ -29,7 +29,6 @@ func benchBudget(maxSteps int32, window int) *Budget {
 		dedupWindow:       window,
 		dedupRing:         newDedupRing(window),
 		resultCap:         defaultDedupResultCap,
-		softFrac:          defaultBranchSoftFrac,
 		now:               benchFarFuture,
 	}
 }
@@ -47,7 +46,7 @@ func BenchmarkConsumeStep(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		if ok, _ := bud.ConsumeStep(); !ok {
-			bud.SetMaxSteps(1 << 30)
+			bud.steps.Store(1 << 30)
 		}
 	}
 }
@@ -62,7 +61,7 @@ func BenchmarkConsumeStepParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if ok, _ := bud.ConsumeStep(); !ok {
-				refill.Do(func() { bud.SetMaxSteps(1 << 30) })
+				refill.Do(func() { bud.steps.Store(1 << 30) })
 			}
 		}
 	})

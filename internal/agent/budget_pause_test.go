@@ -60,7 +60,7 @@ func TestBudgetWallclockSkipsHeldTime(t *testing.T) {
 
 func TestChildBudgetSeesTheParentsHeldTime(t *testing.T) {
 	b, clock := pausableBudget(t, 60)
-	child := b.Child(2)
+	child := b.Child()
 	ctx, cancel := b.WithDeadline(context.Background())
 	defer cancel()
 

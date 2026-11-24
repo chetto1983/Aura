@@ -50,7 +50,7 @@ func TestSwarmWorkerInheritsParentSnapshot(t *testing.T) {
 		Client: runtimeClient,
 		Config: llm.Config{Model: "m", Provider: "openrouter", TotalTimeoutSec: 30},
 	}}
-	budget := rc.ParentBudget.Child(1)
+	budget := rc.ParentBudget.Child()
 
 	report, _ := runChild(context.Background(), rc, budget, 0, "goal")
 	if report.Status != StatusOK {
@@ -77,7 +77,7 @@ func TestSwarmWorkerResolvesFromResolverOverRuntime(t *testing.T) {
 		Client: runtimeClient,
 		Config: llm.Config{Model: "m", Provider: "openrouter", TotalTimeoutSec: 30},
 	}}
-	budget := rc.ParentBudget.Child(1)
+	budget := rc.ParentBudget.Child()
 
 	report, _ := runChild(context.Background(), rc, budget, 0, "goal")
 	if report.Status != StatusOK {
@@ -97,7 +97,7 @@ func TestNilRuntimePortFailsClosed(t *testing.T) {
 	rc.Client = nil
 	rc.Runtime = nil
 	rc.Resolver = nil
-	budget := rc.ParentBudget.Child(1)
+	budget := rc.ParentBudget.Child()
 
 	report, _ := runChild(context.Background(), rc, budget, 0, "goal")
 	if report.Status != StatusFailed {
