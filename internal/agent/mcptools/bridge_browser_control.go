@@ -44,7 +44,7 @@ func browserGuard(ctrl BrowserControl, identityID, tool string, args map[string]
 		return nil
 	}
 	session, _ := args["session"].(string)
-	if ctrl.Held(identityID, session) && browserRecipeActions[tool] != MCPActionRead {
+	if ctrl.Held(identityID, session) && browserRecipeActions[tool] != mcpActionRead {
 		return fmt.Errorf("browser session %q is held by the operator in the live view: "+
 			"wait for them to let go and tell you, then take a snapshot", session)
 	}

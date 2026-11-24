@@ -14,19 +14,19 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// MCPActionClass is the risk tier a trusted-recipe MCP source's table assigns to
+// mcpActionClass is the risk tier a trusted-recipe MCP source's table assigns to
 // one of its tools.
-type MCPActionClass uint8
+type mcpActionClass uint8
 
-// The four MCPActionClass values, in ascending risk order: MCPActionUnknown is
-// the zero value a tool absent from the table reads as, MCPActionRead never
-// gates, MCPActionMutate gates as an ordinary reversible write, and
-// MCPActionDestructive gates as an externally irreversible action.
+// The four mcpActionClass values, in ascending risk order: mcpActionUnknown is
+// the zero value a tool absent from the table reads as, mcpActionRead never
+// gates, mcpActionMutate gates as an ordinary reversible write, and
+// mcpActionDestructive gates as an externally irreversible action.
 const (
-	MCPActionUnknown MCPActionClass = iota
-	MCPActionRead
-	MCPActionMutate
-	MCPActionDestructive
+	mcpActionUnknown mcpActionClass = iota
+	mcpActionRead
+	mcpActionMutate
+	mcpActionDestructive
 )
 
 const (
@@ -38,69 +38,69 @@ const (
 // name, the one lookup classifyToolRisk does. The calendar keys are the PIM
 // fork's 29 tool names, which equal upstream's (2026-11-23 split: the fork no
 // longer multiplexes them behind one tool with an action argument).
-var trustedRecipeActions = map[string]map[string]MCPActionClass{
+var trustedRecipeActions = map[string]map[string]mcpActionClass{
 	mcpmanager.BrowserRecipeSource: browserRecipeActions,
 	calendarRecipeSource: {
-		"list_accounts":              MCPActionRead,
-		"get_emails":                 MCPActionRead,
-		"get_email_details":          MCPActionRead,
-		"search_emails":              MCPActionRead,
-		"list_calendars":             MCPActionRead,
-		"get_calendar_events":        MCPActionRead,
-		"get_calendar_event_details": MCPActionRead,
-		"get_contacts":               MCPActionRead,
-		"search_contacts":            MCPActionRead,
-		"get_contact_details":        MCPActionRead,
-		"create_event":               MCPActionMutate,
-		"update_event":               MCPActionMutate,
-		"mark_email_read":            MCPActionMutate,
-		"respond_to_event":           MCPActionDestructive,
-		"send_email":                 MCPActionDestructive,
-		"delete_email":               MCPActionDestructive,
+		"list_accounts":              mcpActionRead,
+		"get_emails":                 mcpActionRead,
+		"get_email_details":          mcpActionRead,
+		"search_emails":              mcpActionRead,
+		"list_calendars":             mcpActionRead,
+		"get_calendar_events":        mcpActionRead,
+		"get_calendar_event_details": mcpActionRead,
+		"get_contacts":               mcpActionRead,
+		"search_contacts":            mcpActionRead,
+		"get_contact_details":        mcpActionRead,
+		"create_event":               mcpActionMutate,
+		"update_event":               mcpActionMutate,
+		"mark_email_read":            mcpActionMutate,
+		"respond_to_event":           mcpActionDestructive,
+		"send_email":                 mcpActionDestructive,
+		"delete_email":               mcpActionDestructive,
 		// move_email is Destructive even though a move is nominally reversible,
 		// because 'trash' is one of its accepted destinations: tiering it Mutate
 		// would let move_email(destination:"trash") reach the same outcome as
 		// delete_email while bypassing delete_email's approval gate, making that
 		// gate decorative. Same reasoning as escalate-only — the tier follows the
 		// worst reachable outcome, not the usual one.
-		"move_email": MCPActionDestructive,
+		"move_email": mcpActionDestructive,
 
 		// The twelve the fork's first curation round left unreachable. Upstream
 		// serves 29 tools; the curated enum published 17, and the difference was
 		// not cosmetic -- delete_event was missing while create_event and
 		// update_event were present, so an agent could create an event and never
 		// remove it. Tiered here on the same escalate-only rule as their siblings.
-		"get_guide":                    MCPActionRead,
-		"get_unsubscribe_info":         MCPActionRead,
-		"get_email_attachment":         MCPActionRead,
-		"get_contextual_email_summary": MCPActionRead,
-		"create_contact":               MCPActionMutate,
-		"update_contact":               MCPActionMutate,
+		"get_guide":                    mcpActionRead,
+		"get_unsubscribe_info":         mcpActionRead,
+		"get_email_attachment":         mcpActionRead,
+		"get_contextual_email_summary": mcpActionRead,
+		"create_contact":               mcpActionMutate,
+		"update_contact":               mcpActionMutate,
 		// bulk_mark_emails_read hides every unread mail at once, from the operator and from the
 		// next briefing; which mails were unread does not come back (2026-10-31 audit, A3). The
 		// single mark_email_read stays an ordinary write.
-		"bulk_mark_emails_read": MCPActionDestructive,
-		"delete_event":          MCPActionDestructive,
-		"delete_contact":        MCPActionDestructive,
-		"bulk_delete_emails":    MCPActionDestructive,
+		"bulk_mark_emails_read": mcpActionDestructive,
+		"delete_event":          mcpActionDestructive,
+		"delete_contact":        mcpActionDestructive,
+		"bulk_delete_emails":    mcpActionDestructive,
 		// bulk_move_emails inherits move_email's reasoning exactly: 'trash' is an
 		// accepted destination, so tiering it Mutate would route around
 		// bulk_delete_emails' gate. unsubscribe_from_email is Destructive because it
 		// makes an outward request to a third party on the operator's behalf, and no
 		// second call takes it back.
-		"bulk_move_emails":       MCPActionDestructive,
-		"unsubscribe_from_email": MCPActionDestructive,
+		"bulk_move_emails":       mcpActionDestructive,
+		"unsubscribe_from_email": mcpActionDestructive,
 	},
 	whatsAppRecipeSource: {
-		"list_chats":                 MCPActionRead,
-		"list_messages":              MCPActionRead,
-		"search_contacts":            MCPActionRead,
-		"get_contact":                MCPActionRead,
-		"get_chat":                   MCPActionRead,
-		"get_contact_chats":          MCPActionRead,
-		"get_direct_chat_by_contact": MCPActionRead,
-		"get_last_interaction":       MCPActionRead,
-		"get_message_context":        MCPActionRead,
+		"list_chats":                 mcpActionRead,
+		"list_messages":              mcpActionRead,
+		"search_contacts":            mcpActionRead,
+		"get_contact":                mcpActionRead,
+		"get_chat":                   mcpActionRead,
+		"get_contact_chats":          mcpActionRead,
+		"get_direct_chat_by_contact": mcpActionRead,
+		"get_last_interaction":       mcpActionRead,
+		"get_message_context":        mcpActionRead,
 		// Read, and deliberately so, even though it warms the bridge's media cache on
 		// the way: it sends nothing, alters no remote state, and returns bytes the
 		// caller can already read the message for. That classification is what lets a
@@ -109,12 +109,12 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		// back a container path no browser can open, so a view could only ever show a
 		// placeholder where the picture belongs. The incidental write is a cache, not
 		// an effect the user would want approval over.
-		"get_media_data":     MCPActionRead,
-		"download_media":     MCPActionMutate,
-		"send_audio_message": MCPActionDestructive,
-		"send_file":          MCPActionDestructive,
-		"send_message":       MCPActionDestructive,
-		"send_reaction":      MCPActionDestructive,
+		"get_media_data":     mcpActionRead,
+		"download_media":     mcpActionMutate,
+		"send_audio_message": mcpActionDestructive,
+		"send_file":          mcpActionDestructive,
+		"send_message":       mcpActionDestructive,
+		"send_reaction":      mcpActionDestructive,
 	},
 	// The tools cmd/arcadedb-mcp actually serves. The names here were the
 	// PREVIOUS memory server's — memory_add_fact, memory_add_entity, memory_update,
@@ -131,19 +131,19 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	// asks once and a run with no operator is denied (2026-10-30, prd.md §5). Its dry run
 	// only counts and stays a read (MemoryForgetDryRun).
 	mcp.SourceRecipeMemory: {
-		"graph_schema":          MCPActionRead,
-		"graph_diagnostics":     MCPActionRead,
-		"graph_path":            MCPActionRead,
-		"memory_recall":         MCPActionRead,
-		"memory_search":         MCPActionRead,
-		"memory_entities":       MCPActionRead,
-		"memory_facts_about":    MCPActionRead,
-		"memory_digest":         MCPActionRead,
-		"memory_upsert_fact":    MCPActionMutate,
-		"memory_batch":          MCPActionMutate,
-		"memory_merge_entities": MCPActionMutate,
-		"memory_reembed":        MCPActionMutate,
-		"memory_forget":         MCPActionDestructive,
+		"graph_schema":          mcpActionRead,
+		"graph_diagnostics":     mcpActionRead,
+		"graph_path":            mcpActionRead,
+		"memory_recall":         mcpActionRead,
+		"memory_search":         mcpActionRead,
+		"memory_entities":       mcpActionRead,
+		"memory_facts_about":    mcpActionRead,
+		"memory_digest":         mcpActionRead,
+		"memory_upsert_fact":    mcpActionMutate,
+		"memory_batch":          mcpActionMutate,
+		"memory_merge_entities": mcpActionMutate,
+		"memory_reembed":        mcpActionMutate,
+		"memory_forget":         mcpActionDestructive,
 	},
 }
 
@@ -241,11 +241,11 @@ func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructiv
 				return true, true
 			}
 			switch action {
-			case MCPActionRead:
+			case mcpActionRead:
 				return false, false
-			case MCPActionMutate:
+			case mcpActionMutate:
 				return true, false
-			case MCPActionDestructive:
+			case mcpActionDestructive:
 				return true, true
 			}
 		}

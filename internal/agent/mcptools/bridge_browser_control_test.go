@@ -33,7 +33,7 @@ func TestBrowserRefusalTable(t *testing.T) {
 						args["selector"] = selector
 					}
 					err := browserGuard(&r, browserTestIdentity, tool, args)
-					wantHeld := held && class != MCPActionRead
+					wantHeld := held && class != mcpActionRead
 					wantStale := !wantHeld && stale && selector == "@e3"
 					switch {
 					case wantHeld:

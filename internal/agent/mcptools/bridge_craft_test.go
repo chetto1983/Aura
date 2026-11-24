@@ -126,7 +126,7 @@ func TestCraftWritesAreReversibleWhateverTheServerDeclares(t *testing.T) {
 			if destructive {
 				t.Errorf("%s: %s is destructive", server, tool.Name)
 			}
-			if read := craftRecipeActions[policy.recipeSource][tool.Name] == MCPActionRead; mutating == read {
+			if read := craftRecipeActions[policy.recipeSource][tool.Name] == mcpActionRead; mutating == read {
 				t.Errorf("%s: %s mutating=%v, its action is %v", server, tool.Name, mutating, craftRecipeActions[policy.recipeSource][tool.Name])
 			}
 		}

@@ -5,7 +5,7 @@ package mcptools
 // arguments and server output cannot supply this marker.
 func displaySource(source, tool string) (map[string]any, bool) {
 	actions := trustedRecipeActions[source]
-	if actions == nil || actions[tool] == MCPActionUnknown {
+	if actions == nil || actions[tool] == mcpActionUnknown {
 		return nil, false
 	}
 	return map[string]any{"recipe": source, "tool": tool}, true

@@ -238,7 +238,7 @@ func mountLiveMemoryUpsert(t *testing.T, registry *tools.Registry, client *arcad
 	})
 	// A bare URL carries no recipe:memory source, so the gateway sees this tool
 	// classified from its annotations (mutating, destructive), not as the
-	// non-destructive MCPActionMutate the production memory server gets.
+	// non-destructive mutate tier the production memory server gets.
 	managed := mcp.ManagedServer{
 		URL: httpServer.URL, Type: mcp.ServerTypeStreamableHTTP, Env: []string{"MCP_OAUTH_DISABLED=true"},
 	}

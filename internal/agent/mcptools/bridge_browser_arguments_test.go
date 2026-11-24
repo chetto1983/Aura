@@ -40,7 +40,7 @@ func TestBrowserArgumentsAreAnAllowlist(t *testing.T) {
 }
 
 func TestBrowserEvalRequiresDestructiveApproval(t *testing.T) {
-	if browserRecipeActions["agent_browser_eval"] != MCPActionDestructive {
+	if browserRecipeActions["agent_browser_eval"] != mcpActionDestructive {
 		t.Fatal("eval must require destructive approval")
 	}
 }

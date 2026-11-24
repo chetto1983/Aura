@@ -8,7 +8,7 @@ import "github.com/chetto1983/aura/internal/mcp"
 // whole policy: a server's destructiveHint does not raise it (FilmCraft, PdfCraft and PhotoCraft declare
 // doc_save, command_run and even jobs_list destructive: spikes/craft-mcp/FINDINGS.md, verdict 9), and a tool
 // the table does not name fails closed instead of trusting its annotations.
-var craftRecipeActions = map[string]map[string]MCPActionClass{
+var craftRecipeActions = map[string]map[string]mcpActionClass{
 	mcp.CraftRecipeSource("gridcraft"): craftActions(
 		[]string{"list_commands", "inspect_workbook", "read_range", "get_cell", "evaluate_formula", "list_functions",
 			"list_windows"},
@@ -38,23 +38,23 @@ var craftRecipeActions = map[string]map[string]MCPActionClass{
 			"doc_select", "jobs_cancel"}),
 }
 
-func craftActions(reads, writes []string) map[string]MCPActionClass {
-	out := make(map[string]MCPActionClass, len(reads)+len(writes))
+func craftActions(reads, writes []string) map[string]mcpActionClass {
+	out := make(map[string]mcpActionClass, len(reads)+len(writes))
 	for _, name := range reads {
-		out[name] = MCPActionRead
+		out[name] = mcpActionRead
 	}
 	for _, name := range writes {
-		out[name] = MCPActionMutate
+		out[name] = mcpActionMutate
 	}
 	return out
 }
 
 // craftToolRisk is classifyToolRisk's answer for a Craft source: the table, or fail closed.
-func craftToolRisk(actions map[string]MCPActionClass, tool string) (mutating, destructive bool) {
+func craftToolRisk(actions map[string]mcpActionClass, tool string) (mutating, destructive bool) {
 	switch actions[tool] {
-	case MCPActionRead:
+	case mcpActionRead:
 		return false, false
-	case MCPActionMutate:
+	case mcpActionMutate:
 		return true, false
 	default:
 		return true, true

@@ -19,9 +19,10 @@ func calendarPolicy() bridgePolicy {
 	})
 }
 
-// TestUnknownCalendarToolIsDestructiveDespiteReadOnlyHint keeps the floor an unknown
-// action had before the split: a PIM tool the risk table does not name is a tool nobody
-// tiered, so the fork's own readOnlyHint must not lower it.
+// TestUnknownCalendarToolIsDestructiveDespiteReadOnlyHint: a PIM tool the risk table does
+// not name is one nobody tiered. Before the split an unknown action saturated to Risky in
+// the gateway; the floor is now raised to Destructive, and the fork's own readOnlyHint
+// must not lower it.
 func TestUnknownCalendarToolIsDestructiveDespiteReadOnlyHint(t *testing.T) {
 	t.Parallel()
 	tool := mustTool("brand_new", "A tool the fork added.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true})
@@ -120,5 +121,21 @@ func TestCalendarToolNamesAreTheForksTools(t *testing.T) {
 	want := slices.Sorted(slices.Values(calendarForkTools))
 	if got := CalendarToolNames(); !slices.Equal(got, want) {
 		t.Fatalf("CalendarToolNames() = %v, want %v", got, want)
+	}
+}
+
+// TestActionShapedStrangerSchemaIsNeverMultiplexed pins D-34: the bridge never marks an MCP
+// tool Multiplexed, so a stranger's server whose schema happens to carry an `action`
+// argument cannot trip gateway.ValidateClassifiable's boot panic.
+func TestActionShapedStrangerSchemaIsNeverMultiplexed(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"action": map[string]any{"type": "string", "enum": []any{"a", "b"}}},
+		"required":   []any{"action"},
+	}
+	spec := specFromToolDefWithPolicy("stranger", mustTool("do_thing", "A stranger's tool.", schema, nil), bridgePolicy{})
+	if spec.Multiplexed {
+		t.Fatal("a stranger's action-shaped tool was bridged as Multiplexed")
 	}
 }

@@ -61,11 +61,17 @@ func answerFor(args json.RawMessage, scope ApprovalScope) string {
 	return scopeOptionValue(scope, subjectFor(gatedSpec(), args))
 }
 
-// withhold drives the first Decide and returns the operator-visible question, failing the
-// test unless the call was actually withheld.
+// withhold drives the first Decide on gatedSpec and returns the operator-visible question.
 func withhold(t *testing.T, g *Gateway, ctx context.Context, args json.RawMessage) string {
 	t.Helper()
-	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
+	return withholdFor(t, g, ctx, gatedSpec(), args)
+}
+
+// withholdFor drives the first Decide on spec and returns the operator-visible question,
+// failing the test unless the call was actually withheld.
+func withholdFor(t *testing.T, g *Gateway, ctx context.Context, spec tools.Spec, args json.RawMessage) string {
+	t.Helper()
+	v, err := g.Decide(ctx, spec, args, testKey())
 	if err != nil || v.Decision != Approve || v.ApprovalRequest == nil {
 		t.Fatalf("first Decide = %+v, err %v — want a withheld approve", v, err)
 	}
@@ -195,9 +201,9 @@ func TestGrantOnSendEmailDoesNotCoverDeleteEmail(t *testing.T) {
 	grants := newFakeGrants()
 	g, _, ctx := approvedGateway()
 	g.SetGrantStore(grants)
-	send := calendarSpec("send_email")
+	send := destructiveMCPSpec("calendar__send_email")
 
-	question := calendarWithhold(t, g, ctx, send, mail)
+	question := withholdFor(t, g, ctx, send, mail)
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID:  testKey().ConversationID,
 		Tool:            send.Name,
@@ -218,34 +224,13 @@ func TestGrantOnSendEmailDoesNotCoverDeleteEmail(t *testing.T) {
 	if granted.Decision != Allow {
 		t.Fatalf("a second send_email = %q, want allow under the grant", granted.Decision)
 	}
-	sibling, err := g.Decide(ctx, calendarSpec("delete_email"), json.RawMessage(`{"emailId":"m-1"}`), testKey())
+	sibling, err := g.Decide(ctx, destructiveMCPSpec("calendar__delete_email"), json.RawMessage(`{"emailId":"m-1"}`), testKey())
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
 	if sibling.Decision != Approve {
 		t.Fatalf("delete_email = %q, want approve — a mail grant must not authorize deletions", sibling.Decision)
 	}
-}
-
-// calendarSpec is one destructive PIM tool as the bridge names it. Its tier comes from its
-// spec bits, as every MCP tool's does.
-func calendarSpec(tool string) tools.Spec {
-	return tools.Spec{Name: "calendar__" + tool, Mutating: true, Destructive: true}
-}
-
-func calendarWithhold(t *testing.T, g *Gateway, ctx context.Context, spec tools.Spec, args json.RawMessage) string {
-	t.Helper()
-	v, err := g.Decide(ctx, spec, args, testKey())
-	if err != nil || v.Decision != Approve || v.ApprovalRequest == nil {
-		t.Fatalf("first Decide = %+v, err %v — want a withheld approve", v, err)
-	}
-	var payload struct {
-		Question string `json:"question"`
-	}
-	if err := json.Unmarshal([]byte(v.ApprovalRequest.Preview), &payload); err != nil {
-		t.Fatalf("approval payload: %v", err)
-	}
-	return payload.Question
 }
 
 // TestAlwaysDegradesRatherThanLying is the honesty property: when the widest scope cannot be
