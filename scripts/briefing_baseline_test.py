@@ -96,8 +96,8 @@ class KeptResultsTests(unittest.TestCase):
 
     def lines(self, *extra):
         return [kept("board", "list", BOARD, ended="2026-11-02T06:30:30Z"),
-                kept("calendar__calendar", "get_calendar_events", json.dumps(EVENTS)),
-                kept("calendar__calendar", "get_emails", json.dumps(EMAILS)), *extra]
+                kept("calendar__get_calendar_events", None, json.dumps(EVENTS)),
+                kept("calendar__get_emails", None, json.dumps(EMAILS)), *extra]
 
     def test_the_three_reads_make_the_bundle(self) -> None:
         b = briefing_baseline.bundle_from_results(self.lines(), "Europe/Rome")
@@ -105,21 +105,36 @@ class KeptResultsTests(unittest.TestCase):
         self.assertEqual(b["board"], BOARD)
         self.assertEqual(briefing_baseline.render(b), briefing_baseline.render(bundle()))
 
+    def test_a_run_kept_before_the_split_still_replays(self) -> None:
+        lines = [kept("board", "list", BOARD, ended="2026-11-02T06:30:30Z"),
+                 kept("calendar__calendar", "get_calendar_events", json.dumps(EVENTS)),
+                 kept("calendar__calendar", "get_emails", json.dumps(EMAILS))]
+        b = briefing_baseline.bundle_from_results(lines, "Europe/Rome")
+        self.assertEqual(briefing_baseline.render(b), briefing_baseline.render(bundle()))
+
+    def test_other_pim_tools_are_not_the_briefings_reads(self) -> None:
+        lines = [kept("calendar__search_emails", None, json.dumps(EMAILS)),
+                 kept("calendar__calendar", "search_emails", json.dumps(EMAILS)),
+                 kept("calendar__get_calendar_event_details", None, json.dumps(EVENTS))]
+        b = briefing_baseline.bundle_from_results(lines, "UTC")
+        self.assertIsNone(b["events"])
+        self.assertIsNone(b["emails"])
+
     def test_now_is_the_earliest_instant_as_go_writes_it(self) -> None:
         lines = [kept("board", "list", BOARD, ended="2026-11-02T06:31:00.5Z"),
-                 kept("calendar__calendar", "get_emails", "{}", ended="2026-11-02T06:31:00Z"),
-                 kept("calendar__calendar", "get_calendar_events", "{}", ended="2026-11-02T06:31:00.123456789Z")]
+                 kept("calendar__get_emails", None, "{}", ended="2026-11-02T06:31:00Z"),
+                 kept("calendar__get_calendar_events", None, "{}", ended="2026-11-02T06:31:00.123456789Z")]
         self.assertEqual(briefing_baseline.bundle_from_results(lines, "UTC")["now"], "2026-11-02T06:31:00Z")
 
     def test_the_last_successful_read_wins(self) -> None:
-        later = kept("calendar__calendar", "get_emails", json.dumps({"emails": []}))
-        failed = kept("calendar__calendar", "get_calendar_events", "boom", status="error")
+        later = kept("calendar__get_emails", None, json.dumps({"emails": []}))
+        failed = kept("calendar__get_calendar_events", None, "boom", status="error")
         b = briefing_baseline.bundle_from_results(self.lines(later, failed), "Europe/Rome")
         self.assertEqual(json.loads(b["emails"]), {"emails": []})
         self.assertEqual(json.loads(b["events"]), EVENTS)
 
     def test_a_source_not_read_or_failed_is_null(self) -> None:
-        lines = [kept("board", "list", BOARD), kept("calendar__calendar", "get_emails", "x", status="error")]
+        lines = [kept("board", "list", BOARD), kept("calendar__get_emails", None, "x", status="error")]
         b = briefing_baseline.bundle_from_results(lines, "UTC")
         self.assertIsNone(b["events"])
         self.assertIsNone(b["emails"])

@@ -14,24 +14,11 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"testing"
 )
-
-type blindEvalSet struct {
-	Cases []struct {
-		Query string   `json:"query"`
-		Lang  string   `json:"lang"`
-		Gold  []string `json:"gold"`
-	} `json:"cases"`
-	OutOfScope []struct {
-		Query string `json:"query"`
-	} `json:"out_of_scope"`
-}
 
 var unservedRequests = []string{
 	"order a pizza for delivery", "book a flight to Rome", "transfer money to a bank account",
@@ -77,14 +64,7 @@ func scoreRetrieval(specs []Spec, cases []gateCase) (top1, recall5 int, misses [
 
 func TestMeasureRetrievalKeywords(t *testing.T) {
 	corpus := loadManifestFixture(t)
-	raw, err := os.ReadFile("testdata/blind_eval_2026-10-06.json")
-	if err != nil {
-		t.Fatalf("read blind eval: %v", err)
-	}
-	var blind blindEvalSet
-	if err := json.Unmarshal(raw, &blind); err != nil {
-		t.Fatalf("decode blind eval: %v", err)
-	}
+	blind := loadBlindEval(t)
 	byLang := map[string][]gateCase{}
 	for _, c := range blind.Cases {
 		byLang[c.Lang] = append(byLang[c.Lang], gateCase{c.Query, c.Gold})

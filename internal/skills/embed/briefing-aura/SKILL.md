@@ -18,16 +18,17 @@ dates are in UTC: convert each one to that zone before you compare it with today
 
 ## The three reads
 
-The tools are deferred: find them first with `tool_search` ("board", "calendar"). Then make the
-three reads in parallel, because none depends on another:
+The tools are deferred: load them first with `tool_search`
+(`select:board,calendar__get_calendar_events,calendar__get_emails`). Then make the three reads in
+parallel, because none depends on another:
 
 1. `board` with `{"action":"list"}`. Its first section lists what is due within 24 hours,
    overdue first; the columns follow.
-2. `calendar__calendar` with `{"action":"get_calendar_events","timeZone":"<your clock's zone>",
+2. `calendar__get_calendar_events` with `{"timeZone":"<your clock's zone>",
    "startDate":"<today>","endDate":"<today>"}`.
-3. `calendar__calendar` with `{"action":"get_emails","unreadOnly":true,"count":20}`.
+3. `calendar__get_emails` with `{"unreadOnly":true,"count":20}`.
 
-When `tool_search` finds no `calendar__calendar`, no mailbox is connected: skip reads 2 and 3
+When `tool_search` loads no `calendar__` tool, no mailbox is connected: skip reads 2 and 3
 and say so in one line. When a read fails, name it in one line ("calendar unavailable") and go
 on with the others. Never retry a failed read more than once.
 
@@ -51,10 +52,11 @@ scheduled you.
 
 ## Forbidden
 
-- Any write: `board` add, update, move or delete; `calendar__calendar` create_event,
-  update_event, respond_to_event, send_email, or anything that marks mail read.
-- Opening a message: no `get_email_details`, no `search_emails`. The briefing works from what
-  `get_emails` returns.
+- Any write: `board` add, update, move or delete; `calendar__create_event`,
+  `calendar__update_event`, `calendar__respond_to_event`, `calendar__send_email`, or anything
+  that marks mail read.
+- Opening a message: no `calendar__get_email_details`, no `calendar__search_emails`. The briefing
+  works from what `calendar__get_emails` returns.
 - Memory, the web, files: the briefing has three sources and no others.
 - Scheduling: you are the scheduled run. Do not create, change or cancel a task.
 - Inventing: an event, a card or a message you did not read in this run does not exist.

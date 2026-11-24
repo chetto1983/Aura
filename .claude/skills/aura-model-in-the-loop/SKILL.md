@@ -92,7 +92,7 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
   - **agent turn**: the real work.
 - **Answer** by writing `$HAND/llm/resp-$N.json`:
   ```json
-  {"content": "", "tool_calls": [{"id": "c1", "name": "tool_search", "arguments": {"query": "select:board,calendar__calendar"}}]}
+  {"content": "", "tool_calls": [{"id": "c1", "name": "tool_search", "arguments": {"query": "select:board,calendar__get_emails"}}]}
   ```
   Several `tool_calls` run in parallel. A final answer is `{"content": "the text"}` with no calls.
 - **Load deferred tools before calling them.** A deferred tool must be loaded with

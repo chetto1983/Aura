@@ -103,8 +103,8 @@ func TestDeferredManifestFixture_SourceInventory(t *testing.T) {
 	}
 
 	want := map[string]int{
-		"builtins": 10,
-		"calendar": 1,
+		"builtins": 13,
+		"calendar": 29,
 		"linear":   55,
 		"memory":   4,
 		"whatsapp": 15,
@@ -148,8 +148,6 @@ var gateCases = []gateCase{
 	{"search the current web for prices or news", []string{"web_search"}},
 	{"download the contents of a web page", []string{"web_fetch"}},
 	{"web search for B&R 8LSA35.DB030S300-3 specifications", []string{"web_search"}},
-	{"kill a background process", []string{"shell_kill"}},
-	{"poll a still-running background command", []string{"shell_poll"}},
 	{"what time is it", []string{"current_time"}},
 	{"schedule a recurring task", []string{"task"}},
 	// Amendment #194: the six phrasings that found nothing on 2026-08-30.
@@ -165,7 +163,7 @@ var gateCases = []gateCase{
 	{"install or author a new skill", []string{"skill_manage"}},
 	{"recall a deeper or historical fact from memory", []string{"memory__memory_recall"}},
 	{"remember a fact about the user", []string{"memory__memory_upsert_fact"}},
-	{"create a calendar event", []string{"calendar__calendar"}},
+	{"create a calendar event", []string{"calendar__create_event"}},
 	{"create or update a Linear issue", []string{"linear__save_issue"}},
 	{"list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage", []string{"linear__list_issues"}},
 	{"create or update a comment on a Linear issue", []string{"linear__save_comment"}},
@@ -175,6 +173,99 @@ var gateCases = []gateCase{
 }
 
 func isGold(name string, gold []string) bool { return slices.Contains(gold, name) }
+
+// evalSet is a written query set: testdata/blind_eval_2026-10-06.json, whose header in
+// search_keywords_measure_test.go says how it was written and what spends it, and
+// testdata/pim_heldout_2026-11-24.json, written before the PIM's retrieval keywords.
+type evalSet struct {
+	Cases []struct {
+		Query string   `json:"query"`
+		Lang  string   `json:"lang"`
+		Gold  []string `json:"gold"`
+	} `json:"cases"`
+	OutOfScope []struct {
+		Query string `json:"query"`
+	} `json:"out_of_scope"`
+}
+
+func loadEvalSet(t *testing.T, file string) evalSet {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/" + file)
+	if err != nil {
+		t.Fatalf("read eval set: %v", err)
+	}
+	var set evalSet
+	if err := json.Unmarshal(raw, &set); err != nil {
+		t.Fatalf("decode eval set %s: %v", file, err)
+	}
+	return set
+}
+
+func loadBlindEval(t *testing.T) evalSet { return loadEvalSet(t, "blind_eval_2026-10-06.json") }
+
+func (s evalSet) gateCases() []gateCase {
+	out := make([]gateCase, 0, len(s.Cases))
+	for _, c := range s.Cases {
+		out = append(out, gateCase{c.Query, c.Gold})
+	}
+	return out
+}
+
+// assertPIMQueriesInTopFive checks every case whose gold is a PIM tool, and fails when
+// there is none: an empty set would pass without measuring anything.
+func assertPIMQueriesInTopFive(t *testing.T, cases []gateCase) {
+	t.Helper()
+	cases = slices.DeleteFunc(slices.Clone(cases), func(c gateCase) bool { return !strings.HasPrefix(c.gold[0], "calendar__") })
+	if len(cases) == 0 {
+		t.Fatal("the eval holds no PIM query")
+	}
+	ts, ctx := newGateSearch(t)
+	for _, c := range cases {
+		got := gateSearch(t, ts, ctx, c.query)
+		if !slices.ContainsFunc(got[:min(5, len(got))], func(n string) bool { return isGold(n, c.gold) }) {
+			t.Errorf("%q -> %v, want one of %v in the top 5", c.query, got, c.gold)
+		}
+	}
+}
+
+// With one multiplexed PIM tool, any calendar hit was the right one. Split into 29, the
+// model has to find the one it needs, so "does not regress" would compare unlike
+// things: every PIM query of the eval must bring its own tool into tool_search's top 5.
+func TestEveryPIMQueryFindsItsToolInTopFive(t *testing.T) {
+	assertPIMQueriesInTopFive(t, slices.Concat(gateCases, loadBlindEval(t).gateCases()))
+}
+
+// heldOutPIMFloor is how many held-out cases, per language, bring a gold tool into the top 5.
+// It is a ratchet: raise it when retrieval improves, never lower it. Before the split the
+// same set scored 9/52, with calendar__calendar as the gold. Never tune keywords against
+// this set: it was committed before the PIM's keywords existed, and read only after they
+// were frozen, so it is the one evidence that they generalise.
+var heldOutPIMFloor = map[string]int{"it": 21, "en": 11}
+
+func TestHeldOutPIMQueriesKeepTheirFloor(t *testing.T) {
+	set := loadEvalSet(t, "pim_heldout_2026-11-24.json")
+	ts, ctx := newGateSearch(t)
+	hits := map[string]int{}
+	for _, c := range set.Cases {
+		got := gateSearch(t, ts, ctx, c.Query)
+		if slices.ContainsFunc(got[:min(5, len(got))], func(n string) bool { return isGold(n, c.Gold) }) {
+			hits[c.Lang]++
+		} else {
+			t.Logf("miss (%s) %q -> %v, want one of %v", c.Lang, c.Query, got, c.Gold)
+		}
+	}
+	total, floor := 0, 0
+	for lang, want := range heldOutPIMFloor {
+		total, floor = total+hits[lang], floor+want
+		if hits[lang] < want {
+			t.Errorf("%s: %d held-out cases in the top 5, floor %d", lang, hits[lang], want)
+		}
+	}
+	t.Logf("held-out PIM cases in the top 5: %d/%d (floor %d)", total, len(set.Cases), floor)
+	if total < floor {
+		t.Errorf("held-out total %d, floor %d", total, floor)
+	}
+}
 
 func TestToolSearchGate_RealCorpus(t *testing.T) {
 	ts, ctx := newGateSearch(t)

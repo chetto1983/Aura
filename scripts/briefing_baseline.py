@@ -9,8 +9,8 @@ Input, one JSON object:
   now     the instant the run read the clock, RFC 3339
   zone    the IANA zone of the run's clock hint
   board   the text `board list` returned
-  events  the JSON text `calendar__calendar` get_calendar_events returned, or null when it failed
-  emails  the JSON text `calendar__calendar` get_emails (unreadOnly) returned, or null
+  events  the JSON text `calendar__get_calendar_events` returned, or null when it failed
+  emails  the JSON text `calendar__get_emails` (unreadOnly) returned, or null
 
 or the run's own record: a job scheduled with "keep_results": true writes
 <AURA_RUN_DIR>/tmp/agent_job-<run id>/results.jsonl, one finished tool call per line, and
@@ -114,20 +114,24 @@ def render(bundle: dict) -> str:
     return "\n\n".join(sections) + "\n" if sections else QUIET + "\n"
 
 
+# The bundle field each read feeds, keyed by (tool, action). Until the 2026-11-24 split the PIM
+# was one `calendar__calendar` tool taking an `action`; runs kept before it replay too.
+KEPT_READS = {
+    ("board", "list"): "board",
+    ("calendar__get_calendar_events", None): "events",
+    ("calendar__get_emails", None): "emails",
+    ("calendar__calendar", "get_calendar_events"): "events",
+    ("calendar__calendar", "get_emails"): "emails",
+}
+
+
 def kept_source(row: dict) -> str | None:
     """Which bundle field a kept call feeds, or None for a call the baseline does not read."""
     try:
         action = json.loads(row.get("arguments") or "{}").get("action")
     except json.JSONDecodeError:
         return None
-    tool = row.get("tool")
-    if tool == "board" and action == "list":
-        return "board"
-    if tool == "calendar__calendar" and action == "get_calendar_events":
-        return "events"
-    if tool == "calendar__calendar" and action == "get_emails":
-        return "emails"
-    return None
+    return KEPT_READS.get((row.get("tool"), action))
 
 
 def kept_text(row: dict) -> str:

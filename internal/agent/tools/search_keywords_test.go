@@ -17,7 +17,7 @@ func TestRetrievalKeywordsNameRealTools(t *testing.T) {
 		(&ShellKill{}).Spec().Name, (&MailWatchTool{}).Spec().Name,
 	}
 	for name := range retrievalKeywords {
-		if strings.HasPrefix(name, "memory"+nsDelimiterStr) {
+		if strings.HasPrefix(name, "memory"+nsDelimiterStr) || strings.HasPrefix(name, pimNamespace) {
 			continue
 		}
 		if !slices.Contains(builtins, name) {
@@ -27,6 +27,30 @@ func TestRetrievalKeywordsNameRealTools(t *testing.T) {
 	for _, name := range builtins {
 		if _, ok := retrievalKeywords[name]; !ok {
 			t.Errorf("built-in %q has no retrieval keywords", name)
+		}
+	}
+}
+
+const pimNamespace = "calendar" + nsDelimiterStr
+
+// The PIM's names live in another repository, so the dumped corpus is the list they are
+// checked against: a key the PIM does not advertise indexes nothing, and a PIM tool with
+// no key is found by its own words only.
+func TestRetrievalKeywordsCoverEveryPIMTool(t *testing.T) {
+	var served []string
+	for _, s := range loadManifestFixture(t) {
+		if strings.HasPrefix(s.Name, pimNamespace) {
+			served = append(served, s.Name)
+		}
+	}
+	for name := range retrievalKeywords {
+		if strings.HasPrefix(name, pimNamespace) && !slices.Contains(served, name) {
+			t.Errorf("retrievalKeywords key %q is not a tool the PIM advertises", name)
+		}
+	}
+	for _, name := range served {
+		if _, ok := retrievalKeywords[name]; !ok {
+			t.Errorf("PIM tool %q has no retrieval keywords", name)
 		}
 	}
 }

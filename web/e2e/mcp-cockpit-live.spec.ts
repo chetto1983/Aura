@@ -235,7 +235,7 @@ test('sends through the real agent from a mailbox connected in Settings', async 
     const composer = page.getByRole('textbox', { name: 'Ask Aura' });
     await expect(composer).toBeVisible({ timeout: 30_000 });
     await composer.fill(
-      `Usa calendar__calendar con action send_email e accountId ${accountId}. ` +
+      `Usa calendar__send_email con accountId ${accountId}. ` +
         `Invia a ${recipient}, oggetto esatto "${subject}", corpo testo "PIM cockpit live E2E green".`,
     );
     await composer.press('Enter');

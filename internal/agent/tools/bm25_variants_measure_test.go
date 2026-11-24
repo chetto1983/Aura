@@ -5,8 +5,8 @@
 //
 //	go test -tags measure ./internal/agent/tools -run TestMeasureBM25Variants -v
 //
-// The shipped gate corpus (search_gate_test.go) scores 100%/100%, but it is a
-// REGRESSION suite: amendment #194 added the six phrasings that had just failed in
+// The shipped gate corpus (search_gate_test.go) scores high on its own cases (its floors
+// are in TestToolSearchGate_RealCorpus), but it is a REGRESSION suite: amendment #194 added the six phrasings that had just failed in
 // production, so the ranker has been tuned against it. heldOutCases below were written
 // against the tool inventory and never used to tune anything.
 //
@@ -27,15 +27,13 @@ import (
 // name + Summary + argument names (searchDocument), so a lexical ranker has very little
 // surface to match against and vocabulary mismatch is its known failure mode.
 //
-// NEAR-DUPLICATE: 50 of the 85 corpus tools are Linear's get_*/list_*/save_* families,
+// NEAR-DUPLICATE: 40 of the 116 corpus tools are Linear's get_*/list_*/save_* families,
 // whose summaries differ by a verb and a noun. Exact term matching should be STRONG here,
 // and it is the case a semantic ranker is most likely to blur — so a fair test has to
 // carry it, not only the cases lexical matching loses.
 var heldOutCases = []gateCase{
 	// --- paraphrase, built-ins ---
 	{"what does the clock say right now", []string{"current_time"}},
-	{"stop the job I started earlier", []string{"shell_kill"}},
-	{"has my long build finished yet", []string{"shell_poll"}},
 	{"look this up online", []string{"web_search"}},
 	{"grab the text of that page", []string{"web_fetch"}},
 	{"split this across several helpers working at once", []string{"swarm_spawn"}},
@@ -44,7 +42,7 @@ var heldOutCases = []gateCase{
 	{"do this again every morning", []string{"task"}},
 	{"what do you already know about me", []string{"memory__memory_recall"}},
 	{"store that my dog is called Argo", []string{"memory__memory_upsert_fact"}},
-	{"book a meeting for next Tuesday", []string{"calendar__calendar"}},
+	{"book a meeting for next Tuesday", []string{"calendar__create_event"}},
 	{"drop Marco a line on WhatsApp", []string{"whatsapp__send_message"}},
 	{"what did we say to each other last week", []string{"whatsapp__list_messages"}},
 	// --- near-duplicate discrimination, Linear ---

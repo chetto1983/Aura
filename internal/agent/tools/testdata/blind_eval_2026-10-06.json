@@ -340,28 +340,29 @@
    "query": "what meetings do I have tomorrow",
    "lang": "en",
    "gold": [
-    "calendar__calendar"
+    "calendar__get_calendar_events"
    ]
   },
   {
    "query": "send an email to my colleague",
    "lang": "en",
    "gold": [
-    "calendar__calendar"
+    "calendar__send_email"
    ]
   },
   {
    "query": "fissa un appuntamento giovedì pomeriggio in agenda",
    "lang": "it",
    "gold": [
-    "calendar__calendar"
+    "calendar__create_event"
    ]
   },
   {
    "query": "controlla la mia posta e dimmi se è arrivata la fattura",
    "lang": "it",
    "gold": [
-    "calendar__calendar"
+    "calendar__get_emails",
+    "calendar__search_emails"
    ]
   },
   {
