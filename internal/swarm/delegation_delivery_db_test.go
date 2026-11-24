@@ -95,18 +95,6 @@ func (a dbNudgeAdapter) ListUnnudgedDelegationResults(ctx context.Context, cutof
 	return out, nil
 }
 
-func (a dbNudgeAdapter) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UndrainedResult, error) {
-	rows, err := a.store.MarkFanoutNudged(ctx, identityID, fanoutKey)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]UndrainedResult, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, UndrainedResult{ID: r.ID, IdentityID: r.IdentityID, ConversationID: r.ConversationID, Body: r.Body, FanoutKey: r.FanoutKey})
-	}
-	return out, nil
-}
-
 // channelCounterFunc adapts a plain func() into ChannelDeliverer for the
 // concurrency test below -- fakeChannelDeliverer's un-mutexed slice append
 // (delegation_delivery_test.go) is not safe for concurrent callers.

@@ -26,9 +26,7 @@ func TestPendingDelegationResultsWaitForFanoutAndSurvivePhoneNotification(t *tes
 	if err := store.PushDelegationResult(conv, SourceWorker, "saved report", "pending-fanout"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.MarkFanoutNudged(t.Context(), owner, "pending-fanout"); err != nil {
-		t.Fatal(err)
-	}
+	markFanoutNudged(t, pool, owner, "pending-fanout")
 	if rows, err := store.ListPendingDelegationResults(ctx, 10); err != nil || len(rows) != 0 {
 		t.Fatalf("historical unregistered result woke: %v %v", rows, err)
 	}

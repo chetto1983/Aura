@@ -7,8 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/goleak"
+
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
 // TestPostgresSteerQueuePushDrainRoundTrip proves the shipped Push/Drain contract
@@ -344,8 +349,26 @@ func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce proves
-// MarkFanoutNudged's own contract against a REAL connection: it claims every
+// markFanoutNudged runs the MarkFanoutNudged claim the way the fan-out notifier does
+// (cmd/aura serve_delegation.go): one statement inside db.WithTx.
+func markFanoutNudged(t *testing.T, pool *pgxpool.Pool, identityID, fanoutKey string) []sqlc.MarkFanoutNudgedRow {
+	t.Helper()
+	var rows []sqlc.MarkFanoutNudgedRow
+	if err := db.WithTx(t.Context(), pool, func(q *sqlc.Queries) error {
+		var err error
+		rows, err = q.MarkFanoutNudged(t.Context(), sqlc.MarkFanoutNudgedParams{
+			IdentityID: pgtype.UUID{Bytes: uuid.MustParse(identityID), Valid: true},
+			FanoutKey:  pgtype.Text{String: fanoutKey, Valid: true},
+		})
+		return err
+	}); err != nil {
+		t.Fatalf("MarkFanoutNudged: %v", err)
+	}
+	return rows
+}
+
+// TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce proves the
+// MarkFanoutNudged query's contract against a REAL connection: it claims every
 // unclaimed row of one (identity, fanout_key) pair in ONE statement, and a
 // second call over the SAME group claims nothing (the loser of a race sees
 // an empty result, never a partial claim).
@@ -367,19 +390,10 @@ func TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce(t *testing.T) {
 		t.Fatalf("Push (unrelated): %v", err)
 	}
 
-	claimed, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
-	if err != nil {
-		t.Fatalf("MarkFanoutNudged: %v", err)
-	}
-	if len(claimed) != 2 {
+	if claimed := markFanoutNudged(t, pool, identityID, fanoutKey); len(claimed) != 2 {
 		t.Fatalf("claimed = %v, want 2 rows", claimed)
 	}
-
-	again, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
-	if err != nil {
-		t.Fatalf("MarkFanoutNudged (second pass): %v", err)
-	}
-	if len(again) != 0 {
+	if again := markFanoutNudged(t, pool, identityID, fanoutKey); len(again) != 0 {
 		t.Fatalf("second MarkFanoutNudged claimed = %v, want none -- both rows already nudged", again)
 	}
 }
