@@ -469,7 +469,7 @@ func TestConfigFileOverlayAllFields(t *testing.T) {
 	// "entry-by-entry, not wholesale replace" property is no longer observable here —
 	// with nothing to merge onto, a replace and a merge are the same result. The
 	// invariant moved to where a pre-existing entry now exists: see
-	// TestResolvePricingDoesNotClobberAnOperatorOverride in pricing_source_test.go.
+	// TestResolveModelProfileDoesNotClobberAnOperatorPrice in pricing_source_test.go.
 	if len(cfg.Prices) != 1 {
 		t.Errorf("Prices = %+v, want only the file-supplied entry (no hardcoded seed)", cfg.Prices)
 	}

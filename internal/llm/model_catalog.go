@@ -56,8 +56,9 @@ type ModelCatalogEntry struct {
 
 // FetchModelCatalog returns the provider's selectable models, sorted by id. Ollama's
 // list combines baseURL's available tags with the public cloud tags. The API key is sent
-// only for OpenRouter, and even there the route needs no credential (see
-// FetchModelPrice) — it is passed because the endpoint accepts it.
+// only for OpenRouter, and even there the route needs no credential (GET /models answered
+// HTTP 200 with no Authorization header and again with a garbage bearer) — it is passed
+// because the endpoint accepts it.
 func FetchModelCatalog(
 	ctx context.Context, client *http.Client, provider, baseURL, apiKey string,
 ) ([]ModelCatalogEntry, error) {

@@ -285,7 +285,7 @@ func load(allowEmptyKey bool) (*Config, error) {
 			"X-Title":      headerTitle,
 		},
 		// Empty by construction (amendment #93): rates are resolved at runtime by
-		// ResolvePricing, and ~/.aura/llm.json `prices` still overlays onto this map
+		// ResolveModelProfile, and ~/.aura/llm.json `prices` still overlays onto this map
 		// below. Load never touches the network, so an unresolved model renders "n/a".
 		Prices: map[string]Price{},
 	}
