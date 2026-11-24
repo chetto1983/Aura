@@ -24,3 +24,22 @@ What this does not show:
   first push.
 - A fresh install. `install_env.sh` no longer writes the key; that is unit-tested
   (`TestRetiredEnvKeysStayRetired`), not run on a clean host.
+
+## Part B: the split fork published, the VM unmoved (2026-11-24)
+
+Fork `main` pushed `43c49b3..8fbd799`, carrying the 29 per-operation tools.
+
+| Check | Result |
+|---|---|
+| Fork CI Build on `8fbd799` | green |
+| `aura-publish-image` on `8fbd799` | green, finished 10:40 UTC; `:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb` published |
+| `TestCalendarServerLive` against the published image | fails as expected: the sidecar advertises 29 tools and the test still wants the single `calendar` tool (Task C8 updates it) |
+| VM updater ticks after the publish | yes, 10:42 UTC |
+| VM PIM after that tick | still `ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a`, digest `sha256:4bc5…9054`, started 08:22 UTC |
+
+A push to the fork's `main` no longer reaches the VM: the pin from Part A holds it.
+
+What this does not show:
+- A `tools/call` on each of the 29 tools against the published image. Task C8 runs the live tier
+  against it.
+- That Aura reads the new schemas (nullable optional types, per-tool required lists). That is Part C.
