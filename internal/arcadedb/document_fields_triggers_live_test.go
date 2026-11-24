@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+// EnsureDocumentFieldsSchema runs the two passes docfields runs in production: the types and
+// indexes, then the triggers that keep their projection on the indexed rows. It reports whether
+// the triggers are in place: they need ingest's Passage and IndexedDocument types, and ArcadeDB
+// refuses a trigger on a type that does not exist (measured 2026-10-18 on 26.10.1).
+func (c *Client) EnsureDocumentFieldsSchema(ctx context.Context) (bool, error) {
+	if err := c.EnsureDocumentFieldsTypes(ctx); err != nil {
+		return false, err
+	}
+	return c.EnsureDocumentFieldsTriggers(ctx)
+}
+
 // The triggers against what CocoIndex actually writes: a MERGE on the key, then SET n += $props
 // (cocoindex 1.0.25 connectors/neo4j/_cypher.py:95-104), over openCypher.
 func TestDocumentFieldsTriggersStampCocoIndexWrites(t *testing.T) {

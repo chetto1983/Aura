@@ -167,13 +167,6 @@ func TestReasoningGraphLive_DeletionPrecedence(t *testing.T) {
 	}); err != nil || repeated != 0 {
 		t.Fatalf("repeated operator delete count=%d err=%v", repeated, err)
 	}
-
-	identity := storeLiveReasoningTrace(t, client, "identity-delete", "trace-identity", "conversation-identity",
-		ReasoningStatusSucceeded, now)
-	if deleted, err := client.DeleteIdentityReasoning(context.Background(), identity.IdentityID); err != nil || deleted != 1 {
-		t.Fatalf("identity delete count=%d err=%v", deleted, err)
-	}
-	assertLiveReasoningTraceAbsent(t, client, identity.IdentityID, identity.TraceID)
 }
 
 func TestReasoningGraphLive_ExpiryDeleteRace(t *testing.T) {

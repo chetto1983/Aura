@@ -35,16 +35,6 @@ func (c *Client) DeleteReasoningBySource(
 	return c.deleteReasoningBySource(ctx, selector)
 }
 
-// DeleteIdentityReasoning removes every reasoning trace for one identity.
-func (c *Client) DeleteIdentityReasoning(ctx context.Context, identityID string) (int, error) {
-	identityID = strings.TrimSpace(identityID)
-	if identityID == "" {
-		return 0, fmt.Errorf("arcadedb: reasoning identity deletion requires an identity")
-	}
-	return c.deleteReasoningSelected(ctx, identityID, selectIdentityReasoningStatement,
-		map[string]any{"identity_id": identityID})
-}
-
 const selectExpiredReasoningStatement = "SELECT trace_id FROM " + reasoningTraceType +
 	" WHERE identity_id = :identity_id AND expires_at IS NOT NULL AND expires_at <= :now" +
 	" ORDER BY expires_at, trace_id LIMIT :limit"
@@ -57,9 +47,6 @@ const selectReasoningBySourceStatement = "SELECT trace_id FROM " + reasoningTrac
 
 const selectReasoningByTraceStatement = "SELECT trace_id FROM " + reasoningTraceType +
 	" WHERE identity_id = :identity_id AND trace_id = :trace_id LIMIT 1"
-
-const selectIdentityReasoningStatement = "SELECT trace_id FROM " + reasoningTraceType +
-	" WHERE identity_id = :identity_id ORDER BY trace_id"
 
 var deleteReasoningGraphStatements = []string{
 	"DELETE FROM TOUCHED WHERE outV().identity_id = :identity_id AND outV().trace_id = :trace_id",

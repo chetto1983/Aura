@@ -540,7 +540,7 @@ func TestRetrievalReportsHowFarTheIngestHasGot(t *testing.T) {
 	if response.Indexing == nil {
 		t.Fatal("the answer does not say whether the ingest had caught up")
 	}
-	if response.Indexing.Ready() || response.Indexing.InProgress != 2 {
+	if response.Indexing.Status != arcadedb.IngestRunning || response.Indexing.InProgress != 2 {
 		t.Fatalf("ingest state is not the one the index reported: %+v", response.Indexing)
 	}
 }
