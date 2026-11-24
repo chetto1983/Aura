@@ -1851,8 +1851,9 @@ jobs:
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
     # A Go scope is re-measured only when its input closure changed (2026-09-28): the result
     # measured on a byte-identical closure (scripts/go_mutation_cache.py fingerprints the
-    # file, every main-module input of its package's test closure, go.mod/go.sum, the go env
-    # `go test` sees and the go-mutesting build) is reused, and the scope says so with
+    # file, every main-module input of its package's test closure, the modules that closure
+    # imports, go.mod's go/toolchain/godebug lines, the go env `go test` sees and the
+    # go-mutesting build) is reused, and the scope says so with
     # reused_from + fingerprint, which release readiness checks and names. A scope a group
     # job measured on this commit carries no reused_from and that job's duration.
     # This job runs no mutant (--require-measured): a scope whose entry is missing or does not
