@@ -21,11 +21,19 @@ TOOLCHAIN = {
     "GOARCH": "amd64",
     "runner": "mod\tgithub.com/avito-tech/go-mutesting\tv0.0.0-20251226130216-48d0401f00fb",
 }
+GO_MOD = (
+    "module example.com/m\n\ngo 1.27.4\n\n"
+    "require (\n\texample.org/dep v1.0.0\n\texample.org/unused v1.0.0\n)\n"
+)
 SUMMARY = (
     'PASS "/tmp/x.go.0" with checksum a\n'
     "The mutation score is {score:.6f} "
     "({killed} passed, {survived} failed, 0 duplicated, 0 skipped, total is {total})\n"
 )
+
+
+def dep_module(**changes: object) -> dict[str, object]:
+    return {"Path": "example.org/dep", "Version": "v1.0.0", "Sum": "h1:abc=", **changes}
 
 
 def mutesting_log(killed: int = 8, survived: int = 2) -> str:
@@ -83,8 +91,8 @@ class FakeModule:
     def __init__(self, root: pathlib.Path) -> None:
         self.root = root
         for relative, body in {
-            "go.mod": "module example.com/m\n",
-            "go.sum": "example.org/dep v1.0.0 h1:abc=\n",
+            "go.mod": GO_MOD,
+            "go.sum": "example.org/dep v1.0.0 h1:abc=\nexample.org/unused v1.0.0 h1:def=\n",
             "internal/a/a.go": "package a\n",
             "internal/a/a_test.go": "package a\n",
             "internal/a/testdata/case.json": "{}\n",
@@ -108,7 +116,7 @@ class FakeModule:
             {
                 "ImportPath": "example.org/dep",
                 "Dir": "/home/x/go/pkg/mod/example.org/dep@v1.0.0",
-                "Module": {"Path": "example.org/dep", "Main": False},
+                "Module": dep_module(),
                 "GoFiles": ["dep.go"],
             },
             {
@@ -169,8 +177,6 @@ class FingerprintTest(unittest.TestCase):
             "internal/a/testdata/case.json",
             "internal/b/b.go",
             "internal/b/embed/doc.md",
-            "go.mod",
-            "go.sum",
         ):
             with self.subTest(changed=relative):
                 original = (self.module.root / relative).read_text(encoding="utf-8")
@@ -215,7 +221,6 @@ class FingerprintTest(unittest.TestCase):
             relative,
             [
                 "go.mod",
-                "go.sum",
                 "internal/a/a.go",
                 "internal/a/a_test.go",
                 "internal/a/testdata/case.json",
@@ -223,6 +228,52 @@ class FingerprintTest(unittest.TestCase):
                 "internal/b/embed/doc.md",
             ],
         )
+
+    def with_dep(self, **changes: object) -> list[dict[str, object]]:
+        packages = self.module.packages()
+        packages[1] = {**packages[1], "Module": dep_module(**changes)}
+        return packages
+
+    def test_go_sum_and_an_unused_requirement_are_not_inputs(self) -> None:
+        self.module.write("go.sum", "example.org/dep v1.0.0 h1:abc=\nexample.org/unused v2.0.0 h1:zzz=\n")
+        self.module.write("go.mod", GO_MOD.replace("unused v1.0.0", "unused v2.0.0"))
+        self.assertEqual(self.module.fingerprint(), self.baseline)
+
+    def test_a_used_module_version_or_sum_changes_it(self) -> None:
+        for changes in ({"Version": "v1.1.0"}, {"Sum": "h1:xyz="}):
+            with self.subTest(changes=changes):
+                self.assertNotEqual(self.module.fingerprint(packages=self.with_dep(**changes)), self.baseline)
+
+    def test_a_replacement_of_a_used_module_changes_it(self) -> None:
+        fork = {"Path": "example.net/fork", "Version": "v1.0.0", "Sum": "h1:abc="}
+        replaced = self.module.fingerprint(packages=self.with_dep(Replace=fork))
+        self.assertNotEqual(replaced, self.baseline)
+        for changes in ({"Version": "v1.0.1"}, {"Sum": "h1:other="}, {"Path": "example.net/other"}):
+            with self.subTest(changes=changes):
+                changed = self.module.fingerprint(packages=self.with_dep(Replace={**fork, **changes}))
+                self.assertNotEqual(changed, replaced)
+
+    def test_a_directory_replacement_is_keyed_on_its_files(self) -> None:
+        with tempfile.TemporaryDirectory() as outside:
+            fork = pathlib.Path(outside).resolve()
+            (fork / "dep.go").write_text("package dep\n", encoding="utf-8")
+            packages = self.with_dep(Replace={"Path": "../fork", "Dir": str(fork)})
+            packages[1] = {**packages[1], "Dir": str(fork), "GoFiles": ["dep.go"]}
+            before = self.module.fingerprint(packages=packages)
+            self.assertNotEqual(before, self.baseline)
+            (fork / "dep.go").write_text("package dep\n// changed\n", encoding="utf-8")
+            self.assertNotEqual(self.module.fingerprint(packages=packages), before)
+
+    def test_build_directives_of_go_mod_change_it(self) -> None:
+        for body in (
+            GO_MOD.replace("go 1.27.4", "go 1.28.0"),
+            GO_MOD + "toolchain go1.28.1\n",
+            GO_MOD + "godebug default=go1.26\n",
+            GO_MOD + "godebug (\n\tx509sha1=1\n)\n",
+        ):
+            with self.subTest(body=body):
+                self.module.write("go.mod", body)
+                self.assertNotEqual(self.module.fingerprint(), self.baseline)
 
     def test_go_list_json_stream_is_decoded(self) -> None:
         stream = '{\n\t"ImportPath": "a"\n}\n{\n\t"ImportPath": "b"\n}\n'

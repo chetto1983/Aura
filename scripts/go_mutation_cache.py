@@ -4,6 +4,11 @@
 go-mutesting has no cache of its own. A scope's result is a function of the mutated file, the
 test binary of its package and the toolchain, so it is reused when the sha256 over those inputs
 matches an earlier measurement. Anything unreadable in the cache means "run", never an error.
+
+The test binary's inputs are the main-module files of the package's test closure, the
+(path, version, sum) of each non-main module that closure imports, the build-affecting
+directives of go.mod (go, toolchain, godebug) and the go env. go.mod and go.sum themselves are
+not inputs: bumping a module the closure does not import leaves the fingerprint unchanged.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from typing import Any
 
 from evidence_metadata import FULL_GIT_SHA, candidate_commit
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SUMMARY = re.compile(
     r"mutation score is ([0-9.]+) "
     r"\((\d+) passed, (\d+) failed, (\d+) duplicated, (\d+) skipped"
@@ -53,7 +58,9 @@ INPUT_FIELDS = (
 )
 # go-mutesting's built-in exec runs a bare `go test`, so GOFLAGS is how build tags reach it.
 TOOLCHAIN_ENV = ("GOFLAGS", "GOVERSION", "GOOS", "GOARCH", "GOEXPERIMENT", "CGO_ENABLED")
-MODULE_FILES = ("go.mod", "go.sum")
+# The go.mod directives that change how the same sources build; require/replace/exclude only
+# select module versions, which the closure's own modules already carry.
+BUILD_DIRECTIVES = ("go", "toolchain", "godebug")
 GO_MUTESTING_TIMEOUT_SECONDS = 1800
 # internal/agui's suite measures 27 s against go-mutesting's 10 s default, so every mutant there
 # would time out and count as killed: the package gets a longer exec timeout and its own budget.
@@ -104,10 +111,17 @@ def decode_packages(stream: str) -> list[dict[str, Any]]:
         packages.append(package)
 
 
-def closure_files(repo: pathlib.Path, packages: list[dict[str, Any]]) -> list[pathlib.Path]:
-    files = {repo / name for name in MODULE_FILES}
+def is_local(package: dict[str, Any]) -> bool:
+    """True for a package whose files live in the main module or in a directory-replaced module."""
+    module = package.get("Module") or {}
+    replace = module.get("Replace") or {}
+    return bool(module.get("Main") or (replace.get("Dir") and not replace.get("Version")))
+
+
+def closure_files(packages: list[dict[str, Any]]) -> list[pathlib.Path]:
+    files: set[pathlib.Path] = set()
     for package in packages:
-        if not (package.get("Module") or {}).get("Main"):
+        if not is_local(package):
             continue
         # The synthesized test main is generated into GOCACHE from test files hashed here.
         if package.get("ImportPath", "").endswith(".test"):
@@ -120,6 +134,54 @@ def closure_files(repo: pathlib.Path, packages: list[dict[str, Any]]) -> list[pa
     return sorted(files)
 
 
+def closure_modules(packages: list[dict[str, Any]]) -> list[list[str]]:
+    # A directory-replaced module has no version or sum: its files are hashed by closure_files.
+    modules: set[tuple[str, str, str, str]] = set()
+    for package in packages:
+        module = package.get("Module")
+        if not module or module.get("Main") or is_local(package):
+            continue
+        used = module.get("Replace") or module
+        modules.add((module["Path"], used["Path"], used.get("Version", ""), used.get("Sum", "")))
+    return [list(item) for item in sorted(modules)]
+
+
+def build_directives(go_mod: str) -> list[str]:
+    directives: list[str] = []
+    block = False
+    for raw in go_mod.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if block:
+            if line == ")":
+                block = False
+            elif line:
+                directives.append(f"godebug {line}")
+            continue
+        keyword, _, rest = line.partition(" ")
+        if keyword not in BUILD_DIRECTIVES:
+            continue
+        if rest.strip() == "(":
+            block = True
+        else:
+            directives.append(f"{keyword} {rest.strip()}")
+    return sorted(directives)
+
+
+def input_name(repo: pathlib.Path, path: pathlib.Path, packages: list[dict[str, Any]]) -> str:
+    try:
+        return path.relative_to(repo).as_posix()
+    except ValueError:
+        pass
+    for package in packages:
+        replace = (package.get("Module") or {}).get("Replace") or {}
+        if replace.get("Dir") and not replace.get("Version"):
+            try:
+                return f"{package['Module']['Path']}:" + path.relative_to(pathlib.Path(replace["Dir"]).resolve()).as_posix()
+            except ValueError:
+                continue
+    raise ValueError(f"{path} is an input outside the repository and every replaced module")
+
+
 def fingerprint(
     repo: pathlib.Path,
     relative_path: str,
@@ -128,13 +190,15 @@ def fingerprint(
     read: Callable[[pathlib.Path], bytes] = pathlib.Path.read_bytes,
 ) -> str:
     inputs = [
-        (path.relative_to(repo).as_posix(), hashlib.sha256(read(path)).hexdigest())
-        for path in closure_files(repo, packages)
+        (input_name(repo, path, packages), hashlib.sha256(read(path)).hexdigest())
+        for path in closure_files(packages)
     ]
     identity = {
         "schema_version": SCHEMA_VERSION,
         "file": relative_path,
         "toolchain": toolchain,
+        "go_mod": build_directives(read(repo / "go.mod").decode("utf-8")),
+        "modules": closure_modules(packages),
         "inputs": sorted(inputs),
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
