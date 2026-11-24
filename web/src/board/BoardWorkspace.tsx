@@ -26,7 +26,7 @@ import { BoardCardContent } from './BoardCardContent';
 import { BoardCardContext } from './boardCardContext';
 import { BoardColumnsDialog } from './BoardColumnsDialog';
 import { BoardViewsBar } from './BoardViewsBar';
-import { boardTags, filterPredicate } from './boardModel';
+import { boardTags, filterPredicate, overLimitCss, widgetColumn } from './boardModel';
 import { boardWords } from './boardLocale';
 import { TagsEditorItem } from './TagsEditorItem';
 import {
@@ -123,7 +123,7 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
   );
 
   const cards = useMemo(() => withDates(board.data?.cards ?? []), [board.data?.cards]);
-  const columns = useMemo(() => [...(board.data?.columns ?? [])], [board.data?.columns]);
+  const columns = useMemo(() => (board.data?.columns ?? []).map(widgetColumn), [board.data?.columns]);
   const tags = useMemo(() => boardTags(cards), [cards]);
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined).length;
   const linksTasks = cards.some((card) => card.task_id !== undefined);
@@ -345,6 +345,7 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
                   <Kanban
                     cards={cards}
                     columns={columns}
+                    columnCss={overLimitCss}
                     card={CARD_SHAPE}
                     cardContent={BoardCardContent}
                     render={{ fixedColumnWidth: false }}

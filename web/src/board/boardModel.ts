@@ -1,5 +1,5 @@
-import type { KanbanCard } from '@svar-ui/react-kanban';
-import type { BoardFilters, BoardView, WidgetCard } from './boardApi';
+import type { ColumnConfig, ColumnCssFn, KanbanCard } from '@svar-ui/react-kanban';
+import type { BoardColumn, BoardFilters, BoardView, WidgetCard } from './boardApi';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -50,3 +50,28 @@ export function orderViews(views: readonly BoardView[]): BoardView[] {
     (a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name),
   );
 }
+
+/** A column as the widget takes it. SVAR 2.7.0 dropped cardLimit: the count and its limit are
+ * a column summary, and the limit rides in metadata for overLimitCss. */
+export function widgetColumn(column: BoardColumn): ColumnConfig {
+  const { cardLimit, ...rest } = column;
+  if (cardLimit === undefined) return rest;
+  return {
+    ...rest,
+    metadata: { cardLimit },
+    summaries: [
+      {
+        id: 'count',
+        calculate: (cards) => cards.length,
+        format: (count: number) => `${String(count)}/${String(cardLimit)}`,
+        css: (count: number) => (count > cardLimit ? 'wx-over' : ''),
+      },
+    ],
+  };
+}
+
+/** The widget's column class hook: a column holding more cards than its limit is marked. */
+export const overLimitCss: ColumnCssFn = (cards, column) => {
+  const limit: unknown = column.metadata?.cardLimit;
+  return typeof limit === 'number' && cards.length > limit ? 'wx-over-limit' : '';
+};

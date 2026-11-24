@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardView, WidgetCard } from './boardApi';
-import { boardTags, filterPredicate, orderViews, parseTags } from './boardModel';
+import {
+  boardTags,
+  filterPredicate,
+  orderViews,
+  overLimitCss,
+  parseTags,
+  widgetColumn,
+} from './boardModel';
 
 const NOW = new Date('2026-10-09T12:00:00Z');
 
@@ -82,5 +89,32 @@ describe('board helpers', () => {
         view('omega', true),
       ]).map((v) => v.name),
     ).toEqual(['beta', 'omega', 'alpha', 'zeta']);
+  });
+});
+
+describe('column limit', () => {
+  const cards = (n: number) => Array.from({ length: n }, (_, i) => card({ id: String(i) }));
+  const limited = widgetColumn({ id: 'done', label: 'Done', cardLimit: 1 });
+  const view = { ...limited, cards: [], summaries: [], dataStatus: 'loaded', addCard: true, collapsed: false };
+
+  it('marks a column holding more cards than its limit', () => {
+    expect(overLimitCss(cards(2), view as never)).toBe('wx-over-limit');
+  });
+
+  it('leaves a column at its limit, or without one, unmarked', () => {
+    expect(overLimitCss(cards(1), view as never)).toBe('');
+    const free = widgetColumn({ id: 'todo', label: 'To do' });
+    expect(overLimitCss(cards(9), { ...free, cards: [] } as never)).toBe('');
+  });
+
+  it('shows the count against the limit and flags it over', () => {
+    const summary = limited.summaries?.[0];
+    expect(summary?.format?.(2, limited)).toBe('2/1');
+    expect(summary?.css?.(2, limited)).toBe('wx-over');
+    expect(summary?.css?.(1, limited)).toBe('');
+  });
+
+  it('gives a column without a limit no summary', () => {
+    expect(widgetColumn({ id: 'todo', label: 'To do' })).toEqual({ id: 'todo', label: 'To do' });
   });
 });

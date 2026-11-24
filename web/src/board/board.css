@@ -31,3 +31,13 @@
   border-radius: inherit;
   background: var(--color-info);
 }
+
+.wx-column.wx-over-limit {
+  background: color-mix(in srgb, var(--color-danger) 14%, var(--wx-kanban-column-bg));
+}
+
+.wx-column-summary.wx-over {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  font-weight: 600;
+}
