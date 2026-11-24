@@ -1,0 +1,19 @@
+# Production reachability allowlist (scripts/deadcode_production_gate.sh).
+#
+# Each entry is what no main package reaches, and why it stays. One entry per line: a
+# package path or a symbol (<package path>.<Func>, <package path>.<Type>.<Method>), then
+# the reason. The gate fails on a finding this file does not name AND on an entry that no
+# longer matches a finding, so an entry goes in the same commit as the code it excuses and
+# leaves with it.
+
+# Test-support packages: their whole surface exists for tests.
+github.com/chetto1983/aura/internal/agent/agenttest   fake LLM client, mocks and embedders for agent tests
+github.com/chetto1983/aura/internal/agenteval         the agent eval harness, driven by live tests and scripts/musr_live_run_assert.go
+github.com/chetto1983/aura/internal/dbtest            disposable-database guards for db_integration tests
+github.com/chetto1983/aura/internal/steer/steertest   in-memory steer fake for tests in other packages
+
+# Test seams in production packages, used by tests in another package.
+github.com/chetto1983/aura/internal/mcp.WaitForAbandonedCalls             drains abandoned MCP calls so goleak sees none (mcptools tests)
+github.com/chetto1983/aura/internal/obs.IsBoundedAttribute                the attribute-catalog contract the idempotency telemetry test asserts
+github.com/chetto1983/aura/internal/reasoningfifo.FIFO.Len                the CLI renderer tests assert the reasoning window stays bounded
+github.com/chetto1983/aura/internal/utf8cut.Ellipsize                     only internal/agenteval truncates with it

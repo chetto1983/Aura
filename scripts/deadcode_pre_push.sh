@@ -14,8 +14,8 @@
 # removes the hazard rather than re-balancing it — the same shape `web-deadcode` already
 # uses (scripts/check-deadcode-web.sh).
 #
-# CI (.github/workflows/ci.yml) and the Makefile keep calling deadcode_gate.sh directly with
-# an explicit binary; that contract is unchanged.
+# CI (.github/workflows/ci.yml) and the Makefile call deadcode_gate.sh and
+# deadcode_production_gate.sh directly with an explicit binary.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,4 +28,5 @@ if [ -z "$bin" ]; then
   bin="$(go env GOPATH)/bin/deadcode"
 fi
 
-exec bash scripts/deadcode_gate.sh "$bin" -test $(bash scripts/go_packages.sh)
+bash scripts/deadcode_gate.sh "$bin" -test $(bash scripts/go_packages.sh)
+exec bash scripts/deadcode_production_gate.sh "$bin"
