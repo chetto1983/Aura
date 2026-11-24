@@ -119,13 +119,6 @@ func (s *Snapshot) IsDraining() bool {
 	return s.draining
 }
 
-// MarkMigrationCompatible records whether the runtime schema is at head.
-func (s *Snapshot) MarkMigrationCompatible(compatible bool) {
-	s.mu.Lock()
-	s.migrationCompatible = compatible
-	s.mu.Unlock()
-}
-
 // SetSchedulerEnabled records whether scheduler progress is required.
 func (s *Snapshot) SetSchedulerEnabled(enabled bool) {
 	s.mu.Lock()

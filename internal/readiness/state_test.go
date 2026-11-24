@@ -26,7 +26,8 @@ func TestSnapshotDrainAndMigrationStates(t *testing.T) {
 	s.MarkListenerRunning()
 	assertReasons(t, s, CodeMigrationIncompatible)
 
-	s.MarkMigrationCompatible(true)
+	s = NewSnapshot(Config{MigrationCompatible: true})
+	s.MarkListenerRunning()
 	assertReasons(t, s)
 	s.MarkDraining()
 	assertReasons(t, s, CodeDraining)
@@ -69,7 +70,6 @@ func TestSnapshotReasonsAreSortedAndRaceSafe(t *testing.T) {
 	for range 20 {
 		wg.Go(func() {
 			s.MarkListenerBound()
-			s.MarkMigrationCompatible(false)
 			s.MarkSchedulerProgress()
 			_ = s.Reasons()
 		})
