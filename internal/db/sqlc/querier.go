@@ -463,10 +463,6 @@ type Querier interface {
 	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
 	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
 	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
-	// The always-on block is rendered at the top of every turn, so this must be an index lookup
-	// (skill_catalog_always_apply_idx, partial on always_apply) and never a scan -- acceptance
-	// criterion 7 of amendment #214 asserts the plan carries no Seq Scan on this table.
-	ListAlwaysApplySkills(ctx context.Context, ownerIdentityID pgtype.UUID) ([]AuraSkillCatalog, error)
 	// 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
 	// join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
 	// below via db.WithIdentityTx's app.current_identity carrier) rather than living in

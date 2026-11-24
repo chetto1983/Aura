@@ -57,13 +57,6 @@ func TestCatalogReadsSurfaceAnUnreachableDatabase(t *testing.T) {
 			}
 			return err
 		}},
-		{"always apply", "skill catalog always-apply", func() error {
-			rows, err := store.ListAlwaysApply(ctx, catalogTestOwner)
-			if len(rows) != 0 {
-				t.Errorf("rows = %+v, want none when the read failed", rows)
-			}
-			return err
-		}},
 		{"by ids", "skill catalog by ids", func() error {
 			rows, err := store.ListByIDs(ctx, catalogTestOwner, []string{catalogTestOwner})
 			if len(rows) != 0 {

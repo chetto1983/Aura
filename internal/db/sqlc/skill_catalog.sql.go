@@ -31,45 +31,6 @@ func (q *Queries) DeleteSkillCatalog(ctx context.Context, arg DeleteSkillCatalog
 	return result.RowsAffected(), nil
 }
 
-const listAlwaysApplySkills = `-- name: ListAlwaysApplySkills :many
-SELECT id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
-FROM aura.skill_catalog
-WHERE owner_identity_id = $1 AND always_apply
-ORDER BY name
-`
-
-// The always-on block is rendered at the top of every turn, so this must be an index lookup
-// (skill_catalog_always_apply_idx, partial on always_apply) and never a scan -- acceptance
-// criterion 7 of amendment #214 asserts the plan carries no Seq Scan on this table.
-func (q *Queries) ListAlwaysApplySkills(ctx context.Context, ownerIdentityID pgtype.UUID) ([]AuraSkillCatalog, error) {
-	rows, err := q.db.Query(ctx, listAlwaysApplySkills, ownerIdentityID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuraSkillCatalog{}
-	for rows.Next() {
-		var i AuraSkillCatalog
-		if err := rows.Scan(
-			&i.ID,
-			&i.OwnerIdentityID,
-			&i.Name,
-			&i.Description,
-			&i.AlwaysApply,
-			&i.ContentHash,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listSkillCatalogByIDs = `-- name: ListSkillCatalogByIDs :many
 SELECT id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
 FROM aura.skill_catalog

@@ -27,15 +27,6 @@ FROM aura.skill_catalog
 WHERE owner_identity_id = $1
 ORDER BY name;
 
--- name: ListAlwaysApplySkills :many
--- The always-on block is rendered at the top of every turn, so this must be an index lookup
--- (skill_catalog_always_apply_idx, partial on always_apply) and never a scan -- acceptance
--- criterion 7 of amendment #214 asserts the plan carries no Seq Scan on this table.
-SELECT id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
-FROM aura.skill_catalog
-WHERE owner_identity_id = $1 AND always_apply
-ORDER BY name;
-
 -- name: ListSkillCatalogByIDs :many
 -- The shared-in half of a reader's view: the rows an ACL lookup already said they may see.
 -- It carries NO owner predicate on purpose -- these are by definition someone else's skills

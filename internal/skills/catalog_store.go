@@ -120,32 +120,6 @@ func (s *CatalogStore) ListOwned(ctx context.Context, ownerID string) ([]Catalog
 	})
 }
 
-// ListAlwaysApply returns the identity's always-on skills through the partial index
-// skill_catalog_always_apply_idx (acceptance criterion 7).
-//
-// STILL NO PRODUCTION CALLER, and the reason it was expected to acquire one is now closed
-// rather than pending. The always-on block is rendered from the FILESYSTEM loader
-// (cmd/aura/skills_roots.go), which scopes per identity and reads the always flag from the
-// frontmatter; this method existed for the case that scan cannot see — a skill somebody
-// SHARED, whose body is under its owner's root. Criterion 5 landed and decided the opposite
-// (skills.Loader.scanSharedDir): a share is never always-on for the grantee, because
-// always-on means "prepend this to every turn" and one identity must not be able to say that
-// about another's turns, least of all with a public grant.
-//
-// What is left is an indexed read of a denormalised column nothing reads back. The honest
-// futures are two: render the always-block from this query instead of a per-turn filesystem
-// scan, or drop the method, the column and its index together. Neither is this slice's, and
-// keeping the choice visible here is better than a comment that implies a caller is coming.
-func (s *CatalogStore) ListAlwaysApply(ctx context.Context, ownerID string) ([]CatalogRow, error) {
-	owner, err := db.ParseUUID("owner identity", ownerID)
-	if err != nil {
-		return nil, fmt.Errorf("skill catalog always-apply: %w", err)
-	}
-	return s.listRows(ctx, ownerID, "skill catalog always-apply", func(q *sqlc.Queries) ([]sqlc.AuraSkillCatalog, error) {
-		return q.ListAlwaysApplySkills(ctx, owner)
-	})
-}
-
 // ListByIDs resolves catalog rows by id for the reader identity — the second half of the
 // two-query share read (the ids come from the ACL, never from user input). RLS lets a reader
 // see a row that is not theirs ONLY when a grant names them or the row is public, so an id
