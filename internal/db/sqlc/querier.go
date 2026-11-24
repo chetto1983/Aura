@@ -807,7 +807,6 @@ type Querier interface {
 	RefreshPlannedRetentionOperation(ctx context.Context, arg RefreshPlannedRetentionOperationParams) (int64, error)
 	RejectAnsweredDelegation(ctx context.Context, arg RejectAnsweredDelegationParams) (bool, error)
 	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
-	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
 	// Moves the identity's row in one bucket from from_key to to_key, taking new_name when the
 	// move carries one. The file manager copies the object first and deletes the source after,
 	// so the row never names a key without bytes.

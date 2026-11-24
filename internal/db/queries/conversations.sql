@@ -164,18 +164,6 @@ WHERE id = sqlc.arg(id)
   AND delete_reservation = sqlc.arg(reservation)
   AND delete_worker = sqlc.arg(worker);
 
--- name: ReleaseReservedConversationDelete :execrows
-UPDATE aura.conversations
-SET delete_reservation = NULL,
-    delete_phase = NULL,
-    delete_reserved_at = NULL,
-    delete_worker = NULL,
-    delete_lease_expires_at = NULL
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND delete_reservation = sqlc.arg(reservation)
-  AND delete_phase = 'reserved';
-
 -- name: ListReservedConversationDeletes :many
 SELECT id, identity_id, snapshot_version, delete_reservation, delete_phase, delete_reserved_at
 FROM aura.conversations

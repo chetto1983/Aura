@@ -160,11 +160,6 @@ func ValidateCompactionTrigger(enabled bool, contextWindow, triggerPercent, fixe
 	return nil
 }
 
-// HardCap exposes the exact history cap to the final model-request guard.
-func (c ContextConfig) HardCap() int {
-	return c.hardCap()
-}
-
 // smallWindowHardCapFloor returns the positive L2 cap used when the SPEC Req#10
 // formula is non-positive (M-03). Adopting the nanobot precedent (a budget <= 0
 // clamps to max(128, window//2) rather than disabling history management), Aura

@@ -104,7 +104,7 @@ func TestRepairToolMessagePairsDropsOrphansAndRecoversDanglingGroups(t *testing.
 		{Role: llm.RoleTool, ToolCallID: "late_orphan", Content: "late"},
 	}
 
-	got := repairToolMessagePairs(in)
+	got := repairManagedToolMessagePairs(in)
 	if len(got) != 6 {
 		t.Fatalf("repaired history length = %d, want 6: %+v", len(got), got)
 	}
@@ -139,7 +139,7 @@ func TestRepairToolMessagePairsTurnsDanglingAssistantToolCallIntoRecoveryMarker(
 		{Role: llm.RoleUser, Content: "after crash"},
 	}
 
-	got := repairToolMessagePairs(in)
+	got := repairManagedToolMessagePairs(in)
 	if len(got) != 4 {
 		t.Fatalf("repaired history length = %d, want 4: %+v", len(got), got)
 	}

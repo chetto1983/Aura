@@ -228,27 +228,6 @@ func (s *Store) ReleaseDeleteLease(ctx context.Context, conversationID, identity
 	return affected, err
 }
 
-// ReleaseReservedDelete removes a fence only before teardown has started.
-func (s *Store) ReleaseReservedDelete(ctx context.Context, conversationID, identityID, reservation string) (int64, error) {
-	id, err := db.ParseUUID("id", conversationID)
-	if err != nil {
-		return 0, err
-	}
-	owner, err := db.ParseUUID("identity_id", identityID)
-	if err != nil {
-		return 0, err
-	}
-	var affected int64
-	err = db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
-		value, releaseErr := q.ReleaseReservedConversationDelete(ctx, sqlc.ReleaseReservedConversationDeleteParams{
-			ID: id, IdentityID: owner, Reservation: pgtype.Text{String: reservation, Valid: true},
-		})
-		affected = value
-		return releaseErr
-	})
-	return affected, err
-}
-
 // ListReservedDeletes returns a bounded cross-owner recovery page. The stored
 // reservation is the authority; recovery never mints or adopts another token.
 //

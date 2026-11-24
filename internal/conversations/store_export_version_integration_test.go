@@ -114,7 +114,7 @@ func TestExportSnapshotVersionCoversAssetsAndReservationFreezesWriters(t *testin
 	}
 }
 
-func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *testing.T) {
+func TestExportDeleteLeasePreventsAdoptionAfterTeardown(t *testing.T) {
 	ctx := ownerCtx()
 	store := newStore(t, migratedPool(t))
 	conversationID := newConversation(t, store)
@@ -131,9 +131,6 @@ func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *
 	}
 	if affected, err := store.ClaimDeleteTeardown(ctx, conversationID, localID, reservation, "worker-two", time.Now().Add(time.Minute)); err != nil || affected != 0 {
 		t.Fatalf("competing worker adopted live lease: affected=%d err=%v", affected, err)
-	}
-	if affected, err := store.ReleaseReservedDelete(ctx, conversationID, localID, reservation); err != nil || affected != 0 {
-		t.Fatalf("operation reservation released after teardown: affected=%d err=%v", affected, err)
 	}
 	if affected, err := store.ReleaseDeleteLease(ctx, conversationID, localID, reservation, "worker-one"); err != nil || affected != 1 {
 		t.Fatalf("release failed worker lease affected=%d err=%v", affected, err)

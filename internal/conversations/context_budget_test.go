@@ -155,7 +155,6 @@ func TestContextConfig_EarlyCompactionTokens(t *testing.T) {
 }
 
 func TestContextConfig_HardCap(t *testing.T) {
-	// Test HardCap method (public wrapper around hardCap)
 	config := ContextConfig{
 		ContextWindow:              100000,
 		MaxOutputTokens:            8192,
@@ -163,13 +162,13 @@ func TestContextConfig_HardCap(t *testing.T) {
 		FixedOverheadTokens:        1000,
 		ProviderErrorReserveTokens: 0,
 	}
-	got := config.HardCap()
+	got := config.hardCap()
 	// hardCap = ContextWindow - max(MaxOutputTokens, 20000) - 13000 - ProviderErrorReserveTokens
 	// = 100000 - max(8192, 20000) - 13000 - 0
 	// = 100000 - 20000 - 13000 = 67000
 	want := 67000
 	if got != want {
-		t.Errorf("HardCap() = %d, want %d", got, want)
+		t.Errorf("hardCap() = %d, want %d", got, want)
 	}
 }
 

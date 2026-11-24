@@ -54,9 +54,9 @@ func TestOptionalInt8MapsZeroToNull(t *testing.T) {
 	}
 }
 
-func TestRepairToolMessagePairsWithEmptyInput(t *testing.T) {
+func TestRepairManagedToolMessagePairsWithEmptyInput(t *testing.T) {
 	t.Parallel()
-	if got := repairToolMessagePairs(nil); got != nil {
+	if got := repairManagedToolMessagePairs(nil); got != nil {
 		t.Fatalf("repair(nil) = %+v, want nil", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestRepairDropsAnAssistantWhoseToolCallIDsAreUnusable(t *testing.T) {
 				{Role: llm.RoleTool, ToolCallID: "dup", Content: "result"},
 				{Role: llm.RoleUser, Content: "next"},
 			}
-			got := repairToolMessagePairs(in)
+			got := repairManagedToolMessagePairs(in)
 			if len(got) != 2 || got[0].Content != "ask" || got[1].Content != "next" {
 				t.Fatalf("repair kept the unusable group: %+v", got)
 			}
@@ -110,7 +110,7 @@ func TestRepairRecoversAMissingToolResult(t *testing.T) {
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "a"}, {ID: "b"}}},
 		{Role: llm.RoleTool, ToolCallID: "a", Content: "real result"},
 	}
-	got := repairToolMessagePairs(in)
+	got := repairManagedToolMessagePairs(in)
 	if len(got) != 3 {
 		t.Fatalf("repair returned %d messages, want assistant + 2 results: %+v", len(got), got)
 	}
