@@ -22,8 +22,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/dbtest"
 )
+
+// Card reads one card back, or ErrNotFound when this identity cannot see it. Production
+// has no single-card read; these tests are its only caller.
+func (s *Store) Card(ctx context.Context, identityID, cardID string) (Card, error) {
+	var card Card
+	err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		row, err := getCard(ctx, q, cardID)
+		card = cardFromRow(row)
+		return err
+	})
+	if err != nil {
+		return Card{}, fmt.Errorf("get card: %w", err)
+	}
+	return card, nil
+}
 
 func envOrSkip(t *testing.T, key string) string {
 	t.Helper()

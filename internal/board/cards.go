@@ -162,20 +162,6 @@ func (s *Store) Cards(ctx context.Context, identityID string) ([]Card, error) {
 	return out, nil
 }
 
-// Card returns one card, or ErrNotFound when this identity cannot see it.
-func (s *Store) Card(ctx context.Context, identityID, cardID string) (Card, error) {
-	var card Card
-	err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		row, err := getCard(ctx, q, cardID)
-		card = cardFromRow(row)
-		return err
-	})
-	if err != nil {
-		return Card{}, fmt.Errorf("get card: %w", err)
-	}
-	return card, nil
-}
-
 // UpdateCard applies the set fields of patch.
 func (s *Store) UpdateCard(ctx context.Context, identityID, cardID string, patch CardPatch, actor Actor) (Card, error) {
 	if patch.Progress != nil {
