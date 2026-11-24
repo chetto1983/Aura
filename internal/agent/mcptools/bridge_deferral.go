@@ -19,8 +19,10 @@
 //
 // Who holds a slot, measured on a live turn on 2026-10-03 (prd.md §13):
 //   - memory: yes, its core of 4;
-//   - calendar: never (bridgePolicy.neverLoaded). Its one tool qualified by
-//     count but was 13,136 of the 43,403 manifest characters a real turn sent;
+//   - calendar: never (bridgePolicy.neverLoaded). Its 29 tools are over the
+//     ceiling anyway; its one multiplexed tool, before the 2026-11-23 split,
+//     qualified by count but was 13,136 of the 43,403 manifest characters a real
+//     turn sent;
 //   - whatsapp: no. The curated merge meant to bring it to 3 tools has not
 //     landed: the image CI pins (a463da5) and whatsapp-mcp:latest (1ec0233)
 //     both advertise the same 15 raw tools.

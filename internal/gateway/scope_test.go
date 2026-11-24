@@ -6,14 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 // TestSubjectForReadsTheVerbOfAMultiplexedToolOnly proves the grant key is the tool for an
 // ordinary tool and tool+verb for an action-multiplexed one — the property amendment #127
-// rests on, because a subject that dropped the verb would make "always approve calendar
-// delete_event" silently authorize "calendar send_email" too.
+// rests on, because a subject that dropped the verb would make "always approve task
+// cancel" silently authorize "task run_now" too.
 func TestSubjectForReadsTheVerbOfAMultiplexedToolOnly(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -25,9 +24,9 @@ func TestSubjectForReadsTheVerbOfAMultiplexedToolOnly(t *testing.T) {
 		{"multiplexed tool carries its verb",
 			tools.Spec{Name: "skill_manage"}, `{"action":"delete","name":"x"}`,
 			grantSubject{Tool: "skill_manage", Action: "delete"}},
-		{"curated calendar tool carries its verb",
-			tools.Spec{Name: mcptools.CalendarMultiplexedToolName}, `{"action":"delete_event","eventId":"e-1"}`,
-			grantSubject{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"}},
+		{"task carries its verb",
+			tools.Spec{Name: "task"}, `{"action":"cancel","id":"t-1"}`,
+			grantSubject{Tool: "task", Action: "cancel"}},
 		// An ordinary tool has no verb, so its arguments are never read for one: an
 		// `action` field on shell_exec is the tool's own argument, not a verb.
 		{"plain tool ignores an action-looking argument",
@@ -51,6 +50,29 @@ func TestSubjectForReadsTheVerbOfAMultiplexedToolOnly(t *testing.T) {
 	}
 }
 
+// TestCalendarSubjectIsTheToolAlone: each PIM operation is its own tool, so the tool name
+// is the whole subject. An `action` argument left over from the multiplexed shape is the
+// model's text, not a verb, and must not narrow or widen it.
+func TestCalendarSubjectIsTheToolAlone(t *testing.T) {
+	t.Parallel()
+	spec := tools.Spec{Name: "calendar__send_email"}
+	for _, args := range []string{`{"to":["a@b.c"],"subject":"s"}`, `{"action":"delete_event","to":["a@b.c"]}`} {
+		if got := subjectFor(spec, json.RawMessage(args)); got != (grantSubject{Tool: "calendar__send_email"}) {
+			t.Fatalf("subjectFor(%s) = %+v, want the tool alone", args, got)
+		}
+	}
+}
+
+// TestAliasedCalendarToolKeepsItsOwnSubject: a PIM mounted under another namespace keys its
+// grants on its own registered name, the same rule as under the built-in one.
+func TestAliasedCalendarToolKeepsItsOwnSubject(t *testing.T) {
+	t.Parallel()
+	got := subjectFor(tools.Spec{Name: "work__send_email"}, json.RawMessage(`{"to":["a@b.c"]}`))
+	if got != (grantSubject{Tool: "work__send_email"}) {
+		t.Fatalf("subjectFor = %+v, want the aliased tool alone", got)
+	}
+}
+
 // TestScopeOptionsAreRelayable proves the options the model is told to copy verbatim are a
 // payload ask_user accepts: 2-4 entries, non-empty and distinct on BOTH coordinates. A set
 // that failed that validation would surface as a tool error with the destructive call
@@ -60,7 +82,7 @@ func TestScopeOptionsAreRelayable(t *testing.T) {
 	for _, subject := range []grantSubject{
 		{Tool: "shell_exec"},
 		{Tool: "skill_manage", Action: "delete"},
-		{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"},
+		{Tool: "calendar__delete_event"},
 	} {
 		opts := scopeOptions(subject, "")
 		if len(opts) < 2 || len(opts) > 4 {
@@ -84,11 +106,11 @@ func TestScopeOptionsAreRelayable(t *testing.T) {
 // surfaces render their own words from this, so a change here is a change to their copy.
 func TestScopeOptionValueIsALocaleFreeCode(t *testing.T) {
 	t.Parallel()
-	opts := scopeOptions(grantSubject{Tool: "calendar", Action: "delete_event"}, "")
+	opts := scopeOptions(grantSubject{Tool: "task", Action: "cancel"}, "")
 	want := []string{
-		"gateway_scope:once:calendar delete_event",
-		"gateway_scope:session:calendar delete_event",
-		"gateway_scope:always:calendar delete_event",
+		"gateway_scope:once:task cancel",
+		"gateway_scope:session:task cancel",
+		"gateway_scope:always:task cancel",
 	}
 	for i, w := range want {
 		if opts[i].Value != w {
@@ -108,7 +130,7 @@ func TestScopeOptionValueIsALocaleFreeCode(t *testing.T) {
 func TestScopeForAnswerResolvesOnlyItsOwnLabels(t *testing.T) {
 	t.Parallel()
 	subject := grantSubject{Tool: "skill_manage", Action: "delete"}
-	other := grantSubject{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"}
+	other := grantSubject{Tool: "task", Action: "cancel"}
 
 	for _, e := range scopeLabels(subject, "") {
 		// Both the stable code the surfaces submit and the English fallback resolve.
@@ -146,15 +168,15 @@ func TestScopeForAnswerResolvesOnlyItsOwnLabels(t *testing.T) {
 // failure this amendment exists to avoid.
 func TestScopeLabelsNameTheirSubject(t *testing.T) {
 	t.Parallel()
-	subject := grantSubject{Tool: "calendar", Action: "delete_event"}
-	if subject.String() != "calendar delete_event" {
+	subject := grantSubject{Tool: "task", Action: "cancel"}
+	if subject.String() != "task cancel" {
 		t.Fatalf("subject.String() = %q", subject.String())
 	}
 	for _, e := range scopeLabels(subject, "") {
 		if e.Scope == ScopeOnce {
 			continue // "Approve once" is about THIS call; naming the verb adds nothing
 		}
-		if !strings.Contains(e.Label, "calendar delete_event") {
+		if !strings.Contains(e.Label, "task cancel") {
 			t.Errorf("%q scope label %q does not name its subject", e.Scope, e.Label)
 		}
 	}

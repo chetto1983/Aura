@@ -57,7 +57,7 @@ func TestDeferralEveryAdvertisedToolIsBridged(t *testing.T) {
 		got[tool.Spec().Name] = true
 	}
 	for _, name := range names {
-		if !got[namespacedName("memory", name)] {
+		if !got[NamespacedName("memory", name)] {
 			t.Errorf("%s was not bridged", name)
 		}
 	}
@@ -71,10 +71,10 @@ func TestDeferralEveryAdvertisedToolIsBridged(t *testing.T) {
 	}
 	sort.Strings(manifest)
 	want := []string{
-		namespacedName("memory", "memory_batch"),
-		namespacedName("memory", "memory_entities"),
-		namespacedName("memory", "memory_recall"),
-		namespacedName("memory", "memory_upsert_fact"),
+		NamespacedName("memory", "memory_batch"),
+		NamespacedName("memory", "memory_entities"),
+		NamespacedName("memory", "memory_recall"),
+		NamespacedName("memory", "memory_upsert_fact"),
 	}
 	if !slices.Equal(manifest, want) {
 		t.Fatalf("always-loaded memory surface = %v, want %v", manifest, want)
@@ -175,9 +175,32 @@ func TestDeferralBridgeToolsAppliesTheArithmetic(t *testing.T) {
 	}
 }
 
-// TestDeferralCalendarRecipeNeverTakesASlot pins prd.md §13 (2026-10-03): the calendar
-// recipe's one tool qualifies by count but stays deferred, and it spends no slot, so the
-// next qualifying mount still earns one.
+// TestCalendarMountDefersEveryTool: the PIM's 29 tools are all reached through
+// tool_search, and the mount spends no slot, so the next qualifying mount still earns one.
+func TestCalendarMountDefersEveryTool(t *testing.T) {
+	resetLoadedSlotBudgetForTest()
+	t.Cleanup(resetLoadedSlotBudgetForTest)
+	var advertised []*sdkmcp.Tool
+	for _, name := range CalendarToolNames() {
+		advertised = append(advertised, mustTool(name, name, nil, nil))
+	}
+	bridged := bridgeToolsWithPolicy("calendar", nil, advertised, defaultMCPCallTimeout, calendarPolicy())
+	if len(bridged) != 29 {
+		t.Fatalf("calendar mount bridged %d tools, want 29", len(bridged))
+	}
+	for _, tool := range bridged {
+		if !tool.Spec().Deferred {
+			t.Fatalf("%s: every calendar tool must stay Deferred:true", tool.Spec().Name)
+		}
+	}
+	if !grantLoadedSlot("next", 1) {
+		t.Fatal("the calendar mount spent a slot it must not take")
+	}
+}
+
+// TestDeferralCalendarRecipeNeverTakesASlot pins prd.md §13 (2026-10-03) on a fork that
+// advertises few enough tools to qualify by count: it stays deferred anyway, and spends no
+// slot, so the next qualifying mount still earns one.
 func TestDeferralCalendarRecipeNeverTakesASlot(t *testing.T) {
 	resetLoadedSlotBudgetForTest()
 	t.Cleanup(resetLoadedSlotBudgetForTest)
@@ -185,7 +208,7 @@ func TestDeferralCalendarRecipeNeverTakesASlot(t *testing.T) {
 		Source: "recipe:calendar", URL: "http://calendar/mcp",
 		Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 	})
-	one := []*sdkmcp.Tool{mustTool("calendar", "calendar", nil, nil)}
+	one := []*sdkmcp.Tool{mustTool("list_accounts", "list_accounts", nil, nil)}
 	for _, tool := range bridgeToolsWithPolicy("calendar", nil, one, defaultMCPCallTimeout, calendar) {
 		if !tool.Spec().Deferred {
 			t.Fatalf("%s: the calendar recipe must stay Deferred:true on a fresh budget", tool.Spec().Name)

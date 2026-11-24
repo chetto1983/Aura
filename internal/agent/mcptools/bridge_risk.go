@@ -3,6 +3,8 @@ package mcptools
 import (
 	"encoding/json"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,17 +14,14 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// MCPActionClass is the per-action risk tier a trusted-recipe MCP source's
-// action table assigns. Exported (renamed from the unexported mcpActionClass) so
-// internal/gateway's per-action classifier can map it straight to a
-// scoring.RiskTier without inventing a second vocabulary (D-21).
+// MCPActionClass is the risk tier a trusted-recipe MCP source's table assigns to
+// one of its tools.
 type MCPActionClass uint8
 
 // The four MCPActionClass values, in ascending risk order: MCPActionUnknown is
-// the fail-closed zero value (an action absent from the table, or a tool that is
-// not a known curated multiplex), MCPActionRead never gates, MCPActionMutate
-// gates as an ordinary reversible write, and MCPActionDestructive gates as an
-// externally irreversible action.
+// the zero value a tool absent from the table reads as, MCPActionRead never
+// gates, MCPActionMutate gates as an ordinary reversible write, and
+// MCPActionDestructive gates as an externally irreversible action.
 const (
 	MCPActionUnknown MCPActionClass = iota
 	MCPActionRead
@@ -35,19 +34,10 @@ const (
 	whatsAppRecipeSource = "recipe:whatsapp"
 )
 
-// trustedRecipeActions is keyed by whatever discriminator that source's surface
-// exposes — the keys are NOT uniformly "the raw MCP tool name" (D-35). calendar
-// is ACTION-keyed: its 14 keys already equal the fork's curated `action` enum
-// values (D-21/46-05), so no relabeling was needed here — this half of the table
-// is now read by internal/gateway's classifyCalendarAction via
-// mcptools.MCPActionClassFor, NOT by classifyToolRisk's t.Name lookup below,
-// because the curated tool's own advertised raw name ("calendar") never appears
-// as a key in this map. whatsapp stays RAW-TOOL-NAME-keyed for now (plan 46-08
-// re-keys it alongside its own image pin); memory stays RAW-TOOL-NAME-keyed
-// permanently, because it is not merged — each memory_* call is its own MCP tool
-// name, still classified by classifyToolRisk's t.Name lookup unchanged. One
-// table, one lookup site below, mixed key spaces documented here so a future
-// reader does not assume a uniformity that was never true.
+// trustedRecipeActions tiers each trusted recipe's tools by their raw MCP tool
+// name, the one lookup classifyToolRisk does. The calendar keys are the PIM
+// fork's 29 tool names, which equal upstream's (2026-11-23 split: the fork no
+// longer multiplexes them behind one tool with an action argument).
 var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	mcpmanager.BrowserRecipeSource: browserRecipeActions,
 	calendarRecipeSource: {
@@ -203,6 +193,32 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 	return policy
 }
 
+// CalendarToolNames lists the PIM's raw tool names, sorted: the keys of its risk table.
+func CalendarToolNames() []string {
+	return slices.Sorted(maps.Keys(trustedRecipeActions[calendarRecipeSource]))
+}
+
+// warnCalendarToolDrift WARNs by name, in both directions, when the tools a PIM mount
+// advertises and the risk table disagree. The names live in another repository and can
+// drift without Aura noticing. A WARN and not a boot failure, because MCP mounts are
+// fail-soft and a rename there is an outage, not a wiring bug; an unknown tool still
+// classifies Destructive (classifyToolRisk), so this is the loud half of that pair.
+func warnCalendarToolDrift(namespace string, advertised []*sdkmcp.Tool) {
+	table := trustedRecipeActions[calendarRecipeSource]
+	served := make(map[string]struct{}, len(advertised))
+	for _, t := range advertised {
+		served[t.Name] = struct{}{}
+		if _, ok := table[t.Name]; !ok {
+			slog.Warn("mcp calendar tool has no risk-table entry", "namespace", namespace, "tool", t.Name)
+		}
+	}
+	for _, name := range CalendarToolNames() {
+		if _, ok := served[name]; !ok {
+			slog.Warn("mcp risk table has a calendar tool the server no longer advertises", "namespace", namespace, "tool", name)
+		}
+	}
+}
+
 // mcpToolRisk classifies risk from the SDK's own *sdkmcp.Tool. t.Annotations is a
 // POINTER (unlike the deleted mcp.ToolDef.Annotations, which was a value) and may
 // be nil — a nil Annotations must take the same branch an unannotated ToolDef
@@ -215,15 +231,6 @@ func mcpToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive boo
 
 // classifyToolRisk is the decision itself, kept separate from the logging so every
 // branch can return directly and the log record is emitted exactly once.
-//
-// For the calendar curated tool this lookup deliberately MISSES: t.Name is the
-// curated tool's own raw name ("calendar"), which is never a key in
-// trustedRecipeActions[calendarRecipeSource] (that map is keyed by ACTION, not
-// by the tool's own name) — so it falls through to this function's fail-closed
-// default below, landing Mutating:true. That is deliberate, not a gap: bridge.go's
-// specFromToolDefWithPolicy also sets Multiplexed:true for it, and
-// internal/gateway's per-action classifier (not this function) is what actually
-// grades each call by its `action` argument (D-21).
 func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive bool) {
 	if actions, ok := craftRecipeActions[policy.recipeSource]; ok {
 		return craftToolRisk(actions, t.Name)
@@ -242,6 +249,11 @@ func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructiv
 				return true, true
 			}
 		}
+	}
+	// A PIM tool the table does not name is one nobody tiered. It reaches mail, calendars
+	// and contacts, so the fork's own hints must not lower it (spec 2026-11-23 §5.1).
+	if policy.recipeSource == calendarRecipeSource {
+		return true, true
 	}
 
 	// a is captured once so every read below goes through this single pointer —

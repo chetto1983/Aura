@@ -121,7 +121,7 @@ func (b *bridgedTool) newResultWithTail(ctx context.Context, args map[string]any
 		Source: "mcp:" + b.Spec().Name,
 		Trust:  tools.TrustTrusted,
 	}
-	if marker, ok := b.displaySource(args); ok {
+	if marker, ok := displaySource(b.policy.recipeSource, b.name); ok {
 		if res.Meta == nil {
 			res.Meta = &tools.ToolResultMeta{}
 		}

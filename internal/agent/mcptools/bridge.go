@@ -147,6 +147,9 @@ func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advert
 func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
 	policy.modelFacingCount = policy.manifestCount(len(advertised))
 	policy.alwaysLoaded = !policy.neverLoaded && grantLoadedSlot(namespace, policy.modelFacingCount)
+	if policy.recipeSource == calendarRecipeSource {
+		warnCalendarToolDrift(namespace, advertised)
+	}
 	out := make([]tools.Tool, 0, len(advertised))
 	for _, t := range advertised {
 		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy, view: viewRefFor(policy, t)}
@@ -159,7 +162,7 @@ func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*s
 func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePolicy) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(t, policy)
 	mutating, destructive := mcpToolRisk(policy, t)
-	name := namespacedName(namespace, t.Name)
+	name := NamespacedName(namespace, t.Name)
 	spec := tools.Spec{
 		Name:                name,
 		Summary:             summary,
@@ -171,19 +174,6 @@ func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePo
 		TrustedRecipeSource: policy.recipeSource,
 		TrustedRecipeTool:   t.Name,
 		MCPServer:           namespace,
-	}
-	// D-34: Multiplexed is set ONLY when this tool's namespaced name already has a
-	// classifier (isKnownMultiplexedMCPTool, bridge_multiplex.go) — never inferred
-	// from "does the schema have an action property". That inference would make
-	// gateway.ValidateClassifiable panic at boot for ANY stranger's server whose
-	// schema happens to use an `action` argument, the opposite of what a generic
-	// MCP host promises (SC#6). Gating on classifier existence instead means an
-	// unknown server gets the generic fail-closed tier, not a boot failure.
-	spec.Multiplexed = isKnownMultiplexedMCPTool(name)
-	if spec.Multiplexed {
-		// D-33: the action enum lives in another repository and can drift without
-		// Aura noticing — WARN by name in both directions at mount, never panic.
-		reconcileCuratedActions(name, multiplexedMCPTools[name], params)
 	}
 	applyMCPOperationMetadata(&spec)
 	return spec

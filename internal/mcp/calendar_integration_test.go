@@ -52,7 +52,7 @@ const (
 // curatedCalendarToolName is the fork's own advertised wire name (measured live
 // 2026-08-22 against ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d...) — this test
 // talks to the sidecar directly over the SDK session, the same handshake
-// bridge.go's initial mount performs before namespacedName prefixes it
+// bridge.go's initial mount performs before NamespacedName prefixes it
 // "calendar__" for the model.
 // calendarActionEnum is the design doc's §5a action list, in the fork's own
 // tools/list order (docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md).

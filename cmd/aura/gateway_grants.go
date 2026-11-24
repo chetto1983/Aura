@@ -26,7 +26,8 @@ import (
 const gatewayUsage = "usage: aura gateway grants {list <identity>|revoke <identity> <tool> [action]}\n" +
 	"       aura gateway policy {list <identity>|set <identity> <tool> [action] ask|deny|clear <identity> <tool> [action]}\n" +
 	"  <identity> = the identity NAME (`aura identity list`)\n" +
-	"  [action]   = the verb of an action-multiplexed tool; omit it for a plain tool"
+	"  [action]   = the verb of an action-multiplexed tool (task, board); omit it for a plain tool\n" +
+	"               such as an MCP tool (calendar__send_email)"
 
 func runGateway(args []string) {
 	if len(args) < 2 || (args[0] != "grants" && args[0] != "policy") {

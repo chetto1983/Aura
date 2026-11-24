@@ -33,7 +33,8 @@ const (
 
 // grantSubject is what a session/always grant is keyed on. Action is the verb of an
 // action-multiplexed tool and is empty for every other tool, so a grant on
-// "calendar delete_event" never covers "calendar send_email" (amendment #127).
+// "task cancel" never covers "task run_now" (amendment #127). The PIM names each operation
+// as its own tool, so a grant on calendar__delete_email never covers calendar__send_email.
 type grantSubject struct {
 	Tool   string
 	Action string
@@ -137,7 +138,7 @@ func scopeOptions(s grantSubject, policy Policy) []ScopeOption {
 // only the call in front of them.
 //
 // Matching the value against THIS subject's own encoding is what stops a replay: a code
-// minted for "calendar delete_event" does not equal the one for "skill_manage delete", so
+// minted for "calendar__delete_email" does not equal the one for "skill_manage delete", so
 // an answer lifted from another approval grants nothing here.
 func scopeForAnswer(s grantSubject, policy Policy, answer string) ApprovalScope {
 	for _, e := range scopeLabels(s, policy) {

@@ -116,7 +116,7 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	// answered this question, and reading a standing grant — unlike Consume — does not spend
 	// it. Both are keyed on the SUBJECT (tool + multiplexed action), never on the argument
 	// fingerprint, so a second delete of a DIFFERENT event is covered while a grant on
-	// "calendar delete_event" still leaves "calendar send_email" to be asked.
+	// calendar__delete_event still leaves calendar__send_email to be asked.
 	subject := subjectFor(spec, rawArgs)
 	if r, ok := g.approvals.SessionGrant(key.ConversationID, subject); ok && r.Approved {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID, Scope: ScopeSession}, nil

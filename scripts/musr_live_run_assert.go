@@ -42,7 +42,7 @@ import (
 // document_search and shell_exec are internal/agent/tools built-ins (document_search.go:35,
 // shell_exec.go:86); the memory write is the arcadedb-mcp MCP tool bridged under the
 // "memory" namespace (cmd/aura/memory.go:27 memoryServerName, internal/agent/mcptools/
-// name.go's namespacedName joining namespace+"__"+tool), registered upstream as
+// name.go's NamespacedName joining namespace+"__"+tool), registered upstream as
 // memory_upsert_fact (cmd/arcadedb-mcp/tool_memory.go:194).
 var requiredTools = []string{"document_search", "memory__memory_upsert_fact", "shell_exec"}
 

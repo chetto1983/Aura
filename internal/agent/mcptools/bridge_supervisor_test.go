@@ -577,8 +577,8 @@ func TestIsSessionTransportFailure(t *testing.T) {
 // A fixture's mount must be closed once its test ends. Closing only the session left
 // the death-watch to mark the mount dead and log "mcp session closed" after the test,
 // into whatever slog default a later test had installed: the race detector caught
-// that write against TestCuratedActionReconciliationIsSilentWhenTheTwoSidesAgree's
-// buffer on 2026-11-12. A closed mount's watch logs nothing.
+// that write against a log-asserting test's captured buffer on 2026-11-12. A closed
+// mount's watch logs nothing.
 func TestAMountedFixtureIsClosedWhenItsTestEnds(t *testing.T) {
 	var srv *MountedServer
 	t.Run("fixture", func(t *testing.T) { srv, _ = newInMemoryMounted(t) })

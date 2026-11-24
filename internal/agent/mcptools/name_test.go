@@ -43,8 +43,8 @@ func TestNamespacedName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := namespacedName(tc.namespace, tc.tool); got != tc.want {
-				t.Errorf("namespacedName(%q,%q) = %q, want %q", tc.namespace, tc.tool, got, tc.want)
+			if got := NamespacedName(tc.namespace, tc.tool); got != tc.want {
+				t.Errorf("NamespacedName(%q,%q) = %q, want %q", tc.namespace, tc.tool, got, tc.want)
 			}
 		})
 	}
@@ -55,9 +55,9 @@ func TestNameLengthCap(t *testing.T) {
 	// deterministic "_<12hex>" suffix; the same inputs yield the same capped name.
 	ns := "server"
 	tool := strings.Repeat("x", 100)
-	got := namespacedName(ns, tool)
+	got := NamespacedName(ns, tool)
 	if len(got) > maxToolNameLen {
-		t.Fatalf("namespacedName length = %d, want <= %d", len(got), maxToolNameLen)
+		t.Fatalf("NamespacedName length = %d, want <= %d", len(got), maxToolNameLen)
 	}
 	if !strings.HasPrefix(got, "server__") {
 		t.Errorf("capped name should keep the namespace prefix, got %q", got) // Kills the truncate-the-namespace mutant.
@@ -69,12 +69,12 @@ func TestNameLengthCap(t *testing.T) {
 	if !isHex(suffix[1:]) {
 		t.Errorf("capped name suffix should be hex, got %q", suffix[1:])
 	}
-	if again := namespacedName(ns, tool); again != got {
-		t.Errorf("namespacedName not deterministic: %q != %q", again, got)
+	if again := NamespacedName(ns, tool); again != got {
+		t.Errorf("NamespacedName not deterministic: %q != %q", again, got)
 	}
 
 	// A name exactly at the 64-byte boundary is NOT hashed (no suffix added).
-	exact := namespacedName("ns", strings.Repeat("a", maxToolNameLen-len("ns__")))
+	exact := NamespacedName("ns", strings.Repeat("a", maxToolNameLen-len("ns__")))
 	if len(exact) != maxToolNameLen {
 		t.Fatalf("boundary name length = %d, want exactly %d", len(exact), maxToolNameLen)
 	}
@@ -82,7 +82,7 @@ func TestNameLengthCap(t *testing.T) {
 		t.Errorf("a name exactly 64 bytes must not be hashed/truncated: %q", exact)
 	}
 	// One byte over the boundary IS hashed (proves the > vs >= boundary).
-	over := namespacedName("ns", strings.Repeat("a", maxToolNameLen-len("ns__")+1))
+	over := NamespacedName("ns", strings.Repeat("a", maxToolNameLen-len("ns__")+1))
 	if len(over) > maxToolNameLen {
 		t.Fatalf("over-boundary name length = %d, want <= %d", len(over), maxToolNameLen)
 	}
@@ -99,9 +99,9 @@ func TestNameLengthCap(t *testing.T) {
 func TestNamespacedName_LongNamespaceCap(t *testing.T) {
 	ns := strings.Repeat("n", 55)
 	tool := strings.Repeat("t", 30)
-	got := namespacedName(ns, tool)
+	got := NamespacedName(ns, tool)
 	if len(got) > maxToolNameLen {
-		t.Fatalf("namespacedName length = %d, want <= %d (WR-01)", len(got), maxToolNameLen)
+		t.Fatalf("NamespacedName length = %d, want <= %d (WR-01)", len(got), maxToolNameLen)
 	}
 	suffix := got[len(got)-(hashLen+1):]
 	if suffix[0] != '_' {
@@ -119,8 +119,8 @@ func TestNamespacedName_LongNamespaceCap(t *testing.T) {
 // never truncated away: two different overflowing (namespace,tool) pairs must produce
 // different capped names. Kills the "drop-the-suffix" mutant.
 func TestNamespacedName_DistinctLongNamespacesNoRecollision(t *testing.T) {
-	a := namespacedName(strings.Repeat("n", 55), "alpha")
-	b := namespacedName(strings.Repeat("n", 55), "beta")
+	a := NamespacedName(strings.Repeat("n", 55), "alpha")
+	b := NamespacedName(strings.Repeat("n", 55), "beta")
 	if len(a) > maxToolNameLen || len(b) > maxToolNameLen {
 		t.Fatalf("both results must be capped: len(a)=%d len(b)=%d", len(a), len(b))
 	}
@@ -141,8 +141,8 @@ func TestNamespacedName_ShortNamesByteStable(t *testing.T) {
 		{"sb", "sandbox_exec", "sb__sandbox_exec"},
 	}
 	for _, c := range cases {
-		if got := namespacedName(c.ns, c.tool); got != c.want {
-			t.Errorf("namespacedName(%q,%q) = %q, want byte-identical %q", c.ns, c.tool, got, c.want)
+		if got := NamespacedName(c.ns, c.tool); got != c.want {
+			t.Errorf("NamespacedName(%q,%q) = %q, want byte-identical %q", c.ns, c.tool, got, c.want)
 		}
 	}
 }
@@ -165,9 +165,9 @@ func TestNamespacedName_AdversarialLenSweep(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := namespacedName(c.ns, c.tool)
+			got := NamespacedName(c.ns, c.tool)
 			if len(got) > maxToolNameLen {
-				t.Fatalf("namespacedName(%q,%q) len = %d, want <= %d", c.ns, c.tool, len(got), maxToolNameLen)
+				t.Fatalf("NamespacedName(%q,%q) len = %d, want <= %d", c.ns, c.tool, len(got), maxToolNameLen)
 			}
 		})
 	}

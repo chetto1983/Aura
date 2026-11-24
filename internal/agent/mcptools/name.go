@@ -40,13 +40,13 @@ func hashSuffix(rawIdentity string) string {
 	return "_" + hex.EncodeToString(h[:])[:hashLen]
 }
 
-// namespacedName builds the model-facing <namespace>__<tool> name: both sides are
+// NamespacedName builds the model-facing <namespace>__<tool> name: both sides are
 // sanitized, joined with the double-underscore delimiter, and the whole capped at
 // maxToolNameLen. On overflow a deterministic hash suffix is appended; the tool part
 // is truncated to fit, and the prefix itself is truncated when it alone exceeds the
 // budget (WR-01) — so the OUTPUT length is bounded, not just the slice index. Cross-name
 // collision disambiguation across one mount's batch is layered on top of this by registerBridged.
-func namespacedName(namespace, tool string) string {
+func NamespacedName(namespace, tool string) string {
 	prefix := sanitizeName(namespace) + nsDelimiter
 	base := prefix + sanitizeName(tool)
 	if len(base) <= maxToolNameLen {

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -187,24 +186,24 @@ func TestAlwaysScopePersistsAndIsSubjectScoped(t *testing.T) {
 
 }
 
-// TestAlwaysGrantDoesNotLeakToASiblingVerb is the amendment's own example, run: the curated
-// calendar tool multiplexes delete_event AND send_email, both destructive. A grant on one
-// must leave the other withheld, or "always approve" on a deletion quietly authorizes mail.
-func TestAlwaysGrantDoesNotLeakToASiblingVerb(t *testing.T) {
+// TestGrantOnSendEmailDoesNotCoverDeleteEmail is the amendment's own example, run on the
+// PIM's own tools: send_email and delete_email are both destructive. A grant on one must
+// leave the other withheld, or "always approve" on mail quietly authorizes deletions.
+func TestGrantOnSendEmailDoesNotCoverDeleteEmail(t *testing.T) {
 	t.Parallel()
-	del := json.RawMessage(`{"action":"delete_event","eventId":"e-1"}`)
-	mail := json.RawMessage(`{"action":"send_email","to":"a@b.c"}`)
+	mail := json.RawMessage(`{"to":"a@b.c"}`)
 	grants := newFakeGrants()
 	g, _, ctx := approvedGateway()
 	g.SetGrantStore(grants)
+	send := calendarSpec("send_email")
 
-	question := calendarWithhold(t, g, ctx, del)
+	question := calendarWithhold(t, g, ctx, send, mail)
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID:  testKey().ConversationID,
-		Tool:            calendarSpec().Name,
-		ArgsFingerprint: gatewayArgsFingerprint(del),
+		Tool:            send.Name,
+		ArgsFingerprint: gatewayArgsFingerprint(mail),
 		Question:        question,
-		Answer:          calendarAnswer(del, ScopeAlways),
+		Answer:          scopeOptionValue(ScopeAlways, subjectFor(send, mail)),
 		IdentityID:      testIdentity,
 		OperatorID:      "local",
 	})
@@ -212,35 +211,31 @@ func TestAlwaysGrantDoesNotLeakToASiblingVerb(t *testing.T) {
 		t.Fatalf("ApproveChallenge = %q, err %v", scope, err)
 	}
 
-	granted, err := g.Decide(ctx, calendarSpec(), json.RawMessage(`{"action":"delete_event","eventId":"e-2"}`), testKey())
+	granted, err := g.Decide(ctx, send, json.RawMessage(`{"to":"d@e.f"}`), testKey())
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
 	if granted.Decision != Allow {
-		t.Fatalf("a second delete_event = %q, want allow under the grant", granted.Decision)
+		t.Fatalf("a second send_email = %q, want allow under the grant", granted.Decision)
 	}
-	sibling, err := g.Decide(ctx, calendarSpec(), mail, testKey())
+	sibling, err := g.Decide(ctx, calendarSpec("delete_email"), json.RawMessage(`{"emailId":"m-1"}`), testKey())
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
 	if sibling.Decision != Approve {
-		t.Fatalf("send_email = %q, want approve — a delete grant must not authorize mail", sibling.Decision)
+		t.Fatalf("delete_email = %q, want approve — a mail grant must not authorize deletions", sibling.Decision)
 	}
 }
 
-// calendarSpec is the curated multiplexed PIM tool: one name, fourteen verbs, several of
-// them destructive — the shape the grant subject exists for.
-func calendarSpec() tools.Spec {
-	return tools.Spec{Name: mcptools.CalendarMultiplexedToolName, Mutating: true}
+// calendarSpec is one destructive PIM tool as the bridge names it. Its tier comes from its
+// spec bits, as every MCP tool's does.
+func calendarSpec(tool string) tools.Spec {
+	return tools.Spec{Name: "calendar__" + tool, Mutating: true, Destructive: true}
 }
 
-func calendarAnswer(args json.RawMessage, scope ApprovalScope) string {
-	return scopeOptionValue(scope, subjectFor(calendarSpec(), args))
-}
-
-func calendarWithhold(t *testing.T, g *Gateway, ctx context.Context, args json.RawMessage) string {
+func calendarWithhold(t *testing.T, g *Gateway, ctx context.Context, spec tools.Spec, args json.RawMessage) string {
 	t.Helper()
-	v, err := g.Decide(ctx, calendarSpec(), args, testKey())
+	v, err := g.Decide(ctx, spec, args, testKey())
 	if err != nil || v.Decision != Approve || v.ApprovalRequest == nil {
 		t.Fatalf("first Decide = %+v, err %v — want a withheld approve", v, err)
 	}

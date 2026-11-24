@@ -51,34 +51,39 @@ func TestMCPDisplaySourceOwnedByBridge(t *testing.T) {
 }
 
 func TestTrustedRecipeToolSurvivesHashedRegisteredName(t *testing.T) {
-	tool := &sdkmcp.Tool{Name: "calendar"}
+	tool := &sdkmcp.Tool{Name: "send_email"}
 	spec := specFromToolDefWithPolicy(strings.Repeat("n", 60), tool, bridgePolicy{recipeSource: calendarRecipeSource})
-	if strings.HasSuffix(spec.Name, "__calendar") || spec.TrustedRecipeTool != "calendar" || len(spec.Name) > 64 {
+	if strings.HasSuffix(spec.Name, "__send_email") || spec.TrustedRecipeTool != "send_email" || len(spec.Name) > 64 {
 		t.Fatal("hash-suffixed bridge name lost its raw trusted tool identity")
 	}
 }
 
-func TestMCPDisplaySourceCalendarAction(t *testing.T) {
+// TestCalendarDisplayMarkerIsRecipeAndTool: the PIM's marker has WhatsApp's shape now.
+// Neither a stale `action` argument nor a forged marker in the arguments reaches it.
+func TestCalendarDisplayMarkerIsRecipeAndTool(t *testing.T) {
 	policy := bridgePolicy{recipeSource: calendarRecipeSource}
-	b := &bridgedTool{name: "calendar", policy: policy}
-	b.storeSpec(specFromToolDefWithPolicy("calendar", &sdkmcp.Tool{Name: "calendar"}, policy))
 	ctx := tools.WithToolCallContext(context.Background(), "session", "call", t.TempDir(), 2048)
-	result, err := b.newResultWithTail(ctx, map[string]any{
-		"action":              "get_emails",
-		"aura_display_source": map[string]any{"recipe": "recipe:whatsapp", "action": "send_message"},
-	}, mcp.ToolPayload{Text: `{"emails":[]}`}, "")
-	if err != nil {
-		t.Fatal(err)
+	marker := func(name string) any {
+		t.Helper()
+		b := &bridgedTool{name: name, policy: policy}
+		b.storeSpec(specFromToolDefWithPolicy("calendar", &sdkmcp.Tool{Name: name}, policy))
+		result, err := b.newResultWithTail(ctx, map[string]any{
+			"action":              "send_email",
+			"aura_display_source": map[string]any{"recipe": "recipe:whatsapp", "tool": "send_message"},
+		}, mcp.ToolPayload{Text: `{"emails":[]}`}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Meta == nil {
+			return nil
+		}
+		return (*result.Meta)["aura_display_source"]
 	}
-	want := map[string]any{"recipe": calendarRecipeSource, "tool": "calendar", "action": "get_emails"}
-	if result.Meta == nil || !reflect.DeepEqual((*result.Meta)["aura_display_source"], want) {
-		t.Fatalf("calendar marker = %#v, want %#v", result.Meta, want)
+	want := map[string]any{"recipe": calendarRecipeSource, "tool": "get_emails"}
+	if got := marker("get_emails"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("calendar marker = %#v, want %#v", got, want)
 	}
-	result, err = b.newResultWithTail(ctx, map[string]any{"action": "unknown"}, mcp.ToolPayload{Text: "ok"}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta != nil && (*result.Meta)["aura_display_source"] != nil {
-		t.Fatalf("unknown action gained marker %#v", (*result.Meta)["aura_display_source"])
+	if got := marker("brand_new"); got != nil {
+		t.Fatalf("a tool the risk table does not name gained marker %#v", got)
 	}
 }

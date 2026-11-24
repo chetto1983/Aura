@@ -52,7 +52,7 @@ func runPolicy(t *testing.T, store *cliPolicyStore, args ...string) (string, err
 
 func TestGatewayPolicySetListClear(t *testing.T) {
 	store := &cliPolicyStore{}
-	if out, err := runPolicy(t, store, "set", "alice", "calendar", "send_email", "deny"); err != nil || !strings.Contains(out, `"calendar send_email" is now deny`) {
+	if out, err := runPolicy(t, store, "set", "alice", "task", "cancel", "deny"); err != nil || !strings.Contains(out, `"task cancel" is now deny`) {
 		t.Fatalf("set multiplexed = %q, %v", out, err)
 	}
 	if out, err := runPolicy(t, store, "set", "alice", "shell_exec", "ask"); err != nil || !strings.Contains(out, `"shell_exec" is now ask`) {
@@ -68,7 +68,7 @@ func TestGatewayPolicySetListClear(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := [][]string{
 		{"TOOL", "ACTION", "POLICY", "SET", "AT", "BY"},
-		{"calendar", "send_email", "deny", "2026-10-09", "18:00", "cli"},
+		{"task", "cancel", "deny", "2026-10-09", "18:00", "cli"},
 		{"shell_exec", "-", "ask", "2026-10-09", "18:00", "cli"},
 	}
 	if len(lines) != len(want) {

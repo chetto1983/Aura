@@ -29,18 +29,13 @@ import (
 // is not Mutating, so classify's generic branch returns scoring.Safe — the exact tier
 // skillFixedTiers already pinned those three actions to. The authoring half kept the
 // name-keyed entry, because it kept the Mutating+Multiplexed pair the boot-guard checks.
-// The calendar entry (joined by whatsapp__messages in 46-08) is keyed by
-// mcptools.CalendarMultiplexedToolName rather than a literal string, so the
-// Multiplexed flag bridge.go sets and this classifier can never drift apart
-// under a namespace rename (D-21).
 var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
-	"skill_manage":                       classifySkill,
-	"task":                               classifyTask,
-	"swarm_spawn":                        classifySwarmSpawn,
-	"board":                              classifyBoard,
-	"plugin_pack":                        classifyPluginPack,
-	"mail_watch":                         classifyMailWatch,
-	mcptools.CalendarMultiplexedToolName: classifyCalendarAction,
+	"skill_manage": classifySkill,
+	"task":         classifyTask,
+	"swarm_spawn":  classifySwarmSpawn,
+	"board":        classifyBoard,
+	"plugin_pack":  classifyPluginPack,
+	"mail_watch":   classifyMailWatch,
 }
 
 // classify is the monotone saturate-upward de-escalator (D-02). An action-multiplexed
@@ -261,30 +256,3 @@ func classifyTask(raw json.RawMessage) scoring.RiskTier {
 // workspace concurrently can interleave in ways a serial parent cannot. That is a concurrency
 // property to bound in the swarm, not a permission to request.
 func classifySwarmSpawn(json.RawMessage) scoring.RiskTier { return scoring.Normal }
-
-// classifyCalendarAction is the calendar half of D-21: the merge to ONE curated
-// calendar__calendar tool (46-05/46-06) would otherwise flatten 14 graduated
-// actions into a single tier. It reads the action out of the model-supplied raw
-// args and routes it through mcptools.MCPActionClassFor, which resolves the SAME
-// trustedRecipeActions table classifyToolRisk already used before the merge — no
-// second risk source (D-21/D-35). Parse failure, an empty action, a missing
-// action key, or an action the table does not recognise all saturate to Risky,
-// never Safe (this package's own monotone saturate-upward rule).
-func classifyCalendarAction(raw json.RawMessage) scoring.RiskTier {
-	var a struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal(raw, &a); err != nil {
-		return scoring.Risky
-	}
-	switch mcptools.MCPActionClassFor(mcptools.CalendarMultiplexedToolName, a.Action) {
-	case mcptools.MCPActionRead:
-		return scoring.Safe
-	case mcptools.MCPActionMutate:
-		return scoring.Normal
-	case mcptools.MCPActionDestructive:
-		return scoring.Destructive
-	default:
-		return scoring.Risky
-	}
-}
