@@ -443,10 +443,3 @@ func (d *MemoryExportDestination) Open(_ context.Context, ownerID, id string, ex
 func ownerExportMemoryKey(ownerID, id string, expiresAt time.Time) string {
 	return ownerID + ":" + id + ":" + fmt.Sprint(expiresAt.Unix())
 }
-
-// Count reports the number of published archives.
-func (d *MemoryExportDestination) Count() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return len(d.items)
-}
