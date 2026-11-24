@@ -59,7 +59,10 @@ func TestRetiredEnvKeysStayRetired(t *testing.T) {
 		t.Fatal("deploy/aura-image-update.sh declares no RETIRED_ENV_KEYS")
 	}
 	envExample := readProjectFile(t, root, ".env.example")
-	installer := readProjectFile(t, root, "scripts/install.sh")
+	installers := map[string]string{
+		"scripts/install.sh":     readProjectFile(t, root, "scripts/install.sh"),
+		"scripts/install_env.sh": readProjectFile(t, root, "scripts/install_env.sh"),
+	}
 	for key := range strings.FieldsSeq(declared[1]) {
 		for _, rel := range []string{"compose.yaml", "compose.vulkan.yaml", "compose.cpu.yaml"} {
 			if strings.Contains(readProjectFile(t, root, rel), "${"+key) {
@@ -70,8 +73,10 @@ func TestRetiredEnvKeysStayRetired(t *testing.T) {
 			t.Errorf(".env.example sets %s, which the update timer removes from every appliance", key)
 		}
 		written := regexp.MustCompile(`(?m)(\b(set_env_value|ensure_env_default)\s+` + key + `\b|^` + key + `=)`)
-		if written.MatchString(installer) {
-			t.Errorf("scripts/install.sh writes %s, which the update timer removes from every appliance", key)
+		for rel, installer := range installers {
+			if written.MatchString(installer) {
+				t.Errorf("%s writes %s, which the update timer removes from every appliance", rel, key)
+			}
 		}
 	}
 }
@@ -109,4 +114,31 @@ func isPinnedImage(ref string) bool {
 	name := ref[strings.LastIndex(ref, "/")+1:]
 	_, tag, ok := strings.Cut(name, ":")
 	return ok && strings.ContainsAny(tag, "0123456789")
+}
+
+// The fork's main reached appliances on 2026-11-23 before the Aura release that matched it,
+// because the PIM rode a moving tag. It is one immutable sha now, and every script and CI job
+// that runs a PIM runs that same sha -- an image tested is the image shipped.
+func TestThePIMImageIsPinnedEverywhere(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	pinned := regexp.MustCompile(`(?m)^\s+image:\s*(\S+aura-pim-mcp\S*)\s*$`).FindStringSubmatch(compose)
+	if pinned == nil {
+		t.Fatal("compose.yaml has no aura-pim-mcp image line")
+	}
+	ref := composeDefault(pinned[1])
+	if !regexp.MustCompile(`^ghcr\.io/chetto1983/aura-pim-mcp:[0-9a-f]{40}$`).MatchString(ref) {
+		t.Fatalf("compose.yaml runs the PIM as %q, want ghcr.io/chetto1983/aura-pim-mcp:<40-hex sha>", ref)
+	}
+	for _, rel := range []string{".github/workflows/ci.yml", "scripts/pim_mail_e2e.sh", "scripts/pim_tls_mail_up.sh"} {
+		contents := readProjectFile(t, root, rel)
+		if !strings.Contains(contents, ref) {
+			t.Errorf("%s does not name the pinned PIM image %s", rel, ref)
+		}
+		for _, moving := range []string{"aura-pim-mcp:latest", "aura-pim-mcp:sidecar"} {
+			if strings.Contains(contents, moving) {
+				t.Errorf("%s runs the PIM on the moving tag %s", rel, moving)
+			}
+		}
+	}
 }

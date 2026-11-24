@@ -210,12 +210,14 @@ sidecars on its own. A split merged to the fork's `main` would reach appliances 
 So the rollout has a step before the split (decided by the operator, 2026-11-23):
 
 1. **Pin release (before any split code).** One Aura release:
-   - pins `AURA_PIM_MCP_IMAGE`'s default in `compose.yaml` to the current fork revision's `:<sha>`;
+   - pins the PIM image's default in `compose.yaml` to the current fork revision's `:<sha>`;
    - drops `pull_policy: always` for the PIM;
    - adds `AURA_PIM_MCP_IMAGE` to the updater's `RETIRED_ENV_KEYS` (`deploy/aura-image-update.sh`) and stops
      `install_env.sh` writing it, so no appliance `.env` overrides the pin;
-   - keeps `AURA_PIM_MCP_IMAGE` itself as the development override: the updater strips it only from an
-     appliance's `/opt/aura/.env`, so a developer's own `.env` can still point at a local build.
+   - names the development override `AURA_PIM_MCP_DEV_IMAGE`, a key the updater does not retire, and not
+     `AURA_PIM_MCP_IMAGE`: `TestRetiredEnvKeysStayRetired` (`cmd/aura/image_pin_artifacts_test.go`) fails
+     when compose reads a retired key, because a stale appliance value would outrank the pin. A developer's
+     own `.env` can still point at a local build through the new name.
 
    This is the shape the updater already expects: its header says an MCP left at its SHA-pinned compose
    default is a no-op for the sidecar refresh. The PIM then changes on an appliance only when an Aura

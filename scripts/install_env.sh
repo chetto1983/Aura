@@ -264,13 +264,12 @@ ensure_embed_provenance() {
 
 # An :edge install tracks the image home continuously (deploy/aura-image-update.*): compose
 # must re-pull the moving tag on every up, and each MCP sidecar the machine runs
-# needs its own moving tag — a SHA-pinned default would make the update timer a
+# (the PIM excepted: it rides its compose pin) needs its own moving tag — a SHA-pinned default would make the update timer a
 # no-op. Idempotent like the rest: explicit operator choices are preserved.
 ensure_edge_channel_env() {
   case "$(env_value AURA_IMAGE)" in
     *:edge)
       ensure_env_default AURA_PULL_POLICY always
-      ensure_env_default AURA_PIM_MCP_IMAGE ghcr.io/chetto1983/aura-pim-mcp:sidecar
       ensure_env_default AURA_WHATSAPP_MCP_IMAGE ghcr.io/chetto1983/whatsapp-mcp:latest
       # caddy, ingest and arcadedb-mcp are repo-built images whose compose
       # pull_policy defaults to `never`: without a published pin AND `always` a

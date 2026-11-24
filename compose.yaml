@@ -1350,13 +1350,12 @@ services:
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   aura-pim-mcp:
-    # A MOVING tag, deliberately, and `always` so it actually moves. Both sidecars were
-    # pinned by digest and both went stale: their own publish workflow header records
-    # "the deployed pin went stale", and a digest only updates when a human remembers to
-    # paste a new one. `always` is safe HERE in a way it is not for the `aura` service --
-    # nothing builds these locally, so there is no local image for a pull to discard.
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}
-    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}
+    # Pinned by the fork's commit sha. On 2026-11-23 a push to the fork's main reached
+    # appliances before the Aura release that matched it, so the PIM now changes only when an
+    # Aura release changes this pin. AURA_PIM_MCP_DEV_IMAGE is for development only; the
+    # updater retires AURA_PIM_MCP_IMAGE from appliance .env files, where it would outrank the pin.
+    image: ${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a}
+    pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
     depends_on:

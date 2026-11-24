@@ -1491,7 +1491,7 @@ jobs:
       # and compose.yaml defaults to :latest. The pin this replaced (5909c808, 2026-08-28)
       # still let a tenant seed a local JSON account through /admin; production refuses
       # that, so the tier had been proving an image no appliance runs.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:latest
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1975,7 +1975,7 @@ jobs:
       # schema production no longer serves -- the same stale image behind
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:latest
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout

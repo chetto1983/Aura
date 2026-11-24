@@ -20,7 +20,6 @@
 #   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
 #   AURA_PULL_POLICY=always
 #   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
-#   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
 #   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
 #   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
 #   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
@@ -46,7 +45,7 @@ PENDING_PAYLOAD=payload_changes.pending
 # overlays on 2026-09-14, where .env cannot outrank them and freeze a host on an old value.
 # AURA_PIM_EXTERNAL_BASE_URL went on 2026-09-23: Aura now tells the PIM sidecar the cockpit
 # origin on every Google connect and serves the callback itself.
-RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT AURA_PIM_EXTERNAL_BASE_URL)
+RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT AURA_PIM_EXTERNAL_BASE_URL AURA_PIM_MCP_IMAGE)
 # Repo-built services on the edge channel's moving tags, refreshed after aura.
 SIDECARS=(arcadedb-mcp aura-pim-mcp whatsapp caddy aura-ingest aura-cloudflared)
 # The systemd units the payload ships and a host may have installed.

@@ -21,13 +21,13 @@
 # account (spec amendment A5): the spec signs in as the operator.
 #
 # Usage: bash scripts/pim_tls_mail_up.sh [down]
-#   AURA_PIM_MCP_IMAGE picks the PIM image, e.g. a local build of a branch not yet published.
+#   AURA_PIM_MCP_DEV_IMAGE picks the PIM image, e.g. a local build of a branch not yet published.
 #   AURA_E2E_FAKE_MAIL_API moves GreenMail's API; the spec reads the same variable.
 # The Aura under test needs AURA_PIM_MCP_URL=http://127.0.0.1:8093.
 # Needs Docker and openssl, and loopback 993, 465, the API port and 8093 free: stop the compose PIM.
 set -euo pipefail
 
-PIM_IMAGE="${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a}"
 MAIL_IMAGE="${PIM_E2E_MAIL_IMAGE:-greenmail/standalone:2.1.5}"
 MAIL=aura-e2e-tls-mail
 PIM=aura-e2e-tls-pim
