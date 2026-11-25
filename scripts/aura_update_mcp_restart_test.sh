@@ -64,15 +64,16 @@ docker() {
 }
 
 # apply_case <name>: one apply in a fresh install dir, its output in out and docker calls in
-# calls there. PAYLOAD=1 installs a payload the stack has not been brought up on, ABSENT names
-# the services not running when the tick starts.
+# calls there. PAYLOAD=1 installs a payload the stack has not been brought up on, PINS=0 leaves
+# the sandbox images unpinned, ABSENT names the services not running when the tick starts.
 apply_case() {
   INSTALL_DIR="$fixture/$1"
   mkdir -p "$INSTALL_DIR/update"
   cd "$INSTALL_DIR"
   calls="$INSTALL_DIR/calls"
   : >"$calls"
-  printf '%s\n' AURA_SANDBOX_IMAGE=box:edge AURA_SANDBOX_EGRESS_IMAGE=egress:edge >.env
+  : >.env
+  [[ "${PINS:-1}" == 0 ]] || printf '%s\n' AURA_SANDBOX_IMAGE=box:edge AURA_SANDBOX_EGRESS_IMAGE=egress:edge >.env
   [[ "${PAYLOAD:-0}" != 1 ]] || echo 'sum  compose.yaml' >payload_manifest.txt
   local svc
   for svc in ${ABSENT:-}; do touch "absent-$svc"; done
@@ -90,6 +91,13 @@ said() { grep 'restart' out | grep -v '^sandbox:' || true; }
   [[ "$(restarts)" == 1 ]] || fail "a PIM moved after aura mounted it restarted aura $(restarts) times: $(cat out)"
   awaited || fail "the restart of aura was not awaited: $(cat "$calls")"
   [[ "$(said)" == *aura-pim-mcp* ]] || fail "the restart did not name the PIM: $(cat out)"
+)
+# A host with no sandbox pins has no boxes to refresh, and still has a PIM to remount.
+(
+  PINS=0 PAYLOAD=1 UP_MOVES=aura-pim-mcp UP_STARTS='' SIDECAR_MOVES='' STALE=''
+  apply_case no-sandbox-pins
+  grep -qx 'sandbox: no images pinned in .env; skipped.' out || fail "the unpinned sandbox was not reported: $(cat out)"
+  [[ "$(restarts)" == 1 ]] || fail "without sandbox pins a moved PIM restarted aura $(restarts) times: $(cat out)"
 )
 echo "ok: an MCP sidecar moved after aura mounted it restarts aura once"
 
