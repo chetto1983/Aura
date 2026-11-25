@@ -2241,20 +2241,10 @@ jobs:
         # page.request filters Secure CSRF/session cookies from HTTP 127.0.0.1.
         # The runner preserves the web cwd, CI exports, and full browser matrix while
         # using the existing TLS proxy and bounded /healthz readiness on its HTTPS origin.
-        # TEMP-harvest (revert after committing the PNGs, playbook 64ba3ec4/ecc98359):
-        # the calm-prism baselines drifted after the shell containing-block fix; CI
-        # renders with the runner's Chrome, so off-runner regeneration fails on
-        # font/build diffs. --update-snapshots regenerates them ON the runner while the
-        # rest of the suite still runs as a real gate; the artifact below is harvested.
-        run: bash scripts/web_e2e_ci.sh --update-snapshots
-
-      - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: calm-prism-snapshots
-          path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
-          if-no-files-found: error
+        # The calm-prism baselines are the runner's own render (Chrome on ubuntu-latest);
+        # a run with --update-snapshots compares nothing, which is how they went unchecked
+        # from 2026-07-23 to 2026-11-25.
+        run: bash scripts/web_e2e_ci.sh
 
       - name: Tear down
         if: always()
