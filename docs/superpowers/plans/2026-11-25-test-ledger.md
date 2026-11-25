@@ -32,7 +32,7 @@
 
 ## Decisions taken while writing this plan
 
-- **Go is declared from source; JavaScript and Python suites are declared by file.** Measured: `vitest list --json` names 3,744 tests where a run executes 4,275 (parameterised tests), so for those suites a file absent from the report is the violation and the report is the inventory inside a file.
+- **Go is declared from source, pytest by node id, the JavaScript suites by file.** `pytest --collect-only -q` expands parameterised tests at collection, so its node ids are the declared set and a collected id missing from the JUnit report is a violation. `vitest list --json` does not: it names 3,744 tests where a run executes 4,275, so for Vitest and Playwright a file absent from the report is the violation and the report is the inventory inside a file (the limit on conditionally registered tests is spec §9).
 - **The declared-set code moves, it is not rewritten.** `tierTestFiles`, `testFuncs`, `goBuildConstraint` and `gatingTags` leave `cmd/aura/tier_runners_files_test.go` for `internal/testledger`; the rest of the static check (about 1,800 lines interpreting workflow text) is deleted in Part C, not ported.
 - **Subtests are not units.** A parent that ran counts; table rows are the parent's business.
 - **Report-only first.** The first `master` run produces the real violation list; the allowlist is written from it, not guessed.
@@ -82,8 +82,16 @@ scripts/go_test_ledger_test.sh
 
 - [ ] Playwright: `['json', { outputFile }]` beside `github` when `AURA_TEST_LEDGER_DIR` is set.
 - [ ] Vitest (both packages): `--reporter=default --reporter=json --outputFile.json=…`.
-- [ ] pytest: `--junitxml`.
+- [ ] pytest: `--collect-only -q` into the ledger dir (the declared node ids), then the run with `--junitxml`.
 - [ ] One local run of each, report files inspected.
+
+### Task A4: The shell self-test runner
+
+**Files:** `scripts/run_script_tests.sh`, its self-test, `.github/workflows/ci.yml`, `Makefile`
+
+- [ ] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
+- [ ] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
+- [ ] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit.
 
 ## Part B: judge
 
@@ -105,7 +113,7 @@ scripts/go_test_ledger_test.sh
 
 **Files:** `internal/testledger/allow.go`, `check.go` + tests; `.github/test_ledger_allow.txt` (empty at first)
 
-- [ ] Violations, each with a test: declared-not-executed; unexcused skip; stale entry (matches nothing, or matches a unit that executed); a JS or Python test file absent from its report; a needed job with no artifact.
+- [ ] Violations, each with a test: declared-not-executed; unexcused skip of a unit no job executed; stale entry (matches nothing, or matches a unit some job executed); a collected pytest node id absent from the JUnit report; a Vitest or Playwright test file absent from its report; a shell self-test with no result line; a needed job with no artifact.
 - [ ] Classes are exactly `paid`, `outward`, `measure`, `platform`; any other is a parse error.
 - [ ] Mutation ≥70% on `check.go` (`go-mutesting`), recorded in the commit body.
 

@@ -82,7 +82,10 @@ Subtests are not units: a parent that runs counts, and table rows stay the paren
 
 The JavaScript suites are declared by file, not by a listing command: measured on `web`, `vitest list --json`
 names 3,744 tests while the CI run executes 4,275, because parameterised and generated tests exist only at
-run time. A file that never reaches the report is the violation; inside a file the report is complete.
+run time. A file that never reaches the report is the violation; inside a file the report lists every test
+the file registered, skipped ones included. A test registered only under a condition (`if (flag) test(…)`)
+is not registered when the condition is false, so it is in no report: §9 states the limit, §10 asks how to
+close it.
 
 ### 4.2 Recording
 
@@ -104,9 +107,10 @@ run time. A file that never reaches the report is the violation; inside a file t
 A `test-ledger` job in `ci.yml`, `needs:` every test job, `if: ${{ !cancelled() }}`, downloads the
 `test-ledger-*` artifacts and runs `go run ./cmd/testledger check`. It fails on any of:
 
-1. a declared unit with no `pass`/`fail` result and no allowlist entry;
-2. a `skip` result with no allowlist entry;
-3. an allowlist entry that matches no declared unit, or matches one that executed (stale);
+1. a declared unit that no job executed (`pass` or `fail`) and no allowlist entry excuses;
+2. a unit that no job executed and that skipped, with no allowlist entry: a skip is judged only when no job
+   ran the unit, so a test skipped in one job and run in another is executed, not excused;
+3. an allowlist entry that matches no declared unit, or matches a unit some job executed (stale);
 4. a needed test job whose result is not `success`, or one that uploaded no artifact.
 
 It writes to `$GITHUB_STEP_SUMMARY`: declared / executed / skipped / excused counts per suite, every
@@ -115,7 +119,9 @@ allowlist entry with its class and reason, and every violation. The declared-set
 moved into `internal/testledger` so it is tested and inside the coverage floor; `cmd/testledger` is a thin
 main.
 
-Units are matched across jobs by union: a test that runs in two jobs is executed if either ran it.
+Units are matched across jobs by union: a test that runs in two jobs is executed if either ran it. A
+Playwright unit carries its project, so a desktop-only test is executed in `chrome` and, in `mobile-chrome`,
+a separate unit that never runs and needs a `platform` entry.
 
 ### 4.4 Script self-tests
 
@@ -227,14 +233,20 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
   critical mutation gates (≥70% killed) remain the check on assertion strength, and only on their scopes.
 - That a test excused as `paid` or `outward` still works. The ledger keeps it visible, not green.
 - Anything about pushes that do not run the workflow (documentation-only changes under `paths-ignore`).
+- A JavaScript test registered only under a condition that was false in CI: it reaches no report, so the
+  ledger cannot see it (§4.1). Go tests are declared from source and have no such gap.
 
 ## 10. Open questions for the operator
 
-1. **The 22 live Playwright specs.** Eight need only a live stack with fixtures (documents, graph, skill
-   catalogue, origin isolation, paperless, browser sidecar). Fourteen drive a real agent or a real account.
-   Proposal: the eight join a `web-e2e-live` job; the fourteen are designed separately, either against a
-   scripted model endpoint (the model-in-the-loop parking endpoint, automated) or as `paid` entries.
+1. **Conditionally registered JavaScript tests (§4.1, §9).** Declare JavaScript tests from source, as Go is,
+   so a test behind `if (flag) test(…)` is in the declared set; or keep the report as the inventory and
+   accept the limit, with a lint rule that forbids registering a test inside a condition (`test.skip(cond)`
+   registers it and reports the skip, which the ledger sees).
+2. *(answered, see below)* The 22 live Playwright specs: 15 drive a real agent or account and stay manual
+   as `paid`; 7 need only a live stack with fixtures (documents ×4, graph, skill catalogue, origin
+   isolation) and are wired.
 
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
-master's render; the FQDN egress mode is removed.
+master's render; the FQDN egress mode is removed; the paid live Playwright specs stay manual and the rest
+are wired.
