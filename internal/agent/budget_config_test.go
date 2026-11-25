@@ -72,7 +72,7 @@ func TestBudgetResolvesTheBackgroundWindowAndCeiling(t *testing.T) {
 	if b.BackgroundWindow() != 45*time.Second || b.BackgroundCeiling() != 10*time.Minute {
 		t.Fatalf("got %v / %v, want env 45s and profile 10m over env 15m", b.BackgroundWindow(), b.BackgroundCeiling())
 	}
-	child := b.Child(2)
+	child := b.Child()
 	if child.BackgroundWindow() != b.BackgroundWindow() || child.BackgroundCeiling() != b.BackgroundCeiling() {
 		t.Fatalf("child = %v / %v, want the parent's", child.BackgroundWindow(), child.BackgroundCeiling())
 	}

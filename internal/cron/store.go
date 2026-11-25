@@ -275,63 +275,6 @@ func (s *Store) UpdateNextRunAt(ctx context.Context, id string, next time.Time) 
 	return nil
 }
 
-// InsertRun opens a new running agent_job_runs row for taskID.
-func (s *Store) InsertRun(ctx context.Context, taskID string, stepBudget int) (Run, error) {
-	tu, err := db.ParseUUID("uuid", taskID)
-	if err != nil {
-		return Run{}, fmt.Errorf("insert run: %w", err)
-	}
-	row, err := s.q.InsertRun(ctx, sqlc.InsertRunParams{
-		ID:         newUUID(),
-		TaskID:     tu,
-		StepBudget: int4OrNull(stepBudget),
-	})
-	if err != nil {
-		return Run{}, fmt.Errorf("insert run for task %q: %w", taskID, err)
-	}
-	return runFromRow(row), nil
-}
-
-// CreateRunAndAdvance is the atomic claim-then-reschedule write: it opens a run
-// row AND advances the task's next_run_at in ONE transaction (db.WithTx), so a
-// failure between the two never leaves a claimed task that will never fire again
-// (or a fired task with no run row). Returns the opened run.
-func (s *Store) CreateRunAndAdvance(ctx context.Context, taskID string, stepBudget int, next time.Time) (Run, error) {
-	tu, err := db.ParseUUID("uuid", taskID)
-	if err != nil {
-		return Run{}, fmt.Errorf("create run and advance: %w", err)
-	}
-	var run Run
-	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-		row, err := q.InsertRun(ctx, sqlc.InsertRunParams{ID: newUUID(), TaskID: tu, StepBudget: int4OrNull(stepBudget)})
-		if err != nil {
-			return fmt.Errorf("insert run: %w", err)
-		}
-		if err := q.UpdateNextRunAt(ctx, sqlc.UpdateNextRunAtParams{ID: tu, NextRunAt: tsOrNull(next)}); err != nil {
-			return fmt.Errorf("advance next_run_at: %w", err)
-		}
-		run = runFromRow(row)
-		return nil
-	})
-	if err != nil {
-		return Run{}, fmt.Errorf("create run and advance for task %q: %w", taskID, err)
-	}
-	return run, nil
-}
-
-// Heartbeat bumps last_heartbeat_at on a run row (called on the held conn in
-// 10-03; this Store method serves the non-held path and tests).
-func (s *Store) Heartbeat(ctx context.Context, runID string) error {
-	u, err := db.ParseUUID("uuid", runID)
-	if err != nil {
-		return fmt.Errorf("heartbeat: %w", err)
-	}
-	if err := s.q.UpdateHeartbeat(ctx, u); err != nil {
-		return fmt.Errorf("heartbeat run %q: %w", runID, err)
-	}
-	return nil
-}
-
 // CompleteRunParams carries a terminal run transition.
 type CompleteRunParams struct {
 	RunID         string

@@ -64,12 +64,6 @@ func (a *ShellApprovals) approvals() *ApprovalStore[ShellCommand] {
 	return &a.store
 }
 
-// Approve grants a one-shot approval for the command digest and clears any pending
-// challenge for it.
-func (a *ShellApprovals) Approve(sessionID, digest string) {
-	a.approvals().Approve(sessionID, digest)
-}
-
 // Consume redeems an approval, reporting whether one was present. Approvals are one-shot,
 // so a second run of the same command prompts again.
 func (a *ShellApprovals) Consume(sessionID, digest string) bool {

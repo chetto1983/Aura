@@ -118,8 +118,8 @@ func TestMeasureL1(t *testing.T) {
 	// Hard caps for two representative windows (SPEC Req#10 formula, MaxOutput at the
 	// 20k floor, 13k headroom): 1M-class local model vs a 200K-class cloud model.
 	caps := map[string]int{
-		"1M window":   ContextConfig{ContextWindow: 1048576, MaxOutputTokens: 32768}.HardCap(),
-		"200K window": ContextConfig{ContextWindow: 200000, MaxOutputTokens: 8192}.HardCap(),
+		"1M window":   ContextConfig{ContextWindow: 1048576, MaxOutputTokens: 32768}.hardCap(),
+		"200K window": ContextConfig{ContextWindow: 200000, MaxOutputTokens: 8192}.hardCap(),
 	}
 
 	t.Logf("L1 evictAfter=%d  previewCap=%dB", evictAfter, previewCapBytes)

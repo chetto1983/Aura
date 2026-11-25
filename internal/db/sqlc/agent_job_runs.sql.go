@@ -186,14 +186,3 @@ func (q *Queries) ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleR
 	}
 	return items, nil
 }
-
-const updateHeartbeat = `-- name: UpdateHeartbeat :exec
-UPDATE aura.agent_job_runs
-SET last_heartbeat_at = now()
-WHERE id = $1
-`
-
-func (q *Queries) UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, updateHeartbeat, id)
-	return err
-}

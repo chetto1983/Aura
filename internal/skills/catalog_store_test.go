@@ -42,9 +42,6 @@ func TestCatalogStoreRejectsMalformedIdentities(t *testing.T) {
 	if _, err := s.ListOwned(t.Context(), "local"); err == nil {
 		t.Error("ListOwned must reject an owner that is not an identity uuid")
 	}
-	if _, err := s.ListAlwaysApply(t.Context(), "local"); err == nil {
-		t.Error("ListAlwaysApply must reject an owner that is not an identity uuid")
-	}
 	if _, err := s.ListByIDs(t.Context(), catalogTestOwner, []string{"not-a-uuid"}); err == nil {
 		t.Error("ListByIDs must reject an id that is not a uuid")
 	}

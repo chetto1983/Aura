@@ -60,9 +60,6 @@ func New(s StateStore, c Cloudflare, m Members, p Projection, l *slog.Logger, op
 	return r
 }
 
-// Status reads persisted state without triggering external operations.
-func (r *Reconciler) Status(ctx context.Context) (State, error) { return r.store.Load(ctx) }
-
 // SaveDesired prevents concurrent intent changes between creation and ID persistence.
 func (r *Reconciler) SaveDesired(ctx context.Context, generation int64, desired Desired, by string) (State, error) {
 	r.mu.Lock()
@@ -276,8 +273,8 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	if errors.Is(err, ErrStaleGeneration) || errors.Is(err, context.Canceled) {
 		return err
 	}
-	// Disabled operations never call failed except deletion: disabled member sync is
-	// refused locally and disableProjection returns directly. SaveDesired relies on
+	// Disabled operations never call failed except deletion: disableProjection returns
+	// directly. SaveDesired relies on
 	// error + disabled + retained references to recover terminal deletion intent.
 	deleting := s.Phase == PhaseDeleting
 	s.Phase = PhaseError

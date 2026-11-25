@@ -36,11 +36,6 @@ type IngestState struct {
 	Errors     int64  `json:"errors"`
 }
 
-// Ready reports whether the reconciler has caught up. Case-insensitive: the value is
-// another process's enum, and a caught-up ingest read as running is exactly the confusion
-// this field exists to remove.
-func (s IngestState) Ready() bool { return strings.EqualFold(s.Status, IngestReady) }
-
 // IngestState reads the identity's reconciler state, or nil when the sidecar has never
 // written one -- a library nothing has ever been ingested into, and a state this cannot
 // invent. A missing type is that same case: the DDL runs on the sidecar's first start.

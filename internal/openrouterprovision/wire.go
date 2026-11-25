@@ -4,7 +4,7 @@
 // exported function takes its own *http.Client, base URL and API key — no
 // package-level default client, no package-level base URL, no init() — the
 // same convention internal/llm/spend.go:53's FetchSpend and
-// internal/llm/pricing_source.go's FetchModelPrice already use, and the
+// internal/llm/model_catalog.go's FetchModelCatalog already use, and the
 // reason this whole package's tests run against httptest with no daemon and
 // no network (RESEARCH Q6).
 //

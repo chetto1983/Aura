@@ -145,7 +145,7 @@ func (s *Store) AppendTurnSeq(ctx context.Context, p AppendTurnParams) (int, err
 }
 
 // AppendTurnTx is the no-spill, tx-inner half of AppendTurn, EXPORTED so the 34-06
-// runner-package ResumeCommitter can span a pause claim (askuser.MarkResumedTx) and the
+// runner-package ResumeCommitter can span a pause claim (askuser.MarkResumedFencedTx) and the
 // resume/answer turn append in ONE cross-store transaction (D-03). The caller's transaction
 // must already carry the RLS identity — the committer opens it with
 // db.WithCallerIdentityTx — because aura.conversation_turns is fail-closed (0089) and this

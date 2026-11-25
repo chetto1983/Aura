@@ -281,7 +281,7 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Owner gate (MUSR-01 / D-06): resolve only the caller's own approval. The atomic
-	// resume itself stays the Runner's job (SubmitAnswers → MarkResumedTx, never forked);
+	// resume itself stays the Runner's job (SubmitAnswers → MarkResumedFencedTx, never forked);
 	// this gate authorizes it. A miss on the scoped read means the token is not the
 	// caller's, and that is 404 whether it is foreign, unknown, or already resolved.
 	//

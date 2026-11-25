@@ -1,0 +1,34 @@
+# Production reachability allowlist (scripts/deadcode_production_gate.sh).
+#
+# Each entry is what no main package reaches, and why it stays. One entry per line: a
+# package path or a symbol (<package path>.<Func>, <package path>.<Type>.<Method>), then
+# the reason. The gate fails on a finding this file does not name AND on an entry that no
+# longer matches a finding, so an entry goes in the same commit as the code it excuses and
+# leaves with it.
+
+# Test-support packages: their whole surface exists for tests.
+github.com/chetto1983/aura/internal/agent/agenttest   fake LLM client, mocks and embedders for agent tests
+github.com/chetto1983/aura/internal/agenteval         the agent eval harness, driven by live tests and scripts/musr_live_run_assert.go
+github.com/chetto1983/aura/internal/dbtest            disposable-database guards for db_integration tests
+github.com/chetto1983/aura/internal/steer/steertest   in-memory steer fake for tests in other packages
+
+# Test seams in production packages: production never calls them, tests in this or another
+# package do, through an API the type cannot otherwise expose.
+github.com/chetto1983/aura/internal/agent/tools.Registry.Adopt                         tests swap a mounted tool for a wrapped copy (agui, runner)
+github.com/chetto1983/aura/internal/agent/tools.ShellApprovals.PendingChallenge        the shell resume hook tests read the challenge they answer
+github.com/chetto1983/aura/internal/gateway.Gateway.RecordResolvedApproval             seeds a resolved approval; refuses under the production profile
+github.com/chetto1983/aura/internal/mcp.WaitForAbandonedCalls                          drains abandoned MCP calls so goleak sees none (mcptools tests)
+github.com/chetto1983/aura/internal/multimodal.STTClient.Cloud                         cmd/aura voice tests assert which STT route was wired
+github.com/chetto1983/aura/internal/obs.IsBoundedAttribute                             the attribute-catalog contract the idempotency telemetry test asserts
+github.com/chetto1983/aura/internal/reasoningfifo.FIFO.Len                             the CLI renderer tests assert the reasoning window stays bounded
+github.com/chetto1983/aura/internal/runner.ConversationProjector.Flush                 tests wait for the projection worker without closing it
+github.com/chetto1983/aura/internal/sandbox/usersandbox.DockerBackend.EgressImage      cmd/aura tests assert the egress sidecar wiring without a daemon
+github.com/chetto1983/aura/internal/sandbox/usersandbox.DockerBackend.SpoolDir         cmd/aura tests assert the spool dir wiring without a daemon
+github.com/chetto1983/aura/internal/skills.Writer.Owner                                cmd/aura tests assert which identity a writer writes as
+github.com/chetto1983/aura/internal/swarm.DelegationClaimLoop.Wait                     tests join in-flight workers; the daemon never waits
+github.com/chetto1983/aura/internal/utf8cut.Ellipsize                                  only internal/agenteval truncates with it
+
+# UNWIRED: built for production, never connected. Each entry is an open gap, not a seam:
+# wire it or delete it, and the entry goes with that change.
+github.com/chetto1983/aura/internal/channels/telegram.Store.CleanupExpired             GC of expired onboarding tokens; nothing schedules it, so expired rows accumulate
+github.com/chetto1983/aura/internal/idempotency.Store.ExpireReplayBodies               replay-body expiry sweep; nothing schedules it, so payloads outlive ReplayRetention

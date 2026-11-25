@@ -99,23 +99,6 @@ func TestReasoningRetentionPolicy(t *testing.T) {
 		t.Fatalf("reasoning failed TTL = %s, want 7 days", cfg.ReasoningFailedTTL)
 	}
 	for _, test := range []struct {
-		status string
-		want   time.Duration
-	}{
-		{status: "succeeded", want: 30 * 24 * time.Hour},
-		{status: "failed", want: 7 * 24 * time.Hour},
-		{status: "cancelled", want: 7 * 24 * time.Hour},
-	} {
-		got, err := cfg.ReasoningTTL(test.status)
-		if err != nil || got != test.want {
-			t.Errorf("ReasoningTTL(%q) = %s, %v; want %s", test.status, got, err, test.want)
-		}
-	}
-	if _, err := cfg.ReasoningTTL("running"); err == nil {
-		t.Fatal("non-terminal reasoning status received a TTL")
-	}
-
-	for _, test := range []struct {
 		name string
 		edit func(*RetentionConfig)
 	}{

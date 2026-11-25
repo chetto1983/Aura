@@ -148,7 +148,7 @@ func (b *Bank) build(ctx context.Context, identityID string, d Domain, space str
 	if err != nil {
 		return nil, false, err
 	}
-	classifier := semindex.NewClassifier(b.Embedder)
+	classifier := semindex.NewClassifier()
 	for i, seed := range d.Seeds {
 		classifier.AddVecs(seed.Label, seeds[i])
 	}

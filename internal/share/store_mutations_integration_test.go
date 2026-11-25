@@ -2,8 +2,7 @@
 
 // store_mutations_integration_test.go covers the remaining Store methods not exercised by
 // store_integration_test.go's security-property tests: the plain listing/update/sweep paths
-// (ListForIdentity, ListForConversation, UpdateSnapshot, RevokeForConversation,
-// DueForExpiry). Split into its own file (CLAUDE.md NO GOD CLASS / file-size cap) rather than
+// (ListForIdentity, ListForConversation, UpdateSnapshot, DueForExpiry). Split into its own file (CLAUDE.md NO GOD CLASS / file-size cap) rather than
 // growing store_integration_test.go past 600 LOC; shares that file's envOrSkip/migratedPool/
 // seedIdentity/seedConversation/newLink/futurePtr/pastPtr helpers (same package, same tag).
 package share
@@ -141,58 +140,6 @@ func TestShareStoreUpdateSnapshot(t *testing.T) {
 
 	if err := store.UpdateSnapshot(ctx, link.ID.String(), other, newSnapshot, at); !errors.Is(err, ErrShareNotFound) {
 		t.Fatalf("UpdateSnapshot(foreign owner) = %v, want ErrShareNotFound", err)
-	}
-}
-
-// TestShareStoreRevokeForConversation proves the D-15 cascade seam: every still-live link
-// for a conversation is revoked in one call and returned (snapshot fields intact) so the
-// caller can drop their Garage bytes; an already-revoked link is untouched and not returned.
-func TestShareStoreRevokeForConversation(t *testing.T) {
-	pool := migratedPool(t)
-	store := New(pool)
-	ctx := context.Background()
-
-	owner := seedIdentity(t, pool)
-	conv := seedConversation(t, pool, owner)
-
-	live1 := newLink(owner, conv, "internal", nil)
-	if err := store.Insert(ctx, live1, nil); err != nil {
-		t.Fatalf("insert live1: %v", err)
-	}
-	live2 := newLink(owner, conv, "internal", nil)
-	if err := store.Insert(ctx, live2, nil); err != nil {
-		t.Fatalf("insert live2: %v", err)
-	}
-	alreadyRevoked := newLink(owner, conv, "internal", nil)
-	if err := store.Insert(ctx, alreadyRevoked, nil); err != nil {
-		t.Fatalf("insert alreadyRevoked: %v", err)
-	}
-	if err := store.RevokeForIdentity(ctx, alreadyRevoked.ID.String(), owner, time.Now().UTC()); err != nil {
-		t.Fatalf("pre-revoke alreadyRevoked: %v", err)
-	}
-
-	revoked, err := store.RevokeForConversation(ctx, conv, owner, time.Now().UTC())
-	if err != nil {
-		t.Fatalf("RevokeForConversation: %v", err)
-	}
-	if len(revoked) != 2 {
-		t.Fatalf("RevokeForConversation returned %d links, want 2 (only the previously-live ones)", len(revoked))
-	}
-	seen := map[uuid.UUID]bool{}
-	for _, l := range revoked {
-		seen[l.ID] = true
-		if l.RevokedAt == nil {
-			t.Fatalf("revoked link %s has nil RevokedAt", l.ID)
-		}
-		if l.SnapshotBucket != "share-test-bucket" {
-			t.Fatalf("revoked link %s lost its snapshot bucket: %q", l.ID, l.SnapshotBucket)
-		}
-	}
-	if !seen[live1.ID] || !seen[live2.ID] {
-		t.Fatalf("RevokeForConversation did not return both live links: %+v", revoked)
-	}
-	if seen[alreadyRevoked.ID] {
-		t.Fatalf("RevokeForConversation re-returned an already-revoked link: %s", alreadyRevoked.ID)
 	}
 }
 

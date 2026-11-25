@@ -20,9 +20,8 @@ import (
 
 // TestDelegationClaimLoopResolversFallBackToBuiltins pins both legs of every
 // resolver. A zero field must resolve to the package builtin rather than to a zero
-// duration or batch: a zero PollInterval would spin the loop, a zero LeaseDuration
-// would make every claim instantly reclaimable by another worker, and a zero
-// BatchSize would claim nothing forever.
+// duration or batch: a zero LeaseDuration would make every claim instantly
+// reclaimable by another worker, and a zero BatchSize would claim nothing forever.
 func TestDelegationClaimLoopResolversFallBackToBuiltins(t *testing.T) {
 	zero := &DelegationClaimLoop{}
 	if got := zero.workerID(); got != defaultDelegationWorkerID {
@@ -30,9 +29,6 @@ func TestDelegationClaimLoopResolversFallBackToBuiltins(t *testing.T) {
 	}
 	if got, want := zero.leaseDuration(), time.Duration(defaultDelegationLeaseSec)*time.Second; got != want {
 		t.Errorf("leaseDuration() = %v, want %v", got, want)
-	}
-	if got := zero.pollInterval(); got != defaultDelegationPollInterval {
-		t.Errorf("pollInterval() = %v, want %v", got, defaultDelegationPollInterval)
 	}
 	if got := zero.batchSize(); got != defaultDelegationBatchSize {
 		t.Errorf("batchSize() = %d, want %d", got, defaultDelegationBatchSize)
@@ -44,7 +40,6 @@ func TestDelegationClaimLoopResolversFallBackToBuiltins(t *testing.T) {
 	set := &DelegationClaimLoop{
 		WorkerID:      "explicit-worker",
 		LeaseDuration: 7 * time.Second,
-		PollInterval:  11 * time.Second,
 		BatchSize:     13,
 		RetryBackoff:  17 * time.Second,
 	}
@@ -53,9 +48,6 @@ func TestDelegationClaimLoopResolversFallBackToBuiltins(t *testing.T) {
 	}
 	if got := set.leaseDuration(); got != 7*time.Second {
 		t.Errorf("leaseDuration() = %v, want the explicit value", got)
-	}
-	if got := set.pollInterval(); got != 11*time.Second {
-		t.Errorf("pollInterval() = %v, want the explicit value", got)
 	}
 	if got := set.batchSize(); got != 13 {
 		t.Errorf("batchSize() = %d, want the explicit value", got)

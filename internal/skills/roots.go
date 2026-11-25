@@ -138,9 +138,3 @@ func DirWithin(root, dir string) bool {
 	}
 	return !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-
-// Owns reports whether dir is a skill directory this identity may write to — the one under
-// their WritableRoot. A skill loaded from the house root, or from another identity's export
-// via a share, is NOT owned: the person reads and runs it, and the cockpit must not offer
-// them a verb that would land on a directory Writer.For cannot reach (amendment #218).
-func (r Roots) Owns(dir string) bool { return DirWithin(r.WritableRoot(), dir) }

@@ -48,19 +48,6 @@ func documentFieldsSchemaStatements() []string {
 	}
 }
 
-// EnsureDocumentFieldsSchema creates the document fields types and indexes, and the triggers that
-// keep their projection on the indexed rows. It reports whether the triggers are in place: they
-// need ingest's Passage and IndexedDocument types, and ArcadeDB refuses a trigger on a type that
-// does not exist (measured 2026-10-18 on 26.10.1), so until the identity's first ingest the caller
-// asks again. Creating the types here instead would turn an empty library, which retrieval reads
-// as one, into a schema with none of ingest's indexes.
-func (c *Client) EnsureDocumentFieldsSchema(ctx context.Context) (bool, error) {
-	if err := c.EnsureDocumentFieldsTypes(ctx); err != nil {
-		return false, err
-	}
-	return c.EnsureDocumentFieldsTriggers(ctx)
-}
-
 // EnsureDocumentFieldsTypes creates the document fields types and indexes. Two DDL passes over
 // one database at once can fail inside ArcadeDB (an internal NullPointerException, measured
 // 2026-10-18 on 26.10.1), so a caller runs it once per database, not once per request.

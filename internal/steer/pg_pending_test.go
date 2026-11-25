@@ -23,12 +23,10 @@ func TestPendingDelegationResultsWaitForFanoutAndSurvivePhoneNotification(t *tes
 		}
 	}
 	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
-	if err := store.PushDelegationResult(conv, SourceWorker, "saved report", "pending-fanout"); err != nil {
+	if err := store.PushDelegationResultIdempotent(conv, SourceWorker, "saved report", "pending-fanout", "dk-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.MarkFanoutNudged(t.Context(), owner, "pending-fanout"); err != nil {
-		t.Fatal(err)
-	}
+	markFanoutNudged(t, pool, owner, "pending-fanout")
 	if rows, err := store.ListPendingDelegationResults(ctx, 10); err != nil || len(rows) != 0 {
 		t.Fatalf("historical unregistered result woke: %v %v", rows, err)
 	}

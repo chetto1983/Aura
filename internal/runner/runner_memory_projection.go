@@ -238,7 +238,9 @@ func (p *ConversationProjector) completeOffer(err error) {
 	}
 }
 
-// Flush waits for every accepted offer and reports projection failures.
+// Flush waits for every accepted offer and reports projection failures, leaving the
+// projector open. Production only drains on shutdown, through Close; Flush is the seam
+// the tests use to wait for the worker mid-run and then keep offering.
 func (p *ConversationProjector) Flush(ctx context.Context) error {
 	if p == nil {
 		return nil

@@ -20,6 +20,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// Count reports the number of published archives; only tests need to ask.
+func (d *MemoryExportDestination) Count() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.items)
+}
+
 func TestOwnerExporterManifestIsVersionedDeterministicAndVerified(t *testing.T) {
 	source := &fakeOwnerExportSource{
 		snapshot: ExportSnapshot{

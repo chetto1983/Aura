@@ -22,9 +22,8 @@ import (
 // It revokes each live link through Revoke (drop-blobs-then-stamp, R-10's mandatory ordering,
 // already audited "revoke") rather than a bespoke bulk stamp: reusing Revoke means this cascade
 // can never drift from the single already-tested crash-safe ordering every other revoke path
-// uses — a bulk stamp-then-drop (the one aura.shared_links.RevokeForConversation alone would
-// produce) would instead orphan bytes permanently on a crash between the two, exactly the R-10
-// trap this whole plan exists to close.
+// uses — a bulk stamp-then-drop would instead orphan bytes permanently on a crash between the
+// two, exactly the R-10 trap this whole plan exists to close.
 //
 // A per-link failure is collected and processing continues to the next link — a transient
 // object-store error on one share must not abandon cleanup of the conversation's other shares

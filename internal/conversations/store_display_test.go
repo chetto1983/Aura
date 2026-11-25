@@ -80,7 +80,7 @@ func TestRepairDisplayTurns_TheMessagesAreTheModelsRepair(t *testing.T) {
 		in[i] = displayTurn(i+1, i, m)
 	}
 
-	model, shown := repairToolMessagePairs(msgs), DisplayMessages(repairDisplayTurns(in))
+	model, shown := repairManagedToolMessagePairs(msgs), DisplayMessages(repairDisplayTurns(in))
 	if !reflect.DeepEqual(shown, model) {
 		t.Fatalf("display messages differ from the model's repair:\ndisplay %+v\n  model %+v", shown, model)
 	}

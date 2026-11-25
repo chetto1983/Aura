@@ -18,7 +18,7 @@ import (
 
 // QueueKind discriminates aura.steer_queue rows (D-07): one table, rows typed by kind,
 // each deriving its TTL from its own configured knob. Push creates KindSteer rows;
-// PushDelegationResult creates KindDelegationResult rows and requires a fan-out key.
+// PushDelegationResultIdempotent creates KindDelegationResult rows and requires a fan-out key.
 type QueueKind string
 
 // The two kinds aura.steer_queue accepts. These literals are duplicated in migration
@@ -77,24 +77,12 @@ func (s *PostgresStore) Push(conv, source, text string) error {
 	return s.push(conv, source, text, KindSteer, "", "")
 }
 
-// PushDelegationResult is Push's fan-out-aware counterpart (51-11 Task 3, CONTEXT D-15):
-// the SAME guarded INSERT, capacity cap, TTL derivation and sentinel errors, with one
-// additional value written -- the fanout_key every row of one swarm_spawn call shares, so
-// the absent-operator nudge sweep can claim and deliver the whole fan-out in one message.
-// It shares this method's body with Push through the unexported push helper below rather
-// than duplicating the validation ladder or the transaction; Push itself keeps its own
-// locked, unwidenable (conv, source, text string) error signature untouched (this doc's
-// own paragraph above), so a fourth argument was never an option there -- this is a
-// second, additive method instead of a fifth Push argument.
-func (s *PostgresStore) PushDelegationResult(conv, source, text, fanoutKey string) error {
-	if strings.TrimSpace(fanoutKey) == "" {
-		return fmt.Errorf("steer: push delegation result: fan-out key is required")
-	}
-	return s.push(conv, source, text, KindDelegationResult, fanoutKey, "")
-}
-
-// PushDelegationResultIdempotent publishes one job-keyed terminal projection.
-// Repeating the same conversation/key pair preserves the first body and fan-out.
+// PushDelegationResultIdempotent is Push's fan-out-aware counterpart for a terminal
+// worker report (51-11 Task 3, CONTEXT D-15): the SAME guarded INSERT, capacity cap, TTL
+// derivation and sentinel errors through the shared push helper, plus the fanout_key every
+// row of one swarm_spawn call shares (so the absent-operator nudge sweep can claim and
+// deliver the whole fan-out in one message) and a delivery key. Repeating the same
+// conversation/key pair preserves the first body and fan-out.
 func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error {
 	if strings.TrimSpace(fanoutKey) == "" {
 		return fmt.Errorf("steer: push delegation result: fan-out key is required")
@@ -105,9 +93,9 @@ func (s *PostgresStore) PushDelegationResultIdempotent(conv, source, text, fanou
 	return s.push(conv, source, text, KindDelegationResult, fanoutKey, deliveryKey)
 }
 
-// push is Push and PushDelegationResult's shared body: identical validation ladder,
+// push is Push and PushDelegationResultIdempotent's shared body: identical validation ladder,
 // guarded INSERT and disambiguation probe. Its callers select the explicit row kind;
-// only PushDelegationResult can provide a fan-out key.
+// only PushDelegationResultIdempotent can provide a fan-out key.
 func (s *PostgresStore) push(conv, source, text string, kind QueueKind, fanoutKey, deliveryKey string) error {
 	return s.pushScoped(context.Background(), conv, source, text, kind, fanoutKey, deliveryKey, workerScope{})
 }
@@ -335,44 +323,4 @@ func delegationResultRows(rows []sqlc.AuraSteerQueue) []UnnudgedDelegationResult
 		})
 	}
 	return out
-}
-
-// MarkFanoutNudged claims every unclaimed row of one (identity, fanout_key) pair in ONE
-// statement: two concurrent sweep passes over the SAME
-// complete fan-out race for the SAME set of unclaimed rows, and the loser's UPDATE matches
-// zero of them (the winner already set nudged_at on all of them), returning an empty
-// slice -- never an error, and never a partial claim split across two callers. Each
-// returned row carries the body and route captured by that same UPDATE so a sibling
-// inserted after the candidate SELECT cannot be marked without being rendered.
-func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanoutKey string) ([]UnnudgedDelegationResult, error) {
-	if s == nil || s.pool == nil {
-		return nil, fmt.Errorf("steer: mark fanout nudged: store is not configured")
-	}
-	identity, err := uuid.Parse(identityID)
-	if err != nil {
-		return nil, fmt.Errorf("steer: mark fanout nudged: invalid identity_id %q: %w", identityID, err)
-	}
-	var rows []sqlc.MarkFanoutNudgedRow
-	err = db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-		var qErr error
-		rows, qErr = q.MarkFanoutNudged(ctx, sqlc.MarkFanoutNudgedParams{
-			IdentityID: pgtype.UUID{Bytes: identity, Valid: true},
-			FanoutKey:  pgtype.Text{String: fanoutKey, Valid: true},
-		})
-		return qErr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("steer: mark fanout nudged %s/%s: %w", identityID, fanoutKey, err)
-	}
-	claimed := make([]UnnudgedDelegationResult, 0, len(rows))
-	for _, r := range rows {
-		claimed = append(claimed, UnnudgedDelegationResult{
-			ID:             r.ID.String(),
-			IdentityID:     r.IdentityID.String(),
-			ConversationID: r.ConversationID,
-			Body:           r.Body,
-			FanoutKey:      r.FanoutKey.String,
-		})
-	}
-	return claimed, nil
 }

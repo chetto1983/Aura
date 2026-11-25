@@ -4,7 +4,6 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/chetto1983/aura/internal/cloudflareapi"
 )
@@ -84,54 +83,4 @@ func (r *Reconciler) checkAdministrators(ctx context.Context, s *State, admins [
 		return ErrMemberLockout
 	}
 	return nil
-}
-
-// SyncMembers changes only the email policy after checking administrator continuity.
-func (r *Reconciler) SyncMembers(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	s, err := r.store.Load(ctx)
-	if err != nil {
-		return err
-	}
-	if !s.Desired.Enabled || s.Phase == PhaseDeleting {
-		return ErrConfiguration
-	}
-	if s.Phase == PhaseError {
-		return ErrTerminal
-	}
-	if s.Generation == r.retryGeneration && r.now().Before(r.retryAt) {
-		return ErrBackoff
-	}
-	emails, admins, err := r.activeMembers(ctx)
-	if err == nil {
-		err = r.checkAdministrators(ctx, &s, admins)
-	}
-	if err == nil {
-		err = r.verifyOwned(ctx, &s)
-	}
-	if err == nil {
-		for _, route := range routes(&s) {
-			if *route.app == "" || *route.policy == "" {
-				err = ErrConfiguration
-				break
-			}
-			if err = r.policy(ctx, &s, route, emails); err != nil {
-				break
-			}
-		}
-	}
-	if err != nil {
-		return r.failed(ctx, &s, err)
-	}
-	s.Reason = ""
-	if s.Phase == PhaseDegraded {
-		s.Phase = PhaseDisabled
-		if s.Desired.Enabled {
-			s.Phase = PhaseConnecting
-		}
-	}
-	r.attempts = 0
-	r.retryAt = time.Time{}
-	return r.persist(ctx, &s)
 }

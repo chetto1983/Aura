@@ -24,8 +24,8 @@ func TestExpireDue(t *testing.T) {
 	identityID, convID := seedIdentityAndConversation(t, pool)
 	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384, DelegationResultTTL: time.Millisecond})
 
-	if err := store.PushDelegationResult(convID, SourceWorker, "worker report, never delivered", "f-expire"); err != nil {
-		t.Fatalf("PushDelegationResult: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "worker report, never delivered", "f-expire", "dk-1"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent: %v", err)
 	}
 	time.Sleep(5 * time.Millisecond)
 

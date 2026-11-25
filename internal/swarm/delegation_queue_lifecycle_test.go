@@ -23,12 +23,12 @@ import (
 // (CLAUDE.md's 600-LOC ceiling) -- that file keeps the config resolvers and the payload
 // codec, both pure and unrelated to the loop's own runtime behaviour.
 
-// fakeSteerPublisher records the pushes deliverSuccess/DeliverReport make, and
+// fakeSteerPublisher records the pushes deliverSuccess/DeliverPreparedReport make, and
 // can fail one, so the ordering contract (push attempted BEFORE the row is
 // transitioned) is observable without a queue. fanoutKeys is parallel to
-// pushes (51-11 Task 3): index i is the fanout key PushDelegationResult was
+// pushes (51-11 Task 3): index i is the fanout key PushDelegationResultIdempotent was
 // called with at pushes[i], or "" for a plain Push -- so a test can assert
-// DeliverReport wrote payload.FanoutKey without disturbing the many existing
+// DeliverPreparedReport wrote payload.FanoutKey without disturbing the many existing
 // assertions against pushes' own "conv|source|text" shape.
 type fakeSteerPublisher struct {
 	mu         sync.Mutex // ProcessOnce runs a claimed batch concurrently (finding F)
@@ -41,10 +41,6 @@ type fakeSteerPublisher struct {
 
 func (f *fakeSteerPublisher) Push(conv, source, text string) error {
 	return f.push(conv, source, text, "")
-}
-
-func (f *fakeSteerPublisher) PushDelegationResult(conv, source, text, fanoutKey string) error {
-	return f.push(conv, source, text, fanoutKey)
 }
 
 func (f *fakeSteerPublisher) PushDelegationResultIdempotent(conv, source, text, fanoutKey, deliveryKey string) error {
@@ -87,12 +83,12 @@ func TestNewDelegationClaimLoopBindsItsArguments(t *testing.T) {
 	store := &fakeDelegationStore{}
 	delivery := &DelegationDelivery{}
 	parker := &fakePauseAndPark{}
-	l := NewDelegationClaimLoop(store, delivery, parker, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second, 3*time.Second)
+	l := NewDelegationClaimLoop(store, delivery, parker, "identity-1", RunConfig{ConvID: "seed"}, 9*time.Second)
 	if l.Store != store || l.Delivery != delivery || l.PauseParker != parker {
 		t.Fatal("constructor did not bind the store, delivery and pause parker")
 	}
-	if l.IdentityID != "identity-1" || l.LeaseDuration != 9*time.Second || l.PollInterval != 3*time.Second {
-		t.Fatalf("constructor bound %+v, want the passed identity and durations", l)
+	if l.IdentityID != "identity-1" || l.LeaseDuration != 9*time.Second {
+		t.Fatalf("constructor bound %+v, want the passed identity and lease", l)
 	}
 	if l.Worker.ConvID != "seed" {
 		t.Fatal("constructor did not carry the worker template")

@@ -225,11 +225,10 @@ func (r *Registry) Register(t Tool) {
 }
 
 // Adopt registers a set of tools that may already be present, replacing any it collides
-// with. It is how a server is re-mounted: the same server yields the same tool names, and
-// a remount that panicked on its own previous mount would be useless.
-//
-// Unlike Register, a collision here is expected rather than a wiring bug — which is why
-// the two are separate methods instead of one with a flag. Boot must still fail loud.
+// with. Production never replaces a tool in place: a remount Forgets the server's prefix
+// and Registers again (mcptools bridge.go), so Register can keep failing loud on a
+// collision. Adopt is the seam for tests in other packages that swap a mounted tool for a
+// wrapped copy of itself.
 func (r *Registry) Adopt(tools []Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
