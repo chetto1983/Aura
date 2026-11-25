@@ -204,27 +204,17 @@ web-mutation:
 web-quality: web-lint web-test web-mutation
 	@echo "ok: web-quality passed (lint typecheck format test coverage mutation)"
 
+# Every scripts/*_test.py by discovery, so a new one cannot be left out of a list (two
+# were, until 2026-11-25).
 evidence-contracts:
-	PYTHONPATH=scripts python3 -m unittest \
-		scripts/audit_closure_gate_test.py \
-		scripts/briefing_baseline_test.py \
-		scripts/agent_memory_eval_test.py \
-		scripts/capability_eval_test.py \
-		scripts/critical_mutation_gate_test.py \
-		scripts/go_mutation_cache_test.py \
-		scripts/mutation_workflow_test.py \
-		scripts/observability_evidence_test.py \
-		scripts/production_load_chaos_test.py \
-		scripts/release_check_run_gate_test.py \
-		scripts/release_notes_test.py \
-		scripts/release_readiness_gate_test.py \
-		scripts/security_evidence_test.py
+	PYTHONPATH=scripts python3 -m unittest discover -s scripts -t scripts -p '*_test.py'
 	bash scripts/coverage_profile_gate_test.sh
 	bash scripts/coverage_gate_test.sh
 	bash scripts/docker_coverage_gate_test.sh
 	bash scripts/restore_drill_name_test.sh
 	bash scripts/mirror_whisper_server_test.sh
 	bash scripts/tempo_blocks_repair_test.sh
+	bash scripts/web_filter_backstop_test.sh
 
 agent-memory-eval-contract:
 	PYTHONPATH=scripts python3 -m unittest scripts/agent_memory_eval_test.py

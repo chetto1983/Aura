@@ -110,27 +110,7 @@ jobs:
 
       - name: Production-evidence contract tests
         run: |
-          PYTHONPATH=scripts python3 -m unittest \
-            scripts/audit_closure_gate_test.py \
-            scripts/briefing_baseline_test.py \
-            scripts/agent_memory_eval_test.py \
-            scripts/capability_eval_test.py \
-            scripts/critical_mutation_gate_test.py \
-            scripts/go_mutation_cache_test.py \
-            scripts/mutation_workflow_test.py \
-            scripts/observability_evidence_test.py \
-            scripts/production_load_chaos_test.py \
-            scripts/release_check_run_gate_test.py \
-            scripts/release_notes_test.py \
-            scripts/release_readiness_gate_test.py \
-            scripts/security_evidence_test.py
-          bash scripts/coverage_profile_gate_test.sh
-          bash scripts/coverage_gate_test.sh
-          bash scripts/docker_coverage_gate_test.sh
-          bash scripts/restore_drill_name_test.sh
-          bash scripts/mirror_whisper_server_test.sh
-          bash scripts/tempo_blocks_repair_test.sh
-          bash scripts/web_filter_backstop_test.sh
+          make evidence-contracts
           bash scripts/install_lib_test.sh
           bash scripts/install_config_test.sh
           bash scripts/appliance_posture_test.sh
@@ -143,6 +123,13 @@ jobs:
           bash scripts/cloudflare_update_test.sh
           bash scripts/cloudflare_tunnel_live_e2e_test.sh
           bash scripts/payload_manifest_gate.sh
+
+      - name: Caddy keeps the secure origin through the shipped routes (real Caddy, no network)
+        # cloudflare_caddy_origin_test.sh needs the Caddy image, which only the publish
+        # workflow built, so the test ran nowhere before 2026-11-25. Built here from this commit.
+        run: |
+          docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
+          bash scripts/cloudflare_caddy_origin_test.sh
 
       # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh
       # SKIPs with exit 0 when it's absent (right for a laptop, a falsely-green job here).
