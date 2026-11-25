@@ -130,10 +130,21 @@ func TestThePIMImageIsPinnedEverywhere(t *testing.T) {
 	if !regexp.MustCompile(`^ghcr\.io/chetto1983/aura-pim-mcp:[0-9a-f]{40}$`).MatchString(ref) {
 		t.Fatalf("compose.yaml runs the PIM as %q, want ghcr.io/chetto1983/aura-pim-mcp:<40-hex sha>", ref)
 	}
-	for _, rel := range []string{".github/workflows/ci.yml", "scripts/pim_mail_e2e.sh", "scripts/pim_tls_mail_up.sh", ".claude/skills/aura-model-in-the-loop/pim_up.sh"} {
+	// Every reference counts, not just one per file: ci.yml starts the PIM in several jobs, and
+	// a job left on another sha would otherwise pass as long as one job named the pin.
+	published := regexp.MustCompile(`ghcr\.io/chetto1983/aura-pim-mcp[:@][^\s"'}]+`)
+	for _, rel := range []string{
+		".github/workflows/ci.yml", "scripts/mcp_live_integration.sh", "scripts/pim_mail_e2e.sh",
+		"scripts/pim_tls_mail_up.sh", ".claude/skills/aura-model-in-the-loop/pim_up.sh",
+	} {
 		contents := readProjectFile(t, root, rel)
 		if !strings.Contains(contents, ref) {
 			t.Errorf("%s does not name the pinned PIM image %s", rel, ref)
+		}
+		for _, used := range published.FindAllString(contents, -1) {
+			if used != ref {
+				t.Errorf("%s runs the PIM as %s, not the pinned %s", rel, used, ref)
+			}
 		}
 		for _, moving := range []string{"aura-pim-mcp:latest", "aura-pim-mcp:sidecar"} {
 			if strings.Contains(contents, moving) {

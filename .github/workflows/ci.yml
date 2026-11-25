@@ -1574,6 +1574,111 @@ jobs:
         if: always()
         run: docker rm -f aura-pim-mcp || true
 
+  mcp-live-integration-test:
+    name: Live MCP resources (mcp_live_integration tier, PIM + WhatsApp + Memory behind aura serve)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # The three first-party MCP resource servers behind a real `aura serve` as their OAuth
+    # issuer: per subject, the PIM, WhatsApp and memory each show one token's data and never
+    # another's. scripts/mcp_live_integration.sh brings up aura serve, the memory MCP (both
+    # built from this commit), the PIM at its pin and the published WhatsApp MCP, then runs
+    # the tier; this job provisions what the script expects from its caller.
+    # NO-SKIP-AS-GREEN: the tier t.Fatals under $CI when any env it reads is unset.
+    env:
+      CI: "true"
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11960
+      AURA_EMBED_NGL: "0"
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      AURA_EMBED_DIMENSIONS: "768"
+      AURA_EMBED_MODEL_DIR: /tmp/aura-ci-cache/llama.cpp/llama.cpp
+      POSTGRES_PASSWORD: ci-test-password
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      # The tier mints its tokens over the same authula schema aura serve publishes the JWKS of.
+      AURA_AUTHULA_DSN: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      ARCADEDB_URL: http://127.0.0.1:2480
+      ARCADEDB_DATABASE: aura_memory
+      ARCADEDB_USER: root
+      ARCADEDB_ADMIN_USER: root
+      ARCADEDB_ADMIN_PASSWORD: ci-test-password
+      WHATSAPP_BRIDGE_TOKEN: ci-whatsapp-bridge-token-2026
+      # aura serve boots on the strict profile an appliance runs. These are the dummies of the
+      # model-in-the-loop skill (.claude/skills/aura-model-in-the-loop/env.e2e.sh), where the
+      # tier was first run green; the workflow-level object-store and Garage values are the
+      # samples a strict boot refuses (see arcadedb-integration-test).
+      AURA_PROFILE: single_user_hardened
+      AURA_LLM_PROVIDER: llamacpp
+      AURA_LLM_MODEL: no-model
+      AURA_LLM_BASE_URL: http://127.0.0.1:18484/v1
+      AURA_TIMEZONE: Europe/Rome
+      AURA_OBJECTSTORE_BACKEND: filesystem-dev
+      AURA_OBJECTSTORE_ACCESS_KEY: GKe2e0000000000000000000ab
+      AURA_OBJECTSTORE_SECRET_KEY: e2e-not-a-sample-secret-0000000000000000000000000000000000000000
+      GARAGE_RPC_SECRET: e2e00000000000000000000000000000000000000000000000000000000000d4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set runtime paths
+        run: |
+          {
+            echo "AURA_RUN_DIR=$RUNNER_TEMP/aura-run"
+            echo "AURA_SKILL_EXPORT_DIR=$RUNNER_TEMP/aura-skills"
+            echo "AURA_WHATSAPP_STORE_ROOT=$RUNNER_TEMP/aura-whatsapp-store"
+          } >> "$GITHUB_ENV"
+
+      - name: Compile the mcp_live_integration tier
+        run: go vet -tags mcp_live_integration ./internal/webauth/
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
+
+      - name: Migrate the disposable database
+        run: make db-migrate
+
+      - name: Bring up ArcadeDB and EmbeddingGemma
+        # The embed sidecar serves the model from the CI cache overlay's bind mount, and
+        # aura serve's strict boot hashes the same file there (AURA_EMBED_MODEL_DIR).
+        run: |
+          mkdir -p "$AURA_EMBED_MODEL_DIR" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          cp ~/.cache/aura-embed/model.gguf "$AURA_EMBED_MODEL_DIR/embeddinggemma-300M-Q8_0.gguf"
+          mkdir -p "$AURA_RUN_DIR" "$AURA_SKILL_EXPORT_DIR"
+          docker compose up -d arcadedb aura-llama-embed
+          for endpoint in http://127.0.0.1:2480/api/v1/ready http://127.0.0.1:8081/health; do
+            ok=""
+            for i in $(seq 1 60); do
+              if curl -fsS "$endpoint" >/dev/null 2>&1; then ok=1; break; fi
+              echo "$endpoint not ready yet ($i)"
+              sleep 5
+            done
+            if [ -z "$ok" ]; then
+              echo "$endpoint never became ready" >&2
+              docker compose logs --tail 100 arcadedb aura-llama-embed || true
+              exit 1
+            fi
+          done
+
+      - name: Live mcp_live_integration tier
+        run: bash scripts/mcp_live_integration.sh
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Five path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
   # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`
