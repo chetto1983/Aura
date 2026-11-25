@@ -19,6 +19,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,16 +108,24 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	return vs
 }
 
-// gateRemovedEgressAllowlist refuses AURA_SANDBOX_EGRESS_ALLOWLIST under every profile. It
-// configured an OpenSandbox FQDN mode that no shipped aura-egress image could run (the sidecar
-// exited at boot), and the mode was removed on 2026-11-25. Ignoring the knob instead would let
-// an operator believe egress is narrowed to a list while only the tenancy floor applies.
-func gateRemovedEgressAllowlist() []Violation {
+// RemovedEgressAllowlist refuses AURA_SANDBOX_EGRESS_ALLOWLIST wherever a sandbox can be built.
+// It configured an OpenSandbox FQDN mode that no shipped aura-egress image could run (the sidecar
+// exited at boot), and the mode was removed on 2026-11-25. Ignoring the knob instead would let an
+// operator believe egress is narrowed to a list while only the tenancy floor applies. aura serve
+// refuses it at boot (gateRemovedEgressAllowlist); the CLI commands that skip the boot gates meet
+// it in the sandbox router.
+func RemovedEgressAllowlist() error {
 	if strings.TrimSpace(os.Getenv("AURA_SANDBOX_EGRESS_ALLOWLIST")) == "" {
 		return nil
 	}
-	return []Violation{{Knob: "AURA_SANDBOX_EGRESS_ALLOWLIST", Sev: Fatal,
-		Msg: "removed: no aura-egress image ever enforced an FQDN allowlist; unset it (the RFC1918 and metadata floor always applies)"}}
+	return errors.New("AURA_SANDBOX_EGRESS_ALLOWLIST was removed: no aura-egress image ever enforced an FQDN allowlist; unset it (the RFC1918 and metadata floor always applies)")
+}
+
+func gateRemovedEgressAllowlist() []Violation {
+	if err := RemovedEgressAllowlist(); err != nil {
+		return []Violation{{Knob: "AURA_SANDBOX_EGRESS_ALLOWLIST", Sev: Fatal, Msg: err.Error()}}
+	}
+	return nil
 }
 
 // gateMultiUserRequiresStrictProfile keeps multi-user provisioning an explicit hardened-

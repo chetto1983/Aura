@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -63,6 +64,22 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 	}
 	if _, err := nilCfgRouter.Route(context.Background()); err == nil {
 		t.Fatal("a config-less router must DENY, not resolve a box")
+	}
+}
+
+// TestBuildSandboxRouterRefusesTheRemovedEgressAllowlist: the CLI paths skip the boot gate that
+// refuses AURA_SANDBOX_EGRESS_ALLOWLIST, so the router they share with aura serve must deny.
+func TestBuildSandboxRouterRefusesTheRemovedEgressAllowlist(t *testing.T) {
+	t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "pypi.org")
+	// An unreachable daemon keeps the test hermetic; the refusal must come before any dial.
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+	router := buildSandboxRouter(&config.Config{Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest"}}, nil)
+	if router == nil {
+		t.Fatal("buildSandboxRouter returned nil; that permits host execution")
+	}
+	_, err := router.Route(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "sandbox backend unavailable") {
+		t.Fatalf("Route err = %v, want the backend-less refusal", err)
 	}
 }
 
