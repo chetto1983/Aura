@@ -132,10 +132,11 @@ line per file, and replaces today's hand-kept lists (`ci.yml:99`, the make `*-co
 self-test runs because it exists. Tests that need a built image (`cloudflare_caddy_origin_test.sh` needs
 `aura-caddy`) get it from the same job.
 
-Python self-tests run through `make evidence-contracts`' `unittest discover -s scripts`, which reaches only
-the top level (none is nested today), and report to the ledger as JUnit. Their declared set is wider on
-purpose, `scripts/**/*_test.py`: a nested one is then declared and not executed, a violation, instead of a
-file nothing sees.
+Python self-tests run through `make evidence-contracts`' `unittest discover -s scripts`, which reaches the
+top level and any subdirectory that is a package (has an `__init__.py`; none does today), and report to
+the ledger as JUnit. Their declared set is wider on purpose, `scripts/**/*_test.py`: a self-test in a
+subdirectory that is not a package is then declared and not executed, a violation, instead of a file
+nothing sees.
 
 ### 4.5 The allowlist
 
@@ -264,7 +265,8 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
 
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
-master's render; the FQDN egress mode is removed; the paid live Playwright specs stay manual and the rest
-are wired. Of the rest, the three that need an outward account no CI holds (`remote-access`: Cloudflare;
-`paperless-first-import` and `paperless-isolation`: a live Telegram `getMe`) stay manual with the
-Telegram tier as `outward`, a classification the operator has still to confirm (§10.2).
+master's render; the FQDN egress mode is removed; the paid live Playwright specs stay manual ("il resto
+cablalo"). Of the 11 that are not paid, the 8 stack-only specs are wired; the 3 that need an outward account
+no CI holds (`remote-access`: Cloudflare; `paperless-first-import` and `paperless-isolation`: a live
+Telegram `getMe`) stay manual with the Telegram tier as `outward`, a classification the operator has still
+to confirm (§10.2).

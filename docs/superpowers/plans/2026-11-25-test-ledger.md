@@ -91,7 +91,7 @@ scripts/go_test_ledger_test.sh
 
 - [ ] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
 - [ ] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
-- [ ] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` only (none is nested today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a nested self-test fails the gate as declared and not executed rather than going unseen.
+- [ ] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` and subdirectories that are packages (an `__init__.py`; none today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a self-test in a non-package subdirectory fails the gate as declared and not executed rather than going unseen.
 
 ## Part B: judge
 
