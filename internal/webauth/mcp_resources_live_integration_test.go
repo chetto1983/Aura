@@ -100,8 +100,8 @@ func testLiveCalendarIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
-	resultA := awaitLiveToolMarker(t, ctx, sessionA, "calendar", map[string]any{"action": "list_accounts"}, accountA)
-	resultB := awaitLiveToolMarker(t, ctx, sessionB, "calendar", map[string]any{"action": "list_accounts"}, accountB)
+	resultA := awaitLiveToolMarker(t, ctx, sessionA, "list_accounts", map[string]any{}, accountA)
+	resultB := awaitLiveToolMarker(t, ctx, sessionB, "list_accounts", map[string]any{}, accountB)
 	assertLiveMarkersIsolated(t, "Calendar", resultA, resultB, accountA, accountB)
 }
 

@@ -9,13 +9,11 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const curatedCalendarToolName = "calendar"
-
-func callCalendar(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, args map[string]any) (text string, isError bool) {
+func callPIM(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, tool string, args map[string]any) (text string, isError bool) {
 	t.Helper()
-	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: curatedCalendarToolName, Arguments: args})
+	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
-		t.Fatalf("CallTool %s: %v", curatedCalendarToolName, err)
+		t.Fatalf("CallTool %s: %v", tool, err)
 	}
 	return DecodeToolResult(res)
 }

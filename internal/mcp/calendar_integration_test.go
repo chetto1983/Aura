@@ -1,11 +1,11 @@
 //go:build calendar_integration
 
-// Live Aura PIM sidecar tier (forked calendar-mcp → chetto1983/aura-pim-mcp,
-// curated onto ONE `calendar` action tool by 46-05/46-06). Drives the running
-// streamable-HTTP sidecar end to end over the SDK session: connect + tools/list
-// (exactly one curated tool, action enum matching the design doc) + real
-// list_accounts calls for two identities on the same session (each must see only
-// its own fixture account) + the MCP-05 opaque-reference proof (SC#4).
+// Live Aura PIM sidecar tier (forked calendar-mcp → chetto1983/aura-pim-mcp, one tool per
+// operation since the 2026-11-23 split). Drives the running streamable-HTTP sidecar end to
+// end over the SDK session: connect + tools/list (exactly the 29 operations, each with its
+// own required list and no `action` argument) + real list_accounts calls for two identities
+// on the same session (each must see only its own fixture account) + the MCP-05
+// opaque-reference proof (SC#4).
 //
 // No-skip-as-green (CLAUDE.md): when AURA_PIM_MCP_URL (or _PORT) is unset under $CI the
 // test t.Fatals (a skipped tier fails the gate, never passes it); locally it t.Skips.
@@ -14,6 +14,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"regexp"
 	"slices"
@@ -49,36 +50,41 @@ const (
 	calendarForeignAccount = "00000000000000000000000000000002__fixture"
 )
 
-// curatedCalendarToolName is the fork's own advertised wire name (measured live
-// 2026-08-22 against ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d...) — this test
-// talks to the sidecar directly over the SDK session, the same handshake
-// bridge.go's initial mount performs before NamespacedName prefixes it
-// "calendar__" for the model.
-// calendarActionEnum is the design doc's §5a action list, in the fork's own
-// tools/list order (docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md).
-// The live curated tool's schema.properties.action.enum must equal this exactly.
-var calendarActionEnum = []string{
-	"list_accounts", "get_emails", "get_email_details", "search_emails",
-	"list_calendars", "get_calendar_events", "get_calendar_event_details",
-	"get_contacts", "search_contacts", "get_contact_details",
-	"create_event", "update_event", "respond_to_event", "send_email",
-	// Amended 2026-08-22: mail management restored. The provider layer exposes 21
-	// operations and only 14 were ever registered as tools, so delete/mark-read/move
-	// were implemented for every provider and reachable by none.
-	"delete_email", "mark_email_read", "move_email",
-	// Amended 2026-08-23: the twelve b01413620 tiered. That commit did three of the
-	// four things the bump needed — it tiered all twelve in trustedRecipeActions and
-	// moved compose.yaml's pin to the 29-action fork — but left THIS list and
-	// ci.yml's AURA_PIM_MCP_IMAGE on the 17-action one. The two stragglers together
-	// produced a false green: CI kept passing because it ran the old image against
-	// this old list, while the deployment, which runs the pin compose names, failed
-	// the tier. Measured 2026-08-23 against the running
-	// ghcr.io/chetto1983/aura-pim-mcp:c497224cf8a0..., whose tools/list order this
-	// continues.
-	"delete_event", "create_contact", "update_contact", "delete_contact",
-	"get_email_attachment", "get_contextual_email_summary",
-	"get_guide", "get_unsubscribe_info", "unsubscribe_from_email",
-	"bulk_delete_emails", "bulk_mark_emails_read", "bulk_move_emails",
+// pimToolRequired is the fork's advertised surface: each tool and its schema's root
+// `required`, copied from the fork's own contract
+// (src/CalendarMcp.Tests/Tools/SurfaceContractTests.cs at the pinned sha). The keys are
+// the names Aura's stored approvals and drafts use; mcptools.CalendarToolNames() is the
+// same set on Aura's side, but importing it here would cycle through this package.
+var pimToolRequired = map[string][]string{
+	"list_accounts":                {},
+	"get_emails":                   {},
+	"get_email_details":            {"accountId", "emailId"},
+	"search_emails":                {"query"},
+	"list_calendars":               {},
+	"get_calendar_events":          {"timeZone"},
+	"get_calendar_event_details":   {"timeZone", "calendarId", "eventId"},
+	"get_contacts":                 {},
+	"search_contacts":              {"query"},
+	"get_contact_details":          {"accountId", "contactId"},
+	"create_event":                 {"subject", "start", "end"},
+	"update_event":                 {"calendarId", "eventId"},
+	"respond_to_event":             {"eventId", "response"},
+	"send_email":                   {"accountId", "to", "subject"},
+	"delete_email":                 {"accountId", "emailId"},
+	"mark_email_read":              {"accountId", "emailId", "isRead"},
+	"move_email":                   {"accountId", "emailId", "destination"},
+	"delete_event":                 {"eventId"},
+	"create_contact":               {"displayName"},
+	"update_contact":               {"accountId", "contactId"},
+	"delete_contact":               {"accountId", "contactId"},
+	"get_email_attachment":         {"accountId", "emailId", "attachmentId"},
+	"get_contextual_email_summary": {},
+	"get_guide":                    {},
+	"get_unsubscribe_info":         {"accountId", "emailId"},
+	"unsubscribe_from_email":       {"accountId", "emailId"},
+	"bulk_delete_emails":           {"items"},
+	"bulk_mark_emails_read":        {"items", "isRead"},
+	"bulk_move_emails":             {"items", "destination"},
 }
 
 // TestCalendarServerLive drives the live Aura PIM sidecar over streamable-HTTP through
@@ -105,25 +111,18 @@ func TestCalendarServerLive(t *testing.T) {
 		t.Logf("calendar sidecar negotiated protocol version: %s", result.ProtocolVersion)
 	}
 
-	advertised := drainSDKToolsForTest(t, ctx, sessionA)
-	if len(advertised) != 1 {
-		names := make([]string, 0, len(advertised))
-		for _, d := range advertised {
-			names = append(names, d.Name)
+	schemas := pimToolSchemas(t, drainSDKToolsForTest(t, ctx, sessionA))
+	want := slices.Sorted(maps.Keys(pimToolRequired))
+	if got := slices.Sorted(maps.Keys(schemas)); !slices.Equal(got, want) {
+		t.Fatalf("PIM sidecar advertises %d tools %v, want the %d operations %v", len(got), got, len(want), want)
+	}
+	for name, schema := range schemas {
+		if _, ok := schema.Properties["action"]; ok {
+			t.Errorf("%s still takes an action argument", name)
 		}
-		t.Fatalf("PIM sidecar advertises %d tools, want exactly 1 (curated calendar tool); surface=%v", len(advertised), names)
-	}
-	tool := advertised[0]
-	if tool.Name != curatedCalendarToolName {
-		t.Fatalf("PIM sidecar's curated tool is named %q, want %q", tool.Name, curatedCalendarToolName)
-	}
-
-	gotEnum, required := calendarActionSchema(t, tool)
-	if !slices.Equal(gotEnum, calendarActionEnum) {
-		t.Errorf("curated tool action enum = %v, want %v", gotEnum, calendarActionEnum)
-	}
-	if !slices.Equal(required, []string{"action"}) {
-		t.Errorf("curated tool schema required = %v, want [action] — the flat-union D-19 shape has no other root-required field", required)
+		if got, want := slices.Sorted(slices.Values(schema.Required)), slices.Sorted(slices.Values(pimToolRequired[name])); !slices.Equal(got, want) {
+			t.Errorf("%s schema required = %v, want %v", name, got, want)
+		}
 	}
 
 	// list_accounts is read-only. CI configures, as the operator, one local JSON
@@ -133,7 +132,7 @@ func TestCalendarServerLive(t *testing.T) {
 	_ = awaitCalendarAccount(t, ctx, sessionA, calendarTenantAccount, calendarForeignAccount)
 	_ = awaitCalendarAccount(t, ctx, sessionB, calendarForeignAccount, calendarTenantAccount)
 
-	assertOpaqueEventIDNeedsNoAccountID(t, ctx, sessionA, tool)
+	assertOpaqueEventIDNeedsNoAccountID(t, ctx, sessionA)
 }
 
 func awaitCalendarAccount(
@@ -146,9 +145,9 @@ func awaitCalendarAccount(
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		out, isErr := callCalendar(t, ctx, session, map[string]any{"action": "list_accounts"})
+		out, isErr := callPIM(t, ctx, session, "list_accounts", map[string]any{})
 		if isErr {
-			t.Fatalf("CallTool calendar(list_accounts) reported isError: %s", out)
+			t.Fatalf("CallTool list_accounts reported isError: %s", out)
 		}
 		if strings.Contains(out, foreign) {
 			t.Fatalf("calendar account surface contains foreign tenant %q: %s", foreign, out)
@@ -167,28 +166,29 @@ func awaitCalendarAccount(
 	}
 }
 
-// calendarActionSchema parses the curated tool's advertised inputSchema — an `any`
-// holding the CLIENT side's default JSON marshaling of the server's schema (a
-// map[string]any, mirrors internal/agent/mcptools/bridge.go's schemaJSON) — into
-// its action enum and root-level required list.
-func calendarActionSchema(t *testing.T, tool *sdkmcp.Tool) (enum, required []string) {
+type pimToolSchema struct {
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
+}
+
+// pimToolSchemas parses each advertised inputSchema — an `any` holding the CLIENT side's
+// default JSON marshaling of the server's schema (a map[string]any, mirrors
+// internal/agent/mcptools/bridge.go's schemaJSON) — keyed by tool name.
+func pimToolSchemas(t *testing.T, tools []*sdkmcp.Tool) map[string]pimToolSchema {
 	t.Helper()
-	raw, err := json.Marshal(tool.InputSchema)
-	if err != nil {
-		t.Fatalf("marshal curated tool input schema: %v", err)
+	schemas := make(map[string]pimToolSchema, len(tools))
+	for _, tool := range tools {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s input schema: %v", tool.Name, err)
+		}
+		var schema pimToolSchema
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("unmarshal %s input schema: %v", tool.Name, err)
+		}
+		schemas[tool.Name] = schema
 	}
-	var schema struct {
-		Properties struct {
-			Action struct {
-				Enum []string `json:"enum"`
-			} `json:"action"`
-		} `json:"properties"`
-		Required []string `json:"required"`
-	}
-	if err := json.Unmarshal(raw, &schema); err != nil {
-		t.Fatalf("unmarshal curated tool input schema: %v", err)
-	}
-	return schema.Properties.Action.Enum, schema.Required
+	return schemas
 }
 
 var (
@@ -196,25 +196,18 @@ var (
 	calendarIDInResponse = regexp.MustCompile(`"calendarId"\s*:\s*"([^"]+)"`)
 )
 
-// assertOpaqueEventIDNeedsNoAccountID is the MCP-05 / SC#4 proof: the schema half
-// is unconditional (the flat-union root only ever requires "action", so accountId
-// can never be schema-required on ANY action including get_calendar_event_details).
-// The round-trip half resolves an opaque eventId through to a detail call with
-// no accountId argument. The live tier seeds a local JSON provider, so absence
-// of an event is a failed fixture, never a green skip.
-func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, tool *sdkmcp.Tool) {
+// assertOpaqueEventIDNeedsNoAccountID is the MCP-05 / SC#4 proof. Its schema half is the
+// surface check above: get_calendar_event_details' required list names no accountId. This
+// round-trip half resolves an opaque eventId through to a detail call with no accountId
+// argument. The live tier seeds a local JSON provider, so absence of an event is a failed
+// fixture, never a green skip.
+func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession) {
 	t.Helper()
-
-	_, required := calendarActionSchema(t, tool)
-	if slices.Contains(required, "accountId") {
-		t.Fatalf("curated tool schema marks accountId required at the root — MCP-05 regressed: %v", required)
-	}
 
 	// Pin the query to the fixture's own 2026-08-24..25 window. The provider's
 	// omitted-range default starts at the wall clock's current day, which made this
 	// permanent fixture silently expire on 2026-08-26.
-	out, isErr := callCalendar(t, ctx, session, map[string]any{
-		"action":    "get_calendar_events",
+	out, isErr := callPIM(t, ctx, session, "get_calendar_events", map[string]any{
 		"startDate": "2026-08-24T00:00:00Z",
 		"endDate":   "2026-08-26T00:00:00Z",
 		"timeZone":  "UTC",
@@ -228,16 +221,11 @@ func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, sess
 		t.Fatalf("get_calendar_events returned no eventId/calendarId to chain from: %s", out)
 	}
 
-	detailArgs := map[string]any{
-		"action":     "get_calendar_event_details",
+	detailOut, detailIsErr := callPIM(t, ctx, session, "get_calendar_event_details", map[string]any{
 		"eventId":    eventMatch[1],
 		"calendarId": calendarMatch[1],
 		"timeZone":   "UTC",
-	}
-	if _, hasAccountID := detailArgs["accountId"]; hasAccountID {
-		t.Fatal("test bug: the detail call's dispatched arguments must not include accountId")
-	}
-	detailOut, detailIsErr := callCalendar(t, ctx, session, detailArgs)
+	})
 	if detailIsErr {
 		t.Fatalf("get_calendar_event_details with the opaque eventId reference (no accountId argument) failed: %s", detailOut)
 	}

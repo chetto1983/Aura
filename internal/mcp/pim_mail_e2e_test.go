@@ -47,10 +47,12 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	reapIdleHTTPConns(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	operator := openOAuthResourceSession(t, ctx, issuer, "pim-operator", endpoint, issuer.token(t, endpoint, pimOperatorTenant))
+	operatorToken := issuer.token(t, endpoint, pimOperatorTenant)
+	assertOAuthResourceAuthenticates(t, ctx, issuer, endpoint, operatorToken)
+	operator := openOAuthResourceSession(t, ctx, issuer, "pim-operator", endpoint, operatorToken)
 	colleague := openOAuthResourceSession(t, ctx, issuer, "pim-colleague", endpoint, issuer.token(t, endpoint, pimColleagueTenant))
 
-	accounts, isErr := callCalendar(t, ctx, operator, map[string]any{"action": "list_accounts"})
+	accounts, isErr := callPIM(t, ctx, operator, "list_accounts", map[string]any{})
 	if isErr || !strings.Contains(accounts, pimOperatorMail) || !strings.Contains(accounts, pimOperatorCalendar) || strings.Contains(accounts, pimColleagueMail) {
 		t.Fatalf("operator's accounts = %s, want its mailbox and calendar and not the colleague's", accounts)
 	}
@@ -61,8 +63,8 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	if !slices.ContainsFunc(unread, func(m pimEmail) bool { return m.Subject == "Fattura 2026-118 in scadenza" }) {
 		t.Errorf("unread = %+v, want the seeded invoice reminder", unread)
 	}
-	eventsText, isErr := callCalendar(t, ctx, operator, map[string]any{
-		"action": "get_calendar_events", "accountId": pimOperatorCalendar, "timeZone": "Europe/Rome",
+	eventsText, isErr := callPIM(t, ctx, operator, "get_calendar_events", map[string]any{
+		"accountId": pimOperatorCalendar, "timeZone": "Europe/Rome",
 		"startDate": "2026-08-24", "endDate": "2026-08-24",
 	})
 	if isErr || !strings.Contains(eventsText, "Phase 46 tracer") {
@@ -71,8 +73,8 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	writeBaselineBundle(t, eventsText, unreadText)
 
 	// A send leaves the appliance and arrives.
-	sent, isErr := callCalendar(t, ctx, operator, map[string]any{
-		"action": "send_email", "accountId": pimOperatorMail, "to": []string{"colleague@aura.test"},
+	sent, isErr := callPIM(t, ctx, operator, "send_email", map[string]any{
+		"accountId": pimOperatorMail, "to": []string{"colleague@aura.test"},
 		"subject": "E2E: delivered", "body": "Sent by the pim_mail_e2e tier.",
 	})
 	if isErr {
@@ -82,15 +84,15 @@ func TestPIMMailEndToEnd(t *testing.T) {
 
 	// A1: an event with an outside attendee, on each provider this fake setup has.
 	for _, account := range []string{pimOperatorMail, pimOperatorCalendar} {
-		out, isErr := callCalendar(t, ctx, operator, map[string]any{
-			"action": "create_event", "accountId": account, "subject": "E2E invitation " + account,
+		out, isErr := callPIM(t, ctx, operator, "create_event", map[string]any{
+			"accountId": account, "subject": "E2E invitation " + account,
 			"start": "2026-11-03T10:00:00", "end": "2026-11-03T11:00:00", "timeZone": "Europe/Rome",
 			"attendees": []string{"colleague@aura.test"}, "body": "Would this reach the attendee?",
 		})
 		t.Logf("A1 create_event with an attendee on %s: isError=%v result=%s", account, isErr, clip(out))
 	}
 	time.Sleep(3 * time.Second)
-	if text, _ := callCalendar(t, ctx, colleague, map[string]any{"action": "get_emails", "accountId": pimColleagueMail, "count": 20}); strings.Contains(text, "E2E invitation") {
+	if text, _ := callPIM(t, ctx, colleague, "get_emails", map[string]any{"accountId": pimColleagueMail, "count": 20}); strings.Contains(text, "E2E invitation") {
 		t.Errorf("an invitation reached the attendee on a provider that has no scheduling: %s", text)
 	}
 
@@ -99,7 +101,7 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	for _, m := range unread {
 		items = append(items, map[string]string{"accountId": m.AccountID, "emailId": m.ID})
 	}
-	if out, isErr := callCalendar(t, ctx, operator, map[string]any{"action": "bulk_mark_emails_read", "items": items, "isRead": true}); isErr {
+	if out, isErr := callPIM(t, ctx, operator, "bulk_mark_emails_read", map[string]any{"items": items, "isRead": true}); isErr {
 		t.Fatalf("bulk_mark_emails_read = %s", out)
 	}
 	_, after := awaitMail(t, ctx, operator, pimOperatorMail, func(m []pimEmail) bool { return len(m) == 0 })
@@ -110,13 +112,13 @@ func TestPIMMailEndToEnd(t *testing.T) {
 // colleague's) until done holds.
 func awaitMail(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, account string, done func([]pimEmail) bool) (string, []pimEmail) {
 	t.Helper()
-	args := map[string]any{"action": "get_emails", "accountId": account, "count": 20}
+	args := map[string]any{"accountId": account, "count": 20}
 	if account == pimOperatorMail {
 		args["unreadOnly"] = true
 	}
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		text, isErr := callCalendar(t, ctx, session, args)
+		text, isErr := callPIM(t, ctx, session, "get_emails", args)
 		if isErr {
 			t.Fatalf("get_emails(%s) = %s", account, text)
 		}

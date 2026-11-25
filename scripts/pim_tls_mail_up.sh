@@ -27,7 +27,7 @@
 # Needs Docker and openssl, and loopback 993, 465, the API port and 8093 free: stop the compose PIM.
 set -euo pipefail
 
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb}"
 MAIL_IMAGE="${PIM_E2E_MAIL_IMAGE:-greenmail/standalone:2.1.5}"
 MAIL=aura-e2e-tls-mail
 PIM=aura-e2e-tls-pim

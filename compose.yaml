@@ -1354,7 +1354,7 @@ services:
     # appliances before the Aura release that matched it, so the PIM now changes only when an
     # Aura release changes this pin. AURA_PIM_MCP_DEV_IMAGE is for development only; the
     # updater retires AURA_PIM_MCP_IMAGE from appliance .env files, where it would outrank the pin.
-    image: ${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a}
+    image: ${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped

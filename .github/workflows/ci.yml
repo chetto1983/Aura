@@ -1492,8 +1492,8 @@ jobs:
     # Phase 3 (aura-pim-mcp fork). Brings up the published PIM sidecar (forked
     # calendar-mcp → ghcr.io/chetto1983/aura-pim-mcp), stages a no-provider-OAuth JSON
     # fixture, and runs the calendar_integration tier against the LIVE OAuth-protected
-    # container: Streamable HTTP initialize + the ONE curated
-    # 29-action `calendar` tool + cross-tenant list isolation + the MCP-05 opaque-reference
+    # container: Streamable HTTP initialize + the 29 per-operation tools
+    # and their required lists + cross-tenant list isolation + the MCP-05 opaque-reference
     # round-trip. No provider OAuth or external network is needed.
     # NO-SKIP-AS-GREEN: AURA_PIM_MCP_URL is exported so the tier RUNS; the test
     # t.Fatals under $CI when it is unset (a skipped tier fails the gate — CLAUDE.md).
@@ -1504,7 +1504,7 @@ jobs:
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # The same sha compose.yaml pins, so the tier proves the image appliances run;
       # TestThePIMImageIsPinnedEverywhere keeps the two equal.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1565,7 +1565,7 @@ jobs:
       - name: Stage the local calendar fixture
         run: docker cp internal/mcp/testdata/fixture-calendar.json aura-pim-mcp:/app/data/fixture-calendar.json
 
-      - name: Live calendar_integration tier (curated tool + list_accounts)
+      - name: Live calendar_integration tier (29 tools + list_accounts)
         # The test's real issuer signs two subject-bound access tokens and uses
         # those same tokens for both /admin account setup and MCP calls.
         run: go test -race -tags calendar_integration -count=1 ./internal/mcp/
@@ -1989,7 +1989,7 @@ jobs:
       # schema production no longer serves -- the same stale image behind
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:43c49b31c11eebfc041cdd5031cdc3cd45021f3a
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout
