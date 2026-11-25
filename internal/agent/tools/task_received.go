@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // refuseSchedule words a schedule refusal for the model: what is missing, the argument names that
@@ -18,19 +19,34 @@ func refuseSchedule(missing error, raw json.RawMessage) error {
 
 var errScheduleAtMissing = errors.New("task schedule: schedule_kind=at needs `at`, the time to fire as an RFC-3339 string such as 2030-01-01T09:30:00Z")
 
+const (
+	maxReceivedKeys   = 20
+	maxReceivedKeyLen = 40
+)
+
 func receivedArguments(raw json.RawMessage) string {
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &top)
-	var payload map[string]json.RawMessage
-	_ = json.Unmarshal(top["payload"], &payload)
-	payloadKeys := "(none)"
-	if payload != nil {
-		payloadKeys = sortedKeys(payload)
-	}
-	return fmt.Sprintf("%s; payload: %s", sortedKeys(top), payloadKeys)
+	return fmt.Sprintf("%s; payload: %s", receivedKeys(top), receivedPayload(top["payload"]))
 }
 
-func sortedKeys(m map[string]json.RawMessage) string {
+func receivedPayload(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "(none)"
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return "(not an object)"
+	}
+	if len(fields) == 0 {
+		return "(empty object)"
+	}
+	return receivedKeys(fields)
+}
+
+// receivedKeys lists names the model chose, so each is cut and stripped of control characters and
+// the list is capped: none of it can grow the refusal or forge text in it.
+func receivedKeys(m map[string]json.RawMessage) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -39,5 +55,30 @@ func sortedKeys(m map[string]json.RawMessage) string {
 	if len(keys) == 0 {
 		return "(none)"
 	}
-	return strings.Join(keys, ", ")
+	more := 0
+	if len(keys) > maxReceivedKeys {
+		more = len(keys) - maxReceivedKeys
+		keys = keys[:maxReceivedKeys]
+	}
+	for i, k := range keys {
+		keys[i] = safeKey(k)
+	}
+	list := strings.Join(keys, ", ")
+	if more > 0 {
+		list += fmt.Sprintf(", ... and %d more", more)
+	}
+	return list
+}
+
+func safeKey(k string) string {
+	k = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '?'
+		}
+		return r
+	}, k)
+	if r := []rune(k); len(r) > maxReceivedKeyLen {
+		return string(r[:maxReceivedKeyLen]) + "..."
+	}
+	return k
 }
