@@ -220,9 +220,8 @@ func TestRoute_IdleBump(t *testing.T) {
 	}
 }
 
-// TestSpecFor_UsesConfiguredKnobs proves specFor sources every knob from cfg.Sandbox (image,
-// caps, egress allowlist) into the spec — a CONFIGURED allowlist reaches EgressPolicy, not just
-// a test fixture (T-37-05-CONFIGDROP).
+// TestSpecFor_UsesConfiguredKnobs proves specFor sources every knob from cfg.Sandbox (image and
+// caps) into the spec, not a test fixture (T-37-05-CONFIGDROP).
 func TestSpecFor_UsesConfiguredKnobs(t *testing.T) {
 	cfg := config.SandboxConfig{
 		IdleTTLSec:  900,
@@ -249,8 +248,5 @@ func TestSpecFor_UsesConfiguredKnobs(t *testing.T) {
 	}
 	if spec.Limits.PidsLimit != cfg.PidsLimit {
 		t.Fatalf("PidsLimit = %d, want %d", spec.Limits.PidsLimit, cfg.PidsLimit)
-	}
-	if !spec.Egress.Floor {
-		t.Fatalf("Egress.Floor = false, want true (always-on tenancy floor)")
 	}
 }

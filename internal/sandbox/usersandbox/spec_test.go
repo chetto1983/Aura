@@ -17,8 +17,6 @@ func TestSpec_NoHostExposureFields(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
-		"Egress",
-		"Egress.Floor",
 		"IdentityID",
 		"Image",
 		"Kind",
@@ -52,7 +50,7 @@ func TestSpec_NoHostExposureFields(t *testing.T) {
 }
 
 // collectSpecFields returns the dotted field names of a struct type, recursing into
-// nested struct fields so an escape cannot hide inside EgressPolicy/Resources.
+// nested struct fields so an escape cannot hide inside Resources.
 func collectSpecFields(t reflect.Type, prefix string) []string {
 	var out []string
 	for f := range t.Fields() {

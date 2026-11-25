@@ -106,8 +106,8 @@ func sandboxImagePreflight(ctx context.Context, chat *chatEnv) error {
 	}
 	slog.Info("aura serve: sandbox box image verified available", "image", image)
 
-	// DISCRETION, not D-03: specFor (usersandbox/router.go) sets Egress.Floor:true on every
-	// strict-profile box, so an unreachable egress image produces the identical silent
+	// DISCRETION, not D-03: every box gets the egress floor sidecar when an egress image is
+	// configured, so an unreachable egress image produces the identical silent
 	// tool-surface failure — but D-03 names only AURA_SANDBOX_IMAGE as Fatal, so this stays a
 	// WARN, never promoted to Fatal.
 	if err := chat.sandboxRouter.EnsureEgressImage(pctx); err != nil {

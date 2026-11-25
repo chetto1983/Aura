@@ -92,7 +92,6 @@ func TestTranslate_PinsSafe(t *testing.T) {
 			IdentityID: rapid.String().Draw(rt, "identityID"),
 			Image:      rapid.String().Draw(rt, "image"),
 			Kind:       BoxKind(rapid.IntRange(0, 1).Draw(rt, "kind")),
-			Egress:     EgressPolicy{Floor: rapid.Bool().Draw(rt, "floor")},
 			Limits: Resources{
 				NanoCPUs:    rapid.Int64().Draw(rt, "nanoCPUs"),
 				MemoryBytes: rapid.Int64().Draw(rt, "memoryBytes"),

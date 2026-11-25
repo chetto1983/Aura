@@ -106,7 +106,6 @@ func (r *SandboxRouter) specFor(id string) SandboxSpec {
 	return SandboxSpec{
 		IdentityID: id,
 		Image:      r.cfg.Image,
-		Egress:     EgressPolicy{Floor: true},
 		Limits: Resources{
 			NanoCPUs:    int64(r.cfg.CPULimit) * nanoCPUsPerCPU,
 			MemoryBytes: r.cfg.MemoryLimit,

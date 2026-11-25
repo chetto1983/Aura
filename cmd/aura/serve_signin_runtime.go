@@ -11,7 +11,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/browserlogin"
-	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 type signInRuntime struct {
@@ -29,8 +28,7 @@ type signInRuntime struct {
 
 func wireSignInRuntime(ctx context.Context, chat *chatEnv, server *agui.Server, service *mcpAuthService) {
 	root, stop := context.WithCancel(ctx)
-	browser := &sandboxSignInBrowser{router: chat.sandboxRouter, image: chat.cfg.Sandbox.SignInBrowserImage, sidecarImage: chat.cfg.Sandbox.Image,
-		policy: usersandbox.EgressPolicy{Floor: true}}
+	browser := &sandboxSignInBrowser{router: chat.sandboxRouter, image: chat.cfg.Sandbox.SignInBrowserImage, sidecarImage: chat.cfg.Sandbox.Image}
 	login := browserlogin.New(root, browser, browserlogin.Options{})
 	browser.owns, browser.cancel = login.Owns, login.Cancel
 	service.signIn = &signInRuntime{login: login, browser: browser, origin: chat.cfg.MCPSandboxOrigin, port: chat.cfg.MCPSandboxPort, root: root, stop: stop}

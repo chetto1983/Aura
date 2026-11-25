@@ -6,7 +6,7 @@
 //
 // SandboxConfig is a LEAF: it holds only primitives and imports nothing from
 // internal/sandbox — config is a leaf, and 37-05's specFor maps these primitives into
-// usersandbox.Resources / EgressPolicy. Every field is a non-fatal envutil-style fallback
+// usersandbox.Resources. Every field is a non-fatal envutil-style fallback
 // (a malformed ad-hoc tweak falls back at load, never boots fatal); the per-profile
 // re-parse pass (config_knobs.go) is what FLAGS a malformed numeric knob Fatal under a
 // strict tier — so a bad cap/TTL can never silently degrade into an unsafe value.

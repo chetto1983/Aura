@@ -124,7 +124,7 @@ func TestEgress_FloorDropsInternal(t *testing.T) {
 	ctx := context.Background()
 
 	id := uniqueIdentity(t, "egress-floor")
-	spec := SandboxSpec{IdentityID: id, Egress: EgressPolicy{Floor: true}}
+	spec := SandboxSpec{IdentityID: id}
 	h, err := backend.Resolve(ctx, spec)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)

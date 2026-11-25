@@ -80,7 +80,7 @@ func TestEgress_CapOnSidecarOnly(t *testing.T) {
 
 	// The box itself must never gain a capability — assert against the single pinned-safe
 	// translator.
-	hc := toHostConfig(SandboxSpec{IdentityID: "box-cap", Egress: EgressPolicy{Floor: true}})
+	hc := toHostConfig(SandboxSpec{IdentityID: "box-cap"})
 	if len(hc.CapAdd) != 0 {
 		t.Fatalf("box HostConfig must never add capabilities, got CapAdd=%v", hc.CapAdd)
 	}
