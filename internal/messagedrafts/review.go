@@ -55,6 +55,17 @@ func withoutAction(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(fields)
 }
 
+// LegacyEmailArgs is a multiplexed send's stored arguments as Create stores the same call to
+// send_email: without "action", checked and canonicalised by MergeApprovedArgs. Fingerprint hashes
+// the bytes it is given, and jsonb hands them back in its own key order.
+func LegacyEmailArgs(stored json.RawMessage) (json.RawMessage, error) {
+	stripped, err := withoutAction(stored)
+	if err != nil {
+		return nil, err
+	}
+	return MergeApprovedArgs(emailTarget, stripped, nil)
+}
+
 // InlineContent contains the fields an operator can review on a text-only card.
 type InlineContent struct {
 	Recipient, CC, Subject, Text, BodyFormat string

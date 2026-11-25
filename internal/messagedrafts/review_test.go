@@ -110,3 +110,31 @@ func TestLegacyDraftStillRefusesAnUnknownKey(t *testing.T) {
 		t.Fatal("a legacy draft whose arguments are not an object decoded")
 	}
 }
+
+// A pre-split send becomes the bytes Create would store for the same send_email call, whatever key
+// order jsonb handed it back in, so the fingerprint the dispatch recomputes matches.
+func TestLegacyEmailArgsAreCreatesCanonicalSendEmailArgs(t *testing.T) {
+	t.Parallel()
+	got, err := LegacyEmailArgs(json.RawMessage(`{"to": ["a@example.com"], "body": "Text", ` +
+		`"action": "send_email", "subject": "Hi", "accountId": "acc-1", "bodyFormat": "text"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := MergeApprovedArgs(emailTarget,
+		json.RawMessage(`{"accountId":"acc-1","bodyFormat":"text","subject":"Hi","body":"Text","to":["a@example.com"]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("LegacyEmailArgs = %s, want %s", got, want)
+	}
+	for _, refused := range []string{
+		`[1]`,
+		`{"to": ["a@example.com"], "action": "send_email", "subject": "Hi", "accountId": "acc-1", "replyTo": "x"}`,
+		`{"to": "a@example.com", "action": "send_email", "subject": "Hi", "accountId": "acc-1"}`,
+	} {
+		if args, err := LegacyEmailArgs(json.RawMessage(refused)); err == nil {
+			t.Errorf("LegacyEmailArgs(%s) = %s, want an error", refused, args)
+		}
+	}
+}

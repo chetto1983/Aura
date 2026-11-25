@@ -106,12 +106,12 @@ func planDraft(namespaces []string, row draftRow) draftPlan {
 	}
 	plan := draftPlan{registered: mcptools.NamespacedName(ns, "send_email")}
 	var err error
-	if plan.original, err = sendEmailArgs(row.original); err != nil {
+	if plan.original, err = messagedrafts.LegacyEmailArgs(row.original); err != nil {
 		return draftPlan{expire: unmappable}
 	}
 	sent := plan.original
 	if row.effective != nil {
-		if plan.effective, err = sendEmailArgs(row.effective); err != nil {
+		if plan.effective, err = messagedrafts.LegacyEmailArgs(row.effective); err != nil {
 			return draftPlan{expire: unmappable}
 		}
 		sent = plan.effective
@@ -140,21 +140,6 @@ func namespaceOf(namespaces []string, registered string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// sendEmailArgs drops the multiplexed "action" key and canonicalises the rest as Create does:
-// Fingerprint hashes the bytes it is given, and jsonb handed them back in its own key order.
-func sendEmailArgs(stored []byte) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(stored, &fields); err != nil {
-		return nil, err
-	}
-	delete(fields, "action")
-	stripped, err := json.Marshal(fields)
-	if err != nil {
-		return nil, err
-	}
-	return messagedrafts.MergeApprovedArgs(messagedrafts.EmailTarget(), stripped, nil)
 }
 
 func namesAccount(args json.RawMessage) bool {
