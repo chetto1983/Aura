@@ -407,7 +407,13 @@ jobs:
       - name: Live network backup (backup_live)
         # The scheduled Postgres backup, run against this job's server: a dump artifact
         # must land in AURA_BACKUP_DIR. It ran nowhere before 2026-11-25.
-        run: go test -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
+        # `aura db migrate` first, as the appliance's aura-migrate does: the suite above
+        # migrates through its own helpers, and the 0019 down/up drill drops schema authula
+        # with the default privileges db.EnsureAuthulaReadable gives aura_migrate, so the
+        # dump failed on authula.auth_schema_migrations (measured 2026-11-25 on a93d05e9c).
+        run: |
+          go run ./cmd/aura db migrate
+          go test -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
 
       - name: Authula 0019 migration drill
         # Explicit no-skip Authula schema gate: internal/db/... above already runs it,
