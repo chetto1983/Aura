@@ -3,14 +3,11 @@
 package webauth
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +30,14 @@ const (
 
 	liveWhatsAppSubjectA = "d1111111-1111-4111-8111-111111111111"
 	liveWhatsAppSubjectB = "d2222222-2222-4222-8222-222222222222"
+
+	// The PIM refuses a tenant-written account that reads the server's own disk (fork
+	// c5db95e), so the calendar accounts are the operator's: the PIM under test runs with
+	// internal/mcp/testdata/pim-appsettings.json, which gives each subject one fixture account.
+	liveCalendarSubjectA = "00000000-0000-0000-0000-000000000001"
+	liveCalendarSubjectB = "00000000-0000-0000-0000-000000000002"
+	liveCalendarAccountA = "00000000000000000000000000000001__fixture"
+	liveCalendarAccountB = "00000000000000000000000000000002__fixture"
 )
 
 func TestMCPResourcesLiveCrossSubjectIsolation(t *testing.T) {
@@ -86,23 +91,16 @@ func liveSubjectToken(t *testing.T, tokens *LiveMCPTokenIssuer, resource, subjec
 }
 
 func testLiveCalendarIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
-	subjectA := uuid.NewString()
-	subjectB := uuid.NewString()
-	tokenA := liveSubjectToken(t, tokens, liveCalendarResource, subjectA)
-	tokenB := liveSubjectToken(t, tokens, liveCalendarResource, subjectB)
+	tokenA := liveSubjectToken(t, tokens, liveCalendarResource, liveCalendarSubjectA)
+	tokenB := liveSubjectToken(t, tokens, liveCalendarResource, liveCalendarSubjectB)
 	sessionA := openLiveResourceSessionWithToken(t, liveCalendarResource, tokenA, "calendar-live-a")
 	sessionB := openLiveResourceSessionWithToken(t, liveCalendarResource, tokenB, "calendar-live-b")
 
-	accountA := createLiveCalendarAccount(t, tokenA, "live-"+subjectA[:8])
-	accountB := createLiveCalendarAccount(t, tokenB, "live-"+subjectB[:8])
-	t.Cleanup(func() { deleteLiveCalendarAccount(t, tokenA, accountA) })
-	t.Cleanup(func() { deleteLiveCalendarAccount(t, tokenB, accountB) })
-
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
-	resultA := awaitLiveToolMarker(t, ctx, sessionA, "list_accounts", map[string]any{}, accountA)
-	resultB := awaitLiveToolMarker(t, ctx, sessionB, "list_accounts", map[string]any{}, accountB)
-	assertLiveMarkersIsolated(t, "Calendar", resultA, resultB, accountA, accountB)
+	resultA := awaitLiveToolMarker(t, ctx, sessionA, "list_accounts", map[string]any{}, liveCalendarAccountA)
+	resultB := awaitLiveToolMarker(t, ctx, sessionB, "list_accounts", map[string]any{}, liveCalendarAccountB)
+	assertLiveMarkersIsolated(t, "Calendar", resultA, resultB, liveCalendarAccountA, liveCalendarAccountB)
 }
 
 func openLiveResourceSessionWithToken(t *testing.T, resource, token, name string) *sdkmcp.ClientSession {
@@ -125,61 +123,6 @@ func openLiveResourceSessionWithToken(t *testing.T, resource, token, name string
 		}
 	})
 	return session
-}
-
-func createLiveCalendarAccount(t *testing.T, token, localID string) string {
-	t.Helper()
-	body := map[string]any{
-		"id": localID, "displayName": localID, "provider": "json", "enabled": true, "priority": 1,
-		"providerConfig": map[string]string{"source": "local", "filePath": "/app/data/fixture-calendar.json"},
-	}
-	response := liveBearerJSON(t, http.MethodPost, liveCalendarResource+"admin/accounts", token, body)
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
-		t.Fatalf("create Calendar account %s: HTTP %d: %s", localID, response.StatusCode, readLiveBody(response.Body))
-	}
-	var created struct {
-		ID string `json:"id"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&created); err != nil || strings.TrimSpace(created.ID) == "" {
-		t.Fatalf("decode created Calendar account %s: id=%q err=%v", localID, created.ID, err)
-	}
-	return created.ID
-}
-
-func deleteLiveCalendarAccount(t *testing.T, token, accountID string) {
-	t.Helper()
-	response := liveBearerJSON(t, http.MethodDelete,
-		liveCalendarResource+"admin/accounts/"+url.PathEscape(accountID), token, nil)
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusNotFound {
-		t.Errorf("delete Calendar account %s: HTTP %d: %s", accountID, response.StatusCode, readLiveBody(response.Body))
-	}
-}
-
-func liveBearerJSON(t *testing.T, method, endpoint, token string, body any) *http.Response {
-	t.Helper()
-	var reader io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		reader = bytes.NewReader(encoded)
-	}
-	request, err := http.NewRequestWithContext(context.Background(), method, endpoint, reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(request)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, endpoint, err)
-	}
-	return response
 }
 
 func testLiveWhatsAppIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
@@ -280,8 +223,8 @@ func testLiveMemoryIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 	entityB := "Live memory beta " + subjectB[:8]
 	statementA := entityA + " owns the alpha isolation marker."
 	statementB := entityB + " owns the beta isolation marker."
-	upsertLiveMemoryFact(t, ctx, sessionA, entityA, "alpha isolation marker", statementA, "live-memory-a")
-	upsertLiveMemoryFact(t, ctx, sessionB, entityB, "beta isolation marker", statementB, "live-memory-b")
+	upsertLiveMemoryFact(t, ctx, sessionA, entityA, "alpha isolation marker", statementA, "live-memory-a-message")
+	upsertLiveMemoryFact(t, ctx, sessionB, entityB, "beta isolation marker", statementB, "live-memory-b-message")
 
 	resultA := callLiveToolText(t, ctx, sessionA, "memory_facts_about", map[string]any{"entity": entityA})
 	resultB := callLiveToolText(t, ctx, sessionB, "memory_facts_about", map[string]any{"entity": entityB})
@@ -304,12 +247,14 @@ func testLiveMemoryIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
 	}
 }
 
-func upsertLiveMemoryFact(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, subject, object, statement, runID string) {
+// The write schema has no run_id since D-10: the memory MCP derives the writing run from the
+// Aura-issued token itself (cmd/arcadedb-mcp/tool_memory.go hostDerivedActor).
+func upsertLiveMemoryFact(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, subject, object, statement, memoryID string) {
 	t.Helper()
 	_ = callLiveToolText(t, ctx, session, "memory_upsert_fact", map[string]any{
 		"subject": subject, "subject_kind": "test_entity", "predicate": "owns",
 		"object": object, "object_kind": "test_marker", "statement": statement,
-		"source": map[string]any{"run_id": runID, "memory_ids": []string{runID + "-message"}},
+		"source": map[string]any{"memory_ids": []string{memoryID}},
 	})
 }
 
