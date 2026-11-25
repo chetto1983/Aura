@@ -60,8 +60,10 @@ helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" ||
 # the count is the point -- a new tier that fetches the model its own way is how the
 # validated-artifact contract erodes -- so raising it is a deliberate act, not a fixup.
 # Raise it only after checking the new tier calls THIS helper rather than curling a URL.
-if [ "$helper_calls" -ne 6 ]; then
-  echo "expected all six live embedding CI tiers to use the shared helper" >&2
+# SEVEN since 2026-11-25: mcp-live-integration-test starts the memory MCP, which embeds,
+# and fetches the model through this helper (checked); it reached this gate red too.
+if [ "$helper_calls" -ne 7 ]; then
+  echo "expected all seven live embedding CI tiers to use the shared helper" >&2
   exit 1
 fi
 if grep -q 'qwen3-embedding-0[.]6b' "$workflow"; then
