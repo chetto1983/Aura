@@ -27,5 +27,5 @@ func requireTaskPayload(kind string, payload json.RawMessage) error {
 	if value, ok := fields[field].(string); ok && strings.TrimSpace(value) != "" {
 		return nil
 	}
-	return fmt.Errorf("task schedule: %s. No task was created: ask the operator for it, then schedule again", missing)
+	return fmt.Errorf("task schedule: %s", missing)
 }

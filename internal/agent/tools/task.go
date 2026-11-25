@@ -221,7 +221,10 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		return ToolResult{}, fmt.Errorf("task schedule args: %w", err)
 	}
 	if err := validateSchedule(a); err != nil {
-		return ToolResult{}, err
+		return ToolResult{}, refuseSchedule(err, raw)
+	}
+	if a.ScheduleKind == "at" && strings.TrimSpace(a.At) == "" {
+		return ToolResult{}, refuseSchedule(errScheduleAtMissing, raw)
 	}
 	if a.Kind == "message" {
 		return t.scheduleMessage(ctx, a)
