@@ -89,7 +89,7 @@ LIB
   relink_enabled_units() { :; }
   retire_env_keys() { :; }
   wait_healthy() { :; }
-  refresh_sandbox_images() { :; }
+  refresh_boxes_and_mounts() { :; }
   remove_superseded_images() { :; }
   update_sidecar() { echo "$1" >>"$fixture/updated-services"; }
   bash() { [[ "$1" == scripts/appliance_posture.sh ]] || fail 'unexpected bash'; }
@@ -137,7 +137,7 @@ for memory in running stopped; do
     container_image_id() { echo image-id; }
     image_id() { echo image-id; }
     update_sidecar() { :; }
-    refresh_sandbox_images() { :; }
+    refresh_boxes_and_mounts() { :; }
     remove_superseded_images() { :; }
     remove_orphan_volumes() { :; }
     wait_healthy() { echo "wait_healthy $1" >>steps; }

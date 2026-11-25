@@ -12,19 +12,12 @@
 #      exactly as aura.service does at boot, which is how a changed pin lands on Postgres,
 #      ArcadeDB or a model sidecar, then restarts every service that mounts a changed payload
 #      file, which is how a changed garage.toml or Caddyfile reaches its service;
-#   3. refreshes the repo-built sidecars on their moving tags and the per-user sandbox boxes.
+#   3. refreshes the repo-built sidecars on their moving tags and the per-user sandbox boxes,
+#      then restarts aura once if it holds a removed box or an MCP sidecar that changed image.
 # Third-party images never ride a moving tag here: they change when compose.yaml's pin does.
 #
-# Prerequisites in /opt/aura/.env (the dev default stays build-from-source, and
-# an MCP left at its SHA-pinned compose default is a no-op here):
-#   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
-#   AURA_PULL_POLICY=always
-#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
-#   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
-#   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
-#   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
-#   AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
-#   AURA_SANDBOX_EGRESS_IMAGE=ghcr.io/chetto1983/aura-egress:edge
+# The .env keys that put a host on the edge channel's moving tags are written by
+# scripts/install_env.sh (ensure_edge_channel_env); an MCP left at its compose pin is a no-op here.
 #
 # /etc/default/aura may override when an update applies and how long the cockpit can hold it:
 #   AURA_UPDATE_AT=03:00                    the host's local time it applies at on its own
@@ -48,6 +41,8 @@ PENDING_PAYLOAD=payload_changes.pending
 RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT AURA_PIM_EXTERNAL_BASE_URL AURA_PIM_MCP_IMAGE)
 # Repo-built services on the edge channel's moving tags, refreshed after aura.
 SIDECARS=(arcadedb-mcp aura-pim-mcp whatsapp caddy aura-ingest aura-cloudflared)
+# The ones aura mounts as MCP servers, internal/mcp/manager/catalog.go's HTTP recipes.
+MCP_SIDECARS=(arcadedb-mcp aura-pim-mcp whatsapp)
 # The systemd units the payload ships and a host may have installed.
 UNITS=(aura.service aura-image-update.service aura-image-update.timer)
 # Every registry path the repo-built images have been published under, and the one they live
@@ -233,13 +228,10 @@ retire_env_keys() {
 
 ensure_cloudflared_edge_env() {
   [[ "$(env_value AURA_IMAGE)" == *:edge ]] || return 0
-  local key value
-  for key in AURA_CLOUDFLARED_IMAGE AURA_CLOUDFLARED_PULL_POLICY; do
+  local pair key value
+  for pair in "AURA_CLOUDFLARED_IMAGE=${IMAGE_HOME}/aura-cloudflared:edge" AURA_CLOUDFLARED_PULL_POLICY=always; do
+    key="${pair%%=*}" value="${pair#*=}"
     [[ -z "$(env_value "$key")" ]] || continue
-    case "$key" in
-      AURA_CLOUDFLARED_IMAGE) value="${IMAGE_HOME}/aura-cloudflared:edge" ;;
-      AURA_CLOUDFLARED_PULL_POLICY) value=always ;;
-    esac
     # GNU sed preserves .env's mode/owner; no backup or log may copy its secret values.
     sed -i "/^${key}=/d" "${INSTALL_DIR}/.env"
     printf '%s=%s\n' "$key" "$value" >>"${INSTALL_DIR}/.env"
@@ -274,9 +266,9 @@ image_repository() {
 # `docker rmi repo:<none>` is an invalid reference, so an untagged image goes by its ID.
 # Measured on the lab VM (2026-10-11): 8 superseded pins, about 6 GB, the disk at 99%, every
 # removal refused in silence.
-# The box images are not compose services; their pins come from .env, and refresh_sandbox_images
-# has already removed every box on a superseded image when this runs. Docker itself
-# refuses to remove one a container still uses; the refusal is logged with docker's reason.
+# The box images are not compose services: their pins come from .env, and every box on a
+# superseded image is gone by now (refresh_boxes_and_mounts). Docker itself refuses to remove
+# an image a container still uses; the refusal is logged with docker's reason.
 remove_superseded_images() {
   local ref repo tag id target label err
   local -A pinned_repos=() pinned_ids=()
@@ -448,12 +440,23 @@ stale_boxes() {
   done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
 }
 
-refresh_sandbox_images() {
-  local name removed=0
-  if [[ -z "$(env_value AURA_SANDBOX_IMAGE)" || -z "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]]; then
+mcp_sidecar_images() {
+  local svc
+  for svc in "${MCP_SIDECARS[@]}"; do
+    echo "${svc} $(container_image_id "${svc}")"
+  done
+}
+
+# aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one whose new
+# image advertises another tool set stays dead to it until aura restarts (lab VM, 2026-11-25:
+# the PIM moved after aura, which kept 1 of its 29 tools). $1 is mcp_sidecar_images as aura
+# mounted them; one not running then or now has nothing to remount. One restart serves the boxes.
+refresh_boxes_and_mounts() {
+  local name removed=0 moved
+  moved="$(paste -d' ' <(echo "$1") <(mcp_sidecar_images) |
+    awk '$2 != "missing" && $4 != "missing" && $2 != $4 { printf " %s", $1 }')"
+  [[ -n "$(env_value AURA_SANDBOX_IMAGE)" && -n "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]] ||
     echo "sandbox: no images pinned in .env; skipped."
-    return 0
-  fi
   while read -r name; do
     [[ -n "${name}" ]] || continue
     docker rm -f "aura-egress-${name#aura-box-}" >/dev/null 2>&1 || true
@@ -461,14 +464,14 @@ refresh_sandbox_images() {
     echo "sandbox: ${name} ran a superseded image; removed for aura to recreate."
     removed=$((removed + 1))
   done < <(stale_boxes)
-  if ((removed > 0)); then
-    docker compose restart aura
-    wait_healthy aura
-  fi
+  [[ -z "${moved}" ]] || echo "aura: restarting it to remount${moved}, whose image changed after it mounted them."
+  ((removed > 0)) || [[ -n "${moved}" ]] || return 0
+  docker compose restart aura
+  wait_healthy aura
 }
 
 apply_update() {
-  local before after svc
+  local before after svc mounted
   record_status applying
   trap 'on_apply_exit $?' EXIT
   before="$(container_image_id aura)"
@@ -502,6 +505,8 @@ apply_update() {
     docker compose up -d --pull missing
   fi
   wait_healthy aura
+  # aura has just mounted its MCP sidecars: anything that moves them from here on must restart it.
+  mounted="$(mcp_sidecar_images)"
 
   after="$(container_image_id aura)"
   echo "aura: ${before} -> ${after}"
@@ -526,7 +531,7 @@ apply_update() {
     update_sidecar "${svc}"
   done
 
-  refresh_sandbox_images
+  refresh_boxes_and_mounts "${mounted}"
 
   # Only a tick that got this far reclaims images -- tagged ones no pin names any more, then
   # the untagged ones a moving tag left behind -- and orphaned volumes.
