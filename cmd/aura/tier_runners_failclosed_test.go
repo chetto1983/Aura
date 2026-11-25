@@ -274,10 +274,59 @@ SUITES = [
 				"x/py_unit_test.go":    taggedTest("py_unit", "TestPyUnit"),
 			},
 			want: []string{
-				"x/py_var_test.go (tags py_var) runs in no CI go test: invocations with its tags and package select none",
-				"x/py_fstring_test.go (tags py_fstring) runs in no CI go test: invocations with its tags never name ./x",
+				"x/py_var_test.go (tags py_var) runs in no CI go test: no go test invocation sets tags",
+				"x/py_fstring_test.go (tags py_fstring) runs in no CI go test: no go test invocation sets tags",
 				"x/py_concat_test.go (tags py_concat) runs in no CI go test: no go test invocation sets tags",
 				"x/py_unit_test.go (tags py_unit) runs in no CI go test: no go test invocation sets tags",
+			},
+		},
+		{
+			// Round 3, 1: commenting a suite out, or quoting one in a docstring, drops it.
+			name: "a go test list in a Python comment or string is no list",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("python3 scripts/driver.py --tier all"),
+				"scripts/driver.py": `"""Run the suites, for example ["go", "test", "-tags=py_doc", "./x/"]."""
+HELP = '["go", "test", "-tags=py_str", "./x/"]'
+SUITES = [
+    # ("dropped", ["go", "test", "-tags=py_comment", "./x/"]),
+    ("kept", ["go", "test", "-tags=py_kept", "./x/"]),
+]
+`,
+				"x/py_doc_test.go":     taggedTest("py_doc", "TestPyDoc"),
+				"x/py_str_test.go":     taggedTest("py_str", "TestPyStr"),
+				"x/py_comment_test.go": taggedTest("py_comment", "TestPyComment"),
+				"x/py_kept_test.go":    taggedTest("py_kept", "TestPyKept"),
+			},
+			want: []string{
+				"x/py_doc_test.go (tags py_doc) runs in no CI go test",
+				"x/py_str_test.go (tags py_str) runs in no CI go test",
+				"x/py_comment_test.go (tags py_comment) runs in no CI go test",
+			},
+		},
+		{
+			// Round 3, 3: which lists run is the driver's own choice; only --tier all counts.
+			name: "a Python driver launched without --tier all credits nothing",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("python3 scripts/live.py --tier deterministic", "python3 scripts/live.py", "python3 scripts/all.py --tier=all"),
+				"scripts/live.py":          "CMD = [\"go\", \"test\", \"-tags=py_live\", \"./x/\"]\n",
+				"scripts/all.py":           "CMD = [\"go\", \"test\", \"-tags=py_all\", \"./x/\"]\n",
+				"x/py_live_test.go":        taggedTest("py_live", "TestPyLive"),
+				"x/py_all_test.go":         taggedTest("py_all", "TestPyAll"),
+			},
+			want: []string{"x/py_live_test.go (tags py_live) runs in no CI go test"},
+		},
+		{
+			// Round 3, 4: an unresolved argument may be any flag, -run=^X$ included.
+			name: "an unresolved argument where a flag could stand covers nothing",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("python3 scripts/driver.py --tier all", "go test -tags sh_extra $EXTRA ./x > out.log 2>&1"),
+				"scripts/driver.py":        "extra_flags = \"-run=^TestNone$\"\nCMD = [\"go\", \"test\", \"-tags=py_extra\", extra_flags, \"./x/\"]\n",
+				"x/py_extra_test.go":       taggedTest("py_extra", "TestPyExtra"),
+				"x/sh_extra_test.go":       taggedTest("sh_extra", "TestShExtra"),
+			},
+			want: []string{
+				"x/py_extra_test.go (tags py_extra) runs in no CI go test: no go test invocation sets tags",
+				"x/sh_extra_test.go (tags sh_extra) runs in no CI go test: invocations with its tags never name ./x",
 			},
 		},
 	}

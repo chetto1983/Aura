@@ -2,6 +2,7 @@
 # file behind a feature build tag that no CI `go test` executes (its tags, its package and a
 # -run selecting the test) unless an entry here excuses it, and on any entry that is stale or
 # has no reason. A Python driver's literal ["go", "test", ...] argv lists are read.
+# Limit: it reads text, not control flow; a go test under `if False:` or past an early exit counts.
 #
 # [tags]         <tag> | <reason>               every unreached file behind the tag runs by hand
 # [files]        <path> | <reason>              one tagged test file no CI invocation reaches

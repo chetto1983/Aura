@@ -229,7 +229,16 @@ func TestPythonGoTestListsAcceptOnlyLiterals(t *testing.T) {
 			t.Errorf("%s\nwant %q\ngot  %q", src, want, got)
 		}
 	}
-	if got := pythonGoTestLists(`run(["go", "vet", "./x"])`); len(got) != 0 {
-		t.Errorf("a go vet list was read as go test: %q", got)
+	for _, src := range []string{
+		`run(["go", "vet", "./x"])`,
+		`# run(["go", "test", "./x"])`,
+		`"""Example: ["go", "test", "./x"]"""`,
+		`'''Example: ["go", "test", "./x"]'''`,
+		`HELP = rb'["go", "test", "./x"]'`,
+		`HELP = "a \" quote, then [\"go\", \"test\", \"./x\"]"`,
+	} {
+		if got := pythonGoTestLists(src); len(got) != 0 {
+			t.Errorf("%s: read as a go test list: %q", src, got)
+		}
 	}
 }

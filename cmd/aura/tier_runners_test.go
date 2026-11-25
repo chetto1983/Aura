@@ -94,7 +94,7 @@ func tierViolations(files []tierTestFile, runs []goTestRun, manual manualTiers) 
 			if len(missing) > 0 {
 				detail += "; unselected, listed under [tests]: " + strings.Join(missing, ", ")
 			}
-			table = append(table, fmt.Sprintf("%s	%s	%s", f.rel, status, detail))
+			table = append(table, fmt.Sprintf("%s\t%s\t%s", f.rel, status, detail))
 			if fileListed {
 				violations = append(violations, fmt.Sprintf("%s [files] %s is reached by %s: remove it", manualTiersPath, f.rel, run.via))
 			}
@@ -109,9 +109,9 @@ func tierViolations(files []tierTestFile, runs []goTestRun, manual manualTiers) 
 		case fileListed && tagExcuse != "":
 			violations = append(violations, fmt.Sprintf("%s [files] %s is already excused by [tags] %s: keep one", manualTiersPath, f.rel, tagExcuse))
 		case fileListed:
-			table = append(table, fmt.Sprintf("%s	listed (file)	%s", f.rel, fileReason))
+			table = append(table, fmt.Sprintf("%s\tlisted (file)\t%s", f.rel, fileReason))
 		case tagExcuse != "":
-			table = append(table, fmt.Sprintf("%s	listed (tag %s)	%s", f.rel, tagExcuse, manual.tags[tagExcuse]))
+			table = append(table, fmt.Sprintf("%s\tlisted (tag %s)\t%s", f.rel, tagExcuse, manual.tags[tagExcuse]))
 		default:
 			violations = append(violations, fmt.Sprintf("%s (tags %s) runs in no CI go test: %s. Wire it, or list it in %s with a reason",
 				f.rel, strings.Join(f.gating, ","), whyUnreached(f, credited), manualTiersPath))

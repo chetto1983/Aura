@@ -72,6 +72,7 @@ var (
 	scriptPath       = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.sh)$`)
 	pythonDriverPath = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.py)$`)
 	unresolvedVar    = regexp.MustCompile(`\$[A-Za-z0-9_{(]`)
+	redirect         = regexp.MustCompile(`^[0-9]*[<>]+`)
 	moduleLine       = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 	launchers        = []string{"bash", "sh", "source", ".", "exec", "time", "!", "if", "then", "do", "else"}
 	declareWords     = []string{"export", "local", "readonly", "declare"}
@@ -234,7 +235,7 @@ func (w *tierWalk) command(words []string, vars map[string]string, via string, f
 			return nil
 		case !follow:
 		case (word == "python3" || word == "python") && i+1 < len(words) && pythonDriverPath.MatchString(words[i+1]):
-			return w.pythonDriver(pythonDriverPath.FindStringSubmatch(words[i+1])[1], vars, via)
+			return w.pythonDriver(pythonDriverPath.FindStringSubmatch(words[i+1])[1], words[i+2:], vars, via)
 		case word == "make":
 			for _, target := range words[i+1:] {
 				if strings.HasPrefix(target, "-") || strings.Contains(target, "=") {
@@ -277,15 +278,36 @@ func (w *tierWalk) script(rel string, env map[string]string, via string) error {
 
 // pythonDriver records the `go test` argv lists a Python driver spells as literals (see
 // pythonGoTestLists). Like a shell script, a driver is a leaf: what it imports is not read.
-func (w *tierWalk) pythonDriver(rel string, env map[string]string, via string) error {
+// Which lists a driver runs is its own control flow, so they count only when it is launched
+// with `--tier all` (agent_memory_eval.py's switch for every suite); any other or no
+// --tier credits nothing. A list with any element that is not a literal credits nothing
+// either: `go test` takes flags after the packages too, so no position is safe.
+func (w *tierWalk) pythonDriver(rel string, args []string, env map[string]string, via string) error {
 	data, err := os.ReadFile(filepath.Join(w.root, filepath.FromSlash(rel)))
 	if err != nil {
 		return fmt.Errorf("%s: %w", via, err)
 	}
+	if pythonTier(args) != "all" {
+		return nil
+	}
 	for _, argv := range pythonGoTestLists(string(data)) {
-		w.record(argv[2:], env["GOFLAGS"], via+" -> "+rel)
+		if !slices.Contains(argv, unresolvedPython) {
+			w.record(argv[2:], env["GOFLAGS"], via+" -> "+rel)
+		}
 	}
 	return nil
+}
+
+func pythonTier(args []string) string {
+	for i, arg := range args {
+		if tier, ok := strings.CutPrefix(arg, "--tier="); ok {
+			return tier
+		}
+		if arg == "--tier" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func (w *tierWalk) record(args []string, goflags, via string) {
@@ -296,14 +318,18 @@ func (w *tierWalk) record(args []string, goflags, via string) {
 
 // goTest reads a `go test` argument list. GOFLAGS applies first and the command line
 // overrides it, as `go help environment` says: a -tags on the command line replaces the
-// GOFLAGS one.
+// GOFLAGS one. An argument that could not be resolved and is not the value of -tags, -run
+// or -skip may be any flag — `$EXTRA` could hold -run=^X$ — so the run then covers nothing.
 func (w *tierWalk) goTest(args []string, goflags string) goTestRun {
-	var run goTestRun
-	flagTags, flagSet, flagRace := goTestFlags(strings.Fields(goflags), &goTestRun{})
-	tags, set, race := goTestFlags(args, &run)
-	run.tags, run.race = tags, race || flagRace
-	if !set && flagSet {
-		run.tags = flagTags
+	args = withoutRedirects(args)
+	env := readGoTestArgs(strings.Fields(goflags))
+	cmd := readGoTestArgs(args)
+	run := goTestRun{tags: cmd.tags, race: cmd.race || env.race, run: cmd.run}
+	if !cmd.tagsSet && env.tagsSet {
+		run.tags = env.tags
+	}
+	if cmd.opaque {
+		return run
 	}
 	for i := 0; i < len(args) && args[i] != "-args"; i++ {
 		if pkg, ok := packagePattern(args[i], w.module); ok {
@@ -313,16 +339,41 @@ func (w *tierWalk) goTest(args []string, goflags string) goTestRun {
 	return run
 }
 
-// goTestFlags reads -tags, -race and -run. A tag value still holding a `$` ("$1",
-// ${{ matrix.x }}) could not be resolved and names no tag.
-func goTestFlags(args []string, run *goTestRun) (tags []string, tagsSet, race bool) {
+// withoutRedirects drops shell redirections (`> file`, `2>`, `<in`), which are no
+// arguments of go test.
+func withoutRedirects(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		switch redirect.FindString(args[i]) {
+		case "":
+			out = append(out, args[i])
+		case args[i]:
+			i++
+		}
+	}
+	return out
+}
+
+type goTestArgs struct {
+	tags          []string
+	run           string
+	tagsSet, race bool
+	opaque        bool
+}
+
+// readGoTestArgs reads -tags, -race and -run, and whether an unresolved argument stands
+// where a flag could. A tag value still holding a `$` ("$1", ${{ matrix.x }}) could not be
+// resolved and names no tag.
+func readGoTestArgs(args []string) goTestArgs {
+	var out goTestArgs
 	for i := 0; i < len(args) && args[i] != "-args"; i++ {
 		if !strings.HasPrefix(args[i], "-") {
+			out.opaque = out.opaque || strings.Contains(args[i], "$")
 			continue
 		}
 		name, value, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
 		if name == "race" {
-			race = true
+			out.race = true
 		}
 		if name != "tags" && name != "run" && name != "skip" {
 			continue
@@ -333,17 +384,17 @@ func goTestFlags(args []string, run *goTestRun) (tags []string, tagsSet, race bo
 		}
 		switch name {
 		case "run":
-			run.run = value
+			out.run = value
 		case "tags":
-			tagsSet, tags = true, nil
+			out.tagsSet, out.tags = true, nil
 			for _, tag := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' }) {
 				if !strings.Contains(tag, "$") {
-					tags = append(tags, tag)
+					out.tags = append(out.tags, tag)
 				}
 			}
 		}
 	}
-	return tags, tagsSet, race
+	return out
 }
 
 // packagePattern turns a package argument into a repo-relative pattern. Only ./paths and
