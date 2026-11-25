@@ -30,7 +30,6 @@ cmd/arcadedb-mcp/tool_forget_test.go | unwired — owner decision pending (2026-
 cmd/aura/asset_roundtrip_test.go | unwired — owner decision pending (2026-11-25)
 cmd/aura/serve_provisioning_objectstore_restore_garage_test.go | unwired — owner decision pending (2026-11-25)
 cmd/aura/two_role_tracer_e2e_test.go | unwired — owner decision pending (2026-11-25)
-internal/agent/reasoning_tier_live_test.go | unwired — owner decision pending (2026-11-25)
 internal/agui/provisioning_saga_resumable_test.go | unwired — owner decision pending (2026-11-25)
 internal/assets/object_resolver_test.go | unwired — owner decision pending (2026-11-25)
 internal/objectstore/garageadmin/client_integration_test.go | unwired — owner decision pending (2026-11-25)

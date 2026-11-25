@@ -1280,6 +1280,11 @@ jobs:
       - name: Reasoning tier accuracy gate
         run: go test -tags reasoning_live -count=1 -v -run TestReasoningClassifierLive ./internal/agent/prompt/
 
+      - name: Adaptive reasoning tier through the shipped agent wiring
+        # A real LlmAgent with this embedder resolves its tier locally and never asks the
+        # teacher. It ran nowhere before 2026-11-25.
+        run: go test -tags reasoning_live -count=1 -v -run TestAdaptiveReasoningTierLive ./internal/agent/
+
       - name: Tear down
         if: always()
         run: docker compose down
