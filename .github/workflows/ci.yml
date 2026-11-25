@@ -1339,17 +1339,17 @@ jobs:
 
       - name: Compile the multimodal_integration tier (always — no-skip-as-green floor)
         # The tier ALWAYS compiles in CI (the cheap, always-green floor that proves the
-        # tagged file never rots). The live round-trip below runs only when the sidecars
-        # are reachable; the compile gate runs unconditionally.
+        # tagged file never rots), before the live round-trip below.
         run: go vet -tags multimodal_integration ./internal/channels/telegram/
 
       - name: Bring up the 9c audio sidecars (aura-stt + aura-tts)
         run: docker compose up -d aura-stt aura-tts
 
       - name: Wait for the audio sidecars healthy
-        id: audio-health
+        # A sidecar that never comes up fails the job: it used to skip the live tier and stay
+        # green. Measured on the last 40 master runs before the change: the live step ran in
+        # every one that reached it (26 success, 1 cancelled).
         run: |
-          available=1
           for svc in aura-stt aura-tts; do
             ok=""
             for i in $(seq 1 60); do
@@ -1365,16 +1365,13 @@ jobs:
               sleep 10
             done
             if [ -z "$ok" ]; then
-              echo "$svc did not become healthy; skipping live audio tier" >&2
+              echo "$svc did not become healthy" >&2
               docker logs "$svc" --tail 60 || true
-              available=0
-              break
+              exit 1
             fi
           done
-          echo "available=$available" >> "$GITHUB_OUTPUT"
 
       - name: Live multimodal_integration audio tier (TTS->STT loop)
-        if: steps.audio-health.outputs.available == '1'
         run: go test -race -count=1 -tags multimodal_integration -run '^TestLive(TTSThenSTTRoundTrip|TTSVoiceBytes)$' ./internal/channels/telegram/
 
       - name: Tear down

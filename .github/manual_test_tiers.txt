@@ -28,5 +28,4 @@ document_live_e2e | ci.yml ingest-reconcile-e2e -> make ingest-reconcile -> scri
 retrieval_eval    | ci.yml ingest-reconcile-e2e -> make ingest-reconcile -> scripts/ingest_reconcile_e2e.sh | AURA_INGEST_E2E_SCOPE=reconcile exits 0 at line 516, before the scored retrieval eval
 
 [conditional]
-multimodal_integration | ci.yml multimodal-integration-test | the audio step runs only when the STT/TTS sidecars come up healthy (steps.audio-health); otherwise the job stays green without it
 telegram_integration   | ci.yml telegram-integration-test | the live step runs only when the TELEGRAM_BOT_TOKEN secret is set (env.HAS_BOT_TOKEN)
