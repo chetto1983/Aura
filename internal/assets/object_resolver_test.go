@@ -4,8 +4,8 @@
 // REAL asset Service write path against the live Garage stack + a disposable migrated Postgres,
 // proving the per-identity resolver is actually consumed at request time: identity A's asset
 // bytes land in A's OWN Garage bucket, are readable ONLY with A's resolved creds, and are DENIED
-// to B's scoped creds; an UNPROVISIONED identity falls back to the shared bucket (no crash,
-// never a foreign bucket).
+// to B's scoped creds; an UNPROVISIONED identity resolves to nothing, never to the shared or a
+// foreign bucket (F-007 fail-closed).
 //
 // Run (stack up: Postgres + Garage admin):
 //
@@ -19,6 +19,7 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -139,15 +141,15 @@ func TestAssetObjectStoreCrossDenyLive(t *testing.T) {
 		t.Error("B read A's object with B's scoped creds, want access denied (F-007)")
 	}
 
-	// An UNPROVISIONED identity C resolves to the SHARED bucket (ErrNoRows fallback), never a
-	// foreign bucket and never a crash.
+	// An UNPROVISIONED identity C resolves to NOTHING: no store, no bucket, an error that
+	// says why (F-007 fail-closed, resolveObjects). The shared bucket is never the fallback.
 	idC := uuid.NewString()
 	objC, bucketC, err := resolveObjects(identityctx.WithIdentityID(ctx, idC), resolver, factory, sharedStore, sharedBucket)
-	if err != nil {
-		t.Fatalf("unprovisioned C resolve err = %v, want shared fallback", err)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("unprovisioned C resolve err = %v, want fail-closed pgx.ErrNoRows", err)
 	}
-	if bucketC != sharedBucket || objC != sharedStore {
-		t.Fatalf("unprovisioned C = (bucket %q, sharedStore=%v), want the shared store+bucket", bucketC, objC == sharedStore)
+	if objC != nil || bucketC != "" {
+		t.Fatalf("unprovisioned C = (bucket %q, store %v), want no store and no bucket", bucketC, objC)
 	}
 }
 
