@@ -19,7 +19,6 @@ measure           | measurement harness: prints numbers and asserts nothing, so 
 turn_recall_eval  | paid: the frozen turn-recall eval asks the configured teacher model once per uncertain turn
 retrieval_eval    | measurement harness over the real corpus; the scored release eval runs only in the full scope of scripts/ingest_reconcile_e2e.sh, which needs a real LLM key
 document_live_e2e | real-agent document E2E: runs only in the full scope of scripts/ingest_reconcile_e2e.sh and in scripts/ingest_media_e2e.sh, both needing a real LLM key
-backup_live       | unwired — owner decision pending (2026-11-25)
 pim_contract_live | unwired — owner decision pending (2026-11-25)
 pim_mail_e2e      | unwired — owner decision pending (2026-11-25)
 serve_smoke       | unwired — owner decision pending (2026-11-25)

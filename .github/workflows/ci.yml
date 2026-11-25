@@ -403,6 +403,25 @@ jobs:
         # deadlock on pg_advisory_lock once >2 integration packages exist.
         run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/... ./internal/documents/...
 
+      - name: Install the PostgreSQL 18 client (pg_dump must match the server)
+        # The runner ships client 16, which refuses the compose postgres:18 ("server
+        # version mismatch"). Same PGDG source as docker/aura/Dockerfile; its bin goes first
+        # on PATH so the Debian pg_wrapper cannot pick 16.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor --yes -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Live network backup (backup_live)
+        # The scheduled Postgres backup, run against this job's server: a dump artifact
+        # must land in AURA_BACKUP_DIR. It ran nowhere before 2026-11-25.
+        run: go test -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
+
       - name: Authula 0019 migration drill
         # Explicit no-skip Authula schema gate: internal/db/... above already runs it,
         # but this targeted step leaves a crisp failure when the isolated authula schema,
