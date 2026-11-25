@@ -377,6 +377,15 @@ func (s *Store) ExpireReplayBodies(ctx context.Context, before time.Time) (Expir
 	return report, nil
 }
 
+// SweepExpired clears the replay payloads that expired at or before now, up to the store's
+// expiry batch, and reports how many it cleared. It is a handlers.Sweeper: the nightly
+// retention job runs it, so a payload no longer outlives ReplayRetention in the table after
+// readers have stopped honouring it.
+func (s *Store) SweepExpired(ctx context.Context, now time.Time) (int, error) {
+	report, err := s.ExpireReplayBodies(ctx, now)
+	return report.Cleared, err
+}
+
 // expireVisibleReplays clears every expired replay payload q can see, up to budget rows,
 // adding what it cleared to report. It returns how many rows it EXAMINED (not how many it
 // cleared) so the cross-identity sweep can debit one global budget across its per-owner
