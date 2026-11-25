@@ -261,9 +261,10 @@ func TestDuplicateAccountClassified(t *testing.T) {
 	}
 }
 
-// TestCleanupExpired removes stale unconsumed tokens and leaves live + consumed
-// ones untouched, returning the deleted count.
-func TestCleanupExpired(t *testing.T) {
+// TestSweepExpired removes the unconsumed tokens expired at or before the cutoff and leaves
+// the live ones, returning the deleted count: a cutoff before the stale token's expiry
+// spares it, the sweep's own "now" takes it.
+func TestSweepExpired(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	ctx := ownerCtx()
@@ -271,20 +272,25 @@ func TestCleanupExpired(t *testing.T) {
 	stale := freshToken(t, s, -time.Hour) // expired, unconsumed → swept
 	live := freshToken(t, s, time.Hour)   // not expired → kept
 
-	n, err := s.CleanupExpired(ctx)
-	if err != nil {
-		t.Fatalf("CleanupExpired: %v", err)
+	if _, err := s.SweepExpired(ctx, time.Now().Add(-2*time.Hour)); err != nil {
+		t.Fatalf("SweepExpired (early cutoff): %v", err)
 	}
-	if n < 1 {
-		t.Errorf("CleanupExpired should remove at least the stale token, got %d", n)
+	if _, err := s.PendingConsumed(ctx, stale); err != nil {
+		t.Errorf("a cutoff before the token's expiry must spare it: %v", err)
 	}
 
-	// stale is gone; live survives.
+	n, err := s.SweepExpired(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("SweepExpired: %v", err)
+	}
+	if n < 1 {
+		t.Errorf("SweepExpired should remove at least the stale token, got %d", n)
+	}
 	if _, err := s.PendingConsumed(ctx, stale); !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("stale token must be swept, got err=%v", err)
 	}
 	if _, err := s.PendingConsumed(ctx, live); err != nil {
-		t.Errorf("live token must survive cleanup: %v", err)
+		t.Errorf("live token must survive the sweep: %v", err)
 	}
 }
 

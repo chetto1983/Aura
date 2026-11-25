@@ -23,4 +23,4 @@ RETURNING onboarding_token, identity_id, generated_by, created_at, expires_at, c
 -- name: DeleteExpiredTelegramSetupPending :execrows
 DELETE FROM aura.telegram_setup_pending
 WHERE consumed_at IS NULL
-  AND expires_at <= now();
+  AND expires_at <= sqlc.arg(cutoff);

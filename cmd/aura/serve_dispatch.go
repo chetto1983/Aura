@@ -102,10 +102,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
-		// The caller's sweepers (the owner-export archives), the asset delete sweep and the
-		// watch's verdicts past their retention.
+		// The caller's sweepers (the owner-export archives), the asset delete sweep, the
+		// watch's verdicts past their retention and the Telegram onboarding tokens a setup
+		// abandoned before consuming.
 		cron.KindRetentionSweep: handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool),
-			append(sweepers, buildAssetDeleteSweep(chat), watch.sweep)...),
+			append(sweepers, buildAssetDeleteSweep(chat), watch.sweep, buildTelegramTokenSweep(chat))...),
 		// The scheduled caller for the vectors (serve_memory_backfill.go): it visits every
 		// identity's memory database and embeds the facts that have none. buildMemoryEmbedBackfill
 		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which

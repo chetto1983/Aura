@@ -35,8 +35,8 @@ func TestStoreReportsWhatItCannotDo(t *testing.T) {
 
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	if n, err := s.CleanupExpired(cancelled); err == nil || n != 0 {
-		t.Errorf("CleanupExpired on a cancelled context = %d, %v; want 0 and an error", n, err)
+	if n, err := s.SweepExpired(cancelled, time.Now()); err == nil || n != 0 {
+		t.Errorf("SweepExpired on a cancelled context = %d, %v; want 0 and an error", n, err)
 	}
 	if n, err := s.CountAccounts(cancelled); err == nil || n != 0 {
 		t.Errorf("CountAccounts on a cancelled context = %d, %v; want 0 and an error", n, err)

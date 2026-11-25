@@ -30,5 +30,4 @@ github.com/chetto1983/aura/internal/utf8cut.Ellipsize                           
 
 # UNWIRED: built for production, never connected. Each entry is an open gap, not a seam:
 # wire it or delete it, and the entry goes with that change.
-github.com/chetto1983/aura/internal/channels/telegram.Store.CleanupExpired             GC of expired onboarding tokens; nothing schedules it, so expired rows accumulate
 github.com/chetto1983/aura/internal/idempotency.Store.ExpireReplayBodies               replay-body expiry sweep; nothing schedules it, so payloads outlive ReplayRetention
