@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
 // origin-isolation-live.spec.ts is the LIVE half of the artifact origin-isolation work
@@ -13,32 +13,61 @@ import { gotoAuthenticated } from './auth';
 //      that gives it an opaque origin even when opened as a top-level tab, which is what
 //      makes an operator connect-src wildcard safe.
 //
-// Gated because the artifact legs need a stack that HAS an artifact:
-//   AURA_E2E_LIVE_ARTIFACT=1
-//   AURA_E2E_ARTIFACT_ASSET=<asset uuid of an accepted text/html asset this identity owns>
+// Gated on a live stack: AURA_E2E_LIVE_ARTIFACT=1. The run stores its own HTML artifact through
+// the cockpit's upload path and deletes it after; AURA_E2E_ARTIFACT_ASSET=<asset uuid> points it at
+// an existing one instead. The proxy legs reach api.coinbase.com and example.com.
 //
 // No-skip-as-green: the gate is declared once, at describe level, so the suite either does
 // not run this file at all or runs every leg of it. There is deliberately NO branch inside
-// the test that lets a missing artifact pass quietly — an absent id fails the expect below.
+// the test that lets a missing artifact pass quietly — a failed upload throws.
 // An earlier draft of this file had exactly that branch, and it reported green while
 // asserting nothing about the policy it exists to protect.
 
 const live = process.env.AURA_E2E_LIVE_ARTIFACT === '1';
-const assetID = process.env.AURA_E2E_ARTIFACT_ASSET ?? '';
+const configuredAsset = process.env.AURA_E2E_ARTIFACT_ASSET ?? '';
+
+/** uploadHTMLArtifact stores a minimal HTML document as an owned asset, through the cockpit's own
+ * presign, direct upload and finalize, so the run needs no artifact an agent made earlier. */
+async function uploadHTMLArtifact(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const body = new Blob(['<!doctype html><title>origin isolation</title><p>live</p>'], {
+      type: 'text/html',
+    });
+    const presign = await fetch('/api/assets/presign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_name: 'origin-isolation-live.html',
+        mime_type: 'text/html',
+        size_bytes: body.size,
+        modality_hint: 'document',
+      }),
+    });
+    if (!presign.ok) throw new Error(`presign: HTTP ${String(presign.status)}`);
+    const presigned = (await presign.json()) as {
+      asset: { id: string };
+      upload: { upload_url: string; method?: string; required_headers?: Record<string, string> };
+    };
+    const put = await fetch(presigned.upload.upload_url, {
+      method: presigned.upload.method ?? 'PUT',
+      headers: presigned.upload.required_headers ?? {},
+      body,
+    });
+    if (!put.ok) throw new Error(`upload: HTTP ${String(put.status)}`);
+    const finalize = await fetch(`/api/assets/${presigned.asset.id}/finalize`, { method: 'POST' });
+    if (!finalize.ok) throw new Error(`finalize: HTTP ${String(finalize.status)}`);
+    return presigned.asset.id;
+  });
+}
 
 test.describe('artifact origin isolation (live)', () => {
-  test.skip(
-    !live,
-    'set AURA_E2E_LIVE_ARTIFACT=1 with AURA_E2E_ARTIFACT_ASSET against a live stack',
-  );
+  test.skip(!live, 'set AURA_E2E_LIVE_ARTIFACT=1 against a live stack');
 
   test('the daemon serves the data proxy and the sandboxed artifact policy', async ({ page }) => {
     let proofs = 0;
-    expect(assetID, 'AURA_E2E_ARTIFACT_ASSET must name an artifact this identity owns').not.toBe(
-      '',
-    );
-
     await gotoAuthenticated(page, '/');
+    const assetID = configuredAsset !== '' ? configuredAsset : await uploadHTMLArtifact(page);
+    await test.info().attach('artifact asset', { body: assetID });
 
     // The session cookie rides the PAGE, not Playwright's APIRequestContext, so every
     // probe below runs as in-page fetch — the same way the cockpit itself calls the API.
@@ -122,5 +151,13 @@ test.describe('artifact origin isolation (live)', () => {
     }
 
     expect(proofs, 'every leg must have asserted something').toBe(4);
+
+    if (configuredAsset === '') {
+      // Back on the cockpit's own origin: the sealed document above cannot reach Aura.
+      await gotoAuthenticated(page, '/');
+      await page.evaluate(async (id: string) => {
+        await fetch(`/api/assets/${id}`, { method: 'DELETE' });
+      }, assetID);
+    }
   });
 });

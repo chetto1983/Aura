@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import type { Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { sameOriginFetch } from './live';
+import { auraCommand } from './support/auraCli';
 
 // What the documents live specs share: the Documenti view opened in Italian, the documents API
 // called as the signed-in operator, and the agent's own document_search, reached through
@@ -146,7 +147,8 @@ export class DocsMCP {
   private nextID = 1;
 
   private constructor() {
-    this.child = spawn('docker', ['exec', '-i', 'aura', 'aura', 'docs', 'mcp']);
+    const [program, argv] = auraCommand(['docs', 'mcp'], true);
+    this.child = spawn(program, argv);
     createInterface({ input: this.child.stdout }).on('line', (line) => {
       const message = JSON.parse(line) as RPCMessage;
       if (message.id === undefined) return;

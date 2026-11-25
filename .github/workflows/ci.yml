@@ -2246,6 +2246,21 @@ jobs:
         # from 2026-07-23 to 2026-11-25.
         run: bash scripts/web_e2e_ci.sh
 
+      - name: Playwright live specs this stack can run (graph, artifact origin, skill catalogue)
+        # Gated specs that need no model and no account: the memory graph seeded through the host
+        # binary, an HTML artifact the run uploads itself, the data proxy and skills.sh search
+        # (public internet). Chrome only: they measure the server, not the layout. They ran
+        # nowhere before 2026-11-25.
+        env:
+          AURA_E2E_LIVE_GRAPH: "1"
+          AURA_E2E_LIVE_ARTIFACT: "1"
+          AURA_E2E_LIVE_CATALOG: "1"
+          AURA_E2E_AURA_CMD: ../aura
+          AURA_PROFILE: dev
+        run: >-
+          bash scripts/web_e2e_ci.sh --project=chrome
+          e2e/graph-live-arcadedb.spec.ts e2e/origin-isolation-live.spec.ts e2e/skill-catalog-search-live.spec.ts
+
       - name: Tear down
         if: always()
         run: |
