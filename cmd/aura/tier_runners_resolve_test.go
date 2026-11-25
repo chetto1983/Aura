@@ -20,8 +20,9 @@ import (
 //  1. the step's own run text, with the workflow, job and step env;
 //  2. every make target the step names, through prerequisites and $(MAKE), with the
 //     Makefile's variables expanded;
-//  3. every scripts/*.sh the step or a recipe launches. A script is a leaf: what it
-//     launches in turn is not followed, and neither is a Python driver.
+//  3. every scripts/*.sh the step or a recipe launches, and every scripts/*.py it runs as
+//     `python3 scripts/x.py`, whose literal ["go", "test", ...] lists are read. A script is
+//     a leaf: what it launches or imports in turn is not followed.
 //
 // That is as deep as CI goes today: musr_e2e reaches it as
 // ci.yml -> make musr-e2e -> scripts/musr_e2e.sh. It reads text, not control flow: a
@@ -68,12 +69,13 @@ type tierWalk struct {
 }
 
 var (
-	scriptPath    = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.sh)$`)
-	unresolvedVar = regexp.MustCompile(`\$[A-Za-z0-9_{(]`)
-	moduleLine    = regexp.MustCompile(`(?m)^module\s+(\S+)`)
-	launchers     = []string{"bash", "sh", "source", ".", "exec", "time", "!", "if", "then", "do", "else"}
-	declareWords  = []string{"export", "local", "readonly", "declare"}
-	alwaysRuns    = []string{"true", "always()", "success()", "!cancelled()"}
+	scriptPath       = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.sh)$`)
+	pythonDriverPath = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.py)$`)
+	unresolvedVar    = regexp.MustCompile(`\$[A-Za-z0-9_{(]`)
+	moduleLine       = regexp.MustCompile(`(?m)^module\s+(\S+)`)
+	launchers        = []string{"bash", "sh", "source", ".", "exec", "time", "!", "if", "then", "do", "else"}
+	declareWords     = []string{"export", "local", "readonly", "declare"}
+	alwaysRuns       = []string{"true", "always()", "success()", "!cancelled()"}
 )
 
 func workflowTierRunners(root string) ([]goTestRun, error) {
@@ -228,11 +230,11 @@ func (w *tierWalk) command(words []string, vars map[string]string, via string, f
 		}
 		switch {
 		case word == "go" && i+1 < len(words) && words[i+1] == "test":
-			run := w.goTest(words[i+2:], vars["GOFLAGS"])
-			run.via, run.condition = via, w.condition
-			w.runs = append(w.runs, run)
+			w.record(words[i+2:], vars["GOFLAGS"], via)
 			return nil
 		case !follow:
+		case (word == "python3" || word == "python") && i+1 < len(words) && pythonDriverPath.MatchString(words[i+1]):
+			return w.pythonDriver(pythonDriverPath.FindStringSubmatch(words[i+1])[1], vars, via)
 		case word == "make":
 			for _, target := range words[i+1:] {
 				if strings.HasPrefix(target, "-") || strings.Contains(target, "=") {
@@ -271,6 +273,25 @@ func (w *tierWalk) script(rel string, env map[string]string, via string) error {
 		return fmt.Errorf("%s: %w", via, err)
 	}
 	return w.body(string(data), env, via+" -> "+rel, false)
+}
+
+// pythonDriver records the `go test` argv lists a Python driver spells as literals (see
+// pythonGoTestLists). Like a shell script, a driver is a leaf: what it imports is not read.
+func (w *tierWalk) pythonDriver(rel string, env map[string]string, via string) error {
+	data, err := os.ReadFile(filepath.Join(w.root, filepath.FromSlash(rel)))
+	if err != nil {
+		return fmt.Errorf("%s: %w", via, err)
+	}
+	for _, argv := range pythonGoTestLists(string(data)) {
+		w.record(argv[2:], env["GOFLAGS"], via+" -> "+rel)
+	}
+	return nil
+}
+
+func (w *tierWalk) record(args []string, goflags, via string) {
+	run := w.goTest(args, goflags)
+	run.via, run.condition = via, w.condition
+	w.runs = append(w.runs, run)
 }
 
 // goTest reads a `go test` argument list. GOFLAGS applies first and the command line

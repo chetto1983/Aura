@@ -97,6 +97,7 @@ jobs:
       - run: |
           if ! make tier; then exit 1; fi
       - run: bash scripts/tier.sh
+      - run: make eval
       - if: ${{ !cancelled() }}
         run: go test -tags always_step ./x
 `,
@@ -104,7 +105,7 @@ jobs:
 		"Makefile": `
 TIER_TAGS = make_var
 TIER_TAGS += make_append
-.PHONY: tier prereq nested
+.PHONY: tier prereq nested eval
 
 tier: prereq
 	go test -count=1 \
@@ -115,6 +116,16 @@ prereq:
 
 nested:
 	@bash scripts/nested.sh
+
+eval:
+	PYTHONPATH=scripts python3 -m unittest scripts/driver_test.py
+	PYTHONPATH=scripts python3 scripts/driver.py --tier all
+`,
+		"scripts/driver.py": `SUITES = [
+    ("live", ["go", "test", "-race", "-tags=py_tier", "-count=1",  # the live tier
+              "-run", r"^TestPy(One|Two)$", './x/',
+    ]),
+]
 `,
 		"scripts/tier.sh": `#!/usr/bin/env bash
 TAGS="${FIXTURE_TAGS:-script_default}"
@@ -134,6 +145,7 @@ go test -tags "${TAGS}" ./x
 		"x/nested_test.go":           taggedTest("make_script", "TestNested"),
 		"x/script_test.go":           taggedTest("script_default", "TestScript"),
 		"x/always_test.go":           taggedTest("always_step", "TestAlways"),
+		"x/py_test.go":               taggedTest("py_tier", "TestPyOne", "TestPyTwo"),
 		"x/helpers_test.go":          taggedTest("comma_a"),
 		"x/toolchain_test.go":        taggedTest("(linux && amd64.v2) || windows || go1.21 || cgo || race || unix || goexperiment.jsonv2", "TestToolchain"),
 		"x/ignored_test.go":          taggedTest("ignore", "TestIgnored"),
@@ -153,6 +165,7 @@ go test -tags "${TAGS}" ./x
 		"x/nested_test.go":         "ci.yml unit -> make tier -> make prereq -> make nested -> scripts/nested.sh",
 		"x/script_test.go":         "ci.yml unit -> scripts/tier.sh",
 		"x/always_test.go":         "ci.yml unit",
+		"x/py_test.go":             "ci.yml unit -> make eval -> scripts/driver.py",
 		"x/helpers_test.go":        "ci.yml unit",
 	}
 	for rel, via := range want {
@@ -198,5 +211,25 @@ func TestManualTiersRejectAMalformedList(t *testing.T) {
 				t.Fatalf("accepted:\n%s", list)
 			}
 		})
+	}
+}
+
+// TestPythonGoTestListsAcceptOnlyLiterals pins what the Python reader accepts and that
+// everything else fails closed as "$unresolved".
+func TestPythonGoTestListsAcceptOnlyLiterals(t *testing.T) {
+	const u = "$unresolved"
+	for src, want := range map[string][]string{
+		`["go", "test", "-tags=a", r"^T\d$", './x/',]`:            {"go", "test", "-tags=a", `^T\d$`, "./x/"},
+		"['go', 'test',  # why\n  \"-run\", \"A\\\"B\"\n]":        {"go", "test", "-run", `A"B`},
+		`["go", "test", name, f"./{p}", "a" "b", len(x), [1, 2]]`: {"go", "test", u, u, u, u, u},
+		`["go", "test", """-v""", "\n", "./y"]`:                   {"go", "test", u, u, "./y"},
+	} {
+		got := pythonGoTestLists(src)
+		if len(got) != 1 || !slices.Equal(got[0], want) {
+			t.Errorf("%s\nwant %q\ngot  %q", src, want, got)
+		}
+	}
+	if got := pythonGoTestLists(`run(["go", "vet", "./x"])`); len(got) != 0 {
+		t.Errorf("a go vet list was read as go test: %q", got)
 	}
 }

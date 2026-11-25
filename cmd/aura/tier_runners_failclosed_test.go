@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"slices"
+	"strings"
+	"testing"
+)
 
 // Every way the control must fail, one fixture each. The review findings of 2026-11-25
 // are named where a case exists because of one.
@@ -11,6 +15,7 @@ func TestTierRunnersFailClosed(t *testing.T) {
 		name  string
 		files map[string]string
 		want  []string
+		row   string
 	}{
 		{
 			name:  "a tagged file no invocation runs",
@@ -186,19 +191,103 @@ jobs:
 			},
 		},
 		{
+			// Round 2, I-1: a run accepted through [conditional] says so in the table.
 			name: "a listed conditional step counts, a stale one fails",
 			files: map[string]string{
 				".github/workflows/ci.yml": "on: [push]\njobs:\n  it:\n    steps:\n      - if: env.HAS_SECRET == 'true'\n        run: go test -tags if_tier ./x\n",
-				manualTiersPath:            "[tags]\n[conditional]\nif_tier | needs the bot secret\ngone_tier | needs the bot secret\n",
+				manualTiersPath:            "[tags]\n[conditional]\nif_tier | ci.yml it | needs the bot secret\ngone_tier | ci.yml it | needs the bot secret\n",
 				"x/if_test.go":             taggedTest("if_tier", "TestIf"),
 			},
-			want: []string{"[conditional] gone_tier: no conditional step passes it any more"},
+			want: []string{"[conditional] gone_tier via ci.yml it: no conditional step there passes it any more"},
+			row:  "x/if_test.go\treached (conditional: if: env.HAS_SECRET == 'true')\tci.yml it",
+		},
+		{
+			// Round 2, I-2: [conditional] is keyed by route, so a second conditional step for
+			// the same tag is not accepted with the first.
+			name: "a conditional entry accepts its own route only",
+			files: map[string]string{
+				".github/workflows/ci.yml": `on: [push]
+jobs:
+  a:
+    steps:
+      - if: env.HAS_SECRET == 'true'
+        run: go test -tags c_tier -run TestA ./x
+  b:
+    steps:
+      - if: env.HAS_OTHER == 'true'
+        run: go test -tags c_tier -run TestB ./x
+`,
+				manualTiersPath: "[tags]\n[conditional]\nc_tier | ci.yml a | needs the secret\n",
+				"x/c_test.go":   taggedTest("c_tier", "TestA", "TestB"),
+			},
+			want: []string{"x/c_test.go: TestB is selected by no CI go test, though the file runs through ci.yml a"},
+		},
+		{
+			// Round 2, (a): every test of a reached file must be selected by some run.
+			name: "a reached file with a test no -run selects",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("go test -tags ab_tier -run '^(TestA|TestC)$' ./x", "go test -tags ab_tier -run TestC ./x"),
+				"x/ab_test.go":             taggedTest("ab_tier", "TestA", "TestB", "TestC"),
+			},
+			want: []string{"x/ab_test.go: TestB is selected by no CI go test"},
+		},
+		{
+			name: "a [tests] entry excuses one test, stale ones fail",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("go test -tags ab_tier -run '^TestA$' ./x"),
+				manualTiersPath: `[tags]
+[tests]
+x/ab_test.go | TestB | needs a real mailbox
+x/ab_test.go | TestA | stale: CI selects it
+x/ab_test.go | TestGone | stale: no such test
+x/orphan_test.go | TestOrphan | stale: the file is unreached
+x/ab_test.go | TestC |
+`,
+				"x/ab_test.go":     taggedTest("ab_tier", "TestA", "TestB", "TestC"),
+				"x/orphan_test.go": taggedTest("orphan_tier", "TestOrphan"),
+			},
+			want: []string{
+				"[tests] x/ab_test.go TestA: CI selects it",
+				"[tests] x/ab_test.go TestGone: CI selects it",
+				"[tests] x/orphan_test.go TestOrphan: CI selects it",
+				"[tests] x/ab_test.go TestC has no reason",
+				"x/orphan_test.go (tags orphan_tier) runs in no CI go test",
+			},
+		},
+		{
+			// Round 2, (b): a Python driver's go test lists count only as far as they are
+			// literal; a driver run through `-m` is not read.
+			name: "what a Python driver does not resolve",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow("PYTHONPATH=scripts python3 scripts/driver.py --tier all", "python3 -m unittest scripts/unit.py"),
+				"scripts/driver.py": `name = "TestPyVar"
+SUITES = [
+    ("var", ["go", "test", "-tags=py_var", "-run", name, "./x/"]),
+    ("fstring", ["go", "test", "-tags=py_fstring", f"./{name}/"]),
+    ("concat", ["go", "test", "-tags=" "py_concat", "./x/"]),
+]
+`,
+				"scripts/unit.py":      "CMD = [\"go\", \"test\", \"-tags=py_unit\", \"./x/\"]\n",
+				"x/py_var_test.go":     taggedTest("py_var", "TestPyVar"),
+				"x/py_fstring_test.go": taggedTest("py_fstring", "TestPyFstring"),
+				"x/py_concat_test.go":  taggedTest("py_concat", "TestPyConcat"),
+				"x/py_unit_test.go":    taggedTest("py_unit", "TestPyUnit"),
+			},
+			want: []string{
+				"x/py_var_test.go (tags py_var) runs in no CI go test: invocations with its tags and package select none",
+				"x/py_fstring_test.go (tags py_fstring) runs in no CI go test: invocations with its tags never name ./x",
+				"x/py_concat_test.go (tags py_concat) runs in no CI go test: no go test invocation sets tags",
+				"x/py_unit_test.go (tags py_unit) runs in no CI go test: no go test invocation sets tags",
+			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			violations, _ := tierFixture(t, tc.files)
+			violations, table := tierFixture(t, tc.files)
 			assertTierViolations(t, violations, tc.want...)
+			if tc.row != "" && !slices.Contains(table, tc.row) {
+				t.Errorf("want table row %q, got:\n%s", tc.row, strings.Join(table, "\n"))
+			}
 		})
 	}
 }

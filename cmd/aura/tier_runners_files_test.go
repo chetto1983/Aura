@@ -139,27 +139,44 @@ func gatingTags(expr constraint.Expr, negated bool, out map[string]bool) {
 	}
 }
 
-// reachingRun returns the first invocation that executes f: its tags satisfy f's
-// constraint, its packages include f's directory, and its -run selects a test in f (or,
-// for a helper-only file, a test compiled beside it).
-func reachingRun(f tierTestFile, sameDir []tierTestFile, runs []goTestRun) (goTestRun, bool) {
-	for _, run := range runs {
-		if !run.covers(f.dir) || !run.satisfies(f.expr) {
-			continue
+// fileCoverage says which invocations execute f. An invocation executes a test of f when
+// its tags satisfy f's constraint, its packages include f's directory and its -run selects
+// the test; a helper-only file is executed when such an invocation selects a test compiled
+// beside it. missing lists f's tests that no invocation selects. The run returned is one
+// that executes f, an unconditional one when there is any.
+func fileCoverage(f tierTestFile, sameDir []tierTestFile, runs []goTestRun) (run goTestRun, reached bool, missing []string) {
+	executes := func(r goTestRun, tests []string) bool {
+		if !r.covers(f.dir) || !r.satisfies(f.expr) || !slices.ContainsFunc(tests, r.runs) {
+			return false
 		}
-		tests := f.tests
-		if len(tests) == 0 {
+		if !reached || (run.condition != "" && r.condition == "") {
+			run = r
+		}
+		reached = true
+		return true
+	}
+	if len(f.tests) == 0 {
+		for _, r := range runs {
+			var compiled []string
 			for _, g := range sameDir {
-				if run.satisfies(g.expr) {
-					tests = append(tests, g.tests...)
+				if r.satisfies(g.expr) {
+					compiled = append(compiled, g.tests...)
 				}
 			}
+			executes(r, compiled)
 		}
-		if slices.ContainsFunc(tests, run.runs) {
-			return run, true
+		return run, reached, nil
+	}
+	for _, test := range f.tests {
+		selected := false
+		for _, r := range runs {
+			selected = executes(r, []string{test}) || selected
+		}
+		if !selected {
+			missing = append(missing, test)
 		}
 	}
-	return goTestRun{}, false
+	return run, reached, missing
 }
 
 // whyUnreached names the first condition no invocation meets, for the failure message.

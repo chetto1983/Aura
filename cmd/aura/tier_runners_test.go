@@ -10,12 +10,12 @@ import (
 	"testing"
 )
 
-// tier_runners_test.go: every tracked test file behind a feature build tag is executed by
-// some CI `go test` invocation — tags that satisfy its constraint, a package list that
-// includes it, a -run that selects one of its tests — or manualTiersPath says why not.
+// tier_runners_test.go: every test in a tracked test file behind a feature build tag is
+// executed by some CI `go test` invocation — tags that satisfy its constraint, a package
+// list that includes it, a -run that selects the test — or manualTiersPath says why not.
 // The mcp_live_integration tier was broken from 2026-09-24 to 2026-11-25 and nobody saw
 // it, because nothing ran -tags mcp_live_integration; this makes the next such file fail
-// here, and so does a tagged file that its tier's -run filter never selects.
+// here, and so does a test its tier's -run filter never selects.
 
 const manualTiersPath = ".github/manual_test_tiers.txt"
 
@@ -69,36 +69,53 @@ func tierViolations(files []tierTestFile, runs []goTestRun, manual manualTiers) 
 		byRel[f.rel] = f
 		byDir[f.dir] = append(byDir[f.dir], f)
 	}
-	excused := map[string]bool{}
+	excusedTags := map[string]bool{}
+	excusedTests := map[testKey]bool{}
 	for _, f := range files {
 		if len(f.gating) == 0 {
 			continue
 		}
-		run, reached := reachingRun(f, byDir[f.dir], credited)
+		run, reached, missing := fileCoverage(f, byDir[f.dir], credited)
 		fileReason, fileListed := manual.files[f.rel]
 		var tagExcuse string
 		for _, tag := range f.gating {
 			if _, ok := manual.tags[tag]; ok && !reached {
-				excused[tag] = true
+				excusedTags[tag] = true
 				tagExcuse = cmp.Or(tagExcuse, tag)
 			}
 		}
 		switch {
 		case reached:
-			table = append(table, fmt.Sprintf("%s\treached\t%s", f.rel, run.via))
+			status := "reached"
+			if run.condition != "" {
+				status += " (conditional: " + run.condition + ")"
+			}
+			detail := run.via
+			if len(missing) > 0 {
+				detail += "; unselected, listed under [tests]: " + strings.Join(missing, ", ")
+			}
+			table = append(table, fmt.Sprintf("%s	%s	%s", f.rel, status, detail))
 			if fileListed {
 				violations = append(violations, fmt.Sprintf("%s [files] %s is reached by %s: remove it", manualTiersPath, f.rel, run.via))
+			}
+			for _, test := range missing {
+				if _, listed := manual.tests[testKey{f.rel, test}]; listed {
+					excusedTests[testKey{f.rel, test}] = true
+					continue
+				}
+				violations = append(violations, fmt.Sprintf("%s: %s is selected by no CI go test, though the file runs through %s: select it, or list it under [tests] in %s with a reason",
+					f.rel, test, run.via, manualTiersPath))
 			}
 		case fileListed && tagExcuse != "":
 			violations = append(violations, fmt.Sprintf("%s [files] %s is already excused by [tags] %s: keep one", manualTiersPath, f.rel, tagExcuse))
 		case fileListed:
-			table = append(table, fmt.Sprintf("%s\tlisted (file)\t%s", f.rel, fileReason))
+			table = append(table, fmt.Sprintf("%s	listed (file)	%s", f.rel, fileReason))
 		case tagExcuse != "":
-			table = append(table, fmt.Sprintf("%s\tlisted (tag %s)\t%s", f.rel, tagExcuse, manual.tags[tagExcuse]))
+			table = append(table, fmt.Sprintf("%s	listed (tag %s)	%s", f.rel, tagExcuse, manual.tags[tagExcuse]))
 		default:
 			violations = append(violations, fmt.Sprintf("%s (tags %s) runs in no CI go test: %s. Wire it, or list it in %s with a reason",
 				f.rel, strings.Join(f.gating, ","), whyUnreached(f, credited), manualTiersPath))
 		}
 	}
-	return append(violations, manual.staleness(byRel, runs, excused)...), table
+	return append(violations, manual.staleness(byRel, runs, excusedTags, excusedTests)...), table
 }
