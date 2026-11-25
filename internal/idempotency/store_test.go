@@ -341,6 +341,28 @@ func TestStoreSweepExpiredReportsTheClearedCount(t *testing.T) {
 	}
 }
 
+// A pass that fails after clearing rows is rolled back, so the report must not keep what it
+// added; a pass that succeeds keeps its counts on top of the earlier ones.
+func TestCountCommittedKeepsOnlyCommittedPasses(t *testing.T) {
+	report := ExpiryReport{Cleared: 2, Bytes: 20}
+	failed := errors.New("pass failed")
+	err := countCommitted(&report, func(pass *ExpiryReport) error {
+		pass.Cleared += 3
+		pass.Bytes += 30
+		return failed
+	})
+	if !errors.Is(err, failed) || report != (ExpiryReport{Cleared: 2, Bytes: 20}) {
+		t.Fatalf("failed pass: report=%+v err=%v, want the earlier counts and the pass error", report, err)
+	}
+	if err := countCommitted(&report, func(pass *ExpiryReport) error {
+		pass.Cleared++
+		pass.Bytes += 7
+		return nil
+	}); err != nil || report != (ExpiryReport{Cleared: 3, Bytes: 27}) {
+		t.Fatalf("committed pass: report=%+v err=%v, want 3 cleared and 27 bytes", report, err)
+	}
+}
+
 func testBeginRequest(t *testing.T, key string) BeginRequest {
 	t.Helper()
 	fingerprint, err := FingerprintTyped(struct {

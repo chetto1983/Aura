@@ -342,9 +342,8 @@ func (s *Store) MarkRejected(ctx context.Context, request RejectRequest) (err er
 // ONE identity-scoped transaction per owner. No RLS bypass, no service role. The per-owner
 // passes debit a single global budget, so a sweep stays bounded exactly as it was before.
 //
-// On a failure the report is best-effort, as it always was. What changed is the shape of
-// the residue: the owner being swept rolls back whole, so nothing is left half-cleared,
-// while earlier owners' passes have committed and are counted.
+// On a failure the owner being swept rolls back whole, so nothing is left half-cleared, and
+// the report counts only the earlier owners' passes, which committed (countCommitted).
 func (s *Store) ExpireReplayBodies(ctx context.Context, before time.Time) (ExpiryReport, error) {
 	if before.IsZero() {
 		return ExpiryReport{}, fmt.Errorf("idempotency replay expiry cutoff is required")
@@ -365,16 +364,29 @@ func (s *Store) ExpireReplayBodies(ctx context.Context, before time.Time) (Expir
 			break
 		}
 		var examined int32
-		if err := s.withIdentity(ctx, owner, func(q operationQueries) error {
-			var passErr error
-			examined, passErr = s.expireVisibleReplays(ctx, q, before, budget, &report)
-			return passErr
+		if err := countCommitted(&report, func(pass *ExpiryReport) error {
+			return s.withIdentity(ctx, owner, func(q operationQueries) error {
+				var passErr error
+				examined, passErr = s.expireVisibleReplays(ctx, q, before, budget, pass)
+				return passErr
+			})
 		}); err != nil {
 			return report, err
 		}
 		budget -= examined
 	}
 	return report, nil
+}
+
+// countCommitted runs one owner's pass against report and keeps what it added only when the
+// pass succeeds: a failed pass is rolled back, so its clears never happened.
+func countCommitted(report *ExpiryReport, pass func(*ExpiryReport) error) error {
+	start := *report
+	if err := pass(report); err != nil {
+		*report = start
+		return err
+	}
+	return nil
 }
 
 // SweepExpired clears the replay payloads that expired at or before now, up to the store's
