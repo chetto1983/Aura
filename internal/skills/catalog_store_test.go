@@ -79,7 +79,6 @@ func TestCatalogRowProjection(t *testing.T) {
 		OwnerIdentityID: pgtype.UUID{},
 		Name:            "calc",
 		Description:     "desc",
-		AlwaysApply:     true,
 		ContentHash:     "hash",
 		UpdatedAt:       pgtype.Timestamptz{Time: now, Valid: true},
 	})
@@ -87,7 +86,7 @@ func TestCatalogRowProjection(t *testing.T) {
 	if row.ID != catalogTestOwner || row.OwnerID != "" {
 		t.Errorf("projection = id %q owner %q, want the id back and an empty owner for the NULL", row.ID, row.OwnerID)
 	}
-	if row.Name != "calc" || row.Description != "desc" || !row.AlwaysApply || row.ContentHash != "hash" {
+	if row.Name != "calc" || row.Description != "desc" || row.ContentHash != "hash" {
 		t.Errorf("projection dropped a field: %+v", row)
 	}
 	if !row.UpdatedAt.Equal(now) {

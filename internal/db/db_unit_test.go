@@ -400,10 +400,11 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0154 adds the operator's default channel for scheduled delivery.
 	// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.
 	// 0156 records the address an email draft leaves from.
-	// 0157 lets an email draft target the PIM's send_email tool, beside the multiplexed shape.
-	// 0158 adds aura.data_upgrades, so the PIM split's Go rewrite runs once.
-	if head != 158 {
-		t.Fatalf("MigrationHead=%d, want embedded head 158", head)
+	// 0157 drops the skill catalog's always_apply copy and its index (amendment #224).
+	// 0158 lets an email draft target the PIM's send_email tool, beside the multiplexed shape.
+	// 0159 adds aura.data_upgrades, so the PIM split's Go rewrite runs once.
+	if head != 159 {
+		t.Fatalf("MigrationHead=%d, want embedded head 159", head)
 	}
 }
 

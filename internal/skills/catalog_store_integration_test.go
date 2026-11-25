@@ -106,16 +106,18 @@ func TestCatalogWriteRecordsOwnership(t *testing.T) {
 	if len(rows) != 1 || rows[0].Name != "catalog-owned" {
 		t.Fatalf("ListOwned = %+v, want the one skill just written", rows)
 	}
-	if !rows[0].AlwaysApply || rows[0].Description != "a personal skill" || rows[0].ContentHash == "" {
+	if rows[0].Description != "a personal skill" || rows[0].ContentHash == "" {
 		t.Fatalf("the catalog row does not describe what was written: %+v", rows[0])
 	}
 
-	// SetAlways flips the catalog row's always_apply to match the frontmatter.
+	// SetAlways rewrites the frontmatter, the only record of the flag (amendment #224), so
+	// the catalog row learns the new body's hash.
+	written := rows[0].ContentHash
 	if err := scoped.SetAlways(ctx, "catalog-owned", false, AuditActor{ActorID: "cli", IdentityID: owner}); err != nil {
 		t.Fatalf("SetAlways: %v", err)
 	}
-	if rows, err = store.ListOwned(ctx, owner); err != nil || len(rows) != 1 || rows[0].AlwaysApply {
-		t.Fatalf("after always=off: (%+v, %v), want the row with always_apply false", rows, err)
+	if rows, err = store.ListOwned(ctx, owner); err != nil || len(rows) != 1 || rows[0].ContentHash == written {
+		t.Fatalf("after always=off: (%+v, %v), want the row's hash refreshed from %q", rows, err, written)
 	}
 
 	// ResolveID is the name→id step the share CLI runs.

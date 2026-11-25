@@ -241,7 +241,7 @@ type AuraConversations struct {
 	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
-// One row per Go data upgrade that has run (migration 0158), written in the upgrade's own transaction so it runs once. Migrate role only.
+// One row per Go data upgrade that has run (migration 0159), written in the upgrade's own transaction so it runs once. Migrate role only.
 type AuraDataUpgrades struct {
 	Name   string             `json:"name"`
 	DoneAt pgtype.Timestamptz `json:"done_at"`
@@ -880,7 +880,6 @@ type AuraSkillCatalog struct {
 	OwnerIdentityID pgtype.UUID        `json:"owner_identity_id"`
 	Name            string             `json:"name"`
 	Description     string             `json:"description"`
-	AlwaysApply     bool               `json:"always_apply"`
 	ContentHash     string             `json:"content_hash"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`

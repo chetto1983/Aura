@@ -301,6 +301,68 @@ func TestStoreExpireReplayBodiesUsesBoundedBatch(t *testing.T) {
 	}
 }
 
+// The retention sweep sees only the count: SweepExpired passes its now as the cutoff and
+// returns how many payloads ExpireReplayBodies cleared, or the error that stopped it.
+func TestStoreSweepExpiredReportsTheClearedCount(t *testing.T) {
+	now := time.Date(2026, 11, 25, 2, 30, 0, 0, time.UTC)
+	row := sqlc.ListExpiredReplayBodiesRow{
+		IdentityID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, OperationScope: string(ScopeHTTPMutation),
+		OperationKey: "expired", ReplayBytes: 7, ReplayExpiresAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
+	}
+	listErr := errors.New("list failed")
+	for _, tc := range []struct {
+		name    string
+		err     error
+		want    int
+		wantErr bool
+	}{
+		{name: "cleared", want: 1},
+		{name: "list error", err: listErr, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			queries := &fakeOperationQueries{
+				listExpired: func(_ context.Context, arg sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error) {
+					if !arg.Before.Time.Equal(now) {
+						t.Fatalf("cutoff=%v, want the sweep's now %v", arg.Before.Time, now)
+					}
+					if tc.err != nil {
+						return nil, tc.err
+					}
+					return []sqlc.ListExpiredReplayBodiesRow{row}, nil
+				},
+				clearExpired: func(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error) { return 1, nil },
+			}
+			store := newStore(queries, Config{Now: func() time.Time { return now }})
+			got, err := store.SweepExpired(context.Background(), now)
+			if (err != nil) != tc.wantErr || got != tc.want {
+				t.Fatalf("SweepExpired = %d, %v; want %d, error %v", got, err, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A pass that fails after clearing rows is rolled back, so the report must not keep what it
+// added; a pass that succeeds keeps its counts on top of the earlier ones.
+func TestCountCommittedKeepsOnlyCommittedPasses(t *testing.T) {
+	report := ExpiryReport{Cleared: 2, Bytes: 20}
+	failed := errors.New("pass failed")
+	err := countCommitted(&report, func(pass *ExpiryReport) error {
+		pass.Cleared += 3
+		pass.Bytes += 30
+		return failed
+	})
+	if !errors.Is(err, failed) || report != (ExpiryReport{Cleared: 2, Bytes: 20}) {
+		t.Fatalf("failed pass: report=%+v err=%v, want the earlier counts and the pass error", report, err)
+	}
+	if err := countCommitted(&report, func(pass *ExpiryReport) error {
+		pass.Cleared++
+		pass.Bytes += 7
+		return nil
+	}); err != nil || report != (ExpiryReport{Cleared: 3, Bytes: 27}) {
+		t.Fatalf("committed pass: report=%+v err=%v, want 3 cleared and 27 bytes", report, err)
+	}
+}
+
 func testBeginRequest(t *testing.T, key string) BeginRequest {
 	t.Helper()
 	fingerprint, err := FingerprintTyped(struct {

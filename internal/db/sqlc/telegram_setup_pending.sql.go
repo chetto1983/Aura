@@ -42,11 +42,11 @@ func (q *Queries) ConsumeTelegramSetupPending(ctx context.Context, onboardingTok
 const deleteExpiredTelegramSetupPending = `-- name: DeleteExpiredTelegramSetupPending :execrows
 DELETE FROM aura.telegram_setup_pending
 WHERE consumed_at IS NULL
-  AND expires_at <= now()
+  AND expires_at <= $1
 `
 
-func (q *Queries) DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpiredTelegramSetupPending)
+func (q *Queries) DeleteExpiredTelegramSetupPending(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredTelegramSetupPending, cutoff)
 	if err != nil {
 		return 0, err
 	}

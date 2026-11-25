@@ -1,7 +1,7 @@
 -- The PIM advertises one tool per operation (docs/superpowers/specs/2026-11-23-pim-tool-split-design.md
 -- §5.5), so an email draft targets its send_email tool with no action. The multiplexed shape stays
 -- allowed: resolved drafts keep it as history, and pending ones hold it until the Go upgrade step
--- rewrites them. Slot measured with `ls internal/db/migrations/ | tail -1`: 0156 was the head.
+-- rewrites them. Slot measured with `ls internal/db/migrations/ | tail -1`: 0157 was the head.
 --
 -- 0134 declared the target CHECK unnamed, beside three other unnamed table CHECKs, so it is found by
 -- its definition: it is the only one naming send_message.

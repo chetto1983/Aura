@@ -174,7 +174,7 @@ func (w *Writer) SaveSnippet(ctx context.Context, name, language, code string, f
 	}
 	hash := HashSkillFiles(files)
 	audit := actorAudit(name, AuditCreate, hash, actor)
-	cat := w.catalogUpsertOp(name, fm.Description, fm.Always, hash)
+	cat := w.catalogUpsertOp(name, fm.Description, hash)
 	if werr := w.writeActive(ctx, name, writeFilesInto(files), audit, cat); werr != nil {
 		return SnippetSaveResult{}, fmt.Errorf("save snippet %q: %w", name, werr)
 	}

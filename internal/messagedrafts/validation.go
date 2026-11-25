@@ -28,7 +28,7 @@ var ErrInvalidArgs = errInvalidDraftArgs
 // the bridge has selected the exact server tool. The client never supplies it.
 // Action is empty for every target made since the PIM split its tools; it still
 // carries "send_email" on drafts stored in the multiplexed shape, which the
-// message_drafts CHECK keeps (migration 0157) and no send accepts.
+// message_drafts CHECK keeps (migration 0158) and no send accepts.
 type Target struct {
 	Recipe string
 	Tool   string

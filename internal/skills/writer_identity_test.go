@@ -172,7 +172,7 @@ func TestCatalogOwnerAcceptsOnlyARealIdentity(t *testing.T) {
 func TestCatalogOpsAreNilWithoutAnOwner(t *testing.T) {
 	t.Parallel()
 	w, _ := newLayoutWriter(t)
-	if w.catalogUpsertOp("skill", "d", false, "hash") != nil {
+	if w.catalogUpsertOp("skill", "d", "hash") != nil {
 		t.Error("the deployment writer must record no catalog row")
 	}
 	if w.catalogDeleteOp("skill") != nil {
@@ -183,7 +183,7 @@ func TestCatalogOpsAreNilWithoutAnOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
-	if scoped.catalogUpsertOp("skill", "d", false, "hash") == nil {
+	if scoped.catalogUpsertOp("skill", "d", "hash") == nil {
 		t.Error("a scoped writer must record the ownership of what it writes")
 	}
 	if scoped.catalogDeleteOp("skill") == nil {

@@ -1,7 +1,8 @@
 //go:build db_integration
 
 // Live proofs for migration 0118 (amendment #214): the RLS floor on aura.resource_acl, the
-// share/revoke round trip, the deprovision cascade, and the always-apply index.
+// share/revoke round trip and the deprovision cascade. 0157 dropped the always-apply index
+// 0118 added, and its plan test with it (amendment #224).
 //
 // Requires a Postgres with the migrations applied through 0118:
 //
@@ -19,7 +20,6 @@ package skillacl
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -97,13 +97,13 @@ func seedIdentity(t *testing.T, pool *pgxpool.Pool, label string) string {
 // seedSkill inserts one catalog row owned by owner and returns its id. It goes through the
 // identity transaction because aura.skill_catalog is fail-closed: an insert with no
 // app.current_identity is refused, which this helper would surface immediately.
-func seedSkill(t *testing.T, pool *pgxpool.Pool, owner, name string, always bool) string {
+func seedSkill(t *testing.T, pool *pgxpool.Pool, owner, name string) string {
 	t.Helper()
 	var id string
 	err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
 		return tx.QueryRow(context.Background(),
-			`INSERT INTO aura.skill_catalog (owner_identity_id, name, always_apply, content_hash)
-			 VALUES ($1, $2, $3, 'hash') RETURNING id`, owner, name, always).Scan(&id)
+			`INSERT INTO aura.skill_catalog (owner_identity_id, name, content_hash)
+			 VALUES ($1, $2, 'hash') RETURNING id`, owner, name).Scan(&id)
 	})
 	if err != nil {
 		t.Fatalf("seed skill %q: %v", name, err)
@@ -119,7 +119,7 @@ func TestACLRequiresAnIdentityToReadAnything(t *testing.T) {
 	pool := aclPool(t)
 	ctx := context.Background()
 	owner := seedIdentity(t, pool, "owner")
-	skillID := seedSkill(t, pool, owner, "acl-floor-skill", false)
+	skillID := seedSkill(t, pool, owner, "acl-floor-skill")
 
 	store, err := NewStore(pool)
 	if err != nil {
@@ -160,7 +160,7 @@ func TestACLShareAndRevoke(t *testing.T) {
 	ctx := context.Background()
 	alice := seedIdentity(t, pool, "alice")
 	bob := seedIdentity(t, pool, "bob")
-	skillID := seedSkill(t, pool, alice, "acl-share-skill", false)
+	skillID := seedSkill(t, pool, alice, "acl-share-skill")
 
 	store, err := NewStore(pool)
 	if err != nil {
@@ -223,7 +223,7 @@ func TestACLPublicGrantReachesEveryone(t *testing.T) {
 	ctx := context.Background()
 	alice := seedIdentity(t, pool, "alice-public")
 	carol := seedIdentity(t, pool, "carol-stranger")
-	skillID := seedSkill(t, pool, alice, "acl-public-skill", false)
+	skillID := seedSkill(t, pool, alice, "acl-public-skill")
 
 	store, err := NewStore(pool)
 	if err != nil {
@@ -272,8 +272,8 @@ func TestACLDeprovisionLeavesNoOrphan(t *testing.T) {
 	ctx := context.Background()
 	alice := seedIdentity(t, pool, "alice-doomed")
 	bob := seedIdentity(t, pool, "bob-survivor")
-	aliceSkill := seedSkill(t, pool, alice, "acl-cascade-alice", false)
-	bobSkill := seedSkill(t, pool, bob, "acl-cascade-bob", false)
+	aliceSkill := seedSkill(t, pool, alice, "acl-cascade-alice")
+	bobSkill := seedSkill(t, pool, bob, "acl-cascade-bob")
 
 	store, err := NewStore(pool)
 	if err != nil {
@@ -335,7 +335,7 @@ func TestACLRefusesAGrantOverSomebodyElsesSkill(t *testing.T) {
 	ctx := context.Background()
 	alice := seedIdentity(t, pool, "grant-owner")
 	mallory := seedIdentity(t, pool, "grant-forger")
-	aliceSkill := seedSkill(t, pool, alice, "acl-not-yours", false)
+	aliceSkill := seedSkill(t, pool, alice, "acl-not-yours")
 
 	store, err := NewStore(pool)
 	if err != nil {
@@ -378,65 +378,6 @@ func TestACLRefusesAGrantOverSomebodyElsesSkill(t *testing.T) {
 		t.Fatalf("declining a share: %v", err)
 	} else if !removed {
 		t.Fatal("the named principal could not decline the share addressed to them")
-	}
-}
-
-// TestAlwaysApplyLookupUsesTheIndex is acceptance criterion 7: the always-on lookup is an
-// index lookup, not a scan of the catalog. It is rendered at the top of every turn.
-//
-// The seeding is what makes the plan meaningful. On a table of five rows Postgres reads the
-// heap because that IS cheaper, and an EXPLAIN there would assert nothing about the query; so
-// this seeds enough rows for the planner to have a real choice, ANALYZEs, and only then asks.
-func TestAlwaysApplyLookupUsesTheIndex(t *testing.T) {
-	pool := aclPool(t)
-	ctx := context.Background()
-	owner := seedIdentity(t, pool, "always")
-
-	if err := db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
-		for i := range 2000 {
-			name := "always-seed-" + uuid.NewString()[:8] + "-" + string(rune('a'+i%26))
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO aura.skill_catalog (owner_identity_id, name, always_apply, content_hash)
-				 VALUES ($1, $2, $3, 'hash')`, owner, name, i%500 == 0); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seed catalog rows: %v", err)
-	}
-	// ANALYZE as the OWNER. Postgres does not fail an ANALYZE a role may not run — it emits
-	// "skipping ... only table or database owner can analyze it" as a WARNING and moves on, so
-	// running it on the app pool returns nil while doing nothing, and the EXPLAIN below would
-	// then be read over default statistics. That is the difference between proving the index
-	// is chosen and proving nothing at all.
-	if _, err := aclVerifyPool(t).Exec(ctx, `ANALYZE aura.skill_catalog`); err != nil {
-		t.Fatalf("ANALYZE: %v", err)
-	}
-
-	var plan strings.Builder
-	if err := db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx,
-			`EXPLAIN SELECT id, name FROM aura.skill_catalog WHERE owner_identity_id = $1 AND always_apply ORDER BY name`,
-			owner)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var line string
-			if err := rows.Scan(&line); err != nil {
-				return err
-			}
-			plan.WriteString(line)
-			plan.WriteString("\n")
-		}
-		return rows.Err()
-	}); err != nil {
-		t.Fatalf("EXPLAIN: %v", err)
-	}
-	if strings.Contains(plan.String(), "Seq Scan on skill_catalog") {
-		t.Fatalf("the always-apply lookup scans the catalog — it runs on every turn:\n%s", plan.String())
 	}
 }
 

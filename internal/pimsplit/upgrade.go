@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// upgradeName is this upgrade's row in aura.data_upgrades (migration 0158).
+// upgradeName is this upgrade's row in aura.data_upgrades (migration 0159).
 const upgradeName = "pim_tool_split"
 
 const (
@@ -46,7 +46,7 @@ type Report struct {
 
 // Upgrade rewrites every old-shape row in one transaction, the first time it runs on a database,
 // and records that it ran in the same transaction. Later runs find the record and change nothing:
-// a row written after the upgrade can have exactly the shape of one it deletes (migration 0158).
+// a row written after the upgrade can have exactly the shape of one it deletes (migration 0159).
 func Upgrade(ctx context.Context, conn *pgx.Conn, log *slog.Logger) (Report, error) {
 	var report Report
 	applied := false

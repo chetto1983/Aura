@@ -10,34 +10,34 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// 0158 adds the record of Go data upgrades that have run. The migrate role writes it; the
+// 0159 adds the record of Go data upgrades that have run. The migrate role writes it; the
 // application role, which 0001's default privileges would otherwise serve, cannot touch it.
-func TestMigrate0158AddsTheDataUpgradeRecord(t *testing.T) {
+func TestMigrate0159AddsTheDataUpgradeRecord(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	admin, migrateURL, appURL := fresh0093Database(t, ctx, "aura_migrate0158_upgrades")
-	migrateToVersion(t, ctx, migrateURL, admin, 157)
+	admin, migrateURL, appURL := fresh0093Database(t, ctx, "aura_migrate0159_upgrades")
+	migrateToVersion(t, ctx, migrateURL, admin, 158)
 	if regclass(t, ctx, admin, "data_upgrades") != nil {
-		t.Fatal("aura.data_upgrades exists before 0158")
+		t.Fatal("aura.data_upgrades exists before 0159")
 	}
 	if err := MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("migrate 0158 up: %v", err)
+		t.Fatalf("migrate 0159 up: %v", err)
 	}
-	assert0158Roles(t, ctx, migrateURL, appURL)
+	assert0159Roles(t, ctx, migrateURL, appURL)
 
 	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("migrate 0158 down: %v", err)
+		t.Fatalf("migrate 0159 down: %v", err)
 	}
 	if regclass(t, ctx, admin, "data_upgrades") != nil {
-		t.Fatal("aura.data_upgrades survived 0158 down")
+		t.Fatal("aura.data_upgrades survived 0159 down")
 	}
 	if err := MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("migrate 0158 up again: %v", err)
+		t.Fatalf("migrate 0159 up again: %v", err)
 	}
-	assert0158Roles(t, ctx, migrateURL, appURL)
+	assert0159Roles(t, ctx, migrateURL, appURL)
 }
 
-func assert0158Roles(t *testing.T, ctx context.Context, migrateURL, appURL string) {
+func assert0159Roles(t *testing.T, ctx context.Context, migrateURL, appURL string) {
 	t.Helper()
 	migrate := openPool(t, ctx, migrateURL)
 	if _, err := migrate.Exec(ctx, `INSERT INTO aura.data_upgrades (name) VALUES ('probe')`); err != nil {

@@ -1,5 +1,5 @@
 -- A Go data upgrade that must run once records its name here, in the same transaction as its
--- rewrite. Slot measured with `ls internal/db/migrations/ | tail -1`: 0157 was the head.
+-- rewrite. Slot measured with `ls internal/db/migrations/ | tail -1`: 0158 was the head.
 --
 -- WHY. The PIM tool split (docs/superpowers/specs/2026-11-23-pim-tool-split-design.md §5.5)
 -- rewrites the stored grants and policies with Go (`internal/pimsplit`, run by `aura db
@@ -21,4 +21,4 @@ REVOKE ALL ON aura.data_upgrades FROM aura_app;
 GRANT ALL ON aura.data_upgrades TO aura_migrate;
 
 COMMENT ON TABLE aura.data_upgrades IS
-    'One row per Go data upgrade that has run (migration 0158), written in the upgrade''s own transaction so it runs once. Migrate role only.';
+    'One row per Go data upgrade that has run (migration 0159), written in the upgrade''s own transaction so it runs once. Migrate role only.';

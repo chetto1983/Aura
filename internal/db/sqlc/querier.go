@@ -189,7 +189,7 @@ type Querier interface {
 	// One bounded batch of what has outlived the identity's retention, for the retention sweep. An
 	// event still ahead keeps its row: when it moves, the row is what tells a move from a first sight.
 	DeleteExpiredPIMWatchVerdicts(ctx context.Context, arg DeleteExpiredPIMWatchVerdictsParams) (int64, error)
-	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
+	DeleteExpiredTelegramSetupPending(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error)
 	DeleteExpiredVerificationEvents(ctx context.Context, createdAt pgtype.Timestamptz) error
 	// Retention, mirroring the original's two-branch prune: state that was edited before
 	// the cutoff, and state whose only anchor is an event older than the cutoff.

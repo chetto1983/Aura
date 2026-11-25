@@ -92,7 +92,7 @@ func dbMigrate(ctx context.Context, cfg *config.Config) {
 
 // upgradePIMSplit carries the stored approvals, policies and drafts across the PIM tool split. It is
 // data the SQL migrations cannot rewrite, since the new tool names are hashed in Go; it runs under
-// the migration lock, as the migrate role, and only once per database (migration 0158).
+// the migration lock, as the migrate role, and only once per database (migration 0159).
 func upgradePIMSplit(ctx context.Context, migrateURL string) error {
 	conn, err := pgx.Connect(ctx, migrateURL)
 	if err != nil {

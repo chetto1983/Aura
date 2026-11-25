@@ -162,14 +162,17 @@ func (s *Store) ConsumeOnboarding(ctx context.Context, p ConsumeParams) (Account
 	return acct, nil
 }
 
-// CleanupExpired deletes unconsumed onboarding tokens past their expiry and returns
-// the number removed (the setup SSE-pump GC scan).
-func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
-	n, err := s.q.DeleteExpiredTelegramSetupPending(ctx)
+// SweepExpired deletes the unconsumed onboarding tokens that expired at or before now and
+// reports how many went. It is a handlers.Sweeper: the daily retention sweep runs it, so a
+// setup abandoned before its token was consumed no longer leaves its row behind for good.
+// The table carries no row-level security (0087 lists why), so one unscoped DELETE covers
+// every identity.
+func (s *Store) SweepExpired(ctx context.Context, now time.Time) (int, error) {
+	n, err := s.q.DeleteExpiredTelegramSetupPending(ctx, pgtype.Timestamptz{Time: now, Valid: true})
 	if err != nil {
-		return 0, fmt.Errorf("cleanup expired telegram setup pending: %w", err)
+		return 0, fmt.Errorf("sweep expired telegram setup pending: %w", err)
 	}
-	return n, nil
+	return int(n), nil
 }
 
 // PendingConsumed reports whether a token row exists and has been consumed, mapping
