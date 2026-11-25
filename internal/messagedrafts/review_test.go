@@ -111,6 +111,23 @@ func TestLegacyDraftStillRefusesAnUnknownKey(t *testing.T) {
 	}
 }
 
+// The history only strips "action", it does not validate: a stored send the new send_email would
+// refuse still shows the account and subject the strict decode reads before the unknown key.
+func TestLegacyHistoryKeepsWhatDecodesBeforeAnUnknownKey(t *testing.T) {
+	t.Parallel()
+	legacy := Draft{
+		Target: LegacyEmailTarget(),
+		OriginalArgs: json.RawMessage(`{"to": ["a@example.com"], "action": "send_email", "replyTo": "x", ` +
+			`"subject": "Hi", "accountId": "acc-1"}`),
+	}
+	if _, err := LegacyEmailArgs(legacy.OriginalArgs); err == nil {
+		t.Fatal("the fixture is one the new send accepts")
+	}
+	if got := legacy.SendingAccount(); got != "acc-1" {
+		t.Fatalf("SendingAccount = %q, want acc-1", got)
+	}
+}
+
 // A pre-split send becomes the bytes Create would store for the same send_email call, whatever key
 // order jsonb handed it back in, so the fingerprint the dispatch recomputes matches.
 func TestLegacyEmailArgsAreCreatesCanonicalSendEmailArgs(t *testing.T) {
