@@ -3931,6 +3931,20 @@ agent saw the skills and none of the tools.
 **What this does not show:** one plugin and one identity measured, and no Agent Plugins
 plugin measured yet.
 
+**The catalog no longer stores whether a skill is always-on (2026-11-25, amendment #224).**
+Migration 0118 denormalised `always_apply` into `aura.skill_catalog` and indexed it
+(`skill_catalog_always_apply_idx`), so that the always-on block could come from an index lookup
+on every turn. That lookup was never the source. The block is rendered from the per-identity
+filesystem loader, which reads `always` from the SKILL.md frontmatter, and a shared skill is
+never always-on for the grantee. `CatalogStore.ListAlwaysApply`, the only query that filtered
+on the column, had no production caller and was removed with the dead-code sweep (PR #278).
+What was left, measured statically on 2026-11-25 over the Go, SQL and web sources: every
+catalog upsert writes the column, `ListOwned` and `ListByIDs` select it into `CatalogRow`, and
+no code reads the value back. Migration 0157 drops the column and its index, and the
+frontmatter stays the only record of the flag. What this does not show: index usage on a
+running deployment was not read (`pg_stat_user_indexes`). The down migration recreates the
+column as `false` for every row; the true values come back only as each skill is written again.
+
 ## 15. Scheduling, delegation and asynchronous delivery
 
 Tasks support `at`, `every` and `cron`, with durable owner, payload and route. The cockpit

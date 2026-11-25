@@ -38,7 +38,6 @@ type CatalogRow struct {
 	OwnerID     string
 	Name        string
 	Description string
-	AlwaysApply bool
 	ContentHash string
 	UpdatedAt   time.Time
 }
@@ -62,7 +61,6 @@ type CatalogUpsert struct {
 	OwnerID     string
 	Name        string
 	Description string
-	AlwaysApply bool
 	ContentHash string
 }
 
@@ -83,7 +81,6 @@ func UpsertCatalogTx(ctx context.Context, q *sqlc.Queries, in CatalogUpsert) (Ca
 		OwnerIdentityID: owner,
 		Name:            in.Name,
 		Description:     db.PostgresTextSafe(in.Description),
-		AlwaysApply:     in.AlwaysApply,
 		ContentHash:     in.ContentHash,
 	})
 	if err != nil {
@@ -200,7 +197,6 @@ func catalogRowFrom(r sqlc.AuraSkillCatalog) CatalogRow {
 		OwnerID:     catalogUUID(r.OwnerIdentityID),
 		Name:        r.Name,
 		Description: r.Description,
-		AlwaysApply: r.AlwaysApply,
 		ContentHash: r.ContentHash,
 		UpdatedAt:   r.UpdatedAt.Time,
 	}

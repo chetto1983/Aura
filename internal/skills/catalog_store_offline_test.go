@@ -103,7 +103,7 @@ func TestScopedWriteReachesTheLedgerAndFailsThere(t *testing.T) {
 		t.Fatalf("For: %v", err)
 	}
 	fill := writeFilesInto(map[string][]byte{"SKILL.md": []byte("---\nname: ledger-skill\n---\nbody\n")})
-	cat := scoped.catalogUpsertOp("ledger-skill", "d", false, "hash")
+	cat := scoped.catalogUpsertOp("ledger-skill", "d", "hash")
 	if cat == nil {
 		t.Fatal("a scoped writer produced no catalog operation")
 	}
@@ -131,9 +131,9 @@ func TestCatalogRowsProjectionKeepsOrderAndEmptiness(t *testing.T) {
 	id := uuid.MustParse(catalogTestOwner)
 	rows := catalogRowsFrom([]sqlc.AuraSkillCatalog{
 		{ID: pgtype.UUID{Bytes: id, Valid: true}, Name: "alpha"},
-		{ID: pgtype.UUID{Bytes: id, Valid: true}, Name: "beta", AlwaysApply: true},
+		{ID: pgtype.UUID{Bytes: id, Valid: true}, Name: "beta"},
 	})
-	if len(rows) != 2 || rows[0].Name != "alpha" || rows[1].Name != "beta" || !rows[1].AlwaysApply {
+	if len(rows) != 2 || rows[0].Name != "alpha" || rows[1].Name != "beta" {
 		t.Fatalf("catalogRowsFrom = %+v", rows)
 	}
 	if empty := catalogRowsFrom(nil); empty == nil || len(empty) != 0 {
@@ -157,7 +157,7 @@ func TestCatalogOpsRunTheirStatementAndSurfaceTheFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
-	if err := scoped.catalogUpsertOp("calc", "adds", true, "hash")(ctx, q); err == nil ||
+	if err := scoped.catalogUpsertOp("calc", "adds", "hash")(ctx, q); err == nil ||
 		!strings.Contains(err.Error(), "skill catalog upsert") {
 		t.Errorf("upsert op = %v, want a failure naming the upsert", err)
 	}

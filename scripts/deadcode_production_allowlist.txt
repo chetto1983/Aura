@@ -27,8 +27,3 @@ github.com/chetto1983/aura/internal/sandbox/usersandbox.DockerBackend.SpoolDir  
 github.com/chetto1983/aura/internal/skills.Writer.Owner                                cmd/aura tests assert which identity a writer writes as
 github.com/chetto1983/aura/internal/swarm.DelegationClaimLoop.Wait                     tests join in-flight workers; the daemon never waits
 github.com/chetto1983/aura/internal/utf8cut.Ellipsize                                  only internal/agenteval truncates with it
-
-# UNWIRED: built for production, never connected. Each entry is an open gap, not a seam:
-# wire it or delete it, and the entry goes with that change.
-github.com/chetto1983/aura/internal/channels/telegram.Store.CleanupExpired             GC of expired onboarding tokens; nothing schedules it, so expired rows accumulate
-github.com/chetto1983/aura/internal/idempotency.Store.ExpireReplayBodies               replay-body expiry sweep; nothing schedules it, so payloads outlive ReplayRetention

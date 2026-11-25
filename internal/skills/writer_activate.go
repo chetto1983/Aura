@@ -223,9 +223,9 @@ func (w *Writer) SetAlways(ctx context.Context, name string, always bool, actor 
 		return fmt.Errorf("set always %q: materialize: %w", name, err)
 	}
 	hash := HashSkillFiles(map[string][]byte{"SKILL.md": skillFileBytes(fm, body)})
-	// always: is the column the always-on block is looked up by (migration 0118), so the
-	// row has to learn the new value here or the index would answer with the old one.
-	cat := w.catalogUpsertOp(name, fm.Description, always, hash)
+	// The flag itself lives only in the frontmatter (amendment #224); the catalog row learns
+	// the new content hash.
+	cat := w.catalogUpsertOp(name, fm.Description, hash)
 	if err := w.auditActivationLike(ctx, name, AuditUpdate, hash, ApprovalCLI, actor, cat); err != nil {
 		return fmt.Errorf("set always %q: audit: %w", name, err)
 	}

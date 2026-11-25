@@ -400,8 +400,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0154 adds the operator's default channel for scheduled delivery.
 	// 0155 adds the scheduled message: its kind, its draft's time and task, and the parking call.
 	// 0156 records the address an email draft leaves from.
-	if head != 156 {
-		t.Fatalf("MigrationHead=%d, want embedded head 156", head)
+	// 0157 drops the skill catalog's always_apply copy and its index (amendment #224).
+	if head != 157 {
+		t.Fatalf("MigrationHead=%d, want embedded head 157", head)
 	}
 }
 
