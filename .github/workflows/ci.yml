@@ -2042,7 +2042,7 @@ jobs:
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
     # → bootServeChatEnv → db.Open is unconditional). So the E2E provisions the stack
     # exactly like the AG-UI live smoke (integration-test job): a dummy non-empty
@@ -2256,7 +2256,8 @@ jobs:
         # Gated specs that need no model and no account: the memory graph seeded through the host
         # binary, an HTML artifact the run uploads itself, the data proxy and skills.sh search
         # (public internet). Chrome only: they measure the server, not the layout. They ran
-        # nowhere before 2026-11-25.
+        # nowhere before 2026-11-25. One worker: the catalogue spec times a cold search (under
+        # 1.5 s), which missed only when it shared the runner with the other two (2026-11-25).
         env:
           AURA_E2E_LIVE_GRAPH: "1"
           AURA_E2E_LIVE_ARTIFACT: "1"
@@ -2264,8 +2265,59 @@ jobs:
           AURA_E2E_AURA_CMD: ../aura
           AURA_PROFILE: dev
         run: >-
-          bash scripts/web_e2e_ci.sh --project=chrome
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1
           e2e/graph-live-arcadedb.spec.ts e2e/origin-isolation-live.spec.ts e2e/skill-catalog-search-live.spec.ts
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
+
+      - name: Build the ingestion sidecar image from this commit
+        run: make ingest-image
+
+      - name: Bring up the document pipeline (embedder, speech-to-text, ingest)
+        # The ingest sidecar is the only indexer (internal/assets/document_processor.go);
+        # .github/compose.ci-web-e2e.yaml points it at Garage by service name. Speech-to-text
+        # runs the smallest Whisper model: the paperless spec checks that its WAV is indexed
+        # and plays, not what it says.
+        env:
+          COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml:.github/compose.ci-web-e2e.yaml
+          AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+          AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11960
+          AURA_EMBED_NGL: "0"
+          STT_MODEL: tiny
+        run: |
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          cp ~/.cache/aura-embed/model.gguf "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+          if ! docker compose up -d --wait --wait-timeout 600 aura-stt aura-ingest; then
+            docker compose logs --tail 80 aura-llama-embed aura-stt aura-ingest || true
+            exit 1
+          fi
+
+      - name: Seed the operator's document library
+        env:
+          AURA_PROFILE: dev
+        run: bash scripts/web_e2e_documents_seed.sh
+
+      - name: Playwright live document specs (list, filters, survival, paperless)
+        # Indexed by the sidecar, read through the cockpit and `aura docs mcp`. The two paperless
+        # specs that provision a second identity stay manual: provisioning resolves the bot's name
+        # with a live Telegram getMe (internal/agui/onboarding_provision.go). One worker: the
+        # specs share the operator's library, and with fullyParallel the paperless workflow's
+        # uploads landed inside the saved-view spec's unchanged-total check (2026-11-25).
+        env:
+          AURA_E2E_LIVE_DOCUMENTS: "1"
+          AURA_E2E_AURA_CMD: ../aura
+          AURA_PROFILE: dev
+        run: >-
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1
+          e2e/documents-live.spec.ts e2e/documents-filter-eval-live.spec.ts e2e/documents-survival-live.spec.ts
+          e2e/paperless-workflow-live.spec.ts e2e/paperless-saved-view-delete-live.spec.ts
 
       - name: Tear down
         if: always()
