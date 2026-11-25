@@ -78,7 +78,7 @@ What runs is a fact of the CI run, so it is measured there.
 | Playwright | file + title path + project | every tracked `web/e2e/*.spec.ts` must appear in the report; its tests come from the report, which lists skipped ones too | the JSON reporter, `status` per result |
 | Vitest (`web`, `packages/create-aura`) | file + full name | every tracked `*.test.ts(x)` must appear in the report; its tests come from the report (skipped and todo included) | the JSON reporter |
 | pytest (`services/ingest`) | node id | `pytest --collect-only -q` | `--junitxml` |
-| Script self-tests | file `scripts/**/*_test.{sh,py}` | `git ls-files` glob | the glob runner's result line (§4.4) |
+| Script self-tests | file `scripts/**/*_test.{sh,py}` | `git ls-files` glob | shell: the glob runner's result line; Python: unittest's JUnit (§4.4) |
 
 Subtests are not units: a parent that runs counts, and table rows stay the parent's business.
 
@@ -127,10 +127,15 @@ a separate unit that never runs and needs a `platform` entry.
 
 ### 4.4 Script self-tests
 
-`scripts/run_script_tests.sh` runs every tracked `scripts/**/*_test.sh` and `scripts/*_test.py` found by
-glob, writes one result line per file, and replaces today's hand-kept lists (`ci.yml:99`, the unittest list
-in the "Production-evidence contract tests" step, the make `*-contract` recipes). A new self-test runs because it exists. Tests that need
-a built image (`cloudflare_caddy_origin_test.sh` needs `aura-caddy`) get it from the same job.
+`scripts/run_script_tests.sh` runs every tracked `scripts/**/*_test.sh` found by glob, writes one result
+line per file, and replaces today's hand-kept lists (`ci.yml:99`, the make `*-contract` recipes). A new
+self-test runs because it exists. Tests that need a built image (`cloudflare_caddy_origin_test.sh` needs
+`aura-caddy`) get it from the same job.
+
+Python self-tests run through `make evidence-contracts`' `unittest discover -s scripts`, which reaches only
+the top level (none is nested today), and report to the ledger as JUnit. Their declared set is wider on
+purpose, `scripts/**/*_test.py`: a nested one is then declared and not executed, a violation, instead of a
+file nothing sees.
 
 ### 4.5 The allowlist
 
@@ -260,4 +265,6 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
 master's render; the FQDN egress mode is removed; the paid live Playwright specs stay manual and the rest
-are wired.
+are wired. Of the rest, the three that need an outward account no CI holds (`remote-access`: Cloudflare;
+`paperless-first-import` and `paperless-isolation`: a live Telegram `getMe`) stay manual with the
+Telegram tier as `outward`, a classification the operator has still to confirm (§10.2).
