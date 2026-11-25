@@ -1,7 +1,8 @@
 # The PIM's tools, one per operation again
 
 - **Date:** 2026-11-23
-- **Status:** Draft, for the operator's approval
+- **Status:** Approved by the operator 2026-11-23. Shipped in `442c2058d`. Amended 2026-11-25 after the lab VM
+  run (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`): §5.1, §5.3, §5.5, §7.
 - **Repositories:** `chetto1983/aura-pim-mcp` (the fork) and `chetto1983/Aura`
 - **Supersedes:** in `2026-08-17-mcp-curated-surface-design.md`, D-18 for the PIM (one multiplexed tool),
   D-19 (flat-union `action` schema), D-26 as applied to the PIM's raw handlers, and the calendar half of
@@ -113,8 +114,16 @@ records each one, so a sync knows to keep it.
   `reconcileCuratedActions`, and `Multiplexed` for `calendar`.
 - `trustedRecipeActions["recipe:calendar"]` becomes tool-keyed. The keys already equal the upstream names.
 - A `recipe:calendar` tool missing from the table stays fail-closed: Destructive, never the annotation path.
-  This keeps today's floor for an unknown action. Drift detection moves from the action enum to the tool
-  name set.
+  Drift detection moves from the action enum to the tool name set.
+
+  *Amended 2026-11-25.* The draft said this "keeps today's floor for an unknown action". It does not. The
+  gateway saturated an unknown action to Risky, and Risky does not withhold. The split raises the floor to
+  Destructive, the tier that withholds (`TestUnknownCalendarToolIsDestructiveDespiteReadOnlyHint`). This
+  is the stricter side: a tool the fork adds before Aura classifies it is denied in an unattended run.
+  Without the raise, it would be reserved and run. The lab VM run showed the Destructive tier withholding
+  known tools. `bulk_delete_emails` (checks 2 and 9) and `delete_event` (check 4) were each withheld
+  behind an approval, and ran once the operator approved them. Not shown live: an unknown tool. The
+  raised floor is unit-tested only. Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 - Read tools become non-mutating. That is the point: they leave the operation-reservation funnel that once
   denied briefing reads. They become callable from the MCP Apps view's read-only callbacks.
 - `neverLoaded` for `recipe:calendar` stays: about 29 tools is above the slot rule anyway.
@@ -147,6 +156,19 @@ records each one, so a sync knows to keep it.
   `required` list in `send_email`'s own schema is what should make the model pass the account; §7
   check 10 measures whether it does, and that count decides Aura's own check.
 
+  *Amended 2026-11-25: the count.*
+  - **Route.** The route of the day was `thinkingmachines/inkling-2`. The operator had dropped the
+    DeepSeek route that day, because its provider was dropping arguments.
+  - **Count.** There were 4 cockpit sends. 0 of 4 drafts reached review without an `accountId`, and none
+    carried the legacy `action` key. In the 3 sends with no account named, Aura called `list_accounts`
+    and asked the operator which account to use.
+  - **Decision.** On this route, Aura adds no pre-review requirement of its own for `accountId`.
+  - **Not shown.** Other models, the DeepSeek route itself, and more than 4 samples.
+
+  Check 4 found the same gap on `create_event`, where the PIM fell back to the first account. Pin
+  `8f97396` makes `accountId` required on `create_event` and `create_contact`, but its live re-measure is
+  still owed. Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
+
 ### 5.4 Display and cockpit
 
 - The display marker becomes `{recipe, tool}`, as WhatsApp's is. `sidecars.go` keys its read tables by tool,
@@ -156,7 +178,40 @@ records each one, so a sync knows to keep it.
 - The policy picker lists plain tools; nothing has actions any more. The collapsed-row summary
   (`toolSummary.ts`) loses its action word, a cosmetic change.
 
-### 5.5 Data migration (next free slot at landing; 0157 today)
+### 5.5 Data migration (next free slot at landing; landed as 0158 and 0159)
+
+*Amended 2026-11-25: what landed.* Read with `internal/pimsplit/` and `cmd/aura/db.go`.
+- **Numbers.** The CHECK swap is `0158_pim_tool_split`. The run-once record is `0159_data_upgrades`.
+  Both were renumbered from 0157 and 0158 when upstream `0157_drop_skill_catalog_always_apply` landed
+  first.
+- **Run once.** `aura db migrate` runs the Go step (`pimsplit.Upgrade`) under the migration lock, as the
+  migrate role, after `CheckMigrationHead`. It runs once per database, not on every migrate.
+  - The step inserts the row `pim_tool_split` into `aura.data_upgrades` in its own transaction.
+  - Once that row exists, a later run changes nothing and logs `already_applied=true`.
+
+  This is needed because, after the first run, a rewritten row has exactly the shape of a hand-typed
+  `<ns>__<tool>` row that the step deletes. Shape alone cannot tell them apart.
+- **Namespaces.** The step works on every `aura.mcp_server` row with source `recipe:calendar`, plus the
+  catalog name `calendar`. The appliance mounts `calendar` with no row, so `calendar` is included unless
+  a row of another source has taken that name. Names are always built with
+  `mcptools.NamespacedName(ns, …)`, never matched by suffix, so a hashed alias `<alias>__<tool>` is found.
+- **Tool-wide `ask`.** Unlike the bullet below, a tool-wide `ask` is fanned out to the 29 tools on an
+  aliased (non-default) mount. There, the gateway keyed the subject by the tool alone, so the `ask` asked
+  on every call. On the default `calendar` mount the subject carried the call's action, so a tool-wide
+  `ask` matched no call. It is dropped and logged.
+- **Collisions.** Where a `deny` and an `ask` land on the same tool, the `deny` stays, whether each came
+  from a rewrite or a fan-out. Denies are written first, and a copy never overwrites a row.
+- **Hand-typed rows.** A hand-typed `<alias>__<tool>` deny is purged with the other hand-typed rows, as
+  below. It was inert before the split, so nothing loosens.
+- **Draft that cannot be mapped.** A pending or approved email draft is expired with outcome
+  `tool_split_unmappable` if its registered name matches no PIM mount, or if the new `send_email` refuses
+  its arguments. A draft that names no account is expired with outcome `account_required`.
+- **Measured.** The lab VM upgrade logged `rewritten=0`, `fanned_out_denies=0`, `fanned_out_asks=0`,
+  `dropped=0`, `drafts_rewritten=1` and `drafts_expired=1`.
+- **Not shown live.** The grant and policy paths: the VM had no PIM policies to carry. They are proven by
+  the `db_integration` tests only.
+
+Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 
 - **`gateway_approval_grants` and `gateway_tool_policies`** (decided by the operator, 2026-11-23).
   - Only a per-action row `(<ns>__calendar, <action>)` is rewritten, to `(<ns>__<action>, '')`, for any
@@ -250,12 +305,18 @@ draft target, and the fork's suite against Dovecot and GreenMail.
    Sent copy lands.
 3. A briefing turn reads mail and events with no reservation error.
 4. An event is created, read and deleted through its reference.
-5. A `deny` on `calendar` / `send_email` set before the upgrade refuses `calendar__send_email` after it,
-   and a tool-wide `deny` on `calendar` refuses every one of the 29 tools.
+5. *(Amended 2026-11-25, operator.)* A `deny` on a PIM tool that is not drafted (for example
+   `calendar__list_calendars`) refuses it. A `deny` on `calendar__send_email` still lets Aura draft the
+   send, and a draft the operator confirms passes the deny (PRD §5, decision of 2026-10-10). A tool-wide
+   `deny` on `calendar` set before the upgrade becomes a `deny` on each of the 29 tools. The original
+   wording, "refuses `calendar__send_email`", contradicted the 2026-10-10 decision.
 6. A pending draft and a scheduled email draft made before the upgrade, each with an account, send after
    it. One made without an account is expired.
 7. A conversation from before the upgrade replays with its tables.
-8. `tool_search "manda una mail"` returns `calendar__send_email` first.
+8. *(Amended 2026-11-25, operator.)* On a live send turn, the agent loads `calendar__send_email` by name.
+   The original criterion, that `tool_search "manda una mail"` ranks it first, is dropped. The agent calls
+   tools by name from the roster, and the lever is the tool descriptions, not the BM25 rank. On the C7
+   corpus that query ranks the tool 5th.
 9. A scheduled task with an email notification delivers it, from the recipient's own account.
 10. Over several cockpit sends on the route of the day, count how many drafts reach review without an
     `accountId`. That count decides whether Aura adds its own pre-review requirement (§5.3).
@@ -263,7 +324,11 @@ draft target, and the fork's suite against Dovecot and GreenMail.
 Before the split, the pin release is checked on its own: the PIM container runs the pinned digest, and a
 push to the fork's `main` changes nothing on the VM.
 
-The run is recorded in one dated file in `docs/superpowers/verification/`.
+The run is recorded in one dated file in `docs/superpowers/verification/`. The run of 2026-11-25 is
+`2026-11-25-pim-tool-split-vm-checks.md`. Checks 1, 2, 3, 4, 7, 8 and 9 passed. Check 8 passed on its
+amended wording, and so did check 5's per-tool denies. Two things were not shown live, because the VM held
+nothing to carry: the carry-over of a pre-upgrade deny, and the tool-wide fan-out. Check 6 is PARTIAL: no
+pre-upgrade draft that names an account was shown sending after the upgrade. Check 10 counted 0 of 4.
 
 ## 8. Left to the builder
 
