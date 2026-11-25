@@ -13,7 +13,7 @@
 #      ArcadeDB or a model sidecar, then restarts every service that mounts a changed payload
 #      file, which is how a changed garage.toml or Caddyfile reaches its service;
 #   3. refreshes the repo-built sidecars on their moving tags and the per-user sandbox boxes,
-#      then restarts aura once if it holds a removed box or an MCP sidecar created after it started.
+#      then restarts aura once if it holds a removed box or an MCP sidecar replaced under it.
 # Third-party images never ride a moving tag here: they change when compose.yaml's pin does.
 #
 # The .env keys that put a host on the edge channel's moving tags are written by
@@ -396,14 +396,6 @@ runs_superseded_image() {
   fi
 }
 
-# A running service whose tag now names other content than its container runs.
-service_behind() {
-  local cid
-  cid="$(docker compose ps -q "$1")"
-  [[ -n "${cid}" ]] || return 1
-  runs_superseded_image "${cid}" "$(docker inspect --format '{{.Config.Image}}' "${cid}")"
-}
-
 # Per-user boxes are aura's own containers, not compose services, and aura pulls a box image
 # only when it is missing locally (DockerBackend.ensureImage): a tag already present is never
 # refreshed, and an existing box restarts on its old image forever. So both tags are pulled
@@ -440,19 +432,21 @@ stale_boxes() {
   done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
 }
 
-# aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one recreated
-# since may advertise another tool set, and stays dead to it until aura restarts (lab VM,
-# 2026-11-25: the PIM moved after aura, which kept 1 of its 29 tools). Read off the containers,
-# not off this tick, so a tick that dies first leaves it to the next. One restart serves the boxes.
+# aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one replaced by
+# another image while it runs stays dead to it until aura restarts (lab VM, 2026-11-25: the PIM
+# moved after aura, which kept 1 of its 29 tools). A sidecar counts when it runs another image
+# than $1 recorded before the apply replaced anything, and was created after aura started: a boot
+# creates every sidecar after aura (depends_on) but replaces none. One restart serves the boxes.
 refresh_boxes_and_mounts() {
-  local name svc created started='' removed=0
+  local name svc image now created started='' removed=0
   local -a newer=()
-  for svc in "${MCP_SIDECARS[@]}"; do
+  while read -r svc image; do
+    now="$(container_image_id "${svc}")"
+    [[ "${image}" != missing && "${now}" != missing && "${now}" != "${image}" ]] || continue
     created="$(container_time "${svc}" Created)"
-    [[ -n "${created}" ]] || continue
     [[ -n "${started}" ]] || started="$(container_time aura State.StartedAt)"
     ((created <= started)) || newer+=("${svc}")
-  done
+  done <"$1"
   [[ -n "$(env_value AURA_SANDBOX_IMAGE)" && -n "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]] ||
     echo "sandbox: no images pinned in .env; skipped."
   while read -r name; do
@@ -462,14 +456,17 @@ refresh_boxes_and_mounts() {
     echo "sandbox: ${name} ran a superseded image; removed for aura to recreate."
     removed=$((removed + 1))
   done < <(stale_boxes)
-  ((${#newer[@]} == 0)) || echo "aura: restarting it to remount ${newer[*]}, created after it started."
-  ((removed > 0 || ${#newer[@]} > 0)) || return 0
-  docker compose restart aura
-  wait_healthy aura
+  ((${#newer[@]} == 0)) || echo "aura: restarting it to remount ${newer[*]}, replaced after it started."
+  if ((removed > 0 || ${#newer[@]} > 0)); then
+    docker compose restart aura
+    wait_healthy aura
+  fi
+  rm -f "$1"
 }
 
 apply_update() {
-  local before after svc
+  local before after svc mounted
+  mounted="$(update_dir)/mcp-sidecars"
   record_status applying
   trap 'on_apply_exit $?' EXIT
   before="$(container_image_id aura)"
@@ -490,6 +487,13 @@ apply_update() {
 
   # A pre-existing .env used to omit these keys forever, silently retaining dev.
   bash scripts/appliance_posture.sh .env
+
+  # What each MCP sidecar runs before anything is replaced; a tick that dies keeps it for the next.
+  if [[ ! -f "${mounted}" ]]; then
+    for svc in "${MCP_SIDECARS[@]}"; do
+      echo "${svc} $(container_image_id "${svc}")"
+    done >"${mounted}"
+  fi
 
   # The tick already pulled every moving tag. `--pull missing` overrides the services'
   # `pull_policy: always`, so the apply never asks the registry again for an image it holds:
@@ -527,7 +531,7 @@ apply_update() {
     update_sidecar "${svc}"
   done
 
-  refresh_boxes_and_mounts
+  refresh_boxes_and_mounts "${mounted}"
 
   # Only a tick that got this far reclaims images -- tagged ones no pin names any more, then
   # the untagged ones a moving tag left behind -- and orphaned volumes.

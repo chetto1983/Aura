@@ -144,6 +144,14 @@ container_time() {
   date -u -d "${stamp:?docker reported no $2 for $1}" +%s%N
 }
 
+# A running service whose tag now names other content than its container runs.
+service_behind() {
+  local cid
+  cid="$(docker compose ps -q "$1")"
+  [[ -n "${cid}" ]] || return 1
+  runs_superseded_image "${cid}" "$(docker inspect --format '{{.Config.Image}}' "${cid}")"
+}
+
 applied_image() { cat "$(update_dir)/applied-image" 2>/dev/null || true; }
 
 # Anything downloaded that the stack does not run yet: an aura image other than the one last

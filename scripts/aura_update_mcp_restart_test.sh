@@ -3,9 +3,10 @@
 # Drives deploy/aura-image-update.sh's apply against a stubbed docker that keeps a clock. aura
 # mounts its MCP sidecars as it starts and cannot remount one whose new image advertises another
 # tool set (lab VM, 2026-11-25: the PIM moved after aura, which kept 1 of its 29 tools until an
-# operator restarted it). So an apply that ends with an MCP sidecar created after aura started
+# operator restarted it). So an apply that replaces an MCP sidecar's image under a running aura
 # restarts aura, once even when stale boxes need the same restart, and one that does not never
-# restarts it. The containers decide, not the tick: a tick that dies first leaves it to the next.
+# restarts it -- after a boot too, where every sidecar is created after aura. What the sidecars
+# ran before the apply outlives a tick that dies, so the next apply still decides.
 
 set -euo pipefail
 
@@ -110,6 +111,16 @@ new_case() {
   for svc in "${MCP_SIDECARS[@]}"; do echo 800 >"created-$svc"; done
   for svc in ${ABSENT:-}; do touch "absent-$svc"; done
 }
+# booted_case <name>: as new_case, in the order a boot leaves: aura started at 90.0 s, and each
+# MCP sidecar created after it (depends_on: aura, service_started), at 90.1 to 90.3 s.
+booted_case() {
+  new_case "$1"
+  local svc t=900
+  for svc in "${MCP_SIDECARS[@]}"; do
+    t=$((t + 1))
+    echo "$t" >"created-$svc"
+  done
+}
 apply() {
   : >"$calls"
   apply_update >out
@@ -147,7 +158,7 @@ quiet
   PAYLOAD=1 && new_case pim-after-aura
   AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp && apply
   expect_restarts 1 "a PIM recreated after aura started"
-  [[ "$(said)" == 'aura: restarting it to remount aura-pim-mcp, created after it started.' ]] ||
+  [[ "$(said)" == 'aura: restarting it to remount aura-pim-mcp, replaced after it started.' ]] ||
     fail "the restart did not name the PIM alone: $(said)"
   quiet && apply
   expect_restarts 0 "the apply after that restart"
@@ -168,7 +179,8 @@ echo "ok: an MCP sidecar recreated after aura started restarts aura once, and th
   UP_RECREATES='aura arcadedb-mcp aura-pim-mcp' && apply
   grep -qx 'docker compose up -d --pull missing' "$calls" || fail "the stack was not brought up whole: $(cat "$calls")"
   expect_restarts 1 "aura recreated, then the PIM and the memory MCP"
-  [[ "$(said)" == *'remount arcadedb-mcp aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
+  # The memory MCP was not running when the apply began: aura mounted the one it started.
+  [[ "$(said)" == *' remount aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
 )
 (
   ABSENT=arcadedb-mcp PAYLOAD=0 && new_case stack-down-aura-kept
@@ -176,6 +188,28 @@ echo "ok: an MCP sidecar recreated after aura started restarts aura once, and th
   expect_restarts 1 "aura kept, the PIM recreated by the whole-stack up"
 )
 echo "ok: a whole-stack up that recreates an MCP sidecar after aura started restarts aura once"
+
+# (2b) After a boot every sidecar is younger than aura, yet aura mounted each one: an apply that
+# replaces none restarts nothing, whether or not it replaces aura, and one that replaces the PIM
+# still restarts aura once.
+(
+  PAYLOAD=1 && booted_case booted-nothing-moved
+  apply
+  expect_restarts 0 "the first apply after a boot, nothing replaced"
+  [[ -z "$(said)" ]] || fail "an apply after a boot announced a restart: $(said)"
+)
+(
+  PAYLOAD=1 && booted_case booted-aura-replaced
+  AURA_RECREATE=1 && apply
+  expect_restarts 0 "the first apply after a boot, aura replaced alone"
+)
+(
+  PAYLOAD=0 && booted_case booted-pim-moved
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 1 "the first apply after a boot, the PIM replaced"
+  [[ "$(said)" == *' remount aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
+)
+echo "ok: after a boot, only an MCP sidecar the apply replaced restarts aura"
 
 # (3) Nothing created after aura started: no restart, though aura itself was replaced, or was
 # recreated after the PIM within the same apply, or the sidecar was created in the same second
