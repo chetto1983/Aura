@@ -20,7 +20,7 @@ the same gap: nothing checks that a test runs, only that the jobs which run test
 | Go tagged tiers, runtime skips | `t.Skip` calls without a `CI` guard | 16 sites; the tagged jobs run without `-v`, so a skip prints nothing |
 | Vitest (`web`) | CI log, run `45642678128` | 426 files, 4,275 tests, 0 skipped |
 | Vitest (`packages/create-aura`) | `create-aura-appliance.yml` logs | 12 files, 114 tests; only in that workflow |
-| Playwright (`web/e2e`) | CI log, same run; `--list --reporter=json` | 338 tests, **114 skipped**: 86 at collection (80 in 22 `*-live` specs gated on env, 6 visual capture modes) and 28 at run time (desktop-only or mobile-only, by design) |
+| Playwright (`web/e2e`) | CI log, same run; `--list --reporter=json` | 338 tests, **114 skipped**: 86 at collection (80 in 22 env-gated specs, 19 `*-live` and 3 `*-real`; 6 visual capture modes) and 28 at run time (desktop-only or mobile-only, by design) |
 | Playwright, gating | 40 `master` CI runs, jobs API | the job ran 13 times, was skipped by `paths-filter` 14, 13 undeterminable |
 | Calm Prism visual tests | `git log -S` on the workflow | `--update-snapshots` since `75ad77e53` (2026-07-23): they could not fail |
 | pytest (`services/ingest`) | CI log | 273 passed, 0 skipped |

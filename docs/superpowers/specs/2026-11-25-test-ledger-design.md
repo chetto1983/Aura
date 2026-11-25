@@ -7,7 +7,9 @@
   (`3e83b15`, `cb5a571`, `35ee3d2`, `442c205`), once the ledger is green on `master` (§8).
 - **Operator decisions already taken (2026-11-25):** the 15 `unwired — owner decision pending` entries all
   run in CI; the asset round-trip uses a synthetic file, not a corpus; the static check is retired when the
-  ledger works; no test may go unnoticed.
+  ledger works; no test may go unnoticed. The ledger meets that for every suite but one case: a
+  JavaScript test registered only under a condition that was false in CI never reaches a report (§9),
+  and its safeguard is the operator's choice (§10.1).
 
 ## 1. Why
 
@@ -38,8 +40,8 @@ What runs is a fact of the CI run, so it is measured there.
 **Goals**
 - Every declared test, in every suite, executes in CI on every push that runs the workflow, and its result
   is recorded.
-- A declared test that did not execute, or that skipped, fails CI unless an allowlist entry names it with a
-  reason class. The allowlist is printed in every run's summary, so an excused test is still seen.
+- A declared test that no job executed, or that skipped in every job that ran it, fails CI unless an
+  allowlist entry names it with a reason class. The allowlist is printed in every run's summary, so an excused test is still seen.
 - The 15 unwired entries and the other holes in the verification file run, or carry an allowlist entry with
   a reason the operator accepted.
 - One mechanism. The static check and `manual_test_tiers.txt` go once the ledger is proven (§8).
@@ -161,7 +163,8 @@ publish gate.
 
 ### 4.7 Skips
 
-A test may skip in CI only through an allowlist entry. The 59 local "env var or skip" helpers
+A test may skip in a job only when another job executes it, or through an allowlist entry (§4.5,
+rules 2 and 3). The 59 local "env var or skip" helpers
 (`envOrSkip`, `smokeEnvOrSkip`, `calendarEndpointOrGate`, … defined in 40 packages) fold into one
 `internal/testenv.Require(t, keys...)`: skip locally, `t.Fatal` under `$CI`. The 16 unguarded tagged-tier
 skips either go through it or become `platform` entries.
@@ -188,7 +191,7 @@ skips either go through it or become `platform` entries.
 | seven unguarded tagged-tier skips | fail under `$CI` through each package's existing guard |
 | `TestEgress_FQDNAllowlist` | removed with the OpenSandbox FQDN mode no image could run (operator, 2026-11-25); a set `AURA_SANDBOX_EGRESS_ALLOWLIST` fails boot |
 | Telegram live tier | stays manual: `outward` (operator, 2026-11-25) |
-| 22 live Playwright specs (80 tests) | open (§10) |
+| 27 gated Playwright spec files (§10.2) | 8 wired in Web E2E; 19 stay manual as `paid` or `outward` |
 
 The glob runner of §4.4 was not needed for the Python self-tests (discovery covers them); the
 shell self-tests are still listed by hand, and the ledger is what catches one left out.
@@ -242,9 +245,17 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
    so a test behind `if (flag) test(…)` is in the declared set; or keep the report as the inventory and
    accept the limit, with a lint rule that forbids registering a test inside a condition (`test.skip(cond)`
    registers it and reports the skip, which the ledger sees).
-2. *(answered, see below)* The 22 live Playwright specs: 15 drive a real agent or account and stay manual
-   as `paid`; 7 need only a live stack with fixtures (documents ×4, graph, skill catalogue, origin
-   isolation) and are wired.
+2. *(answered, see below)* The gated Playwright specs, re-measured the same day from the `--list` JSON
+   and each file's guard: 24 `*-live` files and 3 `*-real` files. The first count, 22, held only the files
+   skipped at collection (19 `*-live`, 3 `*-real`); four `*-live` files gate inside the test
+   (`mcp-cockpit`, `paperless-first-import`, `paperless-isolation`, `paperless-saved-view-delete`) and
+   `remote-access-live` has a project of its own. 8 need only the stack and fixtures and are wired in Web
+   E2E: graph, artifact origin, skill catalogue, documents ×3, paperless workflow, paperless saved-view
+   delete. 16 drive a real agent or model (`paid`; `model-settings-hot-reload` and `native-media` run a
+   local model, not a paid one, but still a real one) and 3 need an outward account: `remote-access`
+   (Cloudflare) and the two paperless specs that create a second identity, because provisioning resolves
+   the bot's name with a live Telegram `getMe` (`internal/agui/onboarding_provision.go`), which no CI
+   token can answer.
 
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
