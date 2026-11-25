@@ -338,10 +338,15 @@ func smokeAuthulaTOTPCode(t *testing.T) string {
 	return fmt.Sprintf("%06d", bin%1000000)
 }
 
-func waitHealthy(t *testing.T, base string, d time.Duration, stderr fmt.Stringer) {
+func waitHealthy(t *testing.T, base string, d time.Duration, stderr fmt.Stringer, exited <-chan struct{}) {
 	t.Helper()
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
+		select {
+		case <-exited:
+			t.Fatalf("daemon exited before %s/healthz answered\n--- stderr ---\n%s", base, stderr.String())
+		default:
+		}
 		resp, err := smokeClient().Get(base + "/healthz")
 		if err == nil {
 			_ = resp.Body.Close()
@@ -393,23 +398,31 @@ func TestServeSmoke(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		cmd := exec.CommandContext(ctx, bin, "serve", "--only=cli")
+		// The live stack runs on sample object-store keys, which the strict default profile
+		// refuses at boot; scripts/web_e2e_ci.sh boots the same stack in the dev posture.
 		cmd.Env = envWith(map[string]string{
 			"AURA_AGUI_BIND":   aguiAddr,
 			"AURA_SETUP_BIND":  setupAddr,
 			"AURA_SETUP_TOKEN": "smoke-setup-token",
+			"AURA_PROFILE":     "dev",
 		})
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start daemon: %v", err)
 		}
+		exited := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(exited)
+		}()
 		t.Cleanup(func() {
 			cancel()
-			_ = cmd.Wait()
+			<-exited
 		})
 
 		base := "http://" + aguiAddr
-		waitHealthy(t, base, 45*time.Second, &stderr)
+		waitHealthy(t, base, 45*time.Second, &stderr, exited)
 
 		// --- Unauthenticated (no cookie) ---
 		// WEB-03 / D-03: GET /healthz is public.
