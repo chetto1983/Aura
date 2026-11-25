@@ -1,17 +1,85 @@
-# Test tiers no CI workflow runs, and why. cmd/aura/tier_runners_test.go fails on a build
-# tag that gates a tracked *_test.go file with neither a runner nor a line here, and on a
-# line here that is stale: its tag gates nothing any more, or a workflow now runs it.
-# Format: <tag> <reason>. The reason is required.
+# What CI does not run, and why. cmd/aura/tier_runners_test.go fails on a tracked test file
+# behind a feature build tag that no CI `go test` executes (tags, package and -run all
+# reaching it) unless an entry here excuses it, and on any entry that is stale or has no
+# reason. Python drivers are not followed, so the files they alone run are listed.
+#
+# [tags]         <tag> | <reason>            every unreached file behind the tag runs by hand
+# [files]        <path> | <reason>           one tagged test file no CI invocation reaches
+# [routes]       <tag> | <via> | <reason>    the text credits the tag, control flow never gets there
+# [conditional]  <tag> | <reason>            a step that may not run on a push still counts for it
 
-agent_eval         paid: every case is a real turn against a real model on the live deployment (make agent-eval)
-cot_eval           paid: the scheduler North-Star smoke drives DeepSeek-V4 over OpenRouter, operator-authorized
-live_e2e           paid or outward-facing: real-model runner, reasoning and Ollama-cloud rounds, and a real Telegram delivery to a named chat
-live_finalize      paid: forced finalization against the real DeepSeek-V4/OpenRouter endpoint, operator-authorized
-measure            measurement harness: prints numbers and asserts nothing, so it gates nothing
-turn_recall_eval   paid: the frozen turn-recall eval asks the configured teacher model once per uncertain turn
+[tags]
+agent_eval        | paid: every case is a real turn against a real model on the live deployment (make agent-eval)
+cot_eval          | paid: the scheduler North-Star smoke drives DeepSeek-V4 over OpenRouter, operator-authorized
+live_e2e          | paid or outward-facing: real-model runner, reasoning and Ollama-cloud rounds, and a real Telegram delivery to a named chat
+live_finalize     | paid: forced finalization against the real DeepSeek-V4/OpenRouter endpoint, operator-authorized
+measure           | measurement harness: prints numbers and asserts nothing, so it gates nothing
+turn_recall_eval  | paid: the frozen turn-recall eval asks the configured teacher model once per uncertain turn
+retrieval_eval    | measurement harness over the real corpus; the scored release eval runs only in the full scope of scripts/ingest_reconcile_e2e.sh, which needs a real LLM key
+document_live_e2e | real-agent document E2E: runs only in the full scope of scripts/ingest_reconcile_e2e.sh and in scripts/ingest_media_e2e.sh, both needing a real LLM key
+backup_live       | unwired — owner decision pending (2026-11-25)
+pim_contract_live | unwired — owner decision pending (2026-11-25)
+pim_mail_e2e      | unwired — owner decision pending (2026-11-25)
+serve_smoke       | unwired — owner decision pending (2026-11-25)
+smoke             | unwired — owner decision pending (2026-11-25)
 
-backup_live        unwired — owner decision pending (2026-11-25)
-pim_contract_live  unwired — owner decision pending (2026-11-25)
-pim_mail_e2e       unwired — owner decision pending (2026-11-25)
-serve_smoke        unwired — owner decision pending (2026-11-25)
-smoke              unwired — owner decision pending (2026-11-25)
+[files]
+cmd/arcadedb-mcp/memory_batch_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/arcadedb-mcp/memory_graph_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/arcadedb-mcp/memory_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/arcadedb-mcp/memory_recall_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/aura/memory_latency_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/aura/serve_deprovision_memory_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/concurrent_fact_write_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/document_exact_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/document_fields_triggers_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/document_retrieval_fields_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/document_space_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/examples_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_batch_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_conversation_decision_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_conversation_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_conversation_watermark_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_exact_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_gate_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_graph_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_graph_temporal_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_historical_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_mentions_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_mentions_migration_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_mentions_temporal_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_pass_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_prose_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_reasoning_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_recall_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_recall_period_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_reembed_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_space_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_supersede_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_temporal_protocol_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/memory_vector_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/merge_live_integration_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/tenant_schema_race_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/tenant_version_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/testclient_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+internal/arcadedb/turn_recall_live_test.go | python driver: ci.yml arcadedb-integration-test -> make agent-memory-eval -> scripts/agent_memory_eval.py runs it, and Python drivers are not followed
+cmd/arcadedb-mcp/tool_forget_test.go | unwired — owner decision pending (2026-11-25)
+cmd/aura/asset_roundtrip_test.go | unwired — owner decision pending (2026-11-25)
+cmd/aura/serve_provisioning_objectstore_restore_garage_test.go | unwired — owner decision pending (2026-11-25)
+cmd/aura/two_role_tracer_e2e_test.go | unwired — owner decision pending (2026-11-25)
+internal/agent/reasoning_tier_live_test.go | unwired — owner decision pending (2026-11-25)
+internal/agui/provisioning_saga_resumable_test.go | unwired — owner decision pending (2026-11-25)
+internal/assets/object_resolver_test.go | unwired — owner decision pending (2026-11-25)
+internal/objectstore/garageadmin/client_integration_test.go | unwired — owner decision pending (2026-11-25)
+internal/runner/runner_memory_capture_live_test.go | unwired — owner decision pending (2026-11-25)
+internal/runner/runner_memory_projection_live_test.go | unwired — owner decision pending (2026-11-25)
+
+[routes]
+db_integration    | ci.yml ingest-reconcile-e2e -> make ingest-reconcile -> scripts/ingest_reconcile_e2e.sh | AURA_INGEST_E2E_SCOPE=reconcile exits 0 at line 516, before the migration round-trip
+document_live_e2e | ci.yml ingest-reconcile-e2e -> make ingest-reconcile -> scripts/ingest_reconcile_e2e.sh | AURA_INGEST_E2E_SCOPE=reconcile exits 0 at line 516, before the real-agent document E2E
+retrieval_eval    | ci.yml ingest-reconcile-e2e -> make ingest-reconcile -> scripts/ingest_reconcile_e2e.sh | AURA_INGEST_E2E_SCOPE=reconcile exits 0 at line 516, before the scored retrieval eval
+
+[conditional]
+multimodal_integration | the audio step runs only when the STT/TTS sidecars come up healthy (steps.audio-health); otherwise the job stays green without it
+telegram_integration   | the live step runs only when the TELEGRAM_BOT_TOKEN secret is set (env.HAS_BOT_TOKEN)
