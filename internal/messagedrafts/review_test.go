@@ -112,7 +112,9 @@ func TestLegacyDraftStillRefusesAnUnknownKey(t *testing.T) {
 }
 
 // The history only strips "action", it does not validate: a stored send the new send_email would
-// refuse still shows the account and subject the strict decode reads before the unknown key.
+// refuse still shows what the strict decode reads before the unknown key. withoutAction re-marshals
+// a map, so the keys come back sorted: accountId decodes, and the decode stops at replyTo, before
+// subject.
 func TestLegacyHistoryKeepsWhatDecodesBeforeAnUnknownKey(t *testing.T) {
 	t.Parallel()
 	legacy := Draft{
