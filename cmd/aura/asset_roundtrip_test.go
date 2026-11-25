@@ -20,10 +20,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"os"
 	"strings"
@@ -56,11 +56,14 @@ func roundTripEnv(t *testing.T) (*config.Config, *pgxpool.Pool) {
 	return cfg, pool
 }
 
-// syntheticSpreadsheet is 1 MiB of seeded bytes. Nothing in this tier reads the content:
+// syntheticSpreadsheet is 1 MiB of random bytes. Nothing in this tier reads the content:
 // Finalize hashes it and queues it for the ingest sidecar, so only the bytes' identity matters.
-func syntheticSpreadsheet() []byte {
+func syntheticSpreadsheet(t *testing.T) []byte {
+	t.Helper()
 	payload := make([]byte, 1<<20)
-	_, _ = rand.NewChaCha8([32]byte{'a', 'u', 'r', 'a'}).Read(payload)
+	if _, err := rand.Read(payload); err != nil {
+		t.Fatalf("synthetic payload: %v", err)
+	}
 	return payload
 }
 
@@ -102,7 +105,7 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 			"path that deletes the file")
 	}
 
-	payload := syntheticSpreadsheet()
+	payload := syntheticSpreadsheet(t)
 	sum := sha256.Sum256(payload)
 	wantHash := hex.EncodeToString(sum[:])
 
