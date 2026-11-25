@@ -177,14 +177,19 @@ echo "ok: an MCP sidecar recreated after aura started restarts aura once, and th
 )
 echo "ok: a whole-stack up that recreates an MCP sidecar after aura started restarts aura once"
 
-# (3) Nothing created after aura started: no restart, though aura itself was replaced, or the
-# sidecar was created in the same second aura started (13:00:42Z against 13:00:42.1Z, which a
-# comparison as text gets backwards).
+# (3) Nothing created after aura started: no restart, though aura itself was replaced, or was
+# recreated after the PIM within the same apply, or the sidecar was created in the same second
+# aura started (13:00:42Z against 13:00:42.1Z, which a comparison as text gets backwards).
 (
   PAYLOAD=1 && new_case aura-replaced-alone
   AURA_RECREATE=1 && apply
   expect_restarts 0 "aura replaced, no sidecar recreated"
   [[ -z "$(said)" ]] || fail "an apply that recreated no MCP sidecar announced a restart: $(said)"
+)
+(
+  PAYLOAD=1 && new_case aura-after-pim
+  UP_RECREATES='aura-pim-mcp aura' && apply
+  expect_restarts 0 "the PIM recreated, then aura after it in the same apply"
 )
 (
   PAYLOAD=0 && new_case same-second
@@ -236,7 +241,8 @@ echo "ok: an MCP sidecar not running here is ignored"
 echo "ok: a tick that dies before its restart leaves it to the next apply, and only to that one"
 
 # (7) A sidecar whose times docker cannot report fails the tick rather than guess: no restart on
-# a time that is not there, and none skipped either -- the next apply reads it and decides.
+# a time that is not there, and none skipped silently -- the next apply, when one runs, reads it
+# and decides.
 (
   PAYLOAD=0 && new_case blank-inspect
   touch blank-aura-pim-mcp
@@ -247,4 +253,4 @@ echo "ok: a tick that dies before its restart leaves it to the next apply, and o
   quiet && apply
   expect_restarts 1 "the apply that reads the PIM's time again"
 )
-echo "ok: a time docker cannot report fails the tick, and the next apply decides"
+echo "ok: a time docker cannot report fails the tick, and the next apply to run decides"
