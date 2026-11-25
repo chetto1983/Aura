@@ -5,7 +5,7 @@
 # a private Docker network. The published PIM image runs with the operator configuration in
 # internal/mcp/testdata/pim-mail-appsettings.json and the same OAuth contract as the CI
 # calendar_integration job. Three unread mails are seeded, the tier runs, and the briefing
-# baseline renders the PIM's real payloads. Not a CI job: CI has no mail server.
+# baseline renders the PIM's real payloads.
 #
 # Usage: bash scripts/pim_mail_e2e.sh   (needs Docker, Go and python3; ports 3025, 3143, 8093, 18090)
 set -euo pipefail
