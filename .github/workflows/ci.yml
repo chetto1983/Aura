@@ -2438,6 +2438,11 @@ jobs:
         # to one package and keeps the runner's memory envelope predictable.
         run: bash scripts/docker_coverage_gate.sh
 
+      - name: Per-identity pip cache isolation in the box image (smoke)
+        # Two boxes on the image built above: A reuses its own wheel, B can neither read nor
+        # replace it. Offline (--no-index); it ran nowhere before 2026-11-25.
+        run: AURA_SANDBOX_TEST_IMAGE=aura-sandbox:latest go test -tags 'docker_integration smoke' -race -count=1 -run TestPipCacheIsolation ./internal/sandbox/usersandbox/
+
       - name: Upload docker_integration coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

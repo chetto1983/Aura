@@ -21,7 +21,6 @@ retrieval_eval    | measurement harness over the real corpus; the scored release
 document_live_e2e | real-agent document E2E: runs only in the full scope of scripts/ingest_reconcile_e2e.sh and in scripts/ingest_media_e2e.sh, both needing a real LLM key
 pim_contract_live | unwired — owner decision pending (2026-11-25)
 pim_mail_e2e      | unwired — owner decision pending (2026-11-25)
-smoke             | unwired — owner decision pending (2026-11-25)
 
 [files]
 
