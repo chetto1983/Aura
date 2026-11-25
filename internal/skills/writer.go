@@ -114,7 +114,7 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	files := map[string][]byte{"SKILL.md": skillFileBytes(fm, body)}
 	hash := HashSkillFiles(files)
 	audit := actorAudit(fm.Name, auditActionFor(action), hash, actor)
-	cat := w.catalogUpsertOp(fm.Name, fm.Description, fm.Always, hash)
+	cat := w.catalogUpsertOp(fm.Name, fm.Description, hash)
 	if err := w.writeActive(ctx, fm.Name, writeFilesInto(files), audit, cat); err != nil {
 		return "", fmt.Errorf("write mutation %q: %w", fm.Name, err)
 	}
@@ -133,7 +133,7 @@ func (w *Writer) WriteInstall(ctx context.Context, fm Frontmatter, stagedDir, ha
 		}
 		return nil
 	}
-	cat := w.catalogUpsertOp(fm.Name, fm.Description, fm.Always, hash)
+	cat := w.catalogUpsertOp(fm.Name, fm.Description, hash)
 	if err := w.writeActive(ctx, fm.Name, fill, actorAudit(fm.Name, AuditInstall, hash, actor), cat); err != nil {
 		return "", fmt.Errorf("install %q: %w", fm.Name, err)
 	}

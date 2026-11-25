@@ -32,7 +32,7 @@ func (q *Queries) DeleteSkillCatalog(ctx context.Context, arg DeleteSkillCatalog
 }
 
 const listSkillCatalogByIDs = `-- name: ListSkillCatalogByIDs :many
-SELECT id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
+SELECT id, owner_identity_id, name, description, content_hash, created_at, updated_at
 FROM aura.skill_catalog
 WHERE id = ANY($1::uuid[])
 ORDER BY name
@@ -55,7 +55,6 @@ func (q *Queries) ListSkillCatalogByIDs(ctx context.Context, ids []pgtype.UUID) 
 			&i.OwnerIdentityID,
 			&i.Name,
 			&i.Description,
-			&i.AlwaysApply,
 			&i.ContentHash,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -71,7 +70,7 @@ func (q *Queries) ListSkillCatalogByIDs(ctx context.Context, ids []pgtype.UUID) 
 }
 
 const listSkillCatalogForOwner = `-- name: ListSkillCatalogForOwner :many
-SELECT id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
+SELECT id, owner_identity_id, name, description, content_hash, created_at, updated_at
 FROM aura.skill_catalog
 WHERE owner_identity_id = $1
 ORDER BY name
@@ -91,7 +90,6 @@ func (q *Queries) ListSkillCatalogForOwner(ctx context.Context, ownerIdentityID 
 			&i.OwnerIdentityID,
 			&i.Name,
 			&i.Description,
-			&i.AlwaysApply,
 			&i.ContentHash,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -108,21 +106,19 @@ func (q *Queries) ListSkillCatalogForOwner(ctx context.Context, ownerIdentityID 
 
 const upsertSkillCatalog = `-- name: UpsertSkillCatalog :one
 
-INSERT INTO aura.skill_catalog (owner_identity_id, name, description, always_apply, content_hash)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO aura.skill_catalog (owner_identity_id, name, description, content_hash)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (owner_identity_id, name) DO UPDATE SET
     description  = EXCLUDED.description,
-    always_apply = EXCLUDED.always_apply,
     content_hash = EXCLUDED.content_hash,
     updated_at   = now()
-RETURNING id, owner_identity_id, name, description, always_apply, content_hash, created_at, updated_at
+RETURNING id, owner_identity_id, name, description, content_hash, created_at, updated_at
 `
 
 type UpsertSkillCatalogParams struct {
 	OwnerIdentityID pgtype.UUID `json:"owner_identity_id"`
 	Name            string      `json:"name"`
 	Description     string      `json:"description"`
-	AlwaysApply     bool        `json:"always_apply"`
 	ContentHash     string      `json:"content_hash"`
 }
 
@@ -137,7 +133,6 @@ func (q *Queries) UpsertSkillCatalog(ctx context.Context, arg UpsertSkillCatalog
 		arg.OwnerIdentityID,
 		arg.Name,
 		arg.Description,
-		arg.AlwaysApply,
 		arg.ContentHash,
 	)
 	var i AuraSkillCatalog
@@ -146,7 +141,6 @@ func (q *Queries) UpsertSkillCatalog(ctx context.Context, arg UpsertSkillCatalog
 		&i.OwnerIdentityID,
 		&i.Name,
 		&i.Description,
-		&i.AlwaysApply,
 		&i.ContentHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,

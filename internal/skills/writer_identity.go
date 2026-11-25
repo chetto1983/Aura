@@ -75,7 +75,7 @@ func catalogOwner(identity string) string {
 type catalogOp func(context.Context, *sqlc.Queries) error
 
 // catalogUpsertOp records (or refreshes) the owner's catalog row for a skill.
-func (w *Writer) catalogUpsertOp(name, description string, always bool, hash string) catalogOp {
+func (w *Writer) catalogUpsertOp(name, description, hash string) catalogOp {
 	if w.owner == "" {
 		return nil
 	}
@@ -84,7 +84,6 @@ func (w *Writer) catalogUpsertOp(name, description string, always bool, hash str
 			OwnerID:     w.owner,
 			Name:        name,
 			Description: description,
-			AlwaysApply: always,
 			ContentHash: hash,
 		})
 		return err

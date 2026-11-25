@@ -288,8 +288,8 @@ func TestInstallDirLandsActiveWithoutAlways(t *testing.T) {
 		t.Errorf("info = %+v, want source pack:o/r/p and active", info)
 	}
 	rows, err := NewCatalogStore(pool).ListOwned(ctx, owner)
-	if err != nil || len(rows) != 1 || rows[0].Name != name || rows[0].AlwaysApply {
-		t.Fatalf("catalog = (%+v, %v), want one row for %s with always off", rows, err, name)
+	if err != nil || len(rows) != 1 || rows[0].Name != name {
+		t.Fatalf("catalog = (%+v, %v), want one row for %s", rows, err, name)
 	}
 	landed, err := os.ReadFile(filepath.Join(scoped.ActiveDir(), name, "SKILL.md"))
 	if err != nil {

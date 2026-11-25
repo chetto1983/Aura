@@ -874,7 +874,6 @@ type AuraSkillCatalog struct {
 	OwnerIdentityID pgtype.UUID        `json:"owner_identity_id"`
 	Name            string             `json:"name"`
 	Description     string             `json:"description"`
-	AlwaysApply     bool               `json:"always_apply"`
 	ContentHash     string             `json:"content_hash"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
