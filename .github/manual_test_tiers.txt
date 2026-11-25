@@ -1,0 +1,17 @@
+# Test tiers no CI workflow runs, and why. cmd/aura/tier_runners_test.go fails on a build
+# tag that gates a tracked *_test.go file with neither a runner nor a line here, and on a
+# line here that is stale: its tag gates nothing any more, or a workflow now runs it.
+# Format: <tag> <reason>. The reason is required.
+
+agent_eval         paid: every case is a real turn against a real model on the live deployment (make agent-eval)
+cot_eval           paid: the scheduler North-Star smoke drives DeepSeek-V4 over OpenRouter, operator-authorized
+live_e2e           paid or outward-facing: real-model runner, reasoning and Ollama-cloud rounds, and a real Telegram delivery to a named chat
+live_finalize      paid: forced finalization against the real DeepSeek-V4/OpenRouter endpoint, operator-authorized
+measure            measurement harness: prints numbers and asserts nothing, so it gates nothing
+turn_recall_eval   paid: the frozen turn-recall eval asks the configured teacher model once per uncertain turn
+
+backup_live        unwired — owner decision pending (2026-11-25)
+pim_contract_live  unwired — owner decision pending (2026-11-25)
+pim_mail_e2e       unwired — owner decision pending (2026-11-25)
+serve_smoke        unwired — owner decision pending (2026-11-25)
+smoke              unwired — owner decision pending (2026-11-25)
