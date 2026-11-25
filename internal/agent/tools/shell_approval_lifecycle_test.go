@@ -2,6 +2,13 @@ package tools
 
 import "testing"
 
+// Approve seeds a one-shot approval for a digest without a challenge. Production never
+// does this: an approval is only ever the operator's accept of a challenge
+// (ApproveChallenge), so the seed lives with the tests that need one.
+func (a *ShellApprovals) Approve(sessionID, digest string) {
+	a.approvals().Approve(sessionID, digest)
+}
+
 // shell_approval_lifecycle_test.go unit-covers the ShellApprovals challenge lifecycle
 // (CreateChallenge → PendingChallenge → ApproveChallenge → Consume) and its guard paths — the
 // daemon-free destructive-command approval bookkeeping the routed shell_exec gates on.

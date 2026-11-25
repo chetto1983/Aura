@@ -7,8 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/goleak"
+
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
 // TestPostgresSteerQueuePushDrainRoundTrip proves the shipped Push/Drain contract
@@ -229,8 +234,8 @@ func TestQueueTTLDerivedPerKind(t *testing.T) {
 	if err := store.Push(convID, "cockpit", "steer row"); err != nil {
 		t.Fatalf("Push(steer): %v", err)
 	}
-	if err := store.PushDelegationResult(convID, SourceWorker, "delegation row", "f-ttl"); err != nil {
-		t.Fatalf("PushDelegationResult: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "delegation row", "f-ttl", "dk-1"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent: %v", err)
 	}
 
 	var kind, expiresAt string
@@ -297,7 +302,7 @@ func TestQueueTTLDisabledByNonPositiveValue(t *testing.T) {
 	}
 }
 
-// TestPostgresSteerQueuePushDelegationResultRoundTrip proves PushDelegationResult
+// TestPostgresSteerQueuePushDelegationResultRoundTrip proves PushDelegationResultIdempotent
 // (51-11 Task 3) against a REAL Postgres connection: the row it writes carries
 // fanout_key set, and a plain steer Push round-trips a NULL one.
 func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
@@ -305,8 +310,8 @@ func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 	_, convID := seedIdentityAndConversation(t, pool)
 	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
 
-	if err := store.PushDelegationResult(convID, SourceWorker, "fan-out report", "f-roundtrip123"); err != nil {
-		t.Fatalf("PushDelegationResult: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "fan-out report", "f-roundtrip123", "dk-2"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent: %v", err)
 	}
 	if err := store.Push(convID, SourceWorker, "worker question"); err != nil {
 		t.Fatalf("Push: %v", err)
@@ -337,15 +342,33 @@ func TestPostgresSteerQueuePushDelegationResultRoundTrip(t *testing.T) {
 		t.Fatalf("rows = %d, want 2", len(got))
 	}
 	if got[0].body != "fan-out report" || !got[0].fanoutKey.Valid || got[0].fanoutKey.String != "f-roundtrip123" {
-		t.Fatalf("PushDelegationResult row = %+v, want fanout_key set to f-roundtrip123", got[0])
+		t.Fatalf("PushDelegationResultIdempotent row = %+v, want fanout_key set to f-roundtrip123", got[0])
 	}
 	if got[1].body != "worker question" || got[1].fanoutKey.Valid {
 		t.Fatalf("Push row = %+v, want fanout_key NULL", got[1])
 	}
 }
 
-// TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce proves
-// MarkFanoutNudged's own contract against a REAL connection: it claims every
+// markFanoutNudged runs the MarkFanoutNudged claim the way the fan-out notifier does
+// (cmd/aura serve_delegation.go): one statement inside db.WithTx.
+func markFanoutNudged(t *testing.T, pool *pgxpool.Pool, identityID, fanoutKey string) []sqlc.MarkFanoutNudgedRow {
+	t.Helper()
+	var rows []sqlc.MarkFanoutNudgedRow
+	if err := db.WithTx(t.Context(), pool, func(q *sqlc.Queries) error {
+		var err error
+		rows, err = q.MarkFanoutNudged(t.Context(), sqlc.MarkFanoutNudgedParams{
+			IdentityID: pgtype.UUID{Bytes: uuid.MustParse(identityID), Valid: true},
+			FanoutKey:  pgtype.Text{String: fanoutKey, Valid: true},
+		})
+		return err
+	}); err != nil {
+		t.Fatalf("MarkFanoutNudged: %v", err)
+	}
+	return rows
+}
+
+// TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce proves the
+// MarkFanoutNudged query's contract against a REAL connection: it claims every
 // unclaimed row of one (identity, fanout_key) pair in ONE statement, and a
 // second call over the SAME group claims nothing (the loser of a race sees
 // an empty result, never a partial claim).
@@ -355,11 +378,11 @@ func TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce(t *testing.T) {
 	store := NewPostgresStore(pool, Config{Max: 8, MaxBytes: 16384})
 
 	fanoutKey := "f-claimonce456"
-	if err := store.PushDelegationResult(convID, SourceWorker, "worker one", fanoutKey); err != nil {
-		t.Fatalf("PushDelegationResult 1: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "worker one", fanoutKey, "dk-3"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent 1: %v", err)
 	}
-	if err := store.PushDelegationResult(convID, SourceWorker, "worker two", fanoutKey); err != nil {
-		t.Fatalf("PushDelegationResult 2: %v", err)
+	if err := store.PushDelegationResultIdempotent(convID, SourceWorker, "worker two", fanoutKey, "dk-4"); err != nil {
+		t.Fatalf("PushDelegationResultIdempotent 2: %v", err)
 	}
 	// A steer-kind row (no fan-out key) in the same conversation must never be
 	// swept up by a fan-out-scoped claim.
@@ -367,19 +390,10 @@ func TestPostgresSteerQueueMarkFanoutNudgedClaimsWholeGroupOnce(t *testing.T) {
 		t.Fatalf("Push (unrelated): %v", err)
 	}
 
-	claimed, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
-	if err != nil {
-		t.Fatalf("MarkFanoutNudged: %v", err)
-	}
-	if len(claimed) != 2 {
+	if claimed := markFanoutNudged(t, pool, identityID, fanoutKey); len(claimed) != 2 {
 		t.Fatalf("claimed = %v, want 2 rows", claimed)
 	}
-
-	again, err := store.MarkFanoutNudged(t.Context(), identityID, fanoutKey)
-	if err != nil {
-		t.Fatalf("MarkFanoutNudged (second pass): %v", err)
-	}
-	if len(again) != 0 {
+	if again := markFanoutNudged(t, pool, identityID, fanoutKey); len(again) != 0 {
 		t.Fatalf("second MarkFanoutNudged claimed = %v, want none -- both rows already nudged", again)
 	}
 }

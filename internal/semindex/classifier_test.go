@@ -1,16 +1,12 @@
 package semindex
 
 import (
-	"context"
 	"sync"
 	"testing"
 )
 
-func TestClassifier_NilEmbedderIsNil(t *testing.T) {
+func TestClassifier_NilReceiverIsNotOk(t *testing.T) {
 	t.Parallel()
-	if c := NewClassifier(nil); c != nil {
-		t.Fatal("NewClassifier(nil) must return nil")
-	}
 	var nilC *Classifier
 	if v := nilC.RankVecs([]float64{1, 0, 0}); v.Ok {
 		t.Fatal("nil classifier RankVecs must report not-ok")
@@ -19,7 +15,7 @@ func TestClassifier_NilEmbedderIsNil(t *testing.T) {
 
 func TestClassifier_RankVecsArgmaxAndMargin(t *testing.T) {
 	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
+	c := NewClassifier()
 	c.AddVecs("chat", []float64{1, 0, 0})
 	c.AddVecs("weather", []float64{0, 1, 0})
 	c.AddVecs("code", []float64{0, 0, 1})
@@ -39,49 +35,11 @@ func TestClassifier_RankVecsArgmaxAndMargin(t *testing.T) {
 	}
 }
 
-func TestClassifier_GroupCosine(t *testing.T) {
-	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
-	c.AddVecs("chat", []float64{1, 0, 0})
-	c.AddVecs("code", []float64{0, 0, 1})
-
-	// A query on chat's axis scores cosine 1 to its centroid, 0 to code's.
-	if cc, ok := c.GroupCosine("chat", []float64{1, 0, 0}); !ok || !approxEq(cc, 1.0) {
-		t.Fatalf("GroupCosine(chat) = %v ok=%v; want 1.0 ok", cc, ok)
-	}
-	if cc, ok := c.GroupCosine("code", []float64{1, 0, 0}); !ok || !approxEq(cc, 0.0) {
-		t.Fatalf("GroupCosine(code) = %v ok=%v; want 0.0 ok", cc, ok)
-	}
-	// A missing group is (0, false).
-	if cc, ok := c.GroupCosine("absent", []float64{1, 0, 0}); ok || cc != 0 {
-		t.Fatalf("GroupCosine(absent) = %v ok=%v; want 0 not-ok", cc, ok)
-	}
-	// A nil classifier is (0, false).
-	var nilC *Classifier
-	if cc, ok := nilC.GroupCosine("chat", []float64{1, 0, 0}); ok || cc != 0 {
-		t.Fatalf("nil classifier GroupCosine = %v ok=%v; want 0 not-ok", cc, ok)
-	}
-}
-
-func TestClassifier_AddFoldsIntoGroupCentroid(t *testing.T) {
-	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
-	// Two exemplars for "chat": [1,0,0] and [0.6,0.8,0]. Their mean is
-	// [0.8,0.4,0]; normalized centroid favors x. A query [1,0,0] should still
-	// pick chat over a single-exemplar competing group.
-	c.AddVecs("chat", []float64{1, 0, 0}, []float64{0.6, 0.8, 0})
-	c.AddVecs("code", []float64{0, 0, 1})
-	v := c.RankVecs([]float64{1, 0, 0})
-	if !v.Ok || v.Label != "chat" {
-		t.Fatalf("folded centroid verdict = %+v; want chat", v)
-	}
-}
-
 // A group spanning two intents loses on its centroid to a compact group nearby, and wins on
 // its nearest exemplars when the query is one of its intents.
 func TestClassifier_RankNearestFollowsTheMatchingIntent(t *testing.T) {
 	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
+	c := NewClassifier()
 	x, z := []float64{1, 0, 0}, []float64{0, 0, 1}
 	c.AddVecs("spread", x, x, x, z, z, z)
 	c.AddVecs("compact", []float64{0.8, 0.6, 0}, []float64{0.8, 0.6, 0})
@@ -110,7 +68,7 @@ func TestClassifier_RankNearestRefusesWhatItCannotRank(t *testing.T) {
 	if v := nilC.RankNearest([]float64{1, 0, 0}, 3); v.Ok {
 		t.Fatal("nil classifier RankNearest must report not-ok")
 	}
-	c := NewClassifier(&fakeEmbedder{})
+	c := NewClassifier()
 	if v := c.RankNearest([]float64{1, 0, 0}, 3); v.Ok {
 		t.Fatalf("empty-bank verdict = %+v; want not ok", v)
 	}
@@ -120,59 +78,9 @@ func TestClassifier_RankNearestRefusesWhatItCannotRank(t *testing.T) {
 	}
 }
 
-func TestClassifier_RankTextEmbedsQuery(t *testing.T) {
-	t.Parallel()
-	f := &fakeEmbedder{}
-	c := NewClassifier(f)
-	if err := c.Add(context.Background(), "weather", "weather in Rome", "forecast tomorrow"); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if err := c.Add(context.Background(), "code", "debug this script", "refactor module"); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	v, err := c.Rank(context.Background(), "what is the weather forecast")
-	if err != nil {
-		t.Fatalf("Rank: %v", err)
-	}
-	if !v.Ok || v.Label != "weather" {
-		t.Fatalf("Rank verdict = %+v; want weather", v)
-	}
-}
-
-func TestClassifier_RankQueryEmbedFailureSurfacesError(t *testing.T) {
-	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
-	if err := c.Add(context.Background(), "chat", "hello there"); err != nil {
-		t.Fatalf("seed Add: %v", err)
-	}
-	// Force the next single-text query embed to fail.
-	c.embed.(*fakeEmbedder).failQuery = true
-	if _, err := c.Rank(context.Background(), "hi"); err == nil {
-		t.Fatal("Rank should surface the embedder error (Req-6 error surface)")
-	}
-}
-
-func TestClassifier_AddEmbedFailureNotCached(t *testing.T) {
-	t.Parallel()
-	// First Add fails (sidecar down); a retry must succeed — the build failure
-	// is never cached (mirror of ensureAnchors self-heal discipline).
-	f := &fakeEmbedder{failUntil: 1}
-	c := NewClassifier(f)
-	if err := c.Add(context.Background(), "chat", "hello"); err == nil {
-		t.Fatal("first Add should fail while sidecar is down")
-	}
-	if err := c.Add(context.Background(), "chat", "hello"); err != nil {
-		t.Fatalf("retry Add should succeed after recovery; got %v", err)
-	}
-	v := c.RankVecs([]float64{1, 0, 0})
-	if !v.Ok || v.Label != "chat" {
-		t.Fatalf("post-recovery verdict = %+v; want chat", v)
-	}
-}
-
 func TestClassifier_EmptyBankNotOk(t *testing.T) {
 	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
+	c := NewClassifier()
 	if v := c.RankVecs([]float64{1, 0, 0}); v.Ok {
 		t.Fatalf("empty-bank verdict = %+v; want not ok", v)
 	}
@@ -180,7 +88,7 @@ func TestClassifier_EmptyBankNotOk(t *testing.T) {
 
 func TestClassifier_ConcurrentAddRank(t *testing.T) {
 	t.Parallel()
-	c := NewClassifier(&fakeEmbedder{})
+	c := NewClassifier()
 	c.AddVecs("chat", []float64{1, 0, 0})
 	var wg sync.WaitGroup
 	for range 8 {

@@ -109,7 +109,7 @@ func TestBranchPath_NonBranchedByteIdenticalToLinear(t *testing.T) {
 	if fmt.Sprintf("%#v", linear) != fmt.Sprintf("%#v", branch) {
 		t.Errorf("non-branched branch walk != linear LoadHistory:\nlinear %#v\nbranch %#v", linear, branch)
 	}
-	// repairToolMessagePairs preserved the valid assistant(tool_calls)->tool group.
+	// repairManagedToolMessagePairs preserved the valid assistant(tool_calls)->tool group.
 	if len(branch) != 5 {
 		t.Fatalf("branch history: want 5 messages (valid tool group preserved), got %d", len(branch))
 	}

@@ -189,21 +189,15 @@ func decodeToolCalls(raw []byte) ([]llm.ToolCall, error) {
 	return calls, nil
 }
 
-// repairToolMessagePairs removes persisted tool-call fragments that would be
-// rejected by OpenAI-compatible providers on reload. It is intentionally
-// conservative: a valid assistant(tool_calls)->tool... group is preserved
-// byte-for-byte; orphan RoleTool turns are dropped from the model-visible history.
-// A dangling assistant tool-call group is repaired with synthetic RoleTool markers
-// so a crash after a mutating tool executed cannot make the model blindly re-issue
-// the same call on resume.
-func repairToolMessagePairs(in []llm.Message) []llm.Message {
-	return repairToolPairs(in, messagePairs)
-}
-
-// repairManagedToolMessagePairs is the LoadManagedHistory variant. L1 rewrites old
-// tool turns to compact read_tool_output pointers; preserving those pointers as
-// plain assistant memory keeps the context contract without emitting orphan tool
-// messages to providers.
+// repairManagedToolMessagePairs removes persisted tool-call fragments that would be
+// rejected by OpenAI-compatible providers on reload (LoadManagedHistory). It is
+// intentionally conservative: a valid assistant(tool_calls)->tool... group is preserved
+// byte-for-byte; orphan RoleTool turns are dropped from the model-visible history. A
+// dangling assistant tool-call group is repaired with synthetic RoleTool markers so a
+// crash after a mutating tool executed cannot make the model blindly re-issue the same
+// call on resume. L1 rewrites old tool turns to compact read_tool_output pointers;
+// preserving those pointers as plain assistant memory keeps the context contract without
+// emitting orphan tool messages to providers.
 func repairManagedToolMessagePairs(in []llm.Message) []llm.Message {
 	return repairToolPairs(in, managedMessagePairs)
 }
@@ -219,10 +213,7 @@ type toolPairs[T any] struct {
 	pointer func(T) T
 }
 
-var (
-	messagePairs        = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult}
-	managedMessagePairs = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult, pointer: managedToolPointerMessage}
-)
+var managedMessagePairs = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult, pointer: managedToolPointerMessage}
 
 func bareMessage(m llm.Message) llm.Message { return m }
 

@@ -26,7 +26,7 @@ func (s *stubIdentitySnapshotter) SnapshotFor(_ context.Context, identityID stri
 func markerConfig(model string) llm.Config { return llm.Config{Model: model} }
 
 // TestTurnLLMSnapshotPrefersTheContextSnapshot proves a caller that already scoped the
-// context (ScopeContextToIdentitySnapshot, or a nested resume re-entering the turn) is
+// context (a nested resume re-entering the turn) is
 // not second-guessed — its decision stands and the resolver is never consulted.
 func TestTurnLLMSnapshotPrefersTheContextSnapshot(t *testing.T) {
 	t.Parallel()

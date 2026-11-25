@@ -189,10 +189,25 @@ jobs:
       - name: AG-UI boundary gate (D-17, SC2)
         run: bash scripts/agui_boundary_check.sh
 
+      - name: deadexport tool (vet + race tests)
+        # tools/deadexport is a separate module (one package), so the root module's
+        # package list never reaches it.
+        run: |
+          go vet -C tools/deadexport .
+          go test -C tools/deadexport -race -count=1 .
+
       - name: deadcode
+        # The -test run catches what nothing calls; the production run (deadcode
+        # without -test plus tools/deadexport, linux and windows) catches what only
+        # tests call, against scripts/deadcode_production_allowlist.txt. Its
+        # self-test runs first so a gate that can no longer fail is caught before it
+        # reports green.
         run: |
           go install golang.org/x/tools/cmd/deadcode@v0.48.0
+          go build -C tools/deadexport -o "$RUNNER_TEMP/deadexport" .
           bash scripts/deadcode_gate.sh "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)
+          DEADCODE_BIN="$(go env GOPATH)/bin/deadcode" DEADEXPORT_BIN="$RUNNER_TEMP/deadexport" bash scripts/deadcode_production_gate_test.sh
+          bash scripts/deadcode_production_gate.sh "$(go env GOPATH)/bin/deadcode" "$RUNNER_TEMP/deadexport"
 
       - name: golangci-lint
         run: |

@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+// Approve grants a one-shot approval for the digest and clears any pending challenge for it,
+// without the question check ApproveChallenge makes. Only tests seed approvals this way:
+// production approves through ApproveChallenge alone.
+func (a *ApprovalStore[T]) Approve(sessionID, digest string) {
+	if a == nil || sessionID == "" || digest == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.approved == nil {
+		a.approved = map[string]struct{}{}
+	}
+	key := approvalKey(sessionID, digest)
+	a.approved[key] = struct{}{}
+	delete(a.pending, key)
+}
+
 // The store is ready from its zero value, binds an approval to the exact question its
 // challenge carried, redeems it once, and keeps one conversation's approvals from another's.
 func TestApprovalStoreZeroValueAndBinding(t *testing.T) {

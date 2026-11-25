@@ -2,7 +2,6 @@ package swarm
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -11,43 +10,18 @@ import (
 )
 
 // The claim loop's concurrency contract (finding F, live-check/d03/RESULTS.md):
-// a claimed batch runs side by side, Run keeps claiming while workers run, and
+// a claimed batch runs side by side, ProcessOnce returns while workers run, and
 // the identity is bound once at the processJob boundary (defect A).
 
-// TestRunSwallowsAPassErrorAndStopsOnCancel pins the daemon lifecycle: one bad pass
-// is logged and the loop keeps polling (a queue blip must not kill the worker), and
-// a cancelled context ends Run without an error.
-func TestRunSwallowsAPassErrorAndStopsOnCancel(t *testing.T) {
-	defer goleak.VerifyNone(t)
-	store := &fakeDelegationStore{claimErr: errors.New("transient")}
-	l := &DelegationClaimLoop{Store: store, IdentityID: "identity-1", PollInterval: 5 * time.Millisecond}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() { done <- l.Run(ctx) }()
-
-	deadline := time.After(2 * time.Second)
-	for store.claimCount() < 2 { // proves the loop survived the first failing pass
-		select {
-		case <-deadline:
-			t.Fatalf("only %d passes ran; Run stopped on the first error", store.claimCount())
-		case <-time.After(2 * time.Millisecond):
-		}
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("Run = %v, want nil on context cancellation", err)
-	}
-}
-
-// TestRunKeepsClaimingWhileAJobIsInFlight is finding F's second half
+// TestProcessOnceKeepsClaimingWhileAJobIsInFlight is finding F's second half
 // (live-check/d03/RESULTS.md): a row that arrives AFTER a pass has claimed must
-// not wait for that pass's workers. The first claim hands out a slow row (400ms
-// scripted model delay); the second claim -- which the old blocking loop would
-// only have made after the slow worker finished -- hands out a fast row. The
-// fast row's report recorded first is the proof that Run claimed while the slow
-// worker was still running.
-func TestRunKeepsClaimingWhileAJobIsInFlight(t *testing.T) {
+// not wait for that pass's workers. ProcessOnce dispatches and returns, so the
+// runtime ticker (cmd/aura newRuntimeIngestionWorker) can claim again while a
+// worker runs. The first pass hands out a slow row (400ms scripted model delay);
+// the second -- which a blocking pass would only have made after the slow worker
+// finished -- hands out a fast row. The fast row's report recorded first is the
+// proof that the second pass claimed while the slow worker was still running.
+func TestProcessOnceKeepsClaimingWhileAJobIsInFlight(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	const identityID = "11111111-1111-4111-8111-111111111111"
 	client := newRouter().
@@ -62,29 +36,18 @@ func TestRunKeepsClaimingWhileAJobIsInFlight(t *testing.T) {
 	recorder := &fakeConversationRecorder{}
 	l := &DelegationClaimLoop{
 		Store: store, Delivery: &DelegationDelivery{Recorder: recorder, Steer: &fakeSteerPublisher{}, Archiver: successfulReportArchiver()},
-		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute, PollInterval: 10 * time.Millisecond,
+		IdentityID: identityID, Worker: rc, LeaseDuration: time.Minute,
 	}
-	ctx, cancel := context.WithCancel(withToolCtx(context.Background(), t))
-	done := make(chan error, 1)
-	go func() { done <- l.Run(ctx) }()
+	ctx := withToolCtx(context.Background(), t)
+	for pass := range 2 {
+		if _, err := l.ProcessOnce(ctx); err != nil {
+			t.Fatalf("ProcessOnce pass %d: %v", pass+1, err)
+		}
+	}
+	l.Wait()
 
-	deadline := time.After(3 * time.Second)
-	for {
-		recorder.mu.Lock()
-		n := len(recorder.appended)
-		recorder.mu.Unlock()
-		if n == 2 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatalf("recorded %d reports in 3s, want both rows delivered", n)
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("Run = %v, want nil on context cancellation", err)
+	if len(recorder.appended) != 2 {
+		t.Fatalf("recorded %d reports, want both rows delivered", len(recorder.appended))
 	}
 	if recorder.appended[0].conversationID != "conv-fast" {
 		t.Fatalf("recorded order = %+v, want the fast row (claimed while the slow one ran) FIRST", recorder.appended)

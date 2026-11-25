@@ -110,22 +110,12 @@ func TestCatalogWriteRecordsOwnership(t *testing.T) {
 		t.Fatalf("the catalog row does not describe what was written: %+v", rows[0])
 	}
 
-	// The always-apply lookup is the read the always-on block runs on every turn.
-	always, err := store.ListAlwaysApply(ctx, owner)
-	if err != nil {
-		t.Fatalf("ListAlwaysApply: %v", err)
-	}
-	if len(always) != 1 || always[0].ID != rows[0].ID {
-		t.Fatalf("ListAlwaysApply = %+v, want the always:true skill", always)
-	}
-
-	// SetAlways flips the column the index is built on, so the always-on lookup stops
-	// returning a skill the frontmatter no longer marks.
+	// SetAlways flips the catalog row's always_apply to match the frontmatter.
 	if err := scoped.SetAlways(ctx, "catalog-owned", false, AuditActor{ActorID: "cli", IdentityID: owner}); err != nil {
 		t.Fatalf("SetAlways: %v", err)
 	}
-	if always, err = store.ListAlwaysApply(ctx, owner); err != nil || len(always) != 0 {
-		t.Fatalf("after always=off: (%+v, %v), want no rows", always, err)
+	if rows, err = store.ListOwned(ctx, owner); err != nil || len(rows) != 1 || rows[0].AlwaysApply {
+		t.Fatalf("after always=off: (%+v, %v), want the row with always_apply false", rows, err)
 	}
 
 	// ResolveID is the name→id step the share CLI runs.

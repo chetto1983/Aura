@@ -44,12 +44,12 @@ func TestDiskStateExactBoundaries(t *testing.T) {
 		{85, true, true, true},
 		{99, true, true, true},
 	} {
-		got := thresholds.Evaluate(tc.used)
+		got := thresholds.EvaluateRatio(float64(tc.used) / 100)
 		if got.Warn != tc.warn || got.Urgent != tc.urgent || got.StopOptionalTraces != tc.stopOpt {
-			t.Errorf("Evaluate(%d) = %+v", tc.used, got)
+			t.Errorf("EvaluateRatio(%d%%) = %+v", tc.used, got)
 		}
 		if got.DeleteExtraData {
-			t.Errorf("Evaluate(%d) selected emergency deletion", tc.used)
+			t.Errorf("EvaluateRatio(%d%%) selected emergency deletion", tc.used)
 		}
 	}
 }

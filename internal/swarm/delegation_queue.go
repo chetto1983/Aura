@@ -36,7 +36,6 @@ const (
 	defaultDelegationMaxAttempts  = 3
 	defaultDelegationWorkerID     = "aura-swarm-delegation-worker"
 	defaultDelegationBatchSize    = 4
-	defaultDelegationPollInterval = 2 * time.Second
 	defaultDelegationRetryBackoff = 15 * time.Second
 )
 
@@ -82,16 +81,10 @@ type DelegationPayload struct {
 // package), never importing a concrete steer type directly -- the same shape
 // as SteerInbox (internal/agent/llm_agent_steer.go) and ChannelDeliverer
 // (internal/cron/deliver.go). *steer.PostgresStore satisfies this by
-// construction.
-//
-// PushDelegationResult (51-11 Task 3) is Push widened in place with the
-// fan-out key -- 51-PATTERNS.md's rule for exactly this situation is to
-// extend the SAME interface, never declare a second one. Push's own locked
-// (conv, source, text string) error signature is unchanged; every existing
-// caller of the narrower Push method keeps compiling untouched.
+// construction. A terminal report is pushed through the idempotent, fan-out keyed
+// PushDelegationResultIdempotent (idempotentSteerPublisher, delegation_delivery.go).
 type SteerPublisher interface {
 	Push(conv, source, text string) error
-	PushDelegationResult(conv, source, text, fanoutKey string) error
 }
 
 // DelegationJobStore is the seam over the shared Postgres ingestion-job queue
@@ -133,7 +126,6 @@ type DelegationClaimLoop struct {
 	IdentityID    string
 	WorkerID      string
 	LeaseDuration time.Duration
-	PollInterval  time.Duration
 	BatchSize     int
 	RetryBackoff  time.Duration
 	Worker        RunConfig
@@ -153,14 +145,13 @@ type DelegationClaimLoop struct {
 }
 
 // NewDelegationClaimLoop builds a claim loop bound to one identity's queue.
-func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelivery, pauseParker PauseAndPark, identityID string, worker RunConfig, leaseDuration, pollInterval time.Duration) *DelegationClaimLoop {
+func NewDelegationClaimLoop(store DelegationJobStore, delivery *DelegationDelivery, pauseParker PauseAndPark, identityID string, worker RunConfig, leaseDuration time.Duration) *DelegationClaimLoop {
 	return &DelegationClaimLoop{
 		Store:         store,
 		Delivery:      delivery,
 		PauseParker:   pauseParker,
 		IdentityID:    identityID,
 		LeaseDuration: leaseDuration,
-		PollInterval:  pollInterval,
 		Worker:        worker,
 	}
 }
@@ -253,25 +244,6 @@ func (l *DelegationClaimLoop) Wait() {
 func (l *DelegationClaimLoop) Idle() bool {
 	l.slotsOnce.Do(func() { l.slots = make(chan struct{}, l.batchSize()) })
 	return len(l.slots) == 0
-}
-
-// Run polls ProcessOnce until ctx is cancelled, then waits for the jobs in
-// flight. A pass error is logged and swallowed -- one bad pass never kills the
-// loop, mirroring internal/cron's own "log and continue" discipline.
-func (l *DelegationClaimLoop) Run(ctx context.Context) error {
-	ticker := time.NewTicker(l.pollInterval())
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			l.Wait()
-			return nil
-		case <-ticker.C:
-			if _, err := l.ProcessOnce(ctx); err != nil {
-				slog.Warn("swarm.delegation.process_once_failed", "err", err)
-			}
-		}
-	}
 }
 
 func (l *DelegationClaimLoop) processJob(ctx context.Context, job documents.IngestionJob) error {
@@ -480,13 +452,6 @@ func (l *DelegationClaimLoop) leaseDuration() time.Duration {
 		return l.LeaseDuration
 	}
 	return time.Duration(defaultDelegationLeaseSec) * time.Second
-}
-
-func (l *DelegationClaimLoop) pollInterval() time.Duration {
-	if l.PollInterval > 0 {
-		return l.PollInterval
-	}
-	return defaultDelegationPollInterval
 }
 
 func (l *DelegationClaimLoop) batchSize() int {

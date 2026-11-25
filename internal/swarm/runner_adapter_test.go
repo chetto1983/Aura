@@ -121,10 +121,9 @@ type fakeDelegationStore struct {
 	mu      sync.Mutex
 	created []documents.CreateIngestionJobRequest
 
-	claimJobs  []documents.IngestionJob
-	claimNext  []documents.IngestionJob // handed out by the claim AFTER claimJobs drained (rows that arrived later)
-	claimErr   error
-	claimCalls int
+	claimJobs []documents.IngestionJob
+	claimNext []documents.IngestionJob // handed out by the claim AFTER claimJobs drained (rows that arrived later)
+	claimErr  error
 
 	transitions  []documents.TransitionIngestionJobRequest
 	transitErr   error
@@ -146,12 +145,6 @@ type fakeDelegationStore struct {
 	unparks    []documents.UnparkIngestionJobRequest
 	unparkRows int64
 	unparkErr  error
-}
-
-func (s *fakeDelegationStore) claimCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.claimCalls
 }
 
 func (s *fakeDelegationStore) heartbeatCount() int {
@@ -188,7 +181,6 @@ func (s *fakeDelegationStore) Create(_ context.Context, req documents.CreateInge
 func (s *fakeDelegationStore) Claim(context.Context, documents.ClaimIngestionJobsRequest) ([]documents.IngestionJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.claimCalls++
 	if s.claimErr != nil {
 		return nil, s.claimErr
 	}

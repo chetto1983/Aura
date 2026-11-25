@@ -1,13 +1,13 @@
 package cron
 
 // store_runs_fake_test.go covers the agent_job_runs + run-loop-selection Store methods
-// (InsertRun/Heartbeat/CompleteRun/GetRun/DueTasks/ScanStaleRuns) over the in-memory
+// (CompleteRun/GetRun/DueTasks/ScanStaleRuns) over the in-memory
 // sqlc.DBTX fake declared in store_fake_test.go. It targets the branches the
 // db_integration happy-path tier cannot reach from a real Postgres: the generic
 // DB-error wraps, the ErrNoRows→ErrTaskNotFound mapping, the non-23505 PgError path of
 // CompleteRun (vs the 23505 idempotency swallow), the DueTasks WR-02 limit clamp, and
-// the post-loop rows.Err() stream failure. The pool-bound CreateRunAndAdvance (db.WithTx)
-// and the held-conn insertRunOnConn/setMissedSinceOnConn stay in the real-PG tier.
+// the post-loop rows.Err() stream failure. The held-conn insertRunOnConn/setMissedSinceOnConn
+// stay in the real-PG tier.
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// runRow returns the 12-column AuraAgentJobRuns value-set in the InsertRun/GetRun order.
+// runRow returns the 12-column AuraAgentJobRuns value-set in the GetRun order.
 func runRow(t *testing.T) []any {
 	t.Helper()
 	now := time.Date(2026, 6, 13, 9, 30, 0, 0, time.UTC)
@@ -37,67 +37,6 @@ func runRow(t *testing.T) []any {
 		pgtype.Timestamptz{},                       // missed_since (NULL)
 		pgtype.UUID{},                              // paused_state_token (NULL)
 		pgtype.Timestamptz{},                       // completed_at (NULL)
-	}
-}
-
-// --- InsertRun ---
-
-func TestStoreFakeInsertRunSuccess(t *testing.T) {
-	t.Parallel()
-	f := &cronFakeDBTX{queryRowVal: &cronFakeRow{values: runRow(t)}}
-	s := storeWithFake(f)
-
-	got, err := s.InsertRun(context.Background(), fakeTaskID, 7)
-	if err != nil {
-		t.Fatalf("InsertRun: %v", err)
-	}
-	if got.ID != fakeRunID || got.TaskID != fakeTaskID || got.Status != "running" || got.StepBudget != 7 {
-		t.Fatalf("run projection mismatch: %+v", got)
-	}
-}
-
-func TestStoreFakeInsertRunInvalidUUID(t *testing.T) {
-	t.Parallel()
-	s := storeWithFake(&cronFakeDBTX{})
-	if _, err := s.InsertRun(context.Background(), "bogus", 1); err == nil {
-		t.Fatal("InsertRun must reject an invalid task UUID")
-	}
-}
-
-func TestStoreFakeInsertRunDBErrorWraps(t *testing.T) {
-	t.Parallel()
-	f := &cronFakeDBTX{queryRowVal: &cronFakeRow{scanErr: errDB}}
-	s := storeWithFake(f)
-	if _, err := s.InsertRun(context.Background(), fakeTaskID, 1); !errors.Is(err, errDB) {
-		t.Fatalf("InsertRun must wrap the DB error, got %v", err)
-	}
-}
-
-// --- Heartbeat ---
-
-func TestStoreFakeHeartbeatSuccess(t *testing.T) {
-	t.Parallel()
-	f := &cronFakeDBTX{}
-	s := storeWithFake(f)
-	if err := s.Heartbeat(context.Background(), fakeRunID); err != nil {
-		t.Fatalf("Heartbeat: %v", err)
-	}
-}
-
-func TestStoreFakeHeartbeatInvalidUUID(t *testing.T) {
-	t.Parallel()
-	s := storeWithFake(&cronFakeDBTX{})
-	if err := s.Heartbeat(context.Background(), "bogus"); err == nil {
-		t.Fatal("Heartbeat must reject an invalid run UUID")
-	}
-}
-
-func TestStoreFakeHeartbeatDBErrorWraps(t *testing.T) {
-	t.Parallel()
-	f := &cronFakeDBTX{execErr: errDB}
-	s := storeWithFake(f)
-	if err := s.Heartbeat(context.Background(), fakeRunID); !errors.Is(err, errDB) {
-		t.Fatalf("Heartbeat must wrap a valid-UUID DB error, got %v", err)
 	}
 }
 

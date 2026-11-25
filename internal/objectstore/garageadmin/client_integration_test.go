@@ -106,10 +106,7 @@ func TestGarageAdmin(t *testing.T) {
 		t.Fatalf("AllowBucketKey (idempotent re-run): %v", err)
 	}
 
-	// Deny + delete inverses succeed and are idempotent (second call = 404 → nil).
-	if err := c.DenyBucketKey(ctx, bucketID, accessKey, ReadWrite); err != nil {
-		t.Fatalf("DenyBucketKey: %v", err)
-	}
+	// Delete inverses succeed and are idempotent (second call = 404 → nil).
 	if err := c.DeleteKey(ctx, accessKey); err != nil {
 		t.Fatalf("DeleteKey: %v", err)
 	}

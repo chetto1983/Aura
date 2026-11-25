@@ -393,7 +393,7 @@ func TestLoadHistory_FakeInlineTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
 	}
-	// repairToolMessagePairs preserves the valid assistant->tool group.
+	// repairManagedToolMessagePairs preserves the valid assistant->tool group.
 	if len(msgs) != 4 {
 		t.Fatalf("history length = %d, want 4: %+v", len(msgs), msgs)
 	}

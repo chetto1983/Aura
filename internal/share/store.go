@@ -286,47 +286,6 @@ func (s *Store) RevokeForIdentity(ctx context.Context, shareID, identityID strin
 	})
 }
 
-// RevokeForConversation revokes every still-live share link for one conversation, owner-
-// scoped, and returns the revoked rows (snapshot_id/snapshot_bucket intact) so the D-15
-// cascade (Runner.DeleteConversationLifecycle) can drop their Garage bytes. An empty result
-// is not an error — a conversation with zero live links revokes zero rows.
-func (s *Store) RevokeForConversation(ctx context.Context, conversationID, identityID string, at time.Time) ([]Link, error) {
-	conv, err := parseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("revoke shares for conversation: %w", err)
-	}
-	owner, err := parseUUID("identity_id", identityID)
-	if err != nil {
-		return nil, fmt.Errorf("revoke shares for conversation: %w", err)
-	}
-	var out []Link
-	txErr := db.WithIdentityTxRaw(ctx, s.pool, identityID, func(tx pgx.Tx) error {
-		rows, qErr := tx.Query(ctx, `UPDATE aura.shared_links SET revoked_at = $1, updated_at = $1
-			WHERE conversation_id = $2 AND owner_identity_id = $3 AND revoked_at IS NULL
-			RETURNING `+linkColumns, at, conv, owner)
-		if qErr != nil {
-			return fmt.Errorf("revoke shares for conversation %s: %w", conversationID, qErr)
-		}
-		defer rows.Close()
-		out = make([]Link, 0, 4)
-		for rows.Next() {
-			l, sErr := scanLink(rows)
-			if sErr != nil {
-				return fmt.Errorf("scan revoked share link: %w", sErr)
-			}
-			out = append(out, l)
-		}
-		if rErr := rows.Err(); rErr != nil {
-			return fmt.Errorf("iterate revoked share links: %w", rErr)
-		}
-		return nil
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	return out, nil
-}
-
 // DueForExpiry returns the sweep's due set — still-live links whose expires_at has passed
 // now — over shared_links_expiry_idx, oldest-expiring first. It is NOT owner-scoped (the
 // expiry sweep runs system-wide, with no principal) and reads on the plain pool, mirroring

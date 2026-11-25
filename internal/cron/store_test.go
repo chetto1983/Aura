@@ -24,9 +24,28 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// InsertRun opens a new running agent_job_runs row for taskID. It is the tests' fixture:
+// production opens a run on the held claim connection (insertRunOnConn).
+func (s *Store) InsertRun(ctx context.Context, taskID string, stepBudget int) (Run, error) {
+	tu, err := db.ParseUUID("uuid", taskID)
+	if err != nil {
+		return Run{}, fmt.Errorf("insert run: %w", err)
+	}
+	row, err := s.q.InsertRun(ctx, sqlc.InsertRunParams{
+		ID:         newUUID(),
+		TaskID:     tu,
+		StepBudget: int4OrNull(stepBudget),
+	})
+	if err != nil {
+		return Run{}, fmt.Errorf("insert run for task %q: %w", taskID, err)
+	}
+	return runFromRow(row), nil
+}
 
 // envOrSkip mirrors internal/identity/store_test.go: skip locally, fail-loud under
 // CI so a missing DSN never reports a falsely-green integration job.
@@ -281,37 +300,6 @@ func TestCompleteRun_IdempotencyHash(t *testing.T) {
 	}
 }
 
-func TestCreateRunAndAdvance_Atomic(t *testing.T) {
-	pool := migratedPool(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	s := New(pool)
-
-	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
-	first := time.Now().Add(5 * time.Minute).Truncate(time.Second)
-	created, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first, NotifyRoute: "none"})
-	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
-	}
-	t.Cleanup(func() { cleanupTask(t, pool, created.ID) })
-
-	advanced := first.Add(5 * time.Minute)
-	run, err := s.CreateRunAndAdvance(ctx, created.ID, 0, advanced)
-	if err != nil {
-		t.Fatalf("CreateRunAndAdvance: %v", err)
-	}
-	if run.Status != "running" || run.TaskID != created.ID {
-		t.Errorf("opened run = %+v, want running for task %s", run, created.ID)
-	}
-	got, err := s.GetTask(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	if !got.NextRunAt.Equal(advanced.UTC()) {
-		t.Errorf("next_run_at after advance = %s, want %s", got.NextRunAt, advanced.UTC())
-	}
-}
-
 // TestDueTasks_ClampsBadLimit is the WR-02 regression: a non-positive limit must not
 // silently dispatch nothing (LIMIT 0) and a huge limit must not wrap to a negative
 // LIMIT (a Postgres error). Both are floored to 1 at the store boundary, so a single
@@ -348,7 +336,7 @@ func TestDueTasks_ClampsBadLimit(t *testing.T) {
 	}
 }
 
-func TestListUpdateCancelAndHeartbeat(t *testing.T) {
+func TestListUpdateAndCancel(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -410,26 +398,6 @@ func TestListUpdateCancelAndHeartbeat(t *testing.T) {
 	if !soonGot.NextRunAt.Equal(advanced.UTC()) {
 		t.Fatalf("updated next_run_at = %s, want %s", soonGot.NextRunAt, advanced.UTC())
 	}
-
-	run, err := s.InsertRun(ctx, soon.ID, 7)
-	if err != nil {
-		t.Fatalf("InsertRun: %v", err)
-	}
-	var before time.Time
-	if err := pool.QueryRow(ctx, "SELECT last_heartbeat_at FROM aura.agent_job_runs WHERE id = $1", run.ID).Scan(&before); err != nil {
-		t.Fatalf("read heartbeat before: %v", err)
-	}
-	time.Sleep(5 * time.Millisecond)
-	if err := s.Heartbeat(ctx, run.ID); err != nil {
-		t.Fatalf("Heartbeat: %v", err)
-	}
-	var after time.Time
-	if err := pool.QueryRow(ctx, "SELECT last_heartbeat_at FROM aura.agent_job_runs WHERE id = $1", run.ID).Scan(&after); err != nil {
-		t.Fatalf("read heartbeat after: %v", err)
-	}
-	if !after.After(before) {
-		t.Fatalf("heartbeat did not advance timestamp: before=%s after=%s", before, after)
-	}
 }
 
 func TestStoreRejectsInvalidUUIDs(t *testing.T) {
@@ -444,15 +412,6 @@ func TestStoreRejectsInvalidUUIDs(t *testing.T) {
 	}
 	if err := s.UpdateNextRunAt(ctx, badID, time.Now()); err == nil {
 		t.Fatal("UpdateNextRunAt accepted invalid UUID")
-	}
-	if _, err := s.InsertRun(ctx, badID, 1); err == nil {
-		t.Fatal("InsertRun accepted invalid UUID")
-	}
-	if _, err := s.CreateRunAndAdvance(ctx, badID, 1, time.Now()); err == nil {
-		t.Fatal("CreateRunAndAdvance accepted invalid UUID")
-	}
-	if err := s.Heartbeat(ctx, badID); err == nil {
-		t.Fatal("Heartbeat accepted invalid UUID")
 	}
 	if err := s.CompleteRun(ctx, CompleteRunParams{RunID: badID, Status: "completed"}); err == nil {
 		t.Fatal("CompleteRun accepted invalid UUID")

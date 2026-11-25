@@ -8,15 +8,14 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 )
 
-// testIC builds an InvocationContext with a Budget seeded to maxSteps via
-// SetMaxSteps so drain tests are hermetic (no AURA_LOOP_* env dependence).
-func testIC(t *testing.T, maxSteps int32) agent.InvocationContext {
+// testIC builds an InvocationContext with a Budget seeded to maxSteps through
+// BudgetOptions so drain tests are hermetic (no AURA_LOOP_* env dependence).
+func testIC(t *testing.T, maxSteps int) agent.InvocationContext {
 	t.Helper()
-	b, err := agent.NewBudget(agent.BudgetOptions{})
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxSteps: &maxSteps})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
-	b.SetMaxSteps(maxSteps)
 	return agent.InvocationContext{Ctx: context.Background(), Budget: b, Branch: "root"}
 }
 

@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -212,81 +211,56 @@ func attributedWorkerReport(goal, text string) string {
 	return fmt.Sprintf("[Delegated worker report -- goal: %q]\n%s", goal, text)
 }
 
-// DeliverReport is Deliver's counterpart for a TERMINAL worker outcome
-// (51-11, SWARM-12 legs 1+2): it archives the full
-// report markdown FIRST (best-effort, delegation_artifact.go), THEN records
-// the bounded card (never the raw report JSON Amendment #172 measured
-// landing in aura.conversation_turns), THEN pushes a bounded ChildReport JSON
-// projection on the steer rail. The full uncapped report remains in the
-// archive; bounding the courtesy copy prevents a completed worker from being
-// retried solely because JSON encoding exceeds steer's message cap (Amendment
-// #178). The ordering remains the SAME record-before-push ordering Deliver's
-// own doc comment states, with the archive step ahead of both because the
-// card's own artifact-pointer line needs the archived filename to exist first.
+// DeliverPreparedReport is Deliver's counterpart for a TERMINAL worker outcome
+// (51-11, SWARM-12 legs 1+2), retried from the staged delivery without rerunning the
+// worker. The full report markdown is archived BEFORE this call
+// (DelegationClaimLoop.deliverPending, archivePreparedReport), because the card's own
+// artifact-pointer line names artifactName. It records the bounded card (never the raw
+// report JSON Amendment #172 measured landing in aura.conversation_turns), THEN pushes a
+// bounded ChildReport JSON projection on the steer rail: the SAME record-before-push
+// ordering Deliver states. Bounding the courtesy copy prevents a completed worker from
+// being retried solely because JSON encoding exceeds steer's message cap (Amendment
+// #178); the full uncapped report stays in the archive.
 //
-// recorded/err carry the SAME contract as Deliver: recorded=false (never a
-// Go error) on a conversation-append failure, so the caller
-// (delegation_queue.go's deliverSuccess/recordFailure) still gates the row's
-// terminal transition on it, never marking a lost report delivered by
-// omission. A push (steer.Push) failure remains a hard infrastructure error.
-//
-// Push here calls Steer.PushDelegationResult carrying payload.FanoutKey. Deliver
-// (a worker's question) keeps calling plain Steer.Push because it is not a terminal
+// recorded/err carry the SAME contract as Deliver: recorded=false (never a Go error) on a
+// conversation-append failure, so the caller still gates the row's terminal transition on
+// it, never marking a lost report delivered by omission. A push failure remains a hard
+// infrastructure error. The push is PushDelegationResultIdempotent carrying payload.FanoutKey;
+// Deliver (a worker's question) keeps calling plain Steer.Push because it is not a terminal
 // delegation_result and does not enter the absent-operator fan-out sweep.
-func (d *DelegationDelivery) DeliverReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration) (recorded bool, err error) {
-	identityID := identityctx.IdentityID(ctx)
-	artifactName := archiveReport(ctx, d.Archiver, identityID, payload.ConversationID, report.ChildID,
-		DelegationReportMarkdown(report, elapsed))
-	return d.deliverReportProjection(ctx, payload, report, elapsed, artifactName, "")
-}
-
-// DeliverPreparedReport retries staged terminal delivery without rerunning the worker.
 func (d *DelegationDelivery) DeliverPreparedReport(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration, artifactName, deliveryKey string) (recorded bool, err error) {
 	if strings.TrimSpace(deliveryKey) == "" {
 		return false, fmt.Errorf("swarm: prepared delegation report has no delivery key")
 	}
-	return d.deliverReportProjection(ctx, payload, report, elapsed, artifactName, deliveryKey)
-}
-
-func (d *DelegationDelivery) deliverReportProjection(ctx context.Context, payload DelegationPayload, report ChildReport, elapsed time.Duration, artifactName, deliveryKey string) (recorded bool, err error) {
 	if d == nil || d.Recorder == nil {
 		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
 	}
 	if strings.TrimSpace(payload.FanoutKey) == "" {
 		return false, fmt.Errorf("swarm: delegation report has no fan-out key")
 	}
-
-	card := DelegationRecordCard(report, elapsed, artifactName)
-	var rerr error
-	if deliveryKey == "" {
-		rerr = d.Recorder.AppendAssistantTurn(ctx, payload.ConversationID, card)
-	} else if recorder, ok := d.Recorder.(idempotentConversationRecorder); ok {
-		rerr = recorder.AppendAssistantTurnIdempotent(ctx, payload.ConversationID, deliveryKey, card)
-	} else {
+	recorder, ok := d.Recorder.(idempotentConversationRecorder)
+	if !ok {
 		return false, fmt.Errorf("swarm: delegation recorder does not support idempotent delivery")
 	}
-	if rerr != nil {
+
+	card := DelegationRecordCard(report, elapsed, artifactName)
+	if rerr := recorder.AppendAssistantTurnIdempotent(ctx, payload.ConversationID, deliveryKey, card); rerr != nil {
 		slog.Warn("swarm.delegation.record_failed",
 			"conversation", payload.ConversationID, "err", rerr)
-		recorded = false
 	} else {
 		recorded = true
 	}
 
 	if d.Steer != nil {
+		publisher, ok := d.Steer.(idempotentSteerPublisher)
+		if !ok {
+			return recorded, fmt.Errorf("swarm: steer publisher does not support idempotent delivery")
+		}
 		text, merr := marshalReports([]ChildReport{boundedDeliveryReport(report)})
 		if merr != nil {
 			return recorded, fmt.Errorf("delegation report marshal: %w", merr)
 		}
-		var perr error
-		if deliveryKey == "" {
-			perr = d.Steer.PushDelegationResult(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey)
-		} else if publisher, ok := d.Steer.(idempotentSteerPublisher); ok {
-			perr = publisher.PushDelegationResultIdempotent(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey, deliveryKey)
-		} else {
-			return recorded, fmt.Errorf("swarm: steer publisher does not support idempotent delivery")
-		}
-		if perr != nil {
+		if perr := publisher.PushDelegationResultIdempotent(payload.ConversationID, steer.SourceWorker, text, payload.FanoutKey, deliveryKey); perr != nil {
 			return recorded, fmt.Errorf("delegation report push: %w", perr)
 		}
 	}

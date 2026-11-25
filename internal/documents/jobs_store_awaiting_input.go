@@ -54,22 +54,6 @@ func (s *PostgresIngestionJobStore) ParkIngestionJobAwaitingInputTx(ctx context.
 	})
 }
 
-// ParkIngestionJobAwaitingInput parks ONE claimed job as awaiting_input, in a
-// transaction scoped to identityID. Thin wrapper over the Tx variant for a caller with
-// no cross-store atomicity requirement of its own (e.g. a test fixture).
-func (s *PostgresIngestionJobStore) ParkIngestionJobAwaitingInput(ctx context.Context, req ParkAwaitingInputRequest) (int64, error) {
-	var n int64
-	err := s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
-		var qErr error
-		n, qErr = s.ParkIngestionJobAwaitingInputTx(ctx, q, req)
-		return qErr
-	})
-	if err != nil {
-		return 0, fmt.Errorf("park ingestion job awaiting input: %w", err)
-	}
-	return n, nil
-}
-
 // UnparkIngestionJobRequest carries the args for returning an answered pause's parked
 // row to claimable (51-06b Task 2). Payload is the CALLER's already-merged
 // DelegationResumeState (the original payload plus the operator's answer content) --
@@ -133,21 +117,6 @@ func (s *PostgresIngestionJobStore) ResolveIngestionJobAwaitingInputTx(ctx conte
 	return q.ResolveIngestionJobAwaitingInput(ctx, sqlc.ResolveIngestionJobAwaitingInputParams{
 		ErrorMessage: req.ErrorMessage, ID: jobID, IdentityID: identityID,
 	})
-}
-
-// ResolveIngestionJobAwaitingInput is the Tx variant in a transaction scoped to
-// identityID, for a caller with no cross-store atomicity requirement of its own.
-func (s *PostgresIngestionJobStore) ResolveIngestionJobAwaitingInput(ctx context.Context, req ResolveAwaitingInputRequest) (int64, error) {
-	var n int64
-	err := s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
-		var qErr error
-		n, qErr = s.ResolveIngestionJobAwaitingInputTx(ctx, q, req)
-		return qErr
-	})
-	if err != nil {
-		return 0, fmt.Errorf("resolve ingestion job awaiting input: %w", err)
-	}
-	return n, nil
 }
 
 // AnsweredAwaitingInputJob is one parked job whose pause has been answered (the resume

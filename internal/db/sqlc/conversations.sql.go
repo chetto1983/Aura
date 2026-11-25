@@ -556,33 +556,6 @@ func (q *Queries) ReleaseConversationDeleteLease(ctx context.Context, arg Releas
 	return result.RowsAffected(), nil
 }
 
-const releaseReservedConversationDelete = `-- name: ReleaseReservedConversationDelete :execrows
-UPDATE aura.conversations
-SET delete_reservation = NULL,
-    delete_phase = NULL,
-    delete_reserved_at = NULL,
-    delete_worker = NULL,
-    delete_lease_expires_at = NULL
-WHERE id = $1
-  AND identity_id = $2
-  AND delete_reservation = $3
-  AND delete_phase = 'reserved'
-`
-
-type ReleaseReservedConversationDeleteParams struct {
-	ID          pgtype.UUID `json:"id"`
-	IdentityID  pgtype.UUID `json:"identity_id"`
-	Reservation pgtype.Text `json:"reservation"`
-}
-
-func (q *Queries) ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error) {
-	result, err := q.db.Exec(ctx, releaseReservedConversationDelete, arg.ID, arg.IdentityID, arg.Reservation)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const renameConversation = `-- name: RenameConversation :exec
 UPDATE aura.conversations
 SET title = $2

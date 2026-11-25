@@ -60,9 +60,10 @@ func markPausedStateResumedFencedTx(ctx context.Context, q *sqlc.Queries, id pgt
 // MarkResumedFencedTx resolves ONE pause with the AM-02 answer AND its D-12 fencing id,
 // using the caller-supplied Queries (bound to the caller's transaction — it opens NO
 // transaction of its own). It is the single-claim sibling of MarkResumedBatchTx's
-// per-token step: the runner's PoolResumeCommitter.CommitResume calls this instead of the
-// unfenced MarkResumedTx so a ResumeClaim's ExpectActionID is honored on both the single
-// and batch resume paths (interfaces.go's ResumeClaim is the SAME struct for both).
+// per-token step: the runner's PoolResumeCommitter.CommitResume calls it so a
+// ResumeClaim's ExpectActionID is honored on both the single and batch resume paths
+// (interfaces.go's ResumeClaim is the SAME struct for both). An empty expectActionID
+// claims the pause unfenced.
 func (s *Store) MarkResumedFencedTx(ctx context.Context, q *sqlc.Queries, token string, ans ResumeAnswer, expectActionID string) error {
 	id, err := db.ParseUUID("token", token)
 	if err != nil {
@@ -80,15 +81,6 @@ func (s *Store) MarkResumedFencedTx(ctx context.Context, q *sqlc.Queries, token 
 		return fmt.Errorf("mark resumed fenced %s: %w", token, ErrPauseNotFound)
 	}
 	return nil
-}
-
-// MarkResumedFenced resolves ONE pause with the AM-02 answer AND its D-12 fencing id, in
-// a transaction scoped to the identity on ctx. A thin wrapper over MarkResumedFencedTx,
-// mirroring the MarkResumed/MarkResumedTx pairing.
-func (s *Store) MarkResumedFenced(ctx context.Context, token string, ans ResumeAnswer, expectActionID string) error {
-	return s.scoped(ctx, func(q *sqlc.Queries) error {
-		return s.MarkResumedFencedTx(ctx, q, token, ans, expectActionID)
-	})
 }
 
 // NewWithPauseTTL builds a Store whose GetByToken additionally applies D-12/D-13's lazy

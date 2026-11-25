@@ -164,12 +164,13 @@ func TestZeroLayoutYieldsNothingRatherThanAJoinOfEmptyStrings(t *testing.T) {
 	}
 }
 
-// TestOwnsSeparatesTheCallersRootFromEverythingElse pins the rule the cockpit renders:
+// TestWritableRootSeparatesTheCallersRootFromEverythingElse pins the rule the cockpit
+// renders (governance_api.go, DirWithin over WritableRoot):
 // a person mounts the house's skills and everything shared with them, and may write to
 // neither. The cases that matter are the near-misses — a sibling root whose path SHARES A
 // PREFIX with the writable one, and the identity's own export subtree, which is inside the
 // root but is a materialization staging area rather than a skill the board lists.
-func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
+func TestWritableRootSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
 	r := Roots{Global: native(t, "/srv/skills"), Identity: native(t, "/srv/identities/alice")}
 
 	owned := []string{
@@ -178,8 +179,8 @@ func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
 		native(t, "/srv/identities/alice/.export/mine"),
 	}
 	for _, dir := range owned {
-		if !r.Owns(dir) {
-			t.Fatalf("Owns(%q) = false, want true", dir)
+		if !DirWithin(r.WritableRoot(), dir) {
+			t.Fatalf("DirWithin(WritableRoot, %q) = false, want true", dir)
 		}
 	}
 
@@ -191,22 +192,22 @@ func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
 		"",                                                // nothing
 	}
 	for _, dir := range notOwned {
-		if r.Owns(dir) {
-			t.Fatalf("Owns(%q) = true, want false", dir)
+		if DirWithin(r.WritableRoot(), dir) {
+			t.Fatalf("DirWithin(WritableRoot, %q) = true, want false", dir)
 		}
 	}
 }
 
-// TestOwnsFallsBackToTheGlobalRootWhenThereIsNoIdentity mirrors WritableRoot: an unscoped
+// TestWritableRootFallsBackToTheGlobalRootWhenThereIsNoIdentity: an unscoped
 // caller (the CLI, or a deployment with no per-identity base) writes to the global root, so
 // the house library is exactly what they own. The single-operator deployment keeps today's
 // behaviour rather than losing every verb.
-func TestOwnsFallsBackToTheGlobalRootWhenThereIsNoIdentity(t *testing.T) {
+func TestWritableRootFallsBackToTheGlobalRootWhenThereIsNoIdentity(t *testing.T) {
 	r := Roots{Global: native(t, "/srv/skills")}
-	if !r.Owns(native(t, "/srv/skills/house")) {
+	if !DirWithin(r.WritableRoot(), native(t, "/srv/skills/house")) {
 		t.Fatal("an unscoped caller must own the global root they write to")
 	}
-	if r.Owns(native(t, "/srv/identities/alice/mine")) {
+	if DirWithin(r.WritableRoot(), native(t, "/srv/identities/alice/mine")) {
 		t.Fatal("an unscoped caller must not own an identity's root")
 	}
 }

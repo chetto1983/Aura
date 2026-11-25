@@ -339,7 +339,7 @@ func TestBudget_Child_DistinctDedupRing(t *testing.T) {
 		parent.AfterToolResult("tool", args, res)
 	}
 	// A fresh child must NOT inherit the parent's dedup state.
-	child := parent.Child(1)
+	child := parent.Child()
 	if dedup, _ := child.BeforeToolCall("tool", args); dedup {
 		t.Fatal("child ring must be distinct from parent (no cross-branch dedup leakage, D-09)")
 	}

@@ -463,10 +463,6 @@ type Querier interface {
 	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
 	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
 	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
-	// The always-on block is rendered at the top of every turn, so this must be an index lookup
-	// (skill_catalog_always_apply_idx, partial on always_apply) and never a scan -- acceptance
-	// criterion 7 of amendment #214 asserts the plan carries no Seq Scan on this table.
-	ListAlwaysApplySkills(ctx context.Context, ownerIdentityID pgtype.UUID) ([]AuraSkillCatalog, error)
 	// 51-06b (Task 2): the resume observer's read -- which parked jobs may now resume. The
 	// join crosses into aura.paused_states (RLS-scoped to the SAME identity_id predicate
 	// below via db.WithIdentityTx's app.current_identity carrier) rather than living in
@@ -547,13 +543,6 @@ type Querier interface {
 	ListGatewayToolPolicies(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayToolPolicies, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
-	// Deliberately selects NO ciphertext (mirrors internal/db/sqlc/identity_mcp_oauth.sql.go's
-	// ListIdentityMCPOAuthServers): the admin roster needs the cap and the hash, never the key.
-	// RLS-scoped like every other query here (0087 fail-closed floor); the identity_id
-	// parameter is redundant with app.current_identity today (the table's PK means at most
-	// one row per identity) but keeps this query's shape identical to its ListIdentityMCPOAuthServers
-	// precedent for when a later plan adds an admin-bypass role.
-	ListIdentityLLMKeys(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityLLMKeysRow, error)
 	// The names an identity has authorized, for `aura mcp login --status` and the cockpit's
 	// connector list. Deliberately selects NO ciphertext: a listing must not pull three
 	// credentials into memory to render a name and an expiry.
@@ -807,7 +796,6 @@ type Querier interface {
 	RefreshPlannedRetentionOperation(ctx context.Context, arg RefreshPlannedRetentionOperationParams) (int64, error)
 	RejectAnsweredDelegation(ctx context.Context, arg RejectAnsweredDelegationParams) (bool, error)
 	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
-	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
 	// Moves the identity's row in one bucket from from_key to to_key, taking new_name when the
 	// move carries one. The file manager copies the object first and deletes the source after,
 	// so the row never names a key without bytes.
@@ -946,7 +934,6 @@ type Querier interface {
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
-	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
 	// A NULL cost keeps the recorded one; a zero cost is recorded.
 	UpdateMediaJobProgress(ctx context.Context, arg UpdateMediaJobProgressParams) (AuraMediaJob, error)

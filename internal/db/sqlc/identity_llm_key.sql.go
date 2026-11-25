@@ -66,55 +66,6 @@ func (q *Queries) InsertIdentityLLMKeyIfAbsent(ctx context.Context, arg InsertId
 	return result.RowsAffected(), nil
 }
 
-const listIdentityLLMKeys = `-- name: ListIdentityLLMKeys :many
-SELECT identity_id, key_hash, key_label, limit_usd, limit_reset, updated_at
-FROM aura.identity_llm_key
-WHERE identity_id = $1
-ORDER BY identity_id
-`
-
-type ListIdentityLLMKeysRow struct {
-	IdentityID pgtype.UUID        `json:"identity_id"`
-	KeyHash    string             `json:"key_hash"`
-	KeyLabel   string             `json:"key_label"`
-	LimitUsd   pgtype.Numeric     `json:"limit_usd"`
-	LimitReset string             `json:"limit_reset"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Deliberately selects NO ciphertext (mirrors internal/db/sqlc/identity_mcp_oauth.sql.go's
-// ListIdentityMCPOAuthServers): the admin roster needs the cap and the hash, never the key.
-// RLS-scoped like every other query here (0087 fail-closed floor); the identity_id
-// parameter is redundant with app.current_identity today (the table's PK means at most
-// one row per identity) but keeps this query's shape identical to its ListIdentityMCPOAuthServers
-// precedent for when a later plan adds an admin-bypass role.
-func (q *Queries) ListIdentityLLMKeys(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityLLMKeysRow, error) {
-	rows, err := q.db.Query(ctx, listIdentityLLMKeys, identityID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListIdentityLLMKeysRow{}
-	for rows.Next() {
-		var i ListIdentityLLMKeysRow
-		if err := rows.Scan(
-			&i.IdentityID,
-			&i.KeyHash,
-			&i.KeyLabel,
-			&i.LimitUsd,
-			&i.LimitReset,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const upsertIdentityLLMKey = `-- name: UpsertIdentityLLMKey :exec
 INSERT INTO aura.identity_llm_key (identity_id, key_ciphertext, key_hash, key_label, limit_usd, limit_reset)
 VALUES ($1, $2, $3, $4, $5, $6)

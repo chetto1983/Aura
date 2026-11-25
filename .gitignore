@@ -128,3 +128,6 @@ tmp/*
 
 # Built by packages/create-aura/scripts/build-artifact.mjs at prepack; never committed.
 packages/create-aura/install-appliance.run
+
+# tools/deadexport: a local `go build` there drops the binary beside the source.
+/tools/deadexport/deadexport
