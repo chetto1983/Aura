@@ -305,7 +305,7 @@ draft target, and the fork's suite against Dovecot and GreenMail.
    Sent copy lands.
 3. A briefing turn reads mail and events with no reservation error.
 4. An event is created, read and deleted through its reference.
-5. *(Amended 2026-11-25, operator.)* A `deny` on a PIM tool that is not drafted (for example
+5. *(Amended 2026-11-25, to match the operator's decision of 2026-10-10.)* A `deny` on a PIM tool that is not drafted (for example
    `calendar__list_calendars`) refuses it. A `deny` on `calendar__send_email` still lets Aura draft the
    send, and a draft the operator confirms passes the deny (PRD §5, decision of 2026-10-10). A tool-wide
    `deny` on `calendar` set before the upgrade becomes a `deny` on each of the 29 tools. The original

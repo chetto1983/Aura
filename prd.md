@@ -379,8 +379,8 @@ text.
   `calendar__send_email`, `calendar__get_emails`, and so on. The gateway, message drafts, host-built
   calls and display all key on the tool name, and the `calendar` tool's `action` verb is gone
   (`docs/superpowers/specs/2026-11-23-pim-tool-split-design.md`).
-- **What keeps the verbs.** The "multiplexed verbs" above now means Aura's own action tools (`board`,
-  `task`, `skill_manage`, …). It no longer means a third-party server.
+- **What keeps the verbs.** The PIM is no longer among the "multiplexed verbs" above. Aura's own action
+  tools (`board`, `task`, `skill_manage`, …) keep theirs.
 - **The PIM send.** It is now a draft on `calendar__send_email`. Its stored arguments carry `accountId`
   and no `action`. A cockpit send drafted, the operator approved it, it sent, and the Sent copy landed.
 - **Reads.** The PIM's reads now carry non-mutating specs, so they leave the reservation funnel. A
@@ -527,8 +527,9 @@ as unused.
 What this does not show:
 - how often production models write free text at all; that is the report's first number;
 - the Italian vocabulary's reach beyond these 30 queries;
-- discovery of third-party MCP tools (`whatsapp`, `linear`), which get no keywords and still
-  miss paraphrases. *Amended 2026-11-24:* the PIM's 29 tools have English and Italian keywords
+- discovery of third-party MCP tools (`calendar`, `whatsapp`, `linear`), which get no
+  keywords and still miss paraphrases. *Amended 2026-11-24:* `calendar` no longer belongs in
+  that list, because the PIM's 29 tools have English and Italian keywords
   since the split. On a held-out set of 52 queries, written before the keywords existed, 32 rank
   a gold tool in the top 5 (21 of 27 Italian, 11 of 25 English). That is now a floor that only
   rises (`docs/superpowers/verification/2026-11-24-pim-tool-split.md`). Not shown: paraphrases
@@ -630,25 +631,26 @@ they confirm, that a deny is set on the tool.
 
 **PIM policies are per tool, measured on the lab VM 2026-11-25.** Since the PIM split, a PIM policy or
 grant has an empty action, and its subject is the tool: `calendar__send_email`, not `calendar__calendar`
-with `send_email`. The action column remains for Aura's own multiplexed tools. `aura db migrate` rewrote
-stored PIM rows once (`internal/pimsplit`):
-- a per-action row moved onto its tool;
-- a tool-wide `deny` was copied onto each of the 29 tools;
-- on an aliased mount, a tool-wide `ask` was copied onto each of the 29 tools too;
-- every other tool-wide row, and every hand-typed row already named after a new tool, was logged and
+with `send_email`. The action column remains for Aura's own multiplexed tools. `aura db migrate`
+rewrites stored PIM rows once (`internal/pimsplit`):
+- a per-action row moves onto its tool;
+- a tool-wide `deny` is copied onto each of the 29 tools;
+- on an aliased mount, a tool-wide `ask` is copied onto each of the 29 tools too;
+- every other tool-wide row, and every hand-typed row already named after a new tool, is logged and
   dropped.
 
 Two denies were measured on the VM:
-- **On `calendar__list_calendars`,** an outbound tool that is not drafted, which 2026-10-10 left
-  unmeasured. Aura refused the call with "disabled for this identity by policy", and the model went
-  around it through `calendar__get_calendar_events`.
+- **On `calendar__list_calendars`,** a PIM read tool that is not drafted. Aura refused the call with
+  "disabled for this identity by policy", and the model went around it through
+  `calendar__get_calendar_events`.
 - **On `calendar__send_email`.** Aura drafted the send, as the 2026-10-10 decision says. The draft was
   declined.
 
 Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown live:
-- the carry-over of a pre-upgrade deny, because the VM held no PIM policies and the upgrade reported
-  `rewritten=0`. It is proven by `db_integration` tests only;
-- a confirmed send under a deny, re-run on the new tool.
+- the carry-over of a pre-upgrade deny. The VM held no PIM policies, and the upgrade rewrote 0 rows, so
+  it is proven by `db_integration` tests only;
+- a confirmed send under a deny, re-run on the new tool;
+- an outbound tool that is not drafted, which 2026-10-10 also left unmeasured.
 
 **Erasing memory is Destructive; a run with no operator cannot do it, measured in-process
 2026-10-30.** `memory_forget` removes facts and entities and says so in its own description, yet it
@@ -3930,8 +3932,9 @@ is over the slot rule anyway.
 - **Roster cost.** The deferred roster carries every name on every turn. On the C7 corpus, the
   `calendar` line grew from 30 to 811 bytes, and the whole roster from 2,052 to 2,874 bytes
   (`docs/superpowers/verification/2026-11-24-pim-tool-split.md`).
-- **Loading by name.** On the lab VM, the agent loaded each PIM tool it used by name through
-  `tool_search select:` (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`).
+- **Loading by name.** On the lab VM, the agent loaded the PIM tools by name through
+  `tool_search select:`. The ledger records this for the send, delete and briefing turns
+  (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`).
 - **Not shown:**
   - the roster on an appliance. Its size was not recorded there;
   - the per-turn manifest characters after the split;
@@ -4672,7 +4675,7 @@ failed open leaves the run as before. Not shown: the lab VM.
 
 *Amended 2026-11-25.* Since the PIM split, the PIM's reads are their own tools with non-mutating
 specs (`calendar__get_emails`, `calendar__get_calendar_events`), so they no longer enter the reservation
-funnel. `board` still has a mutating spec. On the lab VM, a cockpit briefing turn called `board`, then
+funnel. `board` still has a mutating spec (`internal/agent/tools/board.go`). On the lab VM, a cockpit briefing turn called `board`, then
 `calendar__get_calendar_events` twice, then `calendar__get_emails`. Every call ended `ok`, with no
 reservation error (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`). Not shown:
 - a headless `agent_job` briefing. This failure was headless, and the check was a cockpit turn in a

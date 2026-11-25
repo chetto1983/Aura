@@ -4,8 +4,9 @@ Continues `2026-11-24-pim-tool-split.md`. Plan: `docs/superpowers/plans/2026-11-
 (Task C8 steps 4–5). Spec: `docs/superpowers/specs/2026-11-23-pim-tool-split-design.md` §7, checks 1–10.
 Lab VM `192.168.101.158`.
 
-All the checks ran in the cockpit, through Claude in Chrome, with the operator present. The facts below
-come from the SDD ledger of the run. Mail and events went only between the operator's own accounts,
+Checks 2, 3, 4, 5, 7, 9 and 10 ran in the cockpit, through Claude in Chrome, with the operator present.
+Check 8 is read from the live send turns at 13:29 and 13:41. For checks 1 and 6, the ledger records the result
+and not the method. The facts below come from the SDD ledger of the run. Mail and events went only between the operator's own accounts,
 and every measurement mail and event was deleted afterwards. This file holds counts and yes/no.
 
 ## The release on the VM
@@ -18,7 +19,7 @@ and every measurement mail and event was deleted afterwards. This file holds cou
 | Upgrade `Report` | `already_applied=false`, `rewritten=0`, `fanned_out_denies=0`, `fanned_out_asks=0`, `dropped=0`, `drafts_rewritten=1`, `drafts_expired=1` |
 | Expired draft's outcome | `account_required` |
 | PIM after the apply | fork `8fbd799`, digest `sha256:f595731d…`, recreated 13:21:22 UTC |
-| Gateway approval policies on the VM before the split | none |
+| PIM approval policies on the VM before the split | none |
 | CI on `442c2058d` | 29 jobs green, 1 red: an embedding-tier contract test expected six live tiers to use a shared helper, and the new `mcp_live_integration` job made it seven. Fixed in `ed9322b72`. CI on `7e379a89d`, which carries that fix: every workflow green |
 
 The seeding that Task C8 step 5 planned for checks 5 and 6 (pre-upgrade denies, and pre-upgrade drafts
@@ -149,7 +150,7 @@ What this does not show:
 3. Both rules were removed afterwards, which left 0 rows in `gateway_tool_policies`.
 
 The spec's wording, "a `deny` … refuses `calendar__send_email`", contradicted that 2026-10-10 decision.
-The operator's ruling of 2026-11-25 amends the wording in spec §7.
+Spec §7 is amended on 2026-11-25 to match the operator's decision of 2026-10-10.
 
 What this does not show:
 - **The carry-over of a pre-upgrade deny.** Both denies were set after the upgrade, because the VM had
@@ -238,8 +239,8 @@ Neither task fired, so the check was not measured.
 - **Why OpenRouter did not catch it.** `task` requires only `action`, so a dropped `payload` is still
   schema-valid. OpenRouter's quality routing (Auto Exacto) counts only invalid JSON, unknown tool names
   and schema mismatches, so it does not see this fault.
-- **The operator's response.** The operator switched the primary model, and wrote a report for the
-  provider.
+- **The operator's response.** The operator switched the primary model. A draft report for the provider
+  was prepared for the operator.
 
 **Re-run, on the new route: PASS.**
 
@@ -254,7 +255,8 @@ Neither task fired, so the check was not measured.
 | One-shot task deleted | 14:11:49.780 |
 | `pending_notifications` | 0 |
 
-A second reminder, scheduled from another chat, was delivered at 13:58:19.
+A second reminder, scheduled from another chat, was delivered at 13:58:19. The ledger does not say which
+route scheduled it.
 
 **Clean-up.**
 - Aura found the 2 measurement mails with `search_emails` and `get_email_details`.
@@ -299,7 +301,7 @@ What this does not show:
 
 - **Task schedule refusals name what arrived** (`4adc35b33`..`f74a9328e`).
   - A refusal now names the keys it received and the missing field.
-  - It stops sending the model to the operator for a value that the request already carried.
+  - It no longer tells the model to ask the operator for text that the request already carried.
   - A value that is present but bad gets "fix the value", not the missing-field text.
   - The fix passed review after two rounds.
 - **PIM pin `8f97396`** (`7f8f07d03`, payload manifest `ac9158ff7`).
@@ -315,7 +317,7 @@ What this does not show:
 ## Observations queued, not fixed in this release
 
 - **Composer.** After an `ask_user` or approval card resolves and the turn ends, the composer floats
-  mid-viewport instead of staying docked at the bottom. Reproduced every time.
+  mid-viewport instead of staying docked at the bottom. Reproduced twice.
 - **Interactive view.** The "Vista interattiva" panel never renders. It reads "questa vista non si può
   mostrare qui", for old and new conversations alike, so the split did not cause it.
 - **Double confirmation.** One delete asks twice: the agent's own `ask_user`, then the gateway's
