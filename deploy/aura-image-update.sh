@@ -33,6 +33,8 @@ APPLIED_MANIFEST=payload_manifest.applied
 # The payload paths installed since then, one per line, under INSTALL_DIR: the services that
 # mount them are restarted once the stack is re-applied (restart_payload_readers).
 PENDING_PAYLOAD=payload_changes.pending
+# Each MCP sidecar's image before an apply replaced any, under INSTALL_DIR; a dead tick keeps it.
+MCP_RECORD=mcp_sidecars.recorded
 # Keys an earlier installer wrote into .env that no compose file reads any more. The image
 # pins, the embedding model and the in-stack tracing endpoint moved into compose.yaml and its
 # overlays on 2026-09-14, where .env cannot outrank them and freeze a host on an old value.
@@ -434,19 +436,19 @@ stale_boxes() {
 
 # aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one replaced by
 # another image while it runs stays dead to it until aura restarts (lab VM, 2026-11-25: the PIM
-# moved after aura, which kept 1 of its 29 tools). A sidecar counts when it runs another image
-# than $1 recorded before the apply replaced anything, and was created after aura started: a boot
+# moved after aura, which kept 1 of its 29 tools). A sidecar counts when its image differs from
+# MCP_RECORD, taken before the apply replaced any, and it was created after aura started: a boot
 # creates every sidecar after aura (depends_on) but replaces none. One restart serves the boxes.
 refresh_boxes_and_mounts() {
   local name svc image now created started='' removed=0
   local -a newer=()
-  while read -r svc image; do
+  while read -r svc image <&3; do
     now="$(container_image_id "${svc}")"
     [[ "${image}" != missing && "${now}" != missing && "${now}" != "${image}" ]] || continue
     created="$(container_time "${svc}" Created)"
     [[ -n "${started}" ]] || started="$(container_time aura State.StartedAt)"
     ((created <= started)) || newer+=("${svc}")
-  done <"$1"
+  done 3<"${MCP_RECORD}"
   [[ -n "$(env_value AURA_SANDBOX_IMAGE)" && -n "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]] ||
     echo "sandbox: no images pinned in .env; skipped."
   while read -r name; do
@@ -461,12 +463,11 @@ refresh_boxes_and_mounts() {
     docker compose restart aura
     wait_healthy aura
   fi
-  rm -f "$1"
+  rm -f "${MCP_RECORD}"
 }
 
 apply_update() {
-  local before after svc mounted
-  mounted="$(update_dir)/mcp-sidecars"
+  local before after svc
   record_status applying
   trap 'on_apply_exit $?' EXIT
   before="$(container_image_id aura)"
@@ -488,11 +489,10 @@ apply_update() {
   # A pre-existing .env used to omit these keys forever, silently retaining dev.
   bash scripts/appliance_posture.sh .env
 
-  # What each MCP sidecar runs before anything is replaced; a tick that dies keeps it for the next.
-  if [[ ! -f "${mounted}" ]]; then
+  if [[ ! -f "${MCP_RECORD}" ]]; then
     for svc in "${MCP_SIDECARS[@]}"; do
       echo "${svc} $(container_image_id "${svc}")"
-    done >"${mounted}"
+    done >"${MCP_RECORD}"
   fi
 
   # The tick already pulled every moving tag. `--pull missing` overrides the services'
@@ -531,7 +531,7 @@ apply_update() {
     update_sidecar "${svc}"
   done
 
-  refresh_boxes_and_mounts "${mounted}"
+  refresh_boxes_and_mounts
 
   # Only a tick that got this far reclaims images -- tagged ones no pin names any more, then
   # the untagged ones a moving tag left behind -- and orphaned volumes.

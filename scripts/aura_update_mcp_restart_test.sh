@@ -50,7 +50,8 @@ wait_healthy() { echo "wait_healthy $1" >>"$calls"; }
 # one whose inspect comes back empty (gone between ps and inspect). `up -d aura` recreates aura
 # when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
 # names; update_sidecar recreates those SIDECAR_MOVES names and dies on FAIL_AT, as a sidecar
-# that never turns healthy does.
+# that never turns healthy does. `compose ps` drains its stdin, as a docker CLI may: a loop that
+# feeds the record on stdin would lose the lines after the first. Applies run on /dev/null.
 tick() {
   local t
   t=$(($(cat clock) + 1))
@@ -77,7 +78,10 @@ docker() {
   echo "docker $*" >>"$calls"
   local svc
   case "$*" in
-    'compose ps -q '*) [[ -e "absent-$4" ]] || echo "$4-id" ;;
+    'compose ps -q '*)
+      cat >/dev/null
+      [[ -e "absent-$4" ]] || echo "$4-id"
+      ;;
     'inspect --format {{.Image}} '*) echo "image-$(cat "created-${4%-id}")" ;;
     'inspect --format {{.Created}} '*)
       svc="${4%-id}"
@@ -123,7 +127,7 @@ booted_case() {
 }
 apply() {
   : >"$calls"
-  apply_update >out
+  apply_update >out </dev/null
 }
 # A tick that must die: set -e has to hold inside it, which no `if` or `||` context allows.
 apply_dies() {
@@ -132,7 +136,7 @@ apply_dies() {
   set +e
   (
     set -e
-    apply_update >out 2>err
+    apply_update >out 2>err </dev/null
   )
   status=$?
   set -e
