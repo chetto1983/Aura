@@ -50,6 +50,18 @@
 - **The development image override gets its own name, `AURA_PIM_MCP_DEV_IMAGE`.** The spec says `AURA_PIM_MCP_IMAGE` itself would stay the override. But `TestRetiredEnvKeysStayRetired` (`cmd/aura/image_pin_artifacts_test.go:54-77`) fails when compose reads a retired key, and that test is right: a stale appliance value would outrank the pin. Task A1 corrects spec §5.7.
 - **The pin is a tag, not a digest:** `ghcr.io/chetto1983/aura-pim-mcp:<full 40-character fork sha>`. The fork publishes that tag on every push to `main` (`aura-publish-image.yml:53-56`).
 - **The Go upgrade step runs in `dbMigrate`** (`cmd/aura/db.go:51-74`), after `CheckMigrationHead`, under the migration lock. That is the precedent of `EnsureAuthulaReadable`. Migrations are SQL only (`internal/db/migrate.go:27`) and no version-keyed repair exists. The step runs on every migrate, so it is idempotent: it touches only rows still in the old shape. It runs as `aura_migrate`, which bypasses RLS.
+  - *Amended 2026-11-25: superseded where it landed.* The step runs once per database, not on every
+    migrate. The rows it deletes are hand-typed rows already named `<ns>__<tool>`. After the first run, a
+    rewritten row has exactly that shape, so an idempotence based on the shape would delete the step's own
+    output.
+    - **The record.** Migration `0159_data_upgrades` adds `aura.data_upgrades`. The step inserts
+      `pim_tool_split` there in its own transaction. A later run changes nothing and logs
+      `already_applied=true`.
+    - **The numbers.** The CHECK swap landed as `0158_pim_tool_split`, not `0157`. Upstream
+      `0157_drop_skill_catalog_always_apply` landed first, and both of ours were renumbered.
+    - **The expiry codes.** Drafts the step cannot map are expired with `tool_split_unmappable`.
+
+    See spec §5.5 (amended) and `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 - **It lives in a new package, `internal/pimsplit`.** It uses two exports added for it: `mcptools.NamespacedName` and `messagedrafts.Fingerprint`.
 - **An account-less pending or approved email draft is expired** with `status='expired'`, `resolved_at=now()`, `outcome_code='account_required'`.
 - **The fork modifies upstream's classes** (spec §4.2). No wrapper layer.
@@ -419,12 +431,15 @@ Commits stay local until Task C8 (see Decisions).
 
 ### Task C9: Documents after the measurement
 
-- [ ] **Step 1: PRD amendments.** Each cites the date and the verification file and says what the measurement does not show:
+- [x] **Step 1: PRD amendments.** Each cites the date and the verification file and says what the measurement does not show:
   - §4: `prd.md:354,359,513`;
   - §5: `:581,598`;
   - §13: `:3454,3844-3862`;
   - §15: `:4259,4559`.
-- [ ] **Step 2:** Put a superseded banner on `2026-08-17-mcp-curated-surface-design.md` that names the split spec, and rewrite the PIM paragraph of `PROVENANCE.md`.
-- [ ] **Step 3:** Commit and push (documents only).
+- [x] **Step 2:** Put a superseded banner on `2026-08-17-mcp-curated-surface-design.md` that names the split spec, and rewrite the PIM paragraph of `PROVENANCE.md`.
+- [ ] **Step 3:** Commit and push (documents only). *2026-11-25: committed. The push is the controller's,
+  so this box stays open until it lands.* The verification file is
+  `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Spec §5.1, §5.3, §5.5 and §7
+  (checks 5 and 8) are amended there.
 
 Not in this plan: reconciling `plans/2026-11-23-pim-mail-calendar-rows.md` (spec §6) and the pre-review `accountId` decision (spec §5.3). Both start from Task C8's verification file.

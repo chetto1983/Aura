@@ -374,6 +374,23 @@ with `no_effect` and the model reads "message was not sent". Only a failure afte
 refused, and only the error type otherwise, since a transport error may echo the recipient or the
 text.
 
+**The PIM is one tool per operation, measured on the lab VM 2026-11-25.**
+- **The change.** Since `442c2058d`, the PIM advertises its 29 operations as 29 tools:
+  `calendar__send_email`, `calendar__get_emails`, and so on. The gateway, message drafts, host-built
+  calls and display all key on the tool name, and the `calendar` tool's `action` verb is gone
+  (`docs/superpowers/specs/2026-11-23-pim-tool-split-design.md`).
+- **What keeps the verbs.** The "multiplexed verbs" above now means Aura's own action tools (`board`,
+  `task`, `skill_manage`, …). It no longer means a third-party server.
+- **The PIM send.** It is now a draft on `calendar__send_email`. Its stored arguments carry `accountId`
+  and no `action`. A cockpit send drafted, the operator approved it, it sent, and the Sent copy landed.
+- **Reads.** The PIM's reads now carry non-mutating specs, so they leave the reservation funnel. A
+  cockpit briefing read mail and events with no reservation error.
+
+Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown:
+- a pre-upgrade draft that names an account sending after the upgrade (the one on the VM had expired);
+- a headless briefing;
+- any route but the two of that day.
+
 A tool result with no content still reaches the chat. AG-UI requires `TOOL_CALL_RESULT` content,
 and the run stream drops a frame that fails validation. The same VM turn logged it at 12:14:51
 UTC for a WhatsApp `list_chats` that found nothing, so that call stayed in the chat without its
@@ -510,8 +527,13 @@ as unused.
 What this does not show:
 - how often production models write free text at all; that is the report's first number;
 - the Italian vocabulary's reach beyond these 30 queries;
-- discovery of third-party MCP tools (`calendar`, `whatsapp`, `linear`), which get no
-  keywords and still miss paraphrases;
+- discovery of third-party MCP tools (`whatsapp`, `linear`), which get no keywords and still
+  miss paraphrases. *Amended 2026-11-24:* the PIM's 29 tools have English and Italian keywords
+  since the split. On a held-out set of 52 queries, written before the keywords existed, 32 rank
+  a gold tool in the top 5 (21 of 27 Italian, 11 of 25 English). That is now a floor that only
+  rises (`docs/superpowers/verification/2026-11-24-pim-tool-split.md`). Not shown: paraphrases
+  beyond that one set, a PIM mounted under another server name (it gets no keywords), and the
+  model's own phrasing;
 - abstention: a query for an unmounted family still returns its nearest lexical neighbour.
 The blind set is spent once anyone tunes the keywords against its misses.
 
@@ -605,6 +627,28 @@ confirmation, which is the stronger statement, so a confirmed draft passes a `de
 `docs/superpowers/verification/2026-10-10-lab-vm-wave1-acceptance.md`. Not shown: a second
 model; an outbound tool that is not drafted; whether the cockpit should tell the operator, as
 they confirm, that a deny is set on the tool.
+
+**PIM policies are per tool, measured on the lab VM 2026-11-25.** Since the PIM split, a PIM policy or
+grant has an empty action, and its subject is the tool: `calendar__send_email`, not `calendar__calendar`
+with `send_email`. The action column remains for Aura's own multiplexed tools. `aura db migrate` rewrote
+stored PIM rows once (`internal/pimsplit`):
+- a per-action row moved onto its tool;
+- a tool-wide `deny` was copied onto each of the 29 tools;
+- on an aliased mount, a tool-wide `ask` was copied onto each of the 29 tools too;
+- every other tool-wide row, and every hand-typed row already named after a new tool, was logged and
+  dropped.
+
+Two denies were measured on the VM:
+- **On `calendar__list_calendars`,** an outbound tool that is not drafted, which 2026-10-10 left
+  unmeasured. Aura refused the call with "disabled for this identity by policy", and the model went
+  around it through `calendar__get_calendar_events`.
+- **On `calendar__send_email`.** Aura drafted the send, as the 2026-10-10 decision says. The draft was
+  declined.
+
+Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown live:
+- the carry-over of a pre-upgrade deny, because the VM held no PIM policies and the upgrade reported
+  `rewritten=0`. It is proven by `db_integration` tests only;
+- a confirmed send under a deny, re-run on the new tool.
 
 **Erasing memory is Destructive; a run with no operator cannot do it, measured in-process
 2026-10-30.** `memory_forget` removes facts and entities and says so in its own description, yet it
@@ -3457,6 +3501,19 @@ This does not establish:
 - an agent turn that calls calendar after the repair;
 - whatsapp or browser: no run toggled them, though they are default-on the same way.
 
+*Amended 2026-11-25.* That one-tool shape ended with the PIM split (`442c2058d`).
+- **What the VM ran.** After the update, the VM's Aura registered 29 `calendar__*` tools and no
+  `calendar__calendar`.
+- **The incident.** The updater recreated `aura` before the PIM, so Aura first mounted the old 1-tool
+  PIM. When the tool set changed, Aura marked the server dead ("tool set changed; restart required"),
+  and the PIM stayed unusable until one restart of `aura`.
+- **The fix.** The updater now restarts `aura` once, at the end of an apply that moved a running MCP
+  sidecar's image (`0dac06ddb`..`7e379a89d`).
+
+Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown: that fix on
+the lab VM, which is still owed. Nor a sidecar-only apply that dies after the sidecar moved, which is
+parked.
+
 The cockpit offers no authorization for a sidecar Aura signs itself (2026-10-14). Measured on
 the lab VM, the panel had treated memory, calendar and whatsapp as somebody else's OAuth server:
 - "Riautorizza" ran the browser flow's discovery against `http://whatsapp:8080` and failed:
@@ -3866,6 +3923,19 @@ This does not establish:
   not: `whatsapp-mcp:latest` as published on 2026-09-24 (`1ec0233`) advertises the same
   15 tool names as the CI pin, so it is deferred on an appliance too. The curated
   WhatsApp merge that would bring it to 3 tools has not landed.
+
+*Amended 2026-11-25: the PIM split.* The one 13,136-character schema is gone. The PIM is 29 tools,
+each with only its own parameters, and the recipe still never takes an always-loaded slot. Twenty-nine
+is over the slot rule anyway.
+- **Roster cost.** The deferred roster carries every name on every turn. On the C7 corpus, the
+  `calendar` line grew from 30 to 811 bytes, and the whole roster from 2,052 to 2,874 bytes
+  (`docs/superpowers/verification/2026-11-24-pim-tool-split.md`).
+- **Loading by name.** On the lab VM, the agent loaded each PIM tool it used by name through
+  `tool_search select:` (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`).
+- **Not shown:**
+  - the roster on an appliance. Its size was not recorded there;
+  - the per-turn manifest characters after the split;
+  - token counts.
 
 ## 14. Skills and sharing
 
@@ -4293,6 +4363,26 @@ This does not establish:
 - delivery when the bridge or the PIM is down: only the retry rows of the first probe were
   observed, and those failed for the identity defect fixed above.
 
+**The email route on the split PIM, measured on the lab VM 2026-11-25.** The PIM no longer multiplexes
+mail behind `calendar`. The email route calls `list_accounts`, then its own `send_email` tool, with
+`accountId` and no `action`.
+- **The live reminder.** It was scheduled in the cockpit and fired at 14:11:46 UTC.
+  - The PIM answered "Email sent successfully", from the operator's personal account.
+  - The one-shot was deleted, and no pending notification was left.
+- **The first attempt failed upstream of Aura.** OpenRouter served the day's DeepSeek route through one
+  provider, which dropped `payload` from `task` calls and invented a `task_id`. A replay with the
+  provider pinned measured that provider at 13 of 22 calls correct, DeepSeek at 11 of 11 and Fireworks
+  at 5 of 5. `task` requires only `action`, so the dropped field was schema-valid, and OpenRouter's
+  quality routing did not see it. The operator switched the primary model. Refusals now name the keys
+  that arrived (`4adc35b33`..`f74a9328e`).
+
+Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown:
+- whether the sending account was the one whose address is the recipient's. The ledger records only
+  which account sent;
+- a route other than the one switched to;
+- the PIM's warning, on every notify, about the Microsoft account's sending address. It is queued, not
+  explained.
+
 A one-shot task that has fired is deleted (2026-10-05). Measured on the lab VM after the probes
 above: every fired `at` reminder stayed `status=active` with `next_run_at` NULL, because firing
 only clears the next fire. The cockpit board listed all of them as active, among eight system
@@ -4579,6 +4669,14 @@ origin was deleted does. `homeTask` now also homes an `agent_job` with no origin
 <goal>" as the task's identity and records it with `SetTaskOriginRow`; later runs reuse it. Other
 kinds with no origin are left alone, because none of them runs tools through the gateway. A
 failed open leaves the run as before. Not shown: the lab VM.
+
+*Amended 2026-11-25.* Since the PIM split, the PIM's reads are their own tools with non-mutating
+specs (`calendar__get_emails`, `calendar__get_calendar_events`), so they no longer enter the reservation
+funnel. `board` still has a mutating spec. On the lab VM, a cockpit briefing turn called `board`, then
+`calendar__get_calendar_events` twice, then `calendar__get_emails`. Every call ended `ok`, with no
+reservation error (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`). Not shown:
+- a headless `agent_job` briefing. This failure was headless, and the check was a cockpit turn in a
+  conversation.
 
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un

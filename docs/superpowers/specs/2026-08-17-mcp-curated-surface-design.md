@@ -1,5 +1,18 @@
 # Curated MCP surface design: `aura-pim-mcp` + `whatsapp-mcp`
 
+> **Superseded for the PIM (2026-11-25).** The PIM is no longer one multiplexed `calendar` tool. It
+> advertises its 29 operations as 29 tools, and Aura keys risk, approvals, drafts and display on the tool
+> name. See `docs/superpowers/specs/2026-11-23-pim-tool-split-design.md`, which supersedes four parts of
+> this document:
+> - D-18 for the PIM;
+> - D-19;
+> - D-26 as applied to the PIM's raw handlers;
+> - the calendar half of D-35.
+>
+> D-17, D-20, D-23 and D-32 stand. The split shipped in `442c2058d`. The lab VM run is
+> `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. The WhatsApp parts of this
+> document are unchanged.
+
 - **Original date:** 2026-08-17
 - **Revised 2026-08-22** — after `.planning/phases/46-mcp-trust-and-facade/46-HALT-2026-08-22.md`
   halted execution before any plan commit landed. The 2026-08-17 edition of this document was never
