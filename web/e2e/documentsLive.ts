@@ -15,9 +15,9 @@ export async function openDocuments(page: Page): Promise<void> {
   await page.addInitScript(() => {
     window.localStorage.setItem('aura.language', 'it');
     window.localStorage.setItem('aura.shell.surface', 'documents');
-    window.localStorage.setItem('aura.documents.view', 'documents');
   });
-  await gotoAuthenticated(page, '/');
+  // The Documents surface opens on its overview; the list the specs drive is the library.
+  await gotoAuthenticated(page, '/documents/library');
 }
 
 /** api calls the documents API as the operator and decodes the answer, failing on any error. */

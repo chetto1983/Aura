@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { SavedView } from '../src/documents/workspaceApi';
+import { gotoAuthenticated } from './auth';
 import { api, ensureLabel, type LiveRow } from './documentsLive';
 import {
   fixturePDF,
@@ -167,7 +168,9 @@ test.describe('Paperless document workflow on the real backend', () => {
         });
         try {
           const freshPage = await freshContext.newPage();
-          await freshPage.goto('/documents/views');
+          // Entered as the first page was: gotoAuthenticated pins the onboarding status, without
+          // which an operator who never finished first-run setup gets it over the view.
+          await gotoAuthenticated(freshPage, '/documents/views');
           await freshPage
             .getByRole('listitem')
             .filter({ has: freshPage.locator(`input[value="${viewName}"]`) })

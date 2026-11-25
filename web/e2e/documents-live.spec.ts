@@ -105,24 +105,31 @@ test.describe('the Documenti view, live', () => {
           labels.tags = await ensureLabel(page, 'tag', tagName);
           await page.reload();
 
-          const list = page.getByRole('region', { name: 'Documenti' });
+          // The list is a region named Documenti inside the Documents surface, which carries the
+          // same name.
+          const list = page
+            .getByRole('region', { name: 'Documenti' })
+            .getByRole('region', { name: 'Documenti' });
           await expect(list.getByRole('heading', { name: 'Documenti' })).toBeVisible();
-          await expect(list.locator('.wx-row').first()).toBeVisible();
-          // The grid scrolls inside the room left to it, rather than growing past the page and
-          // taking the rows below the fold and the pager with it.
-          const fits = await list.evaluate((region) => {
-            const grid = region.querySelector('.wx-grid');
-            return (
-              grid !== null &&
-              grid.getBoundingClientRect().bottom <= region.getBoundingClientRect().bottom + 1
-            );
-          });
-          expect(fits, 'the grid stays inside the view').toBe(true);
-          const nameWidth = await list
-            .locator('.wx-header .wx-cell', { hasText: 'Nome' })
-            .evaluate((cell) => cell.getBoundingClientRect().width);
-          expect(nameWidth, 'the name column keeps a readable width').toBeGreaterThanOrEqual(150);
-          if (!device.isMobile) {
+          if (device.isMobile) {
+            // A phone lists documents as cards, not as the grid.
+            await expect(list.getByRole('listitem').first()).toBeVisible();
+          } else {
+            await expect(list.locator('.wx-row').first()).toBeVisible();
+            // The grid scrolls inside the room left to it, rather than growing past the page and
+            // taking the rows below the fold and the pager with it.
+            const fits = await list.evaluate((region) => {
+              const grid = region.querySelector('.wx-grid');
+              return (
+                grid !== null &&
+                grid.getBoundingClientRect().bottom <= region.getBoundingClientRect().bottom + 1
+              );
+            });
+            expect(fits, 'the grid stays inside the view').toBe(true);
+            const nameWidth = await list
+              .locator('.wx-header .wx-cell', { hasText: 'Nome' })
+              .evaluate((cell) => cell.getBoundingClientRect().width);
+            expect(nameWidth, 'the name column keeps a readable width').toBeGreaterThanOrEqual(150);
             // The operator drags a column's edge, and the list keeps the width it was left at.
             const header = list.locator('.wx-header .wx-cell', { hasText: 'Nome' });
             const grip = await header.locator('.wx-grip').boundingBox();
@@ -138,7 +145,10 @@ test.describe('the Documenti view, live', () => {
           }
           await shot(page, testInfo, `${device.name}-01-elenco`);
 
-          await list.getByRole('button', { name: 'Tipo', exact: true }).click();
+          // On a phone the filters sit behind one button, in a popover outside the list region.
+          if (device.isMobile)
+            await list.getByRole('button', { name: 'Filtri', exact: true }).click();
+          await page.getByRole('button', { name: 'Tipo', exact: true }).click();
           const menu = page.getByRole('dialog', { name: 'Tipo' });
           await menu.getByRole('checkbox', { name: new RegExp(typeName) }).click();
           for (const name of INVOICES) {
@@ -183,7 +193,9 @@ test.describe('the Documenti view, live', () => {
           await page.waitForTimeout(1_500);
           await shot(page, testInfo, `${device.name}-07-dettaglio`);
           await use.click();
-          await expect(page.getByRole('button', { name: 'Salva', exact: true })).toBeEnabled();
+          await expect(
+            page.getByRole('button', { name: 'Salva dettagli', exact: true }),
+          ).toBeEnabled();
           await shot(page, testInfo, `${device.name}-08-dettaglio-modificato`);
           // The detail is the section holding its review button: the shell's own navigation
           // carries a "Documenti" too.
@@ -201,7 +213,10 @@ test.describe('the Documenti view, live', () => {
           await shot(page, testInfo, `${device.name}-09-avanti`);
 
           await detail.getByRole('button', { name: 'Documenti', exact: true }).click();
-          await list.getByRole('button', { name: 'Liste e regole' }).click();
+          // On a phone the Documents navigation is a drawer behind its own button.
+          if (device.isMobile)
+            await page.getByRole('button', { name: 'Navigazione documenti' }).click();
+          await page.getByRole('link', { name: 'Organizzazione' }).click();
           await expect(page.getByRole('heading', { name: 'Liste e regole' })).toBeVisible();
           await expect(page.getByRole('heading', { name: typeName, level: 3 })).toBeVisible();
           await expect(page.getByText(/^\d+ document[oi]$/).first()).toBeVisible();
