@@ -1580,10 +1580,10 @@ jobs:
     timeout-minutes: 25
     # The three first-party MCP resource servers behind a real `aura serve` as their OAuth
     # issuer: per subject, the PIM, WhatsApp and memory each show one token's data and never
-    # another's. scripts/mcp_live_integration.sh creates and migrates its own throwaway
-    # database in the compose postgres, brings up aura serve and the memory MCP (both built
-    # from this commit, under `env -i` allowlists), the PIM at its pin and the published
-    # WhatsApp MCP, then runs the tier; this job provisions the servers the script expects.
+    # another's. scripts/mcp_live_integration.sh starts its own Postgres and ArcadeDB
+    # containers, brings up aura serve and the memory MCP (both built from this commit, under
+    # `env -i` allowlists), the PIM at its pin and the published WhatsApp MCP, then runs the
+    # tier and removes all of it; this job provides only the stateless embedding sidecar.
     # NO-SKIP-AS-GREEN: the tier t.Fatals under $CI when any env it reads is unset.
     env:
       CI: "true"
@@ -1594,11 +1594,10 @@ jobs:
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       AURA_EMBED_DIMENSIONS: "768"
       AURA_EMBED_MODEL_DIR: /tmp/aura-ci-cache/llama.cpp/llama.cpp
+      # Only compose's interpolation reads it (the aura service makes it :?-required).
       POSTGRES_PASSWORD: ci-test-password
-      # The script refuses `aura`; this throwaway name is created, migrated and dropped by it.
+      # The script refuses `aura`; this throwaway name lives in the script's own Postgres.
       AURA_MCP_LIVE_DB: aura_mcp_live
-      ARCADEDB_URL: http://127.0.0.1:2480
-      ARCADEDB_ADMIN_PASSWORD: ci-test-password
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1621,29 +1620,24 @@ jobs:
       - name: Materialize the validated EmbeddingGemma model
         run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
 
-      - name: Start Postgres
-        run: make db-up
-
-      - name: Bring up ArcadeDB and EmbeddingGemma
+      - name: Bring up EmbeddingGemma
         # The embed sidecar serves the model from the CI cache overlay's bind mount, and
         # aura serve's strict boot hashes the same file there (AURA_EMBED_MODEL_DIR).
         run: |
           mkdir -p "$AURA_EMBED_MODEL_DIR" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
           cp ~/.cache/aura-embed/model.gguf "$AURA_EMBED_MODEL_DIR/embeddinggemma-300M-Q8_0.gguf"
-          docker compose up -d arcadedb aura-llama-embed
-          for endpoint in http://127.0.0.1:2480/api/v1/ready http://127.0.0.1:8081/health; do
-            ok=""
-            for i in $(seq 1 60); do
-              if curl -fsS "$endpoint" >/dev/null 2>&1; then ok=1; break; fi
-              echo "$endpoint not ready yet ($i)"
-              sleep 5
-            done
-            if [ -z "$ok" ]; then
-              echo "$endpoint never became ready" >&2
-              docker compose logs --tail 100 arcadedb aura-llama-embed || true
-              exit 1
-            fi
+          docker compose up -d aura-llama-embed
+          ok=""
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1; then ok=1; break; fi
+            echo "embedding sidecar not ready yet ($i)"
+            sleep 5
           done
+          if [ -z "$ok" ]; then
+            echo "embedding sidecar never became ready" >&2
+            docker compose logs --tail 100 aura-llama-embed || true
+            exit 1
+          fi
 
       - name: Live mcp_live_integration tier
         run: bash scripts/mcp_live_integration.sh
