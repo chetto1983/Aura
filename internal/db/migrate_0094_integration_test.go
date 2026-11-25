@@ -67,7 +67,7 @@ func assert0094Schema(t *testing.T, ctx context.Context, admin *pgxpool.Pool) {
 
 	var identity string
 	if err := admin.QueryRow(ctx, `SELECT id::text FROM aura.identities LIMIT 1`).Scan(&identity); err != nil {
-		t.Skipf("no identity seeded in the fresh database: %v", err)
+		t.Fatalf("no identity seeded in the fresh database: %v", err)
 	}
 	_, err := admin.Exec(ctx, `
 INSERT INTO aura.verification_events (
