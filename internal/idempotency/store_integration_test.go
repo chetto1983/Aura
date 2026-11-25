@@ -171,6 +171,22 @@ func TestStorePostgresContract(t *testing.T) {
 
 	t.Run("expiry cutoff and bounded batch preserve metadata", func(t *testing.T) {
 		cutoff := now.Add(30 * time.Minute)
+		// A database kept across runs still holds an earlier run's payloads, some expiring
+		// within a second of this cutoff when the runs are that close, and the bounded batch
+		// clears the oldest first. Drain everything up to the latest cutoff used below so
+		// both passes see only this subtest's rows.
+		for drained := 0; ; drained++ {
+			report, err := store.ExpireReplayBodies(ctx, cutoff.Add(time.Second))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Cleared == 0 {
+				break
+			}
+			if drained == 1000 {
+				t.Fatal("expired replay payloads did not drain")
+			}
+		}
 		expiries := []time.Time{cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)}
 		requests := make([]BeginRequest, len(expiries))
 		for i, expiry := range expiries {
