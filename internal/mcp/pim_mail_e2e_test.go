@@ -7,6 +7,7 @@
 //   - the shape of get_emails as the briefing and its baseline read it;
 //   - that a send leaves the appliance and arrives;
 //   - that these providers refuse create_event, so no invitation can leave (A1);
+//   - the change feed internal/pimwatch reads (pim_contract_live_test.go);
 //   - what bulk_mark_emails_read does to the unread mail (A3).
 package mcp
 
@@ -56,6 +57,7 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	if isErr || !strings.Contains(accounts, pimOperatorMail) || !strings.Contains(accounts, pimOperatorCalendar) || strings.Contains(accounts, pimColleagueMail) {
 		t.Fatalf("operator's accounts = %s, want its mailbox and calendar and not the colleague's", accounts)
 	}
+	testPIMChangeFeedContract(t, endpoint, operatorToken, pimOperatorMail)
 
 	// The briefing's two reads.
 	unreadText, unread := awaitMail(t, ctx, operator, pimOperatorMail, func(m []pimEmail) bool { return len(m) >= 3 })

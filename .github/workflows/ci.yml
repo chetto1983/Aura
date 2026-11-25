@@ -1599,6 +1599,31 @@ jobs:
         if: always()
         run: docker rm -f aura-pim-mcp || true
 
+  pim-mail-e2e:
+    name: PIM mail E2E (pim_mail_e2e tier, live aura-pim-mcp over GreenMail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # guards against a hung image pull
+    # The pinned PIM against a fake IMAP/SMTP server (GreenMail) on a private Docker network,
+    # through Aura's OAuth contract: the briefing's mail reads, a send that arrives, the
+    # calendar-write refusal (A1), bulk mark-read (A3), and the change feed internal/pimwatch
+    # reads. scripts/pim_mail_e2e.sh brings both containers up, seeds three unread mails, runs
+    # the tier and the briefing baseline, and removes everything on exit.
+    # NO-SKIP-AS-GREEN: the tier t.Fatals when AURA_PIM_MCP_URL is unset.
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: PIM over a fake mailbox, end to end
+        run: bash scripts/pim_mail_e2e.sh
+
   mcp-live-integration-test:
     name: Live MCP resources (mcp_live_integration tier, PIM + WhatsApp + Memory behind aura serve)
     runs-on: ubuntu-latest

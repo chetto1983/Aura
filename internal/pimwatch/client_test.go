@@ -28,7 +28,8 @@ func (s *staticToken) AccessToken(_ context.Context, server string) (string, err
 }
 
 // contract is testdata/pim_contract.json: the requests and answers spec §5.1 fixes. The fake PIM
-// here answers from it, and the pim_contract_live tier holds the real sidecar to the same file.
+// here answers from it, and internal/mcp's pim_mail_e2e tier holds the real sidecar to the same
+// contract (pim_contract_live_test.go).
 type contract struct {
 	ChangesRequest   json.RawMessage `json:"changesRequest"`
 	ChangesResponse  json.RawMessage `json:"changesResponse"`
