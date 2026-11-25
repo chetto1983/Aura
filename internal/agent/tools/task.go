@@ -234,7 +234,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	}
 	spec, next, err := t.resolveSchedule(a)
 	if err != nil {
-		return ToolResult{}, refuseSchedule(err, raw)
+		return ToolResult{}, refuseResolve(a, err, raw)
 	}
 
 	tier, needsApproval := taskNeedsApproval(a)

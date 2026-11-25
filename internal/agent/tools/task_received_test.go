@@ -105,3 +105,32 @@ func TestScheduleRefusalCapsAndSanitisesKeys(t *testing.T) {
 		t.Fatalf("keys not capped (len %d): %q", len(msg), msg)
 	}
 }
+
+func TestScheduleRefusalForAWrongValueDoesNotClaimItIsMissing(t *testing.T) {
+	t.Parallel()
+	base := `"action":"schedule","kind":"reminder","payload":{"text":"x"}`
+	cases := []struct{ name, args, field string }{
+		{"every below the minimum", `{` + base + `,"schedule_kind":"every","every_minutes":3}`, "`every_minutes`"},
+		{"invalid cron", `{` + base + `,"schedule_kind":"cron","cron":"not a cron"}`, "`cron`"},
+		{"past at", `{` + base + `,"schedule_kind":"at","at":"2020-01-01T00:00:00Z"}`, "`at`"},
+		{"malformed at", `{` + base + `,"schedule_kind":"at","at":"tomorrow"}`, "`at`"},
+		{"invalid tz", `{` + base + `,"schedule_kind":"every","every_minutes":10,"tz":"Mars/Base"}`, "`tz`"},
+		{"unknown schedule_kind", `{` + base + `,"schedule_kind":"weekly"}`, "`schedule_kind`"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(), []byte(c.args))
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, c.field) || !strings.Contains(msg, "fix the value in this same call") || !strings.Contains(msg, "No task was created") {
+				t.Errorf("refusal does not name %s and ask for a fixed value: %q", c.field, msg)
+			}
+			if strings.Contains(msg, "ask the operator") || strings.Contains(msg, "Received:") {
+				t.Errorf("refusal claims the field is missing: %q", msg)
+			}
+		})
+	}
+}

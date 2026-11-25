@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/chetto1983/aura/internal/cron"
 )
 
 // refuseSchedule words a schedule refusal for the model: what is missing, the argument names that
@@ -81,4 +83,29 @@ func safeKey(k string) string {
 		return string(r[:maxReceivedKeyLen]) + "..."
 	}
 	return k
+}
+
+// refuseResolve words a resolveSchedule refusal from the arguments that arrived: a field that is
+// absent gets the missing-field refusal, a field that arrived with a bad value is named as wrong
+// so the model fixes the value instead of hunting for something to add.
+func refuseResolve(a taskArgs, err error, raw json.RawMessage) error {
+	field, present := wrongScheduleField(a, err)
+	if !present {
+		return refuseSchedule(err, raw)
+	}
+	return fmt.Errorf("%w. The value of `%s` is wrong, not missing; fix the value in this same call. No task was created", err, field)
+}
+
+func wrongScheduleField(a taskArgs, err error) (string, bool) {
+	switch {
+	case errors.Is(err, cron.ErrInvalidTimezone):
+		return "tz", true
+	case a.ScheduleKind == "at":
+		return "at", true
+	case a.ScheduleKind == "every":
+		return "every_minutes", a.EveryMinutes != 0
+	case a.ScheduleKind == "cron":
+		return "cron", a.Cron != ""
+	}
+	return "schedule_kind", a.ScheduleKind != ""
 }
