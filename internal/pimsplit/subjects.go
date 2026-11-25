@@ -19,7 +19,7 @@ type subjectTable struct {
 	label string
 	// purge deletes every row named after a PIM tool ($1, text[]).
 	purge string
-	// read locks the rows on one multiplexed tool ($1), each identity's tool-wide row first.
+	// read locks the rows on one multiplexed tool ($1) by identity, a policy table's denies first.
 	read string
 	// copy writes the row ($1 identity, $2 tool, $3 action) under each name of $4 (text[]) with no
 	// action, and never over a row already there.
@@ -47,7 +47,7 @@ var policies = subjectTable{
 	purge: `DELETE FROM aura.gateway_tool_policies WHERE tool = ANY($1::text[])
 RETURNING identity_id::text, tool, action, policy`,
 	read: `SELECT identity_id::text, tool, action, policy FROM aura.gateway_tool_policies
-WHERE tool = $1 ORDER BY identity_id, action FOR UPDATE`,
+WHERE tool = $1 ORDER BY identity_id, policy = 'ask', action FOR UPDATE`,
 	copy: `INSERT INTO aura.gateway_tool_policies (identity_id, tool, action, policy, set_at, set_by)
 SELECT p.identity_id, t.name, '', p.policy, p.set_at, p.set_by
 FROM aura.gateway_tool_policies p, unnest($4::text[]) AS t(name)
@@ -66,12 +66,15 @@ const (
 	moveDrop
 )
 
-// decide is what becomes of one row on the multiplexed tool. Only a deny can be widened to every
-// tool: it can only restrict, and dropping it would let through mail the operator had refused. A
-// tool-wide grant or ask fanned out would be a permission nobody set on the new tools.
-func decide(action, kind string) (move, string) {
+// decide is what becomes of one row on the multiplexed tool of mount ns. A deny is widened to every
+// tool: it can only restrict, and dropping it would let through mail the operator had refused. So
+// is an ask on an aliased mount, where the gateway keyed the tool by its name alone and the ask
+// asked for every call; on the default mount the subject carried the call's action, so a tool-wide
+// ask matched no call the PIM would run. A tool-wide grant, or an ask there, fanned out would be a
+// permission nobody set.
+func decide(ns, action, kind string) (move, string) {
 	switch {
-	case action == "" && kind == "deny":
+	case action == "" && (kind == "deny" || kind == "ask" && ns != calendarServer):
 		return moveFanOut, ""
 	case action == "":
 		return moveDrop, "a tool-wide " + kind + " is not fanned out to the PIM's tools"
@@ -82,8 +85,10 @@ func decide(action, kind string) (move, string) {
 	}
 }
 
-// subjects settles one table. The rows already named after a PIM tool go first, so a rewritten row
-// can meet only a fanned-out deny, which read's order writes first and copy never overwrites.
+// subjects settles one table. The rows already named after a PIM tool go first, so two rows meet on
+// a new tool only when both came from one identity's multiplexed rows. The gateway reads one policy
+// per tool, so there the deny must stay: read's order writes every deny before any ask, and copy
+// never overwrites.
 func (u upgrader) subjects(ctx context.Context, table subjectTable) error {
 	var named []string
 	for _, ns := range u.namespaces {
@@ -113,7 +118,7 @@ func (u upgrader) subjects(ctx context.Context, table subjectTable) error {
 }
 
 func (u upgrader) settle(ctx context.Context, table subjectTable, ns string, s subject) error {
-	verdict, reason := decide(s.action, s.kind)
+	verdict, reason := decide(ns, s.action, s.kind)
 	var targets []string
 	switch verdict {
 	case moveRewrite:
@@ -123,7 +128,11 @@ func (u upgrader) settle(ctx context.Context, table subjectTable, ns string, s s
 		for _, tool := range calendarTools {
 			targets = append(targets, mcptools.NamespacedName(ns, tool))
 		}
-		u.report.FannedOutDenies++
+		if s.kind == "deny" {
+			u.report.FannedOutDenies++
+		} else {
+			u.report.FannedOutAsks++
+		}
 	default:
 		u.drop(table, s, reason)
 	}

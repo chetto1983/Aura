@@ -29,13 +29,15 @@ const (
 
 // Report counts the old-shape rows the upgrade settled; each stored row lands in one count.
 type Report struct {
-	// Rewritten is per-action grants and policies moved onto their tool. A rewritten ask that meets
-	// a fanned-out deny on the same tool is counted here and loses to it.
+	// Rewritten is per-action grants and policies moved onto their tool. A rewritten policy that
+	// meets a fanned-out one on the same tool is counted here, and of the two the deny stays.
 	Rewritten int
 	// FannedOutDenies is tool-wide deny policies copied onto each PIM tool.
 	FannedOutDenies int
-	// Dropped is grants and policies deleted: tool-wide grants and asks, unknown actions, and rows
-	// already named after a PIM tool before the split.
+	// FannedOutAsks is tool-wide ask policies on an aliased mount copied onto each PIM tool.
+	FannedOutAsks int
+	// Dropped is grants and policies deleted: tool-wide grants, tool-wide asks on the default mount,
+	// unknown actions, and rows already named after a PIM tool before the split.
 	Dropped int
 	// DraftsRewritten is pending and approved email drafts moved onto send_email.
 	DraftsRewritten int
@@ -75,7 +77,7 @@ func Upgrade(ctx context.Context, conn *pgx.Conn, log *slog.Logger) (Report, err
 		return Report{}, fmt.Errorf("pim tool split: %w", err)
 	}
 	log.Info("pim tool split upgrade", "already_applied", applied,
-		"rewritten", report.Rewritten, "fanned_out_denies", report.FannedOutDenies, "dropped", report.Dropped,
+		"rewritten", report.Rewritten, "fanned_out_denies", report.FannedOutDenies, "fanned_out_asks", report.FannedOutAsks, "dropped", report.Dropped,
 		"drafts_rewritten", report.DraftsRewritten, "drafts_expired", report.DraftsExpired)
 	return report, nil
 }

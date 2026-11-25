@@ -37,23 +37,28 @@ func TestNamespacesAreTheRecipeRowsAndTheDefaultMount(t *testing.T) {
 func TestDecideMovesEachStoredRow(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		action, kind string
-		want         move
-		reason       string
+		namespace, action, kind string
+		want                    move
+		reason                  string
 	}{
-		{"send_email", "grant", moveRewrite, ""},
-		{"delete_event", "ask", moveRewrite, ""},
-		{"send_email", "deny", moveRewrite, ""},
-		{"", "deny", moveFanOut, ""},
-		{"", "grant", moveDrop, "tool-wide"},
-		{"", "ask", moveDrop, "tool-wide"},
-		{"frobnicate", "grant", moveDrop, "unknown action"},
-		{"calendar", "deny", moveDrop, "unknown action"},
+		{"calendar", "send_email", "grant", moveRewrite, ""},
+		{"calendar", "delete_event", "ask", moveRewrite, ""},
+		{"calendar", "send_email", "deny", moveRewrite, ""},
+		{"calendar", "", "deny", moveFanOut, ""},
+		{"calendar", "", "grant", moveDrop, "tool-wide"},
+		{"calendar", "", "ask", moveDrop, "tool-wide"},
+		{"calendar", "frobnicate", "grant", moveDrop, "unknown action"},
+		{"calendar", "calendar", "deny", moveDrop, "unknown action"},
+		{"work-pim", "", "deny", moveFanOut, ""},
+		{"work-pim", "", "ask", moveFanOut, ""},
+		{"work-pim", "", "grant", moveDrop, "tool-wide"},
+		{"work-pim", "send_email", "ask", moveRewrite, ""},
 	}
 	for _, tc := range cases {
-		got, reason := decide(tc.action, tc.kind)
+		got, reason := decide(tc.namespace, tc.action, tc.kind)
 		if got != tc.want || !strings.Contains(reason, tc.reason) {
-			t.Errorf("decide(%q, %q) = %v %q, want %v containing %q", tc.action, tc.kind, got, reason, tc.want, tc.reason)
+			t.Errorf("decide(%q, %q, %q) = %v %q, want %v containing %q",
+				tc.namespace, tc.action, tc.kind, got, reason, tc.want, tc.reason)
 		}
 	}
 }

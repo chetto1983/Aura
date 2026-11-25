@@ -26,10 +26,12 @@ func TestPerActionGrantBecomesAToolGrant(t *testing.T) {
 	}
 }
 
-func everyToolDenied(namespace, by string) []string {
+func everyToolDenied(namespace, by string) []string { return everyTool(namespace, "deny", by) }
+
+func everyTool(namespace, policy, by string) []string {
 	var want []string
 	for _, name := range mcptools.CalendarToolNames() {
-		want = append(want, mcptools.NamespacedName(namespace, name)+"/=deny by "+by)
+		want = append(want, mcptools.NamespacedName(namespace, name)+"/="+policy+" by "+by)
 	}
 	slices.Sort(want)
 	return want
@@ -64,6 +66,58 @@ func TestToolWideGrantAndAskAreLoggedAndDropped(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Errorf("the log does not name %q:\n%s", want, logs)
 		}
+	}
+}
+
+// Under an alias the gateway keyed the multiplexed tool on its name alone, so a tool-wide ask asked
+// for every call; dropped, it would let every non-destructive tool run unasked. A grant still drops.
+func TestToolWideAskOnAnAliasFansOutToEveryTool(t *testing.T) {
+	h := newHarness(t)
+	long := strings.Repeat("p", 60)
+	h.server("work-pim", "recipe:calendar")
+	h.server(long, "recipe:calendar")
+	id := h.identity()
+	h.policy(id, mcptools.NamespacedName("work-pim", "calendar"), "", "ask")
+	h.policy(id, mcptools.NamespacedName(long, "calendar"), "", "ask")
+	h.grant(id, mcptools.NamespacedName("work-pim", "calendar"), "")
+	if report := h.upgrade(); report != (Report{FannedOutAsks: 2, Dropped: 1}) {
+		t.Fatalf("Report = %+v", report)
+	}
+	want := append(everyTool("work-pim", "ask", "bob"), everyTool(long, "ask", "bob")...)
+	slices.Sort(want)
+	if got := h.policies(id); len(got) != 58 || !slices.Equal(got, want) {
+		t.Fatalf("policies = %v", got)
+	}
+	if got := h.grants(id); len(got) != 0 {
+		t.Fatalf("grants = %v", got)
+	}
+	if !strings.Contains(h.logs.String(), "fanned_out_asks=2") {
+		t.Fatalf("the summary does not count the asks:\n%s", h.logs.String())
+	}
+}
+
+// The gateway reads one row per tool, so where a per-action deny and a fanned-out ask land on the
+// same tool the stored row must be the deny. A per-action ask meets the fanned-out ask as one row.
+func TestDenyWinsOverAFannedOutAsk(t *testing.T) {
+	h := newHarness(t)
+	h.server("work-pim", "recipe:calendar")
+	alias := mcptools.NamespacedName("work-pim", "calendar")
+	id := h.identity()
+	h.policy(id, alias, "", "ask")
+	h.policy(id, alias, "send_email", "deny")
+	h.policy(id, alias, "delete_email", "ask")
+	h.policy(id, mcptools.NamespacedName("work-pim", "get_emails"), "", "deny")
+	if report := h.upgrade(); report != (Report{Rewritten: 2, FannedOutAsks: 1, Dropped: 1}) {
+		t.Fatalf("Report = %+v", report)
+	}
+	want := everyTool("work-pim", "ask", "bob")
+	sendEmail := slices.Index(want, mcptools.NamespacedName("work-pim", "send_email")+"/=ask by bob")
+	want[sendEmail] = mcptools.NamespacedName("work-pim", "send_email") + "/=deny by bob"
+	if got := h.policies(id); !slices.Equal(got, want) {
+		t.Fatalf("policies = %v, want %v", got, want)
+	}
+	if !strings.Contains(h.logs.String(), "tool=work-pim__get_emails") {
+		t.Fatalf("the hand-typed row is not in the log:\n%s", h.logs.String())
 	}
 }
 
