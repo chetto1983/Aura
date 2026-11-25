@@ -3,7 +3,9 @@
 Date: 2026-11-24. Range `ecc3d78..HEAD` on branch `ccr-f5c5d64d-2oo6ah`: 23 removal commits,
 one per package, then two gate commits. Measured in a cloud container: Go 1.27.4,
 deadcode and golang.org/x/tools v0.48.0, staticcheck v0.8.2, golangci-lint v2.14.0, and a
-disposable PostgreSQL 16.15 cluster for the `db_integration` tier.
+disposable PostgreSQL 16.15 cluster for the `db_integration` tier. On 2026-11-25
+`tools/deadexport` moved to golang.org/x/tools v0.51.0 to take x/mod v0.42.0 (CVE-2026-56864
+and CVE-2026-56865 in v0.38.0); its findings on this tree are unchanged.
 
 ## Why the existing gate was blind
 
