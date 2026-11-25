@@ -27,7 +27,7 @@ set +H  # disable history expansion for the '!'-containing password
 
 cd "$(git rev-parse --show-toplevel)"
 
-# --- DSN composition (mirrors run_conversations_integration.sh) ---------------
+# --- DSN composition ----------------------------------------------------------
 if [[ -z "${AURA_DB_URL:-}" || -z "${AURA_DB_MIGRATE_URL:-}" ]]; then
   : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set (or AURA_DB_URL/AURA_DB_MIGRATE_URL)}"
   HOST="${PGHOST:-127.0.0.1}"
