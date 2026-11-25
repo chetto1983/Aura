@@ -156,10 +156,33 @@ test.describe('the Documenti view, live', () => {
           }
           await shot(page, testInfo, `${device.name}-02-filtro-tipo`);
           await page.keyboard.press('Escape');
+          if (device.isMobile) {
+            // Escape closes only the Tipo menu; the Filtri popover stays open over the cards'
+            // checkboxes (CI, 2026-11-25) and a second Escape does not close it, so its button
+            // closes it, as a tap would.
+            const filters = page.getByRole('dialog', { name: 'Filtri' });
+            if (await filters.isVisible()) {
+              await list.getByRole('button', { name: 'Filtri', exact: true }).click();
+            }
+            await expect(filters).toBeHidden();
+          }
           await shot(page, testInfo, `${device.name}-03-filtrato`);
 
-          await list.getByRole('checkbox', { name: `Seleziona ${INVOICES[0]}` }).click();
-          await list.getByRole('checkbox', { name: `Seleziona ${INVOICES[1]}` }).click();
+          // "Rivisto, salva e avanti" opens the next document in the list's order, the indexing
+          // order, which nothing fixes: the reviewed invoice is the first shown, so it has a next
+          // one, and the other two take the bulk edit.
+          const placed = await Promise.all(
+            INVOICES.map(async (name) => {
+              const box = await list.getByRole('button', { name, exact: true }).boundingBox();
+              return { name, y: box?.y ?? Number.POSITIVE_INFINITY };
+            }),
+          );
+          const [reviewedName, ...bulkNames] = placed.sort((a, b) => a.y - b.y).map((p) => p.name);
+          if (reviewedName === undefined) throw new Error('no invoice in the filtered list');
+
+          for (const name of bulkNames) {
+            await list.getByRole('checkbox', { name: `Seleziona ${name}` }).click();
+          }
           const bar = page.getByRole('toolbar', { name: 'Modifica in blocco' });
           await bar.getByRole('button', { name: 'Tag', exact: true }).click();
           const tags = page.getByRole('dialog', { name: 'Tag, sui 2 selezionati' });
@@ -174,21 +197,21 @@ test.describe('the Documenti view, live', () => {
           await shot(page, testInfo, `${device.name}-05-conferma`);
           await confirm.getByRole('button', { name: 'Conferma' }).click();
           await expect(bar).toBeHidden();
-          for (const name of INVOICES.slice(0, 2)) {
+          for (const name of bulkNames) {
             const [doc] = await documentsNamed(page, name);
             expect(doc?.values.some((v) => v.value_key === labels.tags)).toBe(true);
           }
           await shot(page, testInfo, `${device.name}-06-applicato`);
 
-          await list.getByRole('button', { name: INVOICES[2], exact: true }).click();
-          await expect(page.getByRole('heading', { name: INVOICES[2] })).toBeVisible();
+          await list.getByRole('button', { name: reviewedName, exact: true }).click();
+          await expect(page.getByRole('heading', { name: reviewedName })).toBeVisible();
           const use = page.getByRole('button', { name: `Usa il suggerimento ${typeName}` });
           await expect(use).toBeVisible();
           // The preview is GridCraft (/apps/gridcraft/): its own loader leaves once the app
           // runs, and the workbook it is sent then paints on its canvas, which the DOM cannot
           // see, so a short wait follows.
           await expect(
-            page.frameLocator(`iframe[title="${INVOICES[2]}"]`).locator('#gridcraft_loading'),
+            page.frameLocator(`iframe[title="${reviewedName}"]`).locator('#gridcraft_loading'),
           ).toBeHidden({ timeout: 60_000 });
           await page.waitForTimeout(1_500);
           await shot(page, testInfo, `${device.name}-07-dettaglio`);
@@ -203,9 +226,9 @@ test.describe('the Documenti view, live', () => {
             .locator('section')
             .filter({ has: page.getByRole('button', { name: 'Rivisto, salva e avanti' }) });
           await detail.getByRole('button', { name: 'Rivisto, salva e avanti' }).click();
-          await expect(page.getByRole('heading', { name: INVOICES[2] })).toBeHidden();
+          await expect(page.getByRole('heading', { name: reviewedName })).toBeHidden();
           await expect(detail.getByRole('heading', { level: 1 })).toBeVisible();
-          const [reviewed] = await documentsNamed(page, INVOICES[2]);
+          const [reviewed] = await documentsNamed(page, reviewedName);
           expect(reviewed?.needs_review).toBe(false);
           expect(reviewed?.values.some((v) => v.value_key === labels.type && v.accepted)).toBe(
             true,
