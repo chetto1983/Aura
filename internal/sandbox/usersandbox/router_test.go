@@ -225,12 +225,11 @@ func TestRoute_IdleBump(t *testing.T) {
 // a test fixture (T-37-05-CONFIGDROP).
 func TestSpecFor_UsesConfiguredKnobs(t *testing.T) {
 	cfg := config.SandboxConfig{
-		IdleTTLSec:      900,
-		CPULimit:        7,
-		MemoryLimit:     3 << 30,
-		PidsLimit:       333,
-		EgressAllowlist: []string{"api.example.com", "pypi.org"},
-		Image:           "registry.example.com/aura-sandbox@sha256:abc",
+		IdleTTLSec:  900,
+		CPULimit:    7,
+		MemoryLimit: 3 << 30,
+		PidsLimit:   333,
+		Image:       "registry.example.com/aura-sandbox@sha256:abc",
 	}
 
 	r := NewSandboxRouter(&fakeBackend{t: t}, cfg)
@@ -253,13 +252,5 @@ func TestSpecFor_UsesConfiguredKnobs(t *testing.T) {
 	}
 	if !spec.Egress.Floor {
 		t.Fatalf("Egress.Floor = false, want true (always-on tenancy floor)")
-	}
-	if len(spec.Egress.FQDNAllowlist) != len(cfg.EgressAllowlist) {
-		t.Fatalf("FQDNAllowlist = %v, want %v", spec.Egress.FQDNAllowlist, cfg.EgressAllowlist)
-	}
-	for i, fqdn := range cfg.EgressAllowlist {
-		if spec.Egress.FQDNAllowlist[i] != fqdn {
-			t.Fatalf("FQDNAllowlist[%d] = %q, want %q", i, spec.Egress.FQDNAllowlist[i], fqdn)
-		}
 	}
 }

@@ -30,7 +30,7 @@ type signInRuntime struct {
 func wireSignInRuntime(ctx context.Context, chat *chatEnv, server *agui.Server, service *mcpAuthService) {
 	root, stop := context.WithCancel(ctx)
 	browser := &sandboxSignInBrowser{router: chat.sandboxRouter, image: chat.cfg.Sandbox.SignInBrowserImage, sidecarImage: chat.cfg.Sandbox.Image,
-		policy: usersandbox.EgressPolicy{Floor: true, FQDNAllowlist: chat.cfg.Sandbox.EgressAllowlist}}
+		policy: usersandbox.EgressPolicy{Floor: true}}
 	login := browserlogin.New(root, browser, browserlogin.Options{})
 	browser.owns, browser.cancel = login.Owns, login.Cancel
 	service.signIn = &signInRuntime{login: login, browser: browser, origin: chat.cfg.MCPSandboxOrigin, port: chat.cfg.MCPSandboxPort, root: root, stop: stop}

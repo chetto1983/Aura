@@ -73,11 +73,6 @@ type SandboxConfig struct {
 	// PidsLimit is the per-box PID cap (D-14) → container.Resources.PidsLimit.
 	PidsLimit int64 // AURA_SANDBOX_PIDS_LIMIT — per-box pids cap, default 1024
 
-	// EgressAllowlist is the operator-tightened egress allowlist (D-06). Empty (the default)
-	// = floor-only (full public internet minus the tenancy boundary); a non-empty list is
-	// enforced via nftables by 37-06's buildEgressSidecar.
-	EgressAllowlist []string // AURA_SANDBOX_EGRESS_ALLOWLIST — CSV allowlist, empty default = floor-only
-
 	// Image is the box image ref (D-13). Default is the local build tag; production SHOULD
 	// override with a digest-pinned registry ref.
 	Image string // AURA_SANDBOX_IMAGE — box image reference, default aura-sandbox:latest
@@ -106,7 +101,6 @@ func loadSandboxConfig() SandboxConfig {
 		CPULimit:           envutil.IntDefault("AURA_SANDBOX_CPU_LIMIT", defaultSandboxCPULimit),
 		MemoryLimit:        int64Default("AURA_SANDBOX_MEMORY_LIMIT", defaultSandboxMemoryLimit),
 		PidsLimit:          int64Default("AURA_SANDBOX_PIDS_LIMIT", defaultSandboxPidsLimit),
-		EgressAllowlist:    envSliceDefault("AURA_SANDBOX_EGRESS_ALLOWLIST", nil),
 		Image:              envDefault("AURA_SANDBOX_IMAGE", defaultSandboxImage),
 		SignInBrowserImage: envDefault("AURA_SIGNIN_BROWSER_IMAGE", defaultSignInBrowserImage),
 		EgressImage:        envDefault("AURA_SANDBOX_EGRESS_IMAGE", defaultSandboxEgressImage),

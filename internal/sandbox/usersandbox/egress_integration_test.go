@@ -40,19 +40,6 @@ func egressTestImage() string {
 	return "aura-egress:latest"
 }
 
-// egressFQDNImageOrSkip returns an aura-egress image built WITH the OpenSandbox egress binary
-// (the runc-only FQDN mode, #934). The default floor-only image cannot enforce an FQDN
-// allowlist, so the FQDN test skips unless AURA_EGRESS_FQDN_IMAGE names such an image.
-func egressFQDNImageOrSkip(t *testing.T) string {
-	t.Helper()
-	v := strings.TrimSpace(os.Getenv("AURA_EGRESS_FQDN_IMAGE"))
-	if v == "" {
-		t.Skip("FQDN-allowlist enforcement needs an aura-egress image built WITH the OpenSandbox egress binary " +
-			"(runc-only, issue #934); set AURA_EGRESS_FQDN_IMAGE to run this tier")
-	}
-	return v
-}
-
 // skipUnlessEnforcingBridge gates the egress DROP assertions on a native-Linux
 // non-masquerading bridge. Under $CI it is MANDATORY: the daemon must be native-Linux (a
 // non-Linux daemon t.Fatals — a skipped enforcement tier is never a silent pass). Locally it
@@ -196,35 +183,6 @@ func TestEgress_FloorDropsInternal(t *testing.T) {
 	}
 	if containerExists(t, cli, sidecar) {
 		t.Fatalf("egress sidecar %q must be gone after Stop (no orphan)", sidecar)
-	}
-}
-
-// TestEgress_FQDNAllowlist proves the runc-only tightened allowlist: a box resolved with a
-// CONFIGURED allowlist reaches an allowed FQDN, and a disallowed FQDN is DROPPED. It needs an
-// aura-egress image built with the OpenSandbox egress binary (skips otherwise) and a
-// native-Linux enforcing bridge.
-func TestEgress_FQDNAllowlist(t *testing.T) {
-	skipUnlessDockerd(t)
-	skipUnlessEnforcingBridge(t)
-	fqdnImage := egressFQDNImageOrSkip(t)
-	cli := newTestDockerClient(t)
-	backend := NewDockerBackend(cli, testBoxImage(), testLimits(), WithEgress(fqdnImage))
-	ctx := context.Background()
-
-	id := uniqueIdentity(t, "egress-fqdn")
-	// The allowlist is the CONFIGURED policy (as 37-05 specFor would source it), not an inline
-	// default — an allowed host and a disallowed host prove the config drives enforcement.
-	spec := SandboxSpec{IdentityID: id, Egress: EgressPolicy{FQDNAllowlist: []string{"example.com"}}}
-	h, err := backend.Resolve(ctx, spec)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	t.Cleanup(func() { _ = backend.Stop(context.Background(), h) })
-
-	requireBoxReachesPublic(t, cli, h.ContainerID, "http://example.com",
-		"box must reach the ALLOWED FQDN example.com under the configured allowlist")
-	if ok, _ := boxWget(t, cli, h.ContainerID, "http://www.wikipedia.org", 5); ok {
-		t.Fatalf("box reached a DISALLOWED FQDN — the tightened allowlist did not DROP it (SBX-04 breach)")
 	}
 }
 

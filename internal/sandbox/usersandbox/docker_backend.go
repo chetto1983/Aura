@@ -251,11 +251,11 @@ func (b *DockerBackend) launchEgress(ctx context.Context, spec SandboxSpec, h Bo
 		return b.ensureEgressRunning(ctx, existing)
 	}
 
-	return b.startEgress(ctx, name, h.ContainerID, spec.Egress, nil)
+	return b.startEgress(ctx, name, h.ContainerID, nil)
 }
 
-func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, policy EgressPolicy, labels map[string]string) error {
-	sc, err := buildEgressSidecar(policy, netnsOwner)
+func (b *DockerBackend) startEgress(ctx context.Context, name, netnsOwner string, labels map[string]string) error {
+	sc, err := buildEgressSidecar(netnsOwner)
 	if err != nil {
 		return fmt.Errorf("build egress sidecar: %w", err)
 	}

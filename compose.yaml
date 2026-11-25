@@ -322,6 +322,8 @@ services:
       AURA_SANDBOX_CPU_LIMIT: ${AURA_SANDBOX_CPU_LIMIT:-2}
       AURA_SANDBOX_MEMORY_LIMIT: ${AURA_SANDBOX_MEMORY_LIMIT:-2147483648}
       AURA_SANDBOX_PIDS_LIMIT: ${AURA_SANDBOX_PIDS_LIMIT:-1024}
+      # Removed knob, still forwarded so a value left in .env fails boot (config
+      # gateRemovedEgressAllowlist) instead of being silently ignored.
       AURA_SANDBOX_EGRESS_ALLOWLIST: ${AURA_SANDBOX_EGRESS_ALLOWLIST:-}
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"

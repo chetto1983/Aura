@@ -80,9 +80,10 @@ func (c *Config) Validate() error {
 // of the all-tier gates (required secrets, RunDir, web-bind), the generic kind-driven
 // re-parse pass (reparsePass — Fatal under strict, Warn under lenient, PROF-04/F-016),
 // and every bespoke security gate, passing the resolved profile p. It NEVER first-fails
-// — the operator sees EVERY unmet requirement in one pass (criterion #1). The only env
-// reads are reparsePass (cataloged knobs), gateDestructiveShell (the raw
-// destructive-patterns knob); it performs no other I/O and never echoes a secret VALUE.
+// — the operator sees EVERY unmet requirement in one pass (criterion #1). Its env reads are
+// reparsePass (cataloged knobs) and the gates that read one raw knob each
+// (gateDestructiveShell, gateReasoningTraceFull, gateRemovedEgressAllowlist); it performs no
+// other I/O and never echoes a secret VALUE.
 func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	var vs []Violation
 	vs = append(vs, c.gateRequiredSecrets()...)
@@ -102,7 +103,20 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateRetention()...)
 	vs = append(vs, c.gateMultiUserRequiresStrictProfile(p)...)
 	vs = append(vs, c.gateSwarmStaleness(p)...)
+	vs = append(vs, gateRemovedEgressAllowlist()...)
 	return vs
+}
+
+// gateRemovedEgressAllowlist refuses AURA_SANDBOX_EGRESS_ALLOWLIST under every profile. It
+// configured an OpenSandbox FQDN mode that no shipped aura-egress image could run (the sidecar
+// exited at boot), and the mode was removed on 2026-11-25. Ignoring the knob instead would let
+// an operator believe egress is narrowed to a list while only the tenancy floor applies.
+func gateRemovedEgressAllowlist() []Violation {
+	if strings.TrimSpace(os.Getenv("AURA_SANDBOX_EGRESS_ALLOWLIST")) == "" {
+		return nil
+	}
+	return []Violation{{Knob: "AURA_SANDBOX_EGRESS_ALLOWLIST", Sev: Fatal,
+		Msg: "removed: no aura-egress image ever enforced an FQDN allowlist; unset it (the RFC1918 and metadata floor always applies)"}}
 }
 
 // gateMultiUserRequiresStrictProfile keeps multi-user provisioning an explicit hardened-

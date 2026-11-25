@@ -70,7 +70,6 @@ func TestTranslate_PinsSafe(t *testing.T) {
 	adversarial := []SandboxSpec{
 		{}, // zero value
 		{IdentityID: "--privileged", Image: "host"},
-		{IdentityID: "id", Image: "img", Egress: EgressPolicy{FQDNAllowlist: []string{"host", "0.0.0.0/0"}}},
 		{IdentityID: "id", Limits: Resources{NanoCPUs: -1, MemoryBytes: -1, PidsLimit: -1}},
 		{IdentityID: "id", Limits: Resources{NanoCPUs: 1 << 62, MemoryBytes: 1 << 62, PidsLimit: 1 << 62}},
 	}
@@ -93,10 +92,7 @@ func TestTranslate_PinsSafe(t *testing.T) {
 			IdentityID: rapid.String().Draw(rt, "identityID"),
 			Image:      rapid.String().Draw(rt, "image"),
 			Kind:       BoxKind(rapid.IntRange(0, 1).Draw(rt, "kind")),
-			Egress: EgressPolicy{
-				Floor:         rapid.Bool().Draw(rt, "floor"),
-				FQDNAllowlist: rapid.SliceOf(rapid.String()).Draw(rt, "fqdnAllowlist"),
-			},
+			Egress:     EgressPolicy{Floor: rapid.Bool().Draw(rt, "floor")},
 			Limits: Resources{
 				NanoCPUs:    rapid.Int64().Draw(rt, "nanoCPUs"),
 				MemoryBytes: rapid.Int64().Draw(rt, "memoryBytes"),

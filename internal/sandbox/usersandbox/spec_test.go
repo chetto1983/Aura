@@ -18,7 +18,6 @@ func TestSpec_NoHostExposureFields(t *testing.T) {
 
 	want := []string{
 		"Egress",
-		"Egress.FQDNAllowlist",
 		"Egress.Floor",
 		"IdentityID",
 		"Image",
