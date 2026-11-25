@@ -1505,7 +1505,7 @@ jobs:
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # The same sha compose.yaml pins, so the tier proves the image appliances run;
       # TestThePIMImageIsPinnedEverywhere keeps the two equal.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8f97396f33e8a0b8e50ead37b0cc18afc83f93b9
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -2062,7 +2062,7 @@ jobs:
       # schema production no longer serves -- the same stale image behind
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:8f97396f33e8a0b8e50ead37b0cc18afc83f93b9
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout
