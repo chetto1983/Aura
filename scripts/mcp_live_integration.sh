@@ -4,44 +4,50 @@
 # each proving that one subject's token never reaches another subject's data.
 #
 # It brings up, on the host network, what the tier talks to and nothing else:
+#   - a throwaway Postgres database (scripts/lib/disposable_stack.sh, coverage_docker.sh's
+#     pattern: its own container locally, a fresh database in the compose postgres under
+#     GitHub Actions), migrated by the binary under test and dropped on exit;
 #   - `aura serve` on 127.0.0.1:9080, built from this tree: the issuer whose JWKS every sidecar
-#     verifies against, sharing AURA_DB_URL's authula schema with the tier's token minter;
+#     verifies against, sharing that database's authula schema with the tier's token minter;
 #   - the memory MCP (cmd/arcadedb-mcp) on 8096, built from this tree;
 #   - the PIM on 8093 at the pinned image, with the operator configuration in
 #     internal/mcp/testdata/pim-appsettings.json (the PIM refuses a tenant-written account that
 #     reads its own disk, so the two subjects' fixture accounts are the operator's);
-#   - the published WhatsApp MCP on 8092 (bridge on 8094), its store bind-mounted at
-#     AURA_WHATSAPP_STORE_ROOT so the tier can seed each tenant's SQLite.
+#   - the published WhatsApp MCP on 8092 (bridge on 8094), its store a fresh directory of this
+#     run, bind-mounted so the tier can seed each tenant's SQLite.
 # Then it runs the tier and tears everything down.
 #
-# The caller provides a migrated Postgres (AURA_DB_URL, which must not be a live deployment's:
-# aura serve writes to it), ArcadeDB (ARCADEDB_URL + the root pair), the embedding sidecar
-# (AURA_EMBED_BASE_URL, AURA_EMBED_MODEL_DIR) and the strict-profile env `aura serve` boots on.
-# ci.yml's mcp-live-integration-test job is the reference caller.
+# Nothing it starts can reach a live deployment:
+#   - the database is always its own, and a caller DSN naming `aura` is refused before anything
+#     starts;
+#   - aura serve and the memory MCP run under `env -i` with an explicit allowlist, from a
+#     directory with no .env, so no inherited or .env channel token, DSN or key reaches them;
+#   - aura serve runs with --only=cli, which keeps Telegram (its one channel) off even if a
+#     settings row held a token.
+#
+# The caller provides POSTGRES_PASSWORD (the throwaway server's superuser password: any value
+# locally, the compose postgres's in CI), ArcadeDB (ARCADEDB_URL + ARCADEDB_ADMIN_PASSWORD for
+# root) and the embedding sidecar (AURA_EMBED_BASE_URL, AURA_EMBED_MODEL_DIR holding the GGUF a
+# strict boot hashes, AURA_EMBED_REVISION, AURA_EMBED_FINGERPRINT). ci.yml's
+# mcp-live-integration-test job is the reference caller.
 # Needs loopback 8092, 8093, 8094, 8096 and 9080 free.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+# shellcheck source=scripts/lib/disposable_stack.sh
+source scripts/lib/disposable_stack.sh
 
-: "${AURA_DB_URL:?}" "${AURA_AUTHULA_SECRET:?}" "${ARCADEDB_URL:?}" "${ARCADEDB_ADMIN_PASSWORD:?}"
-: "${AURA_EMBED_MODEL_DIR:?}" "${WHATSAPP_BRIDGE_TOKEN:?}" "${AURA_WHATSAPP_STORE_ROOT:?}"
+# A caller that exports a DSN naming the live database expects the tier to use it: refuse that
+# loudly instead of replacing it silently.
+for dsn in "${AURA_DB_URL:-}" "${AURA_AUTHULA_DSN:-}"; do
+  [ -n "$dsn" ] || continue
+  name="${dsn##*/}"
+  disposable_stack_guard_name "${name%%\?*}"
+done
+DB="${AURA_MCP_LIVE_DB:-aura_mcp_live}"
+disposable_stack_guard_name "$DB"
 
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb}"
-WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
-PIM=aura-pim-mcp-live
-WHATSAPP=aura-whatsapp-mcp-live
-WORK="$(mktemp -d)"
-SERVE_PID=""
-MEMORY_PID=""
-
-teardown() {
-  for pid in "$MEMORY_PID" "$SERVE_PID"; do
-    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
-  done
-  wait 2>/dev/null || true
-  docker rm -f "$PIM" "$WHATSAPP" >/dev/null 2>&1 || true
-  rm -rf "$WORK"
-}
-trap teardown EXIT
+: "${POSTGRES_PASSWORD:?}" "${ARCADEDB_URL:?}" "${ARCADEDB_ADMIN_PASSWORD:?}"
+: "${AURA_EMBED_BASE_URL:?}" "${AURA_EMBED_MODEL_DIR:?}" "${AURA_EMBED_REVISION:?}" "${AURA_EMBED_FINGERPRINT:?}"
 
 for port in 8092 8093 8094 8096 9080; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
@@ -50,8 +56,62 @@ for port in 8092 8093 8094 8096 9080; do
   fi
 done
 
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8fbd79960eee2fbb2970a5a725d5759fb44ccfdb}"
+WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
+PIM=aura-pim-mcp-live
+WHATSAPP=aura-whatsapp-mcp-live
+# The run's own dummies: a fresh authula schema is self-consistent with any 64-hex secret, and
+# the tenant secret only derives the throwaway memory databases the tier drops.
+AUTHULA_SECRET=00000000000000000000000000000000000000000000000000000000000000a1
+TENANT_SECRET=0000000000000000000000000000000000000000000000000000000000000d1
+BRIDGE_TOKEN=mcp-live-bridge-token
+WORK="$(mktemp -d)"
+STORE="$WORK/whatsapp-store"
+SERVE_PID=""
+MEMORY_PID=""
+
+teardown() {
+  for pid in "$MEMORY_PID" "$SERVE_PID"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
+  # The WhatsApp image writes the store as root; empty it from inside before removing it.
+  docker exec "$WHATSAPP" sh -c 'rm -rf /app/whatsapp-bridge/store/*' >/dev/null 2>&1 || true
+  docker rm -f "$PIM" "$WHATSAPP" >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+  disposable_stack_teardown
+}
+trap teardown EXIT
+
+disposable_stack_bring_up_auto "$DB" "$POSTGRES_PASSWORD" "${AURA_MCP_LIVE_POSTGRES_PORT:-5434}" "" \
+  aura-postgres-mcp-live "${AURA_PG_CONTAINER:-aura-postgres}"
+disposable_stack_export_env "$POSTGRES_PASSWORD"
+
 go build -o "$WORK/aura" ./cmd/aura
 go build -o "$WORK/arcadedb-mcp" ./cmd/arcadedb-mcp
+mkdir -p "$WORK/run" "$WORK/skills" "$STORE"
+
+base_env=(HOME="$WORK" PATH="$PATH" TMPDIR="$WORK")
+if [ -n "${DOCKER_HOST:-}" ]; then base_env+=(DOCKER_HOST="$DOCKER_HOST"); fi
+db_env=(AURA_DB_URL="$AURA_DB_URL" AURA_DB_MIGRATE_URL="$AURA_DB_MIGRATE_URL" AURA_AUTHULA_SECRET="$AUTHULA_SECRET")
+arcade_env=(ARCADEDB_URL="$ARCADEDB_URL" ARCADEDB_ADMIN_USER=root ARCADEDB_ADMIN_PASSWORD="$ARCADEDB_ADMIN_PASSWORD"
+  AURA_ARCADEDB_TENANT_SECRET="$TENANT_SECRET")
+embed_env=(AURA_EMBED_BASE_URL="$AURA_EMBED_BASE_URL" AURA_EMBED_DIMENSIONS="${AURA_EMBED_DIMENSIONS:-768}"
+  AURA_EMBED_MODEL_DIR="$AURA_EMBED_MODEL_DIR" AURA_EMBED_REVISION="$AURA_EMBED_REVISION"
+  AURA_EMBED_FINGERPRINT="$AURA_EMBED_FINGERPRINT")
+# The strict profile an appliance runs, with the model-in-the-loop skill's dummies
+# (.claude/skills/aura-model-in-the-loop/env.e2e.sh): no model is called, and the object store
+# keys are ones a strict boot accepts.
+serve_env=(AURA_PROFILE=single_user_hardened AURA_TIMEZONE=Europe/Rome
+  AURA_LLM_PROVIDER=llamacpp AURA_LLM_MODEL=no-model AURA_LLM_BASE_URL=http://127.0.0.1:18484/v1
+  AURA_OBJECTSTORE_BACKEND=filesystem-dev AURA_OBJECTSTORE_ACCESS_KEY=GKe2e0000000000000000000ab
+  AURA_OBJECTSTORE_SECRET_KEY=e2e-not-a-sample-secret-0000000000000000000000000000000000000000
+  GARAGE_RPC_SECRET=e2e00000000000000000000000000000000000000000000000000000000000d4
+  AURA_RUN_DIR="$WORK/run" AURA_SKILL_EXPORT_DIR="$WORK/skills")
+
+(cd "$WORK" && exec env -i "${base_env[@]}" "${db_env[@]}" AURA_DB_BOOTSTRAP_URL="$AURA_DB_BOOTSTRAP_URL" \
+  ./aura db migrate) >"$WORK/migrate.log" 2>&1 \
+  || { tail -n 40 "$WORK/migrate.log" >&2; exit 1; }
 
 dump_logs() {
   tail -n 60 "$WORK/serve.log" "$WORK/memory.log" 2>/dev/null || true
@@ -59,9 +119,8 @@ dump_logs() {
   docker logs "$WHATSAPP" --tail 40 2>&1 || true
 }
 
-# Both binaries run from $WORK: started from a checkout, the daemon's godotenv.Load would read
-# a developer's .env, real channel tokens included.
-(cd "$WORK" && exec ./aura serve) >"$WORK/serve.log" 2>&1 &
+(cd "$WORK" && exec env -i "${base_env[@]}" "${db_env[@]}" "${arcade_env[@]}" "${embed_env[@]}" "${serve_env[@]}" \
+  ./aura serve --only=cli) >"$WORK/serve.log" 2>&1 &
 SERVE_PID=$!
 for _ in $(seq 1 90); do
   kill -0 "$SERVE_PID" 2>/dev/null || break
@@ -70,10 +129,11 @@ for _ in $(seq 1 90); do
 done
 curl -fs -o /dev/null http://127.0.0.1:9080/healthz || { echo "FATAL: aura serve never answered /healthz" >&2; dump_logs; exit 1; }
 
-MCP_OAUTH_ISSUER=http://127.0.0.1:9080 MCP_OAUTH_JWKS_URL=http://127.0.0.1:9080/oauth/jwks \
+(cd "$WORK" && exec env -i "${base_env[@]}" "${db_env[@]}" "${arcade_env[@]}" "${embed_env[@]}" \
+  ARCADEDB_DATABASE=aura_memory ARCADEDB_USER=root ARCADEDB_PASSWORD="$ARCADEDB_ADMIN_PASSWORD" \
+  MCP_OAUTH_ISSUER=http://127.0.0.1:9080 MCP_OAUTH_JWKS_URL=http://127.0.0.1:9080/oauth/jwks \
   MCP_OAUTH_RESOURCE=http://127.0.0.1:8096/mcp,http://127.0.0.1:8096/mcp/ MCP_OAUTH_SCOPE=mcp:tools \
-  AURA_ARCADEDB_MCP_HOST=127.0.0.1 AURA_ARCADEDB_MCP_PORT=8096 \
-  sh -c 'cd "$1" && exec ./arcadedb-mcp' _ "$WORK" >"$WORK/memory.log" 2>&1 &
+  AURA_ARCADEDB_MCP_HOST=127.0.0.1 AURA_ARCADEDB_MCP_PORT=8096 ./arcadedb-mcp) >"$WORK/memory.log" 2>&1 &
 MEMORY_PID=$!
 
 # DOTNET_SYSTEM_NET_DISABLEIPV6: see scripts/pim_tls_mail_up.sh (Docker Desktop's host network).
@@ -87,14 +147,13 @@ docker run -d --name "$PIM" --network host \
   --entrypoint /bin/sh "$PIM_IMAGE" \
   -c 'printf "%s" "$AURA_PIM_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll' >/dev/null
 
-mkdir -p "$AURA_WHATSAPP_STORE_ROOT"
 docker run -d --name "$WHATSAPP" --network host \
-  -e WHATSAPP_BRIDGE_TOKEN="$WHATSAPP_BRIDGE_TOKEN" \
+  -e WHATSAPP_BRIDGE_TOKEN="$BRIDGE_TOKEN" \
   -e MCP_OAUTH_ISSUER=http://127.0.0.1:9080 \
   -e MCP_OAUTH_JWKS_URL=http://127.0.0.1:9080/oauth/jwks \
   -e MCP_OAUTH_RESOURCE=http://127.0.0.1:8092/mcp/ \
   -e WHATSAPP_MCP_PORT=8092 -e WHATSAPP_GATEWAY_PORT=8094 -e WHATSAPP_API_URL=http://127.0.0.1:8094/api \
-  -v "$AURA_WHATSAPP_STORE_ROOT:/app/whatsapp-bridge/store" "$WHATSAPP_IMAGE" >/dev/null
+  -v "$STORE:/app/whatsapp-bridge/store" "$WHATSAPP_IMAGE" >/dev/null
 
 for endpoint in http://127.0.0.1:8096/health http://127.0.0.1:8093/health http://127.0.0.1:8094/healthz; do
   curl --retry 40 --retry-delay 2 --retry-connrefused --retry-all-errors -fsS -o /dev/null "$endpoint" \
@@ -106,13 +165,16 @@ docker cp internal/mcp/testdata/fixture-calendar.json "$PIM:/app/data/fixture-ca
 # the bind mount, where the tier (the runner user) must seed it. Create both tenants first,
 # then open the store to either side -- the whatsapp-integration-test job does the same.
 for tenant in d1111111-1111-4111-8111-111111111111 d2222222-2222-4222-8222-222222222222; do
-  curl -fsS -o /dev/null -H "Authorization: Bearer $WHATSAPP_BRIDGE_TOKEN" -H "X-Tenant-ID: $tenant" \
+  curl -fsS -o /dev/null -H "Authorization: Bearer $BRIDGE_TOKEN" -H "X-Tenant-ID: $tenant" \
     http://127.0.0.1:8094/api/status
 done
 docker exec "$WHATSAPP" chmod -R a+rwX /app/whatsapp-bridge/store
 
 echo "==> PIM $(docker image inspect "$PIM_IMAGE" --format '{{index .RepoDigests 0}}')," \
-  "WhatsApp $(docker image inspect "$WHATSAPP_IMAGE" --format '{{index .RepoDigests 0}}')"
-AURA_AUTHULA_DSN="${AURA_AUTHULA_DSN:-$AURA_DB_URL}" \
+  "WhatsApp $(docker image inspect "$WHATSAPP_IMAGE" --format '{{index .RepoDigests 0}}')," \
+  "database $DB"
+AURA_AUTHULA_DSN="$AURA_DB_URL" AURA_AUTHULA_SECRET="$AUTHULA_SECRET" \
+  AURA_WHATSAPP_STORE_ROOT="$STORE" WHATSAPP_BRIDGE_TOKEN="$BRIDGE_TOKEN" \
+  ARCADEDB_ADMIN_USER=root \
   go test -race -count=1 -tags mcp_live_integration -run TestMCPResourcesLiveCrossSubjectIsolation -v ./internal/webauth/ \
   || { dump_logs; exit 1; }
