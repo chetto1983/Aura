@@ -160,24 +160,32 @@ A test may skip in CI only through an allowlist entry. The 59 local "env var or 
 `internal/testenv.Require(t, keys...)`: skip locally, `t.Fatal` under `$CI`. The 16 unguarded tagged-tier
 skips either go through it or become `platform` entries.
 
-## 5. Where each measured hole lands
+## 5. Where each measured hole landed (PR #280)
 
 | Hole | Landing |
 |---|---|
-| `TestTwoRolesTracer`, `TestEnsureForIdentityRestoresAgainstALiveGarage`, `TestAssetRoundTripKeepsTheOriginal` | `scripts/musr_e2e.sh` `-run` (same 5 tags, stack already up) |
-| `TestProvisioningSagaResumable`, `TestAssetObjectStoreCrossDenyLive`, `internal/objectstore/garageadmin` | a `garage_integration` invocation in `scripts/musr_e2e.sh` |
+| `TestTwoRolesTracer`, `TestEnsureForIdentityRestoresAgainstALiveGarage`, `TestAssetRoundTripKeepsTheOriginal` | `scripts/musr_e2e.sh`'s five-tag `-run` |
+| `TestProvisioningSagaResumable`, `TestAssetObjectStoreCrossDenyLive`, `internal/objectstore/garageadmin` | a `garage_integration` block in `scripts/musr_e2e.sh` |
 | `TestForgetDetachesOneActorsSourceAfterD10SplitLeavesTheOther` | the `./cmd/arcadedb-mcp/` `-run` in `scripts/musr_e2e.sh` |
-| `internal/runner` memory live tests | the Agent Memory job |
+| `internal/runner` memory capture and projection | `scripts/musr_e2e.sh`, the stack they were measured on |
+| `serve_smoke` | `scripts/musr_e2e.sh`, last: booting `aura serve` retires the legacy `local` identity |
 | `TestAdaptiveReasoningTierLive` | the Reasoning tier job, next to `TestReasoningClassifierLive` |
-| `serve_smoke` | the Race + leak DB tier job |
-| `backup_live` | the Integration job (`pg_dump` from the runner, version checked against the server) |
-| `smoke` (`TestPipCacheIsolation`) | the Sandbox docker_integration job |
-| `pim_mail_e2e`, `pim_contract_live` | one new `pim-mail-e2e` job running `scripts/pim_mail_e2e.sh`; the contract test takes its token from the in-process issuer (§6) |
-| `agent_memory_eval_protocol_test.py`, `agent_memory_eval_running_aura_test.py`, `cloudflare_caddy_origin_test.sh` | the glob runner (§4.4) |
-| `scripts/run_{runner,askuser,conversations,identity}_integration.sh` + `run_runner_integration_test.sh` | deleted: WSL helpers hard-coded to `/mnt/d/Aura`, duplicating the CI DB tiers and `scripts/coverage_docker.sh` |
-| Web E2E path filter | removed (§4.6) |
-| Telegram live tier | open question 1 |
-| 22 live Playwright specs (80 tests) | open question 2 |
+| `backup_live` | the Integration job, with `postgresql-client-18` from PGDG first on PATH |
+| `smoke` (`TestPipCacheIsolation`) | the Sandbox docker_integration job, on the image it builds |
+| `pim_mail_e2e`, `pim_contract_live` | a new `pim-mail-e2e` job; the contract runs inside `TestPIMMailEndToEnd` on its token, and the `pim_contract_live` tag is gone |
+| two Python self-tests | `make evidence-contracts` discovers every `scripts/*_test.py`; CI calls the target |
+| `cloudflare_caddy_origin_test.sh` | the build job builds `aura-caddy` from the commit and runs it |
+| `scripts/run_{runner,askuser,conversations,identity}_integration.sh` + `run_runner_integration_test.sh` | deleted: WSL helpers hard-coded to `/mnt/d/Aura` |
+| Web E2E and Vitest path filters | removed (§4.6); create-aura's Vitest runs in `web-test` |
+| Calm Prism `--update-snapshots` | removed; baselines are master's render on the runner (operator, 2026-11-25) |
+| multimodal audio skip-as-green | the job fails when a sidecar never comes up |
+| seven unguarded tagged-tier skips | fail under `$CI` through each package's existing guard |
+| `TestEgress_FQDNAllowlist` | removed with the OpenSandbox FQDN mode no image could run (operator, 2026-11-25); a set `AURA_SANDBOX_EGRESS_ALLOWLIST` fails boot |
+| Telegram live tier | stays manual: `outward` (operator, 2026-11-25) |
+| 22 live Playwright specs (80 tests) | open (§10) |
+
+The glob runner of §4.4 was not needed for the Python self-tests (discovery covers them); the
+shell self-tests are still listed by hand, and the ledger is what catches one left out.
 
 ## 6. Stale tests found by running them (fixed 2026-11-25)
 
@@ -199,11 +207,13 @@ from the test issuer; its landing needs that token in CI (§5).
 
 ## 7. Rollout
 
-1. The ledger, recording only, in `ci.yml`: the gate reports and does not fail. One push to `master` proves
-   every test job uploads.
-2. Wire the holes of §5 and fix the stale tests of §6, one commit per landing.
+1. Done in PR #280: wire the holes of §5 and fix the stale tests of §6, one commit per landing.
+2. The ledger, recording only: the gate reports and does not fail. One push to `master` proves every
+   test job uploads.
 3. The gate fails on violations. From here a test that stops running turns CI red on the push that did it.
 4. Retire the static check (§8).
+
+Plan: [`2026-11-25-test-ledger.md`](../plans/2026-11-25-test-ledger.md).
 
 ## 8. Retiring the static check
 
@@ -220,9 +230,11 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
 
 ## 10. Open questions for the operator
 
-1. **Telegram live tier.** It needs `TELEGRAM_BOT_TOKEN` and a chat id as repository secrets. Add them and it
-   runs on every push, or it is an `outward` entry?
-2. **The 22 live Playwright specs.** Eight need only a live stack with fixtures (documents, graph, skill
+1. **The 22 live Playwright specs.** Eight need only a live stack with fixtures (documents, graph, skill
    catalogue, origin isolation, paperless, browser sidecar). Fourteen drive a real agent or a real account.
    Proposal: the eight join a `web-e2e-live` job; the fourteen are designed separately, either against a
    scripted model endpoint (the model-in-the-loop parking endpoint, automated) or as `paid` entries.
+
+Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
+check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
+master's render; the FQDN egress mode is removed.
