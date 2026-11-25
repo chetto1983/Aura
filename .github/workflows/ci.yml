@@ -1694,11 +1694,10 @@ jobs:
         run: docker compose down
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
-  # Five path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
-  # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`
-  # guard early-exits each job green when no web file changed, so Go-only PRs do
-  # not pay the npm install cost. The filter watches web/** + embedded dist +
-  # this workflow file.
+  # Node-24 jobs, all blocking on every PR (D-16), all in the single unified workflow
+  # (D-17 — no separate web.yml). Only web-lint keeps a `dorny/paths-filter` guard: it
+  # runs no tests. web-test and web-e2e run on every push, because a test behind a path
+  # filter goes unseen on the pushes it skips (2026-11-25).
   # The industrial set mirrors the Go gates: web-lint (Oxlint/tsc/prettier),
   # web-test (vitest + ≥85% coverage), web-mutation (Stryker and the critical Go
   # boundaries ≥70% killed each, measured by the jobs before it), web-e2e (Playwright).
@@ -1754,40 +1753,27 @@ jobs:
   web-test:
     name: Web unit tests (Vitest + coverage)
     runs-on: ubuntu-latest
+    # Runs on every push: a test that runs only when a path filter says so goes unseen on the
+    # pushes it skips (2026-11-25). create-aura's Vitest suite runs here too, so its tests are
+    # in this workflow and not only in create-aura-appliance.yml.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Detect web changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: changes
-        with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
-
       - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            packages/create-aura/package-lock.json
 
       - name: Vitest (FND-06)
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run test
 
-      - name: No-skip-as-green backstop (filter must not have misfired)
-        # WR-05: see web-lint — fails if the filter said web==false but a web path
-        # actually changed in the event range. Fail-open on an uncomputable range.
-        if: steps.changes.outputs.web != 'true'
-        run: |
-          bash scripts/web_filter_backstop.sh \
-            "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: create-aura Vitest
+        run: cd packages/create-aura && npm ci && npm test
 
   # Mutation evidence arrives from parallel jobs and is judged once. Stryker and three groups
   # of Go scopes run on runners of their own; `web-mutation` downloads what they measured, runs
@@ -2070,6 +2056,8 @@ jobs:
     # OPENROUTER_API_KEY lets config.LoadServe boot (the placeholder shell needs no
     # real key); the agent loop is never exercised — only the static "/" render is.
     # CI=true arms the no-skip-as-green guards in the surrounding scripts.
+    # It runs on every push: it boots aura serve, so a Go-only push changes what it tests.
+    # Behind a web-path filter it ran on 13 of 40 master pushes (measured 2026-11-25).
     env:
       POSTGRES_USER: aura
       POSTGRES_PASSWORD: ci-test-password
@@ -2114,30 +2102,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Detect web changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: changes
-        with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
-              - 'scripts/web_e2e_ci.sh'
-              # The memory sidecar is built from this commit, so its own changes must
-              # re-run the browser suite that drives it.
-              - 'cmd/arcadedb-mcp/**'
-              - 'docker/arcadedb-mcp/**'
-
       - name: Set up Go
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
@@ -2145,19 +2116,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Start Postgres (docker compose)
-        if: steps.changes.outputs.web == 'true'
         run: make db-up
 
       - name: aura db migrate
-        if: steps.changes.outputs.web == 'true'
         run: go run ./cmd/aura db migrate
 
       - name: Seed Authula E2E operator
-        if: steps.changes.outputs.web == 'true'
         run: go run ./scripts/authula_seed_e2e.go
 
       - name: Install the browser-tested MCP recipes
-        if: steps.changes.outputs.web == 'true'
         # Memory is core/default-on. Calendar and WhatsApp are appliance-default-on
         # only inside the Aura container, while this job runs aura serve on the host.
         run: |
@@ -2165,13 +2132,11 @@ jobs:
           go run ./cmd/aura mcp install whatsapp
 
       - name: Build the ArcadeDB MCP sidecar from this commit
-        if: steps.changes.outputs.web == 'true'
         # compose.yaml's build stanza tags the result with AURA_ARCADEDB_MCP_IMAGE, the
         # reference the raw `docker run` below starts.
         run: docker compose build arcadedb-mcp
 
       - name: Start live MCP OAuth resource sidecars
-        if: steps.changes.outputs.web == 'true'
         # Host networking reproduces the appliance's shared loopback namespace: Aura
         # and all three resource servers use the exact 127.0.0.1 catalog/issuer URLs.
         # The sidecars do not contact the issuer until Playwright has started Aura.
@@ -2233,15 +2198,12 @@ jobs:
           done
 
       - name: Build web dist (fresh embed source)
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run build
 
       - name: Build aura binary (embeds the fresh dist)
-        if: steps.changes.outputs.web == 'true'
         run: go build -o aura ./cmd/aura
 
       - name: Start Garage objectstore (asset upload E2E)
-        if: steps.changes.outputs.web == 'true'
         env:
           AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
           AURA_OBJECTSTORE_BUCKET: aura-assets
@@ -2286,14 +2248,12 @@ jobs:
           ./aura objectstore bootstrap
 
       - name: Install Playwright Chromium
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npx playwright install --with-deps chromium
 
       - name: Playwright E2E (HTTPS cockpit, SC2)
         # page.request filters Secure CSRF/session cookies from HTTP 127.0.0.1.
         # The runner preserves the web cwd, CI exports, and full browser matrix while
         # using the existing TLS proxy and bounded /healthz readiness on its HTTPS origin.
-        if: steps.changes.outputs.web == 'true'
         # TEMP-harvest (revert after committing the PNGs, playbook 64ba3ec4/ecc98359):
         # the calm-prism baselines drifted after the shell containing-block fix; CI
         # renders with the runner's Chrome, so off-runner regeneration fails on
@@ -2302,7 +2262,7 @@ jobs:
         run: bash scripts/web_e2e_ci.sh --update-snapshots
 
       - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
-        if: always() && steps.changes.outputs.web == 'true'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: calm-prism-snapshots
