@@ -131,6 +131,19 @@ image_built() {
     date -u -d "${created}" +%s 2>/dev/null || echo 0
 }
 
+# Nanoseconds since the epoch of timestamp $2 (Created, State.StartedAt) of service $1's
+# container: nothing when it does not run here, a failure when docker reports no time. Parsed,
+# never compared as text: docker writes RFC3339Nano (daemon/inspect.go), which drops trailing
+# zeros, so "13:00:42Z" sorts after "13:00:42.1Z". Kept here beside image_built, the other
+# docker time this pair parses, because the updater has no room left under its 600-line cap.
+container_time() {
+  local cid stamp
+  cid="$(docker compose ps -q "$1")"
+  [[ -n "${cid}" ]] || return 0
+  stamp="$(docker inspect --format "{{.$2}}" "${cid}")"
+  date -u -d "${stamp:?docker reported no $2 for $1}" +%s%N
+}
+
 applied_image() { cat "$(update_dir)/applied-image" 2>/dev/null || true; }
 
 # Anything downloaded that the stack does not run yet: an aura image other than the one last

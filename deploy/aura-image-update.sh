@@ -13,7 +13,7 @@
 #      ArcadeDB or a model sidecar, then restarts every service that mounts a changed payload
 #      file, which is how a changed garage.toml or Caddyfile reaches its service;
 #   3. refreshes the repo-built sidecars on their moving tags and the per-user sandbox boxes,
-#      then restarts aura once if it holds a removed box or an MCP sidecar that changed image.
+#      then restarts aura once if it holds a removed box or an MCP sidecar created after it started.
 # Third-party images never ride a moving tag here: they change when compose.yaml's pin does.
 #
 # The .env keys that put a host on the edge channel's moving tags are written by
@@ -440,21 +440,19 @@ stale_boxes() {
   done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
 }
 
-mcp_sidecar_images() {
-  local svc
-  for svc in "${MCP_SIDECARS[@]}"; do
-    echo "${svc} $(container_image_id "${svc}")"
-  done
-}
-
-# aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one whose new
-# image advertises another tool set stays dead to it until aura restarts (lab VM, 2026-11-25:
-# the PIM moved after aura, which kept 1 of its 29 tools). $1 is mcp_sidecar_images as aura
-# mounted them; one not running then or now has nothing to remount. One restart serves the boxes.
+# aura mounts its MCP sidecars as it starts and cannot unregister a tool (D-104): one recreated
+# since may advertise another tool set, and stays dead to it until aura restarts (lab VM,
+# 2026-11-25: the PIM moved after aura, which kept 1 of its 29 tools). Read off the containers,
+# not off this tick, so a tick that dies first leaves it to the next. One restart serves the boxes.
 refresh_boxes_and_mounts() {
-  local name removed=0 moved
-  moved="$(paste -d' ' <(echo "$1") <(mcp_sidecar_images) |
-    awk '$2 != "missing" && $4 != "missing" && $2 != $4 { printf " %s", $1 }')"
+  local name svc created started='' removed=0
+  local -a newer=()
+  for svc in "${MCP_SIDECARS[@]}"; do
+    created="$(container_time "${svc}" Created)"
+    [[ -n "${created}" ]] || continue
+    [[ -n "${started}" ]] || started="$(container_time aura State.StartedAt)"
+    ((created <= started)) || newer+=("${svc}")
+  done
   [[ -n "$(env_value AURA_SANDBOX_IMAGE)" && -n "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]] ||
     echo "sandbox: no images pinned in .env; skipped."
   while read -r name; do
@@ -464,14 +462,14 @@ refresh_boxes_and_mounts() {
     echo "sandbox: ${name} ran a superseded image; removed for aura to recreate."
     removed=$((removed + 1))
   done < <(stale_boxes)
-  [[ -z "${moved}" ]] || echo "aura: restarting it to remount${moved}, whose image changed after it mounted them."
-  ((removed > 0)) || [[ -n "${moved}" ]] || return 0
+  ((${#newer[@]} == 0)) || echo "aura: restarting it to remount ${newer[*]}, created after it started."
+  ((removed > 0 || ${#newer[@]} > 0)) || return 0
   docker compose restart aura
   wait_healthy aura
 }
 
 apply_update() {
-  local before after svc mounted
+  local before after svc
   record_status applying
   trap 'on_apply_exit $?' EXIT
   before="$(container_image_id aura)"
@@ -505,8 +503,6 @@ apply_update() {
     docker compose up -d --pull missing
   fi
   wait_healthy aura
-  # aura has just mounted its MCP sidecars: anything that moves them from here on must restart it.
-  mounted="$(mcp_sidecar_images)"
 
   after="$(container_image_id aura)"
   echo "aura: ${before} -> ${after}"
@@ -531,7 +527,7 @@ apply_update() {
     update_sidecar "${svc}"
   done
 
-  refresh_boxes_and_mounts "${mounted}"
+  refresh_boxes_and_mounts
 
   # Only a tick that got this far reclaims images -- tagged ones no pin names any more, then
   # the untagged ones a moving tag left behind -- and orphaned volumes.

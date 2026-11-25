@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Drives deploy/aura-image-update.sh's apply against a stubbed docker. aura mounts its MCP
-# sidecars when it turns healthy and cannot remount one whose new image advertises another tool
-# set (lab VM, 2026-11-25: the PIM moved after aura, which kept 1 of its 29 tools until an
-# operator restarted it). An apply that moves an MCP sidecar's image after aura started must
-# restart aura, once even when stale boxes need the same restart; one that moves none must not.
+# Drives deploy/aura-image-update.sh's apply against a stubbed docker that keeps a clock. aura
+# mounts its MCP sidecars as it starts and cannot remount one whose new image advertises another
+# tool set (lab VM, 2026-11-25: the PIM moved after aura, which kept 1 of its 29 tools until an
+# operator restarted it). So an apply that ends with an MCP sidecar created after aura started
+# restarts aura, once even when stale boxes need the same restart, and one that does not never
+# restarts it. The containers decide, not the tick: a tick that dies first leaves it to the next.
 
 set -euo pipefail
 
@@ -19,12 +20,14 @@ fail() {
 
 # shellcheck source=/dev/null
 source "$repo_root/deploy/aura-image-update.sh"
+# shellcheck source=/dev/null
+source "$repo_root/deploy/aura-update-consent.sh"
+eval "$(declare -f stale_boxes | sed '1s/^stale_boxes/updater_stale_boxes/')"
 
 # Out of scope here: aura_image_update_test.sh, aura_update_consent_test.sh and
 # aura_image_home_test.sh drive these.
 record_status() { :; }
 on_apply_exit() { :; }
-update_dir() { printf '%s/update' "$INSTALL_DIR"; }
 image_revision() { :; }
 move_image_registry() { :; }
 # shellcheck disable=SC2034 # read by the sourced apply_update
@@ -37,113 +40,211 @@ restart_payload_readers() { :; }
 remove_superseded_images() { :; }
 remove_orphan_volumes() { :; }
 image_id() { echo image-id; }
-stale_boxes() { echo "${STALE}"; }
+# The real one where the sandbox is unpinned: it must not reach docker at all.
+stale_boxes() { if [[ "${PINS}" == 0 ]]; then updater_stale_boxes; else echo "${STALE}"; fi; }
 wait_healthy() { echo "wait_healthy $1" >>"$calls"; }
 
-# The stack, as files under the case's directory: absent-<svc> is a service not running here,
-# moved-<svc> one whose container now runs its new image. A whole-stack `up` moves the services
-# UP_MOVES names and starts those UP_STARTS names; update_sidecar moves those SIDECAR_MOVES names.
-update_sidecar() { [[ " ${SIDECAR_MOVES} " != *" $1 "* ]] || touch "moved-$1"; }
+# The stack, as files in the case's directory, on a clock in tenths of a second: created-<svc>
+# and started-aura hold times, absent-<svc> marks a service not running here, and blank-<svc>
+# one whose inspect comes back empty (gone between ps and inspect). `up -d aura` recreates aura
+# when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
+# names; update_sidecar recreates those SIDECAR_MOVES names and dies on FAIL_AT, as a sidecar
+# that never turns healthy does.
+tick() {
+  local t
+  t=$(($(cat clock) + 1))
+  echo "$t" >clock
+  echo "$t"
+}
+recreate() {
+  rm -f "absent-$1"
+  tick >"created-$1"
+  [[ "$1" != aura ]] || cp created-aura started-aura
+}
+# docker's RFC3339Nano drops trailing zeros: 420 is 13:00:42Z, 421 is 13:00:42.1Z.
+stamp() {
+  local s=$(($1 / 10)) f=$(($1 % 10))
+  printf '2026-11-25T13:%02d:%02d' $((s / 60)) $((s % 60))
+  ((f == 0)) || printf '.%d' "$f"
+  echo Z
+}
+update_sidecar() {
+  [[ "$1" != "${FAIL_AT}" ]] || exit 7
+  [[ " ${SIDECAR_MOVES} " != *" $1 "* ]] || recreate "$1"
+}
 docker() {
   echo "docker $*" >>"$calls"
   local svc
   case "$*" in
     'compose ps -q '*) [[ -e "absent-$4" ]] || echo "$4-id" ;;
-    'inspect --format {{.Image}} '*)
+    'inspect --format {{.Image}} '*) echo "image-$(cat "created-${4%-id}")" ;;
+    'inspect --format {{.Created}} '*)
       svc="${4%-id}"
-      if [[ -e "moved-$svc" ]]; then echo "$svc-new"; else echo "$svc-old"; fi
+      [[ ! -e "blank-$svc" ]] || return 1
+      stamp "$(cat "created-$svc")"
       ;;
-    'compose up -d --pull missing')
-      for svc in ${UP_MOVES}; do touch "moved-$svc"; done
-      for svc in ${UP_STARTS}; do rm -f "absent-$svc"; done
-      ;;
-    'compose up -d --pull missing aura' | 'compose exec -T aura aura version' | 'image prune --force') ;;
-    'compose restart aura' | 'rm -f aura-box-'* | 'rm -f aura-egress-'*) ;;
+    'inspect --format {{.State.StartedAt}} aura-id') stamp "$(cat started-aura)" ;;
+    'compose up -d --pull missing aura') [[ "${AURA_RECREATE}" != 1 ]] || recreate aura ;;
+    'compose up -d --pull missing') for svc in ${UP_RECREATES}; do recreate "$svc"; done ;;
+    'compose restart aura') tick >started-aura ;;
+    'compose exec -T aura aura version' | 'image prune --force' | 'rm -f aura-box-'* | 'rm -f aura-egress-'*) ;;
     *) fail "unexpected docker $*" ;;
   esac
 }
 
-# apply_case <name>: one apply in a fresh install dir, its output in out and docker calls in
-# calls there. PAYLOAD=1 installs a payload the stack has not been brought up on, PINS=0 leaves
-# the sandbox images unpinned, ABSENT names the services not running when the tick starts.
-apply_case() {
+# new_case <name>: a settled stack in a fresh install dir -- every MCP sidecar created at 80.0 s,
+# aura created and started at 90.0 s, the clock at 100.0 s. PAYLOAD=1 installs a payload the
+# stack has not been brought up on, PINS=0 leaves the sandbox unpinned, ABSENT names services
+# not running.
+new_case() {
   INSTALL_DIR="$fixture/$1"
   mkdir -p "$INSTALL_DIR/update"
   cd "$INSTALL_DIR"
   calls="$INSTALL_DIR/calls"
-  : >"$calls"
   : >.env
-  [[ "${PINS:-1}" == 0 ]] || printf '%s\n' AURA_SANDBOX_IMAGE=box:edge AURA_SANDBOX_EGRESS_IMAGE=egress:edge >.env
+  [[ "${PINS}" == 0 ]] || printf '%s\n' AURA_SANDBOX_IMAGE=box:edge AURA_SANDBOX_EGRESS_IMAGE=egress:edge >.env
   [[ "${PAYLOAD:-0}" != 1 ]] || echo 'sum  compose.yaml' >payload_manifest.txt
+  echo 1000 >clock
+  echo 900 >created-aura && cp created-aura started-aura
   local svc
+  for svc in "${MCP_SIDECARS[@]}"; do echo 800 >"created-$svc"; done
   for svc in ${ABSENT:-}; do touch "absent-$svc"; done
+}
+apply() {
+  : >"$calls"
   apply_update >out
 }
-restarts() { grep -c '^docker compose restart aura$' "$calls" || true; }
-# The restart of aura is followed by waiting for it to turn healthy again.
-awaited() { [[ "$(grep -A1 -x 'docker compose restart aura' "$calls" | tail -n 1)" == 'wait_healthy aura' ]]; }
-said() { grep 'restart' out | grep -v '^sandbox:' || true; }
+# A tick that must die: set -e has to hold inside it, which no `if` or `||` context allows.
+apply_dies() {
+  local status
+  : >"$calls"
+  set +e
+  (
+    set -e
+    apply_update >out 2>err
+  )
+  status=$?
+  set -e
+  ((status != 0)) || fail "$1: the tick did not fail: $(cat out)"
+}
+restarts() { grep -cx 'docker compose restart aura' "$calls" || true; }
+said() { grep '^aura: restarting' out || true; }
+# Exactly <n> restarts of aura, each followed by waiting for it to turn healthy again.
+expect_restarts() {
+  [[ "$(restarts)" == "$1" ]] || fail "$2: aura restarted $(restarts) times: $(cat out)"
+  [[ "$(grep -A1 -x 'docker compose restart aura' "$calls" | grep -cx 'wait_healthy aura' || true)" == "$1" ]] ||
+    fail "$2: a restart of aura was not awaited: $(cat "$calls")"
+}
+quiet() {
+  AURA_RECREATE=0 UP_RECREATES='' SIDECAR_MOVES='' FAIL_AT='' STALE=''
+}
+PINS=1
+quiet
 
-# (1) The incident: the payload's whole-stack `up` moved the PIM after aura had mounted it.
+# (1) The incident: aura replaced alone, then the payload's whole-stack `up` moves the PIM. Once
+# restarted, aura is newer than every sidecar: the next apply leaves it alone.
 (
-  PAYLOAD=1 UP_MOVES=aura-pim-mcp UP_STARTS='' SIDECAR_MOVES='' STALE=''
-  apply_case pim-after-aura
-  [[ "$(restarts)" == 1 ]] || fail "a PIM moved after aura mounted it restarted aura $(restarts) times: $(cat out)"
-  awaited || fail "the restart of aura was not awaited: $(cat "$calls")"
-  [[ "$(said)" == *aura-pim-mcp* ]] || fail "the restart did not name the PIM: $(cat out)"
+  PAYLOAD=1 && new_case pim-after-aura
+  AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp && apply
+  expect_restarts 1 "a PIM recreated after aura started"
+  [[ "$(said)" == 'aura: restarting it to remount aura-pim-mcp, created after it started.' ]] ||
+    fail "the restart did not name the PIM alone: $(said)"
+  quiet && apply
+  expect_restarts 0 "the apply after that restart"
 )
 # A host with no sandbox pins has no boxes to refresh, and still has a PIM to remount.
 (
-  PINS=0 PAYLOAD=1 UP_MOVES=aura-pim-mcp UP_STARTS='' SIDECAR_MOVES='' STALE=''
-  apply_case no-sandbox-pins
+  PINS=0 PAYLOAD=1 && new_case no-sandbox-pins
+  AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp && apply
   grep -qx 'sandbox: no images pinned in .env; skipped.' out || fail "the unpinned sandbox was not reported: $(cat out)"
-  [[ "$(restarts)" == 1 ]] || fail "without sandbox pins a moved PIM restarted aura $(restarts) times: $(cat out)"
+  expect_restarts 1 "without sandbox pins, a PIM recreated after aura started"
 )
-echo "ok: an MCP sidecar moved after aura mounted it restarts aura once"
+echo "ok: an MCP sidecar recreated after aura started restarts aura once, and the next apply does not"
 
-# (2) Nothing moved: no restart, however many sidecars the apply touched.
+# (2) The whole-stack `up` runs when the memory MCP is down. Whether aura is recreated with it or
+# not, the PIM it recreates afterwards may be a tool set aura did not mount.
 (
-  PAYLOAD=1 UP_MOVES='' UP_STARTS='' SIDECAR_MOVES='' STALE=''
-  apply_case nothing-moved
-  [[ "$(restarts)" == 0 ]] || fail "an apply that moved no MCP sidecar restarted aura: $(cat out)"
-  [[ -z "$(said)" ]] || fail "an apply that moved no MCP sidecar announced a restart: $(said)"
+  ABSENT=arcadedb-mcp PAYLOAD=0 && new_case stack-down-aura-recreated
+  UP_RECREATES='aura arcadedb-mcp aura-pim-mcp' && apply
+  grep -qx 'docker compose up -d --pull missing' "$calls" || fail "the stack was not brought up whole: $(cat "$calls")"
+  expect_restarts 1 "aura recreated, then the PIM and the memory MCP"
+  [[ "$(said)" == *'remount arcadedb-mcp aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
 )
-# With its memory MCP down the stack comes up whole, the PIM recreated on its new image
-# together with aura: aura mounted that image, so there is nothing to remount. What aura
-# mounted is read once it is healthy, not when the tick starts.
 (
-  PAYLOAD=0 ABSENT=arcadedb-mcp UP_MOVES=aura-pim-mcp UP_STARTS=arcadedb-mcp SIDECAR_MOVES='' STALE=''
-  apply_case stack-down
-  grep -qx 'docker compose up -d --pull missing' "$calls" || fail "the stack-down case did not bring the stack up: $(cat "$calls")"
-  [[ "$(restarts)" == 0 ]] || fail "a PIM that moved before aura mounted it restarted aura: $(cat out)"
+  ABSENT=arcadedb-mcp PAYLOAD=0 && new_case stack-down-aura-kept
+  UP_RECREATES='arcadedb-mcp aura-pim-mcp' && apply
+  expect_restarts 1 "aura kept, the PIM recreated by the whole-stack up"
 )
-echo "ok: an apply that moves no MCP sidecar after aura mounted it never restarts aura"
+echo "ok: a whole-stack up that recreates an MCP sidecar after aura started restarts aura once"
 
-# (3) Stale boxes and a moved sidecar want the same restart: aura restarts once for both.
+# (3) Nothing created after aura started: no restart, though aura itself was replaced, or the
+# sidecar was created in the same second aura started (13:00:42Z against 13:00:42.1Z, which a
+# comparison as text gets backwards).
 (
-  PAYLOAD=0 UP_MOVES='' UP_STARTS='' SIDECAR_MOVES=arcadedb-mcp STALE=aura-box-u1
-  apply_case boxes-and-sidecar
+  PAYLOAD=1 && new_case aura-replaced-alone
+  AURA_RECREATE=1 && apply
+  expect_restarts 0 "aura replaced, no sidecar recreated"
+  [[ -z "$(said)" ]] || fail "an apply that recreated no MCP sidecar announced a restart: $(said)"
+)
+(
+  PAYLOAD=0 && new_case same-second
+  echo 421 >started-aura
+  for svc in "${MCP_SIDECARS[@]}"; do echo 420 >"created-$svc"; done
+  apply
+  expect_restarts 0 "aura started a tenth of a second after its sidecars"
+)
+echo "ok: an apply that leaves every MCP sidecar older than aura never restarts aura"
+
+# (4) Stale boxes and a recreated sidecar want the same restart: aura restarts once for both.
+(
+  PAYLOAD=0 && new_case boxes-and-sidecar
+  SIDECAR_MOVES=arcadedb-mcp STALE=aura-box-u1 && apply
   grep -qx 'docker rm -f aura-box-u1' "$calls" || fail "the stale box was not removed: $(cat "$calls")"
-  [[ "$(restarts)" == 1 ]] || fail "stale boxes and a moved sidecar restarted aura $(restarts) times: $(cat out)"
-  awaited || fail "the restart of aura was not awaited: $(cat "$calls")"
-  [[ "$(said)" == *arcadedb-mcp* ]] || fail "the restart did not name the moved sidecar: $(cat out)"
+  expect_restarts 1 "stale boxes and a recreated sidecar"
+  [[ "$(said)" == *'remount arcadedb-mcp,'* ]] || fail "the restart did not name the memory MCP: $(said)"
 )
 # Stale boxes alone still restart aura once: its idle reaper holds the removed boxes' IDs.
 (
-  PAYLOAD=0 UP_MOVES='' UP_STARTS='' SIDECAR_MOVES='' STALE=aura-box-u1
-  apply_case boxes-only
-  [[ "$(restarts)" == 1 ]] || fail "stale boxes alone restarted aura $(restarts) times: $(cat out)"
+  PAYLOAD=0 && new_case boxes-only
+  STALE=aura-box-u1 && apply
+  expect_restarts 1 "stale boxes alone"
   [[ -z "$(said)" ]] || fail "stale boxes alone named an MCP sidecar: $(said)"
 )
-echo "ok: stale boxes and a moved MCP sidecar restart aura once, not twice"
+echo "ok: stale boxes and a recreated MCP sidecar restart aura once, not twice"
 
-# (4) A sidecar not running when aura started was never mounted: starting it now (the payload
-# `up` enabling it) is no reason to restart, while the PIM moving next to it still is.
+# (5) A sidecar not running here is ignored, next to one that still restarts aura.
 (
-  PAYLOAD=1 ABSENT=whatsapp UP_MOVES='' UP_STARTS=whatsapp SIDECAR_MOVES=aura-pim-mcp STALE=''
-  apply_case absent-sidecar
-  [[ "$(restarts)" == 1 ]] || fail "with whatsapp absent and the PIM moved, aura restarted $(restarts) times: $(cat out)"
-  [[ "$(said)" == *aura-pim-mcp* && "$(said)" != *whatsapp* ]] ||
-    fail "the restart named the wrong sidecars: $(said)"
+  ABSENT=whatsapp PAYLOAD=1 && new_case absent-sidecar
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 1 "with whatsapp absent and the PIM recreated"
+  [[ "$(said)" == *aura-pim-mcp* && "$(said)" != *whatsapp* ]] || fail "the restart named the wrong sidecars: $(said)"
 )
-echo "ok: an MCP sidecar not running when aura started is ignored"
+echo "ok: an MCP sidecar not running here is ignored"
+
+# (6) A tick that dies after the PIM moved, before its restart: the next apply restarts aura,
+# although that apply itself moves nothing, and the one after does not.
+(
+  PAYLOAD=1 && new_case dies-after-pim
+  AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp FAIL_AT=caddy && apply_dies "the PIM moved, then caddy never turned healthy"
+  expect_restarts 0 "the tick that died"
+  quiet && apply
+  expect_restarts 1 "the apply after a tick that died with the PIM newer than aura"
+  [[ "$(said)" == *aura-pim-mcp* ]] || fail "the retry did not name the PIM: $(said)"
+  apply
+  expect_restarts 0 "the second apply after the tick that died"
+)
+echo "ok: a tick that dies before its restart leaves it to the next apply, and only to that one"
+
+# (7) A sidecar whose times docker cannot report fails the tick rather than guess: no restart on
+# a time that is not there, and none skipped either -- the next apply reads it and decides.
+(
+  PAYLOAD=0 && new_case blank-inspect
+  touch blank-aura-pim-mcp
+  SIDECAR_MOVES=aura-pim-mcp && apply_dies "docker reported no creation time for the PIM"
+  grep -q 'docker reported no Created for aura-pim-mcp' err || fail "the failure did not say why: $(cat err)"
+  expect_restarts 0 "the tick that could not read the PIM's time"
+  rm blank-aura-pim-mcp
+  quiet && apply
+  expect_restarts 1 "the apply that reads the PIM's time again"
+)
+echo "ok: a time docker cannot report fails the tick, and the next apply decides"
