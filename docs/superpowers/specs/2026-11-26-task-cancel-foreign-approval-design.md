@@ -45,6 +45,26 @@ operator's own schedule.
 - A resume hook built with `newChallengeResumeHook` records the accept.
 - A decline, an approval for a different task, or a second repeat cancels nothing.
 
+## Known consequences
+
+The rule follows a call's conversation, so headless runs get these consequences (review of the
+build, 2026-11-26):
+- An agent_job runs with its task's origin conversation as the call's conversation. A job
+  scheduled from a chat therefore cancels, with no card and unattended, itself and any task that
+  chat scheduled. That is narrower than before, when it could cancel anything.
+- A job scheduled from the CLI or the cockpit has an empty origin, so it can no longer cancel
+  itself. Its challenge is keyed on the job's technical session, and a headless ask_user is
+  refused (D-25). A "repeat until Y, then cancel yourself" job scheduled that way keeps firing
+  until the operator cancels it.
+- A swarm worker keeps the parent's `task` tool and its origin. It cancels the parent
+  conversation's own tasks at once, but it cannot get a foreign cancel approved: its challenge is
+  keyed on the worker's own session, which no resume hook reaches. The parent can make the same
+  cancel and get its own card.
+- The card shows up to 160 runes of the payload, flattened but not quoted so the model can copy
+  it byte for byte, inside a result marked trusted. A payload derived from an email can thus put
+  instruction-shaped text into trusted context. It cannot forge a line of the card, and the steer
+  scrub still runs.
+
 ## Left to the builder
 - Field and type names.
 - The question's exact wording, which must match the existing approval texts in `internal/approvaltext`.
