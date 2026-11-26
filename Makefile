@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc memory-up-core lint py-lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract decide-model-contract capability-declaration web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
+.PHONY: help tools sqlc memory-up-core lint py-lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract decide-model-contract vision-model-contract capability-declaration web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval agent-memory-eval-running-aura critical-mutation observability-check observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up sandbox-images installer-artifact payload-manifest arcadedb-integration ingest-image ingest-test extractor-matrix ingest-reconcile sandbox-image-contract restore-drill load-chaos musr-e2e
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -20,6 +20,7 @@ help:
 	@echo "make embedding-model-contract — verify validated atomic EmbeddingGemma cache materialization"
 	@echo "make llm-model-contract     — verify pinned gemma-4-12B model+MTP-drafter fetch"
 	@echo "make decide-model-contract  — verify pinned d1-3B decision model + LICENSE fetch"
+	@echo "make vision-model-contract  — verify pinned Qwen2.5-VL-3B model + mmproj fetch"
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
 	@echo "make quality       — pre-push gate: deadcode vet build file-size lint test-race vuln (no containers)"
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
@@ -148,9 +149,9 @@ agent-eval:
 	go test -tags agent_eval -count=1 -v -timeout 30m ./internal/agenteval/
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: deadcode vet file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract lint test-race vuln
+quality: deadcode vet file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract vision-model-contract lint test-race vuln
 	go build $(GO_PACKAGES)
-	@echo "ok: quality gate passed (deadcode vet build file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract lint test-race vuln)"
+	@echo "ok: quality gate passed (deadcode vet build file-size capability-declaration embedding-model-contract llm-model-contract decide-model-contract vision-model-contract lint test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage
@@ -186,6 +187,10 @@ llm-model-contract:
 # The optional local decision model (d1-3B) and its LICENSE: the same pin-and-refuse contract.
 decide-model-contract:
 	bash scripts/fetch_decide_model_test.sh
+
+# The vision model web-e2e serves as native-media-live's local primary: the same pin-and-refuse contract.
+vision-model-contract:
+	bash scripts/fetch_vision_model_test.sh
 
 # ↓↓ Frontend (web/) industrial gates — mirror the CI web-* jobs. Assume
 # web/node_modules is present (run `npm ci` in web/ first). ↓↓

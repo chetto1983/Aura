@@ -108,6 +108,9 @@ jobs:
       - name: Decision model fetch contract (pinned size + sha256, d1-3B + LICENSE)
         run: make decide-model-contract
 
+      - name: Vision model fetch contract (pinned size + sha256, Qwen2.5-VL-3B + mmproj)
+        run: make vision-model-contract
+
       - name: Production-evidence contract tests
         run: |
           make evidence-contracts
@@ -2021,7 +2024,7 @@ jobs:
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
     # → bootServeChatEnv → db.Open is unconditional). So the E2E provisions the stack
     # exactly like the AG-UI live smoke (integration-test job): a dummy non-empty
@@ -2335,10 +2338,50 @@ jobs:
           SSL_CERT_FILE="$bundle" bash scripts/web_e2e_ci.sh --project=chrome --workers=1 \
             e2e/paperless-first-import-live.spec.ts e2e/paperless-isolation-live.spec.ts
 
+      - name: Cache the native-media vision model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aura-vision
+          key: vision-model-qwen2.5-vl-3b-q4km-mmproj-q8-5037fcf-v1
+
+      - name: Materialize the pinned vision model
+        run: |
+          bash scripts/fetch_vision_model.sh --artifact model ~/.cache/aura-vision/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
+          bash scripts/fetch_vision_model.sh --artifact mmproj ~/.cache/aura-vision/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+
+      - name: Playwright native-media live spec (a local vision model as the primary)
+        # The primary reads ZEBRA 417 from an image through a full Aura turn. A turn carries about
+        # 15.7k tokens (system prompt and mounted tools), and Aura's request budget then needs a
+        # ~40k window, which rules out the small vision models trained on 8k. The operator chose
+        # Qwen2.5-VL-3B: 10 of 10 turns on a 4-vCPU CPU, the first (cold) in 3.6 minutes
+        # (docs/superpowers/verification/2026-11-26-test-ledger-open-points.md). The server is the
+        # same llama.cpp build the embedder runs, on CPU.
+        env:
+          AURA_E2E_NATIVE_MEDIA: "1"
+          AURA_PROFILE: dev
+          AURA_LLM_PROVIDER: llamacpp
+          AURA_LLM_BASE_URL: http://127.0.0.1:8095/v1
+          AURA_LLM_MODEL: qwen2.5-vl-3b
+          AURA_MODEL_CONTEXT_WINDOW: "40960"
+          AURA_MODEL_MAX_OUTPUT_TOKENS: "512"
+          AURA_LLM_MAX_TOKENS: "512"
+        run: |
+          docker run -d --name aura-vision-ci -p 127.0.0.1:8095:8080 -v ~/.cache/aura-vision:/models:ro \
+            ghcr.io/ggml-org/llama.cpp:server-b11960 \
+            -m /models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf \
+            --mmproj /models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf \
+            --alias qwen2.5-vl-3b --host 0.0.0.0 --port 8080 -c 40960 --parallel 1 --jinja
+          if ! curl --retry 60 --retry-delay 3 --retry-connrefused --retry-all-errors -fsS \
+            http://127.0.0.1:8095/health >/dev/null; then
+            docker logs --tail 80 aura-vision-ci || true
+            exit 1
+          fi
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1 e2e/native-media-live.spec.ts
+
       - name: Tear down
         if: always()
         run: |
-          docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci || true
+          docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci aura-vision-ci || true
           docker compose down
 
   # ── Race + goleak db_integration tier (was the Phase-42 compaction rollout gate) ──
