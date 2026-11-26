@@ -5,22 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
-// symlinkOrSkip makes a symlink, skipping only where the OS refuses it (Windows without
-// developer mode). Under CI the refusal is a failure: a containment test that never runs
-// there is a falsely green job.
+// symlinkOrSkip makes link's directory and the symlink, through testenv.Symlink.
 func symlinkOrSkip(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, link); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("symlink: %v", err)
-		}
-		t.Skipf("symlinks unavailable here: %v", err)
-	}
+	testenv.Symlink(t, target, link)
 }
 
 func TestAgentPluginsContainment(t *testing.T) {

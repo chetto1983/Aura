@@ -25,7 +25,6 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -39,12 +38,7 @@ import (
 
 func roundTripEnv(t *testing.T) (*config.Config, *pgxpool.Pool) {
 	t.Helper()
-	if os.Getenv("AURA_DB_URL") == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_DB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("AURA_DB_URL not set")
-	}
+	testenv.Require(t, "AURA_DB_URL")
 	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config: %v", err)

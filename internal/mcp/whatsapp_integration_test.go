@@ -36,10 +36,7 @@ func whatsAppEndpointOrGate(t *testing.T) string {
 	if port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_MCP_PORT")); port != "" {
 		return "http://127.0.0.1:" + port + "/mcp"
 	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatal("AURA_WHATSAPP_MCP_URL (or _PORT) must be set under CI; this tier may not skip as green")
-	}
-	t.Skip("set AURA_WHATSAPP_MCP_URL and start the WhatsApp remote MCP to run this tier")
+	testenv.Unavailable(t, "set AURA_WHATSAPP_MCP_URL (or AURA_WHATSAPP_MCP_PORT) and start the WhatsApp remote MCP")
 	return ""
 }
 
@@ -84,14 +81,8 @@ func TestWhatsAppServerLiveTenantIsolation(t *testing.T) {
 
 func startWhatsAppRuntime(t *testing.T, ctx context.Context, identity string) {
 	t.Helper()
-	gatewayURL := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_GATEWAY_URL"))
-	bridgeToken := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_BRIDGE_TOKEN"))
-	if gatewayURL == "" || bridgeToken == "" {
-		if strings.TrimSpace(os.Getenv("CI")) != "" {
-			t.Fatal("AURA_WHATSAPP_GATEWAY_URL and AURA_WHATSAPP_BRIDGE_TOKEN are required under CI")
-		}
-		t.Skip("set the WhatsApp tenant gateway URL and bridge token to run this tier")
-	}
+	gatewayURL := strings.TrimSpace(testenv.Require(t, "AURA_WHATSAPP_GATEWAY_URL"))
+	bridgeToken := strings.TrimSpace(testenv.Require(t, "AURA_WHATSAPP_BRIDGE_TOKEN"))
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, gatewayURL, nil)
 	if err != nil {
 		t.Fatalf("create WhatsApp gateway request for %s: %v", identity, err)

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {
@@ -17,18 +19,6 @@ func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 	}
 	if err := os.WriteFile(path, []byte(content), mode); err != nil {
 		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-// symlinkOrSkip makes a symlink, skipping where the host cannot (Windows without the
-// privilege) and failing under CI, where the tier must run.
-func symlinkOrSkip(t *testing.T, target, link string) {
-	t.Helper()
-	if err := os.Symlink(target, link); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("symlink: %v", err)
-		}
-		t.Skipf("this host cannot make symlinks: %v", err)
 	}
 }
 
@@ -128,7 +118,7 @@ func TestStoreClaimKeepsModesAndInternalSymlinks(t *testing.T) {
 	t.Parallel()
 	s := Store{Root: t.TempDir()}
 	src := pluginTree(t)
-	symlinkOrSkip(t, "plugin.json", filepath.Join(src, "manifest.json"))
+	testenv.Symlink(t, "plugin.json", filepath.Join(src, "manifest.json"))
 	if err := s.Claim(Record{Name: "p"}, src); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -161,7 +151,7 @@ func TestStoreClaimRefusesAnEscapingOrDirectorySymlink(t *testing.T) {
 			s := Store{Root: t.TempDir()}
 			src := pluginTree(t)
 			target, path := link(src)
-			symlinkOrSkip(t, target, filepath.Join(src, path))
+			testenv.Symlink(t, target, filepath.Join(src, path))
 			if err := s.Claim(Record{Name: "p"}, src); err == nil {
 				t.Fatal("claim accepted the tree")
 			}

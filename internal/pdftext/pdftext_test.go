@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // pdfWithPages is a hand-written PDF with one page per text. Its cross-reference
@@ -42,23 +44,8 @@ func writePDF(t *testing.T, content string) string {
 	return path
 }
 
-// requireExtractor keeps a missing extractor from passing for a test whose whole
-// subject is the extractor. Locally it skips; in CI it fails, because a job that
-// silently exercises nothing is the falsely-green case the test discipline bans
-// (the CI workflows install poppler-utils for exactly this).
-func requireExtractor(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath(Tool); err == nil {
-		return
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatalf("%s is not installed and $CI is set: the extraction path would run nowhere", Tool)
-	}
-	t.Skipf("%s is not installed", Tool)
-}
-
 func TestExtractReadsEveryPageWhenThePageCapIsZero(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, Tool)
 	path := writePDF(t, pdfWithPages("Static torque 12 Nm", "Rated torque 9.1 Nm", "Weight 8.9 kg"))
 	text, capped, err := Extract(context.Background(), path, 0, 1<<20)
 	if err != nil {
@@ -75,7 +62,7 @@ func TestExtractReadsEveryPageWhenThePageCapIsZero(t *testing.T) {
 }
 
 func TestExtractStopsAtThePageCap(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, Tool)
 	path := writePDF(t, pdfWithPages("first page words", "second page words"))
 	text, _, err := Extract(context.Background(), path, 1, 1<<20)
 	if err != nil {
@@ -87,7 +74,7 @@ func TestExtractStopsAtThePageCap(t *testing.T) {
 }
 
 func TestExtractCutsAtTheByteCap(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, Tool)
 	path := writePDF(t, pdfWithPages("abcdefghijklmnopqrstuvwxyz"))
 	text, capped, err := Extract(context.Background(), path, 0, 10)
 	if err != nil {
@@ -110,7 +97,7 @@ func TestExtractFailsCleanlyWithoutTheBinary(t *testing.T) {
 }
 
 func TestExtractReportsAFileThatIsNotAPDF(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, Tool)
 	_, _, err := Extract(context.Background(), writePDF(t, "<html>not a pdf</html>"), 0, 1<<20)
 	if exit, ok := errors.AsType[*exec.ExitError](err); !ok || exit.ExitCode() != 1 {
 		t.Errorf("err = %v, want pdftotext's exit code 1 (could not open as a PDF)", err)
@@ -118,7 +105,7 @@ func TestExtractReportsAFileThatIsNotAPDF(t *testing.T) {
 }
 
 func TestExtractGivesUpWhenTheContextIsDone(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, Tool)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	text, _, err := Extract(ctx, writePDF(t, pdfWithPages("never read")), 0, 1<<20)

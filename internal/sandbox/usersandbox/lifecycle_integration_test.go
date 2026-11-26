@@ -4,7 +4,7 @@
 // retain / resume / delete lifecycle (D-08, Pitfall 5), storage-enforced cross-identity
 // volume deny (spike 078 — never app-prefix scoping), and the D-10 materialize-at-resolve
 // call site (skills land at the SnippetSandboxPath root; a /workspace artifact round-trips
-// via CopyArtifactsOut). Skips locally, t.Fatal under $CI (skipUnlessDockerd, no-skip-as-green).
+// via CopyArtifactsOut). Skips locally, t.Fatal under $CI (testenv.Dockerd, no-skip-as-green).
 
 package usersandbox
 
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/testenv"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 )
@@ -61,7 +62,7 @@ func containerExists(t *testing.T, cli *client.Client, id string) bool {
 // reuses the SAME container against the SAME volume (marker survives), and Stop(Delete)
 // removes the container AND the per-identity workspace and cache volumes.
 func TestLifecycle_SuspendResumeDelete(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()
@@ -141,7 +142,7 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 // named volumes, and B's box cannot read A's /workspace file — isolation is storage-enforced,
 // never app-prefix scoping.
 func TestVolume_CrossIdentityDeny(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()
@@ -190,7 +191,7 @@ func assertExecWrite(t *testing.T, cli *client.Client, h BoxHandle, path, value 
 // at the SnippetSandboxPath root, and a /workspace artifact round-trips out via
 // CopyArtifactsOut.
 func TestResolve_MaterializesInputs(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 
@@ -261,7 +262,7 @@ func TestResolve_MaterializesInputs(t *testing.T) {
 // `npx skills add` drops a whole agent-layout tree there, and it then sat beside the real
 // skills, indistinguishable at use time.
 func TestResolve_MaterializeMirrorsHost(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 

@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 const (
@@ -58,13 +59,7 @@ func sha(text string) string {
 
 func liveDocumentDatabase(t *testing.T) (*arcadedb.Client, func() *arcadedb.Client) {
 	t.Helper()
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
+	base := testenv.Require(t, "ARCADEDB_URL")
 	user := os.Getenv("ARCADEDB_USER")
 	if user == "" {
 		user = "root"

@@ -6,11 +6,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // Run with AURA_SANDBOX_TEST_IMAGE set to the deployed Aura sandbox image.
 func TestPipCacheIsolation(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	b := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()

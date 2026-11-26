@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func embedURL() string {
@@ -32,17 +33,13 @@ func embedURL() string {
 	return "http://127.0.0.1:8081"
 }
 
-// requireEmbedder FAILS rather than skips under $CI. A tier that quietly skips is a
-// falsely-green job exercising nothing (CLAUDE.md, no-skip-as-green). Locally it still
-// skips, because not every developer has the sidecar up.
+// requireEmbedder gates the tier on the embedding sidecar answering /health.
 func requireEmbedder(t *testing.T) {
 	t.Helper()
 	resp, err := http.Get(embedURL() + "/health")
 	if err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("embedding sidecar unreachable at %s under CI: %v", embedURL(), err)
-		}
-		t.Skipf("embedding sidecar unreachable at %s: %v", embedURL(), err)
+		testenv.Unavailable(t, "embedding sidecar unreachable at %s: %v", embedURL(), err)
+		return
 	}
 	_ = resp.Body.Close()
 }

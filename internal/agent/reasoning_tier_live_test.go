@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func embedBase() string {
@@ -33,10 +34,7 @@ func embedBase() string {
 
 func TestAdaptiveReasoningTierLive(t *testing.T) {
 	if resp, err := http.Get(embedBase() + "/health"); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("embedding sidecar unreachable under CI: %v", err)
-		}
-		t.Skipf("embedding sidecar unreachable: %v", err)
+		testenv.Unavailable(t, "embedding sidecar unreachable: %v", err)
 	} else {
 		_ = resp.Body.Close()
 	}

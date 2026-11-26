@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // disposableForgetTestClient mirrors internal/arcadedb's disposableArcadeClient
@@ -36,7 +37,7 @@ func disposableForgetTestClient(t *testing.T) *arcadedb.Client {
 		password = os.Getenv("ARCADEDB_PASSWORD")
 	}
 	if password == "" {
-		agentMemoryLiveGap(t, "ARCADEDB_PASSWORD or ARCADEDB_ADMIN_PASSWORD is not set")
+		testenv.Unavailable(t, "ARCADEDB_PASSWORD or ARCADEDB_ADMIN_PASSWORD is not set")
 	}
 	admin, err := arcadedb.New(arcadedb.Config{
 		BaseURL: base, Database: "unused", User: agentMemoryLiveEnv("ARCADEDB_ADMIN_USER", "root"),
@@ -47,7 +48,7 @@ func disposableForgetTestClient(t *testing.T) *arcadedb.Client {
 	}
 	ctx := context.Background()
 	if _, err := admin.ServerVersion(ctx); err != nil {
-		agentMemoryLiveGap(t, "ArcadeDB is unreachable: %v", err)
+		testenv.Unavailable(t, "ArcadeDB is unreachable: %v", err)
 	}
 	database := fmt.Sprintf("aura_mcp_forget_test_%d", time.Now().UnixNano())
 	if _, err := admin.CreateDatabase(ctx, database); err != nil {

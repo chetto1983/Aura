@@ -18,16 +18,15 @@ package main
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/client"
-
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/moby/moby/client"
 )
 
 // shareITBackend builds a DockerBackend whose materialize sources come from the production
@@ -40,7 +39,7 @@ func shareITBackend(t *testing.T, cli *client.Client, cfg *config.Config, shared
 
 // TestSharedSkillEntersTheBoxAndLeavesOnRevoke is criterion 5's box half, both directions.
 func TestSharedSkillEntersTheBoxAndLeavesOnRevoke(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 
 	base := t.TempDir()
 	boxImage := egressITBoxImage()
@@ -141,7 +140,7 @@ func TestSharedSkillEntersTheBoxAndLeavesOnRevoke(t *testing.T) {
 // to land, and under a clear claimed by the first landing source nothing would remove the
 // body. The dest is mirrored to empty instead.
 func TestBoxIsMirroredWhenEveryHostSourceIsGone(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 
 	base := t.TempDir()
 	boxImage := egressITBoxImage()
@@ -211,7 +210,7 @@ func TestBoxIsMirroredWhenEveryHostSourceIsGone(t *testing.T) {
 // The unit tier already asserts the skip and its asymmetry on tarSources; what only a daemon
 // can say is that the box the grantee is left with is a WORKING one.
 func TestAMalformedShareDoesNotCostTheGranteeTheirBox(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 
 	base := t.TempDir()
 	boxImage := egressITBoxImage()
@@ -239,12 +238,7 @@ func TestAMalformedShareDoesNotCostTheGranteeTheirBox(t *testing.T) {
 	writeExportedSkill(t, ownerRoots.Export, "bad-share", "bad body")
 	// The fault: a symlink inside the shared tree, which writeTarDir refuses by design.
 	badDir := filepath.Join(ownerRoots.Export, "bad-share")
-	if err := os.Symlink(filepath.Join(badDir, "SKILL.md"), filepath.Join(badDir, "link.md")); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("symlink unsupported on the CI host: %v", err)
-		}
-		t.Skipf("symlink unsupported on this host: %v", err)
-	}
+	testenv.Symlink(t, filepath.Join(badDir, "SKILL.md"), filepath.Join(badDir, "link.md"))
 
 	rows := []skills.CatalogRow{
 		{ID: "bad-1", OwnerID: owner, Name: "bad-share"},

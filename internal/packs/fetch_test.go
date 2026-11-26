@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 const fakeCommit = "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
@@ -152,12 +154,7 @@ func TestCheckoutOfARepositoryRootPlugin(t *testing.T) {
 // git 2.39.5. The repository is a local bare one served over file://, so no network is used.
 func TestGitFetcherAgainstALocalBareRepository(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("git"); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("git is required under CI: %v", err)
-		}
-		t.Skip("git is not installed here")
-	}
+	testenv.Executable(t, "git")
 	base := t.TempDir()
 	bare := filepath.Join(base, "owner", "repo.git")
 	work := filepath.Join(base, "work")

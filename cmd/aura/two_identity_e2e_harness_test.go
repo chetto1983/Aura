@@ -37,16 +37,6 @@ import (
 // boundary and defaultConversationOwner fall back to for an empty principal.
 const musrLocalIdentity = "00000000-0000-0000-0000-000000000001"
 
-// musrUnavailable skips locally and fails under CI: a skipped acceptance tier must not pass
-// as green.
-func musrUnavailable(t *testing.T, why string) {
-	t.Helper()
-	if os.Getenv("CI") != "" {
-		t.Fatalf("%s, but it is missing under CI; wire it in ci.yml", why)
-	}
-	t.Skipf("%s; bring the full stack up and set it", why)
-}
-
 // musrMigratedPool applies roles + migrations against the shared aura DB and returns an
 // aura_app pool (closed via t.Cleanup). Per-run identities + their cascaded rows are the
 // isolation unit, not a disposable database.

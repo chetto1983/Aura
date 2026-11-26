@@ -11,17 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/testenv"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
-
-	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 func browserSidecarFixture(t *testing.T, maxActive int) (*client.Client, *DockerBackend, *SandboxRouter, context.Context, string) {
 	t.Helper()
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits(),
 		WithBrowserLimits(testLimits(), maxActive),

@@ -24,17 +24,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func integrationClient(t *testing.T) *Client {
 	t.Helper()
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
+	base := testenv.Require(t, "ARCADEDB_URL")
 	client, err := New(Config{
 		BaseURL:  base,
 		Database: envOr("ARCADEDB_DATABASE", "aura_memory_it"),
@@ -60,13 +56,7 @@ func disposableMemoryClient(t *testing.T) *Client {
 
 func disposableArcadeClient(t *testing.T) *Client {
 	t.Helper()
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
+	base := testenv.Require(t, "ARCADEDB_URL")
 	admin, err := New(Config{
 		BaseURL: base, Database: "unused", User: envOr("ARCADEDB_USER", "root"),
 		Password: os.Getenv("ARCADEDB_PASSWORD"),

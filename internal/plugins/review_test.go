@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/packs"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 const reviewCommit = "0123456789abcdef0123456789abcdef01234567"
@@ -216,7 +217,7 @@ func TestReviewRefusesATreeTheStoreWouldRefuse(t *testing.T) {
 	c, ref := claudePlugin(t, "p", "", nil)
 	outside := filepath.Join(t.TempDir(), "secret")
 	writeFile(t, outside, "x", 0o600)
-	symlinkOrSkip(t, outside, filepath.Join(c.Root, "p", "secret"))
+	testenv.Symlink(t, outside, filepath.Join(c.Root, "p", "secret"))
 	if _, err := BuildReview(c, ref, nothingTaken(), nil, 32768); err == nil || !strings.Contains(err.Error(), "leaves the plugin") {
 		t.Fatalf("review = %v, want the escaping link refused", err)
 	}

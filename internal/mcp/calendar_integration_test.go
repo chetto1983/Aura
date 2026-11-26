@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // calendarEndpointOrGate resolves the live sidecar URL from AURA_PIM_MCP_URL (or
-// AURA_PIM_MCP_PORT). Empty under $CI is a HARD failure (no-skip-as-green); empty
-// locally is a skip.
+// AURA_PIM_MCP_PORT), or ends the test through testenv.Unavailable when neither is set.
 func calendarEndpointOrGate(t *testing.T) string {
 	t.Helper()
 	if v := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_URL")); v != "" {
@@ -36,10 +36,7 @@ func calendarEndpointOrGate(t *testing.T) string {
 	if port := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_PORT")); port != "" {
 		return "http://127.0.0.1:" + port + "/"
 	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatal("AURA_PIM_MCP_URL (or _PORT) must be set under CI — a skipped calendar_integration tier is never a silent pass (CLAUDE.md no-skip-as-green)")
-	}
-	t.Skip("set AURA_PIM_MCP_URL (or AURA_PIM_MCP_PORT) + bring the aura-pim-mcp sidecar up to run the calendar_integration tier")
+	testenv.Unavailable(t, "set AURA_PIM_MCP_URL (or AURA_PIM_MCP_PORT) and bring the aura-pim-mcp sidecar up")
 	return ""
 }
 

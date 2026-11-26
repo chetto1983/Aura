@@ -101,7 +101,7 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 
 	cfg := config.LoadDB()
 	if strings.TrimSpace(cfg.GarageAdminEndpoint) == "" || strings.TrimSpace(cfg.GarageAdminToken) == "" {
-		musrUnavailable(t, "musr_e2e requires AURA_GARAGE_ADMIN_ENDPOINT and AURA_GARAGE_ADMIN_TOKEN")
+		testenv.Unavailable(t, "%s", "musr_e2e requires AURA_GARAGE_ADMIN_ENDPOINT and AURA_GARAGE_ADMIN_TOKEN")
 	}
 
 	sandboxRouter := buildSandboxRouter(cfg, pool)
@@ -126,13 +126,13 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 
 	memory := buildArcadeMemoryProvisioner(cfg)
 	if memory == nil {
-		musrUnavailable(t, "musr_e2e requires ARCADEDB_ADMIN_USER/ARCADEDB_ADMIN_PASSWORD and AURA_ARCADEDB_TENANT_SECRET")
+		testenv.Unavailable(t, "%s", "musr_e2e requires ARCADEDB_ADMIN_USER/ARCADEDB_ADMIN_PASSWORD and AURA_ARCADEDB_TENANT_SECRET")
 	}
 
 	chat := &chatEnv{cfg: cfg, pool: pool, identity: identity.New(pool), sandboxRouter: sandboxRouter}
 	objProv, fsProv, jrnl := buildProvisioningPorts(chat)
 	if objProv == nil || fsProv == nil {
-		musrUnavailable(t, "musr_e2e requires the Garage admin client and object-store resolver to compose")
+		testenv.Unavailable(t, "%s", "musr_e2e requires the Garage admin client and object-store resolver to compose")
 	}
 
 	telegram := newFakeTelegramMint()
