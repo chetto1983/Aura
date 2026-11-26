@@ -91,6 +91,10 @@ env:
   AURA_RUN_DIR: /tmp/aura-run
   # Arms the no-skip-as-green guards: a missing DSN/token under CI t.Fatals.
   CI: "true"
+  # Every go test a job runs goes through scripts/go_test_ledger.sh, which records its events here;
+  # the job's last step uploads the directory as test-ledger-<job>
+  # (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2).
+  AURA_TEST_LEDGER_DIR: /tmp/aura-test-ledger
 
 jobs:
   skills-gate:
@@ -118,7 +122,7 @@ jobs:
           go run ./cmd/aura db migrate
 
       - name: FuzzSkillValidator smoke (SC#3, 60s NFKC/Unicode mutations)
-        run: go test -run '^$' -fuzz=FuzzSkillValidator -fuzztime=60s ./internal/skills/
+        run: bash scripts/go_test_ledger.sh skills-fuzz -run '^$' -fuzz=FuzzSkillValidator -fuzztime=60s ./internal/skills/
 
       - name: db_integration tier (SC#1 audit INSERT + SC#2 immutability + migration round-trip + TTL)
         # internal/skills only. ci.yml's integration-test already runs ./internal/cron/...
@@ -127,13 +131,13 @@ jobs:
         # -p 1 stays (same rule as scripts/coverage_gate.sh): packages here share ONE
         # Postgres and each runs EnsureRoles+Migrate, so parallel package binaries deadlock
         # on pg_advisory_lock. It is a no-op for a single package and a guard for the next.
-        run: go test -tags db_integration -race -count=1 -p 1 ./internal/skills/
+        run: bash scripts/go_test_ledger.sh skills-db -tags db_integration -race -count=1 -p 1 ./internal/skills/
 
       - name: SC#4 by-path snippet exec tier (host python3)
         # The full 7e runtime: save -> activate -> materialize into the host export dir ->
         # exec BY PATH via host python3 -> output captured -> usage stamped. CI=true arms
         # no-skip-as-green; ubuntu-latest ships python3.
-        run: go test -tags db_integration -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
+        run: bash scripts/go_test_ledger.sh skills-snippet-exec -tags db_integration -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
 
       # The owned-surface coverage gate used to run here too, with the same script and the
       # same db_integration tag as ci.yml's knowledge-integration-test job -- but against a
@@ -146,6 +150,14 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v || true
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   skills-mutation:
     name: Skills mutation (${{ matrix.name }})

@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import agent_memory_eval_phase49 as phase49
+import go_test_ledger
 from agent_memory_eval_metadata import (
     candidate_state,
     manifest_sha256,
@@ -328,6 +329,7 @@ def run_suites(manifest: dict[str, Any], tier: str, repo: pathlib.Path, timeout_
                     check=False,
                     timeout=timeout_seconds,
                 )
+                go_test_ledger.record("agent-memory-eval", completed.stdout)
                 parsed = parse_go_test_json(completed.stdout)
                 result: dict[str, Any] = {
                     "id": suite["id"],

@@ -81,10 +81,23 @@ so the helper keeps `-C dir` ahead of `-json`. Seven mutants of the helper (each
 
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/skills.yml`, `Makefile`, the CI-launched `scripts/*.sh` (`musr_e2e.sh`, `mcp_live_integration.sh`, `coverage_gate.sh`, `docker_coverage_gate.sh`, `ingest_*_e2e.sh`, `pim_mail_e2e.sh`, `microcompact_smoke.sh`), `scripts/agent_memory_eval.py`
 
-- [ ] Inventory first: `git grep -nE 'go test' -- .github Makefile scripts` and list each invocation CI reaches; the list goes in the commit body.
-- [ ] Replace each with the helper; `agent_memory_eval.py` writes the `go test -json` it already collects into the ledger dir.
-- [ ] Each test job sets `AURA_TEST_LEDGER_DIR` and uploads it as `test-ledger-${{ github.job }}` with `if: always()`.
+- [x] Inventory first: `git grep -nE 'go test' -- .github Makefile scripts` and list each invocation CI reaches; the list goes in the commit body.
+- [x] Replace each with the helper; `agent_memory_eval.py` writes the `go test -json` it already collects into the ledger dir.
+- [x] Each test job sets `AURA_TEST_LEDGER_DIR` and uploads it as `test-ledger-${{ github.job }}` with `if: always()`.
 - [ ] Run locally the scripts that can run here (`musr_e2e.sh`, `pim_mail_e2e.sh`) and check their jsonl.
+
+*Done 2026-11-26.* The inventory differed from the file list above: `microcompact_smoke.sh` and
+`ingest_media_e2e.sh` are launched by no workflow, `capability_eval.py` collects `go test -json` too and
+writes it as `agent_memory_eval.py` does (both through `scripts/go_test_ledger.py`), and `live-outward.yml`
+runs one. `scripts/tagged_tier_compile.sh` stays as it is: its `-run '^$'` compiles and executes no test.
+The Makefile's own `go test` recipes are reached by no workflow and stay plain. `AURA_TEST_LEDGER_DIR` is
+set once per workflow (`/tmp/aura-test-ledger`), and every job that runs a test ends with the upload
+(`if-no-files-found: error`): 17 in `ci.yml`, one each in `skills.yml` and `live-outward.yml`. Measured
+on the unit tier (124 packages, 15,583 passing tests), the raw stream is 18 MB and 1.3 MB compressed, so
+the file keeps every event. The static check in `cmd/aura/tier_runners*_test.go` reads `go test` from
+workflow text, so until Part C retires it, it reads `go_test_ledger.sh LABEL ARGS` as `go test ARGS`
+(one fixture case). Run here: the no-CGO unit step (3,741 tests recorded) and `pim_mail_e2e.sh` live
+(`TestPIMMailEndToEnd` recorded). `musr_e2e.sh` was not run here: CI runs it on the PR.
 
 ### Task A3: JavaScript and Python suites
 

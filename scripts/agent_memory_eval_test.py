@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -527,8 +528,13 @@ class SuiteRunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw, mock.patch.object(
             evaluator.subprocess, "run", return_value=completed
         ) as run:
-            suites = evaluator.run_suites(manifest, "all", pathlib.Path(raw), 30)
+            ledger = pathlib.Path(raw) / "ledger"
+            with mock.patch.dict(os.environ, {"AURA_TEST_LEDGER_DIR": str(ledger)}):
+                suites = evaluator.run_suites(manifest, "all", pathlib.Path(raw), 30)
+            recorded = (ledger / "agent-memory-eval.jsonl").read_text(encoding="utf-8")
 
+        # The test ledger gets the go test stream as it came, and none of the toolchain's stderr.
+        self.assertEqual(recorded, completed.stdout)
         self.assertTrue(suites["unit"]["passed"])
         self.assertEqual(suites["unit"]["protocol_errors"], [])
         self.assertEqual(suites["unit"]["stderr_line_count"], 1)

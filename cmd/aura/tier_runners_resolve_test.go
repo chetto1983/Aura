@@ -22,7 +22,8 @@ import (
 //     Makefile's variables expanded;
 //  3. every scripts/*.sh the step or a recipe launches, and every scripts/*.py it runs as
 //     `python3 scripts/x.py`, whose literal ["go", "test", ...] lists are read. A script is
-//     a leaf: what it launches or imports in turn is not followed.
+//     a leaf: what it launches or imports in turn is not followed, except the test
+//     ledger's recorder, scripts/go_test_ledger.sh LABEL ARGS, which is go test ARGS.
 //
 // That is as deep as CI goes today: musr_e2e reaches it as
 // ci.yml -> make musr-e2e -> scripts/musr_e2e.sh. It reads text, not control flow: a
@@ -67,6 +68,9 @@ type tierWalk struct {
 	condition string
 	runs      []goTestRun
 }
+
+// ledgerRecorder is the test ledger's go test wrapper (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2).
+const ledgerRecorder = "scripts/go_test_ledger.sh"
 
 var (
 	scriptPath       = regexp.MustCompile(`^(?:\./)?(scripts/[A-Za-z0-9_./-]+\.sh)$`)
@@ -231,6 +235,10 @@ func (w *tierWalk) command(words []string, vars map[string]string, via string, f
 		}
 		switch {
 		case word == "go" && i+1 < len(words) && words[i+1] == "test":
+			w.record(words[i+2:], vars["GOFLAGS"], via)
+			return nil
+		case word == ledgerRecorder && i+1 < len(words):
+			// go_test_ledger.sh LABEL ARGS runs go test ARGS.
 			w.record(words[i+2:], vars["GOFLAGS"], via)
 			return nil
 		case !follow:
