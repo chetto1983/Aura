@@ -1,0 +1,45 @@
+name: Live outward tiers
+
+# Tiers that act on a third party with the operator's own account, so they do not run on every
+# push: the Telegram live Bot-API tier sends a photo, a document and a voice note to the
+# operator's chat and asserts on Telegram's answers. Nightly and on demand. A missing secret
+# fails the run, through the tier's own t.Fatal under CI, so green means the tier ran (class
+# `outward` in docs/superpowers/specs/2026-11-25-test-ledger-design.md). ci.yml compiles the tier
+# on every push.
+#
+# Repository secrets: TELEGRAM_BOT_TOKEN (a bot for this purpose) and AURA_E2E_CHAT_ID (the chat
+# it writes to).
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-outward
+  cancel-in-progress: false
+
+jobs:
+  telegram-live:
+    name: Telegram live Bot-API (telegram_integration tier, operator bot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Live telegram_integration tier (operator bot, response-asserted)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
+        run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
