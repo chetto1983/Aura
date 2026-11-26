@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8f97396f33e8a0b8e50ead37b0cc18afc83f93b9}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5}"
 MAIL_IMAGE="${PIM_E2E_MAIL_IMAGE:-greenmail/standalone:2.1.5}"
 NET=pim-e2e
 WORK="$(mktemp -d)"

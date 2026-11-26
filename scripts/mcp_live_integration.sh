@@ -65,7 +65,7 @@ done
 
 ARCADE_IMAGE="$(sed -nE 's/^    image: (arcadedata\/arcadedb:[^[:space:]]+)$/\1/p' compose.yaml | head -1)"
 [ -n "$ARCADE_IMAGE" ] || { echo "FATAL: no arcadedb image in compose.yaml" >&2; exit 1; }
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:8f97396f33e8a0b8e50ead37b0cc18afc83f93b9}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5}"
 WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
 ARCADE=aura-arcadedb-mcp-live
 PIM=aura-pim-mcp-live
