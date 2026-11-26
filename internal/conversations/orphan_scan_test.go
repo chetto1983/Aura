@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func mkConvDir(t *testing.T, runDir, id string) string {
@@ -69,12 +70,7 @@ func TestScanOrphans_SymlinkNotFollowed(t *testing.T) {
 		t.Fatalf("mkdir convRoot: %v", err)
 	}
 	link := filepath.Join(convRoot, "evil-symlink")
-	if err := os.Symlink(external, link); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("symlinks unavailable on the CI host: %v", err)
-		}
-		t.Skipf("symlinks unavailable on this platform: %v", err)
-	}
+	testenv.Symlink(t, external, link)
 
 	if err := ScanOrphans(ctx, pool, ScanParams{RunDir: runDir}); err != nil {
 		t.Fatalf("ScanOrphans: %v", err)

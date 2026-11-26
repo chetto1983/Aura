@@ -18,26 +18,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/dbtest"
 )
-
-func mediaJobEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("media job store integration requires %s under CI", key)
-		}
-		t.Skipf("media job store integration requires %s", key)
-	}
-	return v
-}
 
 // migratedMediaJobPool opens the nonowner aura_app runtime pool, the role row-level security
 // applies to, after migrating the disposable database.
@@ -45,9 +33,9 @@ func migratedMediaJobPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pwd := mediaJobEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, mediaJobEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := mediaJobEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"

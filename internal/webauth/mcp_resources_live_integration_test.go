@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
+	auramcp "github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/goleak"
-
-	"github.com/chetto1983/aura/internal/arcadedb"
-	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
 const (
@@ -54,8 +54,8 @@ func TestMCPResourcesLiveCrossSubjectIsolation(t *testing.T) {
 func newLiveTokenIssuer(t *testing.T) *LiveMCPTokenIssuer {
 	t.Helper()
 	issuer, err := NewLiveMCPTokenIssuer(
-		liveEnvOrGate(t, "AURA_AUTHULA_DSN"),
-		liveEnvOrGate(t, "AURA_AUTHULA_SECRET"),
+		testenv.Require(t, "AURA_AUTHULA_DSN"),
+		testenv.Require(t, "AURA_AUTHULA_SECRET"),
 	)
 	if err != nil {
 		t.Fatalf("production MCP token issuer: %v", err)
@@ -66,19 +66,6 @@ func newLiveTokenIssuer(t *testing.T) *LiveMCPTokenIssuer {
 		}
 	})
 	return issuer
-}
-
-func liveEnvOrGate(t *testing.T, key string) string {
-	t.Helper()
-	value := strings.TrimSpace(os.Getenv(key))
-	if value != "" {
-		return value
-	}
-	if os.Getenv("CI") != "" {
-		t.Fatalf("mcp_live_integration requires %s under CI", key)
-	}
-	t.Skipf("set %s and run against the production-like Compose stack", key)
-	return ""
 }
 
 func liveSubjectToken(t *testing.T, tokens *LiveMCPTokenIssuer, resource, subject string) string {
@@ -126,7 +113,7 @@ func openLiveResourceSessionWithToken(t *testing.T, resource, token, name string
 }
 
 func testLiveWhatsAppIsolation(t *testing.T, tokens *LiveMCPTokenIssuer) {
-	root := liveEnvOrGate(t, "AURA_WHATSAPP_STORE_ROOT")
+	root := testenv.Require(t, "AURA_WHATSAPP_STORE_ROOT")
 	tokenA := liveSubjectToken(t, tokens, liveWhatsAppResource, liveWhatsAppSubjectA)
 	tokenB := liveSubjectToken(t, tokens, liveWhatsAppResource, liveWhatsAppSubjectB)
 	sessionA := openLiveResourceSessionWithToken(t, liveWhatsAppResource, tokenA, "whatsapp-live-a")
@@ -155,7 +142,7 @@ func startLiveWhatsAppTenant(t *testing.T, subject string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("Authorization", "Bearer "+liveEnvOrGate(t, "WHATSAPP_BRIDGE_TOKEN"))
+	request.Header.Set("Authorization", "Bearer "+testenv.Require(t, "WHATSAPP_BRIDGE_TOKEN"))
 	request.Header.Set("X-Tenant-ID", subject)
 	response, err := (&http.Client{Timeout: 20 * time.Second}).Do(request)
 	if err != nil {

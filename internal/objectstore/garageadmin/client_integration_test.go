@@ -21,20 +21,9 @@ import (
 	"strconv"
 	"testing"
 	"time"
-)
 
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("garage_integration requires %s, but it is unset under CI — "+
-				"a skipped integration tier must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("garage_integration requires %s; bring the Garage stack up and set it", key)
-	}
-	return v
-}
+	"github.com/chetto1983/aura/internal/testenv"
+)
 
 func randSuffix(t *testing.T) string {
 	t.Helper()
@@ -44,8 +33,8 @@ func randSuffix(t *testing.T) string {
 // TestGarageAdmin provisions a per-identity bucket + scoped key, proves the create
 // legs are idempotent, then de-provisions — all against the live admin API.
 func TestGarageAdmin(t *testing.T) {
-	endpoint := envOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
-	token := envOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
+	endpoint := testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+	token := testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN")
 
 	c, err := New(endpoint, token)
 	if err != nil {
@@ -125,7 +114,7 @@ func TestGarageAdmin(t *testing.T) {
 // restored without its Garage leaves behind. A fresh id each run: Garage refuses to import an id
 // it has ever held, deleted or not.
 func TestGarageAdminImportsALostKey(t *testing.T) {
-	c, err := New(envOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT"), envOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN"))
+	c, err := New(testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT"), testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -158,7 +147,7 @@ func TestGarageAdminImportsALostKey(t *testing.T) {
 // the repository's own (docker/garage/garage.toml, the stack this tier runs on) unless
 // AURA_GARAGE_CONFIG names another.
 func TestGarageAdminPlacedReplicasMatchesTheConfiguredFactor(t *testing.T) {
-	c, err := New(envOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT"), envOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN"))
+	c, err := New(testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT"), testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

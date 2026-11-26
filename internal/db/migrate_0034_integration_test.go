@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 // TestMigration0034SchedulerSandboxReapKind proves migration 0034 widens the
@@ -29,7 +29,7 @@ func TestMigration0034SchedulerSandboxReapKind(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
 )
 
 // disposableTenants resolves each identity to a database created for the test and dropped after.
@@ -30,22 +30,9 @@ type disposableTenants struct {
 	clients map[string]*arcadedb.Client
 }
 
-// arcadeURLOrSkip returns ARCADEDB_URL, skipping locally without it and failing under CI.
-func arcadeURLOrSkip(t *testing.T) string {
-	t.Helper()
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
-	return base
-}
-
 func newDisposableTenants(t *testing.T) *disposableTenants {
 	t.Helper()
-	base := arcadeURLOrSkip(t)
+	base := testenv.Require(t, "ARCADEDB_URL")
 	admin, err := arcadedb.New(arcadedb.Config{BaseURL: base, Database: "unused", User: envOr("ARCADEDB_USER", "root"),
 		Password: os.Getenv("ARCADEDB_PASSWORD")})
 	if err != nil {

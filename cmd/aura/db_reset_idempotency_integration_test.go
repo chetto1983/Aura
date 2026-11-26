@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -35,7 +36,7 @@ func TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
-	password := cliMigrationEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := envDefaultForTest("PGHOST", "127.0.0.1")
 	port := envDefaultForTest("PGPORT", "5432")
 	adminDatabase := envDefaultForTest("POSTGRES_DB", "aura")

@@ -15,7 +15,7 @@
 //	export POSTGRES_PASSWORD/AURA_DB_URL/AURA_DB_MIGRATE_URL  # migrated through 0010
 //	go test -tags db_integration -race -run TestSnippetExec ./internal/skills/ -v
 //
-// No-skip-as-green: envOrSkip t.Fatals under $CI when a required var is unset, so a
+// No-skip-as-green: testenv.Require t.Fatals under $CI when a required var is unset, so a
 // skipped tier can never report falsely green in the pipeline.
 package skills
 
@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
@@ -36,7 +37,7 @@ import (
 // (python3 <exportDir>/<name>/<name>.py) on the host. The marker stdout proves the file
 // is visible + executable; the usage stamp proves the deterministic operator stamp (D-19).
 func TestSnippetExec(t *testing.T) {
-	exportDir := envOrSkip(t, "AURA_SKILL_EXPORT_DIR")
+	exportDir := testenv.Require(t, "AURA_SKILL_EXPORT_DIR")
 
 	pool := migratedPool(t)
 	ctx := context.Background()

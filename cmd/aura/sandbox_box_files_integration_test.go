@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/secret"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // TestComposedBoxRunsAgentBrowserWithItsIdentityKey is the composition-root proof for
@@ -22,7 +23,7 @@ import (
 // it does not fall back to busybox: it defaults to aura-sandbox:latest, which the CI
 // docker_integration job builds before this tier runs (override with AURA_SANDBOX_IMAGE).
 func TestComposedBoxRunsAgentBrowserWithItsIdentityKey(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 	image := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE"))
 	if image == "" {
 		image = "aura-sandbox:latest"

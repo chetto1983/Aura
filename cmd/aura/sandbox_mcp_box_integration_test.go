@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // listMCPServers prints the command line of every agent-browser MCP server in the box. The image
@@ -27,7 +27,7 @@ const listMCPServers = `for f in /proc/[0-9]*/cmdline; do tr '\0' ' ' < "$f" 2>/
 // uses, agent-browser's MCP server starts in the identity's box behind the adapter, a real
 // page is driven through it, and closing the session leaves no server process behind.
 func TestBrowserRecipeRunsItsMCPServerInTheBox(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 	image := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE"))
 	if image == "" {
 		image = "aura-sandbox:latest"

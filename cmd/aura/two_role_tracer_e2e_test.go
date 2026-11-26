@@ -33,9 +33,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -46,6 +43,9 @@ import (
 	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // tracerLocalIdentity is the seeded operator identity (migration 0004) — post-0121 it
@@ -53,21 +53,6 @@ import (
 const tracerLocalIdentity = "00000000-0000-0000-0000-000000000001"
 
 const tracerIdentityHeader = "X-Tracer-Test-Identity"
-
-// tracerEnvOrSkip mirrors every other db_integration tier in this repo: skip locally,
-// t.Fatal under $CI so a missing DSN never reports this tier as falsely green.
-func tracerEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("musr_e2e tracer requires %s, but it is unset under CI — a skipped "+
-				"acceptance tier must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("musr_e2e tracer requires %s; bring the stack up and set it", key)
-	}
-	return v
-}
 
 // tracerMigratedPool applies roles + migrations against the composed
 // AURA_DB_URL/AURA_DB_MIGRATE_URL — NEVER the live `aura` DB (internal/dbtest.MigrateURL
@@ -77,9 +62,9 @@ func tracerMigratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := tracerEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, tracerEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := tracerEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -239,7 +224,7 @@ func TestTwoRolesTracer(t *testing.T) {
 	})
 
 	t.Run("own_key_on_the_turn", func(t *testing.T) {
-		authulaSecret := tracerEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+		authulaSecret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 		keyStore, err := identitykey.NewStore(pool, authulaSecret)
 		if err != nil {
 			t.Fatalf("identitykey.NewStore: %v", err)

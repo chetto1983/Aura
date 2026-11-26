@@ -10,7 +10,7 @@
 //
 //	go test -tags db_integration -race ./internal/identity -count=1
 //
-// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset, so a
+// No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset, so a
 // skipped tier can never pass as green in the pipeline.
 package identity
 
@@ -24,27 +24,13 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // localID is the fixed seed UUID from migration 0004 (SPEC Req#5).
 const localID = "00000000-0000-0000-0000-000000000001"
-
-// envOrSkip mirrors internal/db/db_test.go: skip locally, fail-loud under CI so a
-// missing DSN never reports a falsely-green integration job.
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // migratedPool ensures roles + migrations are applied, then returns an aura_app
 // pool ready for Store use. Closed via t.Cleanup.
@@ -53,9 +39,9 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

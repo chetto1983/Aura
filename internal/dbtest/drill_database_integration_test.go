@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,13 +17,7 @@ import (
 // created their database fine and left it behind on every run. So the assertion that matters
 // is made after the subtest that owns the database has finished.
 func TestDrillDatabaseLeavesNothingBehind(t *testing.T) {
-	pwd := os.Getenv("POSTGRES_PASSWORD")
-	if pwd == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("dbtest integration requires POSTGRES_PASSWORD under CI")
-		}
-		t.Skip("dbtest integration requires POSTGRES_PASSWORD")
-	}
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"

@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const localIdentityID = "00000000-0000-0000-0000-000000000001"
@@ -28,8 +28,8 @@ const localIdentityID = "00000000-0000-0000-0000-000000000001"
 func TestStorePostgresContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	app := openIdempotencyPool(t, ctx, requiredIntegrationEnv(t, "AURA_DB_URL"))
-	migrate := openIdempotencyPool(t, ctx, dbtest.MigrateURL(t, requiredIntegrationEnv(t, "AURA_DB_MIGRATE_URL")))
+	app := openIdempotencyPool(t, ctx, testenv.Require(t, "AURA_DB_URL"))
+	migrate := openIdempotencyPool(t, ctx, dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL")))
 	assertDisposableMigratedDatabase(t, ctx, app, migrate)
 
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
@@ -268,18 +268,6 @@ func TestStorePostgresContract(t *testing.T) {
 			})
 		}
 	})
-}
-
-func requiredIntegrationEnv(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("db_integration requires %s under CI", key)
-		}
-		t.Skipf("db_integration requires %s", key)
-	}
-	return value
 }
 
 func openIdempotencyPool(t *testing.T, ctx context.Context, dsn string) *pgxpool.Pool {

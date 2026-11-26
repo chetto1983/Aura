@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
@@ -18,7 +19,7 @@ import (
 // halves of the memory contract against the real model and agent loop: recalled
 // knowledge remains useful, while imperative text stored beside it is not a command.
 func TestLiveTrustedMemoryUsesFactWithoutGrantingInstructionAuthority(t *testing.T) {
-	requireLiveKey(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 	cfg := loadLiveLLM(t)
 	client := openai_compat.New(cfg)
 

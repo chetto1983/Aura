@@ -45,22 +45,19 @@ import (
 	"time"
 	"unicode"
 
-	tele "gopkg.in/telebot.v4"
-
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
+	tele "gopkg.in/telebot.v4"
 )
 
 func TestArtifactLiveE2E_DocumentReachesAnAuthorizedChat(t *testing.T) {
-	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
-	chatRaw := strings.TrimSpace(os.Getenv("AURA_E2E_TELEGRAM_CHAT_ID"))
-	if token == "" || chatRaw == "" {
-		t.Skip("live_e2e: TELEGRAM_BOT_TOKEN and AURA_E2E_TELEGRAM_CHAT_ID must BOTH be set — " +
-			"this test messages a real person, so it never runs on a partial environment. " +
-			"Run: set -a; . ./.env; set +a; AURA_E2E_TELEGRAM_CHAT_ID=<chat id> " +
-			"go test -tags live_e2e -run TestArtifactLiveE2E -timeout 120s -v ./internal/channels/telegram/")
-	}
+	// It messages a real person, so it needs both, never a partial environment. Run:
+	// set -a; . ./.env; set +a; AURA_E2E_TELEGRAM_CHAT_ID=<chat id> go test -tags live_e2e
+	// -run TestArtifactLiveE2E -timeout 120s -v ./internal/channels/telegram/
+	token := strings.TrimSpace(testenv.Require(t, "TELEGRAM_BOT_TOKEN"))
+	chatRaw := strings.TrimSpace(testenv.Require(t, "AURA_E2E_TELEGRAM_CHAT_ID"))
 	chatID, err := strconv.ParseInt(chatRaw, 10, 64)
 	if err != nil {
 		t.Fatalf("AURA_E2E_TELEGRAM_CHAT_ID %q is not a chat id: %v", chatRaw, err)

@@ -17,24 +17,14 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
 func liveArcadeMemoryPurger(t *testing.T) (arcadeMemoryPurgeAdapter, *arcadedb.Client) {
 	t.Helper()
-	password := strings.TrimSpace(os.Getenv("ARCADEDB_PASSWORD"))
-	if password == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_PASSWORD must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_PASSWORD not set")
-	}
-	if strings.TrimSpace(os.Getenv("AURA_ARCADEDB_TENANT_SECRET")) == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_ARCADEDB_TENANT_SECRET must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("AURA_ARCADEDB_TENANT_SECRET not set")
-	}
+	password := strings.TrimSpace(testenv.Require(t, "ARCADEDB_PASSWORD"))
+	testenv.Require(t, "AURA_ARCADEDB_TENANT_SECRET")
 	base := arcadedb.Config{
 		BaseURL:  arcadeEnvOrDefault("ARCADEDB_URL", "http://127.0.0.1:2480"),
 		Database: arcadeEnvOrDefault("ARCADEDB_DATABASE", "aura_memory"),

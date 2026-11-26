@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 )
@@ -38,13 +39,7 @@ func (b existingCraftBox) EnsureBox(_ context.Context, identity string) (usersan
 
 func nativeCraftBox(t *testing.T) existingCraftBox {
 	t.Helper()
-	box := os.Getenv("AURA_CRAFT_PREVIEW_TEST_BOX")
-	if box == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_CRAFT_PREVIEW_TEST_BOX required for native Craft integration")
-		}
-		t.Skip("set AURA_CRAFT_PREVIEW_TEST_BOX to an existing Craft sandbox")
-	}
+	box := testenv.Require(t, "AURA_CRAFT_PREVIEW_TEST_BOX") // an existing Craft sandbox
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		t.Fatal(err)

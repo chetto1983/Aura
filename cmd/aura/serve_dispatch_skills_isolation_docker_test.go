@@ -21,12 +21,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/client"
-
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/moby/moby/client"
 )
 
 // writeExportedSkill lays a materialized skill tree down in an export dir, the shape
@@ -47,7 +47,7 @@ func writeExportedSkill(t *testing.T, exportDir, name, body string) {
 // deployment's, resolves a box for ONE of them through the production path, and reads /skills
 // from inside it.
 func TestBoxHoldsOnlyItsOwnAndTheHouseSkills(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 
 	base := t.TempDir()
 	exportBase := filepath.Join(base, "export")

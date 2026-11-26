@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // TestEnsureAuthulaReadableMakesAuthulaReadableByMigrate covers the backup outage measured on the
@@ -28,7 +30,7 @@ func TestEnsureAuthulaReadableMakesAuthulaReadableByMigrate(t *testing.T) {
 	defer cancel()
 	_, _, appURL := fresh0093Database(t, ctx, "aura_authula_grants")
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	bootstrap := roleDSN(t, "aura", "aura_authula_grants")
 
 	super, err := Open(ctx, &Config{URL: bootstrap})
@@ -95,7 +97,7 @@ func TestEnsureRolesSucceedsBeforeTheAuthulaSchemaExists(t *testing.T) {
 	defer cancel()
 	_, _, _ = fresh0093Database(t, ctx, "aura_authula_absent")
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	if err := EnsureRoles(ctx, roleDSN(t, "aura", "aura_authula_absent"), pwd); err != nil {
 		t.Fatalf("EnsureRoles must succeed when the authula schema is absent: %v", err)
 	}
@@ -105,7 +107,7 @@ func TestEnsureRolesSucceedsBeforeTheAuthulaSchemaExists(t *testing.T) {
 // host/port defaults the other integration helpers use.
 func roleDSN(t *testing.T, role, database string) string {
 	t.Helper()
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"

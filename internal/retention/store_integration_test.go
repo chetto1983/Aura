@@ -5,12 +5,13 @@ package retention
 import (
 	"context"
 	"errors"
-	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,13 +19,13 @@ import (
 func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	dsn := retentionIntegrationEnv(t, "AURA_DB_URL")
+	dsn := testenv.Require(t, "AURA_DB_URL")
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	migratePool, err := pgxpool.New(ctx, dbtest.MigrateURL(t, retentionIntegrationEnv(t, "AURA_DB_MIGRATE_URL")))
+	migratePool, err := pgxpool.New(ctx, dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	pool, err := pgxpool.New(ctx, testenv.Require(t, "AURA_DB_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,7 @@ func TestRetentionStorePersistsTwoPhaseLifecycle(t *testing.T) {
 func TestRetentionPlanRefreshesExpiredUnchangedSnapshotForImmediateApply(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	pool, err := pgxpool.New(ctx, testenv.Require(t, "AURA_DB_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestRetentionPlanRefreshesExpiredUnchangedSnapshotForImmediateApply(t *test
 func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	pool, err := pgxpool.New(ctx, testenv.Require(t, "AURA_DB_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +315,7 @@ func TestRetentionPlanRefreshNeverMutatesNonPlannedOperation(t *testing.T) {
 func TestRetentionBacklogIsDurableAcrossReplayRestartAndTerminalTransitions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	pool, err := pgxpool.New(ctx, testenv.Require(t, "AURA_DB_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +368,7 @@ func TestRetentionBacklogIsDurableAcrossReplayRestartAndTerminalTransitions(t *t
 func TestRetentionStoreFailsClosedAfterPoolShutdown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_URL"))
+	pool, err := pgxpool.New(ctx, testenv.Require(t, "AURA_DB_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,16 +443,4 @@ func assertRetentionBacklogCount(t *testing.T, ctx context.Context, store *Store
 	if err != nil || got != want {
 		t.Fatalf("PendingCount()=%d, %v; want %d", got, err, want)
 	}
-}
-
-func retentionIntegrationEnv(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("db_integration requires %s under CI", key)
-		}
-		t.Skipf("db_integration requires %s", key)
-	}
-	return value
 }

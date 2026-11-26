@@ -11,6 +11,7 @@ github.com/chetto1983/aura/internal/agent/agenttest   fake LLM client, mocks and
 github.com/chetto1983/aura/internal/agenteval         the agent eval harness, driven by live tests and scripts/musr_live_run_assert.go
 github.com/chetto1983/aura/internal/dbtest            disposable-database guards for db_integration tests
 github.com/chetto1983/aura/internal/steer/steertest   in-memory steer fake for tests in other packages
+github.com/chetto1983/aura/internal/testenv           the skip-locally, fail-under-CI gates every test's environment goes through
 
 # Test seams in production packages: production never calls them, tests in this or another
 # package do, through an API the type cannot otherwise expose.

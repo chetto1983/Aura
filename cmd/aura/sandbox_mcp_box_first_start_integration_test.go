@@ -17,12 +17,13 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // Browser discovery is lazy; the first call of EACH identity must still get the
 // recipe's cold-start budget, not the shorter reconnect budget.
 func TestBrowserLazyColdStartGetsItsInitTimeout(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 	image := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE"))
 	if image == "" {
 		image = "aura-sandbox:latest"

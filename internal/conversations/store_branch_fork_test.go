@@ -8,7 +8,7 @@
 //
 //	go test -tags db_integration -race ./internal/conversations -run TestBranchFork -count=1
 //
-// No-skip-as-green: envOrSkip (store_test.go) t.Fatals under $CI when the DSN is unset.
+// No-skip-as-green: testenv.Require (store_test.go) t.Fatals under $CI when the DSN is unset.
 package conversations
 
 import (

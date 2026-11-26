@@ -12,9 +12,9 @@
 //
 //	go test -tags db_integration -race -run TestTurnReasoning ./internal/conversations -count=1
 //
-// Reuses the store_test.go harness (envOrSkip / migratedPool / newStore /
+// Reuses the store_test.go harness (testenv.Require / migratedPool / newStore /
 // newConversation / localID) + the package goleak TestMain. No-skip-as-green:
-// envOrSkip t.Fatals under $CI when the DSN is unset.
+// testenv.Require t.Fatals under $CI when the DSN is unset.
 package conversations
 
 import (

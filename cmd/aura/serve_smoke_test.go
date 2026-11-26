@@ -34,26 +34,11 @@ import (
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/webauth"
 )
-
-// smokeEnvOrSkip mirrors the integration-tier envOrSkip discipline: t.Fatal under $CI
-// when a required var is unset (a skipped smoke must not pass green), skip locally.
-func smokeEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("serve_smoke requires %s, but it is unset under CI — a skipped smoke "+
-				"must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("serve_smoke requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // buildSmokeBinary compiles cmd/aura into a temp dir and returns the binary path. A
 // fresh build guarantees the smoke exercises the current embed + auth boundary.
@@ -142,10 +127,10 @@ func seedSmokeAuthulaOperator(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	dbURL := smokeEnvOrSkip(t, "AURA_DB_URL")
-	email := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_EMAIL")
-	password := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_PASSWORD")
-	secret := smokeEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	dbURL := testenv.Require(t, "AURA_DB_URL")
+	email := testenv.Require(t, "AURA_E2E_AUTHULA_EMAIL")
+	password := testenv.Require(t, "AURA_E2E_AUTHULA_PASSWORD")
+	secret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 
 	pool, err := db.Open(ctx, &db.Config{URL: dbURL})
 	if err != nil {
@@ -210,8 +195,8 @@ func seedSmokeAuthulaOperator(t *testing.T) {
 
 func smokeAuthulaLogin(t *testing.T, base string) *http.Cookie {
 	t.Helper()
-	email := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_EMAIL")
-	password := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_PASSWORD")
+	email := testenv.Require(t, "AURA_E2E_AUTHULA_EMAIL")
+	password := testenv.Require(t, "AURA_E2E_AUTHULA_PASSWORD")
 
 	cfgReq, err := http.NewRequest(http.MethodGet, base+"/api/auth/config", nil)
 	if err != nil {
@@ -318,7 +303,7 @@ func smokeAuthulaTOTPCode(t *testing.T) string {
 	if code := strings.TrimSpace(os.Getenv("AURA_E2E_AUTHULA_TOTP_CODE")); code != "" {
 		return code
 	}
-	secret := smokeEnvOrSkip(t, "AURA_E2E_AUTHULA_TOTP_SECRET")
+	secret := testenv.Require(t, "AURA_E2E_AUTHULA_TOTP_SECRET")
 	normalized := strings.ToUpper(strings.ReplaceAll(secret, " ", ""))
 	normalized = strings.TrimRight(normalized, "=")
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(normalized)
@@ -365,7 +350,7 @@ func TestServeSmoke(t *testing.T) {
 	t.Run("non-loopback bind without Authula config fail-fasts", func(t *testing.T) {
 		// The daemon validates the DB secret before the auth composition root, so
 		// the live env must be present for the Authula config check to be what trips.
-		smokeEnvOrSkip(t, "AURA_DB_URL")
+		testenv.Require(t, "AURA_DB_URL")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		// 0.0.0.0 is non-loopback; without Authula config the daemon must refuse.
@@ -391,7 +376,7 @@ func TestServeSmoke(t *testing.T) {
 
 	t.Run("WEB-01/03 served binary: api 404, healthz public, shell gated", func(t *testing.T) {
 		// Booting the real daemon needs the live DB (no-skip-as-green under $CI).
-		smokeEnvOrSkip(t, "AURA_DB_URL")
+		testenv.Require(t, "AURA_DB_URL")
 		seedSmokeAuthulaOperator(t)
 		aguiAddr := freeAddr(t)
 		setupAddr := freeAddr(t)

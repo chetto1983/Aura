@@ -5,7 +5,7 @@
 // tracks what the frontmatter says.
 //
 // Requires a Postgres with the migrations applied through 0118 and AURA_DB_URL set (the
-// aura_app DSN). No-skip-as-green: catalogEnvOrSkip t.Fatals under $CI when the DSN is unset.
+// aura_app DSN). No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset.
 //
 //	go test -tags db_integration -race -run TestCatalog ./internal/skills -count=1
 package skills
@@ -17,29 +17,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
 )
-
-func catalogEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("skills catalog integration requires %s under CI — a skipped tier is never a silent pass", key)
-		}
-		t.Skipf("skills catalog integration requires %s", key)
-	}
-	return value
-}
 
 func catalogPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := db.Open(ctx, &db.Config{URL: catalogEnvOrSkip(t, "AURA_DB_URL")})
+	pool, err := db.Open(ctx, &db.Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}

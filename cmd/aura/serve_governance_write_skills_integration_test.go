@@ -28,23 +28,10 @@ import (
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// skillsBridgeEnvOrSkip mirrors the integration-tier discipline: skip locally, fail-loud
-// under $CI so a missing DSN never reports a falsely-green job.
-func skillsBridgeEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // skillsBridgeConfig points a config at temp skill dirs so the adapter's Writer operates on a
 // clean, isolated set of dirs. SkillsIdentityDir is set too, and it is not decoration: without
@@ -107,9 +94,9 @@ func buildSkillsInstall(t *testing.T, cfg *config.Config, skillName, body string
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := skillsBridgeEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, skillsBridgeEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := skillsBridgeEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

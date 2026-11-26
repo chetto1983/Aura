@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 // TestMigration0026LocalAdminCapsRoundTrip proves migration 0026 seeds `local`'s
@@ -30,7 +30,7 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -152,7 +152,7 @@ func TestMigration0026RetireSafe_LocalAbsent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

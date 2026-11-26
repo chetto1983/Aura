@@ -37,24 +37,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// multiEnvOrSkip mirrors the webauth_integration envOrSkip (that helper lives under a
-// different build tag, so this file needs its own): t.Fatal under $CI when a required var
-// is unset (no skip-as-green), local skip otherwise.
-func multiEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — a skipped "+
-				"integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (stack up)", key)
-	}
-	return v
-}
 
 // seededLocalIdentityID is the migration-0004 seeded `local` identity (wildcard `*`).
 const seededLocalIdentityID = "00000000-0000-0000-0000-000000000001"
@@ -65,7 +50,7 @@ const testAuthulaSecret = "0123456789abcdef0123456789abcdef0123456789abcdef01234
 // the same construction the daemon boot uses, minus the CLI plumbing.
 func newMultiUserProvider(t *testing.T, ctx context.Context) (*Provider, *IdentityLinker, *pgxpool.Pool) {
 	t.Helper()
-	auraDSN := multiEnvOrSkip(t, "AURA_DB_URL")
+	auraDSN := testenv.Require(t, "AURA_DB_URL")
 	secret := os.Getenv("AURA_AUTHULA_SECRET")
 	if secret == "" {
 		secret = testAuthulaSecret

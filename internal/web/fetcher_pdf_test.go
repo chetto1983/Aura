@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/pdftext"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // onePagePDF is a hand-written one-page PDF whose content stream is stream, deflated
@@ -50,19 +50,6 @@ func textLine(y int, text string) string {
 	return fmt.Sprintf("BT /F1 12 Tf 20 %d Td (%s) Tj ET\n", y, text)
 }
 
-// requirePDFExtractor fails under $CI instead of skipping: a PDF lane that runs
-// nowhere in CI is the falsely-green case (ci.yml installs poppler-utils for it).
-func requirePDFExtractor(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath(pdftext.Tool); err == nil {
-		return
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatalf("%s is not installed and $CI is set", pdftext.Tool)
-	}
-	t.Skipf("%s is not installed", pdftext.Tool)
-}
-
 func servePDF(t *testing.T, body []byte) (*Client, string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -78,7 +65,7 @@ func servePDF(t *testing.T, body []byte) (*Client, string) {
 // The RS datasheet of 2026-10-07 answered 200 application/pdf and died at the MIME
 // allowlist although the aura image carries pdftotext (prd.md §12).
 func TestFetch_PDFTakesThePDFLane(t *testing.T) {
-	requirePDFExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	c, url := servePDF(t, onePagePDF(t, textLine(13000, "Static torque 12.00 Nm")+
 		textLine(12980, "Weight 8.9 kg"), false))
 	page, err := c.Fetch(context.Background(), "c", url)
@@ -95,7 +82,7 @@ func TestFetch_PDFTakesThePDFLane(t *testing.T) {
 
 // A deflated content stream expands: a body inside the cap can carry text past it.
 func TestFetch_PDFTextPastTheCapIsCutAndSaysSo(t *testing.T) {
-	requirePDFExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	var stream strings.Builder
 	for y := 13900; y > 100; y -= 14 {
 		stream.WriteString(textLine(y, "rated data rated data rated data rated data rated data"))
@@ -114,14 +101,14 @@ func TestFetch_PDFTextPastTheCapIsCutAndSaysSo(t *testing.T) {
 }
 
 func TestFetch_PDFWithNoTextIsAnExtractionFailure(t *testing.T) {
-	requirePDFExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	c, url := servePDF(t, onePagePDF(t, "0 0 m 10 10 l S\n", false))
 	_, err := c.Fetch(context.Background(), "c", url)
 	assertWebErr(t, err, CodeExtractionFailed, ReasonNoPDFText)
 }
 
 func TestFetch_BytesThatAreNotAPDFAreAnExtractionFailure(t *testing.T) {
-	requirePDFExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	c, url := servePDF(t, []byte("<html>an error page served as application/pdf</html>"))
 	_, err := c.Fetch(context.Background(), "c", url)
 	assertWebErr(t, err, CodeExtractionFailed, ReasonUnreadablePDF)

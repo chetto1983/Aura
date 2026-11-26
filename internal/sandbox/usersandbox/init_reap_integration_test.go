@@ -7,13 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // TestBoxReapsOrphans pins what Init=true buys: a process whose parent exits is reparented to
 // PID 1, and PID 1 must reap it when it ends. The keep-alive `tail` never did, so each closed
 // browser session left its Chromium children behind as zombies that counted against PidsLimit.
 func TestBoxReapsOrphans(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()

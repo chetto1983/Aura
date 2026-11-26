@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/goleak"
-
-	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 // seededOperatorIdentity is the `local` operator seeded by migration 0004.
@@ -34,28 +34,11 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// envOrSkip returns the env var value, or skips the test locally / fails it under
-// CI when the var is unset. The fail-loud-under-CI branch is deliberate: a skipped
-// integration test must never pass as green in the pipeline (see ci.yml — the
-// integration job exports AURA_DB_URL/AURA_DB_MIGRATE_URL so this never fires there).
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
-
 // bootstrapURL returns the superuser DSN for role/database creation.
 // Conventionally `postgres://aura:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura`.
 func bootstrapURL(t *testing.T) string {
 	t.Helper()
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -78,7 +61,7 @@ func TestEnsureRoles_CreatesBothRoles(t *testing.T) {
 func TestMigrate_Idempotent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 
 	// Roles must exist before m.Up runs.
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
@@ -109,7 +92,7 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -257,7 +240,7 @@ func shippedMigrationCount(t *testing.T) int {
 func TestPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg := &Config{URL: envOrSkip(t, "AURA_DB_URL")}
+	cfg := &Config{URL: testenv.Require(t, "AURA_DB_URL")}
 	pool, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -281,7 +264,7 @@ func TestOpen_PoolTuning_AppliedAndDefaulted(t *testing.T) {
 	// pool.Config() here, the assignments are executed but never verified, so a
 	// mutant that drops them (or flips `> 0` to `>= 0`) survives despite 90%
 	// line coverage.
-	base := envOrSkip(t, "AURA_DB_URL")
+	base := testenv.Require(t, "AURA_DB_URL")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -331,7 +314,7 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	// Ensure roles + migrations are applied first.
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
@@ -340,7 +323,7 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	cfg := &Config{URL: envOrSkip(t, "AURA_DB_URL")} // role aura_app
+	cfg := &Config{URL: testenv.Require(t, "AURA_DB_URL")} // role aura_app
 	pool, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Open as aura_app: %v", err)
@@ -383,8 +366,8 @@ func TestEnsureRoles_NonPrivilegedBootstrapDenied(t *testing.T) {
 	// Passing the shared password keeps aura_app's own credential unchanged.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	err := EnsureRoles(ctx, appURL, pwd)
 	if err == nil {
@@ -403,7 +386,7 @@ func TestReset_DownUpRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}

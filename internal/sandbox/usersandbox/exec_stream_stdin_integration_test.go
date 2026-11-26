@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // lockedBuffer is the concurrent-safe sink the pump goroutine writes into.
@@ -34,7 +36,7 @@ func (l *lockedBuffer) String() string {
 // a Kill with an input pipe nobody ever closes still returns (the handle closes in itself).
 // goleak (TestMain) catches a feeder left parked on the read.
 func TestExecStreamStdin(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()

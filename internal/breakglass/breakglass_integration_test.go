@@ -31,14 +31,14 @@ import (
 
 	authulamodels "github.com/Authula/authula/models"
 	authulaservices "github.com/Authula/authula/services"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/chetto1983/aura/internal/webauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/webauth"
 )
 
 // Fixed sentinels so the no-leak assertion can prove neither the new password nor the
@@ -58,21 +58,6 @@ const seedTelegramUserID int64 = 7700000001
 // harness generates the name, a name interpolated into DDL must be a safe identifier.
 var throwawayNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{2,62}$`)
 
-// recoveryEnvOrSkip is the sanctioned no-skip-as-green env guard (copied verbatim from
-// cmd/aura/recovery_integration_test.go:31-41): t.Fatal under $CI when a required var is
-// unset, skip locally.
-func recoveryEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
-
 // bgEnv is the resolved connection context. It reads ALL four required vars through the
 // no-skip guard (R6): AURA_DB_URL/AURA_DB_MIGRATE_URL gate the guard even though the
 // harness composes its own throwaway DSNs; host/port derive from PGHOST/PGPORT.
@@ -85,10 +70,10 @@ type bgEnv struct {
 
 func readBGEnv(t *testing.T) bgEnv {
 	t.Helper()
-	pwd := recoveryEnvOrSkip(t, "POSTGRES_PASSWORD")
-	recoveryEnvOrSkip(t, "AURA_DB_MIGRATE_URL") // required under $CI (no-skip-as-green)
-	recoveryEnvOrSkip(t, "AURA_DB_URL")         // required under $CI (no-skip-as-green)
-	secret := recoveryEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	testenv.Require(t, "AURA_DB_MIGRATE_URL") // required under $CI (no-skip-as-green)
+	testenv.Require(t, "AURA_DB_URL")         // required under $CI (no-skip-as-green)
+	secret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

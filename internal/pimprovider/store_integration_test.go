@@ -6,28 +6,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/secret"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func appsEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("pimprovider integration requires %s under CI", key)
-		}
-		t.Skipf("pimprovider integration requires %s", key)
-	}
-	return value
-}
 
 // liveStore empties aura.pim_provider_app around each test. The table is install-wide, so its
 // rows ARE the target install's provider apps: the live-target guard refuses the deployment's
@@ -36,9 +23,9 @@ func liveStore(t *testing.T) (*Store, *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	migrateURL := dbtest.MigrateURL(t, appsEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := appsEnvOrSkip(t, "AURA_DB_URL")
-	secretHex := appsEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
+	secretHex := testenv.Require(t, "AURA_AUTHULA_SECRET")
 	if _, err := db.Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("db.Migrate: %v", err)
 	}
@@ -74,7 +61,7 @@ func TestStoreSealsTheGoogleSecretAndKeepsItOnAResave(t *testing.T) {
 	if len(ciphertext) == 0 || bytes.Contains(ciphertext, []byte("plain-secret")) {
 		t.Fatal("client_secret_ciphertext is empty or holds the plaintext")
 	}
-	other, err := secret.NewSealer(appsEnvOrSkip(t, "AURA_AUTHULA_SECRET"), "aura-mcp-registry-key-v1")
+	other, err := secret.NewSealer(testenv.Require(t, "AURA_AUTHULA_SECRET"), "aura-mcp-registry-key-v1")
 	if err != nil {
 		t.Fatalf("NewSealer: %v", err)
 	}

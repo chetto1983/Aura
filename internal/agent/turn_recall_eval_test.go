@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
@@ -72,23 +73,11 @@ func (t evalTurn) accepts(effort llm.ReasoningEffort) bool {
 	return slices.Contains(t.Accepted, string(effort))
 }
 
-func requireEvalEnv(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("%s is unset under CI", key)
-		}
-		t.Skipf("%s is unset; see docs/verification/turn-recall-frozen-eval.md", key)
-	}
-	return value
-}
-
 func newEvalEnv(t *testing.T) evalEnv {
 	t.Helper()
 	cfg := llm.Config{
-		Provider: requireEvalEnv(t, "TURN_EVAL_LLM_PROVIDER"), BaseURL: requireEvalEnv(t, "TURN_EVAL_LLM_BASE_URL"),
-		Model: requireEvalEnv(t, "TURN_EVAL_LLM_MODEL"), APIKey: requireEvalEnv(t, "TURN_EVAL_LLM_API_KEY"),
+		Provider: testenv.Require(t, "TURN_EVAL_LLM_PROVIDER"), BaseURL: testenv.Require(t, "TURN_EVAL_LLM_BASE_URL"),
+		Model: testenv.Require(t, "TURN_EVAL_LLM_MODEL"), APIKey: testenv.Require(t, "TURN_EVAL_LLM_API_KEY"),
 		AdaptiveReasoning: true, TotalTimeoutSec: 60, MaxTokens: 4096,
 	}
 	if !prompt.IsReasoningTarget(cfg.Provider, cfg.BaseURL) {
@@ -120,7 +109,7 @@ func (e evalEnv) teach(user string) (prompt.ReasoningTier, string, time.Duration
 // evalMemory is one trial's identity memory: a fresh database, dropped at the end.
 func evalMemory(t *testing.T) *arcadedb.Client {
 	t.Helper()
-	base, password := requireEvalEnv(t, "ARCADEDB_URL"), os.Getenv("ARCADEDB_PASSWORD")
+	base, password := testenv.Require(t, "ARCADEDB_URL"), os.Getenv("ARCADEDB_PASSWORD")
 	user := os.Getenv("ARCADEDB_USER")
 	if user == "" {
 		user = "root"

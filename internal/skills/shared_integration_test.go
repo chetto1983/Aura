@@ -9,7 +9,7 @@
 // database's, and what is asserted is that the join reaches a BODY and stops there.
 //
 // Requires a Postgres with the migrations applied through 0118 and AURA_DB_URL set (the
-// aura_app DSN). No-skip-as-green: catalogEnvOrSkip t.Fatals under $CI when the DSN is unset.
+// aura_app DSN). No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset.
 //
 //	go test -tags db_integration -race -run TestSharedReader ./internal/skills -count=1
 package skills

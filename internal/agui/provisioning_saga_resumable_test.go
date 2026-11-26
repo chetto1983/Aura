@@ -18,7 +18,7 @@
 //	go test -tags 'db_integration garage_integration' -run TestProvisioningSagaResumable ./internal/agui -count=1 -p 1
 //
 // Requires POSTGRES_PASSWORD (+ optional PGHOST/PGPORT) and AURA_GARAGE_ADMIN_ENDPOINT +
-// AURA_GARAGE_ADMIN_TOKEN. No-skip-as-green: envOrSkip t.Fatals under $CI when unset.
+// AURA_GARAGE_ADMIN_TOKEN. No-skip-as-green: testenv.Require t.Fatals under $CI when unset.
 
 package agui
 
@@ -32,15 +32,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // testAuthulaSecret is a valid 64-hex-char (32-byte) AURA_AUTHULA_SECRET for the
@@ -255,8 +255,8 @@ func seedResumableIdentity(t *testing.T, pool *pgxpool.Pool) (id, name string) {
 
 func newGarageClient(t *testing.T) *garageadmin.Client {
 	t.Helper()
-	endpoint := envOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
-	token := envOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
+	endpoint := testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+	token := testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN")
 	c, err := garageadmin.New(endpoint, token)
 	if err != nil {
 		t.Fatalf("garageadmin.New: %v", err)

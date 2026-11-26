@@ -16,10 +16,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func TestShellBg_RunsInBox(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	bg := NewBackgroundShells(router)
 	t.Cleanup(func() { _ = bg.Shutdown(context.Background()) })

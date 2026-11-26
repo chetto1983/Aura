@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -14,7 +15,7 @@ import (
 // init — and requires Resolve to replace it with the current spec while the workspace survives.
 // A box that is already current must then be reused as is.
 func TestResolveReplacesAStaleBox(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 	const oldImage, newImage = "busybox:stable", "python:3-slim"

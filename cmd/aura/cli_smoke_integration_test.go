@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // TestCLISmoke drives the built binary through every row of cliSmokeRows, in order, against a
@@ -44,7 +44,7 @@ type cliSmoke struct {
 // Nothing else the host runs is reachable from it.
 func newCLISmoke(t *testing.T, ctx context.Context) *cliSmoke {
 	t.Helper()
-	password := cliMigrationEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := envDefaultForTest("PGHOST", "127.0.0.1")
 	port := envDefaultForTest("PGPORT", "5432")
 	admin, err := db.Open(ctx, &db.Config{URL: migrationTestDSN("aura", password, host, port, envDefaultForTest("POSTGRES_DB", "aura"))})

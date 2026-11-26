@@ -7,7 +7,7 @@
 // the queried identity's rows, newest-first across all three planes (cross-identity deny —
 // the core MUSR-01 isolation property for the audit surface).
 //
-// No-skip-as-green: migratedPool/envOrSkip t.Fatal under $CI when the DSN is unset. The
+// No-skip-as-green: migratedPool/testenv.Require t.Fatal under $CI when the DSN is unset. The
 // three ledgers are append-only (UPDATE/DELETE rejected by trigger), so the test uses fresh
 // per-run identity UUIDs instead of cleaning up — each run asserts only its own rows.
 

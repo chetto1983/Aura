@@ -38,7 +38,6 @@ package cron_test
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +49,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -116,13 +116,8 @@ func (s *e2eStore) RunScheduledTaskNow(context.Context, string) error { return n
 // leg of the North-Star queries live. The fire + delivery read-back is the operator
 // checkpoint (Task 3); the scaffold's HARD gate is the persisted scheduler row.
 func TestSchedulerNorthStarE2E(t *testing.T) {
-	if os.Getenv("OPENROUTER_API_KEY") == "" {
-		t.Skip("scheduler E2E: OPENROUTER_API_KEY unset — MANUAL paid gate, NOT CI. See the file header.")
-	}
-	appURL := os.Getenv("AURA_DB_URL")
-	if appURL == "" {
-		t.Skip("scheduler E2E: AURA_DB_URL unset — set it (compose up + derive from POSTGRES_PASSWORD). See the file header.")
-	}
+	testenv.Require(t, "OPENROUTER_API_KEY") // a manual paid gate; the file header says how to run it
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	baseCfg, err := llm.Load()
 	if err != nil {

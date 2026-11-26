@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // identityDeleteExceptions are the ONLY references to aura.identities allowed not to
@@ -44,7 +46,7 @@ func TestIdentityReferencesCascadeOrAreExplicitlyExempt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("open app pool: %v", err)
 	}

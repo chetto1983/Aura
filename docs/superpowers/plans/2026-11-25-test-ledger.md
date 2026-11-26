@@ -36,7 +36,7 @@
 - **The declared-set code moves, it is not rewritten.** `tierTestFiles`, `testFuncs`, `goBuildConstraint` and `gatingTags` leave `cmd/aura/tier_runners_files_test.go` for `internal/testledger`; the rest of the static check (about 1,800 lines interpreting workflow text) is deleted in Part C, not ported.
 - **Subtests are not units.** A parent that ran counts; table rows are the parent's business.
 - **Report-only first.** The first `master` run produces the real violation list; the allowlist is written from it, not guessed.
-- **The 59 local env-or-skip helpers are not folded here.** With the ledger, an unguarded skip is a visible violation whichever helper produced it; folding them into one `internal/testenv` is its own change.
+- **The 59 local env-or-skip helpers are not folded here.** With the ledger, an unguarded skip is a visible violation whichever helper produced it; folding them into one `internal/testenv` is its own change ([plan](2026-11-26-testenv.md), done 2026-11-26).
 
 ## File structure
 
@@ -209,4 +209,5 @@ runs every live step with `--project=chrome`.
 - [x] Delete `cmd/aura/tier_runners*_test.go` and `.github/manual_test_tiers.txt`; update the references (`git grep -n 'manual_test_tiers\|tier_runners'`), the babysit skill's table included.
   The references left are this plan, the spec and the 2026-11-25 inventory, which describe it as history;
   the babysit skill never named it.
-- [ ] Verification file of the closing run.
+- [x] Verification file of the closing run: `docs/superpowers/verification/2026-11-26-test-ledger-closing-run.md`
+  (run 45892030387 on `ce16d43f3`, 0 violations).

@@ -17,11 +17,12 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/client"
 )
 
 func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) {
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 	ctx, service, _, _, _ := mcpSignInFixture(t, "")
 	if err := service.signIn.login.Close(); err != nil {
 		t.Fatal(err)

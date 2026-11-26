@@ -12,7 +12,7 @@
 //
 //	go test -tags db_integration ./internal/agui -run 'TestProvisionGrantsUniformCapabilitySet|TestProvisionRefusesAdministrativeRequest|TestProvisionGrantStepIsIdempotent' -count=1 -p 1 -race -v
 //
-// Requires POSTGRES_PASSWORD plus optional PGHOST/PGPORT. No-skip-as-green: envOrSkip
+// Requires POSTGRES_PASSWORD plus optional PGHOST/PGPORT. No-skip-as-green: testenv.Require
 // t.Fatals under $CI when required env is unset (see disposableLiveSagaPool).
 
 package agui

@@ -4,7 +4,7 @@
 // aura.shared_links/aura.conversations (migrations 0040 + 0005) and objectstore.NewFake() —
 // no Garage, no additional build tag beyond the one on this file's own first line
 // (VALIDATION.md: 37F has zero container/daemon-gated code, and that is a design property to
-// protect). Reuses migratedPool/envOrSkip/seedIdentity/seedConversation/newLink/futurePtr/
+// protect). Reuses migratedPool/testenv.Require/seedIdentity/seedConversation/newLink/futurePtr/
 // pastPtr/pgErrCode from store_integration_test.go (same package, same build tag).
 //
 // This file carries the plan's 9 NAMED security-property tests plus the shared

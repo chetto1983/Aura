@@ -4,7 +4,7 @@
 // six-capability set — never the retired '*' wildcard — and that the identity-audit
 // row's GrantedCapabilities is byte-identical to identity.All()'s source order.
 //
-// No-skip-as-green: bootstrapEnvOrSkip t.Fatal's under $CI when the composed DSN env
+// No-skip-as-green: testenv.Require t.Fatal's under $CI when the composed DSN env
 // is unset, so a missing DB can never report this tier as falsely green.
 //
 // Run via:
@@ -19,27 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// bootstrapEnvOrSkip mirrors every other db_integration tier in this package: skip
-// locally, t.Fatal under $CI so a missing DSN never reports this tier as falsely green.
-func bootstrapEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // bootstrapMigratedPool ensures roles + migrations (to head) are applied against the
 // composed AURA_DB_URL/AURA_DB_MIGRATE_URL — NEVER the live `aura` DB in CI (the
@@ -50,9 +36,9 @@ func bootstrapMigratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := bootstrapEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, bootstrapEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := bootstrapEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

@@ -6,7 +6,7 @@
 // sidecar carries CAP_NET_ADMIN while the box never does, and the sidecar is torn down with
 // the box (no orphan). The DROP assertions are meaningful ONLY on a native-Linux
 // non-masquerading bridge — Docker Desktop/WSL vpnkit NATs around any nftables rule
-// (37-RESEARCH Pitfall 3) — so skipUnlessEnforcingBridge makes them informational-only
+// (37-RESEARCH Pitfall 3) — so testenv.EnforcingBridge makes them informational-only
 // locally and MANDATORY (t.Fatal on a non-Linux daemon) under $CI (no-skip-as-green).
 //
 // These backend-level tests prove the floor DROPs against a hand-built DockerBackend; the
@@ -21,11 +21,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/client"
 )
 
@@ -38,27 +38,6 @@ func egressTestImage() string {
 		return v
 	}
 	return "aura-egress:latest"
-}
-
-// skipUnlessEnforcingBridge gates the egress DROP assertions on a native-Linux
-// non-masquerading bridge. Under $CI it is MANDATORY: the daemon must be native-Linux (a
-// non-Linux daemon t.Fatals — a skipped enforcement tier is never a silent pass). Locally it
-// is informational-only (Docker Desktop/WSL vpnkit NATs the bridge, Pitfall 3) unless a dev
-// opts in with AURA_EGRESS_ENFORCE=1 on a real native-Linux host.
-func skipUnlessEnforcingBridge(t *testing.T) {
-	t.Helper()
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		if runtime.GOOS != "linux" {
-			t.Fatalf("egress enforcement must run on native-Linux dockerd under CI, but GOOS=%s "+
-				"(Docker Desktop vpnkit NATs the bridge — Pitfall 3); wire a native-Linux dockerd into ci.yml", runtime.GOOS)
-		}
-		return
-	}
-	if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("AURA_EGRESS_ENFORCE")) == "1" {
-		return
-	}
-	t.Skip("egress DROP enforcement is native-Linux-only (Docker Desktop/WSL vpnkit NATs the bridge — advisory); " +
-		"informational-only outside CI. Set AURA_EGRESS_ENFORCE=1 on a native-Linux non-masquerading host to run (Pitfall 3)")
 }
 
 // publicProbeAttempts bounds the retries of a public reachability probe: example.com is a
@@ -117,8 +96,8 @@ func inspectCapAdd(t *testing.T, cli *client.Client, ref string) []string {
 // sidecar, never the box) and that Suspend retains the sidecar (stopped) while Stop removes it
 // with no orphan. DROP assertions run native-Linux/CI only (Pitfall 3).
 func TestEgress_FloorDropsInternal(t *testing.T) {
-	skipUnlessDockerd(t)
-	skipUnlessEnforcingBridge(t)
+	testenv.Dockerd(t)
+	testenv.EnforcingBridge(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits(), WithEgress(egressTestImage()))
 	ctx := context.Background()

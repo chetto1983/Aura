@@ -13,50 +13,17 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/client"
 )
-
-// dockerdReachableTools mirrors usersandbox.skipUnlessDockerd's stdlib socket probe (the package's
-// own gate is _test-private). An npipe:// endpoint (Windows Docker Desktop) is not stdlib-dialable
-// and is treated as unreachable — a LOCAL skip only, never a CI pass.
-func skipUnlessDockerdTools(t *testing.T) {
-	t.Helper()
-	network, addr := "unix", "/var/run/docker.sock"
-	if host := strings.TrimSpace(os.Getenv("DOCKER_HOST")); host != "" {
-		switch {
-		case strings.HasPrefix(host, "unix://"):
-			network, addr = "unix", strings.TrimPrefix(host, "unix://")
-		case strings.HasPrefix(host, "tcp://"):
-			network, addr = "tcp", strings.TrimPrefix(host, "tcp://")
-		default:
-			network, addr = "", ""
-		}
-	}
-	reachable := false
-	if network != "" {
-		if conn, err := net.DialTimeout(network, addr, 2*time.Second); err == nil {
-			_ = conn.Close()
-			reachable = true
-		}
-	}
-	if reachable {
-		return
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatal("docker_integration requires a reachable Docker daemon under CI (no-skip-as-green); wire dockerd into ci.yml")
-	}
-	t.Skip("docker_integration requires a reachable Docker daemon; start Docker and re-run")
-}
 
 func dockerTestImage() string {
 	if v := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE")); v != "" {
@@ -94,7 +61,7 @@ func newDockerRouter(t *testing.T, sources usersandbox.SourceResolver) *usersand
 // TestRoute_StrictExecInBox proves a strict-profile shell_exec runs inside the box: a file written
 // under /workspace is readable back IN the box, and the host cwd is never touched.
 func TestRoute_StrictExecInBox(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	tool := &ShellExec{Router: router}
 	ctx := ctxWith(t, "sess-dk-exec", "call-dk-exec")
@@ -116,7 +83,7 @@ func TestRoute_StrictExecInBox(t *testing.T) {
 // agree at RUNTIME: a snippet materialized at /skills/calc/calc.py is executed by the routed
 // shell_exec at the exact path skill action=use rendered, returning the snippet's stdout.
 func TestSnippetExec_RoutedEndToEnd(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 
 	// Host-side snippet the box materializes at /skills/calc/calc.py.
 	exportDir := t.TempDir()

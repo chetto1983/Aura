@@ -17,34 +17,21 @@
 //
 //	go test -tags db_integration ./internal/agent -run VerificationRead -count=1
 //
-// No-skip-as-green: dbEnvOrSkip t.Fatals under $CI when a DSN is unset.
+// No-skip-as-green: testenv.Require t.Fatals under $CI when a DSN is unset.
 package agent
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func dbEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // singleConnPool opens a migrated database with room for exactly ONE connection, so
 // holding that connection wedges every later Begin. A dedicated pool is what makes
@@ -54,8 +41,8 @@ func singleConnPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	appURL := dbEnvOrSkip(t, "AURA_DB_URL")
-	if _, err := db.Migrate(ctx, dbtest.MigrateURL(t, dbEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))); err != nil {
+	appURL := testenv.Require(t, "AURA_DB_URL")
+	if _, err := db.Migrate(ctx, dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 

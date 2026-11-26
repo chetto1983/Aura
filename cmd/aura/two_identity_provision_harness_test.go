@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/webauth"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // musrProvisionFakeBotUsername is the D-08 stub bot name the fake TelegramMint's deep
@@ -101,7 +101,7 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 
 	cfg := config.LoadDB()
 	if strings.TrimSpace(cfg.GarageAdminEndpoint) == "" || strings.TrimSpace(cfg.GarageAdminToken) == "" {
-		musrUnavailable(t, "musr_e2e requires AURA_GARAGE_ADMIN_ENDPOINT and AURA_GARAGE_ADMIN_TOKEN")
+		testenv.Unavailable(t, "%s", "musr_e2e requires AURA_GARAGE_ADMIN_ENDPOINT and AURA_GARAGE_ADMIN_TOKEN")
 	}
 
 	sandboxRouter := buildSandboxRouter(cfg, pool)
@@ -112,7 +112,7 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 	}
 	authulaProvider, err := webauth.New(webauth.Config{
 		DSN:            dsn,
-		Secret:         musrEnvOrSkip(t, "AURA_AUTHULA_SECRET"),
+		Secret:         testenv.Require(t, "AURA_AUTHULA_SECRET"),
 		TrustedOrigins: []string{"http://127.0.0.1:9080"},
 	})
 	if err != nil {
@@ -126,13 +126,13 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 
 	memory := buildArcadeMemoryProvisioner(cfg)
 	if memory == nil {
-		musrUnavailable(t, "musr_e2e requires ARCADEDB_ADMIN_USER/ARCADEDB_ADMIN_PASSWORD and AURA_ARCADEDB_TENANT_SECRET")
+		testenv.Unavailable(t, "%s", "musr_e2e requires ARCADEDB_ADMIN_USER/ARCADEDB_ADMIN_PASSWORD and AURA_ARCADEDB_TENANT_SECRET")
 	}
 
 	chat := &chatEnv{cfg: cfg, pool: pool, identity: identity.New(pool), sandboxRouter: sandboxRouter}
 	objProv, fsProv, jrnl := buildProvisioningPorts(chat)
 	if objProv == nil || fsProv == nil {
-		musrUnavailable(t, "musr_e2e requires the Garage admin client and object-store resolver to compose")
+		testenv.Unavailable(t, "%s", "musr_e2e requires the Garage admin client and object-store resolver to compose")
 	}
 
 	telegram := newFakeTelegramMint()

@@ -11,7 +11,7 @@
 //
 //	go test -tags db_integration -race ./internal/gateway -run 'Reconcile|SlowTool|Recheck' -count=1 -p 1
 //
-// No-skip-as-green: the shared migratedPool/envOrSkip harness (gateway_integration_test.go)
+// No-skip-as-green: the shared migratedPool harness (gateway_integration_test.go) and testenv.Require
 // t.Fatals under $CI when the DSN is unset. The package goleak gate (main_test.go) fails on
 // any leaked pgx pool or reconciler goroutine.
 package gateway

@@ -20,7 +20,7 @@
 // The live vision and document legs left with the clients that used to be here. They
 // belong to the asset pipeline now and are exercised where that pipeline lives.
 //
-// NO-SKIP-AS-GREEN: sidecarEnvOrSkip t.Fatals under $CI when the sidecar base URL
+// NO-SKIP-AS-GREEN: testenv.Require t.Fatals under $CI when the sidecar base URL
 // is SET but unreachable, so a skipped tier under CI fails rather than passing
 // green (CLAUDE.md / VALIDATION). Locally it skips when the env is unset.
 package telegram
@@ -32,23 +32,8 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/multimodal"
+	"github.com/chetto1983/aura/internal/testenv"
 )
-
-// sidecarEnvOrSkip resolves a required sidecar base URL. Unset locally → skip;
-// unset under $CI → t.Fatal (the sidecar-gated CI job exports these, so a skip
-// under CI means a sidecar is down or the wiring rotted, never a silent green).
-func sidecarEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("multimodal_integration requires %s, but it is unset under CI — "+
-				"a skipped sidecar tier must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("multimodal_integration requires %s; bring up the audio sidecars and set the base URLs", key)
-	}
-	return v
-}
 
 // liveTTSConfig builds the channel's TTS config from the live sidecar env.
 func liveTTSConfig() MultimodalConfig {
@@ -73,8 +58,8 @@ func envOr(key, fallback string) string {
 // Italian phrase to opus, aura-stt transcribes it back, and the transcript must be
 // non-empty (the full voice round-trip the operator hears, machine-asserted).
 func TestLiveTTSThenSTTRoundTrip(t *testing.T) {
-	ttsURL := sidecarEnvOrSkip(t, "TTS_BASE_URL")
-	sttURL := sidecarEnvOrSkip(t, "STT_BASE_URL")
+	ttsURL := testenv.Require(t, "TTS_BASE_URL")
+	sttURL := testenv.Require(t, "STT_BASE_URL")
 
 	cfg := liveTTSConfig()
 	cfg.TTSBaseURL = ttsURL
@@ -110,7 +95,7 @@ func TestLiveTTSThenSTTRoundTrip(t *testing.T) {
 // (the sendVoice payload the operator hears; the live sendVoice Bot-API leg is in
 // integration_test.go).
 func TestLiveTTSVoiceBytes(t *testing.T) {
-	ttsURL := sidecarEnvOrSkip(t, "TTS_BASE_URL")
+	ttsURL := testenv.Require(t, "TTS_BASE_URL")
 
 	cfg := liveTTSConfig()
 	cfg.TTSBaseURL = ttsURL
