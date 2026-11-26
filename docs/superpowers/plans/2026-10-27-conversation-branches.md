@@ -168,7 +168,9 @@ stack with `aura-llm`.
   - `runner_context.go`: 58.3%. All nine survivors are in code this plan did not touch (the
     compaction summarizer, the memory context and recall, the profile block);
     `loadTurnHistory` has none;
-  - the snapshot projection: not measured, because the run was stopped.
+  - the snapshot projection (`internal/agui/server_display_tree.go`): 100%, measured on 2026-11-26
+    (`docs/superpowers/verification/2026-11-26-mutation-scopes-backlog.md`). The item stays open on
+    `runner_context.go` alone.
 - [x] Stryker on `ExternalStoreChat_tree.ts`: 93.5%. `messageSeq.ts` 93.1%,
   `sseAdapter_snapshot.ts` 76.7%.
 

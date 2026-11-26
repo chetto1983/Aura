@@ -208,7 +208,9 @@
   `ErrChatOwnedElsewhere`.
 - [x] Green: the consume reads `ConversationOwner(convID(chat))` after binding the token's
   identity and refuses another owner; the sentinel; the reply.
-- [ ] Gates as in Task 1; mutation on `store.go` again.
+- [x] Gates as in Task 1; mutation on `store.go` again. Run on 2026-11-26 against master `40a41e6b9`:
+  the Task 1 gates green, `store.go` 89.2% killed
+  (`docs/superpowers/verification/2026-11-26-mutation-scopes-backlog.md`).
 - [x] Commit `fix(telegram): refuse to link a chat whose conversation is another identity's`.
 
 ### Task 6 — Close
