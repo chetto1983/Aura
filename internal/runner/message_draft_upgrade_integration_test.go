@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/pimsplit"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -48,7 +49,7 @@ func TestAReviewDraftedBeforeThePIMSplitSendsAfterIt(t *testing.T) {
 	r.registry.Register(spy)
 	conversationID := newIntegrationConversation(t, pool, convStore)
 
-	migrate, err := pgx.Connect(ctx, dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL")))
+	migrate, err := pgx.Connect(ctx, dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL")))
 	if err != nil {
 		t.Fatalf("connect as the migrate role: %v", err)
 	}
