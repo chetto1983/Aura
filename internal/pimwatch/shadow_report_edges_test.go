@@ -53,7 +53,9 @@ func TestADigestHoldsTheNowMailToo(t *testing.T) {
 
 // A tier nobody had or answered is left out of the macro F1; the others still count.
 func TestMacroF1SkipsOnlyTheTiersNobodyHad(t *testing.T) {
-	right := func(tier Tier) settledMail { return settledMail{truth: tier, ladder: tier, memory: tier, centroid: tier} }
+	right := func(tier Tier) settledMail {
+		return settledMail{truth: tier, ladder: tier, memory: tier, centroid: tier}
+	}
 	if got := scoreTruth([]settledMail{right(TierLater)}).Ladder.MacroF1; got != 1 {
 		t.Fatalf("one tier all right: macro F1 %v, want 1", got)
 	}
