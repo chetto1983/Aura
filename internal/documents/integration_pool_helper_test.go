@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,7 +30,7 @@ func pipelineDisposablePool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	password := pipelineEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"
@@ -81,16 +82,4 @@ func pipelineDisposablePool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("open disposable app database: %v", err)
 	}
 	return pool
-}
-
-func pipelineEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("pipeline integration requires %s under CI", key)
-		}
-		t.Skipf("pipeline integration requires %s", key)
-	}
-	return value
 }

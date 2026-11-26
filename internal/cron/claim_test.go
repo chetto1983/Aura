@@ -6,7 +6,7 @@
 //
 //	go test -tags db_integration -race -run TestClaim ./internal/cron -count=1
 //
-// migratedPool/envOrSkip/cleanupTask come from store_test.go (same build tag).
+// migratedPool/cleanupTask come from store_test.go (same build tag).
 package cron
 
 import (

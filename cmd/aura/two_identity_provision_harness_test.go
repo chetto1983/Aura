@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/webauth"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // musrProvisionFakeBotUsername is the D-08 stub bot name the fake TelegramMint's deep
@@ -112,7 +112,7 @@ func musrBuildProvisionService(t *testing.T, pool *pgxpool.Pool) (agui.Onboardin
 	}
 	authulaProvider, err := webauth.New(webauth.Config{
 		DSN:            dsn,
-		Secret:         musrEnvOrSkip(t, "AURA_AUTHULA_SECRET"),
+		Secret:         testenv.Require(t, "AURA_AUTHULA_SECRET"),
 		TrustedOrigins: []string{"http://127.0.0.1:9080"},
 	})
 	if err != nil {

@@ -22,6 +22,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,7 +32,7 @@ func delegationDisposablePool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	password := delegationEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"
@@ -83,18 +84,6 @@ func delegationDisposablePool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("open disposable app database: %v", err)
 	}
 	return pool
-}
-
-func delegationEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("swarm delegation integration requires %s under CI", key)
-		}
-		t.Skipf("swarm delegation integration requires %s", key)
-	}
-	return value
 }
 
 // seedSwarmTestIdentity creates a throwaway identity so a delegation row's

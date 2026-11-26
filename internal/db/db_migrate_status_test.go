@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func TestStatus_ReturnsAppliedMigrations(t *testing.T) {
@@ -24,7 +25,7 @@ func TestStatus_ReturnsAppliedMigrations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestCheckMigrationHeadAcceptsCleanEmbeddedHead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestPing_QueryErrorOnCanceledContext(t *testing.T) {
 	// Ping's query-error branch against a real (non-nil) pool.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestStatus_SurfacesInaccessibleTrackerError(t *testing.T) {
 	// A privilege error (42501) is a real failure and must surface.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")}) // aura_app
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")}) // aura_app
 	if err != nil {
 		t.Fatalf("Open as aura_app: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestStatus_MissingTableReturnsEmpty(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

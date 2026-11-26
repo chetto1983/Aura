@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/webauth"
 	"github.com/google/uuid"
 )
@@ -27,7 +28,7 @@ func TestWorkerControlsWithRealAuthulaCookies(t *testing.T) {
 	pool := migratedPool(t)
 	ctx := ownerCtx()
 	provider, err := webauth.New(webauth.Config{
-		DSN:            envOrSkip(t, "AURA_DB_URL"),
+		DSN:            testenv.Require(t, "AURA_DB_URL"),
 		Secret:         "00000000000000000000000000000000000000000000000000000000000000a1",
 		TrustedOrigins: []string{"https://127.0.0.1"},
 	})

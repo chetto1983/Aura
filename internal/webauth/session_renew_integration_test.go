@@ -17,6 +17,7 @@ import (
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,10 +25,10 @@ func TestSessionLifetime_Live(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	dsn := envOrSkip(t, "AURA_AUTHULA_DSN")
+	dsn := testenv.Require(t, "AURA_AUTHULA_DSN")
 	provider, err := New(Config{
 		DSN:            dsn,
-		Secret:         envOrSkip(t, "AURA_AUTHULA_SECRET"),
+		Secret:         testenv.Require(t, "AURA_AUTHULA_SECRET"),
 		TrustedOrigins: []string{"http://127.0.0.1:9080"},
 	})
 	if err != nil {

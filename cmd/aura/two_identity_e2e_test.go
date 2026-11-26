@@ -27,7 +27,7 @@
 // start a second Postgres writer racing this file's own tests, the measured CI #1809
 // race).
 //
-// NO-SKIP-AS-GREEN: every env read goes through musrEnvOrSkip (t.Fatal under $CI). This is
+// NO-SKIP-AS-GREEN: every env read goes through testenv.Require (t.Fatal under $CI). This is
 // the acceptance gate — it MUST be green on Linux CI (ci.yml musr-e2e job).
 package main
 
@@ -39,9 +39,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -51,6 +48,9 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 const musrIdentityHeader = "X-Musr-Test-Identity"
@@ -279,11 +279,11 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 
 	// ── Garage object plane: per-identity buckets + request-time credential selection ─
 	t.Run("garage_cross_deny", func(t *testing.T) {
-		endpoint := musrEnvOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
-		adminToken := musrEnvOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
-		s3Endpoint := musrEnvOrSkip(t, "AURA_OBJECTSTORE_ENDPOINT")
-		region := musrEnvOrSkip(t, "AURA_OBJECTSTORE_REGION")
-		authulaSecret := musrEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+		endpoint := testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+		adminToken := testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN")
+		s3Endpoint := testenv.Require(t, "AURA_OBJECTSTORE_ENDPOINT")
+		region := testenv.Require(t, "AURA_OBJECTSTORE_REGION")
+		authulaSecret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 
 		admin, err := garageadmin.New(endpoint, adminToken)
 		if err != nil {
@@ -365,7 +365,7 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 // run to the Authula-configured stack (AURA_AUTHULA_SECRET + the 0019 schema present).
 func TestProvisionLoginIsolatedRun(t *testing.T) {
 	// Assert the Authula-configured stack is present (the authula_integration precondition).
-	musrEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	testenv.Require(t, "AURA_AUTHULA_SECRET")
 
 	pool := musrMigratedPool(t)
 	convStore := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})

@@ -2,7 +2,7 @@
 
 // Integration tests for the GOV-03 scheduler-management store methods (store_manage.go):
 // ListManageableTasks, ApproveTask, RunTaskNow, UpdateTask. Shares the store_test.go
-// harness (migratedPool / cleanupTask / envOrSkip). Run via:
+// harness (migratedPool / cleanupTask / testenv.Require). Run via:
 //
 //	go test -tags db_integration -race ./internal/cron -count=1
 package cron

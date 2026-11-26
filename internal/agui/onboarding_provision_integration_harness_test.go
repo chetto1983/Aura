@@ -21,15 +21,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/identity"
 )
 
 // --- REAL aura-leg + telegram adapters over the live pool (package agui can import
@@ -309,7 +309,7 @@ func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 
 func disposableLiveSagaPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	t.Helper()
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

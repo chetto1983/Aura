@@ -16,7 +16,7 @@
 //
 //	go test -tags db_integration -race -p 1 ./internal/agui -run TestAgentRunCapability -count=1
 //
-// No-skip-as-green: the shared envOrSkip (server_integration_test.go) t.Fatals under
+// No-skip-as-green: testenv.Require t.Fatals under
 // $CI when the DSN is unset — a skipped integration test must never pass green.
 package agui
 

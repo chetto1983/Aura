@@ -13,7 +13,7 @@
 //
 // Requires POSTGRES_PASSWORD (+ optional PGHOST/PGPORT), AURA_GARAGE_ADMIN_ENDPOINT +
 // AURA_GARAGE_ADMIN_TOKEN, and AURA_OBJECTSTORE_ENDPOINT + AURA_OBJECTSTORE_REGION. No-skip-as-
-// green: assetEnvOrSkip (store_test.go) t.Fatals under $CI when a required var is unset.
+// green: testenv.Require (store_test.go) t.Fatals under $CI when a required var is unset.
 
 package assets
 
@@ -31,6 +31,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,10 +42,10 @@ import (
 const resolverTestAuthulaSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestAssetObjectStoreCrossDenyLive(t *testing.T) {
-	endpoint := assetEnvOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
-	adminToken := assetEnvOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
-	s3Endpoint := assetEnvOrSkip(t, "AURA_OBJECTSTORE_ENDPOINT")
-	region := assetEnvOrSkip(t, "AURA_OBJECTSTORE_REGION")
+	endpoint := testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+	adminToken := testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN")
+	s3Endpoint := testenv.Require(t, "AURA_OBJECTSTORE_ENDPOINT")
+	region := testenv.Require(t, "AURA_OBJECTSTORE_REGION")
 
 	admin, err := garageadmin.New(endpoint, adminToken)
 	if err != nil {
@@ -199,7 +200,7 @@ func seedAssetIdentity(t *testing.T, ctx context.Context, pool *pgxpool.Pool) st
 // agui disposableLiveSagaPool harness.
 func disposableAssetPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	t.Helper()
-	pwd := assetEnvOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

@@ -11,7 +11,7 @@
 //
 //	go test -tags db_integration ./internal/agui/ -run TestConversationsAPI -race
 //
-// No-skip-as-green: migratedPool's envOrSkip t.Fatals under $CI when the DSN is
+// No-skip-as-green: migratedPool's testenv.Require t.Fatals under $CI when the DSN is
 // unset, so a skipped run fails the gate rather than passing green.
 package agui
 

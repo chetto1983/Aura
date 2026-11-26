@@ -2,7 +2,7 @@
 
 // Integration tests for the D-15 conversation-delete cascade (runner_delete.go step 4.5)
 // against a real Postgres-backed aura.shared_links (migration 0040) and objectstore.NewFake()
-// — no Garage. Reuses migratedRunnerPool/envOrSkip/localIdentityID/newIntegrationConversation
+// — no Garage. Reuses migratedRunnerPool/testenv.Require/localIdentityID/newIntegrationConversation
 // from integration_helpers_test.go and newTestRunner/newConvID from runner_test.go, and
 // stepLog/recordingConvStore/seedOwnedConversation from conversation_delete_lifecycle_test.go
 // (all same package, same build tag).

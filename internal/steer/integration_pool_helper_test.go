@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +28,7 @@ func steerDisposablePool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	password := steerEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"
@@ -85,18 +86,6 @@ func steerDisposablePool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("open disposable app database: %v", err)
 	}
 	return pool
-}
-
-func steerEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("steer db_integration requires %s under CI", key)
-		}
-		t.Skipf("steer db_integration requires %s", key)
-	}
-	return value
 }
 
 // seedIdentityAndConversation inserts one identity + one conversation it owns, both

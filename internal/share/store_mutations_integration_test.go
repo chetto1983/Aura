@@ -3,7 +3,7 @@
 // store_mutations_integration_test.go covers the remaining Store methods not exercised by
 // store_integration_test.go's security-property tests: the plain listing/update/sweep paths
 // (ListForIdentity, ListForConversation, UpdateSnapshot, DueForExpiry). Split into its own file (CLAUDE.md NO GOD CLASS / file-size cap) rather than
-// growing store_integration_test.go past 600 LOC; shares that file's envOrSkip/migratedPool/
+// growing store_integration_test.go past 600 LOC; shares that file's testenv.Require/migratedPool/
 // seedIdentity/seedConversation/newLink/futurePtr/pastPtr helpers (same package, same tag).
 package share
 

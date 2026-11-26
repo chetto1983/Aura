@@ -13,35 +13,22 @@
 //
 //	go test -tags db_integration -race -run TestACL ./internal/skillacl -count=1
 //
-// No-skip-as-green: aclEnvOrSkip t.Fatals under $CI when the DSN is unset, so a skipped tier
+// No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset, so a skipped tier
 // fails the gate rather than passing it.
 package skillacl
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/dbtest"
 )
-
-func aclEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("skillacl integration requires %s under CI — a skipped tier is never a silent pass", key)
-		}
-		t.Skipf("skillacl integration requires %s", key)
-	}
-	return value
-}
 
 // aclVerifyPool connects as the role that OWNS aura.skill_catalog and aura.resource_acl
 // (aura_migrate), which is the only way to count what really survived a delete.
@@ -57,7 +44,7 @@ func aclVerifyPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pool, err := db.Open(ctx, &db.Config{
-		URL: dbtest.MigrateURL(t, aclEnvOrSkip(t, "AURA_DB_MIGRATE_URL")),
+		URL: dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL")),
 	})
 	if err != nil {
 		t.Fatalf("db.Open (owner): %v", err)
@@ -70,7 +57,7 @@ func aclPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := db.Open(ctx, &db.Config{URL: aclEnvOrSkip(t, "AURA_DB_URL")})
+	pool, err := db.Open(ctx, &db.Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}

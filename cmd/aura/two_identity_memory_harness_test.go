@@ -14,7 +14,7 @@
 // (see line 1) the four-tag file does not, so the four-tag file (and the acceptance
 // file's own four-tag consumers before this plan) keep compiling regardless of
 // whether this plane's stack is up. Every ArcadeDB env name this file reads goes through
-// musrEnvOrSkip (defined in the four-tag harness), which t.Fatal's under $CI --
+// testenv.Require, which t.Fatal's under $CI --
 // a missing var must fail the acceptance job loudly, never pass a skipped tier green
 // (CLAUDE.md NO-SKIP-AS-GREEN).
 package main
@@ -29,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
 )
 
 // musrMemoryProbeSubject/Predicate are fixed across every write this file makes.
@@ -59,13 +59,13 @@ type musrMemoryPlaneFixture struct {
 // ARCADEDB_PASSWORD -- the same fallback the arcadedb-mcp live-test helper
 // (memory_live_integration_helpers_test.go) already establishes, because the
 // job env sets only the latter. Whichever branch fires, the eventual read goes
-// through musrEnvOrSkip.
+// through testenv.Require.
 func musrArcadeDBAdminPassword(t *testing.T) string {
 	t.Helper()
 	if v := strings.TrimSpace(os.Getenv("ARCADEDB_ADMIN_PASSWORD")); v != "" {
 		return v
 	}
-	return musrEnvOrSkip(t, "ARCADEDB_PASSWORD")
+	return testenv.Require(t, "ARCADEDB_PASSWORD")
 }
 
 // musrNewMemoryPlaneFixture provisions each per-run identity's ArcadeDB tenant through
@@ -76,12 +76,12 @@ func musrArcadeDBAdminPassword(t *testing.T) string {
 // root, cmd/aura/chat_memory_projection.go -- not a parallel one.
 func musrNewMemoryPlaneFixture(t *testing.T, idA, idB string) musrMemoryPlaneFixture {
 	t.Helper()
-	baseURL := musrEnvOrSkip(t, "ARCADEDB_URL")
-	database := musrEnvOrSkip(t, "ARCADEDB_DATABASE")
-	adminUser := musrEnvOrSkip(t, "ARCADEDB_ADMIN_USER")
+	baseURL := testenv.Require(t, "ARCADEDB_URL")
+	database := testenv.Require(t, "ARCADEDB_DATABASE")
+	adminUser := testenv.Require(t, "ARCADEDB_ADMIN_USER")
 	adminPassword := musrArcadeDBAdminPassword(t)
-	musrEnvOrSkip(t, "AURA_ARCADEDB_TENANT_SECRET") // read by arcadedb.NewTenantCredentials below and inside newChatTenantClients
-	embedBaseURL := musrEnvOrSkip(t, "AURA_EMBED_BASE_URL")
+	testenv.Require(t, "AURA_ARCADEDB_TENANT_SECRET") // read by arcadedb.NewTenantCredentials below and inside newChatTenantClients
+	embedBaseURL := testenv.Require(t, "AURA_EMBED_BASE_URL")
 
 	cfg := &config.Config{
 		ArcadeDB: config.ArcadeDBConfig{

@@ -5,7 +5,7 @@
 //
 //	go test -tags db_integration -race -run TestListRunsForTask ./internal/cron -count=1
 //
-// No-skip-as-green: migratedPool's envOrSkip (store_test.go) t.Fatals under $CI when
+// No-skip-as-green: migratedPool's testenv.Require t.Fatals under $CI when
 // the DSN is unset. The package goleak gate (main_test.go) covers leaked pgx pools.
 package cron
 

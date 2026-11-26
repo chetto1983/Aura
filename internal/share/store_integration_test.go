@@ -11,7 +11,7 @@
 //
 //	go test -tags db_integration -race -p 1 -count=1 ./internal/share/
 //
-// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset — a skipped
+// No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset — a skipped
 // integration test must never pass green. R-13 caution: `local` holds the `*` wildcard, so
 // any capability assertion against it passes vacuously — every test here seeds a FRESH,
 // non-wildcard identity (name = "share-store-"+t.Name()) instead.
@@ -21,30 +21,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // bootstrapURL composes the superuser DSN EnsureRoles needs from the password.
 func bootstrapURL(t *testing.T, pwd string) string {
@@ -67,9 +55,9 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)

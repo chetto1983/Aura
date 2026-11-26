@@ -6,7 +6,7 @@
 // db_integration fixtures (migratedPool, ownerCtx, seedAsOwner, seedConversationForIdentity
 // from audit_store_integration_test.go) rather than duplicating them.
 //
-// No-skip-as-green: envOrSkip/migratedPool t.Fatal under $CI when the DSN is unset.
+// No-skip-as-green: testenv.Require/migratedPool t.Fatal under $CI when the DSN is unset.
 
 package agui
 

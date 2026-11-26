@@ -8,7 +8,7 @@
 // REAL conversations.Store so MUSR-02 ownership is exercised end to end.
 //
 // The four build tags gate this file to the full live stack; every helper reads its env
-// through musrEnvOrSkip (t.Fatal under $CI) so a missing DSN/token fails the job rather
+// through testenv.Require (t.Fatal under $CI) so a missing DSN/token fails the job rather
 // than passing a skipped tier green (CLAUDE.md no-skip-as-green).
 package main
 
@@ -20,10 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -31,22 +27,15 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // musrLocalIdentity is the seeded local operator identity (migration 0004) the auth
 // boundary and defaultConversationOwner fall back to for an empty principal.
 const musrLocalIdentity = "00000000-0000-0000-0000-000000000001"
-
-// musrEnvOrSkip mirrors every other live tier: skip locally, t.Fatal under $CI so a
-// missing var never reports a falsely-green integration job.
-func musrEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		musrUnavailable(t, "musr_e2e requires "+key)
-	}
-	return v
-}
 
 // musrUnavailable skips locally and fails under CI: a skipped acceptance tier must not pass
 // as green.
@@ -66,9 +55,9 @@ func musrMigratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := musrEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, musrEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := musrEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

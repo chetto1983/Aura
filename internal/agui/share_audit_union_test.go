@@ -4,7 +4,7 @@
 // provisioned identity surfaces in the SAME admin audit feed (ListActivityForIdentity) as the
 // existing mcp/skill/tool ledgers, with Source == "share".
 //
-// No-skip-as-green: migratedPool/envOrSkip (server_integration_test.go) t.Fatal under $CI when
+// No-skip-as-green: migratedPool (server_integration_test.go) and testenv.Require t.Fatal under $CI when
 // the DSN is unset — a skipped integration test must never pass green. share_audit is
 // append-only (grant, not trigger — see internal/db/migrations/0040), so cleanup deletes the
 // seeded rows directly rather than relying on a fresh-identity-per-run convention.

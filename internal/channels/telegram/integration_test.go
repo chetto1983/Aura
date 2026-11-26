@@ -16,7 +16,7 @@
 // msg.Photo / msg.Document.{FileName,MIME,FileSize} / msg.Voice non-nil — the
 // round-trip the live Bot API confirms in the Send reply.
 //
-// NO-SKIP-AS-GREEN: liveEnvOrSkip t.Fatals under $CI when the env is SET but the
+// NO-SKIP-AS-GREEN: testenv.Require t.Fatals under $CI when the env is SET but the
 // token/chat is unusable, so a skipped tier under CI fails rather than passing
 // green (CLAUDE.md / VALIDATION). Locally it skips when the env is unset.
 package telegram
@@ -24,38 +24,22 @@ package telegram
 import (
 	"bytes"
 	"net/http"
-	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/asciifold"
+	"github.com/chetto1983/aura/internal/testenv"
 	tele "gopkg.in/telebot.v4"
 )
-
-// liveEnvOrSkip resolves a required live-bot env var. Unset locally → skip; unset
-// under $CI → t.Fatal (no-skip-as-green: the operator-token-gated CI step exports
-// these, so a skip under CI means the wiring rotted, never a silent green pass).
-func liveEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("telegram_integration requires %s, but it is unset under CI — "+
-				"a skipped live tier must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("telegram_integration requires %s; set TELEGRAM_BOT_TOKEN + AURA_E2E_CHAT_ID and re-run", key)
-	}
-	return v
-}
 
 // liveBot constructs a real telebot bot (live getMe) and resolves the operator's
 // chat recipient. A bad token is a hard failure (under $CI the env is set, so a
 // construction error is a real break, not a skip).
 func liveBot(t *testing.T) (*tele.Bot, tele.Recipient) {
 	t.Helper()
-	token := liveEnvOrSkip(t, "TELEGRAM_BOT_TOKEN")
-	chatRaw := liveEnvOrSkip(t, "AURA_E2E_CHAT_ID")
+	token := testenv.Require(t, "TELEGRAM_BOT_TOKEN")
+	chatRaw := testenv.Require(t, "AURA_E2E_CHAT_ID")
 
 	chatID, err := strconv.ParseInt(chatRaw, 10, 64)
 	if err != nil {

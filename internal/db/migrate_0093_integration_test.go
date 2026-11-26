@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 func TestMigrate0093FreshUpDownUp(t *testing.T) {
@@ -250,7 +250,7 @@ WHERE table_schema = 'aura' AND table_name = $1 AND column_name = $2)`, table, c
 
 func fresh0093Database(t *testing.T, ctx context.Context, name string) (*pgxpool.Pool, string, string) {
 	t.Helper()
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"

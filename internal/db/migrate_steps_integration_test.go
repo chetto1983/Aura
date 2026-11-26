@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func TestMigrateSteps_EmptyURLErrors(t *testing.T) {
@@ -29,7 +30,7 @@ func TestMigrateSteps_DownUpReversible(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"

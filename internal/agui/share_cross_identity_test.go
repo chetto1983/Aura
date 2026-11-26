@@ -31,7 +31,7 @@
 //
 //	go test -tags db_integration -race -p 1 -count=1 -run TestShareCrossIdentityDeny -v ./internal/agui/
 //
-// No-skip-as-green: migratedPool's envOrSkip (server_integration_test.go) t.Fatals under
+// No-skip-as-green: migratedPool's testenv.Require t.Fatals under
 // $CI when the DSN is unset — a skipped integration test must never pass green.
 package agui
 

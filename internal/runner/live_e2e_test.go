@@ -48,6 +48,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -78,22 +79,6 @@ func requireLiveEnv(t *testing.T) {
 	}
 }
 
-// envOrSkipLive returns the env var, or skips locally / t.Fatals under $CI when
-// unset — the no-skip-as-green helper mirrored from internal/db.envOrSkip (the
-// runner package has no such helper, the unit tier runs on fakes).
-func envOrSkipLive(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("live_e2e requires %s, but it is unset under CI — "+
-				"a skipped integration tier must not pass as green; wire it in the paid CI lane", key)
-		}
-		t.Skipf("live_e2e requires %s; set it and re-run (e.g. via .env + the composed DSN)", key)
-	}
-	return v
-}
-
 // newLiveHarness migrates the DB through the shipped head, opens an aura_app pool,
 // and wires a Runner over the REAL Stores + a REAL openai_compat client. The
 // registry mirrors the runner's pause-capable set (text_response + ask_user +
@@ -105,9 +90,9 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkipLive(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkipLive(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkipLive(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

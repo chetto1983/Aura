@@ -6,35 +6,22 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func registryEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("mcpregistry integration requires %s under CI", key)
-		}
-		t.Skipf("mcpregistry integration requires %s", key)
-	}
-	return value
-}
 
 func registryPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := db.Open(ctx, &db.Config{URL: registryEnvOrSkip(t, "AURA_DB_URL")})
+	pool, err := db.Open(ctx, &db.Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
@@ -44,7 +31,7 @@ func registryPool(t *testing.T) *pgxpool.Pool {
 
 func liveRegistryStore(t *testing.T, pool *pgxpool.Pool) *Store {
 	t.Helper()
-	store, err := NewStore(pool, registryEnvOrSkip(t, "AURA_AUTHULA_SECRET"))
+	store, err := NewStore(pool, testenv.Require(t, "AURA_AUTHULA_SECRET"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

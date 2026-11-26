@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	password := cliMigrationEnvOrSkip(t, "POSTGRES_PASSWORD")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
 	host := envDefaultForTest("PGHOST", "127.0.0.1")
 	port := envDefaultForTest("PGPORT", "5432")
 	adminDatabase := envDefaultForTest("POSTGRES_DB", "aura")
@@ -139,19 +140,6 @@ func assertAuthulaTablesReadableByMigrate(t *testing.T, ctx context.Context, app
 		t.Fatalf("after the first db migrate, aura_migrate cannot read a table Authula creates, "+
 			"so pg_dump fails until the next db migrate: %v", err)
 	}
-}
-
-func cliMigrationEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value != "" {
-		return value
-	}
-	if os.Getenv("CI") != "" {
-		t.Fatalf("integration test requires %s under CI", key)
-	}
-	t.Skipf("integration test requires %s", key)
-	return ""
 }
 
 func envDefaultForTest(key, fallback string) string {

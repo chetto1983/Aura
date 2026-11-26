@@ -11,7 +11,7 @@
 //
 //	go test -tags db_integration -race ./internal/gateway -count=1
 //
-// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset, so a skipped
+// No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset, so a skipped
 // tier can never pass as green. The package goleak gate (main_test.go) fails on any
 // leaked pgx pool goroutine.
 package gateway
@@ -30,6 +30,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -86,19 +87,6 @@ func gatedExec(ctx context.Context, g *Gateway, tool tools.Tool, args json.RawMe
 	return res, v, err
 }
 
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
-
 func bootstrapURL(t *testing.T, pwd string) string {
 	t.Helper()
 	host := os.Getenv("PGHOST")
@@ -117,9 +105,9 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
@@ -488,4 +476,4 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 
 // The D-01/D-04 round-discrimination end-to-end proof for SC#1/SC#2 (45-02-T1) lives in
 // gateway_round_ordinal_integration_test.go — a concern split per CLAUDE.md's 600-LOC cap
-// — reusing envOrSkip/migratedPool/seedConversation/spyTool/insertEnd defined above.
+// — reusing migratedPool/seedConversation/spyTool/insertEnd defined above.
