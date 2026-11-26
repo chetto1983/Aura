@@ -2319,6 +2319,40 @@ jobs:
           e2e/documents-live.spec.ts e2e/documents-filter-eval-live.spec.ts e2e/documents-survival-live.spec.ts
           e2e/paperless-workflow-live.spec.ts e2e/paperless-saved-view-delete-live.spec.ts
 
+      - name: Build the sandbox box and egress images from this commit
+        # The strict, isolation-on serve below refuses to boot without a box image, and it starts
+        # the operator's box (cmd/aura/serve_sandbox_preflight.go).
+        run: make sandbox-images
+
+      - name: Playwright live specs that provision a second identity (first import, isolation)
+        # A second identity needs a strict profile with MUSR isolation
+        # (config.gateMultiUserRequiresStrictProfile), and provisioning names the bot through a
+        # live Telegram getMe (internal/agui/onboarding_provision.go). The getMe is answered by a
+        # local fake that api.telegram.org resolves to, and aura serve trusts its throwaway CA
+        # through SSL_CERT_FILE, so the product runs unchanged (scripts/web_e2e_telegram_fake.sh).
+        # The strict profile refuses the sample object-store key, so a CI-only one is imported.
+        # The ingest sidecar is paused until the first-import spec has uploaded its file: the spec
+        # pins a Library that mounted before any ingest status (its header says why).
+        env:
+          AURA_E2E_LIVE_DOCUMENTS: "1"
+          AURA_E2E_AURA_CMD: ../aura
+          AURA_E2E_INGEST_RESUME_CMD: docker start aura-ingest
+          AURA_PROFILE: single_user_hardened
+          AURA_MUSR_ISOLATION: "true"
+          AURA_EMBED_MODEL_DIR: /tmp/aura-ci-cache/llama.cpp/llama.cpp
+          AURA_OBJECTSTORE_ACCESS_KEY: GK7e2e0a11ce5eed0000000001
+          AURA_OBJECTSTORE_SECRET_KEY: "7e2e0a11ce5eed000000000000000000000000000000000000000000000000e1"
+          TELEGRAM_BOT_TOKEN: "123456:aura-ci-fake"
+        run: |
+          docker compose exec -T garage /garage key import --yes -n aura-web-e2e-strict \
+            "$AURA_OBJECTSTORE_ACCESS_KEY" "$AURA_OBJECTSTORE_SECRET_KEY" >/dev/null
+          docker compose exec -T garage /garage bucket allow --read --write --owner \
+            "$AURA_OBJECTSTORE_BUCKET" --key "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null
+          bundle="$(sudo bash scripts/web_e2e_telegram_fake.sh "$RUNNER_TEMP/telegram-fake")"
+          docker stop aura-ingest >/dev/null
+          SSL_CERT_FILE="$bundle" bash scripts/web_e2e_ci.sh --project=chrome --workers=1 \
+            e2e/paperless-first-import-live.spec.ts e2e/paperless-isolation-live.spec.ts
+
       - name: Tear down
         if: always()
         run: |
