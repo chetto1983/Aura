@@ -2350,33 +2350,49 @@ jobs:
           bash scripts/fetch_vision_model.sh --artifact mmproj ~/.cache/aura-vision/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
 
       - name: Playwright native-media live spec (a local vision model as the primary)
-        # The primary reads ZEBRA 417 from an image through a full Aura turn. A turn carries about
-        # 15.7k tokens (system prompt and mounted tools), and Aura's request budget then needs a
-        # ~40k window, which rules out the small vision models trained on 8k. The operator chose
-        # Qwen2.5-VL-3B: 10 of 10 turns on a 4-vCPU CPU, the first (cold) in 3.6 minutes
-        # (docs/superpowers/verification/2026-11-26-test-ledger-open-points.md). The server is the
-        # same llama.cpp build the embedder runs, on CPU.
+        # The primary reads ZEBRA 417 from an image through a full Aura turn, on the model the
+        # operator chose, Qwen2.5-VL-3B, served by the llama.cpp build the embedder runs, on CPU
+        # (docs/superpowers/verification/2026-11-26-test-ledger-open-points.md). The request budget
+        # keeps 20,000 tokens for the answer and 4,096 for the provider, so at a 40,960 window the
+        # turn here, 16,891 tokens, was 27 over its cap (run 45792411148): 49,152 leaves room. A cold
+        # turn is a ~16k-token prefill that outlasts Aura's default stream-idle (60 s) and total
+        # (120 s) limits. A stalled stream is retried and can finish from llama-server's cache; an
+        # expired deadline is not (internal/agent/llm_agent_stream_retry.go), so the cold turn
+        # passed or failed on which fired first. At 600 s each it finishes in one request.
         env:
           AURA_E2E_NATIVE_MEDIA: "1"
           AURA_PROFILE: dev
           AURA_LLM_PROVIDER: llamacpp
           AURA_LLM_BASE_URL: http://127.0.0.1:8095/v1
           AURA_LLM_MODEL: qwen2.5-vl-3b
-          AURA_MODEL_CONTEXT_WINDOW: "40960"
+          AURA_MODEL_CONTEXT_WINDOW: "49152"
           AURA_MODEL_MAX_OUTPUT_TOKENS: "512"
           AURA_LLM_MAX_TOKENS: "512"
+          AURA_LLM_TOTAL_TIMEOUT_SEC: "600"
+          AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: "600"
         run: |
           docker run -d --name aura-vision-ci -p 127.0.0.1:8095:8080 -v ~/.cache/aura-vision:/models:ro \
             ghcr.io/ggml-org/llama.cpp:server-b11960 \
             -m /models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf \
             --mmproj /models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf \
-            --alias qwen2.5-vl-3b --host 0.0.0.0 --port 8080 -c 40960 --parallel 1 --jinja
+            --alias qwen2.5-vl-3b --host 0.0.0.0 --port 8080 -c 49152 --parallel 1 --jinja
           if ! curl --retry 60 --retry-delay 3 --retry-connrefused --retry-all-errors -fsS \
             http://127.0.0.1:8095/health >/dev/null; then
             docker logs --tail 80 aura-vision-ci || true
             exit 1
           fi
           bash scripts/web_e2e_ci.sh --project=chrome --workers=1 e2e/native-media-live.spec.ts
+
+      # scripts/web_e2e_ci.sh keeps each aura serve's log under $RUNNER_TEMP and nothing read them:
+      # run 45792411148 failed on a model turn whose tool calls and token counts were in a log no
+      # one could open afterwards.
+      - name: Upload the aura serve logs (failure only)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: web-e2e-serve-logs
+          path: ${{ runner.temp }}/aura-web-e2e.*/*.log
+          if-no-files-found: warn
 
       - name: Tear down
         if: always()

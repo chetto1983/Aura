@@ -83,3 +83,31 @@ with it on the CPU llama.cpp build the embedder uses, through `scripts/fetch_vis
 **Does not prove:** the speed of a GitHub runner, so the cold turn's margin under the spec's
 5-minute limit is measured on this container only; anything about audio, which the spec does not
 exercise.
+
+### 4.1 The first CI run, and what the ten turns above had not measured
+
+Web E2E on `caad75583` (run 45792411148) failed the spec twice. The first attempt stopped on the request
+budget: "final request 16891 tokens, cap 16864; output reserve 20000, provider reserve 4096", 27 tokens
+over. On the retry the model answered "The image code is:" and stopped (6 completion tokens).
+
+Measured here afterwards, with the stack the ten turns ran on:
+
+| Condition | Result |
+|---|---|
+| The ten turns of the table | the memory MCP was **down** (`aura-memory-web-ci` had exited three hours earlier; the mount failed with `connection refused`): calendar and WhatsApp mounted, memory not, unlike CI |
+| Memory and WhatsApp mounted, calendar not, 40,960 | 3/3 |
+| Memory, calendar and WhatsApp mounted (57 tools, as in CI), 40,960 | 3/3, one model call each |
+| The same, window 49,152, default timeouts, cold server | 1/2: the cold turn failed on "context deadline exceeded" (`stream_deadline`) |
+| The same, window 49,152, `AURA_LLM_TOTAL_TIMEOUT_SEC` and `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC` at 600 | 3/3 from a cold server (cold turn 3.1 min, then 55 s); two more cold servers, 3.2 and 3.4 min: 3 of 3 cold turns |
+
+So neither the memory tools nor the tool count explains the CI prompt being 2k tokens longer than
+here; the local operator already had 30 documents too. The cold turn is what the table hid: it is a
+~16k-token prefill that outlasts both default limits, and `internal/agent/llm_agent_stream_retry.go`
+retries a stalled stream (the 60 s idle limit) but not an expired deadline (120 s). The paragraph above
+reads it as "Aura's retry then finishes from it"; that holds only when the idle limit fires first. Web
+E2E now runs the spec on a 49,152 window with both limits at 600 s, and uploads the `aura serve` logs
+when the job fails, which the CI run did not keep.
+
+**Does not prove:** why the CI turn is 2k tokens longer, nor why the model's retry answered without the
+code; the next failure's serve log will say. The fix is measured on this container, not on a runner:
+the slowest cold turn, 3.4 min, leaves 1.6 min under the spec's 5-minute limit here.
