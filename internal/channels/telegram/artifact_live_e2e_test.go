@@ -84,7 +84,7 @@ func TestArtifactLiveE2E_DocumentReachesAnAuthorizedChat(t *testing.T) {
 	descriptor := map[string]any{
 		"path":         path,
 		"filename":     filename,
-		"caption":      "Aura EXT-005 — fixture reversibile, verrà cancellato subito",
+		"caption":      "Aura EXT-005 — fixture reversibile, verrà cancellato subito", //nolint:misspell // Italian "cancellato" (deleted), not "cancellation".
 		"tool_call_id": callID,
 		"size_bytes":   int64(len(body)),
 	}

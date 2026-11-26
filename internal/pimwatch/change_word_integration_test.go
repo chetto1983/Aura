@@ -54,7 +54,7 @@ func TestADeletedEventInsideADayIsToldFromTheStartItsRowKept(t *testing.T) {
 		t.Fatalf("a deleted event read as a mail with no subject:\n%s", out.Notice)
 	}
 	got := r.verdict("ev1")
-	if got.Tier != TierNow || got.Change != WordCancelled || !got.Start.Time.Equal(soon.Truncate(time.Microsecond)) {
+	if got.Tier != TierNow || got.Change != WordCancelled || !got.Start.Equal(soon.Truncate(time.Microsecond)) {
 		t.Fatalf("verdict = %+v", got)
 	}
 }
@@ -140,13 +140,13 @@ func TestEveryEventVerdictKeepsItsStartAndAMailKeepsNone(t *testing.T) {
 	r.calendarPage("start-calendar", "c1", addedEvent("ev1", EventTime{Time: soon}))
 	r.pim.page(ResourceMail, "start-mail", ChangesPage{Changes: []Change{r.todayMail("m1")}, NextCursor: "m1"})
 	r.tick()
-	if got := r.verdict("ev1"); !got.Start.Time.Equal(soon.Truncate(time.Microsecond)) || got.Change != WordNew {
+	if got := r.verdict("ev1"); !got.Start.Equal(soon.Truncate(time.Microsecond)) || got.Change != WordNew {
 		t.Fatalf("added = %+v", got)
 	}
 
 	r.calendarPage("c1", "c2", eventChange("ev1", "f2", moved))
 	r.tick()
-	if got := r.verdict("ev1"); !got.Start.Time.Equal(moved.Truncate(time.Microsecond)) || got.Change != WordMoved {
+	if got := r.verdict("ev1"); !got.Start.Equal(moved.Truncate(time.Microsecond)) || got.Change != WordMoved {
 		t.Fatalf("moved = %+v", got)
 	}
 
@@ -193,7 +193,7 @@ func TestAMeetingMovedAwayIsToldByTheTimeTheWatchKept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verdict: %v", err)
 	}
-	if verdict.Tier != TierToday || !verdict.Start.Time.Equal(nextWeek.Add(24*time.Hour).Truncate(time.Microsecond)) {
+	if verdict.Tier != TierToday || !verdict.Start.Equal(nextWeek.Add(24*time.Hour).Truncate(time.Microsecond)) {
 		t.Fatalf("verdict = tier %s, start %s: the second move must replace the kept start", verdict.Tier, verdict.Start.Time)
 	}
 }

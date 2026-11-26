@@ -108,9 +108,7 @@ func TestMemoryBatchLive_ConcurrentBatchesConverge(t *testing.T) {
 	var group sync.WaitGroup
 	errorsByWriter := make(chan error, writers)
 	for writer := range writers {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			request := MemoryBatchRequest{
 				IdempotencyKey: fmt.Sprintf("concurrent-%d", writer),
 				Operations: []MemoryBatchOperation{
@@ -120,7 +118,7 @@ func TestMemoryBatchLive_ConcurrentBatchesConverge(t *testing.T) {
 			}
 			_, err := client.ApplyMemoryBatch(ctx, actor, request, at.Add(time.Duration(writer)*time.Second))
 			errorsByWriter <- err
-		}()
+		})
 	}
 	group.Wait()
 	close(errorsByWriter)

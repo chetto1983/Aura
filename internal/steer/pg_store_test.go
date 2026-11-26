@@ -194,14 +194,12 @@ func TestPostgresSteerQueueConcurrentDrainDisjoint(t *testing.T) {
 	var drained []Message
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			got := store.Drain(convID)
 			mu.Lock()
 			drained = append(drained, got...)
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 

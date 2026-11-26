@@ -170,8 +170,7 @@ func TestMigration0022_SchemaRoundTrip(t *testing.T) {
 
 // sqlState extracts the SQLSTATE from a pgconn.PgError, "" if not a pg error.
 func sqlState(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		return pgErr.Code
 	}
 	return ""

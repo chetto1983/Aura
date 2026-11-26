@@ -31,7 +31,7 @@ func TestListRecent_LimitClamp(t *testing.T) {
 	ctx := ownerCtx()
 
 	mine := map[string]bool{}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		mine[insertPause(t, s, convID, "approval", "q", 0)] = true
 	}
 

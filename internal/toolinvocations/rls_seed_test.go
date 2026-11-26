@@ -14,7 +14,6 @@ package toolinvocations
 
 import (
 	"context"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -33,14 +32,4 @@ func seedAsOwner(t *testing.T, pool *pgxpool.Pool, identityID, sql string, args 
 	}); err != nil {
 		t.Fatalf("seed as owner %s: %v", identityID, err)
 	}
-}
-
-// ownerCtx is context.Background() carrying the identity every fixture in this package is
-// owned by. Since migration 0089 the conversation plane is fail closed, so a store call on a
-// bare context sees no conversation and can write no turn — the same thing that would happen
-// in production to a caller with no principal. The tests carry an identity because the
-// product does: agui.withPrincipal, bootCLIChat, telegram's scopeTurnToIdentity and
-// runner.scopeContextToConversation all put one on the context before the store is reached.
-func ownerCtx() context.Context {
-	return identityctx.WithIdentityID(context.Background(), localIdentity)
 }

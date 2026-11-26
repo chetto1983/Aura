@@ -203,8 +203,7 @@ func TestReasoningGraphLive_ExpiryDeleteRace(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		if err != nil {
-			var serverErr *ServerError
-			if errors.As(err, &serverErr) {
+			if serverErr, ok := errors.AsType[*ServerError](err); ok {
 				t.Logf("deletion error: status=%d exception=%q", serverErr.Status, serverErr.Exception)
 			}
 			t.Fatalf("expiry/delete race: %v", err)

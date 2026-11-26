@@ -263,8 +263,7 @@ func TestUnaccountedPriorDispatchStaysDeniedNeverFabricated(t *testing.T) {
 	if v.Decision != Deny {
 		t.Fatalf("verdict = %q, want deny (an unaccounted prior dispatch must never be fabricated into a success)", v.Decision)
 	}
-	var denied *ErrDenied
-	if !errors.As(derr, &denied) {
+	if _, ok := errors.AsType[*ErrDenied](derr); !ok {
 		t.Fatalf("err = %v, want *ErrDenied", derr)
 	}
 	if spy.count != 0 {

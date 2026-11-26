@@ -25,16 +25,3 @@ func drainSDKToolsForTest(t *testing.T, ctx context.Context, session *sdkmcp.Cli
 	}
 	return tools
 }
-
-// callAndDecodeForTest calls tool on session and decodes its result through the
-// SAME domain-outcome chain (DecodeToolResult, UNCHANGED logic) every production
-// caller uses — mirrors bridge_supervisor.go's decodeResult / cmd/aura's
-// callSessionText.
-func callAndDecodeForTest(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, tool string, args map[string]any) (text string, isError bool) {
-	t.Helper()
-	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: args})
-	if err != nil {
-		t.Fatalf("CallTool %s: %v", tool, err)
-	}
-	return DecodeToolResult(res)
-}

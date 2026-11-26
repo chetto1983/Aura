@@ -45,14 +45,12 @@ func TestResumeBatch_ConcurrentDuplicate_Integration(t *testing.T) {
 	start := make(chan struct{})
 	errs := make(chan error, 2)
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 2 {
+		wg.Go(func() {
 			<-start
 			_, err := r.SubmitAnswers(ctx, batch)
 			errs <- err
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

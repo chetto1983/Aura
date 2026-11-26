@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -160,9 +161,7 @@ func TestSaveProfilesKeepsEmptyProfilesAndTheActiveOne(t *testing.T) {
 	empty, active := "empty-"+suffix, "active-"+suffix
 	doc := original
 	doc.Profiles = map[string]mcp.ManagedProfile{empty: {}, " " + active + " ": {}}
-	for name, profile := range original.Profiles {
-		doc.Profiles[name] = profile
-	}
+	maps.Copy(doc.Profiles, original.Profiles)
 	doc.ActiveProfile = active
 	if err := store.SaveProfiles(ctx, doc); err != nil {
 		t.Fatalf("SaveProfiles: %v", err)
