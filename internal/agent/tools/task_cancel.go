@@ -14,14 +14,10 @@ import (
 // (docs/superpowers/specs/2026-11-26-task-cancel-foreign-approval-design.md). The challenge
 // copies plugin_pack's: a one-shot approval bound to the task, consumed by the repeat.
 
-// TaskCancelAction is what a task cancel approval names.
-type TaskCancelAction struct {
-	TaskID string
-}
-
 // TaskCancelApprovals is the task cancel approvals' own store, apart from the shell's and
-// the plugins', so neither of their resume hooks can approve a cancel.
-type TaskCancelApprovals = ApprovalStore[TaskCancelAction]
+// the plugins', so neither of their resume hooks can approve a cancel. A challenge carries no
+// data: the repeat recomputes its digest from the task it reads.
+type TaskCancelApprovals = ApprovalStore[struct{}]
 
 // TaskCancelApprovalContext is the resume_context type of a task cancel approval.
 const TaskCancelApprovalContext = "task_cancel_approval"
@@ -43,7 +39,7 @@ func (t *TaskTool) actionCancel(ctx context.Context, raw json.RawMessage) (ToolR
 		session := SessionIDFromContext(ctx)
 		digest := taskCancelDigest(task)
 		if !t.CancelApprovals.Consume(session, digest) {
-			challenge := t.CancelApprovals.CreateChallenge(session, digest, taskCancelQuestion(task, digest), TaskCancelAction{TaskID: task.ID})
+			challenge := t.CancelApprovals.CreateChallenge(session, digest, taskCancelQuestion(task, digest), struct{}{})
 			return taskCancelApprovalPrompt.required(challenge.Digest, challenge.Question,
 				map[string]any{"action": "cancel", "task_id": task.ID}), nil
 		}

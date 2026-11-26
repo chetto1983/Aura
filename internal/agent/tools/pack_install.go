@@ -25,19 +25,10 @@ type PluginBackend interface {
 	MayAdminister(ctx context.Context, identityID string) (bool, error)
 }
 
-// PluginAction is what a plugin approval names.
-type PluginAction struct {
-	Action     string
-	Ref        string
-	Name       string
-	Commit     string
-	Digest     string
-	DeleteData bool
-}
-
 // PluginApprovals is the plugin approvals' own store. It is not the shell's: separate
-// instances keep the key spaces apart, so the shell's resume hook cannot approve a plugin.
-type PluginApprovals = ApprovalStore[PluginAction]
+// instances keep the key spaces apart, so the shell's resume hook cannot approve a plugin. A
+// challenge carries no data: the repeat recomputes its digest from the plugin it acts on.
+type PluginApprovals = ApprovalStore[struct{}]
 
 // PluginApprovalContext is the resume_context type of a plugin approval.
 const PluginApprovalContext = "plugin_pack_approval"
@@ -102,8 +93,7 @@ func (t *PackTool) install(ctx context.Context, a packArgs) (ToolResult, error) 
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("plugin_pack install %s: %w", review.Ref, err)
 	}
-	challenge := t.Approvals.CreateChallenge(session, digest, question,
-		PluginAction{Action: "install", Ref: review.Ref, Commit: review.Commit, Digest: review.Digest})
+	challenge := t.Approvals.CreateChallenge(session, digest, question, struct{}{})
 	return pluginApprovalPrompt.required(challenge.Digest, challenge.Question, map[string]any{
 		"action": "install", "ref": review.Ref, "commit": review.Commit, "digest": review.Digest,
 	}), nil
@@ -137,8 +127,7 @@ func (t *PackTool) remove(ctx context.Context, a packArgs) (ToolResult, error) {
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("plugin_pack remove %s: %w", rec.Name, err)
 	}
-	challenge := t.Approvals.CreateChallenge(session, digest, question,
-		PluginAction{Action: "remove", Name: rec.Name, Commit: rec.Commit, DeleteData: a.DeleteData})
+	challenge := t.Approvals.CreateChallenge(session, digest, question, struct{}{})
 	return pluginApprovalPrompt.required(challenge.Digest, challenge.Question, map[string]any{
 		"action": "remove", "name": rec.Name, "commit": rec.Commit, "delete_data": a.DeleteData,
 	}), nil

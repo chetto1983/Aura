@@ -30,7 +30,7 @@ func TestTaskCancelResumeHookRecordsOnlyTheAcceptOfItsQuestion(t *testing.T) {
 	task := &tools.TaskTool{CancelApprovals: &tools.TaskCancelApprovals{}}
 	hook := newTaskCancelResumeHook(task)
 	const question = "Approve cancelling a task not scheduled in this chat?"
-	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, tools.TaskCancelAction{TaskID: "t-1"})
+	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, struct{}{})
 	pending := taskCancelPending(t, question, tools.TaskCancelApprovalContext)
 
 	for _, action := range []string{askuser.ActionDecline, askuser.ActionCancel} {
@@ -53,7 +53,7 @@ func TestTaskCancelResumeHookRecordsOnlyTheAcceptOfItsQuestion(t *testing.T) {
 		t.Fatal("the accept was not recorded")
 	}
 
-	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, tools.TaskCancelAction{TaskID: "t-1"})
+	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, struct{}{})
 	if err := hook(t.Context(), pending, runner.ResponseInput{Action: askuser.ActionExpired}); err != nil {
 		t.Fatalf("expiry: %v", err)
 	}
@@ -71,8 +71,8 @@ func TestTaskCancelAndPluginHooksCannotApproveEachOther(t *testing.T) {
 	task := &tools.TaskTool{CancelApprovals: &tools.TaskCancelApprovals{}}
 	pack := &tools.PackTool{Approvals: &tools.PluginApprovals{}, Backend: adminOnlyBackend{admin: ""}}
 	const question = "Approve?"
-	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, tools.TaskCancelAction{TaskID: "t-1"})
-	pack.Approvals.CreateChallenge("conv-task", taskCancelHookDigest, question, tools.PluginAction{Action: "install"})
+	task.CancelApprovals.CreateChallenge("conv-task", taskCancelHookDigest, question, struct{}{})
+	pack.Approvals.CreateChallenge("conv-task", taskCancelHookDigest, question, struct{}{})
 	accept := runner.ResponseInput{Action: askuser.ActionAccept}
 
 	chain := chainResumeHooks(newShellResumeHook(tools.NewShellApprovals()), newPluginResumeHook(pack))
