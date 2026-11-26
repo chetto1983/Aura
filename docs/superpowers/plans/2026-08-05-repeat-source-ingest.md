@@ -1,5 +1,8 @@
 # Repeat-Source Ingest Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 7248b5880. The final whole-branch review was skipped as an accepted risk.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -97,7 +100,7 @@ It deliberately does **not** refresh `title`, `tags` or `metadata`: re-ingesting
 - Consumes: `pipelineDisposablePool(t)`, `newPipelineStoreFixture(t, ctx, pool, pipeline)`, `asDocumentIdentity(ctx, pool, identityID, fn)`, `NewPostgresPipelineStore(pool)`, `NewPostgresDurableDeleteStore(pool)`, `normalizedDeleteSnapshot(job)`, `fenceForDeleteJob(job)`, `NewPostgresCatalogStore(pool)`.
 - Produces: `ErrDocumentDeleteInFlight`. `CreateDocument` goes from "insert or 23505" to "insert, or return the existing live document unchanged, or `ErrDocumentDeleteInFlight`".
 
-- [ ] **Step 1: Confirm the plan's premise still holds**
+- [x] **Step 1: Confirm the plan's premise still holds**
 
 ```bash
 ls internal/db/migrations/ | tail -2
@@ -105,7 +108,7 @@ docker exec aura-postgres psql -U aura_migrate -d aura -tAc "select version from
 ```
 Expected: highest migration is `0093_document_pipeline_convergence`, live version `92`. If either differs, **STOP and report**.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `internal/documents/catalog_store_source_conflict_integration_test.go`.
 
@@ -236,7 +239,7 @@ func finalizeDocumentDelete(
 
 Write those three helper bodies out — the comment blocks above state their contracts, and `delete_durable_integration_test.go` has the exact calls. Also thread `search_document_id` into `sourceConflictRequest` per the note above.
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 ```bash
 wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && export POSTGRES_PASSWORD="$(grep -E "^POSTGRES_PASSWORD=" .env | cut -d= -f2- | tr -d "\"")" && go test -tags db_integration -run "TestCatalogStore(ReleasesSourceKeyOnFinalizedDelete|RefusesReingestWhileDeleteInFlight|RepeatLiveSourceIsIdempotent)" ./internal/documents/ -v'
@@ -246,7 +249,7 @@ Expected, against the ORIGINAL schema (constraint, no `ON CONFLICT`): all three 
 
 A run under a second means the tier skipped and proved nothing.
 
-- [ ] **Step 4: Swap the constraint for a partial unique index (up migration)**
+- [x] **Step 4: Swap the constraint for a partial unique index (up migration)**
 
 In the `ALTER TABLE aura.documents` block, drop this line and turn the preceding comma into a semicolon:
 
@@ -262,7 +265,7 @@ CREATE UNIQUE INDEX documents_identity_source_live_idx
     WHERE deleted_at IS NULL;
 ```
 
-- [ ] **Step 5: Mirror it in the down migration**
+- [x] **Step 5: Mirror it in the down migration**
 
 Add to the existing `DROP INDEX` block as its first line:
 
@@ -272,7 +275,7 @@ DROP INDEX aura.documents_identity_source_live_idx;
 
 And delete `    DROP CONSTRAINT documents_source_unique,` from the later `ALTER TABLE aura.documents` block.
 
-- [ ] **Step 6: Make the insert a guarded, atomic get-or-create**
+- [x] **Step 6: Make the insert a guarded, atomic get-or-create**
 
 In `internal/db/queries/document_control_plane.sql`, `CreateDocument` ends `)\nRETURNING *;`. Change that ending to:
 
@@ -299,7 +302,7 @@ Put this comment directly above `-- name: CreateDocument :one`:
 -- Zero rows is that case, and the caller turns it into ErrDocumentDeleteInFlight.
 ```
 
-- [ ] **Step 7: Declare the sentinel and map the empty result**
+- [x] **Step 7: Declare the sentinel and map the empty result**
 
 Add `ErrDocumentDeleteInFlight` beside the package's existing sentinels — `ErrDocumentNotCatalogued` names the file. Match the surrounding declaration style:
 
@@ -324,7 +327,7 @@ In `internal/documents/catalog_store.go`'s `createDocument`, map the guarded ups
 
 Read the function first — keep whatever error wrapping it already does for the non-`ErrNoRows` path.
 
-- [ ] **Step 8: Regenerate sqlc**
+- [x] **Step 8: Regenerate sqlc**
 
 ```bash
 wsl -e bash -lc 'export PATH=$HOME/go/bin:$PATH; cd /mnt/d/Aura && sqlc generate'
@@ -336,21 +339,21 @@ wsl -e bash -lc 'cd /mnt/d/Aura && grep -n "documents.status <> " internal/db/sq
 
 If `sqlc generate` errors, do NOT hand-edit the generated file and do NOT restructure the query to dodge it — report the exact error.
 
-- [ ] **Step 9: Run the tests to verify they pass**
+- [x] **Step 9: Run the tests to verify they pass**
 
 ```bash
 wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && export POSTGRES_PASSWORD="$(grep -E "^POSTGRES_PASSWORD=" .env | cut -d= -f2- | tr -d "\"")" && go test -tags db_integration -run "TestCatalogStore(ReleasesSourceKeyOnFinalizedDelete|RefusesReingestWhileDeleteInFlight|RepeatLiveSourceIsIdempotent)" ./internal/documents/ -v'
 ```
 Expected: all three PASS, in seconds not milliseconds.
 
-- [ ] **Step 10: Run the full suites**
+- [x] **Step 10: Run the full suites**
 
 ```bash
 wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && export POSTGRES_PASSWORD="$(grep -E "^POSTGRES_PASSWORD=" .env | cut -d= -f2- | tr -d "\"")" && go vet ./... && go build ./... && go test -race ./internal/documents/ ./internal/agui/ ./cmd/aura/ && go test -tags db_integration -race ./internal/documents/'
 ```
 Expected: PASS throughout. The `db_integration` tier re-migrates from scratch on a disposable database, so a malformed 0093 surfaces as a migration failure rather than a subtle one.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 Stage exactly the files this task touched — the migration pair, the query, every regenerated sqlc file, the sentinel's file, `catalog_store.go`, and the new test. Do NOT use `git add -A`; the tree carries unrelated dirty and untracked files.
 

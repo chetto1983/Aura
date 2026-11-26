@@ -1,5 +1,8 @@
 # Media editing in the cockpit — Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Recorded in docs/superpowers/verification/2026-09-19-media-editing.md: 5 flows pass after 839e62efd. Video Studio later replaced the video half (680b84aae).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -91,7 +94,7 @@ All commands run from `D:/Repo/Aura/web` unless stated.
   `rotateSize(size: Size, rotation: Rotation): Size`, `presetRect(frame: Size, preset: CropPreset): CropRect`,
   `moveRect(rect: CropRect, dx: number, dy: number, frame: Size): CropRect`.
 
-- [ ] **Step 1: Install the libraries**
+- [x] **Step 1: Install the libraries**
 
 ```bash
 npm install --save-exact react-filerobot-image-editor@5.0.0-beta.159 mediabunny@1.58.1
@@ -100,7 +103,7 @@ npm ls react-konva konva styled-components
 ```
 Expected: `react-konva@19.x` and `konva@9.3.18` appear as peers resolved under `react-filerobot-image-editor` (npm installs peers). Do **not** add `konva` or `react-konva` to `package.json`: nothing in Aura imports them, and knip would report them unused.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `web/src/mediaEdit/__tests__/timecode.test.ts`:
 ```ts
@@ -215,12 +218,12 @@ describe('moveRect', () => {
 });
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `npx vitest run src/mediaEdit/__tests__/timecode.test.ts src/mediaEdit/__tests__/cropMath.test.ts`
 Expected: FAIL — `Failed to resolve import "../timecode"` / `"../cropMath"`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `web/src/mediaEdit/timecode.ts`:
 ```ts
@@ -333,12 +336,12 @@ export function moveRect(rect: CropRect, dx: number, dy: number, frame: Size): C
 }
 ```
 
-- [ ] **Step 5: Run them to verify they pass**
+- [x] **Step 5: Run them to verify they pass**
 
 Run: `npx vitest run src/mediaEdit/__tests__/timecode.test.ts src/mediaEdit/__tests__/cropMath.test.ts`
 Expected: PASS (all cases).
 
-- [ ] **Step 6: Fold the planning adjustments into the spec**
+- [x] **Step 6: Fold the planning adjustments into the spec**
 
 Edit `docs/superpowers/specs/2026-09-19-studio-media-editing-design.md`:
 - `timecode.ts` line → `timecode.ts   pure: format and parse "mm:ss.s" (a round-tripping pair)`.
@@ -348,7 +351,7 @@ Edit `docs/superpowers/specs/2026-09-19-studio-media-editing-design.md`:
 - Architecture: add `MediaEditorProvider` in `AppShell` owning the open editor; `EditMediaButton` hands the target to it (and a modal closes itself first).
 - `EditMediaButton` bullet: hides on SVG/GIF when the surface knows the MIME type; the Studio stage resolves it in the editor.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/package.json web/package-lock.json web/src/mediaEdit/timecode.ts web/src/mediaEdit/cropMath.ts web/src/mediaEdit/__tests__/timecode.test.ts web/src/mediaEdit/__tests__/cropMath.test.ts docs/superpowers/specs/2026-09-19-studio-media-editing-design.md
@@ -374,7 +377,7 @@ git commit -m "feat(media-edit): add the trim timecode and crop geometry" -m "Th
   `interface BlockedTrack { type: 'video' | 'audio'; codec: string; reason: DiscardedTrack['reason'] }`;
   `blockingDiscards(discarded: readonly DiscardedTrack[]): BlockedTrack[]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/mediaEdit/__tests__/editRules.test.ts`:
 ```ts
@@ -470,12 +473,12 @@ describe('blockingDiscards', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/editRules.test.ts`
 Expected: FAIL — `Failed to resolve import "../editRules"`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `web/src/mediaEdit/editRules.ts`:
 ```ts
@@ -572,12 +575,12 @@ export function blockingDiscards(discarded: readonly DiscardedTrack[]): BlockedT
 }
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/editRules.test.ts`
 Expected: PASS. If `tsc` later reports that `track.codec` is not on `InputTrack`, narrow first: `const codec = 'codec' in track ? track.codec : null;`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/mediaEdit/editRules.ts web/src/mediaEdit/__tests__/editRules.test.ts
@@ -599,7 +602,7 @@ git commit -m "feat(media-edit): decide what is editable and what a cut asks for
   `type FilerobotTheme`; `filerobotTheme(root?: Element): FilerobotTheme`;
   `forwardDomProp(prop: string, target: unknown): boolean`.
 
-- [ ] **Step 1: Let Vitest load the package**
+- [x] **Step 1: Let Vitest load the package**
 
 `react-filerobot-image-editor` ships ES modules under `lib/` without `"type": "module"`, so Node cannot load them when Vitest externalises `node_modules`. In `web/vitest.config.ts`, inside `test: { … }`, add:
 ```ts
@@ -608,7 +611,7 @@ git commit -m "feat(media-edit): decide what is editable and what a cut asks for
     server: { deps: { inline: ['react-filerobot-image-editor'] } },
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `web/src/mediaEdit/__tests__/filerobotSetup.test.ts`:
 ```ts
@@ -668,12 +671,12 @@ describe('forwardDomProp', () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/filerobotSetup.test.ts`
 Expected: FAIL — `Failed to resolve import "../filerobotSetup"`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `web/src/mediaEdit/filerobot-translations.d.ts`:
 ```ts
@@ -875,12 +878,12 @@ export function forwardDomProp(prop: string, target: unknown): boolean {
 }
 ```
 
-- [ ] **Step 5: Run it to verify it passes**
+- [x] **Step 5: Run it to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/filerobotSetup.test.ts`
 Expected: PASS. If the key test fails, the diff names the missing or extra keys — fix the table, never the test.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/vitest.config.ts web/src/mediaEdit/filerobotSetup.ts web/src/mediaEdit/filerobot-translations.d.ts web/src/mediaEdit/__tests__/filerobotSetup.test.ts

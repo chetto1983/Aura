@@ -1,5 +1,8 @@
 # Memory Sidecar Configuration From Postgres — Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 13baccf36. Embedding plan 1 reshaped it two days later (b6d34b9b9). Task 5's live-run log was never written.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -43,7 +46,7 @@
 - Consumes: `settings.Lister` (`List(ctx context.Context) ([]sqlc.AuraSettings, error)`), `settings.OverlayEnv(ctx context.Context, l Lister) error`, `settings.NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error)`, `(*settings.Store).Secret(ctx context.Context, key string) (string, error)`.
 - Produces: `applySettings(ctx context.Context, logger *slog.Logger) (embedAPIKey string, err error)` — called by `run()` before any other env read.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package main
@@ -107,12 +110,12 @@ func TestNoDatabaseConfiguredDegradesAndSaysSo(t *testing.T) {
 
 Add the tiny `syncBuffer` helper in the same file (a `bytes.Buffer` behind a mutex with a `contains(string) bool`), because `slog` writes from the calling goroutine and the test reads after.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `go test ./cmd/arcadedb-mcp/ -run 'Overlay|NoDatabaseConfigured' -v`
 Expected: FAIL — `undefined: overlayFrom`, `undefined: applySettings`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```go
 package main
@@ -191,17 +194,17 @@ func applySettings(ctx context.Context, logger *slog.Logger) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./cmd/arcadedb-mcp/ -run 'Overlay|NoDatabaseConfigured' -v`
 Expected: PASS, all three.
 
-- [ ] **Step 5: Run the gates for the package**
+- [x] **Step 5: Run the gates for the package**
 
 Run: `go vet ./cmd/arcadedb-mcp/ && go build ./... && go test -race ./cmd/arcadedb-mcp/`
 Expected: no findings, build clean, tests pass under the race detector.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add cmd/arcadedb-mcp/settings.go cmd/arcadedb-mcp/settings_test.go
@@ -221,7 +224,7 @@ git commit -m "feat(memory): read the sidecar's settings from Postgres at boot"
 
 Background the implementer needs: `AURA_EMBED_API_KEY` is read at `main.go:68` and is set by **no** compose file and **no** `.env.example`. Grep the tree: the only other hits are two live integration tests. The memory sidecar therefore cannot authenticate to a cloud embedder today at all. It is not wired up — it is deleted, and the shared credential takes its place.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // The sidecar used to read AURA_EMBED_API_KEY, which nothing ever set, so a cloud embedder
@@ -239,12 +242,12 @@ func TestEmbedCredentialDoesNotComeFromTheDeadEnvVar(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `go test ./cmd/arcadedb-mcp/ -run TestEmbedCredentialDoesNotComeFromTheDeadEnvVar -v`
 Expected: FAIL — `main.go still reads AURA_EMBED_API_KEY`.
 
-- [ ] **Step 3: Change `run()`**
+- [x] **Step 3: Change `run()`**
 
 Replace the opening of `run` so the overlay happens before anything reads the environment, and feed the embedder the real credential:
 
@@ -275,17 +278,17 @@ func run(logger *slog.Logger) error {
 
 Keep the existing comment block above `embedder` — it explains why the dense leg is optional, which is still true. If `run` already builds a `ctx` further down, reuse that one rather than adding a second.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./cmd/arcadedb-mcp/ -v`
 Expected: PASS, including the new test and the pre-existing ones.
 
-- [ ] **Step 5: Run the gates**
+- [x] **Step 5: Run the gates**
 
 Run: `go vet ./... && go build ./... && go test -race ./cmd/arcadedb-mcp/`
 Expected: clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add cmd/arcadedb-mcp/main.go cmd/arcadedb-mcp/settings_test.go
@@ -303,7 +306,7 @@ git commit -m "fix(memory): replace the dead AURA_EMBED_API_KEY with the shared 
 - Consumes: the DSN composition already used by every other service.
 - Produces: `AURA_DB_URL` and `AURA_AUTHULA_SECRET` in the sidecar container.
 
-- [ ] **Step 1: Add the two variables**
+- [x] **Step 1: Add the two variables**
 
 Copy the composition verbatim from the `aura` service (compose.yaml:67 and :70) so there is one spelling in the file, not two:
 
@@ -315,16 +318,16 @@ Copy the composition verbatim from the `aura` service (compose.yaml:67 and :70) 
       AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
 ```
 
-- [ ] **Step 2: Decide the startup order and write down the decision**
+- [x] **Step 2: Decide the startup order and write down the decision**
 
 The `aura` service gates its boot on this sidecar's healthcheck, and that healthcheck is deliberately liveness-only. Check whether `arcadedb-mcp` already declares `depends_on: postgres`. If it does not, adding it is correct — a sidecar that fails boot because Postgres is not up yet would cascade into the daemon starting with zero memory tools. If you decide against it, say why in the commit message. Do not leave the question unanswered.
 
-- [ ] **Step 3: Verify compose still parses and the block is the only change**
+- [x] **Step 3: Verify compose still parses and the block is the only change**
 
 Run: `docker compose config --quiet && git diff --stat compose.yaml`
 Expected: no output from the first command; the diff touches only the `arcadedb-mcp` block.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add compose.yaml
@@ -340,16 +343,16 @@ git commit -m "build(memory): hand the sidecar its Postgres bootstrap"
 
 The block currently tells the operator the sidecar's embedder "must AGREE with `AURA_EMBED_BASE_URL` above", because nothing enforced it. The overlay now does: both containers read the same `aura.settings` rows. The paragraph must stop asking for something the code now guarantees, and must say what is left that it does not.
 
-- [ ] **Step 1: Rewrite the block**
+- [x] **Step 1: Rewrite the block**
 
 State three things, and nothing that is not measured: (1) the embedder is chosen in the cockpit and stored in `aura.settings`, and both the daemon and the sidecar read it at their own boot; (2) `AURA_MEMORY_EMBED_BASE_URL` remains only as a compose-level override for a deployment that deliberately wants the sidecar somewhere else, and using it reintroduces the divergence by hand; (3) the base carries no trailing `/v1` — this client appends `/v1/embeddings` itself.
 
-- [ ] **Step 2: Verify the env catalogue test still passes**
+- [x] **Step 2: Verify the env catalogue test still passes**
 
 Run: `go test ./cmd/aura/ -run EnvExample -v`
 Expected: PASS. It checks active `NAME=value` lines; commented examples are documentation.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .env.example
@@ -362,11 +365,11 @@ git commit -m "docs(memory): the embedder agreement is enforced, not requested"
 
 Unit tests prove the decision; they do not prove the sidecar boots against a real Postgres and reads a real row. CLAUDE.md §DEFINITION OF DONE requires the live run.
 
-- [ ] **Step 1: Bring the stack up**
+- [x] **Step 1: Bring the stack up**
 
 Run: `make db-migrate memory-up`
 
-- [ ] **Step 2: Write a row the sidecar must pick up**
+- [x] **Step 2: Write a row the sidecar must pick up**
 
 Set the embedding model from the cockpit Settings page (Backends pane), or write the row directly, then restart only the sidecar:
 
@@ -377,11 +380,11 @@ docker compose logs --no-log-prefix aura-arcadedb-mcp | tail -20
 
 Expected: the `dense retrieval enabled` line names the base URL from `aura.settings`, not the compose default — and no `AURA_DB_URL unset` warning.
 
-- [ ] **Step 3: Prove the failure path fails**
+- [x] **Step 3: Prove the failure path fails**
 
 A gate that cannot fail is not a gate. Point `AURA_DB_URL` at a closed port, restart the sidecar, and confirm it exits non-zero with `settings database:` in the log rather than starting on stale env.
 
-- [ ] **Step 4: Record the result**
+- [x] **Step 4: Record the result**
 
 Append the two observed log lines to this plan under a `## Live run` heading, with the date. A claim without its evidence is the thing this project keeps paying for.
 

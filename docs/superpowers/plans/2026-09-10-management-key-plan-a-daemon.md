@@ -1,5 +1,8 @@
 # Management Key — Plan A (Daemon) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Live E2E in 266f1a225. Plan D closed the unticked steps (dacc8f9b9, afef8102f).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -3599,7 +3602,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -- bash -lc 'cd /mnt/d/Repo/Aura && export PATH="$HOM
 
 Expected: vet, file-size, lint, deadcode, race and vuln all green.
 
-- [ ] **Step 2: Integration tiers and coverage**
+- [x] **Step 2: Integration tiers and coverage**
 
 ```bash
 MSYS_NO_PATHCONV=1 wsl.exe -- bash -lc 'cd /mnt/d/Repo/Aura && export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/go/bin:$PATH" && bash scripts/coverage_docker.sh'
@@ -3607,7 +3610,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -- bash -lc 'cd /mnt/d/Repo/Aura && export PATH="$HOM
 
 Expected: the aggregate floor of 85% and every package policy pass. If a touched package's denominator changed, follow the script's instructions to re-pin its baseline, never lowering a floor, and say so in the commit.
 
-- [ ] **Step 3: Mutation spot-check** (≥70% killed per critical file). Run `go-mutesting` in WSL on `internal/identitykey/policy.go` (the `credit_policy` scope of `scripts/critical_mutation_gate.py`) and on `internal/agui/openrouter_keys.go`. Record the killed/total counts for the final report.
+- [x] **Step 3: Mutation spot-check** (≥70% killed per critical file). Run `go-mutesting` in WSL on `internal/identitykey/policy.go` (the `credit_policy` scope of `scripts/critical_mutation_gate.py`) and on `internal/agui/openrouter_keys.go`. Record the killed/total counts for the final report.
 
 - [x] **Step 4: Rebuild and restart `aura`**
 
@@ -3619,9 +3622,9 @@ docker logs --since 5m aura 2>&1 | grep -iE 'openrouter reconcile|settings secre
 
 Expected: `healthy`, and no `panic`. A pre-existing plaintext secret row is converted silently by the boot pass.
 
-- [ ] **Step 5: The admin sets the management key.** The operator, logged in as the admin: Settings → Model routing → paste the management key → save (the field still exists until Plan B). In the browser's network tab, the PUT response carries `openrouter_keys` with the admin's id in `identities_minted`, and `errors` naming the missing services cap.
+- [x] **Step 5: The admin sets the management key.** The operator, logged in as the admin: Settings → Model routing → paste the management key → save (the field still exists until Plan B). In the browser's network tab, the PUT response carries `openrouter_keys` with the admin's id in `identities_minted`, and `errors` naming the missing services cap.
 
-- [ ] **Step 6: Set the services cap and reconcile.** In the same browser tab's console:
+- [x] **Step 6: Set the services cap and reconcile.** In the same browser tab's console:
 
 ```js
 const put = (key, value) => fetch(`/api/settings/${key}`, {method: 'PUT', headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()}, body: JSON.stringify({value})}).then(r => r.json());
@@ -3631,7 +3634,7 @@ await fetch('/api/admin/openrouter/reconcile', {method: 'POST', headers: {'Idemp
 
 Expected: `services_label` is set and `errors` is absent. Then restart Aura (Settings banner, or `POST /api/admin/restart`) so TTS/STT and cloud embeddings pick up the services key (decision 8).
 
-- [ ] **Step 7: Check the provider**
+- [x] **Step 7: Check the provider**
 
 ```bash
 curl -sS https://openrouter.ai/api/v1/keys -H "Authorization: Bearer $(cat "$SCRATCH/mkey")" \
@@ -3653,7 +3656,7 @@ Expected: a row whose `api_key_id` is the admin's key name (the identity id) wit
 
 - [x] **Step 10: Record and clean up.** Upsert the measured facts to aura-memory (or put them in the push summary if the MCP is down), each with what it does NOT prove: the wizard, the installer, the reinstall and the `.env` changes are Plans B-D. Delete `$SCRATCH/mkey`.
 
-- [ ] **Step 11: Push and watch CI**
+- [x] **Step 11: Push and watch CI**
 
 ```bash
 git push

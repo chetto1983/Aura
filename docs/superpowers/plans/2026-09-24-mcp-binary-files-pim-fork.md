@@ -1,5 +1,8 @@
 # MCP binary files: PIM fork implementation plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE in aura-pim-mcp: main 6734385, per the operator's notes. Mail attachments through resource_link are recorded in the PRD (952830310, 3d906a726).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -57,7 +60,7 @@
 **Interfaces:**
 - Produces: `AttachmentStoreOptions.MaxBytesPerAttachment` defaults to `25 * 1024 * 1024`. `UploadAsync` reads the cap from `IOptions<AttachmentStoreOptions>`.
 
-- [ ] **Step 1: Write the failing test.** Add it to `InMemoryAttachmentStoreTests`, just before the private `FakeTimeProvider` class:
+- [x] **Step 1: Write the failing test.** Add it to `InMemoryAttachmentStoreTests`, just before the private `FakeTimeProvider` class:
 
 ```csharp
     [TestMethod]
@@ -71,13 +74,13 @@
     }
 ```
 
-- [ ] **Step 2: Run it to verify it fails.**
+- [x] **Step 2: Run it to verify it fails.**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/pim_build.sh test`
 
 Expected: FAIL in `DefaultCap_AdmitsA25MiBAttachmentAndRefusesOneByteMore`. The first `Put` returns null, because the cap is still 10 MiB.
 
-- [ ] **Step 3: Implement.** In `IAttachmentStore.cs`:
+- [x] **Step 3: Implement.** In `IAttachmentStore.cs`:
 
 ```csharp
 public sealed class AttachmentStoreOptions
@@ -116,9 +119,9 @@ with:
             }
 ```
 
-- [ ] **Step 4: Run the tests.** Command as in Step 2. Expected: `Passed!`, 0 failed.
+- [x] **Step 4: Run the tests.** Command as in Step 2. Expected: `Passed!`, 0 failed.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 cd /d/tmp/aura-pim-mcp
@@ -153,7 +156,7 @@ EOF
   - `IMcpServerBuilder.WithEmailAttachmentResource()`
   - Test helper `InProcessMcpSession.StartAsync(ITenantContext, IAttachmentStore, string tenant, Action<IServiceCollection>? configure = null)`. Its `Client` is an `McpClient`.
 
-- [ ] **Step 1: Write the test harness.** Create `src/CalendarMcp.Tests/Helpers/InProcessMcpSession.cs`:
+- [x] **Step 1: Write the test harness.** Create `src/CalendarMcp.Tests/Helpers/InProcessMcpSession.cs`:
 
 ```csharp
 using System.IO.Pipelines;
@@ -244,7 +247,7 @@ internal sealed class InProcessMcpSession : IAsyncDisposable
 }
 ```
 
-- [ ] **Step 2: Write the failing tests.** Create `src/CalendarMcp.Tests/Tools/EmailAttachmentResourceTests.cs`:
+- [x] **Step 2: Write the failing tests.** Create `src/CalendarMcp.Tests/Tools/EmailAttachmentResourceTests.cs`:
 
 ```csharp
 using CalendarMcp.Core.Services;
@@ -341,11 +344,11 @@ public sealed class EmailAttachmentResourceTests
 }
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail.** Command as in Task 1 Step 2.
+- [x] **Step 3: Run the tests to verify they fail.** Command as in Task 1 Step 2.
 
 Expected: build FAIL with `CS0103: The name 'EmailAttachmentResource' does not exist` (and `'WithEmailAttachmentResource'`).
 
-- [ ] **Step 4: Implement the resource.** Create `src/CalendarMcp.Core/Tools/EmailAttachmentResource.cs`:
+- [x] **Step 4: Implement the resource.** Create `src/CalendarMcp.Core/Tools/EmailAttachmentResource.cs`:
 
 ```csharp
 using System.Security.Claims;
@@ -455,9 +458,9 @@ with:
 
 In `src/CalendarMcp.StdioServer/Program.cs`, make the same replacement on its `.WithCalendarView()` line, keeping that file's indentation.
 
-- [ ] **Step 5: Run the tests.** Command as in Task 1 Step 2. Expected: `Passed!`, 0 failed.
+- [x] **Step 5: Run the tests.** Command as in Task 1 Step 2. Expected: `Passed!`, 0 failed.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 cd /d/tmp/aura-pim-mcp
@@ -505,7 +508,7 @@ EOF
   - `CalendarActionTool.WithAttachmentLink(string stashJson) : CallToolResult` (internal static);
   - `CalendarActionTool.TextResult(string text) : CallToolResult` (internal static).
 
-- [ ] **Step 1: Write the failing tests.** Create `src/CalendarMcp.Tests/Tools/CalendarActionToolAttachmentTests.cs`:
+- [x] **Step 1: Write the failing tests.** Create `src/CalendarMcp.Tests/Tools/CalendarActionToolAttachmentTests.cs`:
 
 ```csharp
 using CalendarMcp.Core.Models;
@@ -588,11 +591,11 @@ public sealed class CalendarActionToolAttachmentTests
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail.** Command as in Task 1 Step 2.
+- [x] **Step 2: Run the tests to verify they fail.** Command as in Task 1 Step 2.
 
 Expected: build FAIL with `CS0117: 'CalendarActionTool' does not contain a definition for 'WithAttachmentLink'`.
 
-- [ ] **Step 3: Implement the link builder.** Create `src/CalendarMcp.Core/Tools/CalendarActionTool.Attachments.cs`:
+- [x] **Step 3: Implement the link builder.** Create `src/CalendarMcp.Core/Tools/CalendarActionTool.Attachments.cs`:
 
 ```csharp
 using System.Text.Json.Nodes;
@@ -647,7 +650,7 @@ public sealed partial class CalendarActionTool
 }
 ```
 
-- [ ] **Step 4: Wire it into the tool.** Make these edits with the Edit tool.
+- [x] **Step 4: Wire it into the tool.** Make these edits with the Edit tool.
 
 In `CalendarActionTool.cs`:
 
@@ -749,11 +752,11 @@ to
 
 `  get_email_attachment(accountId, emailId, attachmentId)`.
 
-- [ ] **Step 5: Run the tests.** Command as in Task 1 Step 2. Expected: `Passed!`, 0 failed.
+- [x] **Step 5: Run the tests.** Command as in Task 1 Step 2. Expected: `Passed!`, 0 failed.
 
   `CalendarActionToolTests.DispatchAction_RoutesEveryPublishedAction` still expects `"attachmentId is required"` for `get_email_attachment`, because the forwarder passes the missing id through to upstream.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 cd /d/tmp/aura-pim-mcp
@@ -781,7 +784,7 @@ EOF
 **Files:**
 - Modify: `AURA-FORK.md` (item 4, "One curated tool instead of 29")
 
-- [ ] **Step 1: Document the fork difference.** In `AURA-FORK.md`, append this bullet to change 4, after the bullet that begins "**Required value-type parameters are checked by the forwarder.**":
+- [x] **Step 1: Document the fork difference.** In `AURA-FORK.md`, append this bullet to change 4, after the bullet that begins "**Required value-type parameters are checked by the forwarder.**":
 
 ```markdown
    - **Attachments come back as a resource link.** `get_email_attachment` always stashes and
@@ -792,13 +795,13 @@ EOF
      per-attachment store cap is 25 MiB.
 ```
 
-- [ ] **Step 2: Run the full build and suite.**
+- [x] **Step 2: Run the full build and suite.**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/pim_build.sh build`, then the same script with `test`.
 
 Expected: `0 Warning(s)`, `0 Error(s)`, then `Passed!` with 0 failed.
 
-- [ ] **Step 3: Smoke-test the stdio server.** Add these two requests to the scratchpad `pim_stdio.sh` probe, after the `tools/call` lines:
+- [x] **Step 3: Smoke-test the stdio server.** Add these two requests to the scratchpad `pim_stdio.sh` probe, after the `tools/call` lines:
 
 ```
   echo '{"jsonrpc":"2.0","id":5,"method":"resources/templates/list"}'
@@ -812,7 +815,7 @@ Expected:
 - the read of `attachment://stash/unknown` returns the `attachment expired or unknown` error;
 - `tools/list` still lists `calendar` only.
 
-- [ ] **Step 4: Commit the notes.**
+- [x] **Step 4: Commit the notes.**
 
 ```bash
 cd /d/tmp/aura-pim-mcp
@@ -823,7 +826,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
 EOF
 ```
 
-- [ ] **Step 5: Merge into `main`.**
+- [x] **Step 5: Merge into `main`.**
 
 ```bash
 cd /d/tmp/aura-pim-mcp
@@ -833,7 +836,7 @@ git merge --no-ff aura/upstream-1.8.3 -m "Merge upstream 1.8.3 and the attachmen
 
 Expected: a clean merge. `main` has not moved since the branch was cut; check with `git log main..aura/upstream-1.8.3 --oneline` before merging. Then re-run the Step 2 build and test on `main`.
 
-- [ ] **Step 6: Push. ASK THE OPERATOR FIRST.** Pushing `main` publishes `ghcr.io/chetto1983/aura-pim-mcp:sidecar`, and every appliance's updater refreshes to that tag. With the go:
+- [x] **Step 6: Push. ASK THE OPERATOR FIRST.** Pushing `main` publishes `ghcr.io/chetto1983/aura-pim-mcp:sidecar`, and every appliance's updater refreshes to that tag. With the go:
 
 ```bash
 git push origin main

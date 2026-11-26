@@ -1,5 +1,8 @@
 # Turn recall, plan 1 of 3: tool-only traces and the ArcadeDB version floor
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 799880d07..7838d194b.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -47,7 +50,7 @@
 - Consumes: the existing test helpers in `internal/runner/runner_reasoning_graph_test.go`: `newReasoningTestRunner(t, cap, showReasoning)`, `recordingReasoningGraphSink`, `reasoningGraphEvent`, `reasoningGraphToolEvents`, `reasoningGraphFinalEvent`, `persistReasoningGraphEvents`; in `internal/arcadedb`: `validReasoningTrace`, `freshReasoningTrace`, `disposableMemoryClient`, `constantEmbedder`, `reembedMemory`.
 - Produces: a `ReasoningTrace` whose `ProviderSummary`, and whose steps' `ProviderSummary`, may be `""` when the step carries tool calls. Plan 2's `RecallTurns` reads these traces' `ReasoningToolCall.tool_name`.
 
-- [ ] **Step 1: Write the failing runner tests**
+- [x] **Step 1: Write the failing runner tests**
 
 Create `internal/runner/runner_reasoning_graph_tools_test.go`:
 
@@ -251,12 +254,12 @@ func TestReasoningTraceBuilderRejectsForeignRunsAndRepeatedCalls(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `W 'go test -race -count=1 -run "TestReasoningGraphRecords|TestReasoningGraphToolOpens|TestReasoningGraphDiscardDropsAToolOnly|TestReasoningTraceBuilderRejects" ./internal/runner/'`
 Expected: FAIL. The tool-only tests report `traces = [], want ...`; `TestReasoningTraceBuilderRejectsForeignRunsAndRepeatedCalls` reports `the tool-only trace was not committed`.
 
-- [ ] **Step 3: Write the failing validation tests**
+- [x] **Step 3: Write the failing validation tests**
 
 In `internal/arcadedb/memory_reasoning_validate_test.go`, add three cases to the `cases` map of `TestNormalizeReasoningTraceRejectsAMalformedTrace`:
 
@@ -309,12 +312,12 @@ func TestNormalizeReasoningTraceAcceptsATurnThatOnlyRanTools(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run them and see them fail**
+- [x] **Step 4: Run them and see them fail**
 
 Run: `W 'go test -race -count=1 -run "TestNormalizeReasoningTrace" ./internal/arcadedb/'`
 Expected: FAIL. `TestNormalizeReasoningTraceAcceptsATurnThatOnlyRanTools` reports `refused a tool-only trace: arcadedb: reasoning provider_summary must be non-empty and canonical`, and the new unsupported-status case fails on the summary first, so its error does not name the status. The other two new cases already pass, because today every empty summary is refused.
 
-- [ ] **Step 5: Implement the builder change**
+- [x] **Step 5: Implement the builder change**
 
 In `internal/runner/runner_reasoning_graph.go`:
 
@@ -444,7 +447,7 @@ with
 
 The existing `if len(steps) == 0 { return ..., false }` stays.
 
-- [ ] **Step 6: Implement the validation change**
+- [x] **Step 6: Implement the validation change**
 
 In `internal/arcadedb/memory_reasoning_validate.go`:
 
@@ -495,12 +498,12 @@ func traceHasToolCalls(trace ReasoningTrace) bool {
 
 3. Add `"slices"` to the imports.
 
-- [ ] **Step 7: Run the unit tests and see them pass**
+- [x] **Step 7: Run the unit tests and see them pass**
 
 Run: `W 'go vet ./internal/runner/ ./internal/arcadedb/ && go test -race -count=1 ./internal/runner/ ./internal/arcadedb/'`
 Expected: PASS, including the existing `TestReasoningGraphTracer` subtests "hidden and synthetic sources have no producer" (no tools, so still no trace) and `TestReasoningGraphRetryDiscard`. If an existing test asserted that a turn with tools and no reasoning produces no trace, that assertion encoded the defect: change it, and say why in the commit body.
 
-- [ ] **Step 8: Write the live test**
+- [x] **Step 8: Write the live test**
 
 Append to `internal/arcadedb/memory_reasoning_live_test.go`:
 
@@ -549,12 +552,12 @@ func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
 
 `validReasoningTrace`'s one tool is `shell_exec`, succeeded. If `rowStrings` returns nested lists for the traversal, flatten them in the test, not in production code: production code that reads this traversal arrives in plan 2.
 
-- [ ] **Step 9: Run the live test**
+- [x] **Step 9: Run the live test**
 
 Run recipe **A** with `-run TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce`.
 Expected: PASS. If the engine refuses `""` for the MANDATORY property, stop: the spec's "stored as an empty summary" rests on that, and the operator decides how to change it.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 Message:
 
@@ -595,7 +598,7 @@ Paths: `internal/runner/runner_reasoning_graph.go internal/runner/runner_reasoni
 - Consumes: `Client.VerifySecureVersion(ctx) error`, `Client.ServerVersion`, `parseVersion`, `DatabaseFor`, `TenantUserFor`, `TenantCredentials{secret}`, test helpers `newTenantHTTPRecorder`, `resolverCredentials`, `resolverIdentity`, `envOr`.
 - Produces: `TenantClients.For` returns an error naming `26.10.1` when the server is older; plan 2's `RecallTurns` relies on that floor (ArcadeData/arcadedb#8959).
 
-- [ ] **Step 1: Measure whether a tenant credential can read the server version**
+- [x] **Step 1: Measure whether a tenant credential can read the server version**
 
 The floor is checked through the admin client when one exists, and through the tenant client otherwise. `cmd/arcadedb-mcp` can run with no admin. Nothing in ArcadeDB's documentation says whether a non-root user may call `GET /api/v1/server?mode=basic`, so measure it before wiring anything.
 
@@ -662,7 +665,7 @@ func TestTenantCredentialReadsTheServerVersionLive(t *testing.T) {
 Run recipe **A** with `-run TestTenantCredentialReadsTheServerVersionLive`.
 Expected: PASS against 26.10.1 with the floor still at 26.4.2. If `VerifySecureVersion` fails with 401 or 403, **stop and report the response to the operator**. Do not skip the check when there is no admin, and do not weaken it.
 
-- [ ] **Step 2: Write the failing unit tests**
+- [x] **Step 2: Write the failing unit tests**
 
 In `internal/arcadedb/tenant_clients_test.go`:
 
@@ -790,12 +793,12 @@ In `internal/arcadedb/client_admin_test.go`, `TestServerVersionAndSecurityBounda
 		{name: "below the floor", status: http.StatusOK, body: `{"version":"26.9.1"}`, wantErr: true},
 ```
 
-- [ ] **Step 3: Run them and see them fail**
+- [x] **Step 3: Run them and see them fail**
 
 Run: `W 'go test -race -count=1 -run "TestTenantClients|TestVersionComparisonAtTheFloor|TestServerVersionAndSecurityBoundary" ./internal/arcadedb/'`
 Expected: FAIL. `TestTenantClientsRefuseAServerBelowTheFloor` gets a nil error, `TestTenantClientsVerifyTheServerOnce` sees 0 reads, `TestVersionComparisonAtTheFloor` accepts `26.10.0` and others, and the `below the floor` row returns no error.
 
-- [ ] **Step 4: Raise the floor**
+- [x] **Step 4: Raise the floor**
 
 In `internal/arcadedb/admin.go`, extend the `minSecureVersion` comment and value:
 
@@ -834,7 +837,7 @@ and in `VerifySecureVersion` replace the refusal with:
 
 Update `VerifySecureVersion`'s doc comment to: `// VerifySecureVersion refuses a server older than minSecureVersion.`
 
-- [ ] **Step 5: Wire the floor into `For`**
+- [x] **Step 5: Wire the floor into `For`**
 
 In `internal/arcadedb/tenant_clients.go`:
 
@@ -892,7 +895,7 @@ func (t *TenantClients) verifyServer(ctx context.Context, tenant *Client) error 
 
 4. Update `For`'s doc comment: `// For returns the client for one identity, provisioning its database, scoped credential, and memory schema on the first successful call. The first call of a resolver also refuses a server older than minSecureVersion.`
 
-- [ ] **Step 6: Run the tests and see them pass**
+- [x] **Step 6: Run the tests and see them pass**
 
 Run: `W 'go vet ./internal/arcadedb/ && go test -race -count=1 ./internal/arcadedb/ ./cmd/arcadedb-mcp/ ./cmd/aura/'`
 Expected: PASS. If a fake ArcadeDB server in another test now answers `GET /api/v1/server` with 404 or a decode error, give that fake the same route as Step 2 (`{"version":"26.10.1"}`). That fixes the test's model of the server; it does not change what the test asserts. Name each such file in the commit body.
@@ -900,7 +903,7 @@ Expected: PASS. If a fake ArcadeDB server in another test now answers `GET /api/
 Then run recipe **A** with `-run "TestTenantCredentialReadsTheServerVersionLive|TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce|TestConversationProjectionLive"`.
 Expected: PASS against the local 26.10.1.
 
-- [ ] **Step 7: Update CLAUDE.md**
+- [x] **Step 7: Update CLAUDE.md**
 
 In `CLAUDE.md`, under `## Persistence`, replace the sentence
 
@@ -910,7 +913,7 @@ with
 
 `Richiede ≥ 26.10.1: sotto 26.4.2 un database creato a runtime resta senza autorizzazione (CVE-2026-44221), e sotto 26.10.1 un filtro di `vector.neighbors` che non trova niente vale come nessun filtro (#8959). `TenantClients.For` lo verifica una volta per resolver con `VerifySecureVersion`, prima di consegnare il primo client tenant.`
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Message:
 
@@ -941,7 +944,7 @@ Paths: `internal/arcadedb/admin.go internal/arcadedb/tenant_clients.go internal/
 **Files:**
 - Modify: `prd.md` §10, after the measurement only. Another session has uncommitted edits in `prd.md`: before touching it, run `git diff -- prd.md` and stop to ask the operator if those edits are still uncommitted, rather than committing them along with yours.
 
-- [ ] **Step 1: Run the local gates**
+- [x] **Step 1: Run the local gates**
 
 Run: `W 'make quality'`
 Expected: exit 0 (vet, file-size, lint and dupl, deadcode, test-race, vuln, build).
@@ -949,13 +952,13 @@ Expected: exit 0 (vet, file-size, lint and dupl, deadcode, test-race, vuln, buil
 Run: `W 'bash scripts/coverage_docker.sh'`
 Expected: the aggregate owned-surface coverage is at least 85% and the package policy holds. `internal/arcadedb` delegates to its live profile, which the `agent-memory-eval` job measures. If Docker is not reachable from WSL, CI is the authority: say so and continue.
 
-- [ ] **Step 2: Push and wait for every job on this SHA**
+- [x] **Step 2: Push and wait for every job on this SHA**
 
 Run: `W 'LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks push origin master'`
 Then: `gh run list --branch master --limit 10 --json databaseId,headSha,name,status,conclusion`, and `gh run watch <id>` for each run on the pushed SHA.
 Expected: every job green on this SHA, including `agent-memory-eval`, which runs `./internal/arcadedb/` with `arcadedb_integration`, and "Publish Aura edge image". A red job is fixed before anything else, whoever's it looks like.
 
-- [ ] **Step 3: Let the updater roll the VM, then check it**
+- [x] **Step 3: Let the updater roll the VM, then check it**
 
 Never update the VM by hand. The updater applies a new aura image after about 15 minutes without chat activity. Then, read-only over SSH (lab VM `192.168.101.158`, user `aura`; scripts read the password from an untracked file, never inline):
 - `sudo docker inspect aura --format '{{.Image}}'` matches the digest the edge publish job pushed;
@@ -963,7 +966,7 @@ Never update the VM by hand. The updater applies a new aura image after about 15
 - ArcadeDB answers `26.10.1` on `GET /api/v1/server?mode=basic` (root password from the container's `JAVA_OPTS`, curl against the container IP from the host);
 - `sudo docker logs aura --since 30m 2>&1 | grep -i 'conversation projection\|reasoning graph delivery failed'` shows no new failure.
 
-- [ ] **Step 4: Run tool turns on the VM and measure coverage**
+- [x] **Step 4: Run tool turns on the VM and measure coverage**
 
 Drive two turns with the operator's own account, through the cockpit API (`scripts/musr_live_run_authula_helpers.sh`: `fetch_auth_config`, `sign_in` with `VM_COCKPIT_EMAIL`/`VM_COCKPIT_PASSWORD` from `D:\Aura\.env.google`, never printed; then `POST /api/conversations` and `POST /agent/run`). Each turn asks for a reminder a few minutes out, so it runs `task`. Use fresh wording that appears in no corpus.
 
@@ -982,7 +985,7 @@ Expected: every tool turn since the rollout reaches its tools in the graph. If n
 
 Score the E2E (Definition of Done: above 9.8) on these checks: the image and floor are live, the projection is healthy, every new tool turn is in the graph, and at least one turn with no exposed reasoning is in it.
 
-- [ ] **Step 5: Amend the PRD with what was measured**
+- [x] **Step 5: Amend the PRD with what was measured**
 
 In `prd.md` §10 ("Memory authority, capture and reasoning"), add a paragraph in the style of the 2026-10-06 entries. It says:
 - what changed: the first valid tool event opens a trace; an empty summary is accepted only with tool calls;
@@ -1000,6 +1003,6 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 Use `git add -p prd.md` for your own hunk alone if the other session's edits are still there, after the operator has answered Task 3's question about them.
 
-- [ ] **Step 6: Push the PRD commit and confirm CI**
+- [x] **Step 6: Push the PRD commit and confirm CI**
 
 Push as in Step 2. A docs-only change needs the same green run on its SHA before the plan is closed.

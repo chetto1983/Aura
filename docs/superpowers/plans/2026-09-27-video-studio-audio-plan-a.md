@@ -1,5 +1,8 @@
 # Video Studio audio — Plan A (spikes + foundation) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Spikes in 8643c177f..d5288a6ce. T1 landed in cdfdae5c5 and db29668fc.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -62,7 +65,7 @@ The four spikes need a real browser, the pinned packages and three audio fixture
 **Interfaces:**
 - Produces: `openProbe(pagePath, { mobile? }) → { page, assets, close }` in `lib/browser.mjs`, where `assets` is the list of `{ url, bytes }` the page fetched. Produces `encodeWav`, `decodeMono`, `rmsDb`, `toBase64`, `fromBase64` in `src/wav.ts`. Produces the fixtures, 16 kHz mono PCM16. `speech.truth.json` holds `{ sampleRate, snrDb, speechRmsDb, windows: [[start, end], …] }` in seconds.
 
-- [ ] **Step 1: Write the spike package and config**
+- [x] **Step 1: Write the spike package and config**
 
 `spikes/video-studio-audio/package.json`:
 
@@ -128,7 +131,7 @@ cp node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx node_modules/@ric
 cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs public/ort/
 ```
 
-- [ ] **Step 2: Write the browser helper and the WAV helpers**
+- [x] **Step 2: Write the browser helper and the WAV helpers**
 
 `spikes/video-studio-audio/lib/browser.mjs`:
 
@@ -230,7 +233,7 @@ export function rmsDb(samples: Float32Array, from = 0, to = samples.length): num
 }
 ```
 
-- [ ] **Step 3: Write the fixture page**
+- [x] **Step 3: Write the fixture page**
 
 `spikes/video-studio-audio/fixtures.html`:
 
@@ -345,7 +348,7 @@ async function build(phrases: readonly string[]) {
 Object.assign(window, { buildFixtures: build });
 ```
 
-- [ ] **Step 4: Write the three generators and the verifier**
+- [x] **Step 4: Write the three generators and the verifier**
 
 `spikes/video-studio-audio/tts-phrases.sh`:
 
@@ -491,7 +494,7 @@ for (const name of ['speech.wav', 'speech-noisy.wav']) {
 }
 ```
 
-- [ ] **Step 5: Run the generators (in WSL, one script file)**
+- [x] **Step 5: Run the generators (in WSL, one script file)**
 
 ```bash
 cd /mnt/d/Aura/spikes/video-studio-audio
@@ -505,7 +508,7 @@ node verify-fixtures.mjs
 
 Expected: `capabilities: {"tts":true,…}`, three phrase files of a few kB each; `music RMS -18.24 dBFS`; `speech.wav` gaps below -100 dBFS (trimmed TTS silence is digital zero); `speech-noisy.wav` gaps about 10 dB under its speech windows. If the VM answers `"tts":false`, stop and report: the speech fixtures cannot be made without TTS.
 
-- [ ] **Step 6: Write the fixture provenance**
+- [x] **Step 6: Write the fixture provenance**
 
 `web/e2e/fixtures/video-studio/audio/README.md`:
 
@@ -537,7 +540,7 @@ Chromium (Playwright 1.62.1, WSL) against the probe's own Vite server.
 (Task 1: paste the `verify-fixtures.mjs` output here.)
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/video-studio-audio/package.json spikes/video-studio-audio/.gitignore \
@@ -566,7 +569,7 @@ The docs say keyframe `time` values live in source media time (`node_modules/@vi
 - Create: `spikes/video-studio-audio/s1.mjs`
 - Modify: `spikes/video-studio-audio/FINDINGS.md`
 
-- [ ] **Step 1: Write the probe**
+- [x] **Step 1: Write the probe**
 
 `s1.html`: the same shape as `fixtures.html`, loading `/src/s1.ts`.
 
@@ -665,7 +668,7 @@ try {
 }
 ```
 
-- [ ] **Step 2: Run it (WSL)**
+- [x] **Step 2: Run it (WSL)**
 
 ```bash
 cd /mnt/d/Aura/spikes/video-studio-audio && node s1.mjs
@@ -679,7 +682,7 @@ How to read the result:
 
 A result matching none of these is a finding: record it and stop.
 
-- [ ] **Step 3: Record and commit**
+- [x] **Step 3: Record and commit**
 
 Add to `FINDINGS.md` an `## S1` section: the five printed lines, the domain the numbers prove, and one consequence for Plan B. If the domain is absolute source time, `clipOpacity`'s fades are shifted on every trimmed clip. That is a live bug, to be fixed on touch in Plan B's T2 with its own test.
 
@@ -703,7 +706,7 @@ The audio lane draws its waveform with wavesurfer from cached peaks and edits th
 - Create: `spikes/video-studio-audio/s2.mjs`
 - Modify: `spikes/video-studio-audio/FINDINGS.md`
 
-- [ ] **Step 1: Write the probe page**
+- [x] **Step 1: Write the probe page**
 
 `s2.html`:
 
@@ -836,7 +839,7 @@ function App() {
 createRoot(document.getElementById('root') as HTMLElement).render(<App />);
 ```
 
-- [ ] **Step 2: Write the runner**
+- [x] **Step 2: Write the runner**
 
 `s2.mjs`:
 
@@ -890,7 +893,7 @@ writeFileSync(new URL('out/s2.json', import.meta.url), JSON.stringify(results, n
 console.table(results);
 ```
 
-- [ ] **Step 3: Run it (WSL) and read the table**
+- [x] **Step 3: Run it (WSL) and read the table**
 
 ```bash
 cd /mnt/d/Aura/spikes/video-studio-audio && node s2.mjs
@@ -898,7 +901,7 @@ cd /mnt/d/Aura/spikes/video-studio-audio && node s2.mjs
 
 Pass condition (spec S2) on the guarded rows, desktop and mobile: `pointDragMovedPoint` true, `pointDragMovedItem` false, `bodyDragMovedItem` true, and `renderMs` under 200. Record the unguarded rows too: they say whether the guard is needed at all. If no configuration passes, write that down and stop for the operator; do not write a waveform component.
 
-- [ ] **Step 4: Record and commit**
+- [x] **Step 4: Record and commit**
 
 `FINDINGS.md` `## S2`: the table and the verdict. Commit `s2.html`, `src/s2.tsx`, `s2.mjs` and `FINDINGS.md` with `spike(video-studio): measure wavesurfer envelope inside a dnd-timeline item`.
 
@@ -912,7 +915,7 @@ Pass condition (spec S2) on the guarded rows, desktop and mobile: `pointDragMove
 - Create: `spikes/video-studio-audio/s3.mjs`
 - Modify: `spikes/video-studio-audio/FINDINGS.md`
 
-- [ ] **Step 1: Write the probe**
+- [x] **Step 1: Write the probe**
 
 `s3.html`: the `fixtures.html` shape, loading `/src/s3.ts`.
 
@@ -1040,7 +1043,7 @@ try {
 }
 ```
 
-- [ ] **Step 2: Run it (WSL)**
+- [x] **Step 2: Run it (WSL)**
 
 ```bash
 cd /mnt/d/Aura/spikes/video-studio-audio && node s3.mjs
@@ -1048,7 +1051,7 @@ cd /mnt/d/Aura/spikes/video-studio-audio && node s3.mjs
 
 Pass condition (spec S3): at least one suppressor gives a noise-floor drop well above 0 dB, costs under 3 dB of speech on both files, and runs faster than real time (`× real time` > 1). Pick the one with the largest floor drop among those. Its measured drop, minus 3 dB of headroom, becomes Task T6's E2E threshold in Plan B. If none passes, record it and stop.
 
-- [ ] **Step 3: Record and commit**
+- [x] **Step 3: Record and commit**
 
 `FINDINGS.md` `## S3`: both tables, the choice, the T6 threshold, and each `.wasm` size (the bytes the committed dist gains). Commit `s3.html`, `src/s3.ts`, `s3.mjs` and `FINDINGS.md` with `spike(video-studio): compare RNNoise, Speex and GTCRN offline on noisy speech`.
 
@@ -1062,7 +1065,7 @@ Pass condition (spec S3): at least one suppressor gives a noise-floor drop well 
 - Create: `spikes/video-studio-audio/s4.mjs`
 - Modify: `spikes/video-studio-audio/FINDINGS.md`
 
-- [ ] **Step 1: Write the probe**
+- [x] **Step 1: Write the probe**
 
 `s4.html`: the `fixtures.html` shape, loading `/src/s4.ts`.
 
@@ -1174,7 +1177,7 @@ try {
 }
 ```
 
-- [ ] **Step 2: Run it (WSL)**
+- [x] **Step 2: Run it (WSL)**
 
 ```bash
 cd /mnt/d/Aura/spikes/video-studio-audio && node s4.mjs
@@ -1184,7 +1187,7 @@ cd /mnt/d/Aura/spikes/video-studio-audio && node s4.mjs
 
 Decision rule (spec S4): take the best WebRTC mode and compare it with Silero. The lighter detector (by summed `heavy` bytes) wins unless its edges miss by more than 150 ms, or it misses a window, where the other does not.
 
-- [ ] **Step 3: Record and commit**
+- [x] **Step 3: Record and commit**
 
 `FINDINGS.md` `## S4`: both tables, the origins, the bytes each detector adds to the dist, and the choice. Commit `s4.html`, `src/s4.ts`, `s4.mjs` and `FINDINGS.md` with `spike(video-studio): compare Silero and WebRTC VAD on the speech fixtures`.
 
@@ -1197,7 +1200,7 @@ Decision rule (spec S4): take the best WebRTC mode and compare it with Silero. T
 - Modify: `prd.md` (after the video editor paragraphs, currently ending near line 578)
 - Modify: `docs/superpowers/specs/2026-09-27-video-studio-audio-design.md` (the Spikes table: add the measured result to each row)
 
-- [ ] **Step 1: Measure M1 on the VM (read-only)**
+- [x] **Step 1: Measure M1 on the VM (read-only)**
 
 Write `~/aura-vm/m1.sh` in WSL. It lives outside the repo because it runs with the VM's ssh password (given by the operator for this lab VM) from `VM_SSH_PASSWORD`. `sudo -S` eats stdin, so the SQL travels as a file: scp to the host, then `docker cp` into the container.
 
@@ -1227,7 +1230,7 @@ sshpass -p "$VM_SSH_PASSWORD" scp -o StrictHostKeyChecking=no "$WORK/m1.sql" "$V
 
 The `\d` output comes first. If `document_id`, `mime_type` or `file_name` is not in it, rewrite the query from the real column list; do not guess. Record the rows in `FINDINGS.md` `## M1`. JSON assets with `document_id` set, or in `searchable`/`complete`, mean saved projects are indexed. That goes to the operator as its own item; it is **not** fixed here.
 
-- [ ] **Step 2: Write the PRD amendment**
+- [x] **Step 2: Write the PRD amendment**
 
 Append after the video editor paragraphs in `prd.md` one paragraph, in the style of its neighbours:
 
@@ -1241,7 +1244,7 @@ Append after the video editor paragraphs in `prd.md` one paragraph, in the style
 
 Every number comes from `FINDINGS.md`.
 
-- [ ] **Step 3: Update the spec's Spikes table with the results, then commit**
+- [x] **Step 3: Update the spec's Spikes table with the results, then commit**
 
 ```bash
 git commit -m "docs(video-studio): record the audio spike measurements" -- \
@@ -1276,7 +1279,7 @@ Stop here and report to the operator: the four verdicts, M1, and the Plan B thre
 - Produces (web): `finalizeMediaAsset(id: string): Promise<Asset>`.
 - Produces (e2e): `uploadBytes(page, bytes, fileName, mimeType, { use? })`, `uploadAsset(page, path, fileName, mimeType, { use? })`, `trackCreatedAssets(page) → { ids(): string[] }`, `deleteAssets(page, ids)`, `readAsset(page, id) → { status, modality, object_key, summary }`.
 
-- [ ] **Step 1: Write the failing Go service tests**
+- [x] **Step 1: Write the failing Go service tests**
 
 Append to `internal/assets/service_accept_test.go` (add `"errors"` to the imports):
 
@@ -1367,7 +1370,7 @@ Extend `TestServicePresignPutsMediaInItsOwnFolder` (`service_accept_test.go:104-
 		{name: "a sound", fileName: "bed.wav", mimeType: "audio/wav", want: "media/"},
 ```
 
-- [ ] **Step 2: Run them and watch them fail (WSL)**
+- [x] **Step 2: Run them and watch them fail (WSL)**
 
 ```bash
 cd /mnt/d/Aura && go test ./internal/assets/ -run 'TestServiceFinalizeMedia|TestServicePresignPutsMediaInItsOwnFolder' -count=1
@@ -1375,7 +1378,7 @@ cd /mnt/d/Aura && go test ./internal/assets/ -run 'TestServiceFinalizeMedia|Test
 
 Expected: a compile failure, `svc.FinalizeMedia undefined`. Once the method exists as a stub, the "a sound" presign row fails with `ObjectKey = "chat/…", want the "media/" folder`.
 
-- [ ] **Step 3: Move the accept code and implement `FinalizeMedia`**
+- [x] **Step 3: Move the accept code and implement `FinalizeMedia`**
 
 Create `internal/assets/service_accept.go` holding the moved `Finalize`, `ErrWrongModality`, `FinalizeUnprocessed`, `storedSizeMatchesUpload` and `accept`, with `accept` taking the modalities it allows:
 
@@ -1457,7 +1460,7 @@ func folderFor(modality Modality) objectstore.AssetFolder {
 
 Update its comment to "pictures, clips and sounds". Also update the `FolderMedia` comment in `internal/objectstore/asset_placement.go:56`, which says "pictures and clips". Then run `goimports -w internal/assets/service.go internal/assets/service_accept.go`.
 
-- [ ] **Step 4: Run the service tests green (WSL)**
+- [x] **Step 4: Run the service tests green (WSL)**
 
 ```bash
 cd /mnt/d/Aura && go test ./internal/assets/ -count=1 && go vet ./internal/assets/ ./internal/objectstore/
@@ -1465,7 +1468,7 @@ cd /mnt/d/Aura && go test ./internal/assets/ -count=1 && go vet ./internal/asset
 
 Expected: PASS, including every existing Finalize/FinalizeUnprocessed test. `wc -l internal/assets/service.go` is now under 520.
 
-- [ ] **Step 5: Write the failing handler test**
+- [x] **Step 5: Write the failing handler test**
 
 In `internal/agui/assets_api_test.go`, give the fake counters and the new method:
 
@@ -1522,7 +1525,7 @@ func TestAssetFinalizeRoutesTheMediaUse(t *testing.T) {
 
 Run `go test ./internal/agui/ -run TestAssetFinalizeRoutesTheMediaUse -count=1`: it fails to compile until the interface has `FinalizeMedia`, then fails on the media row until the handler reads `use`.
 
-- [ ] **Step 6: Implement the handler and the interface**
+- [x] **Step 6: Implement the handler and the interface**
 
 `internal/agui/asset_service.go`, after `Finalize`:
 
@@ -1558,7 +1561,7 @@ func (s *Server) handleAssetFinalize(w http.ResponseWriter, r *http.Request) {
 
 Add `"fmt"` to the imports if missing. Check that `sanitizeErr` passes the refusal text through; if it rewrites it, keep whatever it returns. The status code is what the test pins.
 
-- [ ] **Step 7: Run AG-UI and race green (WSL)**
+- [x] **Step 7: Run AG-UI and race green (WSL)**
 
 ```bash
 cd /mnt/d/Aura && go test ./internal/agui/ -count=1 && go vet ./internal/agui/ && \
@@ -1567,7 +1570,7 @@ cd /mnt/d/Aura && go test ./internal/agui/ -count=1 && go vet ./internal/agui/ &
 
 Expected: PASS. `cmd/aura` builds, because `*assets.Service` now satisfies the widened interface.
 
-- [ ] **Step 8: Write the failing web tests**
+- [x] **Step 8: Write the failing web tests**
 
 `web/src/chat/attachments/__tests__/api.test.ts`: import `finalizeMediaAsset` and, in `encodes ids for asset routes`, call it right after `finalizeAsset('asset/1')`. Then expect `'/api/assets/asset%2F1/finalize?use=media'` second in the URL list.
 
@@ -1585,7 +1588,7 @@ cd /mnt/d/Aura/web && ./node_modules/.bin/vitest run src/chat/attachments/__test
 
 Expected: FAIL (`finalizeMediaAsset` is not exported; the picked clip is finalized the plain way).
 
-- [ ] **Step 9: Implement the client**
+- [x] **Step 9: Implement the client**
 
 `web/src/chat/attachments/api.ts`, replacing `finalizeAsset`:
 
@@ -1613,7 +1616,7 @@ export async function finalizeMediaAsset(id: string): Promise<Asset> {
 
 Re-run the two vitest files: PASS. Then run the whole `src/videoStudio` and `src/chat/attachments` suites.
 
-- [ ] **Step 10: Write the E2E helpers**
+- [x] **Step 10: Write the E2E helpers**
 
 `web/e2e/support/assetUpload.ts`, restructured so bytes and paths share one path:
 
@@ -1739,7 +1742,7 @@ export async function readAsset(page: Page, id: string): Promise<AssetRow> {
 }
 ```
 
-- [ ] **Step 11: Write the T1a E2E**
+- [x] **Step 11: Write the T1a E2E**
 
 `web/e2e/video-studio-audio.spec.ts`:
 
@@ -1801,7 +1804,7 @@ test.describe('audio sources in the library', () => {
 
 (Task 8 adds `uploadBytes` to this import when it first uses it.)
 
-- [ ] **Step 12: Local gates (WSL), then commit**
+- [x] **Step 12: Local gates (WSL), then commit**
 
 ```bash
 cd /mnt/d/Aura/web && ./node_modules/.bin/tsc -b && ./node_modules/.bin/eslint src e2e && \
@@ -1824,7 +1827,7 @@ git commit -m "feat(assets): finalize editor sources without processing and file
 
 The body explains the transcription cost and the query-on-the-same-route choice. End with the trailer.
 
-- [ ] **Step 13: Push, wait for the VM, run the E2E**
+- [x] **Step 13: Push, wait for the VM, run the E2E**
 
 ```bash
 git push
@@ -1881,7 +1884,7 @@ Expected: PASS on `chrome` and `mobile-chrome`. Report the control's final statu
 - Consumes: `uploadBytes`, `trackCreatedAssets`, `deleteAssets` (Task 7).
 - Produces: the types `EnvelopePoint { time: number; gain: number }`, `AudioDucking { amountDb: number; ramp: number }`, `AudioItem`, `AudioTrack`; `VideoProject.audio?: readonly AudioTrack[]`; `ProjectSource.kind: 'video' | 'image' | 'audio'`; `ProjectSource.speech?: readonly (readonly [number, number])[]`; `ProjectSource.denoisedAssetId?: string`; `VideoItem.denoise?: boolean`; `audioTracks(project: VideoProject): readonly AudioTrack[]`. Also `StudioRail` with the props below, and the helpers `openStudioWith`, `editorOnSeededClip`, `pressAddAction`, `addClip`, `setField`, `seconds`, `boxOf`, `dragBy`, `containerFacts`, `watchNetwork`, `expectNothingLeftTheAppliance`, `FIXTURES`, exported from `e2e/support/videoStudio.ts`.
 
-- [ ] **Step 1: Write the failing loader tests**
+- [x] **Step 1: Write the failing loader tests**
 
 In `web/src/videoStudio/__tests__/projectStore.test.ts`, add after the existing `it.each` refusal block:
 
@@ -1968,7 +1971,7 @@ describe('loadProject with audio lanes', () => {
 
 Run (WSL): `cd /mnt/d/Aura/web && ./node_modules/.bin/vitest run src/videoStudio/__tests__/projectStore.test.ts`. Expected: the round-trip test fails (the audio source's `kind` is refused, so the file is "not a project"), and most refusal rows pass for the wrong reason. Also run `tsc -b`: `audio` does not exist on `VideoProject`.
 
-- [ ] **Step 2: Add the model to `project.ts`**
+- [x] **Step 2: Add the model to `project.ts`**
 
 `ProjectSource`:
 
@@ -2041,7 +2044,7 @@ export function audioTracks(project: VideoProject): readonly AudioTrack[] {
 }
 ```
 
-- [ ] **Step 3: Extend the loader's validation**
+- [x] **Step 3: Extend the loader's validation**
 
 In `projectStore.ts`, add the finite-number guard next to `bagOf` and use it for every new numeric field:
 
@@ -2165,7 +2168,7 @@ function referencesHold(project: VideoProject): boolean {
 
 Update the doc comment above it to name the two new ways of failing: a lane playing a source of the wrong kind, and a sound hanging off a missing clip. Import `audioTracks`, `AudioItem`, `AudioTrack` and `ProjectSource` from `./project`.
 
-- [ ] **Step 4: Run the loader tests green (WSL)**
+- [x] **Step 4: Run the loader tests green (WSL)**
 
 ```bash
 cd /mnt/d/Aura/web && ./node_modules/.bin/vitest run src/videoStudio && ./node_modules/.bin/tsc -b
@@ -2173,7 +2176,7 @@ cd /mnt/d/Aura/web && ./node_modules/.bin/vitest run src/videoStudio && ./node_m
 
 Expected: PASS. `wc -l src/videoStudio/projectStore.ts` stays under 600 (about 390).
 
-- [ ] **Step 5: Extract the rail**
+- [x] **Step 5: Extract the rail**
 
 `web/src/videoStudio/VideoStudio_rail.tsx`:
 
@@ -2244,7 +2247,7 @@ In `VideoStudio.tsx`:
 
 Run in WSL: `./node_modules/.bin/vitest run src/videoStudio`. PASS, with no test changes; the rail's role, label and button names are identical. `wc -l src/videoStudio/VideoStudio.tsx` is now about 550.
 
-- [ ] **Step 6: Move the Studio E2E helpers into `e2e/support/videoStudio.ts`**
+- [x] **Step 6: Move the Studio E2E helpers into `e2e/support/videoStudio.ts`**
 
 Move the following from `web/e2e/video-studio.spec.ts` into the new file, unchanged, adding `export`:
 - `FIXTURES`;
@@ -2263,7 +2266,7 @@ Move the following from `web/e2e/video-studio.spec.ts` into the new file, unchan
 
 `FIXTURES` resolves from `e2e/support`, so it becomes `resolve(dirname(fileURLToPath(import.meta.url)), '../fixtures/video-studio')`. `twinFrameDiff`, `FrameDiff` and the title constants stay in the spec. In `video-studio.spec.ts`, import the helpers. In each test, add `const created = trackCreatedAssets(page);` first and wrap the body in `try { … } finally { await deleteAssets(page, created.ids()); }`, so a VM run leaves no clip behind.
 
-- [ ] **Step 7: Write the T1b E2E**
+- [x] **Step 7: Write the T1b E2E**
 
 Append to `web/e2e/video-studio-audio.spec.ts`:
 
@@ -2342,7 +2345,7 @@ test.describe('the project file with audio lanes', () => {
 
 Keep all imports at the top of the file (merge them with Task 7's). Before running, read `web/src/studio/StudioWorkspace.tsx:240-260` to confirm the reopen button renders when `lastSavedProject()` is set and the Studio surface is open. If its gate differs, follow the component rather than this plan's assumption.
 
-- [ ] **Step 8: Local gates, commit, push, VM E2E**
+- [x] **Step 8: Local gates, commit, push, VM E2E**
 
 Run the same local gates as Task 7 Step 12, with `src/videoStudio` for vitest. Commit:
 

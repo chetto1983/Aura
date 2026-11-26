@@ -1,5 +1,8 @@
 # Document search lists Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-23):** COMPLETE.
 - Tasks 1, 2, 2b and 2c landed in d9a726414..489815bf7, after two whole-branch reviews whose findings
   were fixed.
@@ -73,20 +76,20 @@ the agent can filter by a tag the operator's words do not spell.
   - `const MaxListedNames = 30`
   - `func (s *Store) LibraryLists(ctx context.Context, identityID string) (LibraryLists, error)`
 
-- [ ] **Step 1: Write the failing unit test** `TestListedNamesOrdersCapsAndDropsEmpty` in `lists_test.go` for the
+- [x] **Step 1: Write the failing unit test** `TestListedNamesOrdersCapsAndDropsEmpty` in `lists_test.go` for the
   pure helper `listed(labels []Label, counts map[string]int) ([]ListedName, int)`:
   - labels `interno`/l-int (3), `bozza`/l-boz (1), `Urgente`/l-urg (1), `Vuoto`/l-vuo (0); counts also hold
     `l-gone` (5), with no label;
   - expected `[{interno 3} {bozza 1} {Urgente 1}]`, omitted 0. The tie is ordered by `NameKey`,
     `Vuoto` and `l-gone` are absent, and an empty input returns a non-nil empty slice;
   - 31 labels with counts 31..1 return 30 names and omitted 1.
-- [ ] **Step 2: Run it.** `go test ./internal/docfields/ -run TestListedNames`. Expected: FAIL, `listed`
+- [x] **Step 2: Run it.** `go test ./internal/docfields/ -run TestListedNames`. Expected: FAIL, `listed`
   undefined.
-- [ ] **Step 3: Implement** `listed`, and `Store.LibraryLists` on top of it:
+- [x] **Step 3: Implement** `listed`, and `Store.LibraryLists` on top of it:
   - `List(ctx, identityID, ListQuery{FileType: "all", Limit: 1}).Facets["type"]` and `["tags"]`;
   - `Labels(ctx, identityID, KindType)` and `KindTag`.
-- [ ] **Step 4: Run it.** Same command. Expected: PASS.
-- [ ] **Step 5: Integration test** `TestLibraryListsNameTypesAndTagsWithCounts` in `library_integration_test.go`:
+- [x] **Step 4: Run it.** Same command. Expected: PASS.
+- [x] **Step 5: Integration test** `TestLibraryListsNameTypesAndTagsWithCounts` in `library_integration_test.go`:
   - start from `officeLibrary`;
   - save a tag label `Interno`, and apply it to `chat/a.pdf` with `ApplyToDocuments`;
   - expect Types `[{Fattura 2}]`: `Contratto` holds no document, so it is not listed;
@@ -94,7 +97,7 @@ the agent can filter by a tag the operator's words do not spell.
 
   Run with `-tags arcadedb_integration` against the local ArcadeDB. Expected: PASS, and FAIL before
   Step 3.
-- [ ] **Step 6: Commit** `feat(docfields): the library's types and tags with their document counts`.
+- [x] **Step 6: Commit** `feat(docfields): the library's types and tags with their document counts`.
 
 ### Task 2: `document_search` carries the lists
 
@@ -109,7 +112,7 @@ the agent can filter by a tag the operator's words do not spell.
   - `DocumentFieldFilters.LibraryLists(ctx context.Context, identityID string) (docfields.LibraryLists, error)`;
   - `documentSearchResult.Lists *docfields.LibraryLists \`json:"library_lists,omitempty"\``.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `TestDocumentSearchNamesTheLibraryLists`: a plain query with the office fake returns
     `library_lists.tags` = `[{interno 3}]`.
   - `TestDocumentSearchListsTheLibraryOnAnAbstention`: an unknown counterparty abstains and still carries the
@@ -118,16 +121,16 @@ the agent can filter by a tag the operator's words do not spell.
     with no `library_lists` key.
   - With `Fields == nil`, the existing tests' results must have no `library_lists` key; one assertion is
     added to `TestDocumentSearchSevenArgumentsStrict`'s no-store case.
-- [ ] **Step 2: Run them.** `go test ./internal/agent/tools/ -run 'TestDocumentSearch'`. Expected: FAIL to
+- [x] **Step 2: Run them.** `go test ./internal/agent/tools/ -run 'TestDocumentSearch'`. Expected: FAIL to
   compile on the fake's missing method, then FAIL on the missing key.
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - The call: `t.Fields.LibraryLists(ctx, owner)` after the filter, and before or instead of retrieval.
   - On error: `slog.Warn("document_search: library lists unavailable", "err", err)`, and no lists.
   - The description sentence: "library_lists in every result names the types and tags the operator's
     library holds, with how many documents carry each: when the question asks for a kind of document or
     a quality the words do not spell (internal, draft), filter by the listed name."
-- [ ] **Step 4: Run them.** Same command, plus `go test -race ./internal/agent/tools/`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(document_search): every result names the library's types and tags`.
+- [x] **Step 4: Run them.** Same command, plus `go test -race ./internal/agent/tools/`. Expected: PASS.
+- [x] **Step 5: Commit** `feat(document_search): every result names the library's types and tags`.
 
 ### Task 2b: a search with no query lists what the filters admit
 
@@ -156,7 +159,7 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
   - `DocumentFieldFilters.List(ctx context.Context, identityID string, q docfields.ListQuery) (docfields.ListResult, error)`.
   - `documentSearchResult.Matching int \`json:"matching_documents,omitempty"\``.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
   - `TestSourcePredicateJoinsKeysAndPrefixes`: a key and a prefix with `%` give one OR clause with the
     prefix escaped; nothing gives `""`.
   - `TestLibraryListHonoursSourcePrefixes` (integration): `SourcePrefixes: ["chat/"]` over
@@ -172,14 +175,14 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
     `{"tags":["urgente"],"document_ids":["d"]}`.
   - `TestDocumentSearchListOfNothingAbstains`: total 0 gives `abstained` with
     `filter_admits_nothing`.
-- [ ] **Step 2: Run them.** Expected: FAIL (undefined `SourcePredicate`, missing `List` on the fake,
+- [x] **Step 2: Run them.** Expected: FAIL (undefined `SourcePredicate`, missing `List` on the fake,
   the query required).
-- [ ] **Step 3: Implement.** `candidateWhere` and `workspacePredicates` both call `SourcePredicate`.
+- [x] **Step 3: Implement.** `candidateWhere` and `workspacePredicates` both call `SourcePredicate`.
   `LibraryLists` counts with the extracted facet helper. The list mode sits in
   `document_search_list.go` if `document_search.go` would pass 600 lines.
-- [ ] **Step 4: Run** `go test` and `-race` on `./internal/arcadedb/ ./internal/docfields/ ./internal/agent/tools/`,
+- [x] **Step 4: Run** `go test` and `-race` on `./internal/arcadedb/ ./internal/docfields/ ./internal/agent/tools/`,
   and the `arcadedb_integration` tier of `docfields`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(document_search): with no query, list the documents the filters admit`.
+- [x] **Step 5: Commit** `feat(document_search): with no query, list the documents the filters admit`.
 
 ### Task 2c: every result names each document's fields
 
@@ -198,7 +201,7 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
   - `documentSearchResult.DocumentFields map[string]docfields.FieldNames \`json:"document_fields,omitempty"\``,
     declared before the embedded response.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
   - `TestNameFieldsByLabelAndReview` (unit, pure `nameFields(values []Value, names map[string]string) FieldNames`):
     - an operator type is named and reviewed;
     - a rule tag is named and not reviewed;
@@ -214,16 +217,16 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
   - `TestDocumentSearchListNamesEachListedDocument`: in list mode, the names reach `document_fields`.
   - `TestDocumentSearchAnswersWithoutFieldsItCannotRead`: a `DocumentFields` error leaves no key.
   - The cut-preview test also asserts `"document_fields"` in the preview.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
   - `DocumentFields` reads the hits' rows by `search_document_id`, then `withFields`, then the three
     kinds of labels, and names them.
   - The tool asks after retrieval or listing, only when there is at least one document. On an error
     it logs a warning and leaves the key out.
   - One description sentence: "document_fields names each returned document's type, counterparty,
     document_date and tags; reviewed true is a value the operator set or accepted."
-- [ ] **Step 4: Run** the same commands as Task 2b. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(document_search): every result names each document's own fields`.
+- [x] **Step 4: Run** the same commands as Task 2b. Expected: PASS.
+- [x] **Step 5: Commit** `feat(document_search): every result names each document's own fields`.
 
 ### Task 3: gates, the lab VM, step 7 again
 
@@ -232,11 +235,11 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
 - Modify: this plan's Status line, the document fields plan's Status line, `prd.md` §11 (the measured
   result).
 
-- [ ] **Step 1: Gates in WSL.** `make quality`, then `bash scripts/coverage_docker.sh`. Update the package
+- [x] **Step 1: Gates in WSL.** `make quality`, then `bash scripts/coverage_docker.sh`. Update the package
   policy only where a pinned denominator moved.
-- [ ] **Step 2: Push** with the CLAUDE.md recipe. CI, Skills, CodeQL and the edge image must be green on the
+- [x] **Step 2: Push** with the CLAUDE.md recipe. CI, Skills, CodeQL and the edge image must be green on the
   SHA; the VM's updater applies it.
-- [ ] **Step 3: Ask Aura's agent on the lab VM.** The operator's instruction (2026-10-23): no 25-question
+- [x] **Step 3: Ask Aura's agent on the lab VM.** The operator's instruction (2026-10-23): no 25-question
   run. Aura's agent is capable, so ask it.
   - Upload the step-7 files through the cockpit and review them as declared, so the library holds types
     and tags.
@@ -247,9 +250,9 @@ Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's 
   Expected: the agent filters by the `interno` and `bozza` tags it reads from `library_lists`, and its
   report names no friction about the lists, or names friction to fix. Then delete the files, the labels
   the review created and the conversations.
-- [ ] **Step 4: Write the verification file**: what was measured, and what it does not show (one model, one
+- [x] **Step 4: Write the verification file**: what was measured, and what it does not show (one model, one
   run). Update the PRD note and both plans' Status lines.
-- [ ] **Step 5: Commit** `docs: document_search lists, measured on the lab VM`, and push.
+- [x] **Step 5: Commit** `docs: document_search lists, measured on the lab VM`, and push.
 
 ## Decisions taken while writing this plan
 

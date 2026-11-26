@@ -1,5 +1,8 @@
 # Embedding route and space identity — Implementation Plan (1 of 5)
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. d712fb099..e67058fe4.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -45,7 +48,7 @@
 **Interfaces:**
 - Produces: `func ResolveEmbedRoute(embed EmbedConfig, apiKey string) (baseURL, credential, model string)` — the `llmBaseURL` parameter is removed. `(*Config).EmbedRoute()` keeps its signature.
 
-- [ ] **Step 1: Write the failing config test**
+- [x] **Step 1: Write the failing config test**
 
 Append to `internal/config/config_routes_embed_test.go`:
 
@@ -71,12 +74,12 @@ func TestEmbedRouteOpenRouterOptionIgnoresTheChatBase(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/config/ -run TestEmbedRoute -count=1 -v"`
 Expected: `TestEmbedRouteOpenRouterOptionIgnoresTheChatBase` FAILS with `OpenRouter option resolved to "http://host.docker.internal:11434"`; the three existing `TestEmbedRoute*` tests pass.
 
-- [ ] **Step 3: Fix the resolver**
+- [x] **Step 3: Fix the resolver**
 
 Replace the whole of `internal/config/config_routes.go` with:
 
@@ -135,12 +138,12 @@ In `internal/config/config_embed.go`, replace the `CloudBaseURL` field comment (
 	// that already has it.
 ```
 
-- [ ] **Step 4: Run the config tests and watch them pass**
+- [x] **Step 4: Run the config tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/config/ -count=1"`
 Expected: `ok  github.com/chetto1983/aura/internal/config`.
 
-- [ ] **Step 5: Update the memory sidecar's caller and its defect-encoding test**
+- [x] **Step 5: Update the memory sidecar's caller and its defect-encoding test**
 
 In `cmd/arcadedb-mcp/boot_settings.go`, remove `"github.com/chetto1983/aura/internal/llm"` from the imports and change the `ResolveEmbedRoute` call to:
 
@@ -166,7 +169,7 @@ In `cmd/arcadedb-mcp/boot_settings_test.go`, replace the subtest `"cloud uses sh
 	})
 ```
 
-- [ ] **Step 6: Run the sidecar tests, then race on both packages**
+- [x] **Step 6: Run the sidecar tests, then race on both packages**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/arcadedb-mcp/ -run 'TestEmbeddingRoute|TestApplyBootSettings|TestLoadBootSettings' -count=1 -v"`
 Expected: all PASS, including `cloud_ignores_the_chat_LLM_base`.
@@ -174,7 +177,7 @@ Expected: all PASS, including `cloud_ignores_the_chat_LLM_base`.
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go build ./... && go test -race ./internal/config/ ./cmd/arcadedb-mcp/ -count=1"`
 Expected: build succeeds; both packages `ok`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/config/config_routes.go internal/config/config_embed.go internal/config/config_routes_embed_test.go cmd/arcadedb-mcp/boot_settings.go cmd/arcadedb-mcp/boot_settings_test.go
@@ -216,7 +219,7 @@ The spec's file table lists `internal/config/config_embed_space.go`; the identit
   - `const embeddings.RecipeVersion = 1`.
   - `type embeddings.Space struct { ID, Label string }`; `func embeddings.SpaceFor(kind config.EmbedKind, model, base string, dims int, artifact string) embeddings.Space`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `internal/config/config_routes_embed_test.go`:
 
@@ -357,12 +360,12 @@ func TestSpaceLabelIsReadable(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/config/ ./internal/embeddings/ -count=1"`
 Expected: compile errors — `undefined: EmbedKind`, `undefined: EmbedRouteKind`, `undefined: SpaceFor`, `undefined: RecipeVersion`. (`TestPythonDocumentPrefixMatchesGo` would pass on its own: the prefixes agree today; it exists to catch drift.)
 
-- [ ] **Step 3: Add the route kind**
+- [x] **Step 3: Add the route kind**
 
 Append to `internal/config/config_routes.go`:
 
@@ -390,7 +393,7 @@ func EmbedRouteKind(embed EmbedConfig) EmbedKind {
 }
 ```
 
-- [ ] **Step 4: Add the recipe version**
+- [x] **Step 4: Add the recipe version**
 
 Append to `internal/embeddings/tasks.go`:
 
@@ -404,7 +407,7 @@ Append to `internal/embeddings/tasks.go`:
 const RecipeVersion = 1
 ```
 
-- [ ] **Step 5: Write the space**
+- [x] **Step 5: Write the space**
 
 Create `internal/embeddings/space.go`:
 
@@ -472,7 +475,7 @@ func spaceLabel(key spaceKey) string {
 }
 ```
 
-- [ ] **Step 6: Run the tests and watch them pass**
+- [x] **Step 6: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/config/ ./internal/embeddings/ -count=1 -v -run 'EmbedRouteKind|Space|Prefix'"`
 Expected: every listed test PASS.
@@ -480,7 +483,7 @@ Expected: every listed test PASS.
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test -race ./internal/config/ ./internal/embeddings/ -count=1"`
 Expected: both `ok`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/config/config_routes.go internal/config/config_routes_embed_test.go internal/embeddings/tasks.go internal/embeddings/space.go internal/embeddings/space_test.go internal/embeddings/prefix_parity_test.go
@@ -521,7 +524,7 @@ EOF
   - `func embeddings.AttestLocal(ctx context.Context, client *http.Client, baseURL string) (string, error)`.
   - `var embeddings.ErrNoRoute error`; `func embeddings.RouteSpace(ctx context.Context, client *http.Client, embed config.EmbedConfig, dims int) (embeddings.Space, error)` — plans 2, 3 and 5 call this to stamp and compare.
 
-- [ ] **Step 1: Write the failing attestation tests**
+- [x] **Step 1: Write the failing attestation tests**
 
 Create `internal/embeddings/attest_test.go`:
 
@@ -631,12 +634,12 @@ func TestRouteSpaceAttestsOnlyTheLocalRoute(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/embeddings/ -count=1 -run 'Attest|RouteSpace'"`
 Expected: compile errors — `undefined: AttestLocal`, `undefined: RouteSpace`, `undefined: ErrNoRoute`.
 
-- [ ] **Step 3: Write the attestation**
+- [x] **Step 3: Write the attestation**
 
 Create `internal/embeddings/attest.go`:
 
@@ -731,12 +734,12 @@ func RouteSpace(ctx context.Context, client *http.Client, embed config.EmbedConf
 }
 ```
 
-- [ ] **Step 4: Run the attestation tests and watch them pass**
+- [x] **Step 4: Run the attestation tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test -race ./internal/embeddings/ -count=1"`
 Expected: `ok  github.com/chetto1983/aura/internal/embeddings`.
 
-- [ ] **Step 5: Extend the doctor tests**
+- [x] **Step 5: Extend the doctor tests**
 
 In `cmd/aura/doctor_test.go`, in `TestDoctorEmbedProbeReportsWhatTheSidecarActuallyLoaded`, add a `/v1/models` case to the server's switch (before `default:`):
 
@@ -759,12 +762,12 @@ In `TestDoctorEmbedProbeDoesNotCallTheCloudRoute`, after the existing model asse
 	}
 ```
 
-- [ ] **Step 6: Run them and watch them fail**
+- [x] **Step 6: Run them and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/aura/ -run TestDoctorEmbedProbe -count=1 -v"`
 Expected: `TestDoctorEmbedProbeReportsWhatTheSidecarActuallyLoaded` and `TestDoctorEmbedProbeDoesNotCallTheCloudRoute` FAIL with `want it to contain "space es1-"` / `want the resolved space named`; the loading test passes.
 
-- [ ] **Step 7: Print the space in the probe**
+- [x] **Step 7: Print the space in the probe**
 
 In `cmd/aura/doctor_embed_probe.go`, add the import `"github.com/chetto1983/aura/internal/embeddings"`, then change the cloud branch and the final return of `defaultDoctorProbeEmbed`:
 
@@ -801,7 +804,7 @@ func describeSpace(space embeddings.Space) string {
 }
 ```
 
-- [ ] **Step 8: Run the doctor tests, build, and race**
+- [x] **Step 8: Run the doctor tests, build, and race**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/aura/ -run 'TestDoctor' -count=1 -v"`
 Expected: every `TestDoctor*` PASS.
@@ -809,7 +812,7 @@ Expected: every `TestDoctor*` PASS.
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go build ./... && go test -race ./internal/embeddings/ ./cmd/aura/ -run 'Doctor|Attest|RouteSpace|Space' -count=1"`
 Expected: build succeeds; both `ok`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add internal/embeddings/attest.go internal/embeddings/attest_test.go internal/embeddings/space.go cmd/aura/doctor_embed_probe.go cmd/aura/doctor_test.go
@@ -846,7 +849,7 @@ EOF
   - `type settings.SecretLister interface { Lister; Secret(ctx context.Context, key string) (string, error) }`
   - `func settings.EmbedRoute(ctx context.Context, store settings.SecretLister, lookupEnv func(string) (string, bool), defaultLocalBase string) (config.EmbedConfig, string, error)` — returns the route inputs and the sealed `OPENROUTER_API_KEY`. Plan 3's ingest supervisor and plan 5's MCP watcher call it on every tick; it never mutates the environment.
 
-- [ ] **Step 1: Write the failing helper tests**
+- [x] **Step 1: Write the failing helper tests**
 
 Create `internal/settings/embed_route_test.go`:
 
@@ -943,12 +946,12 @@ func TestEmbedRouteFailsClosed(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/settings/ -run TestEmbedRoute -count=1"`
 Expected: compile error — `undefined: EmbedRoute`.
 
-- [ ] **Step 3: Write the helper**
+- [x] **Step 3: Write the helper**
 
 Create `internal/settings/embed_route.go`:
 
@@ -1008,12 +1011,12 @@ func EmbedRoute(
 }
 ```
 
-- [ ] **Step 4: Run the helper tests and watch them pass**
+- [x] **Step 4: Run the helper tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test -race ./internal/settings/ -run TestEmbedRoute -count=1 -v"`
 Expected: the four `TestEmbedRoute*` PASS.
 
-- [ ] **Step 5: Rewrite the memory sidecar's boot tests for the new shape**
+- [x] **Step 5: Rewrite the memory sidecar's boot tests for the new shape**
 
 The sidecar stops deriving its route from the environment it just overlaid; `embeddingRouteFromEnv` goes away, and so do the tests that exercised it. In `cmd/arcadedb-mcp/boot_settings_test.go`:
 
@@ -1090,12 +1093,12 @@ func TestLoadBootSettingsClosesTheBootstrapStore(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Run them and watch them fail**
+- [x] **Step 6: Run them and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/arcadedb-mcp/ -run 'BootSettings' -count=1"`
 Expected: compile errors — `route.baseURL undefined (type string has no field or method baseURL)` (`applyBootSettings` still returns the key).
 
-- [ ] **Step 7: Rewrite `boot_settings.go`**
+- [x] **Step 7: Rewrite `boot_settings.go`**
 
 Replace the whole of `cmd/arcadedb-mcp/boot_settings.go` with:
 
@@ -1189,7 +1192,7 @@ func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingR
 
 Note: `applyBootSettings` runs `OverlayEnv` first, so the environment it then passes to `settings.EmbedRoute` already holds the row values. That is harmless — rows win either way — and keeps the non-embedding keys working exactly as before.
 
-- [ ] **Step 8: Wire the route and log the space in `main.go`**
+- [x] **Step 8: Wire the route and log the space in `main.go`**
 
 In `cmd/arcadedb-mcp/main.go`, add `"github.com/chetto1983/aura/internal/config"` and `"github.com/chetto1983/aura/internal/embeddings"` to the imports if absent. Then replace
 
@@ -1249,7 +1252,7 @@ func errString(err error) string {
 }
 ```
 
-- [ ] **Step 9: Run the sidecar tests, build, and race**
+- [x] **Step 9: Run the sidecar tests, build, and race**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/arcadedb-mcp/ -run 'BootSettings' -count=1 -v"`
 Expected: every `*BootSettings*` test PASS.
@@ -1260,7 +1263,7 @@ Expected: vet clean, build succeeds, four packages `ok`.
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && ~/go/bin/deadcode ./cmd/... 2>&1 | grep -E 'embeddings|settings/embed_route|boot_settings' || echo none"`
 Expected: `none` — `SpaceFor`, `RouteSpace`, `AttestLocal` and `EmbedRoute` are all reachable from `cmd/aura` or `cmd/arcadedb-mcp`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add internal/settings/embed_route.go internal/settings/embed_route_test.go cmd/arcadedb-mcp/boot_settings.go cmd/arcadedb-mcp/boot_settings_test.go cmd/arcadedb-mcp/main.go
@@ -1291,7 +1294,7 @@ EOF
 
 ## After the last task
 
-- [ ] Run the unit tier for every touched package once more, alone on the tree:
+- [x] Run the unit tier for every touched package once more, alone on the tree:
   `wsl -e bash -lc "cd /mnt/d/Aura && go test -race ./internal/config/ ./internal/embeddings/ ./internal/settings/ ./cmd/arcadedb-mcp/ ./cmd/aura/ -count=1"`
   Expected: five `ok`.
-- [ ] Do not push yet: plans 1–5 land as one phase, pushed at its end with CI green (CLAUDE.md §Git push discipline). The E2E on `192.168.101.158` runs after plan 5.
+- [x] Do not push yet: plans 1–5 land as one phase, pushed at its end with CI green (CLAUDE.md §Git push discipline). The E2E on `192.168.101.158` runs after plan 5.

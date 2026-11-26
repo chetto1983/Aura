@@ -1,5 +1,8 @@
 # Embedding change, plan 5 of 5: cockpit, MCP watcher, doctor — Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 7098a07e4..4102d552a. VM E2E recorded in the PRD (6aae08fc9).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans (Native, chosen for
@@ -91,15 +94,15 @@ func (c *Client) catalogEntry(ctx context.Context) (llm.ModelCatalogEntry, error
 - A hosted route with an empty credential returns `ErrNoCredential` before any request.
 - `InputLimit` keeps its behaviour and its cache; the limit arithmetic moves to a helper both use.
 
-- [ ] Step 1: tests (httptest server): local route probe reads `/v1/models` (attest + n_ctx) and
+- [x] Step 1: tests (httptest server): local route probe reads `/v1/models` (attest + n_ctx) and
   `/v1/embeddings`, returns NativeWidth 768, a positive CharsPerSecond, InputLimit 2048, no price;
   hosted probe sends `Authorization: Bearer`, no `dimensions` field, reads price
   `pricing.prompt` "0.00000002" → PricePer1M 0.02; mixed widths → error; empty credential →
   `ErrNoCredential` and zero requests; parity `CHARS_PER_TOKEN_FALLBACK = 3` in chunk.py.
-- [ ] Step 2: run, watch fail (undefined `ProbeRoute`).
-- [ ] Step 3: implement.
-- [ ] Step 4: `go test ./internal/embeddings/ -run 'Probe|Parity|InputLimit' -count=1` → PASS.
-- [ ] Step 5: commit `feat(embeddings): a route probe names the target space, width, speed, limit and price`.
+- [x] Step 2: run, watch fail (undefined `ProbeRoute`).
+- [x] Step 3: implement.
+- [x] Step 4: `go test ./internal/embeddings/ -run 'Probe|Parity|InputLimit' -count=1` → PASS.
+- [x] Step 5: commit `feat(embeddings): a route probe names the target space, width, speed, limit and price`.
 
 ### Task 2: the corpus report (`internal/arcadedb`)
 
@@ -165,15 +168,15 @@ func (b *TenantBackfill) CorpusWork(ctx context.Context, memorySpace, documentSp
   `text`, IndexedDocument `card`. Over limit: `SELECT count(*) AS n FROM Passage WHERE
   text.length() > :limit` (skipped when `limitChars` is 0).
 
-- [ ] Step 1: unit tests over the fake HTTP server (`testDocumentIndex`/client fixtures): the four
+- [x] Step 1: unit tests over the fake HTTP server (`testDocumentIndex`/client fixtures): the four
   counts per type become one tally; a family with an OtherSpace row is closed; missing Passage type
   → zero, open; stuck list and ingest row decoded; work sums across two tenants; unprovisioned
   tenant skipped.
-- [ ] Step 2: watch fail.
-- [ ] Step 3: implement (≤300 lines).
-- [ ] Step 4: `go test ./internal/arcadedb/ -run 'SpaceReport|CorpusWork' -count=1` → PASS; live:
+- [x] Step 2: watch fail.
+- [x] Step 3: implement (≤300 lines).
+- [x] Step 4: `go test ./internal/arcadedb/ -run 'SpaceReport|CorpusWork' -count=1` → PASS; live:
   `go test -tags arcadedb_integration ./internal/arcadedb/ -run DocumentSpaceLive -count=1` → PASS.
-- [ ] Step 5: commit `feat(arcadedb): report each tenant's rows by embedding space, and the work a new space costs`.
+- [x] Step 5: commit `feat(arcadedb): report each tenant's rows by embedding space, and the work a new space costs`.
 
 ### Task 3: the three endpoints and the refused keys (`internal/agui`)
 
@@ -212,14 +215,14 @@ func (s *Server) SetEmbeddingRoutes(routes EmbeddingRoutes)
   the rows are saved and `restart_required: true`, 200).
 - Refusal rules and arithmetic are one pure function `previewRoute(probe, work, dims) routePreview`.
 
-- [ ] Step 1: tests — PUT/DELETE of each protected key → 409 naming the endpoint; GET assembles
+- [x] Step 1: tests — PUT/DELETE of each protected key → 409 naming the endpoint; GET assembles
   current spaces + reports; preview arithmetic (tokens = chars/3 rounded up, cost from price,
   local → cost 0 & known, no price → unknown); refusals (width 512 < 768, limit 512 < 2048, probe
   error); apply: mismatch → 409, refusal → 422, match → ReplaceMany with exactly the three keys and
   the trigger fired once; unauthenticated → 401; no seam → 503.
-- [ ] Step 2: watch fail. Step 3: implement. Step 4:
+- [x] Step 2: watch fail. Step 3: implement. Step 4:
   `go test ./internal/agui/ -run 'EmbeddingRoute|EmbeddingSpace|ProtectedEmbed|PutSetting|DeleteSetting' -count=1` → PASS.
-- [ ] Step 5: commit `feat(agui): the embedding route changes only through a preview and a confirmed apply`.
+- [x] Step 5: commit `feat(agui): the embedding route changes only through a preview and a confirmed apply`.
 
 ### Task 4: daemon wiring and `aura doctor` (`cmd/aura`)
 
@@ -235,7 +238,7 @@ func (s *Server) SetEmbeddingRoutes(routes EmbeddingRoutes)
 - Doctor check `embedding_space` (failureCode 0: a closed gate is a state, not an outage): PASS
   "all N tenants dense in <label>" or FAIL naming each `tenant family` closed with its
   other-space count.
-- [ ] Steps: tests with fakes (closed gate named; all open; no ArcadeDB configured → PASS "not
+- [x] Steps: tests with fakes (closed gate named; all open; no ArcadeDB configured → PASS "not
   configured"); watch fail; implement; `go test ./cmd/aura/ -run 'EmbeddingRoute|DoctorEmbeddingSpace|Doctor' -count=1`;
   commit `feat(aura): wire the embedding route endpoints, and doctor names every closed gate`.
 
@@ -255,7 +258,7 @@ func watchEmbeddingRoute(ctx context.Context, cancel func(), boot routeIdentity,
 - Every `every` (60 s) resolve through `settings.EmbedRoute` with the pre-overlay environment;
   a failed read logs and keeps running; a different base, model or credential hash logs
   "embedding route changed; exiting to restart on it" and calls `cancel` once.
-- [ ] Steps: tests (fake resolve + short interval): unchanged → never cancels; failed read →
+- [x] Steps: tests (fake resolve + short interval): unchanged → never cancels; failed read →
   never cancels; model change → cancels once; credential change → cancels, the key never appears
   in the log buffer; watch fail; implement; `go test ./cmd/arcadedb-mcp/ -count=1` (whole
   package: goldens); commit `feat(arcadedb-mcp): exit and restart on a changed embedding route`.
@@ -276,7 +279,7 @@ func watchEmbeddingRoute(ctx context.Context, cancel func(), boot routeIdentity,
   refusal and after the operator ticks the confirmation.
 - The panel lists, per tenant and family, in space / other space / no vector / rejected, the
   gate state, the stuck documents by file name and the ingest error count.
-- [ ] Steps: vitest (Save disabled until confirmed; refusal shown and apply disabled; unknown
+- [x] Steps: vitest (Save disabled until confirmed; refusal shown and apply disabled; unknown
   price; panel with stuck documents; the generic save skips the embed keys); watch fail;
   implement; run `npx vitest run src/settings` in WSL; `npm run lint` and read "Found N errors";
   commit `feat(web): preview and confirm an embedding route change, and show each family's space`.
@@ -285,7 +288,7 @@ func watchEmbeddingRoute(ctx context.Context, cancel func(), boot routeIdentity,
 
 **Files:** `prd.md` (upgrade note: after the upgrade every family is lexical until re-embedded;
 documents answer `lexical_only`), spec §4/§7 amendments for the rulings below, ledger.
-- [ ] commit `docs: record plan 5 — upgrade note and the rulings the cockpit and watcher took`.
+- [x] commit `docs: record plan 5 — upgrade note and the rulings the cockpit and watcher took`.
 
 ### Task 8: the space panel closes when nothing needs a look (2026-10-20)
 

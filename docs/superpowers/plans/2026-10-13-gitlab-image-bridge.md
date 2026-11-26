@@ -1,5 +1,8 @@
 # GitLab image bridge
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Recorded in docs/superpowers/verification/2026-10-14-gitlab-image-bridge.md and 2026-10-15-docker-restart-and-install-dir.md. The milestone closed on 2026-10-15.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -132,7 +135,7 @@ through glab.
 
   `publish_images.sh` clones both by default.
 
-- [ ] **Step 1: Clone the whatsapp fork beside the pim one**
+- [x] **Step 1: Clone the whatsapp fork beside the pim one**
 
 ```bash
 cd "<scratchpad>/forks" && gh repo clone chetto1983/whatsapp-mcp whatsapp-mcp -- --quiet
@@ -141,7 +144,7 @@ git -C whatsapp-mcp log -1 --format='%h %s' main
 
 Expected: `1ec0233 fix(media): name a Markdown document's type`.
 
-- [ ] **Step 2: Create both projects from a neutral directory, then push `main`**
+- [x] **Step 2: Create both projects from a neutral directory, then push `main`**
 
 ```bash
 export PATH="$HOME/go/bin:$PATH"
@@ -157,7 +160,7 @@ done
 
 Expected: `32d0c43…` and `1ec0233…`, read anonymously over https.
 
-- [ ] **Step 3: No Aura commit.** Ledger the two heads.
+- [x] **Step 3: No Aura commit.** Ledger the two heads.
 
 ---
 
@@ -176,7 +179,7 @@ Expected: `32d0c43…` and `1ec0233…`, read anonymously over https.
   - `published <registry>/<name>:<tag>`;
   - then `moved <registry>/<name>:<moving tag>`.
 
-- [ ] **Step 1: Write the failing test.** Create `scripts/publish_images_test.sh`:
+- [x] **Step 1: Write the failing test.** Create `scripts/publish_images_test.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -270,12 +273,12 @@ done
 echo "ok: a failed build or image contract pushes nothing"
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run in WSL: `bash scripts/publish_images_test.sh`
 Expected: FAIL. `source` cannot find `scripts/publish_images.sh`.
 
-- [ ] **Step 3: Write `scripts/publish_images.sh`**
+- [x] **Step 3: Write `scripts/publish_images.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -394,12 +397,12 @@ main() {
 [[ "${BASH_SOURCE[0]:-$0}" != "$0" ]] || main "$@"
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run in WSL: `bash scripts/publish_images_test.sh`
 Expected: three `ok:` lines and exit 0.
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 shellcheck scripts/publish_images.sh scripts/publish_images_test.sh
@@ -440,7 +443,7 @@ Expected: shellcheck prints nothing, and the hooks are green.
   Task A2 reads `IMAGE_HOME` with sed, and Task C1's Go test reads both lines with a regex. So
   both stay on one line each, at column 0.
 
-- [ ] **Step 1: Write the failing test.** Insert into `scripts/aura_image_update_test.sh`,
+- [x] **Step 1: Write the failing test.** Insert into `scripts/aura_image_update_test.sh`,
   right before the comment block that starts `# A pin change leaves the previous image behind`:
 
 ```bash
@@ -517,13 +520,13 @@ echo "ok: an image key moves to its home once its image pulls there, and back wh
 echo "ok: the cloudflared default names IMAGE_HOME"
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `bash scripts/aura_image_update_test.sh`
 Expected: FAIL with `move_image_registry: command not found` (bash exits 127 inside the
 subshell) after the earlier `ok:` lines.
 
-- [ ] **Step 3: Implement in `deploy/aura-image-update.sh`.** First, after the `SIDECARS=` line,
+- [x] **Step 3: Implement in `deploy/aura-image-update.sh`.** First, after the `SIDECARS=` line,
   add:
 
 ```bash
@@ -575,13 +578,13 @@ move_image_registry() {
   move_image_registry
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash scripts/aura_image_update_test.sh`
 Expected: every `ok:` line, the two new ones included, and exit 0. The dispatch test at the top
 still passes: its fixture has no `.env`, so `move_image_registry` returns at once.
 
-- [ ] **Step 5: Run the other updater suites**
+- [x] **Step 5: Run the other updater suites**
 
 Run: `bash scripts/aura_update_consent_test.sh && bash scripts/cloudflare_update_test.sh`
 Expected: `aura_update_consent_test.sh` passes. `cloudflare_update_test.sh` FAILS: its `.env`
@@ -589,7 +592,7 @@ names `ghcr.io/chetto1983/aura:edge`, so the real updater now pulls the GitLab a
 strict docker stub refuses `pull -q`. Task C1 moves that fixture to the home. Ledger the
 expected red here, and go on to Step 6.
 
-- [ ] **Step 6: Commit, then the manifest**
+- [x] **Step 6: Commit, then the manifest**
 
 ```bash
 LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks commit -F <file> -- deploy/aura-image-update.sh scripts/aura_image_update_test.sh
@@ -619,7 +622,7 @@ pulls`. The body names:
 - Consumes: `IMAGE_HOMES` (Task B1).
 - Produces: `image_repository` returns the same name for a reference under either home.
 
-- [ ] **Step 1: Write the failing test.** Insert after the line
+- [x] **Step 1: Write the failing test.** Insert after the line
   `echo "ok: images no pin names any more are removed, untagged ones by ID, and a refusal is reported"`:
 
 ```bash
@@ -664,12 +667,12 @@ echo "ok: after a move the ghcr copies are superseded by their GitLab pins, the 
   redefines `local_images` and `compose_images` inside its subshell, so the outer test is
   untouched.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `bash scripts/aura_image_update_test.sh`
 Expected: FAIL at `the two homes are two repositories: chetto1983/aura/aura-caddy`.
 
-- [ ] **Step 3: Implement.** `image_repository` becomes:
+- [x] **Step 3: Implement.** `image_repository` becomes:
 
 ```bash
 # [registry/]path[:tag][@digest] -> path. The registry host (a first component with a
@@ -711,13 +714,13 @@ image_repository() {
   The rest of that sentence stays: `refuses to remove one a container still uses; the refusal
   is logged with docker's reason.`
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash scripts/aura_image_update_test.sh`
 Expected: every `ok:` line and exit 0. The existing cleanup expectations do not change: that
 fixture's `.env` has no box keys, and its ghcr `aura:edge` has its pin's ID.
 
-- [ ] **Step 5: Commit, then the manifest**
+- [x] **Step 5: Commit, then the manifest**
 
 ```bash
 LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks commit -F <file> -- deploy/aura-image-update.sh scripts/aura_image_update_test.sh
@@ -745,7 +748,7 @@ Message: `fix(updater): reclaim the ghcr images a move to the home superseded`. 
 - Produces: an appliance whose `AURA_IMAGE` names the GitLab home, with
   `aura-image-update.service` started.
 
-- [ ] **Step 1: Write the failing test.** Create `scripts/aura_registry_bridge_test.sh`:
+- [x] **Step 1: Write the failing test.** Create `scripts/aura_registry_bridge_test.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -827,12 +830,12 @@ grep -qx 'systemctl start --no-block aura-image-update.service' "$calls" || fail
 echo "ok: a second run only starts the updater"
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `bash scripts/aura_registry_bridge_test.sh`
 Expected: FAIL. `source` cannot find `deploy/aura-registry-bridge.sh`.
 
-- [ ] **Step 3: Write `deploy/aura-registry-bridge.sh`**
+- [x] **Step 3: Write `deploy/aura-registry-bridge.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -904,12 +907,12 @@ main() {
   `df -P -BG` prints `Avail` in the 4th column as `NNG`. The test's `df` stub prints `NNG` on
   line 2, so the same `awk`/`tr` reads both.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bash scripts/aura_registry_bridge_test.sh`
 Expected: three `ok:` lines and exit 0.
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 shellcheck deploy/aura-registry-bridge.sh scripts/aura_registry_bridge_test.sh
@@ -956,7 +959,7 @@ The body says:
   - `foreignHomeRefs(text string, others []string) []string`;
   - `isThirdPartyImage(ref string, homes []string) bool`.
 
-- [ ] **Step 1: Write the failing test.** Create `cmd/aura/image_home_artifacts_test.go`:
+- [x] **Step 1: Write the failing test.** Create `cmd/aura/image_home_artifacts_test.go`:
 
 ```go
 package main
@@ -1062,7 +1065,7 @@ func TestShippedDefaultsNameTheUpdatersImageHome(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test -run 'TestForeignHomeRefsFindsTheOtherHome|TestShippedDefaultsNameTheUpdatersImageHome' ./cmd/aura/`
 Expected: `TestForeignHomeRefsFindsTheOtherHome` PASSES. That is the proof the check can fail.
@@ -1077,7 +1080,7 @@ Expected: `TestForeignHomeRefsFindsTheOtherHome` PASSES. That is the proof the c
 - `packages/create-aura/src/remote.ts`
 - `packages/create-aura/README.md`
 
-- [ ] **Step 3: Move the defaults.** Exact edits, `H=registry.gitlab.com/chetto1983/aura`:
+- [x] **Step 3: Move the defaults.** Exact edits, `H=registry.gitlab.com/chetto1983/aura`:
   - **`scripts/install.sh`:**
     - line 4 → `#   npx create-aura-appliance            (the npm installer, which carries this script)`;
     - line 5 → `#   curl -fsSL https://gitlab.com/Chetto1983/aura/-/raw/<ref>/scripts/install.sh | bash`;
@@ -1111,7 +1114,7 @@ Expected: `TestForeignHomeRefsFindsTheOtherHome` PASSES. That is the proof the c
     `-run TestForeignHomeRefsFindsTheOtherHome` plus a check that the failure lists only those
     three create-aura files.
 
-- [ ] **Step 4: Move the tests that pinned ghcr**
+- [x] **Step 4: Move the tests that pinned ghcr**
   - `scripts/install_lib_test.sh:113,115`, `scripts/cloudflare_update_test.sh:11,37,48` and
     `scripts/install_remote_access_test.sh:44`: replace `ghcr.io/chetto1983/` with
     `registry.gitlab.com/chetto1983/aura/`.
@@ -1140,7 +1143,7 @@ func isThirdPartyImage(ref string, homes []string) bool {
       `home, others := imageHomes(t, root)` and `homes := append([]string{home}, others...)`.
       The call becomes `if !isThirdPartyImage(ref, homes) {`.
 
-- [ ] **Step 5: Docs.**
+- [x] **Step 5: Docs.**
   - **`docs/INSTALL.md` "Releases and channels" (lines 23-29).** Keep the release sentence. The
     edge sentence becomes: `Independently of releases, the moving edge image every default
     install tracks is published as \`registry.gitlab.com/chetto1983/aura/aura:edge\` (plus an
@@ -1157,7 +1160,7 @@ func isThirdPartyImage(ref string, homes []string) bool {
   - **The spec's "What this does not establish".** Add:
     `- **Release installs.** A pinned \`vX.Y.Z\` install names a release tag that only ghcr carries; the bridge mirrors the edge channel.`
 
-- [ ] **Step 6: Run everything this task touched**
+- [x] **Step 6: Run everything this task touched**
 
 ```bash
 go vet ./cmd/aura/
@@ -1171,7 +1174,7 @@ Expected:
   lists only the three create-aura files;
 - the four shell suites pass. `cloudflare_update_test.sh` is green again.
 
-- [ ] **Step 7: Commit, then the manifest**
+- [x] **Step 7: Commit, then the manifest**
 
 ```bash
 LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks commit -F <file> -- \
@@ -1206,7 +1209,7 @@ first, then commit C1 and C2 as written, in order. Ledger the ruling.
   `https://registry.gitlab.com` answered 200 to `curl -fsS` on 2026-10-13. Its `/v2/` answers
   401, so it would fail `-f`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `local.test.ts:63`: the hosts array becomes
     `['https://registry.gitlab.com', 'https://get.docker.com', 'https://huggingface.co']`.
   - `local.test.ts:39`: the comment becomes
@@ -1220,12 +1223,12 @@ first, then commit C1 and C2 as written, in order. Ledger the ruling.
     expect(probeScript).not.toContain('https://ghcr.io');
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run, from `packages/create-aura` in WSL: `npx vitest run src/__tests__/local.test.ts src/__tests__/remote.test.ts`
 Expected: FAIL. The calls still name `https://ghcr.io`.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - **`local.ts`.** In `REQUIRED_HOSTS`, `'https://ghcr.io'` → `'https://registry.gitlab.com'`.
     Append to the R3 comment: `The image registry is the one install.sh pulls from, the image
     home (deploy/aura-image-update.sh IMAGE_HOME).`
@@ -1238,7 +1241,7 @@ Expected: FAIL. The calls still name `https://ghcr.io`.
     - line 42: `` `ghcr.io` `` → `` `registry.gitlab.com` ``.
   - **Version.** In `packages/create-aura`, run `npm version 0.2.12 --no-git-tag-version`.
 
-- [ ] **Step 4: Run the package's tests and the Go drift test**
+- [x] **Step 4: Run the package's tests and the Go drift test**
 
 ```bash
 cd packages/create-aura && npx vitest run && npx tsc --noEmit && cd ../..
@@ -1247,7 +1250,7 @@ go test -run 'TestShippedDefaultsNameTheUpdatersImageHome' ./cmd/aura/
 
 Expected: every create-aura test passes, `tsc` prints nothing, and the drift test PASSES.
 
-- [ ] **Step 5: Commit.** Commit Task C1's changes here if the hook held them back. Then:
+- [x] **Step 5: Commit.** Commit Task C1's changes here if the hook held them back. Then:
 
 ```bash
 LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks commit -F <file> -- \
@@ -1264,21 +1267,21 @@ Message: `feat(create-aura): require the image home, not ghcr, and release 0.2.1
 
 ### Task D1: Publish, mirror whisper, read back anonymously
 
-- [ ] **Step 1: Docker authenticates through glab.** In WSL, run
+- [x] **Step 1: Docker authenticates through glab.** In WSL, run
   `export PATH="$HOME/go/bin:$PATH"; glab auth configure-docker`. Then
   `grep -c credHelpers ~/.docker/config.json` must be ≥ 1, read without printing the file.
-- [ ] **Step 2: skopeo.** Run `wsl -u root apt-get install -y skopeo`, then `skopeo --version`.
-- [ ] **Step 3: Mirror whisper.** Run
+- [x] **Step 2: skopeo.** Run `wsl -u root apt-get install -y skopeo`, then `skopeo --version`.
+- [x] **Step 3: Mirror whisper.** Run
   `DEST_REPO=registry.gitlab.com/chetto1983/aura/aura-whisper-server bash scripts/mirror_whisper_server.sh`.
   Expected: `mirror: registry.gitlab.com/chetto1983/aura/aura-whisper-server:2026.10.08.1056@sha256:c6c6311a…`.
 
   If skopeo cannot use the glab helper, the operator runs `skopeo login registry.gitlab.com`.
   Ledger the ruling.
-- [ ] **Step 4: Publish the HEAD that carries Parts B and C.** Run
+- [x] **Step 4: Publish the HEAD that carries Parts B and C.** Run
   `bash scripts/publish_images.sh HEAD 2>&1 | tee <workspace>/publish.log | grep -E '^(published|moved) '`.
   Expected: 9 `published` lines and 11 `moved` lines: 6 edge, 1 arcadedb-mcp, and 2 for each
   of the 2 forks. The last line is `moved registry.gitlab.com/chetto1983/aura/aura:edge`.
-- [ ] **Step 5: Anonymous read-back from the VM.** The VM has no registry login. Through `vm.sh`,
+- [x] **Step 5: Anonymous read-back from the VM.** The VM has no registry login. Through `vm.sh`,
   for each of the ten references:
   - `docker manifest inspect` or `docker buildx imagetools inspect`;
   - then `docker run --rm --entrypoint aura <aura:edge> version`, which must name the published
@@ -1290,30 +1293,30 @@ Message: `feat(create-aura): require the image home, not ghcr, and release 0.2.1
 
 ### Task D2: The lab VM takes Andrea's path
 
-- [ ] **Step 1: Before.** Read and record:
+- [x] **Step 1: Before.** Read and record:
   - the image keys in `.env`, with key names and prefixes only;
   - the running images;
   - `df -h /`;
   - the timer state.
 
   Check `auth.log`.
-- [ ] **Step 2: Hand the VM to the updater.**
+- [x] **Step 2: Hand the VM to the updater.**
   - The VM currently runs the lab overlay `aura:lab-aura-connect-20261013-1`, through
     `compose.lab.yaml` passed with `-f`. The updater uses `.env`'s `COMPOSE_FILE`, without the
     overlay, so its first apply moves `aura` to `edge`. That is intended.
   - Start the timer again: `systemctl start aura-image-update.timer`. Its last stop was a lab
     deploy, and the bridge is the moment to hand the VM back to it. Ledger that.
-- [ ] **Step 3: Run the patch exactly as Andrea will.** Run
+- [x] **Step 3: Run the patch exactly as Andrea will.** Run
   `curl -fsSL https://gitlab.com/Chetto1983/aura/-/raw/master/deploy/aura-registry-bridge.sh | sudo bash`
   on the VM.
   Expected:
   - `pulling registry.gitlab.com/chetto1983/aura/aura:edge`;
   - `AURA_IMAGE now names the GitLab bridge.`;
   - the updater starts.
-- [ ] **Step 4: Apply.** With the operator's cockpit session, post "update now" through the
+- [x] **Step 4: Apply.** With the operator's cockpit session, post "update now" through the
   cockpit's update decision. Otherwise wait for the 15 idle minutes. Follow
   `journalctl -u aura-image-update.service` until `Aura image update completed`.
-- [ ] **Step 5: Read back:**
+- [x] **Step 5: Read back:**
   - all nine `.env` image keys name the GitLab prefix, read with
     `grep -c '=registry.gitlab.com/chetto1983/aura/'`;
   - every compose container and every box runs an image whose `RepoTags` or `RepoDigests` name
@@ -1325,13 +1328,13 @@ Message: `feat(create-aura): require the image home, not ghcr, and release 0.2.1
   - `docker images | grep -c ghcr.io/chetto1983` counts only the whisper name that shares its
     pin's ID;
   - `df -h /` is back near Step 1's value.
-- [ ] **Step 6: Second tick.** Run `systemctl start aura-image-update.service`. The journal has
+- [x] **Step 6: Second tick.** Run `systemctl start aura-image-update.service`. The journal has
   no `moved` line, and the tick exits 0.
-- [ ] **Step 7: Smoke.** One chat turn in the cockpit and one on Telegram, both answered.
+- [x] **Step 7: Smoke.** One chat turn in the cockpit and one on Telegram, both answered.
 
 ### Task D3: Fresh installs are reachable, and create-aura is on npm
 
-- [ ] **Step 1: The cheap probe in a clean container, with no credentials.** In WSL, list what a
+- [x] **Step 1: The cheap probe in a clean container, with no credentials.** In WSL, list what a
   fresh install fetches and pulls. Then let a clean `ubuntu:24.04` container read each of them
   anonymously:
 
@@ -1352,7 +1355,7 @@ docker run --rm -v /tmp/fresh-files:/f:ro -v /tmp/fresh-images:/i:ro ubuntu:24.0
   Expected: one `ok` line per file and per image, and no `MISSING`. The image list holds at
   least `aura:edge`, the 9 sidecar and box defaults, and the 3 compose fallbacks (pim,
   whatsapp, whisper).
-- [ ] **Step 2: create-aura.** The operator publishes it from `packages/create-aura` in WSL with
+- [x] **Step 2: create-aura.** The operator publishes it from `packages/create-aura` in WSL with
   `npm publish`; `makeself` is installed. Then:
 
 ```bash
@@ -1365,14 +1368,14 @@ grep -a -c 'registry.gitlab.com/chetto1983/aura/aura' package/install-appliance.
 
 ### Task D4: Ledger, PRD, push, Andrea
 
-- [ ] **Step 1: Write the ledger.**
+- [x] **Step 1: Write the ledger.**
   `docs/superpowers/verification/<date>-gitlab-image-bridge.md` records:
   - D1-D3, with commands and read-backs;
   - what this does not establish: the spec's list, plus that no CI ran.
-- [ ] **Step 2: Amend PRD §17.** Add the bridge, citing the ledger and the date: the home, the
+- [x] **Step 2: Amend PRD §17.** Add the bridge, citing the ledger and the date: the home, the
   move, the patch, and the return trip.
-- [ ] **Step 3: Commit; push to `origin` and `gitlab`.** Every pre-push gate must be green.
-- [ ] **Step 4: Andrea.** Give the operator the one line to send him:
+- [x] **Step 3: Commit; push to `origin` and `gitlab`.** Every pre-push gate must be green.
+- [x] **Step 4: Andrea.** Give the operator the one line to send him:
   `curl -fsSL https://gitlab.com/Chetto1983/aura/-/raw/master/deploy/aura-registry-bridge.sh | sudo bash`.
   Add the two things to tell him:
   - after "Update now" in the cockpit, the Google redirect URI to add, as in the aura-connect

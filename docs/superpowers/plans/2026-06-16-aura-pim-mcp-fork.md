@@ -1,5 +1,8 @@
 # aura-pim-mcp Fork Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Phases 0-3 and the mail cutover shipped on 2026-06-16 (6cb74692, deab7fbd). The deferred Phase 4 UI landed with 2026-09-23-pim-provider-apps.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -47,7 +50,7 @@ docker run -d --rm --name aura-pim-gate -p 127.0.0.1:8093:8080 -e CALENDAR_MCP_A
 ```
 Container internal port is **8080** (Dockerfile `ASPNETCORE_URLS=http://+:8080`), mapped to host `127.0.0.1:8093`. Empty config (zero accounts) is fine for the interop gate. Expected logs: `listening on http://[::]:8080`, `MCP endpoint:  /`.
 
-- [ ] **Step 3: Confirm the MCP endpoint path + health (curl)**
+- [x] **Step 3: Confirm the MCP endpoint path + health (curl)**
 
 Run:
 ```bash
@@ -55,7 +58,7 @@ curl -s http://127.0.0.1:8093/health
 ```
 Expected: a 200/health JSON. Note the exact MCP path the server logs (`/` per `HttpServer/Program.cs:236`); if it differs, use the logged path in Step 4.
 
-- [ ] **Step 4: Write the Go mount harness**
+- [x] **Step 4: Write the Go mount harness**
 
 Adapt the spike-032 pattern (`internal/agent/mcptools` + `internal/mcp`). Read `internal/agent/mcptools/mount.go` first to confirm the exact `MountManagedServer` signature and whether a policy-aware variant exists; if DenyRisk is applied via the managed-config `toolPolicy` field rather than a function arg, set it on the `mcp.ManagedServer` value.
 
@@ -151,7 +154,7 @@ func main() {
 }
 ```
 
-- [ ] **Step 5: Run the harness**
+- [x] **Step 5: Run the harness**
 
 Run:
 ```bash
@@ -159,15 +162,15 @@ cd /d/Aura && go run ./.planning/spikes/064-calendar-mcp-http-mount
 ```
 Expected: `initialize OK` → `tools/list=29` → `SUMMARY VALIDATED`. If `OpenServer` errors on initialize or `ListTools` returns nothing, the HTTP transport is incompatible → **GATE RED** (record the error; agent mount falls back to stdio in Phase 3).
 
-- [ ] **Step 6: Add a bridged Execute read (ground truth, not just listing)**
+- [x] **Step 6: Add a bridged Execute read (ground truth, not just listing)**
 
 Append to `main.go` after the mount: call the bridged `calendar__get_calendar_events` through Aura's tool-execution path. Read `internal/agent/tools` for `WithToolCallContext` + `NewResult` + the tool `Execute` signature first (the spike-001 finding: `Execute` requires `ctx = tools.WithToolCallContext(ctx, session, callID, runDir, previewCap)`), then invoke and assert the result contains an event or a clean empty result.
 
-- [ ] **Step 7: Run again, write the README + verdict**
+- [x] **Step 7: Run again, write the README + verdict**
 
 Run the harness; write `.planning/spikes/064-calendar-mcp-http-mount/README.md` with frontmatter, the transport finding (HTTP works / falls back to stdio), tool count, and the bridged-read evidence.
 
-- [ ] **Step 8: Commit (scoped pathspec — concurrent Codex session)**
+- [x] **Step 8: Commit (scoped pathspec — concurrent Codex session)**
 
 ```bash
 git add .planning/spikes/064-calendar-mcp-http-mount/
@@ -186,7 +189,7 @@ git commit .planning/spikes/064-calendar-mcp-http-mount/ -m "docs(spike-064): [V
 - Modify: `src/CalendarMcp.HttpServer/Program.cs` (remove Razor wiring + trim tools)
 - Modify: `src/CalendarMcp.Core/CalendarMcp.Core.csproj` (pin Kiota), `src/CalendarMcp.HttpServer/CalendarMcp.HttpServer.csproj`
 
-- [ ] **Step 1: Fork + branch**
+- [x] **Step 1: Fork + branch**
 
 ```bash
 gh repo fork MarimerLLC/calendar-mcp --clone=false --fork-name aura-pim-mcp
@@ -194,7 +197,7 @@ wsl -e bash -lc 'cd ~ && git clone https://github.com/chetto1983/aura-pim-mcp.gi
 ```
 Expected: fork exists, branch created.
 
-- [ ] **Step 2: Patch the Kiota HIGH-sev CVE**
+- [x] **Step 2: Patch the Kiota HIGH-sev CVE**
 
 Add a direct pin in `src/CalendarMcp.Core/CalendarMcp.Core.csproj` `<ItemGroup>`:
 ```xml
@@ -202,33 +205,33 @@ Add a direct pin in `src/CalendarMcp.Core/CalendarMcp.Core.csproj` `<ItemGroup>`
 ```
 (Confirm the lowest non-vulnerable version via `dotnet list package --vulnerable` — bump until clean.)
 
-- [ ] **Step 3: Verify CVE cleared**
+- [x] **Step 3: Verify CVE cleared**
 
 ```bash
 wsl -e bash -lc 'export PATH="$HOME/.dotnet:$PATH"; export DOTNET_ROOT=$HOME/.dotnet; cd ~/aura-pim-mcp && dotnet restore src/CalendarMcp.HttpServer && dotnet list src/CalendarMcp.HttpServer package --vulnerable --include-transitive'
 ```
 Expected: no HIGH-severity advisories (GHSA-7j59-v9qr-6fq9 gone).
 
-- [ ] **Step 4: Remove the Blazor admin UI, keep the REST admin API**
+- [x] **Step 4: Remove the Blazor admin UI, keep the REST admin API**
 
 Delete `src/CalendarMcp.HttpServer/Components/` and `src/CalendarMcp.HttpServer/BlazorAdmin/`. In `src/CalendarMcp.HttpServer/Program.cs` remove: `AddRazorComponents`/`AddInteractiveServerComponents`, the cookie `AddAuthentication`/`AddCookie` for the UI, `AddCascadingAuthenticationState`, `AddScoped<AuthenticationStateProvider,...>`, `app.MapRazorComponents<...>()`, `MapStaticAssets`, `app.MapAdminAuthEndpoints()`. KEEP: `app.MapAdminEndpoints()`, `AdminAuthMiddleware`, `IAccountConfigurationService`, `DeviceCodeAuthManager`, `GoogleOAuthManager`, `app.MapMcp()`, `MapHealthEndpoints`, `MapAttachmentEndpoints`.
 
-- [ ] **Step 5: Trim the tool surface**
+- [x] **Step 5: Trim the tool surface**
 
 In `Program.cs`, remove the `.WithTools<>` lines for the dropped tools (spec §5): `DeleteEmailTool`, `MarkEmailAsReadTool`, `MoveEmailTool`, `BulkDeleteEmailsTool`, `BulkMarkEmailsAsReadTool`, `BulkMoveEmailsTool`, `GetEmailAttachmentTool`, `GetContextualEmailSummaryTool`, `GetUnsubscribeInfoTool`, `UnsubscribeFromEmailTool`, `CreateContactTool`, `UpdateContactTool`, `DeleteContactTool`, `GetGuideTool`, `DeleteEventTool`. Keep the 15 in spec §5 keep-list (+ `delete_event`/`delete_contact` stay removed at server level; Aura's DenyRisk is defense-in-depth on top).
 
-- [ ] **Step 6: Drop the unused Router/LLM smart-routing**
+- [x] **Step 6: Drop the unused Router/LLM smart-routing**
 
 Remove the Router configuration + the LLM backend services from `AddCalendarMcpCore` registration path if cleanly separable (else leave dormant — it only activates when `Router` config is present, which Aura won't set). Document the decision in the fork README.
 
-- [ ] **Step 7: Build + verify the trimmed surface live**
+- [x] **Step 7: Build + verify the trimmed surface live**
 
 ```bash
 wsl -e bash -lc 'export PATH="$HOME/.dotnet:$PATH"; export DOTNET_ROOT=$HOME/.dotnet; cd ~/aura-pim-mcp && dotnet publish src/CalendarMcp.HttpServer -c Release -o ~/aura-pim-publish'
 ```
 Then run it and `tools/list` (reuse `D:\tmp\calendar-mcp-win\mcp_harness.py` adapted for HTTP, or curl the MCP endpoint). Expected: exactly the 15 kept tools, no Blazor routes, `/health` + `/admin` still respond.
 
-- [ ] **Step 8: Commit the fork branch**
+- [x] **Step 8: Commit the fork branch**
 
 ```bash
 wsl -e bash -lc 'cd ~/aura-pim-mcp && git add -A && git commit -m "aura: thin fork — strip Blazor UI, trim tools, patch Kiota CVE" && git push -u origin aura/pim-sidecar'
@@ -249,14 +252,14 @@ wsl -e bash -lc 'cd ~/aura-pim-mcp && git add -A && git commit -m "aura: thin fo
 - [x] Repointed `recipe:calendar` in `internal/mcp/manager/catalog.go` from the `aura-calendar-mcp-fixture` stdio placeholder → the streamable-HTTP `aura-pim-mcp` sidecar via `calendarRecipeURL()` (loopback 8093 / compose-DNS `aura-pim-mcp:8080` under `AURA_IN_CONTAINER`, WR-01 port-validation). Install-on-demand, NOT default-on. (Spec §6 catalog.)
 - [x] Agent mount is automatic through the existing `MountManagedServer` path: tools mount `Deferred` (all non-`memory` namespaces) + `calendar__*`-namespaced; write tools carry `Mutating:true` (from the server's `ReadOnlyHint`) into Aura's execution-time permission layer. **Correction:** there is no `DenyRisk` mount-time filter in the codebase (the memory tier proves "NO DenyRisk filter") — the write-deny posture is the fork's server-side tool trim (no destructive tools) + the `Mutating` flag, not a per-recipe mount filter.
 - [x] Rewrote `internal/mcp/calendar_integration_test.go` to drive the live sidecar over streamable-HTTP (`OpenServer` + `ManagedServer`) with the `AURA_PIM_MCP_URL`/`_PORT` knob + no-skip-as-green `$CI` gate; asserts the trimmed 14-tool surface (dropped tools absent) + clean `list_accounts`. Added a `calendar-integration-test` CI job that boots the published GHCR sidecar (zero accounts) and runs the tier (`.github/workflows/ci.yml`).
-- [ ] Aura Go backend admin-proxy endpoints (`/admin/*` forward + token) — **moved to Phase 4** (same surface as the cockpit connect UI). (Spec §4, §6.)
+- [x] Aura Go backend admin-proxy endpoints (`/admin/*` forward + token) — **moved to Phase 4** (same surface as the cockpit connect UI). (Spec §4, §6.)
 - [x] **Mail cutover (Phase 5 catalog/doctor/image bits, folded in per user request):** removed the `recipe:mail` catalog entry + the `recipe:mail`/`writeMailChecks` doctor branch (`cmd/aura/mcp_status.go`); dropped the vendored `mail-mcp` from the image (`docker/aura/Dockerfile`, `.goreleaser.yaml`, `docker/aura/PROVENANCE.md`, `mail-mcp-src.tar.gz` git-rm). Node-24 stays (JS skill snippets + `npx skills`). The cron email self-send route survives via `calendar__send_email` (the resolver matches the bare suffix).
 
 ### Phase 4 — Cockpit connect (admin-proxy SHIPPED 2026-06-16; UI deferred to the v1.0.0 frontend roadmap)
 - [x] **Backend admin-proxy SHIPPED** (commit 64e8333f): `cmd/aura/integrations_proxy.go` — a registry-driven reverse proxy at `/api/integrations/<name>/<sub>` mounted on the loopback, auth-deferred daemon mux (ahead of the `/` embed). The `calendar` leg forwards `/api/integrations/calendar/*` → PIM sidecar `/admin/*` with `X-Admin-Token` injected server-side (the cockpit never holds the token). `mcpmanager.PIMSidecarBaseURL` extracted + shared with the MCP recipe URL. httptest coverage: rewrite + token, method/body/query + default-token, unknown→404, down→502. (Spec §4, §6.)
-- [ ] **Cockpit "Integrations" UI deferred** to the v1.0.0 frontend roadmap (Phase 28/29): the cockpit is foundation-only today (`web/src/` has no router/API client) and serve is auth-deferred (amendment #35). The UI (per-provider OAuth config form, Connect Google / Connect Microsoft device-code card, account list/status/remove) wires onto the shipped proxy when the cockpit reaches its Integrations surface.
-- [ ] **WhatsApp leg blocked on a bridge prerequisite:** the whatsmeow bridge (`docker/whatsapp`) pairs via terminal QR (qrterminal) and exposes NO REST QR/status/logout endpoint to proxy. "Same stuff for whatsapp" needs a bridge-side management REST endpoint added first (a Go fork patch to chetto1983/whatsapp-mcp), then it's a one-entry add to `builtinIntegrations()`.
-- [ ] **Google OAuth redirect leg deferred:** Phase 1 removed the Blazor UI the fork's `/admin/auth/{id}/google/start` + callback depended on (cookie auth → `/admin/ui` redirects). Google connect needs headless rework in the fork (token-gated start + callback → a configurable cockpit URL via `ExternalBaseUrl`). Device-code (Outlook) + account-CRUD JSON paths proxy cleanly today.
+- [x] **Cockpit "Integrations" UI deferred** to the v1.0.0 frontend roadmap (Phase 28/29): the cockpit is foundation-only today (`web/src/` has no router/API client) and serve is auth-deferred (amendment #35). The UI (per-provider OAuth config form, Connect Google / Connect Microsoft device-code card, account list/status/remove) wires onto the shipped proxy when the cockpit reaches its Integrations surface.
+- [x] **WhatsApp leg blocked on a bridge prerequisite:** the whatsmeow bridge (`docker/whatsapp`) pairs via terminal QR (qrterminal) and exposes NO REST QR/status/logout endpoint to proxy. "Same stuff for whatsapp" needs a bridge-side management REST endpoint added first (a Go fork patch to chetto1983/whatsapp-mcp), then it's a one-entry add to `builtinIntegrations()`.
+- [x] **Google OAuth redirect leg deferred:** Phase 1 removed the Blazor UI the fork's `/admin/auth/{id}/google/start` + callback depended on (cookie auth → `/admin/ui` redirects). Google connect needs headless rework in the fork (token-gated start + callback → a configurable cockpit URL via `ExternalBaseUrl`). Device-code (Outlook) + account-CRUD JSON paths proxy cleanly today.
 
 ### Phase 5 — mail-mcp cutover
 - Validate calendar-mcp's email path per connected account through Aura's bridge (send→search self).

@@ -1,5 +1,8 @@
 # Embedding model change — ingest (plan 3 of 5) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 1fdb3d6bd..4ae4245d3.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -108,7 +111,7 @@ The spec is the plan's authority, and four of its §6 lines are wrong or silent 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md` (§6 and the Files table)
 
-- [ ] **Step 1: Amend the pre-overlay paragraph**
+- [x] **Step 1: Amend the pre-overlay paragraph**
 
 Replace:
 ```
@@ -125,7 +128,7 @@ unsets, so its live `os.LookupEnv` would bring a deleted row's boot value back a
 (review of plan 1). The supervisor never overlays, so its `os.LookupEnv` is that environment.
 ```
 
-- [ ] **Step 2: Amend the supervisor bullets**
+- [x] **Step 2: Amend the supervisor bullets**
 
 Replace the four bullets from `- \`ProcessSpec\`, \`Environment()\` and \`fingerprint()\` gain` through `…the fail-closed behaviour \`arcadedb-mcp\` already has.` with:
 ```
@@ -150,7 +153,7 @@ Replace the four bullets from `- \`ProcessSpec\`, \`Environment()\` and \`finger
   start their child with it, so no child ever stamps a space the resolver did not name.
 ```
 
-- [ ] **Step 3: Amend the split rule**
+- [x] **Step 3: Amend the split rule**
 
 Replace:
 ```
@@ -166,7 +169,7 @@ with:
   should not split (`cocoindex/_internal/batching.py`, 1.0.24). (Amended 2026-09-24, plan 3.)
 ```
 
-- [ ] **Step 4: Amend the extraction split**
+- [x] **Step 4: Amend the extraction split**
 
 Replace:
 ```
@@ -185,7 +188,7 @@ with:
 - the rest (`index_object`) chunks and embeds.
 ```
 
-- [ ] **Step 5: Extend the Files table**
+- [x] **Step 5: Extend the Files table**
 
 Replace the row `| \`cmd/aura-ingest-supervisor/main.go\` | 72 | settings store wiring |` with these rows:
 ```
@@ -197,7 +200,7 @@ Replace the row `| \`cmd/aura-ingest-supervisor/main.go\` | 72 | settings store 
 | `services/ingest/tests/space_driver.py`, `fake_embedder.py` | new | the §6 re-run test's driver |
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-09-23-embedding-model-change-design.md
@@ -239,7 +242,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `func (r EmbedRoute) Environment() []string`: the seven `KEY=VALUE` entries, in this order: BASE_URL, MODEL, API_KEY, SPACE, DIMENSIONS, INPUT_LIMIT, TOKENIZER_URL;
   - `type ingestsupervisor.RouteResolver struct{ Store settings.SecretLister; LookupEnv func(string) (string, bool); Dimensions int; HTTP *http.Client }` with `func (r *RouteResolver) Resolve(ctx context.Context) (EmbedRoute, error)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `internal/ingestsupervisor/route_test.go`:
 ```go
@@ -445,12 +448,12 @@ func TestRouteResolverRefusesALocalRouteWithNoBase(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/ingestsupervisor/ -run "RouteResolver" -count=1'`
 Expected: build failure, `undefined: RouteResolver`.
 
-- [ ] **Step 3: Export the input-limit read**
+- [x] **Step 3: Export the input-limit read**
 
 In `internal/embeddings/fit.go`, replace:
 ```go
@@ -469,7 +472,7 @@ func (c *Client) InputLimit(ctx context.Context) (int, error) {
 ```
 In `internal/embeddings/client.go:123`, replace `limit, err := c.inputLimit(ctx)` with `limit, err := c.InputLimit(ctx)`.
 
-- [ ] **Step 4: Share the local default**
+- [x] **Step 4: Share the local default**
 
 In `internal/settings/embed_route.go`, add above `// EmbedRoute reads`:
 ```go
@@ -488,7 +491,7 @@ const defaultMemoryEmbedBaseURL = "http://aura-llama-embed:8081"
 ```
 Then replace `settings.EmbedRoute(ctx, store, os.LookupEnv, defaultMemoryEmbedBaseURL)` with `settings.EmbedRoute(ctx, store, os.LookupEnv, settings.DefaultEmbedBaseURL)`.
 
-- [ ] **Step 5: Write the resolver**
+- [x] **Step 5: Write the resolver**
 
 Create `internal/ingestsupervisor/route.go`:
 ```go
@@ -598,12 +601,12 @@ func (r *RouteResolver) inputLimit(ctx context.Context, base, model, key string)
 }
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/ingestsupervisor/ ./internal/embeddings/ ./internal/settings/ ./cmd/arcadedb-mcp/ -count=1'`
 Expected: all four packages `ok`. The six `RouteResolver` tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 gofmt -l internal/ingestsupervisor internal/embeddings internal/settings cmd/arcadedb-mcp
@@ -639,7 +642,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - the `ProcessSpec.Embed EmbedRoute` field;
   - the flag `aura-ingest-supervisor -print-embed-env`, which prints `EmbedRoute.Environment()` one line each and exits 0.
 
-- [ ] **Step 1: Update the tests to the new contract and add the route tests**
+- [x] **Step 1: Update the tests to the new contract and add the route tests**
 
 In `internal/ingestsupervisor/supervisor_test.go`:
 
@@ -843,12 +846,12 @@ func TestProcessSpecFingerprintMovesWithTheRouteAndOnlyWithIt(t *testing.T) {
 ```
 Add `"github.com/chetto1983/aura/internal/embeddings"` to the test imports.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/ingestsupervisor/ -count=1'`
 Expected: build failure: `too many arguments in call to New`, `unknown field Embed in struct literal of type ProcessSpec`.
 
-- [ ] **Step 3: Give the supervisor the route**
+- [x] **Step 3: Give the supervisor the route**
 
 In `internal/ingestsupervisor/supervisor.go`:
 
@@ -961,7 +964,7 @@ func (s *Supervisor) embedRoute(ctx context.Context) (EmbedRoute, bool) {
 }
 ```
 
-- [ ] **Step 4: Wire the command**
+- [x] **Step 4: Wire the command**
 
 Replace the `import` block and `run()` in `cmd/aura-ingest-supervisor/main.go` with:
 ```go
@@ -1064,7 +1067,7 @@ func printEmbedEnv(ctx context.Context, routes *ingestsupervisor.RouteResolver) 
 }
 ```
 
-- [ ] **Step 5: Correct the compose comment**
+- [x] **Step 5: Correct the compose comment**
 
 In `compose.yaml`, in the `aura-ingest` service, replace:
 ```yaml
@@ -1080,12 +1083,12 @@ with:
       AURA_EMBED_DIMENSIONS: "768"
 ```
 
-- [ ] **Step 6: Run the tests and build the command**
+- [x] **Step 6: Run the tests and build the command**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/ingestsupervisor/ -count=1 && go vet ./internal/ingestsupervisor/ ./cmd/aura-ingest-supervisor/ && go build -o /dev/null ./cmd/aura-ingest-supervisor/'`
 Expected: `ok`, then no vet output and no build output.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 gofmt -l internal/ingestsupervisor cmd/aura-ingest-supervisor
@@ -1124,7 +1127,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `embed_text`, the CocoIndex async batched function (one text → one vector);
   - the private helpers the tests call: `_embed_texts(texts) -> list[list[float]]`, `_embed_batch(texts)`, `_fit(text) -> (str, int)`, `_fit_for_embedding`, `_head_within_ceiling`, `_request_end`, `_embed_failure_detail`.
 
-- [ ] **Step 1: Write the Python test runner and build the image**
+- [x] **Step 1: Write the Python test runner and build the image**
 
 Create `.superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh`:
 ```bash
@@ -1155,7 +1158,7 @@ bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh
 ```
 Expected: the build succeeds, and the current suite passes on the current code before anything changes. This is the baseline; record its pass count in the ledger. If `aura-llama-embed` cannot start, the chunk tests fall back to the character estimate by design; record that in the ledger.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `services/ingest/tests/test_embed_route.py`:
 ```python
@@ -1390,12 +1393,12 @@ def test_tokens_are_counted_by_the_local_sidecar_whatever_route_embeds(monkeypat
     assert seen == ["http://tokenizer.test:8081/tokenize"]
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh "ingest/tests/test_embed_route.py ingest/tests/test_chunk.py"`
 Expected: `test_embed_route.py` fails at collection with `ImportError: cannot import name 'embed' from 'ingest'`. The new `test_chunk.py` test fails with `seen == ['http://aura-llama-embed:8081/tokenize']`, because the base URL variable is read instead of the tokenizer one.
 
-- [ ] **Step 4: Write `embed.py`**
+- [x] **Step 4: Write `embed.py`**
 
 Create `services/ingest/embed.py`. The helpers carried from `app.py` (`_estimated_tokens`, `_fit_for_embedding`, `_request_end`, `_head_within_ceiling`, `_embed_failure_detail`) keep their bodies and docstrings verbatim. `_embed_batch` changes only where marked.
 ```python
@@ -1592,7 +1595,7 @@ def _embed_batch(texts: list[str]) -> list[list[float]]:
 ```
 Replace each `(… moved verbatim …)` placeholder line with the real function copied from `app.py` (lines 187-239 and 305-354 there), unchanged.
 
-- [ ] **Step 5: Point `app.py` at `embed.py`**
+- [x] **Step 5: Point `app.py` at `embed.py`**
 
 In `services/ingest/app.py`:
 1. Change the imports:
@@ -1634,12 +1637,12 @@ In `Makefile`, `ingest-test`, after `-e AURA_EMBED_BASE_URL=http://aura-llama-em
 	  -e AURA_EMBED_SPACE=es1-ingest-test \
 ```
 
-- [ ] **Step 6: Run the whole suite to verify it passes**
+- [x] **Step 6: Run the whole suite to verify it passes**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh`
 Expected: every test passes, the Step 1 baseline plus 17 new cases (12 functions in `test_embed_route.py`, one of them parametrized five ways, and the chunk test). Then `wc -l services/ingest/app.py services/ingest/embed.py`: both are below 600.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add services/ingest/embed.py services/ingest/app.py services/ingest/chunk.py Makefile \
@@ -1673,7 +1676,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Consumes: `embed.SPACE`, `embed.embed_text`, `embed.DIMENSIONS` (Task 4).
 - Produces: the `embed_space: str` field on `app.Passage` and `app.IndexedDocument`; `arcade._space_stamp_ddl(type_name) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `services/ingest/tests/test_embed_space_stamp.py`:
 ```python
@@ -1724,12 +1727,12 @@ def test_rows_written_before_the_stamp_are_counted_through_its_index(disposable_
     assert stamped[0]["n"] == 1
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh "ingest/tests/test_embed_space_stamp.py ingest/tests/test_arcade_integration.py"`
 Expected: both stamp tests fail (the DDL line and the `embed_space` field are absent). The integration test fails at `DROP PROPERTY Passage.embed_space FORCE` with `ArcadeSchemaError` naming a missing property.
 
-- [ ] **Step 3: Declare and write the stamp**
+- [x] **Step 3: Declare and write the stamp**
 
 In `services/ingest/arcade.py`, add after `schema_version`:
 ```python
@@ -1765,12 +1768,12 @@ In `process_chunk`, after `embedding=await embed.embed_text(piece.text),` add `e
 
 The empty card's zero vector is stamped too: it is out of scope (spec, Out of scope), and an unstamped row would hold the gate closed forever.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh`
 Expected: the whole suite passes, with the three new tests included.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/ingest/arcade.py services/ingest/app.py \
@@ -1803,7 +1806,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `async index_object(identity_id, key, file_name, content, extracted, table, documents) -> None`;
   - `async mount_targets() -> tuple[TableTarget[Passage], TableTarget[IndexedDocument]]`.
 
-- [ ] **Step 1: Write the fake embedder and the driver**
+- [x] **Step 1: Write the fake embedder and the driver**
 
 Create `services/ingest/tests/fake_embedder.py`:
 ```python
@@ -1918,7 +1921,7 @@ if __name__ == "__main__":
     print(f"REQUESTS {fake_embedder.requests()}", flush=True)
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `services/ingest/tests/test_embed_space_reruns.py`:
 ```python
@@ -2030,12 +2033,12 @@ def test_a_route_change_re_embeds_once_re_extracts_nothing_and_never_mislabels(d
     assert _stamps() == {HEALTHY: {SPACE_A}, REFUSED: {SPACE_A}}
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh ingest/tests/test_embed_space_reruns.py`
 Expected: FAIL at the first pass's `returncode == 0`, with `AttributeError: module 'ingest.app' has no attribute 'mount_targets'` in the driver's stderr.
 
-- [ ] **Step 4: Split extraction from indexing**
+- [x] **Step 4: Split extraction from indexing**
 
 In `services/ingest/app.py`:
 
@@ -2167,7 +2170,7 @@ async def app_main(identity_id: str, interval_s: float) -> None:
 ```
 Replace every `(… verbatim)` placeholder with the named comment from today's `process_file`, unchanged.
 
-- [ ] **Step 5: Run the test to verify it passes, then the whole suite**
+- [x] **Step 5: Run the test to verify it passes, then the whole suite**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh ingest/tests/test_embed_space_reruns.py`
 Expected: PASS.
@@ -2182,7 +2185,7 @@ Stop, record the output in the ledger, and rule from the spec. The test is not t
 Then run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/ingest-py.sh`
 Expected: the whole suite passes. `wc -l services/ingest/app.py` is below 600.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add services/ingest/app.py services/ingest/tests/fake_embedder.py \
@@ -2213,7 +2216,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `ingest_container_env <KEY>`, which prints KEY's value from the running `aura-ingest` container;
   - `ingest_embed_env <image> <network> <out-file>`, which uses that container's own settings DSN and sealing secret, so the answer is the one the running supervisor gets. `ingest_media_e2e.sh` does not load `.env`, so neither value can come from the script's own environment.
 
-- [ ] **Step 1: Watch the reconcile E2E fail on the current scripts**
+- [x] **Step 1: Watch the reconcile E2E fail on the current scripts**
 
 Rebuild the image, because the supervisor binary changed. Then bring up what the script inspects and run it:
 ```bash
@@ -2225,7 +2228,7 @@ Expected: FAIL in the first `run_pass`, with `RuntimeError: AURA_EMBED_SPACE is 
 
 `aura-ingest` is the real supervisor on the local dev stack. With Task 3 in the image it resolves the route from the local `aura.settings`; its log line `embedding route resolved` names the space. Record that line in the ledger: it is the first live reading of the supervisor.
 
-- [ ] **Step 2: Write the helper**
+- [x] **Step 2: Write the helper**
 
 Create `scripts/ingest_embed_env.sh`:
 ```bash
@@ -2260,7 +2263,7 @@ ingest_embed_env() {
 }
 ```
 
-- [ ] **Step 3: Use it in both scripts**
+- [x] **Step 3: Use it in both scripts**
 
 In `scripts/ingest_reconcile_e2e.sh`:
 1. After `repo_root`/`cd` near the top, add `source "$repo_root/scripts/ingest_embed_env.sh"` (use the script's existing repo-root variable, as `retrieval_fixture` does).
@@ -2283,7 +2286,7 @@ ingest_embed_env "$image" "$network" "$embed_env"
 
 The child's `-e AURA_DB_URL=` stays: it keeps `aura-media-index` on the environment's vision route, as the script intends.
 
-- [ ] **Step 4: Run the reconcile E2E to verify it passes**
+- [x] **Step 4: Run the reconcile E2E to verify it passes**
 
 Run:
 ```bash
@@ -2302,7 +2305,7 @@ Expected: the same `es1-…` in both lines. Record them in the ledger. The E2E's
 
 `scripts/ingest_media_e2e.sh` needs Ollama Cloud and TTS. It runs in the VM E2E after plan 5; only its syntax is checked here.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ingest_embed_env.sh scripts/ingest_reconcile_e2e.sh scripts/ingest_media_e2e.sh
@@ -2326,7 +2329,7 @@ The spec says (`concepts/vector-search.adoc`) that before 26.10.1 an updated vec
 - Create (git-ignored workspace): `.superpowers/sdd/2026-09-24-embedding-ingest/rebuild/measure.py`, `run.sh`
 - Modify: `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md` ("What this design does not prove")
 
-- [ ] **Step 1: Write the measurement**
+- [x] **Step 1: Write the measurement**
 
 `.superpowers/sdd/2026-09-24-embedding-ingest/rebuild/measure.py`:
 ```python
@@ -2440,14 +2443,14 @@ docker restart arcadedb-measure >/dev/null; py ready
 echo "== after a restart, every vector re-embedded"; py query
 ```
 
-- [ ] **Step 2: Run it at 5,000 and at 20,000 vectors**
+- [x] **Step 2: Run it at 5,000 and at 20,000 vectors**
 
 Run: `bash .superpowers/sdd/2026-09-24-embedding-ingest/rebuild/run.sh 5000`, then the same with `20000`.
 Expected: four `query ms:` lines per run. Record all eight in the ledger with the wall-clock time of each run.
 
 If 20,000 takes over 20 minutes to load, stop it, record the rate reached, and rule the upper size from it: the number records what was measured, not a target.
 
-- [ ] **Step 3: Record the measurement in the spec**
+- [x] **Step 3: Record the measurement in the spec**
 
 In "What this design does not prove", replace the bullet that begins `- **A full re-embed on ArcadeDB 26.9.1 costs one graph rebuild per vector index**` with the same statement, followed by the measured numbers. Use this form, filled with the values from Step 2:
 ```
@@ -2462,7 +2465,7 @@ In "What this design does not prove", replace the bullet that begins `- **A full
 ```
 If the numbers show no rebuild (the first query after a re-embed is as fast as without one), write that instead, and say the documented cost did not reproduce on this build.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-09-23-embedding-model-change-design.md

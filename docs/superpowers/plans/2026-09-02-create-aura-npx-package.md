@@ -1,5 +1,8 @@
 # `packages/create-aura` Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. T1-T5 in 2ce0bc01d..87e32e9f8, plus local.ts and remote.ts. Published up to create-aura-appliance 0.2.15. modelroute.ts was later removed by design (bb7ba7a5c).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
@@ -112,11 +115,11 @@ re-derive it.
 **Files:** `package.json`, `tsconfig.json`, `vitest.config.ts`, `src/{bin,i18n,process}.ts`,
 `src/messages/{en,it}.ts`, `src/__tests__/{i18n,process}.test.ts`
 
-- [ ] **Step 1:** Copy the four config files and the three sources from `R`, renaming
+- [x] **Step 1:** Copy the four config files and the three sources from `R`, renaming
   `create-wpt-iot` to `create-aura`. Remove the `stamp-installer` / `verify-installer-manifest`
   / `verify:manifest*` scripts; `build` becomes `node scripts/clean-dist.mjs && tsc`.
-- [ ] **Step 2:** Port `R/src/__tests__/{i18n,process}.test.ts` unchanged but for names.
-- [ ] **Step 3:** Add ONE assertion the reference does not have, because it is the failure
+- [x] **Step 2:** Port `R/src/__tests__/{i18n,process}.test.ts` unchanged but for names.
+- [x] **Step 3:** Add ONE assertion the reference does not have, because it is the failure
   this port is most likely to introduce — a key present in `en` and missing in `it`:
 
 ```ts
@@ -125,8 +128,8 @@ it('has identical key sets across locales', () => {
 })
 ```
 
-- [ ] **Step 4:** `npm install && npx vitest run` — green.
-- [ ] **Step 5:** Commit.
+- [x] **Step 4:** `npm install && npx vitest run` — green.
+- [x] **Step 5:** Commit.
 
 ---
 
@@ -138,11 +141,11 @@ it('has identical key sets across locales', () => {
 `validateUsername`, `validateInstallDir`, plus new `validateBaseUrl`, `validateModelId`,
 `assertNoLineBreak`.
 
-- [ ] **Step 1:** Copy `validation.ts`. Delete the three wpt-specific validators. Keep the
+- [x] **Step 1:** Copy `validation.ts`. Delete the three wpt-specific validators. Keep the
   other five **byte-identical** — `validateInstallDir` in particular.
-- [ ] **Step 2:** Port `R/src/__tests__/validation.test.ts`, dropping the cases for the
+- [x] **Step 2:** Port `R/src/__tests__/validation.test.ts`, dropping the cases for the
   deleted validators.
-- [ ] **Step 3:** Add the new validators and their tests:
+- [x] **Step 3:** Add the new validators and their tests:
 
 ```ts
 // A newline reaches set_env_value, which writes two .env lines; install.sh's reader takes
@@ -153,8 +156,8 @@ it('rejects a line break in a model id', () =>
   expect(() => validateModelId('a\nOPENROUTER_API_KEY=x')).toThrow(ValidationError))
 ```
 
-- [ ] **Step 4:** Copy `preflight.ts`, adjusting `MINIMUM_DISK_KB` and the architecture set.
-- [ ] **Step 5:** Green, commit.
+- [x] **Step 4:** Copy `preflight.ts`, adjusting `MINIMUM_DISK_KB` and the architecture set.
+- [x] **Step 5:** Green, commit.
 
 ---
 
@@ -162,10 +165,10 @@ it('rejects a line break in a model id', () =>
 
 **Files:** `src/config-file.ts`, `src/types.ts`, `src/__tests__/config-file.test.ts`
 
-- [ ] **Step 1:** Copy `config-file.ts` whole. Keep `createTemporaryInstallConfig`
+- [x] **Step 1:** Copy `config-file.ts` whole. Keep `createTemporaryInstallConfig`
   **unchanged** — the `mkdtemp` + `chmod 0700` + write `0600` + cleanup-on-throw sequence is
   already right.
-- [ ] **Step 2:** Replace `InstallSettings` in `types.ts` with Aura's fields, and rewrite
+- [x] **Step 2:** Replace `InstallSettings` in `types.ts` with Aura's fields, and rewrite
   only the array inside `serializeInstallConfig`:
 
 ```ts
@@ -188,7 +191,7 @@ export function serializeInstallConfig(s: InstallSettings): string {
 }
 ```
 
-- [ ] **Step 3:** Port the reference's test, then add the assertion its shorter key list did
+- [x] **Step 3:** Port the reference's test, then add the assertion its shorter key list did
   not need — the exact set, because `install.sh` exits 2 on any key it does not name:
 
 ```ts
@@ -206,7 +209,7 @@ it('emits exactly the nine keys install.sh accepts', () => {
 Also assert an empty key stays an empty value (not the base64 of an empty string), and that
 `appliance`/`gvisor` are unencoded.
 
-- [ ] **Step 4:** Green, commit.
+- [x] **Step 4:** Green, commit.
 
 ---
 
@@ -231,7 +234,7 @@ cannot answer a single turn.
 memory. A typo'd model is indistinguishable from an absent one until the first turn fails,
 long after the operator has walked away.
 
-- [ ] **Step 1:** Write the failing test against a fake `CommandRunner`:
+- [x] **Step 1:** Write the failing test against a fake `CommandRunner`:
   - `nvidia-smi` exiting 0 yields the CUDA image and `embedNgl: '99'`; absent yields the CPU
     image and `'0'`
   - `probeOllama` returns the ids from an `/api/tags` body
@@ -240,7 +243,7 @@ long after the operator has walked away.
     Assert on the recorded call that `docker run` was used: a probe that passes by querying
     the host is passing for the wrong reason.
   - an unreachable endpoint returns `reachable: false` and does not throw
-- [ ] **Step 2:** Watch it fail, implement, watch it pass, commit.
+- [x] **Step 2:** Watch it fail, implement, watch it pass, commit.
 
 ---
 
@@ -248,19 +251,19 @@ long after the operator has walked away.
 
 **Files:** `src/prompts.ts`, `src/cli.ts`, `src/__tests__/{prompts,cli}.test.ts`
 
-- [ ] **Step 1:** Copy `prompts.ts`. Keep the option interfaces, `PromptPort`,
+- [x] **Step 1:** Copy `prompts.ts`. Keep the option interfaces, `PromptPort`,
   `inquirerPrompt` and `collectTarget` **unchanged** — host/port/username is the same
   question for us.
-- [ ] **Step 2:** Rewrite `collectSettings`: install dir, appliance, gVisor, model route
+- [x] **Step 2:** Rewrite `collectSettings`: install dir, appliance, gVisor, model route
   (OpenRouter or Ollama — **not** llama.cpp; see the spec's "Why llama.cpp is not in the
   wizard"), then the route-specific questions, then the GPU probe.
-- [ ] **Step 3:** Copy `cli.ts`'s `CliDependencies` and `runCli` structure; change the flow
+- [x] **Step 3:** Copy `cli.ts`'s `CliDependencies` and `runCli` structure; change the flow
   and add the model-route step.
-- [ ] **Step 4:** Port both tests, then add the two assertions Aura's contract needs:
+- [x] **Step 4:** Port both tests, then add the two assertions Aura's contract needs:
   - the OpenRouter route asks for a key, the Ollama route does not
   - **the Ollama route still emits an empty `openrouter_api_key_base64`** rather than
     omitting it — `install.sh` accepts an empty value and `exit 2`s on a missing key set
-- [ ] **Step 5:** Green, commit.
+- [x] **Step 5:** Green, commit.
 
 ---
 
@@ -268,11 +271,11 @@ long after the operator has walked away.
 
 **Files:** `src/local.ts`, `src/remote.ts`, `src/__tests__/{local,remote}.test.ts`
 
-- [ ] **Step 1:** Copy both. In `remote.ts` keep `sshDestination`, `preflightRemote`, the
+- [x] **Step 1:** Copy both. In `remote.ts` keep `sshDestination`, `preflightRemote`, the
   scp plumbing and `WarningSink` unchanged.
-- [ ] **Step 2:** Change `local.ts`'s `REQUIRED_COMMANDS` / `REQUIRED_HOSTS` and its
+- [x] **Step 2:** Change `local.ts`'s `REQUIRED_COMMANDS` / `REQUIRED_HOSTS` and its
   existing-install probe for Aura; drop the serial probe.
-- [ ] **Step 3:** The one behavioural change, in BOTH files:
+- [x] **Step 3:** The one behavioural change, in BOTH files:
 
 ```ts
 // makeself's header parses argv before it execs the embedded script, so
@@ -281,12 +284,12 @@ await runner.run('sudo', ['bash', artifact.path, '--', '--config', config.path],
   { redactions: [settings.openrouterApiKey] });
 ```
 
-- [ ] **Step 4:** Port both tests, then add:
+- [x] **Step 4:** Port both tests, then add:
   - `expect(runner.calls[0][1]).toContain('--')` before `--config`, in both
   - the remote config is `0600` and is **removed after the install** — it carries the API
     key and leaving it in `/tmp` on a customer box is what nobody notices
   - a failed `scp` aborts before the install runs, and its exit code propagates
-- [ ] **Step 5:** Green, commit.
+- [x] **Step 5:** Green, commit.
 
 ---
 
@@ -295,7 +298,7 @@ await runner.run('sudo', ['bash', artifact.path, '--', '--config', config.path],
 **Files:** `package.json`, `scripts/build-artifact.mjs`,
 `.github/workflows/{publish-aura-edge,ci}.yml`, `src/__tests__/packaging.test.ts`
 
-- [ ] **Step 1:** Write the failing test:
+- [x] **Step 1:** Write the failing test:
 
 ```ts
 // Decision 5: the package CARRIES the payload, so nothing is fetched at install time.
@@ -306,18 +309,18 @@ it('lists the artifact in package.json files', () => {
 })
 ```
 
-- [ ] **Step 2:** `build-artifact.mjs` shells out to `scripts/build_installer.sh` and writes
+- [x] **Step 2:** `build-artifact.mjs` shells out to `scripts/build_installer.sh` and writes
   `packages/create-aura/install-appliance.run`. It must FAIL when `makeself` is absent — no
   skip-as-green.
-- [ ] **Step 3:** Add a `create-aura` job to `ci.yml` mirroring `web-test` and
+- [x] **Step 3:** Add a `create-aura` job to `ci.yml` mirroring `web-test` and
   `web-mutation` (coverage >=85, mutation >=70), installing `makeself` where the artifact is
   built.
-- [ ] **Step 4:** In `publish-aura-edge.yml`, after the images push, build and
+- [x] **Step 4:** In `publish-aura-edge.yml`, after the images push, build and
   `npm publish --provenance --access public`. Publishing from that workflow is what makes
   decision 6 true; publishing anywhere else silently re-opens the drift this design closes.
-- [ ] **Step 5:** `npm pack --dry-run` must list `dist/**` and the artifact and must NOT list
+- [x] **Step 5:** `npm pack --dry-run` must list `dist/**` and the artifact and must NOT list
   `src/**` or `__tests__`. Report the file list.
-- [ ] **Step 6:** Commit.
+- [x] **Step 6:** Commit.
 
 ---
 

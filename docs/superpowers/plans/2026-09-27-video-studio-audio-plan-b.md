@@ -1,5 +1,8 @@
 # Video Studio audio — Plan B (audio lanes, the mix, Extract audio) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. c18438619..7f0a1e247.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -52,7 +55,7 @@
 - Produces (`commands_audio.ts`): `addAudio(project, {sourceId, time, label?})`, `moveAudio(project, {itemId, start, trackId?})`, `trimAudio(project, {itemId, start, end})` (source seconds from the item's current `sourceStart`, like `trimClip`), `splitAudio(project, {itemId, time})`, `setAudioProperties(project, {itemId, volume?, muted?, fadeIn?, fadeOut?, speed?, denoise?, ducking?: AudioDucking | null})`, `setEnvelope(project, {itemId, points})`, `recordAnalysis(project, {sourceId, speech?, denoisedAssetId?})`, `AUDIO_REFUSAL` (the i18n keys).
 - `EnvelopePoint.time` is **source seconds from the item's `sourceStart`**: a point stays on the sound it was set on when the speed changes, and it is the time domain of wavesurfer's envelope over the item's waveform (Plan C).
 
-- [ ] **Step 1: Write the failing lane tests**
+- [x] **Step 1: Write the failing lane tests**
 
 `web/src/videoStudio/__tests__/audioLane.test.ts`:
 
@@ -190,7 +193,7 @@ describe('a sound follows the video lane', () => {
 });
 ```
 
-- [ ] **Step 2: Write the failing command tests**
+- [x] **Step 2: Write the failing command tests**
 
 `web/src/videoStudio/__tests__/commands_audio.test.ts`:
 
@@ -403,14 +406,14 @@ describe('recordAnalysis', () => {
 });
 ```
 
-- [ ] **Step 3: Run both to verify they fail**
+- [x] **Step 3: Run both to verify they fail**
 
 Script `vt.sh` (already in the scratchpad) runs `npx vitest run "$@"` in `/mnt/d/Aura/web`:
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/audioLane.test.ts src/videoStudio/__tests__/commands_audio.test.ts`
 Expected: FAIL — `Failed to resolve import "../audioLane"` / `"../commands_audio"`.
 
-- [ ] **Step 4: Write `audioLane.ts`**
+- [x] **Step 4: Write `audioLane.ts`**
 
 ```ts
 // audioLane.ts — where a sound sits in project time, and how it follows the video lane.
@@ -550,7 +553,7 @@ export function withoutAudioItem(project: VideoProject, itemId: string): VideoPr
 }
 ```
 
-- [ ] **Step 5: Wire it into `commands.ts`**
+- [x] **Step 5: Wire it into `commands.ts`**
 
 Export the tolerance (it is shared with `commands_audio.ts`), replace the local `Placement` with the lane's, and let the two lane-rebuilding paths carry the audio:
 
@@ -592,7 +595,7 @@ Update `removeItem`'s doc comment: "Remove a clip, an overlay or a sound. A clip
 
 In `project.ts`, the `EnvelopePoint.time` comment becomes `// source seconds from the item's sourceStart: a point stays on its sound when the speed changes`.
 
-- [ ] **Step 6: Write `commands_audio.ts`**
+- [x] **Step 6: Write `commands_audio.ts`**
 
 ```ts
 // commands_audio.ts — the audio lanes' commands. The same contract as commands.ts: a pure
@@ -964,7 +967,7 @@ export function recordAnalysis(project: VideoProject, args: RecordAnalysisArgs):
 }
 ```
 
-- [ ] **Step 7: Write the audio strings**
+- [x] **Step 7: Write the audio strings**
 
 `web/src/i18n/resources.videoStudioAudio.ts`:
 
@@ -1026,16 +1029,16 @@ export const videoStudioAudioIt: typeof videoStudioAudioEn = {
 
 In `resources.videoStudio.ts`: `import { videoStudioAudioEn, videoStudioAudioIt } from './resources.videoStudioAudio';`, then `audio: videoStudioAudioEn,` as the last key of `videoStudioEn.videoStudio` and `audio: videoStudioAudioIt,` in `videoStudioIt.videoStudio`. Add one line to the header comment: "the audio lanes' strings live in resources.videoStudioAudio.ts and are merged here as `audio`".
 
-- [ ] **Step 8: Run the tests to verify they pass**
+- [x] **Step 8: Run the tests to verify they pass**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/ src/i18n/`
 Expected: PASS — `audioLane.test.ts` and `commands_audio.test.ts` green, `commands.test.ts` still 48/48, `projectStore.test.ts` still green, the i18n parity tests green. (`videoflow_fonts.test.ts` fails in WSL only on its JSON import attribute — a known WSL-only failure, green in CI.)
 
-- [ ] **Step 9: Put the pure core under mutation**
+- [x] **Step 9: Put the pure core under mutation**
 
 Spec §Tasks asks Stryker ≥ 70 % killed on the pure core. Add `"src/videoStudio/audioLane.ts"` and `"src/videoStudio/commands_audio.ts"` to `web/stryker.config.json` `mutate`, and `'src/videoStudio/__tests__/audioLane.test.ts'`, `'src/videoStudio/__tests__/commands_audio.test.ts'` to `mutationTests` in `web/vitest.stryker.config.ts` (under a comment `// Video Studio audio core (spec 2026-09-27).`). Stryker runs in CI only (critical-mutation job); after CI, the job's `critical-mutation` artifact carries `web/reports/mutation/mutation.json`, from which the per-file score of each new file is read (killed+timeout over killed+timeout+survived+no-coverage) and must be ≥ 70 %; survivors below that get a killing test before the next task.
 
-- [ ] **Step 10: Static checks, coverage, commit**
+- [x] **Step 10: Static checks, coverage, commit**
 
 Run `webcheck.sh` with the new and touched files (prettier write, typecheck, oxlint, lint-contract, knip, prettier check), then `npx vitest run --coverage --coverage.reportOnFailure=true src/videoStudio src/i18n` and read the per-file lines for `audioLane.ts` and `commands_audio.ts`.
 Expected: 0 errors everywhere; both new files ≥ 85 % lines.
@@ -1068,7 +1071,7 @@ Commit body: the three rules (never outlives the video, never disappears on a vi
 - Produces (`videoflow_audio.ts`): `addAudioItems(flow, project, urls)`, `withVolumes(project, json): VideoJSON`.
 - Produces (E2E support): `AUDIO_FIXTURES`, `reopen(page, project, clipAsset)`, `uploadClip(page)`, `exportTo(page, editor, info, fileName)`, `windowPowers(page, bytes)`, `levelBetween(powers, from, to)`.
 
-- [ ] **Step 1: Write the failing curve tests**
+- [x] **Step 1: Write the failing curve tests**
 
 `web/src/videoStudio/__tests__/volumeCurve.test.ts`:
 
@@ -1144,12 +1147,12 @@ describe('gainAt', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/volumeCurve.test.ts`
 Expected: FAIL — `Failed to resolve import "../volumeCurve"`.
 
-- [ ] **Step 3: Write `volumeCurve.ts`**
+- [x] **Step 3: Write `volumeCurve.ts`**
 
 ```ts
 // volumeCurve.ts — a layer's gain over time, as the keyframes VideoFlow's mixer can play.
@@ -1227,12 +1230,12 @@ export function volumeKeyframes(input: CurveInput): readonly VolumeKeyframe[] | 
 }
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/volumeCurve.test.ts`
 Expected: PASS, 9 tests.
 
-- [ ] **Step 5: Write the failing compile tests**
+- [x] **Step 5: Write the failing compile tests**
 
 `web/src/videoStudio/__tests__/videoflow_audio.test.ts`:
 
@@ -1379,7 +1382,7 @@ describe('withVolumes', () => {
 });
 ```
 
-- [ ] **Step 6: Run them to verify they fail, and rewrite the dead-volume expectation**
+- [x] **Step 6: Run them to verify they fail, and rewrite the dead-volume expectation**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/videoflow_audio.test.ts`
 Expected: FAIL — `Failed to resolve import "../videoflow_audio"`.
@@ -1391,7 +1394,7 @@ In `videoflow.test.ts`, the test "carries the selected clip rotation, fit and vo
     expect(calls.videos[0]?.props).not.toHaveProperty('volume');
 ```
 
-- [ ] **Step 7: Write `videoflow_audio.ts` and wire it into `toVideoJSON`**
+- [x] **Step 7: Write `videoflow_audio.ts` and wire it into `toVideoJSON`**
 
 ```ts
 // videoflow_audio.ts — the audio half of the compile: one AudioLayer per sound, and every audible
@@ -1512,12 +1515,12 @@ In `videoflow.ts`:
   return withVolumes(project, await flow.compile());
 ```
 
-- [ ] **Step 8: Run the unit tests to verify they pass**
+- [x] **Step 8: Run the unit tests to verify they pass**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/`
 Expected: PASS — `volumeCurve.test.ts` 9, `videoflow_audio.test.ts` 8, `videoflow.test.ts` green with the rewritten expectation (its mock's `compile()` returns `{ layers: [] }`, which `withVolumes` maps to itself); `videoflow_fonts.test.ts` fails only on its WSL-only JSON import attribute.
 
-- [ ] **Step 9: Write the E2E helpers**
+- [x] **Step 9: Write the E2E helpers**
 
 `web/e2e/support/audioMeasure.ts`:
 
@@ -1611,7 +1614,7 @@ export async function exportTo(
 
 In `video-studio-audio.spec.ts` delete the local `reopen` and `uploadClip` and the local `AUDIO` constant, import `AUDIO_FIXTURES, reopen, uploadClip` from `./support/videoStudio`, and drop the imports the move leaves unused.
 
-- [ ] **Step 10: Write the mix E2E**
+- [x] **Step 10: Write the mix E2E**
 
 `web/e2e/video-studio-mix.spec.ts`:
 
@@ -1718,12 +1721,12 @@ test.describe('the mix', () => {
 });
 ```
 
-- [ ] **Step 11: Run the mix E2E RED against the VM's current image**
+- [x] **Step 11: Run the mix E2E RED against the VM's current image**
 
 The VM still runs the image without this task: it loads these project files (Plan A's loader) but ignores both the audio items and the clip's static volume. From WSL: `e2e-vm.sh video-studio-mix.spec.ts --project=chrome`.
 Expected: FAIL on both tests, on the level assertions (the music is absent, so `full − soft` is nowhere near 6 dB; `full − half` ≈ 0) — not on loading or exporting.
 
-- [ ] **Step 12: Static checks, coverage, mutation scope, dist, commit, push, GREEN on the VM**
+- [x] **Step 12: Static checks, coverage, mutation scope, dist, commit, push, GREEN on the VM**
 
 Add `"src/videoStudio/volumeCurve.ts"` and `"src/videoStudio/videoflow_audio.ts"` to `stryker.config.json` `mutate`, their two test files to `vitest.stryker.config.ts` under the Task 1 comment. Run `webcheck.sh` (prettier, typecheck, oxlint, lint-contract, knip, format) over every touched file and the E2E files, then coverage over `src/videoStudio` (`volumeCurve.ts`, `videoflow_audio.ts`, `videoflow.ts` ≥ 85 % lines), then `build.sh` (`npm run build`, refreshes `internal/webui/dist`).
 
@@ -1759,7 +1762,7 @@ The first commit's body states the live bug it fixes (the clip Volume slider was
 
 Rulings carried into this task (ledgered at execution): the rail's *Add audio* opens an audio file picker directly — the panel with *Record voice* and *Text to speech* is Plan C's (T5), and a panel with one entry would be ceremony; audio lanes sit under the video lane, which is also "under the overlay lanes" (spec §UI) since overlays draw above it.
 
-- [ ] **Step 1: Write the failing door tests**
+- [x] **Step 1: Write the failing door tests**
 
 Append to `web/src/mediaEdit/__tests__/videoMedia.test.ts` (and import `probeAudio` beside `probeVideo`):
 
@@ -1834,12 +1837,12 @@ it('files a sound as a sound', async () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/mediaEdit/__tests__/videoMedia.test.ts src/videoStudio/__tests__/VideoStudio_sources.test.ts`
 Expected: FAIL — `probeAudio` is not exported; `REFUSAL_UNDECODABLE_SOUND` is undefined; `sourceEdit` adds a clip instead of a sound.
 
-- [ ] **Step 3: Write the door**
+- [x] **Step 3: Write the door**
 
 `videoMedia.ts` — the body of `probeVideo` becomes a reader over a shared opener:
 
@@ -1976,11 +1979,11 @@ export function sourceEdit(
 
 - `uploadSource`: `modality_hint: file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'video',` and the comment above it: "…A still is filed as one, and a sound as one."
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run the same command. Expected: PASS.
 
-- [ ] **Step 5: Write the failing selection, lane and inspector tests**
+- [x] **Step 5: Write the failing selection, lane and inspector tests**
 
 `web/src/videoStudio/__tests__/VideoStudio_selection.test.ts`:
 
@@ -2312,12 +2315,12 @@ describe('VideoStudio, with sounds', () => {
 
 In `VideoStudio.test.tsx` the `media` hoist becomes `{ probeVideo: vi.fn(), probeAudio: vi.fn() }` (one line; the file stays under 600).
 
-- [ ] **Step 6: Run them to verify they fail**
+- [x] **Step 6: Run them to verify they fail**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/VideoStudio_selection.test.ts src/videoStudio/__tests__/Timeline_audio.test.tsx src/videoStudio/__tests__/Inspector_audio.test.tsx src/videoStudio/__tests__/VideoStudio_mobile.test.tsx src/videoStudio/__tests__/VideoStudio_audio.test.tsx`
 Expected: FAIL — `../VideoStudio_selection` does not resolve; no audio lanes are drawn; a sound selected shows "select an item"; no *Add audio*; no audio picker.
 
-- [ ] **Step 7: Write the selection helpers and the lane**
+- [x] **Step 7: Write the selection helpers and the lane**
 
 `web/src/videoStudio/VideoStudio_selection.ts`:
 
@@ -2590,7 +2593,7 @@ passed to `<Lanes … onMoveAudio={onMoveAudio} onTrimAudio={onTrimAudio} />`, a
       }}
 ```
 
-- [ ] **Step 8: Write the inspector**
+- [x] **Step 8: Write the inspector**
 
 `web/src/videoStudio/Inspector_audio.tsx`:
 
@@ -2847,7 +2850,7 @@ and the imports the move leaves unused (`useId`, `setMuted`, `Switch`, `Slider` 
         />
 ```
 
-- [ ] **Step 9: Wire the workspace**
+- [x] **Step 9: Wire the workspace**
 
 `VideoStudio_rail.tsx`: `Music` from lucide-react; props gain `readonly onAddAudio: () => void;`; after the *Add source* button:
 
@@ -2988,12 +2991,12 @@ inside the component `const tools = soundSelected ? INSPECTOR_TOOLS.filter(({ ta
 }
 ```
 
-- [ ] **Step 10: Run the unit tests to verify they pass**
+- [x] **Step 10: Run the unit tests to verify they pass**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/ src/mediaEdit/`
 Expected: PASS — every new test green, `Timeline.test.tsx`, `Inspector.test.tsx`, `VideoStudio.test.tsx`, `VideoStudio_mobile.test.tsx`, `VideoStudio_sources.test.ts` unchanged and green.
 
-- [ ] **Step 11: Write the UI E2E**
+- [x] **Step 11: Write the UI E2E**
 
 `web/e2e/video-studio-lane.spec.ts`:
 
@@ -3100,11 +3103,11 @@ test('a sound goes on its lane under a thumb, with the tools a sound has', async
 
 (The accessible names are the English strings in `resources.videoStudio.ts`: `mobileTools` is 'Mobile editing tools', the rail's split is 'Split at the playhead', the mobile tools are 'Adjust', 'Audio', 'Speed', 'Time'.)
 
-- [ ] **Step 12: Run the UI E2E RED on the VM's current image**
+- [x] **Step 12: Run the UI E2E RED on the VM's current image**
 
 `e2e-vm.sh video-studio-lane.spec.ts`. Expected: FAIL at `pressAddAction(editor, 'Add audio')` — the button does not exist yet — on both projects.
 
-- [ ] **Step 13: Static checks, coverage, dist, commit, push, GREEN on the VM**
+- [x] **Step 13: Static checks, coverage, dist, commit, push, GREEN on the VM**
 
 `webcheck.sh` over every touched file; coverage ≥ 85 % lines on `VideoStudio_sources.ts`, `VideoStudio_selection.ts`, `Timeline.tsx`, `Timeline_audio.tsx`, `Timeline_items.tsx`, `Inspector_audio.tsx`, `Inspector_clip.tsx`, `Inspector.tsx`, `VideoStudio_rail.tsx`, `VideoStudio_mobile.tsx`, `VideoStudio.tsx`, `videoMedia.ts`; every touched file ≤ 600 lines (`wc -l`); `build.sh`.
 
@@ -3130,7 +3133,7 @@ Push, CI green, `wait-contains.sh <dist sha>`, then `e2e-vm.sh video-studio-lane
 - Consumes: `placeOnFreeLane` (Task 1, module-private in `commands_audio.ts`), `ClipAudioControls` (Task 3).
 - Produces: `extractAudio(project, {clipId}): VideoProject`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `commands_audio.test.ts` (import `extractAudio`; `audioWindow` is already imported):
 
@@ -3185,12 +3188,12 @@ it('extracts the clip sound from its Audio tab', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vt.sh src/videoStudio/__tests__/commands_audio.test.ts src/videoStudio/__tests__/Inspector_audio.test.tsx`
 Expected: FAIL — `extractAudio` is not exported; no *Extract audio* button.
 
-- [ ] **Step 3: Write the command and the button**
+- [x] **Step 3: Write the command and the button**
 
 In `commands_audio.ts`:
 
@@ -3247,11 +3250,11 @@ In `Inspector_audio.tsx`, `import { AudioLines } from 'lucide-react';`, `extract
 
 (with `const { t } = useTranslation();` at its top).
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run the same command. Expected: PASS.
 
-- [ ] **Step 5: Write the Extract E2E**
+- [x] **Step 5: Write the Extract E2E**
 
 `web/e2e/video-studio-extract.spec.ts`:
 
@@ -3314,11 +3317,11 @@ test('an extracted sound carries the clip tone, and its trim is heard', async ({
 });
 ```
 
-- [ ] **Step 6: Run the Extract E2E RED on the VM's current image**
+- [x] **Step 6: Run the Extract E2E RED on the VM's current image**
 
 `e2e-vm.sh video-studio-extract.spec.ts --project=chrome`. Expected: FAIL at the *Extract audio* button (it does not exist on the running image).
 
-- [ ] **Step 7: Static checks, mutation, dist, commit, push, GREEN on the VM**
+- [x] **Step 7: Static checks, mutation, dist, commit, push, GREEN on the VM**
 
 `webcheck.sh`; coverage on `commands_audio.ts` and `Inspector_audio.tsx` ≥ 85 %; `build.sh`.
 
