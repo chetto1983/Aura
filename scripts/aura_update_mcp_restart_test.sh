@@ -309,3 +309,26 @@ echo "ok: a time docker cannot report fails the tick, and the next apply to run 
   expect_restarts 1 "the apply that reads aura's start time again"
 )
 echo "ok: aura's start time that docker cannot report fails the tick, and the next apply to run decides"
+
+# (9) The comparison and the read of aura's start time. A sidecar created at the very instant aura
+# started is not newer: aura mounted it. Aura's start time is read when a sidecar moved, and once
+# however many did; a tick where none moved never asks for it.
+started_reads() { grep -cx 'docker inspect --format {{.State.StartedAt}} aura-id' "$calls" || true; }
+(
+  PAYLOAD=0 && new_case created-at-start
+  echo 1001 >started-aura
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 0 "a sidecar created the instant aura started"
+)
+(
+  PAYLOAD=0 && new_case read-once
+  SIDECAR_MOVES='arcadedb-mcp aura-pim-mcp whatsapp' && apply
+  expect_restarts 1 "three sidecars replaced"
+  [[ "$(started_reads)" == 1 ]] || fail "aura's start time was read $(started_reads) times for three sidecars"
+)
+(
+  PAYLOAD=0 && new_case read-never
+  apply
+  [[ "$(started_reads)" == 0 ]] || fail "aura's start time was read although no sidecar moved"
+)
+echo "ok: a sidecar created as aura started is not newer, and aura's start time is read once, and only when needed"
