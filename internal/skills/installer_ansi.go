@@ -1,6 +1,10 @@
 package skills
 
-import "regexp"
+import (
+	"math"
+	"regexp"
+	"strconv"
+)
 
 // installer_ansi.go is the spike-011-proven ANSI strip + provenance parse for the
 // `npx skills` transport output. The CLI emits ANSI color unconditionally (NO_COLOR
@@ -25,8 +29,8 @@ func stripANSI(s string) string {
 // `owner[/repo]@skill N[K|M] installs` (spike 011, entryRE). It is machine output
 // with a fixed line shape — never natural language, so a literal regex is correct
 // here (unlike the prose-blocklist NFKC path). Group 1 is the source (owner or
-// owner/repo), group 2 the skill name, group 3 the install count token.
-var catalogEntryRe = regexp.MustCompile(`^([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?)@([A-Za-z0-9._-]+) ([0-9.]+[KM]?) installs$`)
+// owner/repo), group 2 the skill name, groups 3 and 4 the install count's number and unit.
+var catalogEntryRe = regexp.MustCompile(`^([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?)@([A-Za-z0-9._-]+) ([0-9]+(?:\.[0-9]+)?)([KM]?) installs$`)
 
 // CatalogHit is one parsed `npx skills find` result: the install source the operator
 // would pass to Install (owner/repo) plus the skill name and a human-readable install
@@ -47,7 +51,22 @@ func parseCatalogHits(raw string) []CatalogHit {
 		if m == nil {
 			continue
 		}
-		hits = append(hits, CatalogHit{Source: m[1], Skill: m[2], Installs: m[3]})
+		hits = append(hits, CatalogHit{Source: m[1], Skill: m[2], Installs: cliInstallCount(m[3], m[4])})
 	}
 	return hits
+}
+
+// cliInstallCount reads the CLI's count token (226.3K) as the count it stands for and formats
+// it as the JSON catalog path does (226K, compactInstallCount), so both paths print one format.
+// The token keeps one decimal, so a count next to a rounding boundary can still differ by one
+// in the last digit (226,450: the catalog says 226K, a CLI rounding to 226.5K reads back 227K).
+func cliInstallCount(number, unit string) string {
+	value, _ := strconv.ParseFloat(number, 64) // catalogEntryRe admits only digits and one fraction
+	switch unit {
+	case "K":
+		value *= 1_000
+	case "M":
+		value *= 1_000_000
+	}
+	return compactInstallCount(int64(math.Round(value)))
 }
