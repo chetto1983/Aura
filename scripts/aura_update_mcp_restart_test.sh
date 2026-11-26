@@ -47,8 +47,8 @@ wait_healthy() { echo "wait_healthy $1" >>"$calls"; }
 
 # The stack, as files in the case's directory, on a clock in tenths of a second: created-<svc>
 # and started-aura hold times, absent-<svc> marks a service not running here, and blank-<svc>
-# one whose inspect comes back empty (gone between ps and inspect). `up -d aura` recreates aura
-# when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
+# one whose inspect comes back empty (gone between ps and inspect); blank-started-aura does the same
+# for aura's start time. `up -d aura` recreates aura when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
 # names; update_sidecar recreates those SIDECAR_MOVES names and dies on FAIL_AT, as a sidecar
 # that never turns healthy does. `compose ps` drains its stdin, as a docker CLI may: a loop that
 # feeds the record on stdin would lose the lines after the first. Applies run on /dev/null.
@@ -88,7 +88,10 @@ docker() {
       [[ ! -e "blank-$svc" ]] || return 1
       stamp "$(cat "created-$svc")"
       ;;
-    'inspect --format {{.State.StartedAt}} aura-id') stamp "$(cat started-aura)" ;;
+    'inspect --format {{.State.StartedAt}} aura-id')
+      [[ ! -e blank-started-aura ]] || return 1
+      stamp "$(cat started-aura)"
+      ;;
     'compose up -d --pull missing aura') [[ "${AURA_RECREATE}" != 1 ]] || recreate aura ;;
     'compose up -d --pull missing') for svc in ${UP_RECREATES}; do recreate "$svc"; done ;;
     'compose restart aura') tick >started-aura ;;
@@ -292,3 +295,17 @@ echo "ok: a tick that dies before its restart leaves it to the next apply, and o
   expect_restarts 1 "the apply that reads the PIM's time again"
 )
 echo "ok: a time docker cannot report fails the tick, and the next apply to run decides"
+
+# (8) aura's start time fails the tick the way a sidecar's creation time does: no restart on a
+# time that is not there, and none skipped silently.
+(
+  PAYLOAD=0 && new_case blank-aura-start
+  touch blank-started-aura
+  SIDECAR_MOVES=aura-pim-mcp && apply_dies "docker reported no start time for aura"
+  grep -q 'docker reported no State.StartedAt for aura' err || fail "the failure did not say why: $(cat err)"
+  expect_restarts 0 "the tick that could not read aura's start time"
+  rm blank-started-aura
+  quiet && apply
+  expect_restarts 1 "the apply that reads aura's start time again"
+)
+echo "ok: aura's start time that docker cannot report fails the tick, and the next apply to run decides"
