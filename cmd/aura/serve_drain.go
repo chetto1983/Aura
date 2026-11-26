@@ -101,6 +101,9 @@ func drainShutdown(workCtx context.Context, env *serveEnv) {
 	if env.approvalExpirySweeper != nil {
 		env.approvalExpirySweeper.Stop()
 	}
+	if env.messageDraftRecovery != nil {
+		env.messageDraftRecovery.Stop()
+	}
 	if env.steerQueueSweeper != nil {
 		env.steerQueueSweeper.Stop()
 	}
