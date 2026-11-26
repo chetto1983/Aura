@@ -2739,11 +2739,11 @@ jobs:
           if-no-files-found: error
 
   # The test ledger (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.3): what every test job
-  # above executed, against what the tree declares and .github/test_ledger_allow.txt excuses. It is
-  # report-only until the allowlist is written from its first run on master (plan task C1); a run it
-  # cannot judge at all (an artifact it cannot read) still fails it.
+  # above executed, against what the tree declares and .github/test_ledger_allow.txt excuses. It fails
+  # on a declared test no job ran, a skip no entry excuses, a stale entry, and a needed job that
+  # failed or uploaded nothing; cmd/testledger/main_enforce_test.go proves the first two on a fixture.
   test-ledger:
-    name: Test ledger (report-only)
+    name: Test ledger
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     needs:
@@ -2787,4 +2787,4 @@ jobs:
       - name: Judge the run
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: go run ./cmd/testledger check --artifacts "$RUNNER_TEMP/test-ledger" --needs "$NEEDS" --report-only
+        run: go run ./cmd/testledger check --artifacts "$RUNNER_TEMP/test-ledger" --needs "$NEEDS"
