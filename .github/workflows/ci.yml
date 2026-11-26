@@ -102,6 +102,11 @@ jobs:
         # 2026-11-25. Built here from this commit; the self-tests step below runs the test.
         run: docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
 
+      - name: Build the cloudflared image cloudflared_image_contract_test.sh runs (no network)
+        # Its contract ran only in publish-aura-edge.yml, after a merge to master, so a pull
+        # request changing the image was never checked (the test ledger's first report, 2026-11-26).
+        run: docker build -q -f docker/cloudflared/Dockerfile -t aura-cloudflared:local .
+
       # makeself is not preinstalled on GitHub's ubuntu runners, and build_installer_test.sh
       # (run by the self-tests step below) needs it.
       - name: Install makeself (the artifact packer)
@@ -167,8 +172,8 @@ jobs:
 
       # Every tracked scripts/**/*_test.sh, found by scripts/run_script_tests.sh, so a new one runs
       # because it exists: llm-model-contract's test had no job for two weeks (Makefile). It runs
-      # last, after the Go toolchain, deadcode, makeself and the Caddy image are in place. The ones
-      # excepted need what only another job has, and that job runs them by name.
+      # last, after the Go toolchain, deadcode, makeself and the Caddy and cloudflared images are
+      # in place. The ones excepted need what only another job has, and that job runs them by name.
       - name: Shell self-tests (every scripts/**/*_test.sh)
         run: |
           bash scripts/run_script_tests.sh \
@@ -176,8 +181,7 @@ jobs:
             --except scripts/observability_sidecar_check_test.sh \
             --except scripts/extractor_matrix_test.sh \
             --except scripts/ingest_image_contract_test.sh \
-            --except scripts/sandbox_image_contract_test.sh \
-            --except scripts/cloudflared_image_contract_test.sh
+            --except scripts/sandbox_image_contract_test.sh
 
       - name: Upload the test ledger
         if: always()
