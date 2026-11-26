@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/cron"
 )
@@ -212,5 +213,25 @@ func TestScheduleRefusalBoundsTheEchoedValue(t *testing.T) {
 	_, _, err := (&TaskTool{}).messageSchedule(message, time.Now())
 	if err == nil || len(err.Error()) > 600 || !errors.Is(err, cron.ErrInvalidTimezone) {
 		t.Fatalf("message tz refusal = %v (len %d), want a bounded ErrInvalidTimezone", err, len(fmt.Sprint(err)))
+	}
+}
+
+// The cut counts runes, not bytes: a value of multi-byte runes keeps as many characters as an ASCII
+// one and is never split inside a rune. A byte cut would keep about a third of the CJK runes.
+func TestScheduleRefusalCutsTheEchoedValueByRunes(t *testing.T) {
+	t.Parallel()
+	base := `"action":"schedule","kind":"reminder","payload":{"text":"x"},"schedule_kind":"cron"`
+	for _, r := range []rune{0xE8, 0x6642} {
+		char := string(r)
+		_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(),
+			[]byte(`{`+base+`,"cron":"`+strings.Repeat(char, 5000)+`"}`))
+		if err == nil {
+			t.Fatal("accepted")
+		}
+		msg := err.Error()
+		if !utf8.ValidString(msg) || !strings.Contains(msg, strings.Repeat(char, 150)+"...") ||
+			strings.Contains(msg, strings.Repeat(char, 200)) {
+			t.Errorf("U+%04X: reason not cut at %d runes (len %d): %.80q", r, maxEngineReasonLen, len(msg), msg)
+		}
 	}
 }
