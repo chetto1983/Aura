@@ -39,6 +39,9 @@ GO_SCOPES = {
     "mail_repair": "internal/pimwatch/service_repair.go",
     "pim_account_relay": "internal/agui/connect_pim_account_api.go",
     "pim_secret_fingerprint": "internal/agui/idempotency_pim.go",
+    "example_bank": "internal/examplebank/bank.go",
+    "urgency_centroid": "internal/pimwatch/centroid.go",
+    "shadow_report": "internal/pimwatch/shadow_report.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -84,6 +87,9 @@ REQUIRED_SCOPE_IDS = frozenset(
         "mail_repair",
         "pim_account_relay",
         "pim_secret_fingerprint",
+        "example_bank",
+        "urgency_centroid",
+        "shadow_report",
         "frontend",
         "media_frontend",
     }

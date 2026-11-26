@@ -2001,6 +2001,15 @@ jobs:
     # makes about 6435 s for the group and 290 minutes (6435 x 2.7 = 290) until a run says
     # otherwise.
     #
+    # Measured on run 45880718801 (2026-11-26), each group's scopes as the cache last measured
+    # them on a runner: turn-reading 2016 s (turn_reading 1116, task_message 453, task_approval
+    # 190, message_fire 183, lapsed_approval 73), so 91 minutes at 2.7 and 95 set; media 4827 s
+    # (signin_proxy alone 3698), so 218 minutes and 220 set, where 150 was under the rule;
+    # elicitation-boundaries 2935 s, far under its estimate. example_bank, urgency_centroid and
+    # shadow_report (2026-11-26) ride with elicitation-boundaries: 82, 90 and 286 s measured cold
+    # in a cloud container, not on a runner, so about 3393 s for the group, 153 minutes at 2.7,
+    # under the 290 kept until a run measures the new three.
+    #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
     # exactly as it did inside the single job, so a timeout-sensitive mutant sees the same
@@ -2014,13 +2023,13 @@ jobs:
         include:
           - group: turn-reading
             scopes: turn_reading task_approval task_message message_fire lapsed_approval
-            timeout: 90
+            timeout: 95
           - group: elicitation-boundaries
-            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire mail_repair pim_account_relay pim_secret_fingerprint
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire mail_repair pim_account_relay pim_secret_fingerprint example_bank urgency_centroid shadow_report
             timeout: 290
           - group: media
             scopes: media_clamp media_watcher signin_flow signin_options signin_proxy
-            timeout: 150
+            timeout: 220
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
