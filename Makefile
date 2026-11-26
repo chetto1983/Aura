@@ -383,7 +383,8 @@ ingest-image:
 #
 # With AURA_TEST_LEDGER_DIR set, pytest writes there the node ids it collects and its JUnit report
 # (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2); the container runs as root.
-INGEST_TEST_LEDGER = $(if $(AURA_TEST_LEDGER_DIR),-v "$(AURA_TEST_LEDGER_DIR):/ledger" -e LEDGER=/ledger)
+# docker run -v reads a relative source as a named volume, so the host path is made absolute.
+INGEST_TEST_LEDGER = $(if $(AURA_TEST_LEDGER_DIR),-v "$(abspath $(AURA_TEST_LEDGER_DIR)):/ledger" -e LEDGER=/ledger)
 ingest-test: memory-up-core ingest-image
 	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
 	@# The image ships without pip (docker/aura-ingest/Dockerfile); ensurepip puts the bundled

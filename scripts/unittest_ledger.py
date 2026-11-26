@@ -21,6 +21,11 @@ class _Recording(unittest.TextTestResult):
         self.outcomes: dict[str, str] = {}
 
     def _note(self, test: unittest.TestCase, outcome: str) -> None:
+        # A subtest reports under its parent; a failing setUpClass comes as an error holder, which
+        # is no test (its id is a description with spaces) and stays failed in the base result.
+        test = getattr(test, "test_case", test)
+        if not isinstance(test, unittest.TestCase):
+            return
         if self.outcomes.get(test.id()) != "fail":
             self.outcomes[test.id()] = outcome
 

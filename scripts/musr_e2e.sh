@@ -231,6 +231,11 @@ export AURA_EMBED_DIMENSIONS="${AURA_EMBED_DIMENSIONS:-768}"
 export AURA_SKILL_EXPORT_DIR="${AURA_SKILL_EXPORT_DIR:-/tmp/aura-musr-skills-export}"
 export AURA_RUN_DIR="${AURA_RUN_DIR:-/tmp/aura-musr-run}"
 mkdir -p "$AURA_SKILL_EXPORT_DIR" "$AURA_RUN_DIR"
+# The arm below makes scripts/go_test_ledger.sh refuse an unset ledger directory, so a local run
+# records into its own; a real CI run keeps the refusal and must set it (ci.yml does).
+if [ -z "${CI:-}" ]; then
+  export AURA_TEST_LEDGER_DIR="${AURA_TEST_LEDGER_DIR:-/tmp/aura-musr-test-ledger}"
+fi
 # No-skip-as-green arm: musrEnvOrSkip/envOrSkip t.Fatal on a missing var under CI=true
 # instead of silently skipping the tier (CLAUDE.md).
 export CI=true

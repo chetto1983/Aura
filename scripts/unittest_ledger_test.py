@@ -36,6 +36,31 @@ def _fixture_suite() -> unittest.TestSuite:
     return unittest.defaultTestLoader.loadTestsFromTestCase(Fixture)
 
 
+def _edge_suite() -> unittest.TestSuite:
+    # A class whose setUpClass raises, and subtests that skip; built here for the same reason.
+    class Broken(unittest.TestCase):
+        @classmethod
+        def setUpClass(cls) -> None:
+            raise RuntimeError("fixture")
+
+        def test_never_runs(self) -> None:
+            pass
+
+    class Subtests(unittest.TestCase):
+        def test_one_subtest_skips(self) -> None:
+            with self.subTest(value=1):
+                self.skipTest("inside a subtest")
+
+        def test_a_skip_and_a_failure(self) -> None:
+            with self.subTest(value=1):
+                self.skipTest("first")
+            with self.subTest(value=2):
+                self.fail("second")
+
+    loader = unittest.defaultTestLoader
+    return unittest.TestSuite([loader.loadTestsFromTestCase(Broken), loader.loadTestsFromTestCase(Subtests)])
+
+
 class RunTests(unittest.TestCase):
     def test_records_one_outcome_per_test(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -56,6 +81,16 @@ class RunTests(unittest.TestCase):
             },
         )
         self.assertEqual(len(lines), 6, "a test whose subtests fail is one line, not one per subtest")
+
+    def test_fixture_errors_and_subtests_keep_one_two_field_line_per_test(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            with mock.patch.dict(os.environ, {"AURA_TEST_LEDGER_DIR": raw}):
+                ok = unittest_ledger.run(_edge_suite(), io.StringIO())
+            lines = (pathlib.Path(raw) / "python-tests.txt").read_text(encoding="utf-8").splitlines()
+        self.assertFalse(ok, "a failing setUpClass still fails the run")
+        self.assertTrue(all(len(line.split()) == 2 for line in lines), lines)
+        outcomes = {line.split()[0].rsplit(".", 1)[1]: line.split()[1] for line in lines}
+        self.assertEqual(outcomes, {"test_one_subtest_skips": "skip", "test_a_skip_and_a_failure": "fail"})
 
     def test_a_passing_suite_is_successful(self) -> None:
         suite = unittest.TestSuite(t for t in _fixture_suite() if t.id().endswith("test_passes"))
