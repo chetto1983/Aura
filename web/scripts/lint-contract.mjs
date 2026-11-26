@@ -57,6 +57,20 @@ const cases = [
     code: 'export function Image() { return <img src="/image.png" />; }',
   },
   {
+    name: 'conditional-test',
+    rule: 'aura(no-conditional-test-registration)',
+    code: 'import { test } from "@playwright/test"; if (process.env.LIVE === "1") { test("hidden when unset", () => {}); }',
+  },
+  {
+    name: 'conditional-vitest',
+    rule: 'vitest(no-conditional-tests)',
+    code: 'import { it } from "vitest"; if (process.env.LIVE === "1") { it("hidden when unset", () => {}); }',
+  },
+  {
+    name: 'skipped-test',
+    code: 'import { expect, test } from "@playwright/test"; test.skip(process.env.LIVE !== "1", "needs a live stack"); test("reported", () => { expect(1).toBe(1); });',
+  },
+  {
     name: 'imports',
     rule: 'import-order(order)',
     code: 'import { useState } from "react"; import { readFile } from "node:fs/promises"; export { useState, readFile };',

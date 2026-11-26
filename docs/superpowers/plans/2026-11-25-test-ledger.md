@@ -32,7 +32,7 @@
 
 ## Decisions taken while writing this plan
 
-- **Go is declared from source, pytest by node id, the JavaScript suites by file.** `pytest --collect-only -q` expands parameterised tests at collection, so its node ids are the declared set and a collected id missing from the JUnit report is a violation. `vitest list --json` does not: it names 3,744 tests where a run executes 4,275, so for Vitest and Playwright a file absent from the report is the violation and the report is the inventory inside a file (the limit on conditionally registered tests is spec §9).
+- **Go is declared from source, pytest by node id, the JavaScript suites by file.** `pytest --collect-only -q` expands parameterised tests at collection, so its node ids are the declared set and a collected id missing from the JUnit report is a violation. `vitest list --json` does not: it names 3,744 tests where a run executes 4,275, so for Vitest and Playwright a file absent from the report is the violation and the report is the inventory inside a file (a test registered under a condition, which would reach no report, is a lint error: spec §4.1).
 - **The declared-set code moves, it is not rewritten.** `tierTestFiles`, `testFuncs`, `goBuildConstraint` and `gatingTags` leave `cmd/aura/tier_runners_files_test.go` for `internal/testledger`; the rest of the static check (about 1,800 lines interpreting workflow text) is deleted in Part C, not ported.
 - **Subtests are not units.** A parent that ran counts; table rows are the parent's business.
 - **Report-only first.** The first `master` run produces the real violation list; the allowlist is written from it, not guessed.

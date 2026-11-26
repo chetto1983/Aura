@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "import", "unicorn"],
+  "plugins": ["typescript", "import", "unicorn", "vitest"],
   "categories": {
     "correctness": "off"
   },
@@ -26,6 +26,8 @@
     "src/components/ui/popover.tsx"
   ],
   "rules": {
+    "aura/no-conditional-test-registration": "error",
+    "vitest/no-conditional-tests": "error",
     "constructor-super": "error",
     "for-direction": "error",
     "getter-return": "error",
@@ -474,6 +476,7 @@
     {
       "specifier": "eslint-plugin-react-hooks",
       "name": "react-compiler"
-    }
+    },
+    "./lint/aura.mjs"
   ]
 }
