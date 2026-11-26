@@ -64,7 +64,7 @@ func TestLegacyCalendarMarkerStillRenders(t *testing.T) {
 
 // A PIM tool with no read table renders nothing. A tool the PIM does not serve never gets this
 // far: TrustedMCPFromMeta refuses its marker (mcp_source_test.go).
-func TestCalendarMarkerWithUnknownToolRendersNothing(t *testing.T) {
+func TestCalendarToolWithoutAReadTableRendersNothing(t *testing.T) {
 	for _, tool := range []string{"send_email", "get_email_attachment"} {
 		if p, ok := projectFromMeta(t, map[string]any{"recipe": "recipe:calendar", "tool": tool},
 			"pim__"+tool, `{}`, `{"emails":[],"accounts":[]}`); ok {
