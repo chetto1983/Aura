@@ -160,15 +160,15 @@ them by file, and discovery then runs those 37 tests twice.
 **Files:** `internal/testledger/results.go` + test, `testdata/` cut from the 2026-11-25 logs
 
 - [x] One reader per format, each returning units `{suite, id, status}`; a top-level Go test is `pkg TestName`, a subtest (`/` in the name) is ignored.
-- [ ] Union across files: executed if any file has `pass` or `fail` for the unit.
+- [x] Union across files: executed if any file has `pass` or `fail` for the unit.
 
 ### Task B3: The allowlist and the check
 
 **Files:** `internal/testledger/allow.go`, `check.go` + tests; `.github/test_ledger_allow.txt` (empty at first)
 
-- [ ] Violations, each with a test: declared-not-executed; unexcused skip of a unit no job executed; stale entry (matches nothing, or matches a unit some job executed); a collected pytest node id absent from the JUnit report; a Vitest or Playwright test file absent from its report; a shell self-test with no result line; a needed job with no artifact.
-- [ ] Classes are exactly `paid`, `outward`, `measure`, `platform`; any other is a parse error.
-- [ ] Mutation ≥70% on `check.go` (`go-mutesting`), recorded in the commit body.
+- [x] Violations, each with a test: declared-not-executed; unexcused skip of a unit no job executed; stale entry (matches nothing, or matches a unit some job executed); a collected pytest node id absent from the JUnit report; a Vitest or Playwright test file absent from its report; a shell self-test with no result line; a needed job with no artifact.
+- [x] Classes are exactly `paid`, `outward`, `measure`, `platform`; any other is a parse error.
+- [x] Mutation ≥70% on `check.go` (`go-mutesting`), recorded in the commit body.
 
 ### Task B4: The gate job, report-only
 
