@@ -98,6 +98,9 @@ func (s *e2eStore) CreateScheduledTask(ctx context.Context, in tools.CreateTaskI
 func (s *e2eStore) ListScheduledTasks(context.Context) ([]tools.ScheduledTask, error) {
 	return nil, nil
 }
+func (s *e2eStore) CancelTarget(_ context.Context, id string) (tools.ScheduledTask, error) {
+	return tools.ScheduledTask{ID: id}, nil
+}
 func (s *e2eStore) CancelScheduledTask(ctx context.Context, id string) error {
 	return s.store.CancelTask(ctx, id)
 }

@@ -152,6 +152,29 @@ service_behind() {
   runs_superseded_image "${cid}" "$(docker inspect --format '{{.Config.Image}}' "${cid}")"
 }
 
+# Writes MCP_RECORD, the image each MCP sidecar runs, unless a usable one exists (a dead tick
+# keeps it for the next). It is written whole or not at all: a tick killed mid-write leaves a
+# stray temp file, never a record missing sidecars that a later apply would read as complete.
+# One that is not usable -- a sidecar missing, or a last line cut short, as an earlier updater
+# could leave it -- is replaced by a record naming no image, so every sidecar replaced since
+# counts as moved: at worst one needless restart, never a skipped one.
+record_mcp_sidecars() {
+  local svc image tmp known=1
+  if [[ -f "${MCP_RECORD}" ]]; then
+    [[ -z "$(tail -c1 "${MCP_RECORD}")" && "$(awk 'NF == 2 { printf "%s ", $1 }' "${MCP_RECORD}")" == "${MCP_SIDECARS[*]} " ]] &&
+      return 0
+    known=0
+  fi
+  rm -f "${MCP_RECORD}".??????
+  tmp="$(mktemp "${MCP_RECORD}.XXXXXX")"
+  for svc in "${MCP_SIDECARS[@]}"; do
+    image=unknown
+    ((known == 0)) || image="$(container_image_id "${svc}")"
+    echo "${svc} ${image}"
+  done >"${tmp}"
+  mv -f "${tmp}" "${MCP_RECORD}"
+}
+
 applied_image() { cat "$(update_dir)/applied-image" 2>/dev/null || true; }
 
 # Anything downloaded that the stack does not run yet: an aura image other than the one last

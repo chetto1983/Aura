@@ -33,7 +33,6 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -43,7 +42,7 @@ import (
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
 func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry, senders messagedrafts.SenderDirectory) *tools.TaskTool {
-	t := &tools.TaskTool{DeploymentZone: deploymentZone}
+	t := &tools.TaskTool{DeploymentZone: deploymentZone, CancelApprovals: &tools.TaskCancelApprovals{}}
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier
@@ -89,9 +88,9 @@ func newBoardTool(pool *pgxpool.Pool) *tools.BoardTool {
 // --- taskStore adapter (live `task` tool persistence, 10-05 deviation #3) ---
 
 // cronTaskStore adapts the live Postgres pool + cron.Store onto the tools.taskStore
-// seam the `task` tool dispatches against. CreateScheduledTask/CancelScheduledTask
-// reuse cron.Store; ListScheduledTasks/RunScheduledTaskNow/ApproveScheduledTask run
-// the status-aware reads/UPDATEs cron.Store does not expose as raw parameterized SQL
+// seam the `task` tool dispatches against. CreateScheduledTask and pause/resume reuse
+// cron.Store; the list, the cancel (serve_adapters_cancel.go) and run_now run the
+// identity-scoped reads/UPDATEs cron.Store does not expose as raw parameterized SQL
 // (the cmd/aura/task.go CLI precedent), never string-concatenated.
 type cronTaskStore struct {
 	pool  *pgxpool.Pool
@@ -221,52 +220,6 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		return nil, fmt.Errorf("list scheduled tasks: %w", err)
 	}
 	return out, nil
-}
-
-// CancelScheduledTask soft-cancels only inside the identity carried by the tool call, and
-// only a kind the agent may stop: never a system sweep or the database backup, which
-// enrolment can hand to the operator's identity, and never the mail watch.
-func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) error {
-	identityID, err := taskIdentity(ctx)
-	if err != nil {
-		return err
-	}
-	var kind, status string
-	var origin *string
-	err = s.pool.QueryRow(ctx, `
-		SELECT kind, status, origin_conversation_id::text FROM aura.scheduler_tasks
-		WHERE id = $1::uuid
-		  AND identity_id = $2
-		  AND status IN ('active', 'pending_approval', 'paused')`, id, identityID).Scan(&kind, &status, &origin)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("task %s is not active, paused or awaiting approval, or not owned by this identity", id)
-	}
-	if err != nil {
-		return fmt.Errorf("cancel task %s: %w", id, err)
-	}
-	if !cron.IsCancellableKind(cron.TaskKind(kind)) {
-		return fmt.Errorf("task %s is a %s task, which cannot be cancelled", id, kind)
-	}
-	if !cron.IsAgentStoppableKind(cron.TaskKind(kind)) {
-		return watchStopRefused(id)
-	}
-	if kind == string(cron.KindMessage) {
-		if err := s.drafts.DeclineForTask(ctx, identityID, id); err != nil {
-			return fmt.Errorf("cancel task %s: decline its message: %w", id, err)
-		}
-	}
-	if status == "pending_approval" && origin != nil && s.pauses != nil {
-		if _, err := s.pauses.ExpireApprovalPause(ctx, *origin, id, cancelledApprovalAnswer(kind, id)); err != nil {
-			return fmt.Errorf("cancel task %s: close its approval: %w", id, err)
-		}
-	}
-	if _, err := s.pool.Exec(ctx, `
-		UPDATE aura.scheduler_tasks
-		SET status = 'cancelled', paused_reason = NULL, updated_at = now()
-		WHERE id = $1::uuid AND identity_id = $2`, id, identityID); err != nil {
-		return fmt.Errorf("cancel task %s: %w", id, err)
-	}
-	return nil
 }
 
 // RunScheduledTaskNow flips an active task's next_run_at to now so the next tick

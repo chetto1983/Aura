@@ -165,3 +165,60 @@ func TestRenderItalianPluginInstall(t *testing.T) {
 		}
 	}
 }
+
+// The task cancel card derives one param per line and renders in Italian; the same lines under
+// another resume type, or with a line missing, derive nothing.
+func TestDeriveTaskCancelCard(t *testing.T) {
+	t.Parallel()
+	question := "Approve cancelling a task not scheduled in this chat?\ntask: 019f9349-e0e5-77cc-9639-804bcf88b968\nkind: reminder\n" +
+		"schedule: at\nnext run: none\npayload: {\"text\": \"call Monica\"}\nsha256: " + pluginApprovalDigest
+	resume, err := json.Marshal(map[string]string{"type": "task_cancel_approval", "approval_sha256": pluginApprovalDigest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched, err := Enrich(question, resume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := FromContext(question, enriched)
+	if !ok || p.Key != TaskCancelKey || p.Params["next"] != "none" || p.Params["payload"] != `{"text": "call Monica"}` {
+		t.Fatalf("task cancel card derived %+v %v", p, ok)
+	}
+	want := "Approva l'annullamento di un'attività non pianificata in questa chat?\nattività: 019f9349-e0e5-77cc-9639-804bcf88b968\ntipo: reminder\n" +
+		"pianificazione: at\nprossima esecuzione: nessuna\ncontenuto: {\"text\": \"call Monica\"}\nsha256: " + pluginApprovalDigest
+	if got := RenderItalian(p, question); got != want {
+		t.Fatalf("italian =\n%s\nwant\n%s", got, want)
+	}
+	if p, ok := derived(t, question); ok {
+		t.Fatalf("a task card under the plugin type derived %+v", p)
+	}
+	short := strings.Replace(question, "schedule: at\n", "", 1)
+	if enriched, err := Enrich(short, resume); err != nil {
+		t.Fatal(err)
+	} else if p, ok := FromContext(short, enriched); ok {
+		t.Fatalf("a card with a line missing derived %+v", p)
+	}
+}
+
+// Telegram translates only the words a card owns. A task payload is the operator's own text, so a
+// payload that happens to end like a plugin list ("): none") stays verbatim.
+func TestRenderItalianKeepsATaskPayloadVerbatim(t *testing.T) {
+	t.Parallel()
+	question := "Approve cancelling a task not scheduled in this chat?\ntask: t-1\nkind: reminder\nschedule: at\n" +
+		"next run: none\npayload: tasks (0): none\nsha256: " + pluginApprovalDigest
+	resume, err := json.Marshal(map[string]string{"type": "task_cancel_approval", "approval_sha256": pluginApprovalDigest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched, err := Enrich(question, resume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := FromContext(question, enriched)
+	if !ok {
+		t.Fatal("the task card derived nothing")
+	}
+	if got := RenderItalian(p, question); !strings.Contains(got, "\ncontenuto: tasks (0): none\n") {
+		t.Fatalf("italian rewrote the payload:\n%s", got)
+	}
+}

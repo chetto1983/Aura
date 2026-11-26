@@ -43,12 +43,16 @@ remove_orphan_volumes() { :; }
 image_id() { echo image-id; }
 # The real one where the sandbox is unpinned: it must not reach docker at all.
 stale_boxes() { if [[ "${PINS}" == 0 ]]; then updater_stale_boxes; else echo "${STALE}"; fi; }
-wait_healthy() { echo "wait_healthy $1" >>"$calls"; }
+# die-after-restart: aura never turns healthy again once restarted.
+wait_healthy() {
+  [[ ! -e die-after-restart || "$(tail -1 "$calls")" != 'docker compose restart aura' ]] || exit 9
+  echo "wait_healthy $1" >>"$calls"
+}
 
 # The stack, as files in the case's directory, on a clock in tenths of a second: created-<svc>
 # and started-aura hold times, absent-<svc> marks a service not running here, and blank-<svc>
-# one whose inspect comes back empty (gone between ps and inspect). `up -d aura` recreates aura
-# when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
+# one whose inspect comes back empty (gone between ps and inspect); blank-started-aura does the same
+# for aura's start time. `up -d aura` recreates aura when AURA_RECREATE=1; the whole-stack `up` recreates, in order, the services UP_RECREATES
 # names; update_sidecar recreates those SIDECAR_MOVES names and dies on FAIL_AT, as a sidecar
 # that never turns healthy does. `compose ps` drains its stdin, as a docker CLI may: a loop that
 # feeds the record on stdin would lose the lines after the first. Applies run on /dev/null.
@@ -80,6 +84,8 @@ docker() {
   case "$*" in
     'compose ps -q '*)
       cat >/dev/null
+      # 'torn': the record showed itself while its last line was still being gathered.
+      [[ "$4" != whatsapp || ! -e mcp_sidecars.recorded ]] || grep -q '^whatsapp ' mcp_sidecars.recorded || touch torn
       [[ -e "absent-$4" ]] || echo "$4-id"
       ;;
     'inspect --format {{.Image}} '*) echo "image-$(cat "created-${4%-id}")" ;;
@@ -88,7 +94,10 @@ docker() {
       [[ ! -e "blank-$svc" ]] || return 1
       stamp "$(cat "created-$svc")"
       ;;
-    'inspect --format {{.State.StartedAt}} aura-id') stamp "$(cat started-aura)" ;;
+    'inspect --format {{.State.StartedAt}} aura-id')
+      [[ ! -e blank-started-aura ]] || return 1
+      stamp "$(cat started-aura)"
+      ;;
     'compose up -d --pull missing aura') [[ "${AURA_RECREATE}" != 1 ]] || recreate aura ;;
     'compose up -d --pull missing') for svc in ${UP_RECREATES}; do recreate "$svc"; done ;;
     'compose restart aura') tick >started-aura ;;
@@ -292,3 +301,112 @@ echo "ok: a tick that dies before its restart leaves it to the next apply, and o
   expect_restarts 1 "the apply that reads the PIM's time again"
 )
 echo "ok: a time docker cannot report fails the tick, and the next apply to run decides"
+
+# (8) aura's start time fails the tick the way a sidecar's creation time does: no restart on a
+# time that is not there, and none skipped silently.
+(
+  PAYLOAD=0 && new_case blank-aura-start
+  touch blank-started-aura
+  SIDECAR_MOVES=aura-pim-mcp && apply_dies "docker reported no start time for aura"
+  grep -q 'docker reported no State.StartedAt for aura' err || fail "the failure did not say why: $(cat err)"
+  expect_restarts 0 "the tick that could not read aura's start time"
+  rm blank-started-aura
+  quiet && apply
+  expect_restarts 1 "the apply that reads aura's start time again"
+)
+echo "ok: aura's start time that docker cannot report fails the tick, and the next apply to run decides"
+
+# (9) The comparison and the read of aura's start time. A sidecar created at the very instant aura
+# started is not newer: aura mounted it. Aura's start time is read when a sidecar moved, and once
+# however many did; a tick where none moved never asks for it.
+started_reads() { grep -cx 'docker inspect --format {{.State.StartedAt}} aura-id' "$calls" || true; }
+(
+  PAYLOAD=0 && new_case created-at-start
+  echo 1001 >started-aura
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 0 "a sidecar created the instant aura started"
+)
+(
+  PAYLOAD=0 && new_case read-once
+  SIDECAR_MOVES='arcadedb-mcp aura-pim-mcp whatsapp' && apply
+  expect_restarts 1 "three sidecars replaced"
+  [[ "$(started_reads)" == 1 ]] || fail "aura's start time was read $(started_reads) times for three sidecars"
+)
+(
+  PAYLOAD=0 && new_case read-never
+  apply
+  [[ "$(started_reads)" == 0 ]] || fail "aura's start time was read although no sidecar moved"
+)
+echo "ok: a sidecar created as aura started is not newer, and aura's start time is read once, and only when needed"
+
+# (10) The record of what the sidecars ran before the apply exists to outlive a tick that dies, and
+# only that: a decision taken, whether to restart (awaited) or not to, clears it.
+record=mcp_sidecars.recorded
+(
+  PAYLOAD=0 && new_case record-after-restart
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 1 "the restart that clears the record"
+  [[ ! -e "$record" ]] || fail "the record outlived an apply that restarted aura and saw it healthy"
+)
+(
+  PAYLOAD=0 && new_case record-after-no-op
+  apply
+  [[ ! -e "$record" ]] || fail "the record outlived an apply that replaced nothing"
+)
+(
+  PAYLOAD=1 && new_case record-after-dead-tick
+  AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp FAIL_AT=caddy && apply_dies "caddy never turned healthy"
+  [[ -e "$record" ]] || fail "a tick that died before its decision lost the record"
+)
+(
+  PAYLOAD=0 && new_case record-after-dead-restart
+  SIDECAR_MOVES=aura-pim-mcp && touch die-after-restart && apply_dies "aura never turned healthy after the restart"
+  [[ "$(restarts)" == 1 ]] || fail "aura was not restarted once before the tick died: $(cat "$calls")"
+  [[ -e "$record" ]] || fail "a tick that died awaiting the restart lost the record"
+)
+echo "ok: the record is cleared by a decision taken, and kept by a tick that dies before it"
+
+# (11) The record is written whole or not at all, and one that cannot be trusted restarts aura
+# once rather than skip a restart. A tick killed while writing it must not leave a stub a later
+# apply reads as complete; a record an earlier updater left cut short names no image, so every
+# sidecar replaced since counts as moved when it is newer than aura.
+(
+  PAYLOAD=0 && new_case record-written-whole
+  apply
+  [[ ! -e torn ]] || fail "the record was visible before it was whole"
+)
+# bad_record_case <name> <content>: the PIM was replaced before the apply, after aura started.
+bad_record_case() {
+  PAYLOAD=0 && new_case "$1"
+  printf '%b' "$2" >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+}
+(
+  bad_record_case record-cut-mid-line 'arcadedb-mcp image-800\naura-pim-mcp image-8'
+  expect_restarts 1 "a record cut in the middle of a line"
+)
+(
+  bad_record_case record-missing-sidecar 'arcadedb-mcp image-800\nwhatsapp image-800\n'
+  expect_restarts 1 "a record without the PIM"
+)
+(
+  bad_record_case record-empty ''
+  expect_restarts 1 "an empty record"
+)
+(
+  PAYLOAD=0 && new_case record-whole
+  printf '%s\n' 'arcadedb-mcp image-800' 'aura-pim-mcp image-800' 'whatsapp image-800' >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+  expect_restarts 1 "a whole record that names the PIM's image before it moved"
+  [[ "$(said)" == *' remount aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
+)
+(
+  PAYLOAD=0 && new_case record-whole-unmoved
+  printf '%s\n' 'arcadedb-mcp image-800' 'aura-pim-mcp image-950' 'whatsapp image-800' >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+  expect_restarts 0 "a whole record that names the PIM's image as it runs now"
+)
+echo "ok: the record is written whole or not at all, and one that cannot be trusted restarts aura"

@@ -55,7 +55,7 @@ func pluginPending(t *testing.T, question, contextType, digestField string) asku
 func TestShellHookCannotApproveAPluginChallenge(t *testing.T) {
 	shell := tools.NewShellApprovals()
 	plugin := &tools.PluginApprovals{}
-	ch := plugin.CreateChallenge("conv-plugin", pluginHookDigest, "Approve plugin install?", tools.PluginAction{Action: "install"})
+	ch := plugin.CreateChallenge("conv-plugin", pluginHookDigest, "Approve plugin install?", struct{}{})
 	hook := newShellResumeHook(shell)
 	accept := runner.ResponseInput{Action: askuser.ActionAccept}
 
@@ -77,7 +77,7 @@ func TestShellHookCannotApproveAPluginChallenge(t *testing.T) {
 func TestPluginResumeHookCountsOnlyAnAdminAndAlwaysDiscardsOnExpiry(t *testing.T) {
 	pack := &tools.PackTool{Approvals: &tools.PluginApprovals{}}
 	hook := newPluginResumeHook(pack)
-	ch := pack.Approvals.CreateChallenge("conv-plugin", pluginHookDigest, "Approve plugin install?", tools.PluginAction{Action: "install"})
+	ch := pack.Approvals.CreateChallenge("conv-plugin", pluginHookDigest, "Approve plugin install?", struct{}{})
 	pending := pluginPending(t, ch.Question, "plugin_pack_approval", "approval_sha256")
 	accept := runner.ResponseInput{Action: askuser.ActionAccept}
 	admin := identityctx.WithIdentityID(t.Context(), "admin-1")
@@ -101,7 +101,7 @@ func TestPluginResumeHookCountsOnlyAnAdminAndAlwaysDiscardsOnExpiry(t *testing.T
 		t.Fatal("an administrator's accept was not recorded")
 	}
 
-	pack.Approvals.CreateChallenge("conv-plugin", pluginHookDigest, ch.Question, tools.PluginAction{})
+	pack.Approvals.CreateChallenge("conv-plugin", pluginHookDigest, ch.Question, struct{}{})
 	if err := hook(member, pending, runner.ResponseInput{Action: askuser.ActionExpired}); err != nil {
 		t.Fatalf("expiry: %v", err)
 	}

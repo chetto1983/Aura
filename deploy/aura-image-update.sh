@@ -489,11 +489,7 @@ apply_update() {
   # A pre-existing .env used to omit these keys forever, silently retaining dev.
   bash scripts/appliance_posture.sh .env
 
-  if [[ ! -f "${MCP_RECORD}" ]]; then
-    for svc in "${MCP_SIDECARS[@]}"; do
-      echo "${svc} $(container_image_id "${svc}")"
-    done >"${MCP_RECORD}"
-  fi
+  record_mcp_sidecars
 
   # The tick already pulled every moving tag. `--pull missing` overrides the services'
   # `pull_policy: always`, so the apply never asks the registry again for an image it holds:

@@ -18,7 +18,9 @@ type runtimeToolHandles struct {
 	SkillManage *tools.SkillManageTool
 	// Pack is plugin_pack, retained so serve boot can bind its plugin backend once the live
 	// mount exists, and so the plugin resume hook reads that backend when it runs.
-	Pack          *tools.PackTool
+	Pack *tools.PackTool
+	// Task is the task tool, retained so its cancel resume hook records accepts into its own store.
+	Task          *tools.TaskTool
 	Memory        *mcptools.MountedServer
 	MemoryContext *mountedMemoryContext
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live

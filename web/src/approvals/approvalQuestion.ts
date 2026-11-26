@@ -6,6 +6,7 @@ const SHELL_KEY = 'approval.shell.command';
 const SCHEDULED_KEY = 'approval.scheduled.task';
 const PLUGIN_INSTALL_KEY = 'approval.plugin.install';
 const PLUGIN_REMOVE_KEY = 'approval.plugin.remove';
+const TASK_CANCEL_KEY = 'approval.task.cancel';
 
 function hasParams(presentation: ApprovalPresentation, ...names: readonly string[]): boolean {
   return names.every((name) => typeof presentation.params[name] === 'string');
@@ -93,6 +94,19 @@ export function approvalQuestion(approval: Approval, t: TFunction): string {
       return hasParams(presentation, 'plugin', 'source', 'skills', 'connectors', 'data', 'digest')
         ? t('approval.question.plugin.remove', pluginParams(presentation.params, t))
         : approval.question;
+    // A task cancel card's words are its own only for an empty next run: the payload is the
+    // operator's text and stays verbatim (internal/approvaltext/presentation_plugin.go).
+    case TASK_CANCEL_KEY:
+      if (!hasParams(presentation, 'task', 'kind', 'schedule', 'next', 'payload', 'digest')) {
+        return approval.question;
+      }
+      return t('approval.question.task.cancel', {
+        ...presentation.params,
+        next:
+          presentation.params.next === 'none'
+            ? t('approval.question.task.noNextRun')
+            : presentation.params.next,
+      });
     default:
       return approval.question;
   }

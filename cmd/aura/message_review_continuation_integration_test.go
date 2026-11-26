@@ -63,6 +63,10 @@ func TestApprovedMessageSurvivesAutomaticContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	unrelated := insertOwnedTask(t, pool, owner, "reminder")
+	// This conversation scheduled it, so the model's cancel runs without asking (task_cancel.go).
+	if _, err := pool.Exec(ctx, `UPDATE aura.scheduler_tasks SET origin_conversation_id = $2 WHERE id = $1`, unrelated, thread); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM aura.scheduler_tasks WHERE id=$1", task.ID); err != nil {
 			t.Errorf("clean up scheduled message: %v", err)

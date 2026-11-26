@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -128,5 +131,46 @@ func (a *ApprovalStore[T]) Evict(sessionID string) {
 		if strings.HasPrefix(k, prefix) {
 			delete(a.pending, k)
 		}
+	}
+}
+
+// approvalDigest hashes what an approval names, its parts kept apart by NUL.
+func approvalDigest(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+// approvalPrompt names one tool's in-tool approval challenge: the tool the model repeats, the
+// result's name (its error is name+"_required", its provenance "aura:"+name) and the
+// resume_context type its resume hook reads.
+type approvalPrompt struct {
+	tool, name, contextType string
+}
+
+// required is Aura's own text, marked trusted so the model copies the question and
+// resume_context exactly, as shell_exec's challenge is (spec 2026-10-12). The caller's question
+// keeps every string someone else wrote from forging a line: plugin_pack quotes and caps them
+// (plugins.Review.Question), the task cancel card flattens and caps its payload without quoting it
+// (flatText), so that text still reaches the model inside this trusted result. json.Marshal's
+// HTML-safe encoding keeps <, > and & out of the payload.
+func (p approvalPrompt) required(digest, question string, repeat map[string]any) ToolResult {
+	code := p.name + "_required"
+	payload := map[string]any{
+		"error":           code,
+		"approval_sha256": digest,
+		"question":        question,
+		"repeat":          repeat,
+		"resume_context":  map[string]string{"type": p.contextType, "approval_sha256": digest},
+		"message": "This needs the operator's approval. Call ask_user with kind=\"approval\", question exactly equal to the question field " +
+			"and resume_context exactly equal to the resume_context field. After the operator accepts, call " + p.tool + " again with " +
+			"exactly the arguments in repeat. If they decline, do not retry.",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(`{"error":"` + code + `"}`)
+	}
+	return ToolResult{
+		Preview: string(raw), Bytes: len(raw),
+		Provenance: &ToolResultProvenance{Source: "aura:" + p.name, Trust: TrustTrusted},
 	}
 }

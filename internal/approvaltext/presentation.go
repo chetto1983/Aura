@@ -25,6 +25,9 @@ const (
 	PluginInstallKey = "approval.plugin.install"
 	// PluginRemoveKey identifies a plugin removal approval.
 	PluginRemoveKey = "approval.plugin.remove"
+	// TaskCancelKey identifies an approval to cancel a task another conversation, the CLI or the
+	// cockpit scheduled.
+	TaskCancelKey = "approval.task.cancel"
 
 	maxShortParamBytes = 256
 	maxArgsBytes       = 1024
@@ -98,7 +101,9 @@ func derive(question string, fields map[string]json.RawMessage) (Presentation, b
 	case "scheduled_task_approval":
 		return deriveScheduled(question, fields)
 	case "plugin_pack_approval":
-		return derivePlugin(question, fields)
+		return deriveCard(question, fields, pluginCards)
+	case "task_cancel_approval":
+		return deriveCard(question, fields, taskCancelCards)
 	default:
 		return Presentation{}, false
 	}
@@ -248,8 +253,8 @@ func valid(p Presentation) bool {
 			"task": maxShortParamBytes, "kind": maxShortParamBytes, "schedule": maxArgsBytes, "risk": maxShortParamBytes,
 			"when": maxShortParamBytes, "summary": maxArgsBytes,
 		}
-	case PluginInstallKey, PluginRemoveKey:
-		limits = pluginLimits(p.Key)
+	case PluginInstallKey, PluginRemoveKey, TaskCancelKey:
+		limits = cardLimits(p.Key)
 	default:
 		return false
 	}
@@ -275,8 +280,8 @@ func requiredParams(key string) []string {
 		return []string{"cwd", "command", "digest"}
 	case ScheduledKey:
 		return []string{"task", "kind"}
-	case PluginInstallKey, PluginRemoveKey:
-		return pluginRequired(key)
+	case PluginInstallKey, PluginRemoveKey, TaskCancelKey:
+		return cardRequired(key)
 	default:
 		return nil
 	}
@@ -315,8 +320,8 @@ func RenderItalian(p Presentation, fallback string) string {
 			return fmt.Sprintf("Approva l'attività pianificata %s %s (%s, rischio=%s)? Non verrà eseguita finché non approvi.", p.Params["kind"], p.Params["task"], p.Params["schedule"], p.Params["risk"])
 		}
 		return fmt.Sprintf("Approva l'attività pianificata %s %s? Non verrà eseguita finché non approvi.", p.Params["kind"], p.Params["task"])
-	case PluginInstallKey, PluginRemoveKey:
-		return renderPluginItalian(p)
+	case PluginInstallKey, PluginRemoveKey, TaskCancelKey:
+		return renderCardItalian(p)
 	default:
 		return fallback
 	}

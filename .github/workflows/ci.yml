@@ -1594,7 +1594,7 @@ jobs:
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
       # The same sha compose.yaml pins, so the tier proves the image appliances run;
       # TestThePIMImageIsPinnedEverywhere keeps the two equal.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:68f8935ce8df6d8c18315d8e7ad617aac7768410
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -2031,15 +2031,19 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Restore only. Each entry holds one scope's measurement and the fingerprint of its
-      # inputs; the fingerprint decides reuse, so the key is only per commit. The gate job
-      # merges every group's entries and saves them once.
+      # Each entry holds one scope's measurement and the fingerprint of its inputs; the
+      # fingerprint decides reuse, so a foreign group's entry (the old merged keys, or a group
+      # with no entry yet) is harmless. run_attempt keeps a re-run of a cancelled attempt from
+      # hitting the exact key and skipping the save of the scopes it adds. Every group saves
+      # its own entries below, because a push cancels the run before any aggregate could.
       - name: Restore Go mutation results
+        id: go_mutation_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: artifacts/go-mutation-cache
-          key: go-mutation-v1-${{ runner.os }}-${{ github.sha }}
+          key: go-mutation-v1-${{ runner.os }}-${{ matrix.group }}-${{ github.sha }}-${{ github.run_attempt }}
           restore-keys: |
+            go-mutation-v1-${{ runner.os }}-${{ matrix.group }}-
             go-mutation-v1-${{ runner.os }}-
 
       - name: Install pinned Go mutation runner
@@ -2053,6 +2057,19 @@ jobs:
           --measure-scopes ${{ matrix.scopes }}
           --go-cache-dir artifacts/go-mutation-cache
           --export-dir artifacts/go-mutation-group
+
+      # always(), not !cancelled(): when a push cancels the run the server re-evaluates each
+      # step's if, and only a condition that is still true keeps the step (always() "returns
+      # true, even when canceled"; !cancelled() is false then). The scopes this group finished
+      # are already on disk, one entry per scope. Saved when the measure step failed too: an
+      # entry is a measurement. Workflow cancellation:
+      # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation
+      - name: Save this group's Go mutation results
+        if: always() && steps.go_mutation_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/go-mutation-cache
+          key: ${{ steps.go_mutation_cache.outputs.cache-primary-key }}
 
       - name: Hand this group's measurements to the mutation gate
         if: always()
@@ -2083,6 +2100,7 @@ jobs:
     # job measured on this commit carries no reused_from and that job's duration.
     # This job runs no mutant (--require-measured): a scope whose entry is missing or does not
     # match its inputs fails the gate instead of being measured here in silence.
+    # It saves no cache either: each group saves its own entries, so they survive a cancelled run.
     # The scope roster lives in scripts/critical_mutation_gate.py (REQUIRED_SCOPE_IDS), which
     # release readiness imports; tests pin the group matrix to that roster.
     steps:
@@ -2101,7 +2119,6 @@ jobs:
           go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # Go first: when the Stryker report is missing, the Go measurements are still saved below.
       - name: Download every group's Go measurements
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -2115,29 +2132,10 @@ jobs:
           name: stryker-mutation
           path: web/reports
 
-      # lookup-only reports an exact per-commit hit (a re-run) without downloading over the
-      # merged measurements.
-      - name: Look up this commit's Go mutation cache
-        id: go_mutation_cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: artifacts/go-mutation-cache
-          key: go-mutation-v1-${{ runner.os }}-${{ github.sha }}
-          lookup-only: true
-
       - name: Per-boundary Go + frontend mutation gate
         run: |
           PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py scripts/go_mutation_cache_test.py scripts/mutation_workflow_test.py
           PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py --require-measured --go-cache-dir artifacts/go-mutation-cache
-
-      # Saved when the gate fails too: an entry is a measurement, and a below-floor scope stays
-      # below until something in its closure changes.
-      - name: Save Go mutation results
-        if: always() && steps.go_mutation_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: artifacts/go-mutation-cache
-          key: ${{ steps.go_mutation_cache.outputs.cache-primary-key }}
 
       - name: Upload critical mutation evidence
         if: always()
@@ -2201,7 +2199,7 @@ jobs:
       # schema production no longer serves -- the same stale image behind
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:68f8935ce8df6d8c18315d8e7ad617aac7768410
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout

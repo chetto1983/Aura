@@ -17,7 +17,11 @@ type fakeTaskStore struct {
 	createID  string
 	listRows  []ScheduledTask
 	listErr   error
+	// targets are the rows CancelTarget reads, by id; an unknown id reads as a task with no origin.
+	targets   map[string]ScheduledTask
+	targetErr error
 	cancelled string
+	cancels   int
 	cancelErr error
 	ranNow    string
 	runNowErr error
@@ -42,8 +46,15 @@ func (f *fakeTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInpu
 func (f *fakeTaskStore) ListScheduledTasks(context.Context) ([]ScheduledTask, error) {
 	return f.listRows, f.listErr
 }
+func (f *fakeTaskStore) CancelTarget(_ context.Context, id string) (ScheduledTask, error) {
+	if task, ok := f.targets[id]; ok {
+		return task, f.targetErr
+	}
+	return ScheduledTask{ID: id, Kind: "reminder", ScheduleKind: "at", Status: "active"}, f.targetErr
+}
 func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error {
 	f.cancelled = id
+	f.cancels++
 	return f.cancelErr
 }
 func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error {
@@ -271,23 +282,32 @@ func TestTaskList(t *testing.T) {
 	}
 }
 
+// The list, the cancel card and the approval summary flatten text the same way: one line, no
+// control or format rune (a bidi override would reorder what the operator reads), one ellipsis.
 func TestTaskPayloadPreviewIsSingleLineAndBounded(t *testing.T) {
 	t.Parallel()
 
-	got := taskPayloadPreview(strings.Repeat("x", taskPayloadPreviewRunes+20) + "\nsecret")
-	if strings.Contains(got, "\n") {
-		t.Fatalf("task payload preview contains a newline: %q", got)
+	bidi := string(rune(0x202e))
+	got := taskPayloadPreview(bidi + strings.Repeat("x", taskPayloadPreviewRunes+20) + "\nsecret")
+	if strings.ContainsAny(got, "\n"+bidi) {
+		t.Fatalf("task payload preview holds a newline or a format rune: %q", got)
 	}
-	if len([]rune(got)) != taskPayloadPreviewRunes+3 || !strings.HasSuffix(got, "...") {
-		t.Fatalf("task payload preview length/suffix = %d/%q", len([]rune(got)), got[len(got)-3:])
+	if len([]rune(got)) != taskPayloadPreviewRunes+1 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("task payload preview length/suffix = %d/%q", len([]rune(got)), string([]rune(got)[len([]rune(got))-1:]))
+	}
+	if summary := taskSummary("reminder", json.RawMessage(`{"text":"a`+bidi+`b"}`)); summary != "ab" {
+		t.Fatalf("approval summary = %q, want the format rune dropped", summary)
 	}
 }
 
+// The cancel half cancels a task its own conversation scheduled: any other one asks first
+// (task_cancel_test.go).
 func TestTaskCancelRunNow(t *testing.T) {
-	store := &fakeTaskStore{}
+	store := &fakeTaskStore{targets: map[string]ScheduledTask{"c1": {ID: "c1", OriginConversationID: "conv-C"}}}
 	tool := &TaskTool{Store: store}
+	ctx := WithToolCallContext(context.Background(), "conv-C", "call-1", t.TempDir(), 2048)
 
-	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"cancel","task_id":"c1"}`)); err != nil {
+	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"cancel","task_id":"c1"}`)); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	if store.cancelled != "c1" {

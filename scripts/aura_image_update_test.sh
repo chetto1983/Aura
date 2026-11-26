@@ -74,6 +74,7 @@ load_status() { :; }
 record_status() { :; }
 on_apply_exit() { :; }
 image_revision() { :; }
+record_mcp_sidecars() { :; }
 rerun_if_asked_meanwhile() { :; }
 LIB
   # aura_image_home_test.sh drives the real image-home functions.
@@ -134,6 +135,7 @@ for memory in running stopped; do
     retire_env_keys() { :; }
     ensure_cloudflared_edge_env() { :; }
     bash() { [[ "$1" == scripts/appliance_posture.sh ]] || fail 'unexpected bash'; }
+    record_mcp_sidecars() { :; }
     container_image_id() { echo image-id; }
     image_id() { echo image-id; }
     update_sidecar() { :; }

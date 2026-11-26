@@ -16,12 +16,16 @@
 #     reads its own disk, so the two subjects' fixture accounts are the operator's);
 #   - the published WhatsApp MCP on 8092 (bridge on 8094), its store a fresh directory of this
 #     run, bind-mounted so the tier can seed each tenant's SQLite.
-# Then it runs the tier and removes all of it, both containers' data included.
+# Then it runs the tier and removes all of it: Postgres and ArcadeDB run with --rm, which takes their
+# anonymous volumes with them; the PIM and WhatsApp containers go by docker rm -f -v, and the
+# temporary directory with the bind-mounted store.
 #
 # What it reaches outside that: the Docker daemon (it pulls and runs the images above), the
 # loopback ports above, and the caller's embedding sidecar, which is stateless: it embeds text
-# and keeps nothing. It reads the GGUF in AURA_EMBED_MODEL_DIR, and writes only below its own
-# temporary directory.
+# and keeps nothing. It reads the GGUF in AURA_EMBED_MODEL_DIR.
+# What it writes outside its own temporary directory: the caller's Go build and module caches
+# (go build and go test run as the caller; only aura serve, the memory MCP and the migration run
+# under env -i with HOME in that directory) and the Docker daemon's image store.
 #
 # What it cannot reach:
 #   - another Postgres or ArcadeDB: it never takes a database address from its caller, so no
@@ -56,6 +60,13 @@ disposable_stack_guard_name "$DB"
 
 PG_PORT=5434
 ARCADE_PORT=2490
+PG_CONTAINER=aura-postgres-mcp-live
+ARCADE=aura-arcadedb-mcp-live
+PIM=aura-pim-mcp-live
+WHATSAPP=aura-whatsapp-mcp-live
+# What a previous run killed before its trap ran left behind would hold the ports below. Only this
+# script's own names are removed.
+docker rm -f -v "$PG_CONTAINER" "$ARCADE" "$PIM" "$WHATSAPP" >/dev/null 2>&1 || true
 for port in "$ARCADE_PORT" "$PG_PORT" 8092 8093 8094 8096 9080; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
     echo "FATAL: 127.0.0.1:$port is already in use" >&2
@@ -65,12 +76,14 @@ done
 
 ARCADE_IMAGE="$(sed -nE 's/^    image: (arcadedata\/arcadedb:[^[:space:]]+)$/\1/p' compose.yaml | head -1)"
 [ -n "$ARCADE_IMAGE" ] || { echo "FATAL: no arcadedb image in compose.yaml" >&2; exit 1; }
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:68f8935ce8df6d8c18315d8e7ad617aac7768410}"
 WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
-ARCADE=aura-arcadedb-mcp-live
-PIM=aura-pim-mcp-live
-WHATSAPP=aura-whatsapp-mcp-live
 random_hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
+# A pulled image has a registry digest; a locally built override (AURA_PIM_MCP_DEV_IMAGE) has none,
+# and indexing its empty RepoDigests is a template error: report its image ID instead.
+image_identity() {
+  docker image inspect "$1" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}'
+}
 PG_PASSWORD="$(random_hex 16)"
 ARCADE_PASSWORD="$(random_hex 16)"
 ARCADEDB_URL="http://127.0.0.1:$ARCADE_PORT"
@@ -94,13 +107,13 @@ teardown() {
   wait 2>/dev/null
   # The WhatsApp image writes the store as root; empty it, dotfiles included, from inside.
   docker exec "$WHATSAPP" find /app/whatsapp-bridge/store -mindepth 1 -delete >/dev/null 2>&1
-  docker rm -f "$PIM" "$WHATSAPP" "$ARCADE" >/dev/null 2>&1
+  docker rm -f -v "$PIM" "$WHATSAPP" "$ARCADE" >/dev/null 2>&1
   rm -rf "$WORK"
   disposable_stack_teardown
 }
 trap teardown EXIT
 
-disposable_stack_bring_up_local "$DB" "$PG_PASSWORD" aura-postgres-mcp-live "$PG_PORT"
+disposable_stack_bring_up_local "$DB" "$PG_PASSWORD" "$PG_CONTAINER" "$PG_PORT"
 disposable_stack_export_env "$PG_PASSWORD"
 
 # compose.yaml's own JAVA_OPTS form: the empty brackets after the database name are
@@ -196,8 +209,7 @@ for tenant in d1111111-1111-4111-8111-111111111111 d2222222-2222-4222-8222-22222
 done
 docker exec "$WHATSAPP" chmod -R a+rwX /app/whatsapp-bridge/store
 
-echo "==> PIM $(docker image inspect "$PIM_IMAGE" --format '{{index .RepoDigests 0}}')," \
-  "WhatsApp $(docker image inspect "$WHATSAPP_IMAGE" --format '{{index .RepoDigests 0}}')," \
+echo "==> PIM $(image_identity "$PIM_IMAGE"), WhatsApp $(image_identity "$WHATSAPP_IMAGE")," \
   "database $DB on 127.0.0.1:$PG_PORT, ArcadeDB $ARCADE_IMAGE on $ARCADEDB_URL"
 AURA_AUTHULA_DSN="$AURA_DB_URL" AURA_AUTHULA_SECRET="$AUTHULA_SECRET" \
   AURA_WHATSAPP_STORE_ROOT="$STORE" WHATSAPP_BRIDGE_TOKEN="$BRIDGE_TOKEN" \

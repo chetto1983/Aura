@@ -20,7 +20,7 @@ docker run -d --name aura-pim-mcp --network host -e ASPNETCORE_URLS=http://127.0
   -e CALENDAR_MCP_OAuth__Issuer=http://127.0.0.1:9080 \
   -e CALENDAR_MCP_OAuth__MetadataAddress=http://127.0.0.1:9080/.well-known/oauth-authorization-server \
   -e 'CALENDAR_MCP_OAuth__Resource=http://127.0.0.1:8093,http://127.0.0.1:8093/' -e CALENDAR_MCP_OAuth__ToolsScope=mcp:tools \
-  -e AURA_PIM_CONFIG_B64="$CONFIG" --entrypoint /bin/sh ${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5} \
+  -e AURA_PIM_CONFIG_B64="$CONFIG" --entrypoint /bin/sh ${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:68f8935ce8df6d8c18315d8e7ad617aac7768410} \
   -c 'printf "%s" "$AURA_PIM_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll' >/dev/null
 for _ in $(seq 1 40); do curl -s -o /dev/null http://127.0.0.1:8093/health && break; sleep 2; done
 docker cp internal/mcp/testdata/fixture-calendar.json aura-pim-mcp:/app/data/fixture-calendar.json

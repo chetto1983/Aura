@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // requireTaskPayload refuses a reminder with no text and an agent_job with no goal. A scheduled run
@@ -28,4 +29,20 @@ func requireTaskPayload(kind string, payload json.RawMessage) error {
 		return nil
 	}
 	return fmt.Errorf("task schedule: %s", missing)
+}
+
+// flatText puts text someone else wrote on one line for a list or an approval card: whitespace
+// runs, line breaks included, collapse to one space, every other non-printable rune (a control,
+// a bidi override, a zero-width) is dropped, and the result is capped at maxRunes plus "…".
+func flatText(text string, maxRunes int) string {
+	flat := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, strings.Join(strings.Fields(text), " "))
+	if runes := []rune(flat); len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "…"
+	}
+	return flat
 }

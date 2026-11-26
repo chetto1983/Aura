@@ -46,6 +46,9 @@ type TaskTool struct {
 	// Defaults is the operator's default channel, applied when a schedule names no notify
 	// (task_default_notify.go). Nil, or nothing set, leaves the delivery choice directive.
 	Defaults taskDefaults
+	// CancelApprovals holds the operator's approvals to cancel a task this conversation did not
+	// schedule (task_cancel.go). Nil records none, so such a cancel only ever asks.
+	CancelApprovals *TaskCancelApprovals
 
 	routerOnce sync.Once
 	router     *ActionRouter
@@ -74,6 +77,9 @@ type ScheduledTask struct {
 	PausedReason        string
 	ConsecutiveFailures int
 	TelegramRecipients  []int64
+	// OriginConversationID is the conversation that scheduled the task, "" for one scheduled
+	// from the CLI or the cockpit. Only CancelTarget reads it.
+	OriginConversationID string
 }
 
 // CreateTaskInput carries a resolved, validated task the tool asks the store to
@@ -110,6 +116,9 @@ type CreateTaskInput struct {
 type taskStore interface {
 	CreateScheduledTask(ctx context.Context, in CreateTaskInput) (ScheduledTask, error)
 	ListScheduledTasks(ctx context.Context) ([]ScheduledTask, error)
+	// CancelTarget reads the task CancelScheduledTask would stop, origin included, and
+	// refuses what it would refuse.
+	CancelTarget(ctx context.Context, id string) (ScheduledTask, error)
 	CancelScheduledTask(ctx context.Context, id string) error
 	RunScheduledTaskNow(ctx context.Context, id string) error
 	PauseScheduledTask(ctx context.Context, id string) error
@@ -166,7 +175,7 @@ func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
 		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — a reminder or message to send the operator later on WhatsApp, Telegram or email (in 10 minutes, tomorrow at 9), agent_job wake-ups, every N minutes or on a cron; list, pause, resume, cancel, or run one now.",
-		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active, paused and awaiting-approval tasks; action=cancel/run_now/pause/resume operate on a task_id. " +
+		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active, paused and awaiting-approval tasks; action=cancel/run_now/pause/resume operate on a task_id; cancelling a task this conversation did not schedule first asks the operator (task_cancel_approval_required). " +
 			"The scheduler pauses a task by itself after repeated failed runs; list marks it, and it should be resumed only once the cause is fixed. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. An agent_job cannot send a message to anyone other than the operator; to send a fixed message later, use kind=message. " +
 			"notify reaches only the operator (their own sign-in email, WhatsApp or Telegram), never an address the request names: a result that only exists when the job runs (a summary, a report) cannot be sent to someone else; say so, and offer to deliver it to the operator or to send a fixed text with kind=message. " +
@@ -250,16 +259,6 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		status = "pending_approval"
 	}
 
-	// Headless workers have a flat technical session id, so use their explicit
-	// origin conversation for the durable owner. Direct calls retain the historic
-	// tool-call-session fallback.
-	originConvID := OriginConversationIDFromContext(ctx)
-	if originConvID == "" {
-		if tc, ok := toolCallCtx(ctx); ok {
-			originConvID = tc.sessionID
-		}
-	}
-
 	created, err := t.Store.CreateScheduledTask(ctx, CreateTaskInput{
 		Kind:                 a.Kind,
 		ScheduleKind:         spec.ScheduleKind,
@@ -272,7 +271,7 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		NotifyRoute:          a.Notify,
 		Status:               status,
 		NextRunAt:            next,
-		OriginConversationID: originConvID,
+		OriginConversationID: callerConversationID(ctx),
 		TelegramRecipients:   TelegramRecipientIDs(plan.Recipients),
 	})
 	if err != nil {
@@ -402,24 +401,7 @@ func renderTaskList(rows []ScheduledTask) string {
 const taskPayloadPreviewRunes = 500
 
 func taskPayloadPreview(payload string) string {
-	payload = strings.Join(strings.Fields(payload), " ")
-	runes := []rune(payload)
-	if len(runes) <= taskPayloadPreviewRunes {
-		return payload
-	}
-	return string(runes[:taskPayloadPreviewRunes]) + "..."
-}
-
-func (t *TaskTool) actionCancel(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(ctx, raw, "cancel")
-	if err != nil {
-		return ToolResult{}, err
-	}
-	if err := t.Store.CancelScheduledTask(ctx, id); err != nil {
-		return ToolResult{}, fmt.Errorf("task cancel: %w", err)
-	}
-	s := "cancelled task " + id
-	return ToolResult{Preview: s, Bytes: len(s)}, nil
+	return flatText(payload, taskPayloadPreviewRunes)
 }
 
 func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
