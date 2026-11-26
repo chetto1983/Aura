@@ -11,7 +11,7 @@
 //
 //	go test -tags db_integration -race ./internal/identity -count=1
 //
-// No-skip-as-green: envOrSkip (store_test.go) t.Fatals under $CI when the DSN is
+// No-skip-as-green: testenv.Require (store_test.go) t.Fatals under $CI when the DSN is
 // unset, so a skipped tier can never pass as green in the pipeline. The package
 // goleak gate (main_test.go) fails the package on any leaked pgx pool goroutine.
 package identity

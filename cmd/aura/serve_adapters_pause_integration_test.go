@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,13 +21,7 @@ import (
 // pauses and resumes its reminder and sees it paused in its list; another identity cannot
 // touch it; the database backup cannot be paused by its own owner either.
 func TestTaskToolPauseIsOwnerScoped(t *testing.T) {
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "task pause integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "task pause integration")
 	ctx := context.Background()
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
@@ -87,13 +80,7 @@ func TestTaskToolPauseIsOwnerScoped(t *testing.T) {
 // A job that read a hostile mail calls the task tool at Normal tier, so it must not be able to
 // silence the watch (spec §4). mail_watch disable is the model's one way, because it asks first.
 func TestTheTaskToolCannotStopTheWatch(t *testing.T) {
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "task pause integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "task pause integration")
 	ctx := context.Background()
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)

@@ -5,27 +5,20 @@ package agui
 import (
 	"context"
 	"net/http"
-	"os"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/chetto1983/aura/internal/board"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
 )
 
 func TestBoardProgressHTTPWithRealPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	migrateURL, appURL := os.Getenv("AURA_DB_MIGRATE_URL"), os.Getenv("AURA_DB_URL")
-	if migrateURL == "" || appURL == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("board progress integration needs composed database URLs under CI")
-		}
-		t.Skip("board progress integration needs a disposable Postgres")
-	}
+	migrateURL, appURL := testenv.Require(t, "AURA_DB_MIGRATE_URL"), testenv.Require(t, "AURA_DB_URL")
 	if _, err := db.Migrate(ctx, dbtest.MigrateURL(t, migrateURL)); err != nil {
 		t.Fatal(err)
 	}

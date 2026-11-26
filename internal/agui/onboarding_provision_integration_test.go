@@ -23,7 +23,7 @@
 //
 // Requires POSTGRES_PASSWORD plus optional PGHOST/PGPORT. The test creates and drops a
 // throwaway DB, so append-only audit rows never pollute the shared aura DB. No-skip-as-
-// green: envOrSkip t.Fatals under $CI when required env is unset.
+// green: testenv.Require t.Fatals under $CI when required env is unset.
 
 package agui
 

@@ -6,13 +6,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 )
 
 func TestResolveReplacesForeignCacheMounts(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	b := NewDockerBackend(cli, testBoxImage(), testLimits())
 	ctx := context.Background()

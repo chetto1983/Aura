@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func liveEmbedder(t *testing.T) DenseEmbedder {
@@ -28,10 +29,10 @@ func liveEmbedder(t *testing.T) DenseEmbedder {
 	}
 	embedder := NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil)
 	if embedder == nil {
-		liveGap(t, "no embedder configured")
+		testenv.Unavailable(t, "no embedder configured")
 	}
 	if _, err := embedder.Embed(context.Background(), []string{"probe"}); err != nil {
-		liveGap(t, "embedding sidecar unreachable: %v", err)
+		testenv.Unavailable(t, "embedding sidecar unreachable: %v", err)
 	}
 	return embedder
 }
@@ -40,7 +41,7 @@ func vectorClient(t *testing.T) *Client {
 	t.Helper()
 	password := strings.TrimSpace(os.Getenv("ARCADEDB_PASSWORD"))
 	if password == "" {
-		liveGap(t, "ARCADEDB_PASSWORD not set")
+		testenv.Unavailable(t, "ARCADEDB_PASSWORD not set")
 	}
 	base := strings.TrimSpace(os.Getenv("ARCADEDB_URL"))
 	if base == "" {
@@ -52,7 +53,7 @@ func vectorClient(t *testing.T) *Client {
 	}
 	client, err := New(Config{BaseURL: base, Database: database, User: "root", Password: password})
 	if err != nil {
-		liveGap(t, "arcadedb: %v", err)
+		testenv.Unavailable(t, "arcadedb: %v", err)
 	}
 	return client.WithEmbedder(liveEmbedder(t))
 }

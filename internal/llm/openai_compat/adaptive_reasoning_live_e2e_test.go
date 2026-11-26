@@ -48,6 +48,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // liveModel is the production default; an operator can repoint it with AURA_LLM_MODEL
@@ -66,17 +67,6 @@ type streamResult struct {
 	reasoningChars int
 	contentChars   int
 	finishReason   string
-}
-
-// requireLiveLLM skips when the paid key is unset (the one legitimate local skip —
-// this tier is PAID and never runs in CI, so there is no no-skip-as-green obligation).
-func requireLiveLLM(t *testing.T) {
-	t.Helper()
-	if os.Getenv("OPENROUTER_API_KEY") == "" {
-		t.Skip("live_e2e: OPENROUTER_API_KEY unset — PAID gate, not CI. " +
-			"Run: cp /d/Aura/.env ./.env; set -a; . ./.env; set +a; " +
-			"go test -tags live_e2e -run TestLiveReasoning -timeout 600s -v ./internal/llm/openai_compat/")
-	}
 }
 
 // liveCfg builds the production-shaped config from the env key, defaulting the model
@@ -126,7 +116,7 @@ func streamLive(t *testing.T, cfg llm.Config, req llm.Request, timeout time.Dura
 
 // C1: the NONE tier (effort:none) suppresses reasoning entirely yet still answers.
 func TestLiveReasoning_NoneTierOffSwitch(t *testing.T) {
-	requireLiveLLM(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 	cfg := liveCfg()
 	builder := prompt.NewPromptBuilder()
 	reg := tools.NewRegistry()
@@ -150,7 +140,7 @@ func TestLiveReasoning_NoneTierOffSwitch(t *testing.T) {
 // C2: the HIGH tier completes a deep reasoning turn at max_tokens=4096 — reasoning
 // runs past the cap (exclude=true) without truncating the answer.
 func TestLiveReasoning_HighTierNoStarvation(t *testing.T) {
-	requireLiveLLM(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 	cfg := liveCfg()
 	builder := prompt.NewPromptBuilder()
 	reg := tools.NewRegistry()
@@ -178,7 +168,7 @@ func TestLiveReasoning_HighTierNoStarvation(t *testing.T) {
 // emitting the JSON classification — the off-switch the background teacher, asked on uncertain turns,
 // relies on.
 func TestLiveReasoning_RouterEnabledFalseOffSwitch(t *testing.T) {
-	requireLiveLLM(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 	cfg := liveCfg()
 	disabled := false
 	// Mirrors the hand-built router request of internal/agent.AskTeacher.

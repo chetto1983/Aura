@@ -18,71 +18,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/client"
-
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 )
-
-// egressITDockerdOrGate resolves the Docker daemon endpoint from DOCKER_HOST and gates the test on
-// its reachability: a stdlib socket probe (npipe:// on Windows is not dialable and resolves to
-// unreachable). Unreachable => local t.Skip but t.Fatal under $CI (a skipped docker_integration
-// tier is never a silent pass — CLAUDE.md no-skip-as-green). Mirrors usersandbox.skipUnlessDockerd.
-func egressITDockerdOrGate(t *testing.T) {
-	t.Helper()
-	var network, addr string
-	switch host := strings.TrimSpace(os.Getenv("DOCKER_HOST")); {
-	case host == "":
-		network, addr = "unix", "/var/run/docker.sock"
-	case strings.HasPrefix(host, "unix://"):
-		network, addr = "unix", strings.TrimPrefix(host, "unix://")
-	case strings.HasPrefix(host, "tcp://"):
-		network, addr = "tcp", strings.TrimPrefix(host, "tcp://")
-	}
-	if network != "" {
-		if conn, err := net.DialTimeout(network, addr, 2*time.Second); err == nil {
-			_ = conn.Close()
-			return
-		}
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatal("docker_integration requires a reachable Docker daemon under CI — a skipped tier is never a " +
-			"silent pass (CLAUDE.md no-skip-as-green); wire dockerd into ci.yml")
-	}
-	t.Skip("docker_integration requires a reachable Docker daemon; start Docker and re-run " +
-		"(e.g. `go test -tags docker_integration ./cmd/aura`)")
-}
-
-// egressITEnforcingBridgeOrGate gates the egress DROP assertions on a native-Linux non-masquerading
-// bridge. Under $CI it is MANDATORY: a non-Linux daemon t.Fatals (Docker Desktop vpnkit NATs the
-// bridge, Pitfall 3 — a skipped enforcement tier is never a silent pass). Locally it skips unless a
-// dev opts in with AURA_EGRESS_ENFORCE=1 on a real native-Linux host. Mirrors
-// usersandbox.skipUnlessEnforcingBridge so the composition-root proof has the SAME contract as the
-// backend-level SBX-04 test.
-func egressITEnforcingBridgeOrGate(t *testing.T) {
-	t.Helper()
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		if runtime.GOOS != "linux" {
-			t.Fatalf("egress enforcement must run on native-Linux dockerd under CI, but GOOS=%s "+
-				"(Docker Desktop vpnkit NATs the bridge — Pitfall 3); wire a native-Linux dockerd into ci.yml", runtime.GOOS)
-		}
-		return
-	}
-	if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("AURA_EGRESS_ENFORCE")) == "1" {
-		return
-	}
-	t.Skip("egress DROP enforcement is native-Linux-only (Docker Desktop/WSL vpnkit NATs the bridge — advisory); " +
-		"informational-only outside CI. Set AURA_EGRESS_ENFORCE=1 on a native-Linux non-masquerading host to run (Pitfall 3)")
-}
 
 // egressITBoxImage is the box image the composition-root box is created from. It defaults to a
 // tiny, universally-pullable image with wget+timeout (busybox) and is overridable so a live run can
@@ -228,8 +175,8 @@ func hasCap(caps []string, want string) bool {
 // from the cloud-metadata IP + RFC1918 (D-05). This is the LIVE proof carried forward to WSL/CI
 // (37-VALIDATION.md Manual-Only); locally it compiles + gates cleanly.
 func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
-	egressITDockerdOrGate(t)
-	egressITEnforcingBridgeOrGate(t)
+	testenv.Dockerd(t)
+	testenv.EnforcingBridge(t)
 
 	cli, err := client.New(client.FromEnv)
 	if err != nil {

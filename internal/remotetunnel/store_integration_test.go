@@ -4,7 +4,6 @@ package remotetunnel
 
 import (
 	"errors"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/settings"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,21 +32,11 @@ func TestStorePersistsGenerationAndEncryptedCredentials(t *testing.T) {
 
 func remoteAccessPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("AURA_DB_MIGRATE_URL")
-	if dsn == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_DB_MIGRATE_URL required in CI")
-		}
-		t.Skip("requires disposable PostgreSQL")
-	}
-	dsn = dbtest.MigrateURL(t, dsn)
+	dsn := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if _, err := db.Migrate(t.Context(), dsn); err != nil {
 		t.Fatal(err)
 	}
-	appDSN := os.Getenv("AURA_DB_URL")
-	if appDSN == "" {
-		t.Fatal("AURA_DB_URL required for runtime-role verification")
-	}
+	appDSN := testenv.Require(t, "AURA_DB_URL") // the runtime role the store runs as
 	pool, err := pgxpool.New(t.Context(), dbtest.MigrateURL(t, appDSN))
 	if err != nil {
 		t.Fatal(err)

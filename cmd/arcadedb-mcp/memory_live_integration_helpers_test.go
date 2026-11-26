@@ -19,14 +19,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
+	auramcp "github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	officialmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/goleak"
-
-	"github.com/chetto1983/aura/internal/arcadedb"
-	"github.com/chetto1983/aura/internal/config"
-	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
 type agentMemoryLiveMCPOptions struct {
@@ -375,20 +375,12 @@ func agentMemoryLiveEnv(name, fallback string) string {
 	return fallback
 }
 
-func agentMemoryLiveGap(t *testing.T, format string, args ...any) {
-	t.Helper()
-	if os.Getenv("CI") != "" {
-		t.Fatalf("arcadedb_integration cannot skip under CI: "+format, args...)
-	}
-	t.Skipf(format, args...)
-}
-
 func agentMemoryLiveDependencyGap(t *testing.T, strict bool, format string, args ...any) {
 	t.Helper()
 	if strict {
 		t.Fatalf("arcadedb_integration dependency unavailable: "+format, args...)
 	}
-	agentMemoryLiveGap(t, format, args...)
+	testenv.Unavailable(t, format, args...)
 }
 
 func agentMemoryLiveVectorWidth(vectors [][]float64) int {

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 type passageQuery struct{}
@@ -29,7 +31,7 @@ type passageResponses struct {
 
 func recordPassageResponses(t *testing.T) *passageResponses {
 	t.Helper()
-	raw := arcadeURLOrSkip(t)
+	raw := testenv.Require(t, "ARCADEDB_URL")
 	target, err := url.Parse(raw)
 	if err != nil || target.Host == "" {
 		t.Fatalf("ARCADEDB_URL %q is not a URL with a host: %v", raw, err)

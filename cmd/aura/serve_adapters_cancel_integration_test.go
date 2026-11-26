@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -19,13 +18,7 @@ import (
 // target carries, and it never asks about a task the cancel would refuse: the read refuses the
 // same tasks, inside the same identity.
 func TestCancelTargetCarriesTheOriginAndRefusesWhatCancelRefuses(t *testing.T) {
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "task cancel integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "task cancel integration")
 	ctx := context.Background()
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)

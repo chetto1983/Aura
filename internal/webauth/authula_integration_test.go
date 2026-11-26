@@ -22,37 +22,24 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
 	authulaservices "github.com/Authula/authula/services"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/goleak"
 )
 
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — a skipped "+
-				"integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (stack up)", key)
-	}
-	return v
-}
-
 func TestAuthulaProvider_EndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	dsn := envOrSkip(t, "AURA_AUTHULA_DSN")
-	secret := envOrSkip(t, "AURA_AUTHULA_SECRET")
-	auraDSN := envOrSkip(t, "AURA_DB_URL") // for the identity-link table (aura.*)
+	dsn := testenv.Require(t, "AURA_AUTHULA_DSN")
+	secret := testenv.Require(t, "AURA_AUTHULA_SECRET")
+	auraDSN := testenv.Require(t, "AURA_DB_URL") // for the identity-link table (aura.*)
 
 	// Construct the provider: builds its own pool on search_path=authula and runs
 	// Authula's core + plugin migrations into the isolated schema.
@@ -155,8 +142,8 @@ func TestAuthulaProviderCloseReleasesOwnedWorkers(t *testing.T) {
 	baseline := goleak.IgnoreCurrent()
 
 	provider, err := New(Config{
-		DSN:            envOrSkip(t, "AURA_AUTHULA_DSN"),
-		Secret:         envOrSkip(t, "AURA_AUTHULA_SECRET"),
+		DSN:            testenv.Require(t, "AURA_AUTHULA_DSN"),
+		Secret:         testenv.Require(t, "AURA_AUTHULA_SECRET"),
 		TrustedOrigins: []string{"http://127.0.0.1:9080"},
 	})
 	if err != nil {

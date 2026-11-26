@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agui"
@@ -20,13 +19,7 @@ import (
 // The saga over the real adapter and a real Postgres. The purge takes the id alone, the shape of
 // `aura identity purge --resume-resources`.
 func TestDeprovisionPausesThenDeletesAnIdentitysTasks(t *testing.T) {
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "deprovision integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "deprovision integration")
 	ctx := context.Background()
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)

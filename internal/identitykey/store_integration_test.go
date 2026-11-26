@@ -20,34 +20,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-func identitykeyEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("identitykey integration requires %s under CI — a skipped tier must not pass as green", key)
-		}
-		t.Skipf("identitykey integration requires %s", key)
-	}
-	return v
-}
 
 func migratedKeyPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := identitykeyEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, identitykeyEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := identitykeyEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 	host := os.Getenv("PGHOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -92,7 +80,7 @@ func seedKeyIdentity(t *testing.T, pool *pgxpool.Pool) string {
 
 func keyStore(t *testing.T, pool *pgxpool.Pool) *Store {
 	t.Helper()
-	s, err := NewStore(pool, identitykeyEnvOrSkip(t, "AURA_AUTHULA_SECRET"))
+	s, err := NewStore(pool, testenv.Require(t, "AURA_AUTHULA_SECRET"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

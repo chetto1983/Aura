@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/client"
 )
 
@@ -15,7 +16,7 @@ import (
 // file is written 0600 at create, is still there after Suspend/Resume, and a recreated box gets
 // it back from Resolve rather than from anything stored in the old container.
 func TestBoxFilesLandAndComeBackAfterRecreate(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	const path, body = "/run/aura/test.key", "per-identity-key"
 	calls := 0

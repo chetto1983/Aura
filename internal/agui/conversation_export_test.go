@@ -9,7 +9,7 @@
 //
 //	go test -tags db_integration -race -p 1 -count=1 -run 'TestConversationExport' ./internal/agui/
 //
-// No-skip-as-green: migratedPool's envOrSkip (server_integration_test.go)
+// No-skip-as-green: migratedPool's testenv.Require
 // t.Fatals under $CI when the DSN is unset, so a skipped run fails the gate
 // rather than passing green.
 package agui

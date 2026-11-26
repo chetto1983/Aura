@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/client"
 )
 
@@ -38,7 +39,7 @@ func boxPathExists(t *testing.T, cli *client.Client, containerID, boxPath string
 }
 
 func TestPluginTreeIsRewrittenOnlyWhenItsCommitChanges(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 	v1, v2 := t.TempDir(), t.TempDir()
@@ -93,7 +94,7 @@ func TestPluginTreeIsRewrittenOnlyWhenItsCommitChanges(t *testing.T) {
 
 // Before the plugin mirror, materializeInputs returned as soon as the skill sources were empty.
 func TestPluginSyncRunsWithoutSkillSources(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -114,7 +115,7 @@ func TestPluginSyncRunsWithoutSkillSources(t *testing.T) {
 // A plugin server runs in its root, the tree keeps its modes, and PLUGIN_DATA lives on the
 // workspace volume, so it outlives the box container.
 func TestPluginProcessSeesItsRootAndKeepsItsData(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	ctx := context.Background()
 	root := t.TempDir()

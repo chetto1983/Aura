@@ -20,27 +20,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/identitykey"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
-
-func openRouterKeyEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // fakeOpenRouterProvisioningServer stands in for OpenRouter's Provisioning API: mint
 // returns a fixed key/hash/label, GET returns 200 until revoked then 404, DELETE marks
@@ -100,10 +88,10 @@ func TestOpenRouterKeyAdaptersRoundTripLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	pwd := openRouterKeyEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, openRouterKeyEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := openRouterKeyEnvOrSkip(t, "AURA_DB_URL")
-	authulaSecret := openRouterKeyEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
+	authulaSecret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {

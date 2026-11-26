@@ -12,8 +12,8 @@
 //
 //	go test -tags db_integration -race -run TestReasoningEffort ./internal/conversations -count=1
 //
-// Reuses the store_test.go harness (envOrSkip / migratedPool / newStore / newConversation /
-// localID) + the package goleak TestMain (main_test.go). No-skip-as-green: envOrSkip t.Fatals
+// Reuses the store_test.go harness (testenv.Require / migratedPool / newStore / newConversation /
+// localID) + the package goleak TestMain (main_test.go). No-skip-as-green: testenv.Require t.Fatals
 // under $CI when the DSN is unset, so a skipped tier can never pass green.
 package conversations
 

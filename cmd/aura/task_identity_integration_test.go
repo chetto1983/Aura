@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"slices"
 	"testing"
 	"time"
@@ -25,13 +24,7 @@ import (
 // The assertion is deliberately about the OWNER, not about delivery: a row that owns
 // nothing is the precondition for the whole class.
 func TestCLIScheduledTaskCarriesAnOwner(t *testing.T) {
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "task identity integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "task identity integration")
 
 	ctx := context.Background()
 	cfg := config.LoadDB()

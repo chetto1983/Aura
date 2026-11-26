@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func liveProjectionCount(t *testing.T, client *arcadedb.Client, identityID, conversationID string) int {
@@ -36,8 +37,8 @@ func liveProjectionCount(t *testing.T, client *arcadedb.Client, identityID, conv
 
 func liveProjectionClient(t *testing.T) *arcadedb.Client {
 	t.Helper()
-	base := envOrSkip(t, "ARCADEDB_URL")
-	password := envOrSkip(t, "ARCADEDB_PASSWORD")
+	base := testenv.Require(t, "ARCADEDB_URL")
+	password := testenv.Require(t, "ARCADEDB_PASSWORD")
 	user := strings.TrimSpace(os.Getenv("ARCADEDB_ADMIN_USER"))
 	if user == "" {
 		user = "root"

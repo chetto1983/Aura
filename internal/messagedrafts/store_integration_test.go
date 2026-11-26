@@ -12,33 +12,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/dbtest"
 )
-
-func draftDBEnv(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("message draft integration requires %s", key)
-		}
-		t.Skipf("message draft integration requires %s", key)
-	}
-	return value
-}
 
 func draftTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	password := draftDBEnv(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, draftDBEnv(t, "AURA_DB_MIGRATE_URL"))
-	appURL := draftDBEnv(t, "AURA_DB_URL")
+	password := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 	host, port := os.Getenv("PGHOST"), os.Getenv("PGPORT")
 	if host == "" {
 		host = "127.0.0.1"

@@ -17,23 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
 )
-
-func restoreGarageEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("garage_integration requires %s, but it is unset under CI — a skipped tier must not pass as green", key)
-		}
-		t.Skipf("garage_integration requires %s; bring Garage up and set it", key)
-	}
-	return v
-}
 
 func restoreRandHex(t *testing.T, n int) string {
 	t.Helper()
@@ -45,11 +33,11 @@ func restoreRandHex(t *testing.T, n int) string {
 }
 
 func TestEnsureForIdentityRestoresAgainstALiveGarage(t *testing.T) {
-	client, err := garageadmin.New(restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT"), restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN"))
+	client, err := garageadmin.New(testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT"), testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN"))
 	if err != nil {
 		t.Fatalf("garageadmin.New: %v", err)
 	}
-	s3Endpoint := restoreGarageEnvOrSkip(t, "AURA_OBJECTSTORE_ENDPOINT")
+	s3Endpoint := testenv.Require(t, "AURA_OBJECTSTORE_ENDPOINT")
 	region := os.Getenv("AURA_OBJECTSTORE_REGION")
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

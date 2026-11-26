@@ -3,7 +3,7 @@
 // Integration tests for Service.ExpireDue (the share_expiry_sweep seam target) and the D-15
 // expiry-monotonicity property, against a real Postgres-backed aura.shared_links/
 // aura.share_audit (migration 0040) and objectstore.NewFake() — no Garage. Reuses
-// migratedPool/envOrSkip/seedIdentity/seedConversation/newLink/futurePtr/pastPtr and
+// migratedPool/testenv.Require/seedIdentity/seedConversation/newLink/futurePtr/pastPtr and
 // newShareTestService from store_integration_test.go/service_integration_test.go (same
 // package, same build tag).
 //

@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 const hostLeakCanary = "HOST-LEAK-CANARY-2-5"
@@ -36,7 +38,7 @@ func hostTreeWithCanary(t *testing.T) string {
 // TestPatchRoutedEditsInBoxNotHost proves the edit lands on the box copy and the identically-named
 // host file is left byte-for-byte alone.
 func TestPatchRoutedEditsInBoxNotHost(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	hostDir := hostTreeWithCanary(t)
 	hostTwin := filepath.Join(hostDir, "app.go")
@@ -85,7 +87,7 @@ func TestPatchRoutedEditsInBoxNotHost(t *testing.T) {
 // TestSearchFilesNamesRoutedListsBoxTreeOnly proves the routed enumeration walks the box, and that the host
 // tree the tool is configured with never appears in the results.
 func TestSearchFilesNamesRoutedListsBoxTreeOnly(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	hostTreeWithCanary(t) // seeds hostonly.go on the HOST; the assertions below prove it never lists
 
@@ -117,7 +119,7 @@ func TestSearchFilesNamesRoutedListsBoxTreeOnly(t *testing.T) {
 // TestSearchFilesContentRoutedSearchesBoxTreeOnly proves the routed search reads box content and cannot reach
 // the host tree — the canary is present on the host and must never be reported.
 func TestSearchFilesContentRoutedSearchesBoxTreeOnly(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	hostTreeWithCanary(t) // seeds the canary on the HOST; the box sweep must never find it
 

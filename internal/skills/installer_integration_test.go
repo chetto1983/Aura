@@ -2,7 +2,7 @@
 
 // Integration test for the skills install transport (plan 29-03 task 1). It requires
 // the migrations applied through 0010 (see audit_store_integration_test.go header for
-// the env + invocation). No-skip-as-green: the shared envOrSkip t.Fatals under $CI, so
+// the env + invocation). No-skip-as-green: testenv.Require t.Fatals under $CI, so
 // a skipped tier can never report falsely green. This is the Task-1 live-PG backstop —
 // a real Install through WriteInstall appends EXACTLY ONE skill_audit install row
 // (newest-first), the tree lands active + materialized, and the loader sees it.

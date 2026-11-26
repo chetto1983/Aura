@@ -25,7 +25,6 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -33,17 +32,13 @@ import (
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func roundTripEnv(t *testing.T) (*config.Config, *pgxpool.Pool) {
 	t.Helper()
-	if os.Getenv("AURA_DB_URL") == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_DB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("AURA_DB_URL not set")
-	}
+	testenv.Require(t, "AURA_DB_URL")
 	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config: %v", err)
@@ -73,8 +68,8 @@ func syntheticSpreadsheet(t *testing.T) []byte {
 // by the production provisioning port, before the identity row goes.
 func roundTripOwner(t *testing.T, cfg *config.Config, pool *pgxpool.Pool) string {
 	t.Helper()
-	restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
-	restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
+	testenv.Require(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+	testenv.Require(t, "AURA_GARAGE_ADMIN_TOKEN")
 	objects, _, _ := buildProvisioningPorts(&chatEnv{cfg: cfg, pool: pool})
 	if objects == nil {
 		t.Fatal("buildProvisioningPorts composed no object-store provisioner")

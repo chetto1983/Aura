@@ -5,7 +5,7 @@
 // (suspend-retain), and the NEXT Route transparently auto-resumes the SAME container — the D-08
 // inline resume, never a scheduled one. It closes SBX-03's idle-TTL lifecycle onto the live
 // DockerBackend. It skips locally when dockerd is unreachable (t.Fatal under $CI, via the shared
-// skipUnlessDockerd gate — no-skip-as-green).
+// testenv.Dockerd gate — no-skip-as-green).
 
 package usersandbox
 
@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moby/moby/client"
-
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/moby/moby/client"
 )
 
 // TestReap_IdleSuspendAutoResume drives the full idle lifecycle through the router: create via
 // Route → force idle → SuspendIdle stops the box → Route auto-resumes the same container.
 func TestReap_IdleSuspendAutoResume(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 
 	id := "reap-" + time.Now().UTC().Format("150405.000")

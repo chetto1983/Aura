@@ -8,7 +8,7 @@
 // serve_provisioning_objectstore_test.go, same package) since dialing a live Garage Admin API
 // is out of scope here — the point of this tier is the real DB write/read, not a real Garage.
 //
-// No-skip-as-green: objStoreProvEnvOrSkip t.Fatal's under $CI when the composed DSN env is
+// No-skip-as-green: testenv.Require t.Fatal's under $CI when the composed DSN env is
 // unset, so a missing DB can never report this tier as falsely green.
 //
 // Run via:
@@ -23,29 +23,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// objStoreProvEnvOrSkip mirrors mcpAuditEnvOrSkip / the internal/objectstore
-// identity_store_integration_test.go objEnvOrSkip: skip locally, t.Fatal under $CI so a
-// missing DSN never reports this tier as falsely green.
-func objStoreProvEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("EnsureForIdentity db_integration test requires %s, but it is unset under CI", key)
-		}
-		t.Skipf("EnsureForIdentity db_integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // objStoreProvMigratedPool ensures roles + migrations (to head) are applied against the
 // composed AURA_DB_URL/AURA_DB_MIGRATE_URL, then returns an aura_app pool.
@@ -54,9 +39,9 @@ func objStoreProvMigratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := objStoreProvEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, objStoreProvEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := objStoreProvEnvOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")
 	if host == "" {
@@ -109,7 +94,7 @@ func objStoreProvSeedIdentity(t *testing.T, pool *pgxpool.Pool) string {
 // again.
 func TestEnsureForIdentityDBIntegrationProvisionsRealRow(t *testing.T) {
 	pool := objStoreProvMigratedPool(t)
-	secret := objStoreProvEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	secret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 	const localID = "00000000-0000-0000-0000-000000000001"
 	shared := objectstore.Credentials{Bucket: "aura-assets", AccessKey: "GKshared", SecretKey: "sharedsecret"}
 	store, err := objectstore.NewIdentityStore(pool, secret, shared, localID)
@@ -177,7 +162,7 @@ func TestEnsureForIdentityDBIntegrationProvisionsRealRow(t *testing.T) {
 // writing any row to aura.identity_object_store and without ever touching the minter.
 func TestEnsureForIdentityDBIntegrationSharedWritesNoRow(t *testing.T) {
 	pool := objStoreProvMigratedPool(t)
-	secret := objStoreProvEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	secret := testenv.Require(t, "AURA_AUTHULA_SECRET")
 	const localID = "00000000-0000-0000-0000-000000000001"
 	shared := objectstore.Credentials{Bucket: "aura-assets", AccessKey: "GKshared", SecretKey: "sharedsecret"}
 	store, err := objectstore.NewIdentityStore(pool, secret, shared, localID)

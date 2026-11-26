@@ -27,6 +27,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 const (
@@ -156,7 +158,7 @@ func TestSoak_ConcurrentIdentities(t *testing.T) {
 			"Set %s=1 on the 32GB host and re-run "+
 			"(go test -tags docker_integration ./internal/sandbox/usersandbox/ -run TestSoak -v).", soakRealHostEnv)
 	}
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 
 	memTotal, memAvailBefore, ok := readMemInfoKiB()
 	if !ok {

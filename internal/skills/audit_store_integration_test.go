@@ -10,7 +10,7 @@
 //
 //	go test -tags db_integration -race ./internal/skills -count=1
 //
-// No-skip-as-green: envOrSkip t.Fatals under $CI when the DSN is unset, so a
+// No-skip-as-green: testenv.Require t.Fatals under $CI when the DSN is unset, so a
 // skipped tier can never pass as green in the pipeline. The package goleak gate
 // (main_test.go TestMain) fails the package on any leaked pgx pool goroutine.
 package skills
@@ -27,24 +27,10 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// envOrSkip mirrors internal/identity: skip locally, fail-loud under CI so a
-// missing DSN never reports a falsely-green integration job.
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("integration test requires %s, but it is unset under CI — "+
-				"a skipped integration test must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
-	}
-	return v
-}
 
 // bootstrapURL composes the superuser DSN EnsureRoles needs from the password.
 func bootstrapURL(t *testing.T, pwd string) string {
@@ -67,9 +53,9 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
@@ -224,7 +210,7 @@ func TestMigration0010_SchemaRoundTrip(t *testing.T) {
 	// Down to 0009: the audit table must disappear and the kind CHECK must no
 	// longer admit skill_ttl_sweep. The step count is computed from the current
 	// head so this test does not rot when 0011+ migrations are added.
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if err := migrateToVersion(t, ctx, migrateURL, 9); err != nil {
 		t.Fatalf("migrate down to 0009: %v", err)
 	}

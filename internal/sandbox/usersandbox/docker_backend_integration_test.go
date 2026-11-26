@@ -5,7 +5,7 @@
 // create (AutoRemove:false), exec, cp in, cp out, suspend, resume, exec again, stop. The
 // spikes proved the box MODEL via the docker CLI; this proves the Go SDK BINDING the runtime
 // actually uses. It skips locally when dockerd is unreachable (t.Fatal under $CI — no-skip-as-
-// green) via the shared skipUnlessDockerd gate.
+// green) via testenv.Dockerd.
 
 package usersandbox
 
@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
 )
@@ -129,7 +130,7 @@ func readTarEntry(t *testing.T, r io.Reader, entryName string) string {
 // volume) — every leg against a live dockerd. This retires the "the SDK code works" risk the
 // CLI-only spikes never touched (Pitfall 7).
 func TestDockerBackend_RoundTrip(t *testing.T) {
-	skipUnlessDockerd(t)
+	testenv.Dockerd(t)
 	cli := newTestDockerClient(t)
 	backend := NewDockerBackend(cli, testBoxImage(), testLimits())
 

@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"slices"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -33,10 +33,10 @@ type memoryLatencyEvidence struct {
 
 func TestAgentMemoryCLILiveSearchP95(t *testing.T) {
 	if os.Getenv("AURA_DB_URL") == "" {
-		memoryLiveGap(t, "AURA_DB_URL is required")
+		testenv.Unavailable(t, "AURA_DB_URL is required")
 	}
 	if os.Getenv("AURA_AUTHULA_DSN") == "" || os.Getenv("AURA_AUTHULA_SECRET") == "" {
-		memoryLiveGap(t, "AURA_AUTHULA_DSN and AURA_AUTHULA_SECRET are required")
+		testenv.Unavailable(t, "AURA_AUTHULA_DSN and AURA_AUTHULA_SECRET are required")
 	}
 	identityCtx, err := withOperatorIdentity(context.Background())
 	if err != nil {
@@ -113,13 +113,4 @@ func nearestRank(samples []time.Duration, percentile float64) time.Duration {
 
 func durationMS(value time.Duration) float64 {
 	return float64(value.Microseconds()) / 1000
-}
-
-func memoryLiveGap(t *testing.T, format string, args ...any) {
-	t.Helper()
-	message := fmt.Sprintf(format, args...)
-	if os.Getenv("CI") != "" {
-		t.Fatal(message)
-	}
-	t.Skip(message)
 }

@@ -15,10 +15,11 @@ import (
 
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-mcp", "call-dk-mcp"), "req-dk-mcp"))
 	// A failure midway must not leave the file in the volume: the next run would name its
@@ -55,7 +56,7 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 // before the write, so the writing call's own directory is seeded as old as the orphan: only
 // the sweep's exclusion of it keeps what the call already holds.
 func TestMCPFileSink_SweepsACallDirectoryAnUncleanExitLeftBehind(t *testing.T) {
-	skipUnlessDockerdTools(t)
+	testenv.Dockerd(t)
 	router := newDockerRouter(t, nil)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-sweep", "call-dk-sweep"), "req-dk-sweep"))
 	// Run forgets its steps, so this removes the new call's directory once and only once.

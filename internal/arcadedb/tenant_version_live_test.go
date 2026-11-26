@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
@@ -16,13 +17,7 @@ import (
 // version. ArcadeDB's documentation does not say either way for a non-root user; this
 // measures it on the pinned engine.
 func TestTenantCredentialReadsTheServerVersionLive(t *testing.T) {
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
+	base := testenv.Require(t, "ARCADEDB_URL")
 	ctx := context.Background()
 	admin, err := New(Config{
 		BaseURL: base, Database: "unused", User: envOr("ARCADEDB_USER", "root"),

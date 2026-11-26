@@ -34,7 +34,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +43,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/google/uuid"
 )
@@ -55,39 +55,6 @@ const meteoRuns = 6
 
 // meteoPrompt is the exact Phase-7 repro prompt (Italian — Aura answers in Italian).
 const meteoPrompt = "dammi le previsioni meteo a Caraglio"
-
-// requireLiveKey gates on OPENROUTER_API_KEY: it skips locally (the one legitimate
-// local skip) but t.Fatals under $CI so a skipped paid tier never passes as green
-// in a pipeline (no-skip-as-green, CLAUDE.md). These tests are NOT in the CI matrix,
-// so locally with no key they skip cleanly and compile under the tag.
-func requireLiveKey(t *testing.T) {
-	t.Helper()
-	if os.Getenv("OPENROUTER_API_KEY") != "" {
-		return
-	}
-	if os.Getenv("CI") != "" {
-		t.Fatal("live_finalize requires OPENROUTER_API_KEY, but it is unset under CI — " +
-			"a skipped paid tier must not pass as green; this gate is excluded from the CI matrix by design")
-	}
-	t.Skip("live_finalize: OPENROUTER_API_KEY unset — MANUAL paid gate, NOT a CI job. " +
-		"Run: set -a; . ./.env; set +a; go test -tags live_finalize -run TestLive -timeout 600s -v ./internal/agent/")
-}
-
-// requireLiveEnv gates an additional required-but-skippable env var (e.g. SEARXNG_URL
-// for the web tools): skip locally / t.Fatal under $CI when unset, mirroring the
-// runner package's envOrSkipLive no-skip-as-green helper.
-func requireLiveEnv(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v != "" {
-		return v
-	}
-	if os.Getenv("CI") != "" {
-		t.Fatalf("live_finalize requires %s, but it is unset under CI — a skipped tier must not pass as green", key)
-	}
-	t.Skipf("live_finalize requires %s; set it (e.g. via .env) and re-run the paid gate", key)
-	return ""
-}
 
 // loadLiveLLM resolves the live llm.Config (key + model + endpoint) from env/.env.
 func loadLiveLLM(t *testing.T) llm.Config {
@@ -107,7 +74,7 @@ func loadLiveLLM(t *testing.T) llm.Config {
 // (prompt.Build + ToolChoice="none" + drain content) one-shot, without spending a
 // budget step.
 func TestLiveToolChoiceNone(t *testing.T) {
-	requireLiveKey(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 	cfg := loadLiveLLM(t)
 	client := openai_compat.New(cfg)
 
@@ -150,8 +117,8 @@ func TestLiveToolChoiceNone(t *testing.T) {
 // LLMResponse.Content (the always-return-an-answer contract); the observed failure
 // rate must be 0. A scored report is written to docs/ (never /tmp — CLAUDE.md).
 func TestLiveMeteoCaraglio(t *testing.T) {
-	requireLiveKey(t)
-	requireLiveEnv(t, "SEARXNG_URL") // the web tools need a runtime SearXNG backend
+	testenv.Require(t, "OPENROUTER_API_KEY")
+	testenv.Require(t, "SEARXNG_URL") // the web tools need a runtime SearXNG backend
 	cfg := loadLiveLLM(t)
 	client := openai_compat.New(cfg)
 	reg := registryForLive(t)

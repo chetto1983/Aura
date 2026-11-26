@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // TestBrowserRelayDrivesTheBoxBrowser is the live-view chain end to end on the real image
@@ -82,7 +83,7 @@ func TestBrowserRelayDrivesTheBoxBrowser(t *testing.T) {
 // liveBox routes the box of a fresh identity from the real image and stops it after the test.
 func liveBox(t *testing.T) (context.Context, *usersandbox.SandboxRouter, usersandbox.BoxHandle) {
 	t.Helper()
-	egressITDockerdOrGate(t)
+	testenv.Dockerd(t)
 	image := strings.TrimSpace(os.Getenv("AURA_SANDBOX_IMAGE"))
 	if image == "" {
 		image = "aura-sandbox:latest"

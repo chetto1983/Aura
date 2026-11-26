@@ -3,12 +3,12 @@ package filecard
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/pdftext"
+	"github.com/chetto1983/aura/internal/testenv"
 )
 
 // minimalPDF is a hand-written one-page PDF whose only content is the text
@@ -27,21 +27,6 @@ func minimalPDF(text string) string {
 		"endstream\nendobj\ntrailer<</Root 1 0 R/Size 6>>\n%%EOF\n"
 }
 
-// requireExtractor keeps a missing extractor from passing for a test whose whole
-// subject is the extractor. Locally it skips; in CI it fails, because a job that
-// silently exercises nothing is the falsely-green case the test discipline bans
-// (the CI workflows install poppler-utils for exactly this).
-func requireExtractor(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath(pdftext.Tool); err == nil {
-		return
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatalf("%s is not installed and $CI is set: the extraction path would run nowhere", pdftext.Tool)
-	}
-	t.Skipf("%s is not installed", pdftext.Tool)
-}
-
 // hideExtractor points PATH at an empty directory so exec.LookPath fails. It is
 // how the no-extractor host — a developer laptop, a runner without
 // poppler-utils — is exercised without uninstalling anything.
@@ -51,7 +36,7 @@ func hideExtractor(t *testing.T) {
 }
 
 func TestPDFTextLandsInTheCard(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	path := writeFile(t, "decreto.pdf", minimalPDF("Codice dell amministrazione digitale"))
 	card := build(t, path, "decreto.pdf")
 	rendered := card.Render()
@@ -75,7 +60,7 @@ func TestPDFTextLandsInTheCard(t *testing.T) {
 // A PDF that opens but carries no text — a scan — must say which of the two it
 // is, because "no text" and "could not open" call for different actions.
 func TestPDFWithoutExtractableTextSaysItIsProbablyAScan(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	path := writeFile(t, "scansione.pdf", minimalPDF(""))
 	rendered := build(t, path, "scansione.pdf").Render()
 	if !strings.Contains(rendered, "probably a scan") {
@@ -288,7 +273,7 @@ func TestExtractorFailsCleanlyWithoutABinary(t *testing.T) {
 // The byte cap has to bite before the page cap does on a page dense enough to
 // hold a book, and the card has to say that it did.
 func TestPDFExtractStopsAtTheByteCap(t *testing.T) {
-	requireExtractor(t)
+	testenv.Executable(t, pdftext.Tool)
 	// One very tall page, one line of text per 8 units. Stacking the lines at
 	// distinct coordinates matters: poppler lays text out by position, and lines
 	// written on top of each other come back once.

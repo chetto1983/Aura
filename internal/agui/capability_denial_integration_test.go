@@ -10,7 +10,7 @@
 //
 //	go test -tags db_integration -race -count=1 -p 1 ./internal/agui -run TestCapabilityDenialsRLSAndScope -v
 //
-// No-skip-as-green: migratedPool/envOrSkip (server_integration_test.go) t.Fatal under
+// No-skip-as-green: migratedPool (server_integration_test.go) and testenv.Require t.Fatal under
 // $CI when the DSN is unset — a skipped integration test must never pass green.
 package agui
 

@@ -11,40 +11,22 @@ package web
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
-	"go.uber.org/goleak"
-
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/testenv"
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// envOrSkip enforces NO-SKIP-AS-GREEN (CLAUDE.md): when the required env var is
-// unset it t.Fatal's under $CI (a missing live env in CI is a misconfigured job,
-// never a silent pass) and only skips for a local developer who has no stack up.
-// A sub-second "integration" runtime is the skip tell the CI gate watches for.
-func envOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v != "" {
-		return v
-	}
-	if os.Getenv("CI") != "" {
-		t.Fatalf("%s must be set in CI (web_integration tier must run live against the SearXNG container, no skip-as-green)", key)
-	}
-	t.Skipf("%s unset — skipping web_integration tier locally (bring the SearXNG stack up to run it)", key)
-	return ""
-}
-
 func liveClient(t *testing.T) *Client {
 	t.Helper()
 	cfg := &config.Config{
-		SearxngURL:           envOrSkip(t, "SEARXNG_URL"),
+		SearxngURL:           testenv.Require(t, "SEARXNG_URL"),
 		WebDNSPinTTLSec:      60,
 		WebFetchMaxBodyBytes: 5_000_000,
 		WebSearchTimeoutSec:  20,
@@ -115,9 +97,6 @@ func TestSearch_Live(t *testing.T) {
 // clean markdown with no obvious nav/footer chrome (D-17).
 func TestFetch_Live(t *testing.T) {
 	c := liveClient(t)
-	if os.Getenv("SEARXNG_URL") == "" && os.Getenv("CI") == "" {
-		t.Skip("local skip without stack")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 

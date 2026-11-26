@@ -11,18 +11,19 @@
 //
 //	go test -tags db_integration -race ./internal/db -run TestCacheMetrics -count=1
 //
-// No-skip-as-green: envOrSkip (db_test.go) t.Fatals under $CI when the DSN is unset, so a
+// No-skip-as-green: testenv.Require (db_test.go) t.Fatals under $CI when the DSN is unset, so a
 // skipped run can never pass green in the pipeline.
 package db
 
 import (
 	"context"
-	"github.com/chetto1983/aura/internal/dbtest"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -40,9 +41,9 @@ func cacheMetricsPool(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
-	appURL := envOrSkip(t, "AURA_DB_URL")
+	pwd := testenv.Require(t, "POSTGRES_PASSWORD")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 
 	if err := EnsureRoles(ctx, bootstrapURL(t), pwd); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)

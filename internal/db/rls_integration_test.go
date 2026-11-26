@@ -10,8 +10,8 @@
 //
 //	go test -tags db_integration -race -run TestRLS ./internal/db -count=1
 //
-// No-skip-as-green: db_test.go's envOrSkip t.Fatals under $CI when a DSN is unset, so a
-// skipped tier can never pass as green. This file reuses that harness (envOrSkip /
+// No-skip-as-green: db_test.go's testenv.Require t.Fatals under $CI when a DSN is unset, so a
+// skipped tier can never pass as green. This file reuses that harness (testenv.Require /
 // bootstrapURL / Open / Migrate / EnsureRoles) AND the package goleak TestMain in
 // db_test.go — it deliberately declares no second TestMain.
 package db
@@ -19,13 +19,14 @@ package db
 import (
 	"context"
 	"errors"
-	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,10 +42,10 @@ func rlsMigratedPool(t *testing.T) *pgxpool.Pool {
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
-	if _, err := Migrate(ctx, dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))); err != nil {
+	if _, err := Migrate(ctx, dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("Open (aura_app): %v", err)
 	}
@@ -210,7 +211,7 @@ func TestVerifyRLSEnforcedRejectsTheMigrationRole(t *testing.T) {
 	ctx := context.Background()
 	rlsMigratedPool(t) // apply roles + migrations first; the ownership this asserts is their product
 
-	migrate, err := Open(ctx, &Config{URL: dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))})
+	migrate, err := Open(ctx, &Config{URL: dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))})
 	if err != nil {
 		t.Fatalf("Open (migration role): %v", err)
 	}

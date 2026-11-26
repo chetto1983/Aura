@@ -25,12 +25,13 @@ package db
 import (
 	"context"
 	"errors"
-	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -39,14 +40,14 @@ func appPoolMigrated(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("Open aura_app: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestWithTx_PanicRollsBackAndRepanics(t *testing.T) {
 func TestWithTx_BeginErrorOnClosedPool(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})
+	pool, err := Open(ctx, &Config{URL: testenv.Require(t, "AURA_DB_URL")})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

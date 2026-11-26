@@ -7,35 +7,22 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/dbtest"
+	"github.com/chetto1983/aura/internal/testenv"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // The tests share one database and Upgrade reads every row in it, so none runs in parallel.
 
 var oldTool = mcptools.NamespacedName("calendar", "calendar")
-
-func splitEnv(t *testing.T, key string) string {
-	t.Helper()
-	value := os.Getenv(key)
-	if value == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("pim split integration requires %s", key)
-		}
-		t.Skipf("pim split integration requires %s", key)
-	}
-	return value
-}
 
 type harness struct {
 	t    *testing.T
@@ -52,8 +39,8 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
-	migrateURL := dbtest.MigrateURL(t, splitEnv(t, "AURA_DB_MIGRATE_URL"))
-	appURL := splitEnv(t, "AURA_DB_URL")
+	migrateURL := dbtest.MigrateURL(t, testenv.Require(t, "AURA_DB_MIGRATE_URL"))
+	appURL := testenv.Require(t, "AURA_DB_URL")
 	if _, err := db.Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}

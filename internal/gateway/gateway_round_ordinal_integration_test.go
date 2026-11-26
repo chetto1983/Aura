@@ -3,7 +3,7 @@
 // gateway_round_ordinal_integration_test.go is a concern split out of
 // gateway_integration_test.go (CLAUDE.md's 600-LOC no-god-class cap): the D-01/D-04
 // round-discrimination end-to-end proof for SC#1/SC#2 (45-02-T1), reusing that file's
-// db_integration harness (envOrSkip, migratedPool, seedConversation, spyTool, insertEnd).
+// db_integration harness (testenv.Require, migratedPool, seedConversation, spyTool, insertEnd).
 //
 // This package cannot import internal/agent to call the real deriveToolOperationContext
 // directly: internal/agent already imports internal/gateway, so the reverse import would
