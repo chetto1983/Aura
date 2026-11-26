@@ -129,6 +129,19 @@ class GoMutationParserTest(unittest.TestCase):
                 self.assertEqual(critical_mutation_gate.GO_SCOPES.get(scope), relative)
                 self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
 
+    def test_the_urgency_shadow_files_are_scoped(self) -> None:
+        # The centroid shadow's promotion gate reads these three (verification
+        # 2026-11-03-urgency-centroid-shadow-live.md left their 70% open).
+        expected = {
+            "example_bank": "internal/examplebank/bank.go",
+            "urgency_centroid": "internal/pimwatch/centroid.go",
+            "shadow_report": "internal/pimwatch/shadow_report.go",
+        }
+        for scope, relative in expected.items():
+            with self.subTest(scope=scope):
+                self.assertEqual(critical_mutation_gate.GO_SCOPES.get(scope), relative)
+                self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
+
     def test_the_scheduled_delivery_files_are_scoped(self) -> None:
         expected = {
             "task_approval": "internal/agent/tools/task_approval.go",
