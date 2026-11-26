@@ -185,3 +185,19 @@ func TestReadPytest(t *testing.T) {
 		t.Fatal("a truncated JUnit report must be an error")
 	}
 }
+
+func TestReadPytestKeepsAColonPairInsideTheParameters(t *testing.T) {
+	collected := "pkg/test_colon.py::test_param[a::b]\npkg/test_colon.py::TestK::test_in_class[x::y]\n"
+	junit := `<testsuites><testsuite>
+	  <testcase classname="pkg.test_colon" name="test_param[a::b]"/>
+	  <testcase classname="pkg.test_colon.TestK" name="test_in_class[x::y]"/>
+	</testsuite></testsuites>`
+	_, units, err := ReadPytest(strings.NewReader(collected), strings.NewReader(junit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertUnits(t, units,
+		"pytest | pkg/test_colon.py::test_param[a::b] | pkg/test_colon.py | pass",
+		"pytest | pkg/test_colon.py::TestK::test_in_class[x::y] | pkg/test_colon.py | pass",
+	)
+}

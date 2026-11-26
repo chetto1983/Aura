@@ -234,11 +234,16 @@ func ReadPytest(collected, junit io.Reader) (declared []string, units []Unit, er
 }
 
 // junitKey turns a node id, path/to/test_x.py::Class::test_y[p], into pytest's JUnit
-// classname.name, path.to.test_x.Class.test_y[p].
+// classname.name, path.to.test_x.Class.test_y[p]. The [p] suffix stays as pytest writes it in
+// both forms, a "::" inside it included (pytest 9.1.1: test_param[a::b] in each).
 func junitKey(node string) string {
-	file, rest, _ := strings.Cut(node, "::")
-	module := strings.ReplaceAll(strings.TrimSuffix(file, ".py"), "/", ".")
-	return module + "." + strings.ReplaceAll(rest, "::", ".")
+	names, params, parametrized := strings.Cut(node, "[")
+	file, rest, _ := strings.Cut(names, "::")
+	key := strings.ReplaceAll(strings.TrimSuffix(file, ".py"), "/", ".") + "." + strings.ReplaceAll(rest, "::", ".")
+	if parametrized {
+		key += "[" + params
+	}
+	return key
 }
 
 func parseStatus(s string) (Status, error) {

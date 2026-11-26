@@ -144,3 +144,46 @@ func TestDeclaredGo(t *testing.T) {
 		t.Fatal("a file that does not parse must fail the read")
 	}
 }
+
+func TestBuildConstraintReadsOnlyLineComments(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"a directive inside a block comment", "/*\n//go:build a &&\n*/\n\npackage x\n", ""},
+		{"a block comment before the directive", "/* //go:build a */\n//go:build b\n\npackage x\n", "b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := BuildConstraint([]byte(tc.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if expr != nil {
+				got = expr.String()
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTestFuncsFollowTheGoTool(t *testing.T) {
+	src := `package x
+
+import . "testing"
+
+func TestMain(t *T)             {}
+func TestDot(t *T)              {}
+func TestEmptyResults(t *T) ()  {}
+func TestBenchmarkShaped(b *B)  {}
+func TestValue(t T)             {}
+`
+	file, err := parser.ParseFile(token.NewFileSet(), "x_test.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"TestMain", "TestDot", "TestEmptyResults"}
+	if got := TestFuncs(file); !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

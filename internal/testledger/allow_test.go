@@ -27,16 +27,19 @@ playwright | web/e2e/attachment-filename.spec.ts [mobile-chrome] | platform | on
 }
 
 func TestParseAllowRefuses(t *testing.T) {
-	for name, src := range map[string]string{
-		"an unknown class":     "go | internal/x TestX | pending | later\n",
-		"no reason":            "go | internal/x TestX | paid |\n",
-		"three fields":         "go | internal/x TestX | paid\n",
-		"an unknown suite":     "jest | a.test.js | paid | money\n",
-		"an empty selector":    "go |  | paid | money\n",
-		"the same entry twice": "script | scripts/a_test.sh | platform | x\nscript | scripts/a_test.sh | measure | y\n",
-	} {
-		if _, err := ParseAllow(strings.NewReader(src)); err == nil {
-			t.Errorf("%s must be a parse error", name)
-		}
+	cases := []struct{ name, src string }{
+		{"an unknown class", "go | internal/x TestX | pending | later\n"},
+		{"no reason", "go | internal/x TestX | paid |\n"},
+		{"three fields", "go | internal/x TestX | paid\n"},
+		{"an unknown suite", "jest | a.test.js | paid | money\n"},
+		{"an empty selector", "go |  | paid | money\n"},
+		{"the same entry twice", "script | scripts/a_test.sh | platform | x\nscript | scripts/a_test.sh | measure | y\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ParseAllow(strings.NewReader(tc.src)); err == nil {
+				t.Errorf("%s must be a parse error", tc.name)
+			}
+		})
 	}
 }

@@ -34,17 +34,23 @@ func TestRun(t *testing.T) {
 	if code := run(args, &out, &errs); code != 1 {
 		t.Errorf("an enforcing run exits 1 on a red ledger, got %d", code)
 	}
-	for _, bad := range [][]string{
-		nil,
-		{"verify"},
-		{"check"},
-		{"check", "--artifacts", filepath.Join(artifacts, "missing"), "--workspace", "../.."},
-		{"check", "--artifacts", artifacts, "--workspace", "../..", "--allow", "no/such/file"},
-		{"check", "--artifacts", artifacts, "--workspace", "../..", "--needs", "{"},
-		{"check", "--unknown-flag"},
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"no subcommand", nil},
+		{"an unknown subcommand", []string{"verify"}},
+		{"no --artifacts", []string{"check"}},
+		{"a missing artifacts directory", []string{"check", "--artifacts", filepath.Join(artifacts, "missing"), "--workspace", "../.."}},
+		{"a missing allowlist", []string{"check", "--artifacts", artifacts, "--workspace", "../..", "--allow", "no/such/file"}},
+		{"malformed needs", []string{"check", "--artifacts", artifacts, "--workspace", "../..", "--needs", "{"}},
+		{"an unknown flag", []string{"check", "--unknown-flag"}},
 	} {
-		if code := run(bad, &out, &errs); code != 2 {
-			t.Errorf("%v: want exit 2, got %d", bad, code)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errs bytes.Buffer
+			if code := run(tc.args, &out, &errs); code != 2 {
+				t.Errorf("%v: want exit 2, got %d", tc.args, code)
+			}
+		})
 	}
 }

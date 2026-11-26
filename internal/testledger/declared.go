@@ -70,12 +70,13 @@ func IgnoredByGoTool(rel string) bool {
 }
 
 // TestFuncs lists the functions `go test` runs as tests: TestXxx(t *testing.T) with no result,
-// where Xxx does not start with a lower-case letter. TestMain always runs and is not one of them.
+// where Xxx does not start with a lower-case letter. TestMain(m *testing.M) is the entry point, not
+// a test; TestMain(t *testing.T) is a test (cmd/go/internal/load/test.go, go1.27.4).
 func TestFuncs(file *ast.File) []string {
 	var tests []string
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name.Name == "TestMain" || !takesTestingT(fn.Type) {
+		if !ok || fn.Recv != nil || !takesTestingT(fn.Type) {
 			continue
 		}
 		rest, ok := strings.CutPrefix(fn.Name.Name, "Test")
@@ -86,28 +87,41 @@ func TestFuncs(file *ast.File) []string {
 	return tests
 }
 
-// takesTestingT matches func(*<testing>.T) with no result; the import may be aliased.
+// takesTestingT matches func(*T) with no result as cmd/go's isTestFunc does: T qualified by any
+// import name (testing.T, an alias) or bare (a dot-import).
 func takesTestingT(fn *ast.FuncType) bool {
-	if fn.Results != nil || fn.Params == nil || len(fn.Params.List) != 1 || len(fn.Params.List[0].Names) > 1 {
+	if (fn.Results != nil && len(fn.Results.List) > 0) || fn.Params == nil ||
+		len(fn.Params.List) != 1 || len(fn.Params.List[0].Names) > 1 {
 		return false
 	}
 	star, ok := fn.Params.List[0].Type.(*ast.StarExpr)
 	if !ok {
 		return false
 	}
-	sel, ok := star.X.(*ast.SelectorExpr)
-	return ok && sel.Sel.Name == "T"
+	switch t := star.X.(type) {
+	case *ast.Ident:
+		return t.Name == "T"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "T"
+	}
+	return false
 }
 
-// BuildConstraint returns the //go:build line before the package clause, or nil.
+// BuildConstraint returns the //go:build line comment before the package clause, or nil. It reads
+// the parsed comments, so text inside a /* */ block that looks like a directive is not one.
 func BuildConstraint(src []byte) (constraint.Expr, error) {
-	for line := range strings.Lines(string(src)) {
-		line = strings.TrimSpace(line)
-		if constraint.IsGoBuild(line) {
-			return constraint.Parse(line)
-		}
-		if strings.HasPrefix(line, "package ") {
+	file, err := parser.ParseFile(token.NewFileSet(), "", src, parser.PackageClauseOnly|parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range file.Comments {
+		if group.Pos() >= file.Package {
 			break
+		}
+		for _, c := range group.List {
+			if constraint.IsGoBuild(c.Text) {
+				return constraint.Parse(c.Text)
+			}
 		}
 	}
 	return nil, nil
