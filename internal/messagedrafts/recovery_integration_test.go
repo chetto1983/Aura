@@ -29,11 +29,28 @@ func recoveryDraft(t *testing.T, store *Store, owner, call string) Draft {
 	return draft
 }
 
-// age runs one fixture update in the owner's RLS transaction, as the drafts' own tests do.
-func age(t *testing.T, pool *pgxpool.Pool, owner, draftID, set string) {
+// shift says how long ago each of a draft's timestamps is, as a Postgres interval ("46 days");
+// an empty field leaves its timestamp alone.
+type shift struct{ expires, dispatched, sendAt string }
+
+// interval is a shift field as a query argument: an empty one is NULL, which COALESCE keeps.
+func interval(ago string) any {
+	if ago == "" {
+		return nil
+	}
+	return ago
+}
+
+// age moves one of the owner's drafts back in time, in the owner's RLS transaction as the drafts'
+// own tests do. One statement sets all three, so a scheduled draft keeps expires_at > send_at.
+func age(t *testing.T, pool *pgxpool.Pool, owner, draftID string, s shift) {
 	t.Helper()
 	err := db.WithIdentityTxRaw(context.Background(), pool, owner, func(tx pgx.Tx) error {
-		_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET `+set+` WHERE id=$1`, draftID)
+		_, err := tx.Exec(context.Background(), `UPDATE aura.message_drafts SET
+  expires_at = COALESCE(now() - $2::interval, expires_at),
+  dispatch_started_at = COALESCE(now() - $3::interval, dispatch_started_at),
+  send_at = COALESCE(now() - $4::interval, send_at)
+WHERE id = $1`, draftID, interval(s.expires), interval(s.dispatched), interval(s.sendAt))
 		return err
 	})
 	if err != nil {
@@ -59,13 +76,13 @@ func TestRecoverClosesTheDraftsNobodyReopens(t *testing.T) {
 	ctx := context.Background()
 
 	stale := recoveryDraft(t, store, owner, "call-stale")
-	age(t, pool, owner, stale.ID, `expires_at=now()-interval '46 days'`)
+	age(t, pool, owner, stale.ID, shift{expires: "46 days"})
 	fresh := recoveryDraft(t, store, owner, "call-fresh")
 	abandoned := recoveryDraft(t, store, owner, "call-abandoned")
 	if _, err := store.ClaimSend(ctx, owner, abandoned.ID, nil); err != nil {
 		t.Fatalf("claim abandoned: %v", err)
 	}
-	age(t, pool, owner, abandoned.ID, `dispatch_started_at=now()-interval '31 minutes'`)
+	age(t, pool, owner, abandoned.ID, shift{dispatched: "31 minutes"})
 	recent := recoveryDraft(t, store, owner, "call-recent")
 	if _, err := store.ClaimSend(ctx, owner, recent.ID, nil); err != nil {
 		t.Fatalf("claim recent: %v", err)
@@ -74,14 +91,14 @@ func TestRecoverClosesTheDraftsNobodyReopens(t *testing.T) {
 	if _, err := store.Decline(ctx, owner, declined.ID); err != nil {
 		t.Fatalf("decline: %v", err)
 	}
-	age(t, pool, owner, declined.ID, `expires_at=now()-interval '1 day'`)
+	age(t, pool, owner, declined.ID, shift{expires: "1 day"})
 	scheduled, err := store.Create(ctx, scheduledInput(owner, "call-scheduled", scheduledTask(t, pool, owner), time.Now().Add(time.Hour)))
 	if err != nil {
 		t.Fatalf("create scheduled: %v", err)
 	}
-	age(t, pool, owner, scheduled.ID, `send_at=now()-interval '2 days', expires_at=now()-interval '1 day'`)
+	age(t, pool, owner, scheduled.ID, shift{sendAt: "2 days", expires: "1 day"})
 	foreign := recoveryDraft(t, store, other, "call-foreign")
-	age(t, pool, other, foreign.ID, `expires_at=now()-interval '1 day'`)
+	age(t, pool, other, foreign.ID, shift{expires: "1 day"})
 
 	got, err := store.Recover(ctx, owner)
 	if err != nil || got != (Recovered{Expired: 1, Interrupted: 1}) {
