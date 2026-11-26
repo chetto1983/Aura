@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/sidecarurl"
 )
 
 func writeWhatsAppBridgeHealth(ctx context.Context, out io.Writer, cfg mcp.ServerConfig) error {
@@ -47,7 +47,7 @@ func whatsAppBridgeBaseURL() (string, bool) {
 	if v := strings.TrimSpace(os.Getenv("AURA_MCP_WHATSAPP_BRIDGE_URL")); v != "" {
 		return strings.TrimRight(v, "/"), true
 	}
-	return mcpmanager.WhatsAppBridgeBaseURL(), false
+	return sidecarurl.WhatsAppBridge(), false
 }
 
 func probeWhatsAppBridgeHTTP(ctx context.Context, baseURL string) string {
