@@ -67,7 +67,7 @@ echo "==> coverage gate: internal/* >= ${MIN}% (tags: ${TAGS})"
 # The default parallel run is flaky once >2 integration packages exist (broke CI
 # after Phase 4 added identity/askuser/conversations/runner). Fail loud — never
 # discard the test output, or a real failure looks like a coverage miss.
-if ! go test -tags "${TAGS}" -p 1 -count=1 -covermode=atomic \
+if ! bash scripts/go_test_ledger.sh coverage-gate -tags "${TAGS}" -p 1 -count=1 -covermode=atomic \
   -coverpkg=./internal/... ./internal/... ./cmd/aura/... \
   -args -test.gocoverdir="${COVDIR}" > "${PROFILE}.testlog" 2>&1; then
   echo "FAIL: integration coverage test run failed (see output below)" >&2

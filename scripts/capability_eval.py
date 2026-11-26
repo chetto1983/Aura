@@ -15,6 +15,7 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable
 
+import test_ledger
 from evidence_metadata import candidate_commit
 
 
@@ -115,6 +116,7 @@ def run_package(package: str, tests: list[str], race: bool) -> tuple[int, dict[s
     started = time.perf_counter()
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     elapsed_ms = round((time.perf_counter() - started) * 1000)
+    test_ledger.append("capability-eval.jsonl", completed.stdout)
     if completed.stderr:
         sys.stderr.write(completed.stderr)
     if completed.returncode != 0:

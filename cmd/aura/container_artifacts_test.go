@@ -334,7 +334,7 @@ func TestRetiredMCPPythonRuntimeStaysOutAndCoverageIsReproducible(t *testing.T) 
 	}
 
 	coverageGate := readProjectFile(t, root, "scripts/coverage_gate.sh")
-	goTest := regexp.MustCompile(`(?s)go test .*?-count=1 .*?-covermode=atomic`)
+	goTest := regexp.MustCompile(`(?s)scripts/go_test_ledger\.sh \S+ .*?-count=1 .*?-covermode=atomic`)
 	if !goTest.MatchString(coverageGate) {
 		t.Error("scripts/coverage_gate.sh must force -count=1 before accepting integration coverage")
 	}

@@ -214,5 +214,5 @@ echo "==> PIM $(image_identity "$PIM_IMAGE"), WhatsApp $(image_identity "$WHATSA
 AURA_AUTHULA_DSN="$AURA_DB_URL" AURA_AUTHULA_SECRET="$AUTHULA_SECRET" \
   AURA_WHATSAPP_STORE_ROOT="$STORE" WHATSAPP_BRIDGE_TOKEN="$BRIDGE_TOKEN" \
   ARCADEDB_URL="$ARCADEDB_URL" ARCADEDB_ADMIN_USER=root ARCADEDB_ADMIN_PASSWORD="$ARCADE_PASSWORD" \
-  go test -race -count=1 -tags mcp_live_integration -run TestMCPResourcesLiveCrossSubjectIsolation -v ./internal/webauth/ \
+  bash scripts/go_test_ledger.sh mcp-live -race -count=1 -tags mcp_live_integration -run TestMCPResourcesLiveCrossSubjectIsolation -v ./internal/webauth/ \
   || { dump_logs; exit 1; }

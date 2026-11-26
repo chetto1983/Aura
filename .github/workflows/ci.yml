@@ -56,6 +56,10 @@ env:
   ARCADEDB_APP_PASSWORD: ci-test-password
   AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
   AURA_CI_NODE_VERSION: "24.x"
+  # Every go test a job runs goes through scripts/go_test_ledger.sh, which records its events here;
+  # the job's last step uploads the directory as test-ledger-<job>
+  # (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2).
+  AURA_TEST_LEDGER_DIR: /tmp/aura-test-ledger
 
 # Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
 # on rapid pushes; in-flight runs on other refs are untouched).
@@ -73,9 +77,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: CI go-packages lint self-test
-        run: bash scripts/check_ci_go_packages_test.sh
-
       - name: CI go-packages lint
         run: bash scripts/check_ci_go_packages.sh
 
@@ -87,60 +88,24 @@ jobs:
           python3 -m pip install --user --quiet ruff==0.17.1
           bash scripts/ruff.sh check .
 
-      - name: Workflow pin gate self-test
-        run: bash scripts/workflow_pin_gate_test.sh
-
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
 
-      # security-scan.yml runs once a week, so its scripts are tested here, where a change to
-      # them or to compose.yaml lands.
-      - name: Weekly security scan scripts self-test
-        run: for test in scripts/security_scan/*_test.sh; do bash "$test"; done
+      - name: Python self-tests (unittest discovery over scripts/, each test recorded)
+        run: PYTHONPATH=scripts python3 scripts/unittest_ledger.py
 
-      - name: Disposable-stack library self-test
-        run: bash scripts/lib/disposable_stack_test.sh
+      - name: Payload manifest gate
+        run: bash scripts/payload_manifest_gate.sh
 
-      - name: EmbeddingGemma cache helper self-test
-        run: make embedding-model-contract
-      - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)
-        run: make llm-model-contract
-      - name: Decision model fetch contract (pinned size + sha256, d1-3B + LICENSE)
-        run: make decide-model-contract
+      - name: Build the Caddy image cloudflare_caddy_origin_test.sh runs (real Caddy, no network)
+        # The publish workflow was the only one to build it, so the test ran nowhere before
+        # 2026-11-25. Built here from this commit; the self-tests step below runs the test.
+        run: docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
 
-      - name: Vision model fetch contract (pinned size + sha256, Qwen2.5-VL-3B + mmproj)
-        run: make vision-model-contract
-
-      - name: Production-evidence contract tests
-        run: |
-          make evidence-contracts
-          bash scripts/install_lib_test.sh
-          bash scripts/install_config_test.sh
-          bash scripts/appliance_posture_test.sh
-          bash scripts/install_preflight_test.sh
-          bash scripts/aura_image_update_test.sh
-          bash scripts/aura_update_consent_test.sh
-          bash scripts/aura_image_home_test.sh
-          bash scripts/aura_update_mcp_restart_test.sh
-          bash scripts/publish_images_test.sh
-          bash scripts/cloudflare_update_test.sh
-          bash scripts/cloudflare_tunnel_live_e2e_test.sh
-          bash scripts/payload_manifest_gate.sh
-
-      - name: Caddy keeps the secure origin through the shipped routes (real Caddy, no network)
-        # cloudflare_caddy_origin_test.sh needs the Caddy image, which only the publish
-        # workflow built, so the test ran nowhere before 2026-11-25. Built here from this commit.
-        run: |
-          docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
-          bash scripts/cloudflare_caddy_origin_test.sh
-
-      # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh
-      # SKIPs with exit 0 when it's absent (right for a laptop, a falsely-green job here).
+      # makeself is not preinstalled on GitHub's ubuntu runners, and build_installer_test.sh
+      # (run by the self-tests step below) needs it.
       - name: Install makeself (the artifact packer)
         run: sudo apt-get update && sudo apt-get install -y makeself
-
-      - name: Installer artifact self-check and payload round-trip
-        run: bash scripts/build_installer_test.sh
 
       - name: Definitive audit closure gate
         run: PYTHONPATH=scripts python3 scripts/audit_closure_gate.py
@@ -158,9 +123,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Tagged tier compile gate self-test
-        run: bash scripts/tagged_tier_compile_test.sh
 
       - name: Compile every discovered Aura tier
         run: bash scripts/tagged_tier_compile.sh
@@ -185,25 +147,45 @@ jobs:
         # package list never reaches it.
         run: |
           go vet -C tools/deadexport .
-          go test -C tools/deadexport -race -count=1 .
+          bash scripts/go_test_ledger.sh deadexport -C tools/deadexport -race -count=1 .
 
       - name: deadcode
         # The -test run catches what nothing calls; the production run (deadcode
         # without -test plus tools/deadexport, linux and windows) catches what only
-        # tests call, against scripts/deadcode_production_allowlist.txt. Its
-        # self-test runs first so a gate that can no longer fail is caught before it
-        # reports green.
+        # tests call, against scripts/deadcode_production_allowlist.txt. Its self-test,
+        # like every gate's here, runs in the self-tests step below and fails the job.
         run: |
           go install golang.org/x/tools/cmd/deadcode@v0.48.0
           go build -C tools/deadexport -o "$RUNNER_TEMP/deadexport" .
           bash scripts/deadcode_gate.sh "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)
-          DEADCODE_BIN="$(go env GOPATH)/bin/deadcode" DEADEXPORT_BIN="$RUNNER_TEMP/deadexport" bash scripts/deadcode_production_gate_test.sh
           bash scripts/deadcode_production_gate.sh "$(go env GOPATH)/bin/deadcode" "$RUNNER_TEMP/deadexport"
 
       - name: golangci-lint
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
           "$(go env GOPATH)/bin/golangci-lint" run --timeout=5m $(bash scripts/go_packages.sh)
+
+      # Every tracked scripts/**/*_test.sh, found by scripts/run_script_tests.sh, so a new one runs
+      # because it exists: llm-model-contract's test had no job for two weeks (Makefile). It runs
+      # last, after the Go toolchain, deadcode, makeself and the Caddy image are in place. The ones
+      # excepted need what only another job has, and that job runs them by name.
+      - name: Shell self-tests (every scripts/**/*_test.sh)
+        run: |
+          bash scripts/run_script_tests.sh \
+            --except scripts/cache_invariant_negative_test.sh \
+            --except scripts/observability_sidecar_check_test.sh \
+            --except scripts/extractor_matrix_test.sh \
+            --except scripts/ingest_image_contract_test.sh \
+            --except scripts/sandbox_image_contract_test.sh \
+            --except scripts/cloudflared_image_contract_test.sh
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   unit-test:
     name: Unit tests (race detector)
@@ -226,13 +208,21 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: go test -race
-        run: go test -race -count=1 $(bash scripts/go_packages.sh)
+        run: bash scripts/go_test_ledger.sh unit-race -race -count=1 $(bash scripts/go_packages.sh)
 
       - name: Authula seam focused test (no-CGO posture)
         # Authula brings sqlite/mysql/testcontainer support transitively, but Aura's
         # embedded provider uses Postgres only. This focused gate proves the flag-gated
         # A2 seam builds/tests under the pure-Go (no-CGO) posture.
-        run: CGO_ENABLED=0 go test -count=1 ./internal/webauth ./internal/agui ./cmd/aura ./internal/config
+        run: CGO_ENABLED=0 bash scripts/go_test_ledger.sh unit-nocgo -count=1 ./internal/webauth ./internal/agui ./cmd/aura ./internal/config
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   capability-eval:
     name: Deterministic capability evaluation
@@ -260,6 +250,14 @@ jobs:
         with:
           name: capability-eval
           path: artifacts/production-readiness/capability-eval.json
+          if-no-files-found: error
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
           if-no-files-found: error
 
   cache-invariant:
@@ -295,7 +293,15 @@ jobs:
       - name: cache invariant gate (negative)
         # Continuously proves the gate is NOT silently green: a mutated messages[0]
         # MUST make the gate exit 1 with `mutated` (SC#5, Pitfall #3).
-        run: bash scripts/cache_invariant_negative_test.sh
+        run: bash scripts/run_script_tests.sh scripts/cache_invariant_negative_test.sh
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   vulncheck:
     name: Supply-chain vulnerability scan (govulncheck)
@@ -327,10 +333,18 @@ jobs:
         run: pwsh -NoProfile -File scripts/verify-observability.Tests.ps1
 
       - name: Scheduled scrape-check contract
-        run: bash scripts/observability_sidecar_check_test.sh
+        run: bash scripts/run_script_tests.sh scripts/observability_sidecar_check_test.sh
 
       - name: Deployable observability contract
         run: pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   integration-test:
     name: Integration tests (db_integration tag)
@@ -391,7 +405,7 @@ jobs:
         # -p 1 is MANDATORY (same rule as scripts/coverage_gate.sh): the packages share
         # ONE Postgres and each runs EnsureRoles+Migrate; parallel package binaries
         # deadlock on pg_advisory_lock once >2 integration packages exist.
-        run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/... ./internal/documents/...
+        run: bash scripts/go_test_ledger.sh db-integration -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/... ./internal/documents/...
 
       - name: Install the PostgreSQL 18 client (pg_dump must match the server)
         # The runner ships client 16, which refuses the compose postgres:18 ("server
@@ -416,13 +430,13 @@ jobs:
         # dump failed on authula.auth_schema_migrations (measured 2026-11-25 on a93d05e9c).
         run: |
           go run ./cmd/aura db migrate
-          go test -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
+          bash scripts/go_test_ledger.sh backup-live -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
 
       - name: Authula 0019 migration drill
         # Explicit no-skip Authula schema gate: internal/db/... above already runs it,
         # but this targeted step leaves a crisp failure when the isolated authula schema,
         # identity_auth_links mapping, grants, or down/up reversibility drift.
-        run: go test -tags db_integration -race -count=1 -run '^TestMigrate0019_' ./internal/db/
+        run: bash scripts/go_test_ledger.sh migrate-0019 -tags db_integration -race -count=1 -run '^TestMigrate0019_' ./internal/db/
 
       - name: aura db migrate (smoke, idempotency)
         run: |
@@ -434,7 +448,7 @@ jobs:
       - name: Authula provider lifecycle (race + goleak)
         # This tag constructs the full provider against the migrated Postgres service.
         # CI=true makes a missing DSN/secret fatal, so the tier cannot skip as green.
-        run: go test -tags webauth_integration -race -count=1 ./internal/webauth
+        run: bash scripts/go_test_ledger.sh webauth-integration -tags webauth_integration -race -count=1 ./internal/webauth
 
       - name: Seed Authula operator for AG-UI smoke
         run: go run ./scripts/authula_seed_e2e.go
@@ -456,6 +470,14 @@ jobs:
         env:
           OPENROUTER_API_KEY: ci-degraded-no-network
         run: bash scripts/agui_smoke.sh
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   musr-e2e:
     name: MUSR two-identity cross-deny E2E (Postgres + Garage-admin + Authula)
@@ -642,6 +664,14 @@ jobs:
         if: always()
         run: docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   sqlc-golden:
     name: sqlc generate is in sync
     runs-on: ubuntu-latest
@@ -710,11 +740,19 @@ jobs:
         # D-05/D-44).
         env:
           SEARXNG_URL: http://127.0.0.1:18080/search
-        run: go test -race -count=1 -tags web_integration ./internal/web/
+        run: bash scripts/go_test_ledger.sh web-integration -race -count=1 -tags web_integration ./internal/web/
 
       - name: Tear down
         if: always()
         run: docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   knowledge-integration-test:
     name: Owned-surface coverage gate (live Postgres + ArcadeDB + embed sidecar)
@@ -798,6 +836,14 @@ jobs:
         with:
           name: owned-surface-coverage
           path: artifacts/production-readiness/coverage-report.json
+          if-no-files-found: error
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
           if-no-files-found: error
 
   arcadedb-integration-test:
@@ -900,7 +946,7 @@ jobs:
         # internal/docfields keeps the operator's document fields in each identity's ArcadeDB
         # database, so its store, pass and review run only against a live server; the db_integration
         # coverage tier cannot reach them. CI=true arms newDisposableTenants' no-skip-as-green guard.
-        run: go test -race -count=1 -tags arcadedb_integration ./internal/docfields/...
+        run: bash scripts/go_test_ledger.sh docfields -race -count=1 -tags arcadedb_integration ./internal/docfields/...
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -993,6 +1039,14 @@ jobs:
         if: always()
         run: docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   ingest-sidecar-test:
     name: Ingestion sidecar (live ArcadeDB + EmbeddingGemma)
     runs-on: ubuntu-latest
@@ -1070,22 +1124,33 @@ jobs:
       - name: Run the ingestion sidecar suite
         run: make ingest-test
 
-      - name: Extractor format matrix (hard AND silent failures)
+      - name: Extractor format matrix (hard AND silent failures) and the image contract
         # The suite above proves the chunker and the passage contract; it does not open a
         # single .pdf, .xls or .odt. This does, on the committed fixture set, and scores
         # the failure that has no error message: a format that yields plausible text in
         # which the canary sentence is reflowed or gone. It reuses the image make
-        # ingest-test just built, so it costs seconds and needs no service of its own.
-        run: bash scripts/extractor_matrix_test.sh
+        # ingest-test just built, so it costs seconds and needs no service of its own. The image's
+        # own contract (ingest_image_contract_test.sh) ran only where the image is published.
+        run: bash scripts/run_script_tests.sh scripts/extractor_matrix_test.sh scripts/ingest_image_contract_test.sh
 
       - name: Tear down
         if: always()
         run: docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   ingest-reconcile-e2e:
     name: Ingestion reconciliation (add/modify/delete, live Garage + ArcadeDB)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # No test-ledger upload here: the reconcile scope stops before the script's go test calls
+    # (scripts/ingest_reconcile_e2e.sh line 509), so this job records no test (run 45839224188).
     # Amendment #118 says CocoIndex's own target reconciliation gives Aura add, modify and
     # delete "with zero code of ours". Until now NOTHING in CI tested that claim: the
     # sidecar job runs the Python unit suite, and scripts/ingest_reconcile_e2e.sh -- which
@@ -1293,16 +1358,24 @@ jobs:
           fi
 
       - name: Reasoning tier accuracy gate
-        run: go test -tags reasoning_live -count=1 -v -run TestReasoningClassifierLive ./internal/agent/prompt/
+        run: bash scripts/go_test_ledger.sh reasoning-classifier -tags reasoning_live -count=1 -v -run TestReasoningClassifierLive ./internal/agent/prompt/
 
       - name: Adaptive reasoning tier through the shipped agent wiring
         # A real LlmAgent with this embedder resolves its tier locally and never asks the
         # teacher. It ran nowhere before 2026-11-25.
-        run: go test -tags reasoning_live -count=1 -v -run TestAdaptiveReasoningTierLive ./internal/agent/
+        run: bash scripts/go_test_ledger.sh reasoning-adaptive -tags reasoning_live -count=1 -v -run TestAdaptiveReasoningTierLive ./internal/agent/
 
       - name: Tear down
         if: always()
         run: docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   multimodal-integration-test:
     name: Multimodal sidecars (multimodal_integration tier, live STT/TTS)
@@ -1368,11 +1441,19 @@ jobs:
           done
 
       - name: Live multimodal_integration audio tier (TTS->STT loop)
-        run: go test -race -count=1 -tags multimodal_integration -run '^TestLive(TTSThenSTTRoundTrip|TTSVoiceBytes)$' ./internal/channels/telegram/
+        run: bash scripts/go_test_ledger.sh multimodal-audio -race -count=1 -tags multimodal_integration -run '^TestLive(TTSThenSTTRoundTrip|TTSVoiceBytes)$' ./internal/channels/telegram/
 
       - name: Tear down
         if: always()
         run: docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   telegram-integration-test:
     name: Telegram live Bot-API tier compiles (the live run is nightly, live-outward.yml)
@@ -1475,12 +1556,20 @@ jobs:
         # The test starts a real OAuth metadata/JWKS issuer, signs two RS256
         # access tokens, creates both tenant runtimes, seeds their real SQLite
         # stores, and proves cross-subject isolation over MCP.
-        run: go test -race -tags whatsapp_integration -count=1 ./internal/mcp/
+        run: bash scripts/go_test_ledger.sh whatsapp -race -tags whatsapp_integration -count=1 ./internal/mcp/
 
       - name: Tear down
         if: always()
         run: |
           docker rm -f aura-whatsapp-ci || true
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   calendar-integration-test:
     name: Calendar PIM MCP (calendar_integration tier, live aura-pim-mcp sidecar)
@@ -1565,11 +1654,19 @@ jobs:
       - name: Live calendar_integration tier (29 tools + list_accounts)
         # The test's real issuer signs two subject-bound access tokens and uses
         # those same tokens for both /admin account setup and MCP calls.
-        run: go test -race -tags calendar_integration -count=1 ./internal/mcp/
+        run: bash scripts/go_test_ledger.sh calendar -race -tags calendar_integration -count=1 ./internal/mcp/
 
       - name: Tear down
         if: always()
         run: docker rm -f aura-pim-mcp || true
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   pim-mail-e2e:
     name: PIM mail E2E (pim_mail_e2e tier, live aura-pim-mcp over GreenMail)
@@ -1595,6 +1692,14 @@ jobs:
 
       - name: PIM over a fake mailbox, end to end
         run: bash scripts/pim_mail_e2e.sh
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   mcp-live-integration-test:
     name: Live MCP resources (mcp_live_integration tier, PIM + WhatsApp + Memory behind aura serve)
@@ -1667,6 +1772,14 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Node-24 jobs, all blocking on every PR (D-16), all in the single unified workflow
@@ -1750,11 +1863,20 @@ jobs:
       - name: create-aura Vitest
         run: cd packages/create-aura && npm ci && npm test
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   # Mutation evidence arrives from parallel jobs and is judged once. Stryker and three groups
   # of Go scopes run on runners of their own; `web-mutation` downloads what they measured, runs
   # no mutant itself, and publishes the one candidate-bound report release readiness reads.
   # Until 2026-09-28 all of it was one serial job: 27m07s on run 36412624433 (Stryker 8m01s,
   # then the Go scopes 18m27s), the longest job of that CI run.
+
   web-mutation-stryker:
     name: Stryker mutation (frontend + media frontend)
     runs-on: ubuntu-latest
@@ -1778,6 +1900,10 @@ jobs:
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
     timeout-minutes: 185
+    # Stryker loads web/vitest.config.ts, whose JSON reporter would rewrite the ledger's report on
+    # every mutant run; mutants are not tests the ledger counts, so this job records nothing.
+    env:
+      AURA_TEST_LEDGER_DIR: ""
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -2398,6 +2524,14 @@ jobs:
           docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci aura-vision-ci || true
           docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   # ── Race + goleak db_integration tier (was the Phase-42 compaction rollout gate) ──
   # The dark Phase-42 compaction engine was removed (Amendment #86); its evaluator,
   # mutation, and fresh-boot rollout-acceptance jobs went with it. The job below
@@ -2442,18 +2576,26 @@ jobs:
         # shared-Postgres CI tier (scripts/coverage_gate.sh — parallel integration
         # packages deadlock on pg_advisory_lock).
         run: |
-          go test -race -tags=db_integration -count=1 -p 1 \
+          bash scripts/go_test_ledger.sh race-db -race -tags=db_integration -count=1 -p 1 \
             ./internal/conversations/... \
             ./internal/runner/... ./internal/agui/... ./cmd/aura/...
 
       - name: DB tier — internal/assets, verbose (-race, no skip)
         # Verbose so the asset lifecycle's Postgres tests are named in the log as passing, not
         # only counted in one `ok` line.
-        run: go test -race -tags=db_integration -count=1 -v ./internal/assets/...
+        run: bash scripts/go_test_ledger.sh assets -race -tags=db_integration -count=1 -v ./internal/assets/...
 
       - name: Tear down
         if: always()
         run: docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   sandbox-docker-integration:
     name: Sandbox docker_integration tier (live dockerd, native-Linux egress)
@@ -2515,7 +2657,7 @@ jobs:
           docker run -d --rm --name "$craft_box" --network none \
             --cpus 2 --memory 2g --pids-limit 256 aura-sandbox:latest
           AURA_CRAFT_PREVIEW_TEST_BOX="$craft_box" \
-            go test -race -tags craft_integration ./cmd/aura \
+            bash scripts/go_test_ledger.sh craft-preview -race -tags craft_integration ./cmd/aura \
               -run '^TestCraftPreviewNative' -count=1 -timeout 5m
 
       - name: Box image runtime contract (pip, agent-browser)
@@ -2523,7 +2665,7 @@ jobs:
         # `python3 -m pip install ...` works despite PEP 668 (PIP_BREAK_SYSTEM_PACKAGES=1),
         # and agent-browser refuses to run without Aura's per-identity state key and keeps its
         # state on /workspace. A network install would test the runner's egress, not the image.
-        run: bash scripts/sandbox_image_contract_test.sh
+        run: bash scripts/run_script_tests.sh scripts/sandbox_image_contract_test.sh
 
       - name: Pre-pull the box images
         # DockerBackend.ensureImage would pull these on first use; doing it here makes a
@@ -2546,7 +2688,7 @@ jobs:
       - name: Per-identity pip cache isolation in the box image (smoke)
         # Two boxes on the image built above: A reuses its own wheel, B can neither read nor
         # replace it. Offline (--no-index); it ran nowhere before 2026-11-25.
-        run: AURA_SANDBOX_TEST_IMAGE=aura-sandbox:latest go test -tags 'docker_integration smoke' -race -count=1 -run TestPipCacheIsolation ./internal/sandbox/usersandbox/
+        run: AURA_SANDBOX_TEST_IMAGE=aura-sandbox:latest bash scripts/go_test_ledger.sh pip-cache-isolation -tags 'docker_integration smoke' -race -count=1 -run TestPipCacheIsolation ./internal/sandbox/usersandbox/
 
       - name: Upload docker_integration coverage report
         if: always()
@@ -2567,3 +2709,62 @@ jobs:
             --format '{{.Names}}\t{{.Status}}'
           docker ps -aq --filter 'name=aura-box-' --filter 'name=aura-egress-' | xargs -r docker rm -f
           docker volume ls -q --filter 'name=aura-box-' | xargs -r docker volume rm -f
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
+  # The test ledger (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.3): what every test job
+  # above executed, against what the tree declares and .github/test_ledger_allow.txt excuses. It is
+  # report-only until the allowlist is written from its first run on master (plan task C1); a run it
+  # cannot judge at all (an artifact it cannot read) still fails it.
+  test-ledger:
+    name: Test ledger (report-only)
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - build-and-lint
+      - unit-test
+      - capability-eval
+      - cache-invariant
+      - observability-contract
+      - integration-test
+      - musr-e2e
+      - web-integration-test
+      - knowledge-integration-test
+      - arcadedb-integration-test
+      - ingest-sidecar-test
+      - reasoning-tier-test
+      - multimodal-integration-test
+      - whatsapp-integration-test
+      - calendar-integration-test
+      - pim-mail-e2e
+      - mcp-live-integration-test
+      - web-test
+      - web-e2e
+      - race-db-integration-gates
+      - sandbox-docker-integration
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download every job's test ledger
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-ledger-*
+          path: ${{ runner.temp }}/test-ledger
+
+      - name: Judge the run
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: go run ./cmd/testledger check --artifacts "$RUNNER_TEMP/test-ledger" --needs "$NEEDS" --report-only

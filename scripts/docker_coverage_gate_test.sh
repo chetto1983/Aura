@@ -40,6 +40,7 @@ EOF
 chmod +x "$TMP/bin/go"
 
 PATH="$TMP/bin:$PATH" \
+AURA_TEST_LEDGER_DIR="$TMP/ledger" \
 FAKE_GO_LOG="$TMP/go.log" \
 AURA_DOCKER_COVERAGE_PROFILE="$TMP/docker.cover" \
 AURA_DOCKER_COVERAGE_REPORT="$TMP/docker-report.json" \

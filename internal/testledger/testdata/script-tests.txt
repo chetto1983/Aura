@@ -1,0 +1,3 @@
+scripts/testdata/run_script_tests/passes_test.sh pass 0
+scripts/testdata/run_script_tests/fails.sh fail 0
+scripts/testdata/run_script_tests/skips.sh skip 0

@@ -1,0 +1,8 @@
+pkg/tests/test_mixed.py::test_passes
+pkg/tests/test_mixed.py::test_fails
+pkg/tests/test_mixed.py::test_skips
+pkg/tests/test_mixed.py::test_param[1]
+pkg/tests/test_mixed.py::test_param[2]
+pkg/tests/test_mixed.py::TestGroup::test_in_class
+
+6 tests collected in 0.00s

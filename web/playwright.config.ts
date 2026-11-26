@@ -1,5 +1,8 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+const ledger = process.env.AURA_TEST_LEDGER_DIR;
 
 // Playwright's webServer does NOT inherit the runner/process env by default
 // (microsoft/playwright#19780). `aura serve` hard-requires a Postgres pool +
@@ -76,7 +79,15 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? 'github' : 'list',
+  // With AURA_TEST_LEDGER_DIR set, a JSON report joins the run's reporter
+  // (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2). One file per invocation: a CI
+  // job runs several, and the pid keeps each from overwriting the last.
+  reporter: [
+    [process.env.CI ? 'github' : 'list'],
+    ...(ledger
+      ? [['json', { outputFile: join(ledger, `playwright-${process.pid}.json`) }] as const]
+      : []),
+  ],
   // serviceWorkers: 'block' — the embedded cockpit registers a PWA service worker
   // (internal/webui/dist/sw.js); leaving it active makes the SW intercept fetches so
   // page.route() never sees them (the golden-replay E2E mocks /agent/run + /api/* at the

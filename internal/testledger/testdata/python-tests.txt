@@ -1,0 +1,4 @@
+test_ledger_test.AppendTests.test_appends_the_stream_under_its_file_name pass
+test_ledger_test.AppendTests.test_the_name_is_a_bare_file_name pass
+test_ledger_test.AppendTests.test_unset_outside_ci_records_nothing pass
+test_ledger_test.AppendTests.test_unset_under_ci_is_refused pass
