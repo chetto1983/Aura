@@ -2,12 +2,15 @@
 // semver: the lockfile pins oxlint, and scripts/lint-contract.mjs proves each rule still fires).
 
 const REGISTERS = new Set(['test', 'it', 'describe']);
-// Members that still register a test or a group: test.only(...), test.describe.serial(...),
-// it.each([...])('name', fn). test.skip is the sanctioned way to gate on a condition: the runner
-// reports the skip, so it is not a hidden registration.
+// Members a registration can carry: test.only(...), test.describe.serial(...),
+// it.each([...])('name', fn), test.skip('name', fn). Several are also runtime annotations
+// (test.skip(condition, reason), test.fail(true, reason)), which register nothing: the call's
+// shape tells them apart (see registers). test.skip(condition, reason) is the sanctioned gate,
+// since the runner reports the skip.
 const MODIFIERS = new Set([
   'describe',
   'only',
+  'skip',
   'serial',
   'parallel',
   'fixme',
@@ -45,14 +48,17 @@ function registration(callee) {
 }
 
 /**
+ * registers names the call when it declares a test or a group. A declaration passes its body as
+ * a function after the title (test(title, fn), test(title, details, fn), describe(title, fn));
+ * an annotation passes none there (test.fail(true, reason)), or only a condition callback first
+ * (test.skip(({ browserName }) => …, reason)).
  * @param {Node} node
  * @returns {string | null}
  */
 function registers(node) {
-  if (node.type !== 'CallExpression' || !node.callee || (node.arguments?.length ?? 0) < 2) {
-    return null;
-  }
-  return registration(node.callee);
+  if (node.type !== 'CallExpression' || !node.callee) return null;
+  const body = (node.arguments ?? []).slice(1).some((argument) => FUNCTIONS.has(argument.type));
+  return body ? registration(node.callee) : null;
 }
 
 /**

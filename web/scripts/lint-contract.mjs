@@ -67,6 +67,15 @@ const cases = [
     code: 'import { it } from "vitest"; if (process.env.LIVE === "1") { it("hidden when unset", () => {}); }',
   },
   {
+    name: 'conditional-skip',
+    rule: 'aura(no-conditional-test-registration)',
+    code: 'import { test } from "@playwright/test"; if (process.env.LIVE === "1") { test.skip("hidden when unset", () => {}); }',
+  },
+  {
+    name: 'runtime-annotation',
+    code: 'import { expect, test } from "@playwright/test"; test("annotated", () => { if (process.env.KNOWN === "1") test.fail(true, "known issue"); expect(1).toBe(1); });',
+  },
+  {
     name: 'skipped-test',
     code: 'import { expect, test } from "@playwright/test"; test.skip(process.env.LIVE !== "1", "needs a live stack"); test("reported", () => { expect(1).toBe(1); });',
   },
