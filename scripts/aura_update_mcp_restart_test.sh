@@ -84,6 +84,8 @@ docker() {
   case "$*" in
     'compose ps -q '*)
       cat >/dev/null
+      # 'torn': the record showed itself while its last line was still being gathered.
+      [[ "$4" != whatsapp || ! -e mcp_sidecars.recorded ]] || grep -q '^whatsapp ' mcp_sidecars.recorded || touch torn
       [[ -e "absent-$4" ]] || echo "$4-id"
       ;;
     'inspect --format {{.Image}} '*) echo "image-$(cat "created-${4%-id}")" ;;
@@ -363,3 +365,48 @@ record=mcp_sidecars.recorded
   [[ -e "$record" ]] || fail "a tick that died awaiting the restart lost the record"
 )
 echo "ok: the record is cleared by a decision taken, and kept by a tick that dies before it"
+
+# (11) The record is written whole or not at all, and one that cannot be trusted restarts aura
+# once rather than skip a restart. A tick killed while writing it must not leave a stub a later
+# apply reads as complete; a record an earlier updater left cut short names no image, so every
+# sidecar replaced since counts as moved when it is newer than aura.
+(
+  PAYLOAD=0 && new_case record-written-whole
+  apply
+  [[ ! -e torn ]] || fail "the record was visible before it was whole"
+)
+# bad_record_case <name> <content>: the PIM was replaced before the apply, after aura started.
+bad_record_case() {
+  PAYLOAD=0 && new_case "$1"
+  printf '%b' "$2" >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+}
+(
+  bad_record_case record-cut-mid-line 'arcadedb-mcp image-800\naura-pim-mcp image-8'
+  expect_restarts 1 "a record cut in the middle of a line"
+)
+(
+  bad_record_case record-missing-sidecar 'arcadedb-mcp image-800\nwhatsapp image-800\n'
+  expect_restarts 1 "a record without the PIM"
+)
+(
+  bad_record_case record-empty ''
+  expect_restarts 1 "an empty record"
+)
+(
+  PAYLOAD=0 && new_case record-whole
+  printf '%s\n' 'arcadedb-mcp image-800' 'aura-pim-mcp image-800' 'whatsapp image-800' >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+  expect_restarts 1 "a whole record that names the PIM's image before it moved"
+  [[ "$(said)" == *' remount aura-pim-mcp,'* ]] || fail "the restart named: $(said)"
+)
+(
+  PAYLOAD=0 && new_case record-whole-unmoved
+  printf '%s\n' 'arcadedb-mcp image-800' 'aura-pim-mcp image-950' 'whatsapp image-800' >"$record"
+  echo 950 >created-aura-pim-mcp
+  apply
+  expect_restarts 0 "a whole record that names the PIM's image as it runs now"
+)
+echo "ok: the record is written whole or not at all, and one that cannot be trusted restarts aura"
