@@ -90,6 +90,7 @@ vet:
 
 lint:
 	$(GOBIN)/golangci-lint run $(GO_PACKAGES)
+	$(GOBIN)/golangci-lint run --build-tags "$$(bash scripts/go_build_tags.sh)" $(GO_PACKAGES)
 
 py-lint:
 	bash scripts/ruff.sh check .
