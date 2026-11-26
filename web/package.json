@@ -107,6 +107,7 @@
   },
   "overrides": {
     "@svar-ui/react-core": "$@svar-ui/react-core",
+    "minimatch": "^11.0.5",
     "qs": "~6.16.1"
   },
   "allowScripts": {
