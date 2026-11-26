@@ -1,7 +1,8 @@
 # Every test runs in CI, or is named: the runtime test ledger
 
 - **Date:** 2026-11-25
-- **Status:** Draft, for the operator's approval
+- **Status:** Implemented. Parts A and B in #282, the allowlist and the enforcing gate in #284, the
+  static check retired in the PR that deletes it (plan task C3).
 - **Measurement this rests on:** [`docs/superpowers/verification/2026-11-25-ci-test-inventory.md`](../verification/2026-11-25-ci-test-inventory.md)
 - **Supersedes:** `.github/manual_test_tiers.txt` and the static check in `cmd/aura/tier_runners*_test.go`
   (`3e83b15`, `cb5a571`, `35ee3d2`, `442c205`), once the ledger is green on `master` (§8).
