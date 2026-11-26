@@ -1,6 +1,6 @@
 # MCP elicitation and the question card: implementation plan
 
-**Status (2026-10-15):** PARTIAL. Tasks 1-9 landed (895d27248..e235d1daa). Task 10's live E2E never ran, and the PRD still describes decline-and-surface where the cockpit now shows the form.
+**Status (2026-11-26):** PARTIAL. Tasks 1-9 landed (895d27248..e235d1daa). Task 10 ran locally with the model in the loop and the cockpit's API (`docs/superpowers/verification/2026-11-26-elicitation-model-in-the-loop.md`), and PRD amendment #225 records it. Its lab VM steps, the card on screen and a surfaced fallback are still open.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
