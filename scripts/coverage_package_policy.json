@@ -109,7 +109,7 @@
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "target"},
     "github.com/chetto1983/aura/internal/utf8cut": {"mode": "target"},
     "github.com/chetto1983/aura/internal/web": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 246, "total_statements": 428},
+    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 248, "total_statements": 430},
     "github.com/chetto1983/aura/internal/webui": {"mode": "target"},
     "github.com/chetto1983/aura/internal/whatsappbridge": {"mode": "target"}
   }
