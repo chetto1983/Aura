@@ -241,6 +241,37 @@ func TestInstallerSearchRunsWhenFlagOn(t *testing.T) {
 	}
 }
 
+// The CLI fallback prints its own count token (226.3K); the JSON catalog path formats the
+// number itself (226K). One count must read the same whichever path served it: Web E2E on
+// PR #282 compared the two after skills.sh outlasted its 2 s budget.
+func TestInstallerSearchCLICountsReadAsTheCatalogFormatsThem(t *testing.T) {
+	t.Setenv(externalDiscoveryEnv, "1")
+	inst := newTestInstaller(t, func(context.Context, string, string, ...string) (string, error) {
+		return "anthropics/skills@docx 226.3K installs\n" +
+			"a@b 12.3K installs\n" +
+			"c@d 1.2M installs\n" +
+			"e@f 1.0K installs\n" +
+			"g@h 900 installs\n" +
+			"i@j 1.2.3K installs\n", nil
+	})
+	res, err := inst.Search(t.Context(), "docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"docx": "226K", "b": "12.3K", "d": "1.2M", "f": "1K", "h": "900"}
+	if len(res.Hits) != len(want) {
+		t.Fatalf("want %d hits (a malformed count is no result line), got %+v", len(want), res.Hits)
+	}
+	for _, hit := range res.Hits {
+		if hit.Installs != want[hit.Skill] {
+			t.Errorf("%s@%s installs = %q, want %q", hit.Source, hit.Skill, hit.Installs, want[hit.Skill])
+		}
+	}
+	if got := compactInstallCount(226_300); got != want["docx"] {
+		t.Errorf("the catalog path formats 226300 as %q, the CLI path as %q", got, want["docx"])
+	}
+}
+
 // TestInstallerSearchEmptyState proves an enabled search whose output has no result lines
 // renders an empty (non-nil) Hits slice (the empty-state edge, SKW-01).
 func TestInstallerSearchEmptyState(t *testing.T) {
