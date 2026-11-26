@@ -16,12 +16,16 @@
 #     reads its own disk, so the two subjects' fixture accounts are the operator's);
 #   - the published WhatsApp MCP on 8092 (bridge on 8094), its store a fresh directory of this
 #     run, bind-mounted so the tier can seed each tenant's SQLite.
-# Then it runs the tier and removes all of it, both containers' data included.
+# Then it runs the tier and removes all of it: Postgres and ArcadeDB run with --rm, which takes their
+# anonymous volumes with them; the PIM and WhatsApp containers go by docker rm -f -v, and the
+# temporary directory with the bind-mounted store.
 #
 # What it reaches outside that: the Docker daemon (it pulls and runs the images above), the
 # loopback ports above, and the caller's embedding sidecar, which is stateless: it embeds text
-# and keeps nothing. It reads the GGUF in AURA_EMBED_MODEL_DIR, and writes only below its own
-# temporary directory.
+# and keeps nothing. It reads the GGUF in AURA_EMBED_MODEL_DIR.
+# What it writes outside its own temporary directory: the caller's Go build and module caches
+# (go build and go test run as the caller; only aura serve, the memory MCP and the migration run
+# under env -i with HOME in that directory) and the Docker daemon's image store.
 #
 # What it cannot reach:
 #   - another Postgres or ArcadeDB: it never takes a database address from its caller, so no
