@@ -1,12 +1,17 @@
 # The PIM's mail and calendar rows M1, M2, M9, C1, C2, C3: implementation plan
 
-**Status:** v1, 2026-11-23. Not started, not reviewed. Written while the parallel session pushes
-master; nothing here runs before that push is green.
+**Status:** v2, 2026-11-26. Not started, not reviewed. v1 (2026-11-23) was written against the
+multiplexed `calendar` tool, which the PIM tool split removed (`specs/2026-11-23-pim-tool-split-design.md`,
+landed in the fork as change 4 of `AURA-FORK.md` and in Aura as migrations 0158/0159). As that spec's §6
+asks, v2 reconciles this plan with it: the new operations become new tools, not new actions, and the
+release goes through Aura's pin of the PIM image. "Changes from v1" at the end lists every change. The
+fork was read at `main` `68f8935` (2026-11-26), Aura at `master` `1e1c1cfe1`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or
 > superpowers:executing-plans, task by task.
-> - P1-P8 run in the PIM fork (`D:/tmp/aura-pim-mcp`), on a branch `aura/mail-complete` off `main`.
-> - A1 runs in Aura, on `master`.
+> - P1-P8 run in a clone of the PIM fork (`chetto1983/aura-pim-mcp`), on a branch
+>   `aura/mail-complete` off `main` (`68f8935` when v2 was written).
+> - A1 and A2 run in Aura, on `master`. Each carries the pin of the fork commit its wave needs.
 > - L1 and L2 are the live runs on the lab VM.
 >
 > Steps use checkbox syntax.
@@ -37,8 +42,14 @@ the code it tests is deployed.
   `scope` (`occurrence`, `series`, `following`). Listings carry `seriesId` and
   `originalStartUtc`. Graph has no RRULE input, so `RRuleToGraph` converts a documented subset and
   refuses the rest before any request.
-- **Aura** classifies the two draft actions, lets the reviewed send carry `bcc` and
-  `replyToEmailId`, and shows Bcc in both review surfaces (cockpit and Telegram).
+- **Two new tools, not new actions.** `create_draft` and `update_draft` are tool classes of their
+  own, registered in `CalendarMcpSurface.ToolTypes`, so the tenant binding, the scalar coercion and
+  the missing-argument filter cover them with no extra line. Every other new argument lands on the
+  per-tool class that owns it (`SendEmailTool`, `CreateEventTool`, `UpdateEventTool`,
+  `DeleteEventTool`, `RespondToEventTool`, `GetCalendarEventsTool`).
+- **Aura** tiers the two new tools, lets the reviewed send carry `bcc` and `replyToEmailId`, shows
+  Bcc in both review surfaces (cockpit and Telegram), and moves its pin of the PIM image to the fork
+  commit that serves them.
 
 **Tech Stack:**
 - PIM: .NET 10, MailKit/MimeKit 4.18.2, Microsoft.Graph 6.5.0 (Kiota `RequestInformation` for the
@@ -50,7 +61,9 @@ the code it tests is deployed.
 
 **Spec:** `docs/superpowers/specs/2026-11-21-mailcraft-cockpit-design.md`, D4 rows M1, M2, M9, C1,
 C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
-`docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md`.
+`docs/superpowers/verification/2026-11-23-mailcraft-gate1-pim-as-is.md`. The tool surface and the
+release path follow `docs/superpowers/specs/2026-11-23-pim-tool-split-design.md` (§4.1-4.3, §5.1, §5.6,
+§5.7, §6) and its live checks, `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 
 ## Global Constraints
 
@@ -60,10 +73,17 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
   Gmail draft is addressed by its draft id (immutable), never by its message id, which changes on
   every update (`guides/drafts`). Graph calls keep today's default ids: this plan adds no
   `Prefer: IdType="ImmutableId"` (see Decisions 9).
-- **Release order: the PIM first, then Aura.** The PIM binds arguments by parameter name, so an
-  older PIM drops a `bcc` it does not know and the mail leaves without it. Aura must not accept
-  `bcc` on a reviewed send before the VM runs a PIM that has it. A new action reaching an older
-  Aura is harmless: `classifyToolRisk` tiers an unlisted action destructive (fail-closed).
+- **Release: one Aura release carries the PIM and what accepts it.** The PIM reaches an appliance
+  only when an Aura release changes its pin (`compose.yaml:1359`, the `aura-pim-mcp` image by commit
+  sha, since a push to the fork's `main` reached appliances early on 2026-11-23). CI pins the same sha
+  twice (`.github/workflows/ci.yml:1597`, `:2202`). So the fork branch merges first and publishes its
+  `:<sha>` image, and then one Aura commit moves the pin and starts accepting what that PIM serves.
+  The hazard v1 guarded against still exists inside that commit: the PIM binds arguments by parameter
+  name, so a PIM without `bcc` drops it and the mail leaves without the blind copy. Aura's live
+  contract test (`internal/mcp/calendar_integration_test.go`, exact tool set and required fields) runs
+  against the pinned image, so a pin that lacks the new surface fails CI before a release. A new tool
+  reaching an Aura that does not name it (a development image) is tiered destructive:
+  `classifyToolRisk` does so for every PIM tool its table does not name (`bridge_risk.go:253-257`).
 - **Bcc.** Delivered copies never carry a `Bcc:` header. The Sent copy and a draft keep it, as
   mail clients do, so the owner sees whom they blind-copied. (This reads spec Acceptance "Bcc
   delivered and absent from every header" as every *delivered* copy; see Decisions.)
@@ -73,9 +93,10 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
 - **Errors reach the model.** Every new refusal names the argument to change and never echoes a
   value, as Aura's `messagedrafts` does since `285d6cc8f`.
 - **Files ≤600 LOC; new code in new partial-class files.** `GoogleProviderService.cs` (1746),
-  `M365ProviderService.cs` (1529), `OutlookComProviderService.cs` (1498) and
-  `ImapProviderService.cs` (598) are not split by this plan (precedent: the 2026-11-20 plan). Each
-  task moves the code it rewrites out of them into its own partial file, so they only shrink.
+  `M365ProviderService.cs` (1539) and `OutlookComProviderService.cs` (1508) are not split by this plan
+  (precedent: the 2026-11-20 plan). `ImapProviderService.cs` is 571 lines, already beside its
+  `.Changes`, `.Folders`, `.SpecialFolders` and `.Support` partials. Each task moves the code it
+  rewrites out of them into its own partial file, so they only shrink.
 - **Public repos.** Fixtures use `example.com`/`example.org` and invented names. No real address,
   subject or mail text, in tests, commits or verification files (verification files hold field
   names, counts and yes/no).
@@ -85,10 +106,16 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
     `PIM_TEST_GREENMAIL=localhost:3143`, `PIM_TEST_GREENMAIL_SMTP=localhost:3025` and
     `PIM_TEST_DOVECOT=localhost:31143`, started with the `docker run` lines in
     `.github/workflows/ci.yml`.
-  - **Go, in WSL:** `wsl -e bash -lc 'cd /mnt/d/Aura && export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH && go vet ./... && go build ./... && go test -race ./internal/<pkg>/...'`.
+  - **Go:** `go vet ./... && go build ./... && go test -race ./internal/<pkg>/...` (in WSL, with
+    `~/.local/bin` and `~/go/bin` on `PATH`, per `CLAUDE.md`). The PIM live tier:
+    `go test -tags mcp_live_integration ./internal/mcp/` against the pinned image.
   - **Web, on Windows:** `cd web; npx vitest run <file>; npm run lint; npm run typecheck; npm run test`.
-- **`AURA-FORK.md`** gets a line for each new action, argument and behaviour change, in the commit
-  that makes it.
+- **`AURA-FORK.md`** change 4 (the tool surface) gets a line for each new tool and argument, and a
+  behaviour change gets its own line, in the commit that makes it.
+- **The surface tests move with the surface.** A new tool is added, in the same commit, to
+  `CalendarMcpSurface.ToolTypes`, to `SurfaceContractTests` (exactly the served names and each one's
+  required fields), to `ToolSurfaceTenancyTests` (each tool called as one tenant sees no other
+  tenant's accounts) and to `EmptyRequiredArgumentTests`.
 - **Commits.** One atomic commit per task. Aura commits end
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -123,25 +150,29 @@ C2, C3 and Gate 1 rows G1-G3, G5-G9. Measured baseline:
 | PIM Core | `Providers/RRuleToGraph.cs` (new) | RRULE → `PatternedRecurrence`, refusing what Graph cannot hold |
 | PIM Core | `Models/EventWrite.cs` (new) | `EventWrite` record: the C1 fields shared by create and update |
 | PIM Core | `Providers/*ProviderService.Events.cs` (new) | create/update/delete with C1 fields and `scope` (C2) |
-| PIM Core | `Tools/DraftTools.cs` (new), `Tools/CalendarActionTool*.cs` | `create_draft`, `update_draft`; the new arguments in the multiplexed tool |
-| PIM Tests | `Providers/OutboundMimeTests.cs`, `Providers/*DraftsTests.cs`, `Providers/RRuleToGraphTests.cs`, `Providers/*EventsTests.cs`, `Providers/ImapSendTests.cs` (new) | one per unit above |
-| Aura Go | `internal/agent/mcptools/bridge_risk.go`, `internal/messagedrafts/validation.go` | draft actions tiered; `bcc`, `replyToEmailId` allowed on a reviewed send |
+| PIM Core | `Tools/CreateDraftTool.cs`, `Tools/UpdateDraftTool.cs` (new), `Tools/CalendarMcpSurface.cs` | the two new tools, registered in `ToolTypes` (not `ViewToolTypes`: they are writes) |
+| PIM Core | `Tools/SendEmailTool.cs`, `Tools/{Create,Update,Delete}EventTool.cs`, `Tools/RespondToEventTool.cs`, `Tools/GetCalendarEventsTool.cs` | the new arguments, each on the tool that owns it |
+| PIM Tests | `Providers/OutboundMimeTests.cs`, `Providers/*DraftsTests.cs`, `Providers/RRuleToGraphTests.cs`, `Providers/*EventsTests.cs`, `Providers/ImapSendTests.cs` (new); `Tools/SurfaceContractTests.cs`, `Tenancy/ToolSurfaceTenancyTests.cs`, `Tools/EmptyRequiredArgumentTests.cs` | one per unit above; the surface tests gain the two tools |
+| Aura Go | `internal/agent/mcptools/bridge_risk.go`, `internal/messagedrafts/validation.go` | the two tools tiered; `bcc`, `replyToEmailId` allowed on a reviewed send |
+| Aura Go | `internal/mcp/calendar_integration_test.go`, `internal/agent/mcptools/bridge_calendar_test.go`, `internal/agent/mcptools/bridge_risk_recipes_test.go` | the exact PIM surface, against the pinned image |
+| Aura Go | `internal/agent/tools/search_keywords.go`, `internal/agent/tools/testdata/deferred_manifest.json` | retrieval keywords for the two tools; the corpus re-dumped from the pinned registry |
+| Aura deploy | `compose.yaml`, `.github/workflows/ci.yml` | the pin of the fork commit |
 | Aura Go | `internal/channels/telegram/hitl_message_draft.go` | Bcc in the Telegram review |
 | Aura web | `web/src/approvals/MessageDraftCard.tsx`, `web/src/i18n/resources.*` | Bcc field and the reply marker in the cockpit review |
 
 ---
 
-## PIM fork (`D:/tmp/aura-pim-mcp`)
+## PIM fork (`chetto1983/aura-pim-mcp`)
 
-**Before P1.** `aura/account-connect` (PR chetto1983/aura-pim-mcp#5) rewrites
-`ImapProviderService.cs`. If it is not merged into `main` when P1 starts, stop and ask: branching
-from `main` would conflict, branching from it would carry unreviewed work.
+v1's "Before P1" gate is met: `aura/account-connect` (PR chetto1983/aura-pim-mcp#5) is in `main`
+(`AURA-FORK.md` changes 9 and 11). If `main` has moved past `68f8935` when P1 starts, re-read the
+files each task names before writing a line.
 
 ### Task P1: One MIME builder, and SMTP sends Bcc without the header
 
 **Files:**
 - Create: `src/CalendarMcp.Core/Models/OutboundEmail.cs`, `src/CalendarMcp.Core/Providers/OutboundMime.cs`
-- Modify: `GoogleProviderService.cs` (send body → `OutboundMime`), `ImapProviderService.cs:462-540` (same)
+- Modify: `GoogleProviderService.cs:443-` (`SendEmailAsync`, whose `MimeMessage` is built at `:461`) and `ImapProviderService.cs:424-` (`SendEmailAsync`, `MimeMessage` at `:434`): both bodies → `OutboundMime`. `MimeAttachmentBuilder.cs` stays the one attachment builder
 - Test: `src/CalendarMcp.Tests/Providers/OutboundMimeTests.cs`, `src/CalendarMcp.Tests/Providers/ImapSendTests.cs`
 
 **Interfaces:**
@@ -190,7 +221,7 @@ from `main` would conflict, branching from it would carry unreviewed work.
 ### Task P3: One send method for every provider, with Bcc and replies (M2)
 
 **Files:**
-- Modify: `Services/IProviderService.cs` (`SendEmailAsync` → `SendAsync`), the four `*.Mail.cs`, `Tools/SendEmailTool.cs`, `Tools/CalendarActionArguments.cs`, `Tools/CalendarActionTool.cs` (description), `AURA-FORK.md`
+- Modify: `Services/IProviderService.cs:50` (`SendEmailAsync` → `SendAsync`), the four `*.Mail.cs`, `Tools/SendEmailTool.cs` (the two arguments and their descriptions; the tool's description names `replyToEmailId`), `Tools/UnsubscribeFromEmailTool.cs:170` (its mailto unsubscribe sends through `SendEmailAsync` today), the `Ics`, `JsonCalendar` and `Dav` stubs (`NotSupportedException`, as now), `AURA-FORK.md`
 - Delete: the four old `SendEmailAsync` bodies; Graph's JSON message builder moves into the `M365`/`OutlookCom` `*.Mail.cs`, unchanged but for `bccRecipients`
 - Test: `Tools/SendEmailToolReplyTests.cs`, `Providers/SendTests.cs`
 
@@ -214,6 +245,10 @@ from `main` would conflict, branching from it would carry unreviewed work.
   - `ReplyToEmailId_FromAnotherAccount_IsRefused`: the error names `replyToEmailId`; no provider
     call is made.
   - `ReplyToEmailId_Gone_IsRefused`: `GetRawEmailAsync` returns null; the error names the argument.
+  - `Unsubscribe_Mailto_StillSends`: the mailto path of `unsubscribe_from_email` sends one message
+    through `SendAsync`.
+  - `SurfaceContractTests`: `send_email` keeps `accountId`, `to`, `subject` required; `bcc` and
+    `replyToEmailId` are optional.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement** `SendAsync` per spec D4 M2, Graph as Decisions 1 says.
 - [ ] **Step 4: Run them, then the whole suite.** Expected: PASS; no `SendEmailAsync` left
@@ -223,16 +258,16 @@ from `main` would conflict, branching from it would carry unreviewed work.
 ### Task P4: Drafts in the provider's Drafts (M9)
 
 **Files:**
-- Create: `Providers/{Google,M365,OutlookCom,Imap}ProviderService.Drafts.cs`, `Tools/DraftTools.cs`
-- Modify: `Services/IProviderService.cs`, `Tools/CalendarActionTool.cs` (`create_draft`, `update_draft`), `AURA-FORK.md`
-- Test: `Providers/GmailDraftsTests.cs`, `Providers/GraphDraftsTests.cs`, `Providers/ImapDraftsTests.cs`, `Tools/DraftToolsTests.cs`
+- Create: `Providers/{Google,M365,OutlookCom,Imap}ProviderService.Drafts.cs`, `Tools/CreateDraftTool.cs`, `Tools/UpdateDraftTool.cs`
+- Modify: `Services/IProviderService.cs`, `Tools/CalendarMcpSurface.cs` (`ToolTypes`), `AURA-FORK.md`
+- Test: `Providers/GmailDraftsTests.cs`, `Providers/GraphDraftsTests.cs`, `Providers/ImapDraftsTests.cs`, `Tools/DraftToolsTests.cs`, `Tools/SurfaceContractTests.cs`, `Tenancy/ToolSurfaceTenancyTests.cs`, `Tools/EmptyRequiredArgumentTests.cs`
 
 **Interfaces:**
 - Consumes: `OutboundMime.Build`, `ReplyThread`, `GetRawEmailAsync` (IMAP drafts are messages), Graph's JSON message builder (P3).
 - Produces: `Task<string> CreateDraftAsync(string accountId, OutboundEmail email, ReplyThread? replyTo, CancellationToken ct)` and `Task<string> UpdateDraftAsync(string accountId, string draftId, DraftChange change, CancellationToken ct)`, both returning the id to use next.
 - Gmail reads the stored draft with `users.drafts.get format=raw` (`guides/drafts`), never through `GetRawEmailAsync`, whose id is a message id.
 - Produces: `public sealed record DraftChange(IReadOnlyList<string>? To, IReadOnlyList<string>? Cc, IReadOnlyList<string>? Bcc, string? Subject, string? Body, string? BodyFormat);` (null = unchanged).
-- Produces: actions `create_draft` (the `send_email` arguments, with `to` optional) → `{draftId}`; `update_draft` (`draftId` + `DraftChange` fields) → `{draftId}`.
+- Produces: tools `create_draft` (the `send_email` arguments, `accountId` required, `to` optional) → `{draftId}`; `update_draft` (`accountId`, `draftId` required, plus the `DraftChange` fields) → `{draftId}`. Each is `[McpServerTool(Name = "...")]` on its own class, as `send_email` is.
 - A draft may have no recipient at all: the work-assistant requirements (PR #274, v0.7 §9) leave To, Cc and Bcc empty for the owner to fill.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -252,6 +287,9 @@ from `main` would conflict, branching from it would carry unreviewed work.
     header in the stored draft, and no error.
   - `Drafts_MissingFolder_IsAnErrorNotACreate`: IMAP `APPEND` never creates the mailbox (RFC 9051
     §6.3.12), and neither does the PIM.
+  - The surface tests: `SurfaceContractTests` lists exactly 31 names with the two tools' required
+    fields; `ToolSurfaceTenancyTests` calls both as one tenant and sees no other tenant's accounts;
+    `EmptyRequiredArgumentTests` names a missing `accountId` and `draftId`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement** per spec D4 M9.
 - [ ] **Step 4: Run them.** Expected: PASS.
@@ -261,7 +299,7 @@ from `main` would conflict, branching from it would carry unreviewed work.
 
 **Files:**
 - Create: `Models/EventWrite.cs`, `Providers/RRuleToGraph.cs`, `Providers/*ProviderService.Events.cs` (Google, M365, OutlookCom, Dav)
-- Modify: `Services/IProviderService.cs` (`CreateEventAsync`/`UpdateEventAsync` take `EventWrite`), `Tools/CreateEventTool.cs`, `Tools/UpdateEventTool.cs`, `Tools/CalendarActionArguments.cs`, `AURA-FORK.md`
+- Modify: `Services/IProviderService.cs` (`CreateEventAsync`/`UpdateEventAsync` take `EventWrite`), `Tools/CreateEventTool.cs`, `Tools/UpdateEventTool.cs`, `AURA-FORK.md`. `update_event` keeps taking the opaque `eventId` (`EventRef`, D-20) and no `accountId`
 - Test: `Providers/RRuleToGraphTests.cs`, `Providers/EventsRecurrenceTests.cs`
 
 **Interfaces:**
@@ -309,7 +347,7 @@ from `main` would conflict, branching from it would carry unreviewed work.
 
 ### Task P7: One occurrence, the series, or this and following (C2)
 
-**Files:** the `*.Events.cs` files, `Tools/UpdateEventTool.cs`, `Tools/DeleteEventTool.cs`, `Tools/GetCalendarEventsTool.cs`, `Models/CalendarEvent.cs`; tests; `AURA-FORK.md`.
+**Files:** the `*.Events.cs` files, `Tools/UpdateEventTool.cs`, `Tools/DeleteEventTool.cs`, `Tools/GetCalendarEventsTool.cs`, `Tools/GetCalendarEventDetailsTool.cs`, `Models/CalendarEvent.cs`; tests; `AURA-FORK.md`. `seriesId` is an `EventRef` like `eventId`, so a listing never hands the model a provider id.
 
 **Interfaces:**
 - Produces: listings and details carry `seriesId` (Graph `seriesMasterId`, Google
@@ -355,36 +393,62 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
 
 ## Aura
 
-### Task A1: The draft actions, and Bcc and replies in the reviewed send
+### Task A1: The two draft tools, Bcc and replies in the reviewed send, and the wave A pin
+
+Runs after P1-P4 are merged into the fork's `main` and its `:<sha>` image is published.
 
 **Files:**
-- Modify: `internal/agent/mcptools/bridge_risk.go` (`create_draft`, `update_draft`: `MCPActionMutate`), `internal/messagedrafts/validation.go` (allow `bcc`, editable; `replyToEmailId`, fixed), `internal/messagedrafts/review.go`, `internal/channels/telegram/hitl_message_draft.go`, `web/src/approvals/MessageDraftCard.tsx`, `web/src/i18n/resources.*`
-- Test: `internal/agent/mcptools/bridge_risk_test.go`, `internal/messagedrafts/validation_test.go`, `internal/channels/telegram/hitl_message_draft_test.go`, `web/src/approvals/__tests__/MessageDraftCard.test.tsx`
+- Modify: `internal/agent/mcptools/bridge_risk.go` (`create_draft`, `update_draft`: `mcpActionMutate`, in the `calendarRecipeSource` table), `internal/messagedrafts/validation.go` (`bcc` allowed and editable; `replyToEmailId` allowed, fixed), `internal/messagedrafts/review.go`, `internal/channels/telegram/hitl_message_draft.go`, `web/src/approvals/MessageDraftCard.tsx`, `web/src/i18n/resources.*`
+- Modify: `internal/agent/tools/search_keywords.go` (keywords for `calendar__create_draft`, `calendar__update_draft`), `internal/agent/tools/testdata/deferred_manifest.json` (re-dumped with `aura toolpipe --manifest-json` from a registry that mounts the new pin)
+- Modify: `compose.yaml:1359` and `.github/workflows/ci.yml:1597`, `:2202` (the pin, to the fork commit P4 merged)
+- Test: `internal/agent/mcptools/bridge_risk_test.go`, `internal/agent/mcptools/bridge_risk_recipes_test.go`, `internal/agent/mcptools/bridge_calendar_test.go` (`calendarForkTools`), `internal/mcp/calendar_integration_test.go` (the exact surface and required fields), `internal/messagedrafts/validation_test.go`, `internal/channels/telegram/hitl_message_draft_test.go`, `web/src/approvals/__tests__/MessageDraftCard.test.tsx`, `internal/agent/tools/search_gate_test.go`
 
-- [ ] **Step 1: Grep every counted list of calendar actions**, tagged tests included
-  (`git grep -n -E 'calendarRecipeSource|send_email' -- '*_test.go'` and the `//go:build` files),
-  before changing the table.
+- [ ] **Step 1: Grep every counted list of PIM tools**, tagged tests included
+  (`git grep -n -E 'calendarRecipeSource|bulk_move_emails|send_email' -- '*.go' '*.ts' '*.tsx'`,
+  and the `//go:build` files), before changing a table. v2 found five: the risk table, its recipes
+  test, `calendarForkTools`, the live surface test and the retrieval keywords.
 - [ ] **Step 2: Write the failing tests.**
-  - `TestDraftActionsAreMutateNotOutbound`: both tiered `Mutate`; `TrustedOutboundTarget` is false
-    for them, so no review is asked.
+  - `TestDraftToolsAreMutateNotOutbound`: both tiered `Mutate`; `TrustedOutboundTarget` is false
+    for them, so a draft asks for no review.
   - `TestMergeApprovedArgsBccIsEditableReplyToIsFixed`: `bcc` edits apply; an override of
     `replyToEmailId` is refused naming it.
   - `TestTelegramDraftShowsBcc`: the Telegram review text lists the Bcc addresses.
   - `MessageDraftCard` shows and edits Bcc, and marks a reply ("In risposta a un messaggio").
+  - `TestCalendarServerLive` (`mcp_live_integration`): the pinned image serves exactly the 31 tools,
+    `create_draft` requiring `accountId`, `update_draft` requiring `accountId` and `draftId`.
+  - The retrieval gate: a dated held-out set of draft queries, written before the keywords as the
+    2026-11-24 set was, finds `calendar__create_draft` in `tool_search`'s top 5. The 2026-11-24 set
+    is not edited.
 - [ ] **Step 3: Run them.** Expected: FAIL.
-- [ ] **Step 4: Implement.**
-- [ ] **Step 5: Run the package suites and the web gates.** Expected: PASS.
-- [ ] **Step 6: Commit** "Review Bcc and replies before a send, and let drafts through as writes".
+- [ ] **Step 4: Implement**, the pin included.
+- [ ] **Step 5: Run the package suites, the live tier against the new pin, and the web gates.**
+  Expected: PASS.
+- [ ] **Step 6: Commit** "Review Bcc and replies before a send, let drafts through as writes, and pin
+  the PIM that serves them".
+
+### Task A2: The wave B pin
+
+Runs after P5-P8 are merged into the fork's `main` and its image is published.
+
+**Files:** `compose.yaml:1359`, `.github/workflows/ci.yml` (both pins); `internal/mcp/calendar_integration_test.go`
+if a required field changed; `internal/agent/tools/testdata/deferred_manifest.json`, re-dumped.
+
+- [ ] **Step 1: Read the fork's P5-P8 diff** for a changed required field or a new tool. P5-P8 add
+  only optional arguments; if that holds, the surface test is unchanged.
+- [ ] **Step 2: Move both pins**, re-dump the corpus and run the live tier and the retrieval gate.
+  Expected: PASS.
+- [ ] **Step 3: Commit** "Pin the PIM that writes recurring events".
 
 ## Live
 
 ### Task L1: Wave A on the lab VM (after P1-P4 and A1)
 
-- [ ] **Step 1: Release the PIM, and only then Aura.** Merge the fork branch to `main`; the fork's
-  `aura-publish-image.yml` publishes the image; the VM updater applies it. Check on the VM that the
-  running PIM lists `bcc`, `replyToEmailId`, `create_draft` and `update_draft` in the `calendar`
-  tool's schema (`docker exec aura aura mcp tools calendar`). Then push Aura with A1 (WSL recipe),
-  CI green on the SHA, and let the updater apply it. No manual step on the VM.
+- [ ] **Step 1: Release through the pin.** The fork branch is merged to `main` and its
+  `aura-publish-image.yml` has published `:<sha>` (P1-P4). Push Aura with A1, which carries the pin
+  (WSL recipe), wait for CI green on the SHA, and let the updater apply the release: it brings the PIM
+  with it. Check on the VM that the running PIM serves `create_draft` and `update_draft`, and
+  `send_email` with `bcc` and `replyToEmailId` (`docker exec aura aura mcp tools calendar`). No manual
+  step on the VM.
 - [ ] **Step 2: Measure** on the VM's Gmail, Microsoft 365 and IMAP accounts, driving the agent
   through the cockpit API, with the rules the operator set on 2026-11-23: mail only between the
   operator's own accounts, subject prefix `[aura-misura]`, one measurement at a time, everything
@@ -401,9 +465,9 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
 - [ ] **Step 4: Amend** the spec for each result that contradicts it (date and evidence), and turn
   the spec's "What decides" fallback into a task before L2.
 
-### Task L2: Wave B on the lab VM (after P5-P8)
+### Task L2: Wave B on the lab VM (after P5-P8 and A2)
 
-- [ ] **Step 1: Release**, as L1.
+- [ ] **Step 1: Release**, as L1, with A2's pin.
 - [ ] **Step 2: Measure.**
   - G3: Microsoft 365 organizes an event and invites the Google account. Google answers with a
     comment; the organizer receives it.
@@ -425,7 +489,7 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
 2. **The Sent copy and drafts keep Bcc; delivered copies never.** Every mail client keeps the Bcc in
    the sender's copy. The spec's Acceptance line "Bcc delivered and absent from every header" is
    read as every delivered copy. To confirm with the operator, and amend the spec if confirmed.
-3. **M1 is a provider method here, not yet an MCP action or an `/admin` route.** Its only consumer
+3. **M1 is a provider method here, not yet an MCP tool or an `/admin` route.** Its only consumer
    in this plan is the reply. The MailCraft facade (`internal/mailhost`) is its other consumer and
    adds the route in its own plan.
 4. **The PIM resolves the reply.** `replyToEmailId` keeps headers out of the model's hands and out
@@ -444,9 +508,37 @@ Delete `GoogleProviderService.cs:1024-1028` (the comment logged and dropped).
    default id in a request that asks for immutable ones, or the reverse. Adding the header to new
    calls only would let a default id from `get_emails` meet an immutable one from `create_draft`.
    Spec M7 switches every call at once, with `translateExchangeIds`, in the facade's plan.
-10. **The release order is part of the plan**, not of the code (Global Constraints): the PIM ships
-    `bcc` before Aura lets a reviewed send carry it.
+10. **The release order is part of the plan, and since v2 one commit holds it.** The pin makes the
+    PIM and the Aura that accepts it ship together (Global Constraints). v1's order, the PIM first,
+    then Aura, is now the order inside that one release: the fork image exists before the commit that
+    pins it.
 11. **A CalDAV answer without server scheduling only warns.** Spec D4 C3 sends an iMIP `REPLY`
     through M2 "on the same account", but a `dav` account has no SMTP. Pairing it with a mail
     account is a design question for the operator, not a guess here; until then the answer is
     saved and the result says the organizer was not told.
+12. **New operations are new tools** (split spec §6). `create_draft` and `update_draft` are classes
+    of their own, so every filter `WithCalendarMcpSurface` registers covers them and the tenant test
+    calls them. An argument stays on the tool that owns it.
+13. **`create_draft` requires `accountId`, as `send_email` does** (`63365df`, split spec §4.2): a
+    draft lands in one account's Drafts, so the account is never guessed.
+14. **`seriesId` is an `EventRef`.** `update_event` and `delete_event` take only opaque references
+    (D-20), so a series id handed back raw could not be used, and would hand the model a provider id.
+15. **The retrieval keywords for the two tools are written after a held-out set**, dated, as the
+    2026-11-24 set was; the 2026-11-24 set is blind once and not reused.
+
+## Changes from v1
+
+| v1 (2026-11-23) | v2 (2026-11-26) | Why |
+|---|---|---|
+| `create_draft`, `update_draft` as actions of the multiplexed `calendar` tool | two tool classes, registered in `CalendarMcpSurface.ToolTypes` | split spec §6; `CalendarActionTool` no longer exists in the fork |
+| New arguments in `CalendarActionArguments.cs` and the tool description | on `SendEmailTool`, the event tools and `GetCalendarEventsTool` | the same |
+| "Release the PIM first; the VM updater applies it" | one Aura release moves the pin and accepts the new surface | the PIM is pinned by sha in `compose.yaml` since 2026-11-23 |
+| A1 tiered two actions | A1 tiers two tools, moves the pin, updates the five counted lists, the live surface test and the retrieval corpus | Aura pins the PIM's exact surface (`calendar_integration_test.go`) and searches it (`search_gate_test.go`) |
+| no A2 | A2 moves the pin for wave B | the same pin rule |
+| P3 changed the senders of `SendEmailTool` | also `UnsubscribeFromEmailTool.cs:170` and the three stubs | `git grep SendEmailAsync` at `68f8935` |
+| "Before P1": stop if `aura/account-connect` is unmerged | met | `AURA-FORK.md` changes 9 and 11 |
+| `ImapProviderService.cs` 598 lines, send at `:462-540` | 571 lines, send at `:424` | measured at `68f8935` |
+| Windows paths (`D:/tmp/aura-pim-mcp`, `/mnt/d/Aura`) | a clone of the fork; Go commands without a host path | the plan runs in any session |
+
+What v2 does not establish: it was written from the fork's source and Aura's, not from a build or a
+run. No P or A step was executed, so every "Expected" above is still a prediction.
