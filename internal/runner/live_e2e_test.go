@@ -67,25 +67,13 @@ type liveHarness struct {
 	cfg   llm.Config
 }
 
-// requireLiveEnv skips locally (and t.Fatals under $CI) when the paid key or the
-// Postgres DSN env is unset. The key gate is checked first so a local run with no
-// key skips cleanly without touching the DB.
-func requireLiveEnv(t *testing.T) {
-	t.Helper()
-	if os.Getenv("OPENROUTER_API_KEY") == "" {
-		t.Skip("live_e2e: OPENROUTER_API_KEY unset — PAID gate, not CI. " +
-			"Run: cp /d/Aura/.env ./.env; set -a; . ./.env; set +a; " +
-			"go test -tags live_e2e -run TestLiveE2E -timeout 600s -v ./internal/runner/")
-	}
-}
-
 // newLiveHarness migrates the DB through the shipped head, opens an aura_app pool,
 // and wires a Runner over the REAL Stores + a REAL openai_compat client. The
 // registry mirrors the runner's pause-capable set (text_response + ask_user +
 // read_tool_output) so the live model can both pause and terminate a turn.
 func newLiveHarness(t *testing.T) *liveHarness {
 	t.Helper()
-	requireLiveEnv(t)
+	testenv.Require(t, "OPENROUTER_API_KEY")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

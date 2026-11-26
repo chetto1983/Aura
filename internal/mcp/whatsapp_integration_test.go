@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	_ "github.com/mattn/go-sqlite3"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -44,7 +45,7 @@ func whatsAppEndpointOrGate(t *testing.T) string {
 
 func TestWhatsAppServerLiveTenantIsolation(t *testing.T) {
 	endpoint := whatsAppEndpointOrGate(t)
-	storeRoot := whatsAppStoreRootOrGate(t)
+	storeRoot := testenv.Require(t, "AURA_WHATSAPP_STORE_ROOT")
 	issuer := newOAuthResourceIssuer(t)
 	tokenA := issuer.token(t, endpoint, whatsAppTenantA)
 	tokenB := issuer.token(t, endpoint, whatsAppTenantB)
@@ -106,18 +107,6 @@ func startWhatsAppRuntime(t *testing.T, ctx context.Context, identity string) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("start WhatsApp runtime for %s: HTTP %d", identity, response.StatusCode)
 	}
-}
-
-func whatsAppStoreRootOrGate(t *testing.T) string {
-	t.Helper()
-	if root := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_STORE_ROOT")); root != "" {
-		return root
-	}
-	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatal("AURA_WHATSAPP_STORE_ROOT must expose the live container store under CI")
-	}
-	t.Skip("set AURA_WHATSAPP_STORE_ROOT to the bind-mounted WhatsApp store")
-	return ""
 }
 
 func seedWhatsAppChat(t *testing.T, ctx context.Context, root, identity, marker string) {

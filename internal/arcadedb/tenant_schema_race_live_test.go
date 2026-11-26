@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/google/uuid"
 )
 
@@ -19,13 +20,7 @@ import (
 // "Cannot create the property 'name' in type 'Entity' because it already exists" and aura
 // serve exited.
 func TestIndependentResolversOpenANewTenantTogetherLive(t *testing.T) {
-	base := os.Getenv("ARCADEDB_URL")
-	if base == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_URL not set")
-	}
+	base := testenv.Require(t, "ARCADEDB_URL")
 	admin, err := New(Config{
 		BaseURL: base, Database: "unused", User: envOr("ARCADEDB_USER", "root"),
 		Password: os.Getenv("ARCADEDB_PASSWORD"),

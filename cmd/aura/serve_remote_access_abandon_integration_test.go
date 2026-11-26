@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"reflect"
 	"testing"
 
@@ -29,13 +28,7 @@ type abandonFixture struct {
 
 func newAbandonFixture(t *testing.T) *abandonFixture {
 	t.Helper()
-	if os.Getenv("AURA_DB_URL") == "" && os.Getenv("POSTGRES_PASSWORD") == "" {
-		msg := "remote access abandon integration needs Postgres (AURA_DB_URL or POSTGRES_PASSWORD)"
-		if os.Getenv("CI") != "" {
-			t.Fatal(msg)
-		}
-		t.Skip(msg)
-	}
+	requireConfiguredPostgres(t, "remote access abandon integration")
 	ctx := context.Background()
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)

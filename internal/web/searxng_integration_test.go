@@ -11,7 +11,6 @@ package web
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -98,9 +97,6 @@ func TestSearch_Live(t *testing.T) {
 // clean markdown with no obvious nav/footer chrome (D-17).
 func TestFetch_Live(t *testing.T) {
 	c := liveClient(t)
-	if os.Getenv("SEARXNG_URL") == "" && os.Getenv("CI") == "" {
-		t.Skip("local skip without stack")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 

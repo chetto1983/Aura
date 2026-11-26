@@ -5,7 +5,6 @@ package web
 import (
 	"context"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -24,9 +23,6 @@ import (
 // whole is CI-gated by SEARXNG_URL — no-skip-as-green).
 func TestDNSRebind(t *testing.T) {
 	_ = testenv.Require(t, "SEARXNG_URL") // gate the whole tier on the stack being up
-	if os.Getenv("CI") == "" && os.Getenv("SEARXNG_URL") == "" {
-		t.Skip("local skip without stack")
-	}
 
 	c := liveClient(t)
 	const conv = "rebind-conv"
