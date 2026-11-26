@@ -1,57 +1,20 @@
 package manager
 
 import (
-	"os"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/sidecarurl"
 )
 
-// sidecarBaseURL is a first-party sidecar's base URL: stable Compose DNS inside the appliance
-// (AURA_IN_CONTAINER=1), the loopback host publish for a native Aura process.
-//
-// The host port comes from portEnv, validated as a TCP port (1-65535) before interpolation:
-// anything else (e.g. "8096@evil.example" via the URL userinfo trick) would retarget the
-// loopback-by-construction URL off-host, so garbage falls back to defaultPort (WR-01). One
-// helper, because the four sidecars below each carried their own copy of this guard.
-func sidecarBaseURL(containerURL, portEnv, defaultPort string) string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return containerURL
-	}
-	port := strings.TrimSpace(os.Getenv(portEnv))
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = defaultPort
-	}
-	return "http://127.0.0.1:" + port
-}
+// memoryRecipeURL is the ArcadeDB memory MCP endpoint.
+func memoryRecipeURL() string { return sidecarurl.Memory() + "/mcp/" }
 
-// memoryRecipeURL is the ArcadeDB memory MCP endpoint (AURA_ARCADEDB_MCP_PORT, default 8096).
-func memoryRecipeURL() string {
-	return sidecarBaseURL("http://aura-arcadedb-mcp:8096", "AURA_ARCADEDB_MCP_PORT", "8096") + "/mcp/"
-}
+// whatsappRecipeURL is the WhatsApp bridge's MCP endpoint.
+func whatsappRecipeURL() string { return sidecarurl.WhatsAppMCP() + "/mcp/" }
 
-// whatsappRecipeURL is the WhatsApp bridge's MCP endpoint (AURA_WHATSAPP_MCP_PORT, default 8092).
-func whatsappRecipeURL() string {
-	return sidecarBaseURL("http://whatsapp:8080", "AURA_WHATSAPP_MCP_PORT", "8092") + "/mcp/"
-}
-
-// PIMSidecarBaseURL returns the PIM MCP/admin base (AURA_PIM_MCP_PORT, default 8093).
-func PIMSidecarBaseURL() string {
-	return sidecarBaseURL("http://aura-pim-mcp:8080", "AURA_PIM_MCP_PORT", "8093")
-}
-
-// calendarRecipeURL is the sidecar's MCP-over-HTTP endpoint — the server root "/".
-func calendarRecipeURL() string {
-	return PIMSidecarBaseURL() + "/"
-}
-
-// WhatsAppBridgeBaseURL returns the WhatsApp bridge's management REST base
-// (AURA_WHATSAPP_BRIDGE_PORT, default 8094).
-func WhatsAppBridgeBaseURL() string {
-	return sidecarBaseURL("http://whatsapp:8081", "AURA_WHATSAPP_BRIDGE_PORT", "8094")
-}
+// calendarRecipeURL is the PIM sidecar's MCP-over-HTTP endpoint — the server root "/".
+func calendarRecipeURL() string { return sidecarurl.PIM() + "/" }
 
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
 // LLM-facing metadata (summary, trust class, runtime) with the concrete

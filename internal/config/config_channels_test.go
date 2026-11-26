@@ -75,6 +75,7 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 // endpoint and credential independently from the MCP OAuth transport.
 func TestWhatsAppBridgeConfigDefaultAndOverride(t *testing.T) {
 	clearPostgresEnv(t)
+	t.Setenv("AURA_IN_CONTAINER", "1")
 	t.Setenv("AURA_WHATSAPP_BRIDGE_TOKEN", "")
 
 	if cfg := LoadDB(); cfg.WhatsAppBridgeURL != "http://whatsapp:8081" || cfg.WhatsAppBridgeToken != "" {

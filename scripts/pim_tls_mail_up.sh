@@ -23,7 +23,7 @@
 # Usage: bash scripts/pim_tls_mail_up.sh [down]
 #   AURA_PIM_MCP_DEV_IMAGE picks the PIM image, e.g. a local build of a branch not yet published.
 #   AURA_E2E_FAKE_MAIL_API moves GreenMail's API; the spec reads the same variable.
-# The Aura under test needs AURA_PIM_MCP_URL=http://127.0.0.1:8093.
+# A native Aura reaches this PIM at its default address (internal/sidecarurl).
 # Needs Docker and openssl, and loopback 993, 465, the API port and 8093 free: stop the compose PIM.
 set -euo pipefail
 
