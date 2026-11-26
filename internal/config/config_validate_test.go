@@ -148,15 +148,19 @@ func TestGateReplication(t *testing.T) {
 	}
 }
 
-// TestEgressAllowlistAcceptedUnderEveryProfile: every box runs on runc since gVisor was retired
-// (2026-10-11), and runc has the nat table the FQDN allowlist needs, so no profile refuses it.
-func TestEgressAllowlistAcceptedUnderEveryProfile(t *testing.T) {
-	withAllowlist := &Config{Sandbox: SandboxConfig{EgressAllowlist: []string{"pypi.org"}}}
+// TestRemovedEgressAllowlistIsRefusedUnderEveryProfile: the FQDN allowlist was removed on
+// 2026-11-25 (no image could enforce it), so a configured one fails boot under every profile
+// rather than being ignored, and an unset one raises nothing.
+func TestRemovedEgressAllowlistIsRefusedUnderEveryProfile(t *testing.T) {
+	cfg := &Config{}
 	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened, ProfileServerProduction} {
-		for _, v := range withAllowlist.ValidateProfile(p) {
-			if v.Knob == "AURA_SANDBOX_EGRESS_ALLOWLIST" {
-				t.Errorf("%s must accept an egress allowlist, got %+v", p, v)
-			}
+		t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "")
+		if hasViolation(cfg.ValidateProfile(p), "AURA_SANDBOX_EGRESS_ALLOWLIST", Fatal) {
+			t.Errorf("%s: an unset allowlist must raise nothing", p)
+		}
+		t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "pypi.org")
+		if !hasViolation(cfg.ValidateProfile(p), "AURA_SANDBOX_EGRESS_ALLOWLIST", Fatal) {
+			t.Errorf("%s: a configured allowlist must be Fatal", p)
 		}
 	}
 }

@@ -24,7 +24,6 @@ var (
 type sandboxSignInBrowser struct {
 	router              *usersandbox.SandboxRouter
 	image, sidecarImage string
-	policy              usersandbox.EgressPolicy
 	mu                  sync.RWMutex
 	sessions            map[string]*signInBrowserSession
 	owns                func(context.Context, string, string) bool
@@ -102,7 +101,7 @@ func (s *signInBrowserSession) Navigate(ctx context.Context, authURL string) err
 		return errors.New("invalid sign-in authorization state")
 	}
 	spec := usersandbox.SignInSpec{Session: s.session, IdentityID: s.owner, DesktopImage: s.browser.image, SidecarImage: s.browser.sidecarImage,
-		AuthURL: authURL, CockpitOrigin: s.opts.CockpitOrigin, StreamOrigin: s.opts.StreamOrigin, Egress: s.browser.policy}
+		AuthURL: authURL, CockpitOrigin: s.opts.CockpitOrigin, StreamOrigin: s.opts.StreamOrigin}
 	_, err = s.browser.router.StartSignIn(ctx, spec, func(ctx context.Context, box usersandbox.SignInBox) error {
 		s.mu.Lock()
 		s.box = box

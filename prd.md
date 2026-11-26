@@ -2599,7 +2599,11 @@ Measured that day on the lab VM: every container ran on `runc`, `AURA_RUNTIME` w
   package and its Docker registration, which nothing selects any more. The updater does not
   touch apt or dockerd.
 - **The FQDN egress allowlist now works under `server_production`.** It needs the nat table
-  that gVisor lacks, and `server_production` boxes now run on runc.
+  that gVisor lacks, and `server_production` boxes now run on runc. *Corrected 2026-11-25:*
+  it never worked anywhere. No image baked in the OpenSandbox binary, so a configured
+  allowlist made the egress sidecar exit at boot, and `TestEgress_FQDNAllowlist` skipped in
+  every CI run from 2026-07-07. The mode was removed; a set `AURA_SANDBOX_EGRESS_ALLOWLIST`
+  now fails boot under every profile (`gateRemovedEgressAllowlist`).
 - **Boxes created on gVisor are recreated on runc.** `Resolve` treats a box whose runtime is
   `runsc` as stale, so the allowlist never meets a gVisor box.
 - **Not covered:** a box names no runtime, so a host whose dockerd default runtime was changed

@@ -1,12 +1,13 @@
 //go:build pim_mail_e2e
 
 // The published aura-pim-mcp sidecar against a fake IMAP/SMTP server (GreenMail), end to end
-// through Aura's OAuth contract. scripts/pim_mail_e2e.sh brings both up, seeds three unread
-// mails into operator@aura.test and runs this tier; it is not a CI job, because CI has no mail
-// server. What it settles for the daily briefing and the 2026-10-31 audit:
+// through Aura's OAuth contract. scripts/pim_mail_e2e.sh brings both up in Docker, seeds three
+// unread mails into operator@aura.test and runs this tier. What it settles for the daily
+// briefing and the 2026-10-31 audit:
 //   - the shape of get_emails as the briefing and its baseline read it;
 //   - that a send leaves the appliance and arrives;
-//   - whether create_event with an attendee sends an invitation on these providers (A1);
+//   - that these providers refuse create_event, so no invitation can leave (A1);
+//   - the change feed internal/pimwatch reads (pim_contract_live_test.go);
 //   - what bulk_mark_emails_read does to the unread mail (A3).
 package mcp
 
@@ -56,6 +57,7 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	if isErr || !strings.Contains(accounts, pimOperatorMail) || !strings.Contains(accounts, pimOperatorCalendar) || strings.Contains(accounts, pimColleagueMail) {
 		t.Fatalf("operator's accounts = %s, want its mailbox and calendar and not the colleague's", accounts)
 	}
+	testPIMChangeFeedContract(t, endpoint, operatorToken, pimOperatorMail)
 
 	// The briefing's two reads.
 	unreadText, unread := awaitMail(t, ctx, operator, pimOperatorMail, func(m []pimEmail) bool { return len(m) >= 3 })
@@ -82,18 +84,18 @@ func TestPIMMailEndToEnd(t *testing.T) {
 	}
 	awaitMail(t, ctx, colleague, pimColleagueMail, func(m []pimEmail) bool { return hasSubject(m, "E2E: delivered") })
 
-	// A1: an event with an outside attendee, on each provider this fake setup has.
+	// A1: neither provider here can write a calendar (IMAP grants emailRead/emailSend, the JSON
+	// fixture calendarRead), so create_event with an outside attendee must be refused on both
+	// before anything is sent. A refusal is the only way no invitation leaves.
 	for _, account := range []string{pimOperatorMail, pimOperatorCalendar} {
 		out, isErr := callPIM(t, ctx, operator, "create_event", map[string]any{
 			"accountId": account, "subject": "E2E invitation " + account,
 			"start": "2026-11-03T10:00:00", "end": "2026-11-03T11:00:00", "timeZone": "Europe/Rome",
 			"attendees": []string{"colleague@aura.test"}, "body": "Would this reach the attendee?",
 		})
-		t.Logf("A1 create_event with an attendee on %s: isError=%v result=%s", account, isErr, clip(out))
-	}
-	time.Sleep(3 * time.Second)
-	if text, _ := callPIM(t, ctx, colleague, "get_emails", map[string]any{"accountId": pimColleagueMail, "count": 20}); strings.Contains(text, "E2E invitation") {
-		t.Errorf("an invitation reached the attendee on a provider that has no scheduling: %s", text)
+		if !isErr || !strings.Contains(out, "does not permit modifying calendars") {
+			t.Errorf("A1 create_event on %s = isError %v, %s; want the calendar-write refusal", account, isErr, clip(out))
+		}
 	}
 
 	// A3: one bulk call hides every unread mail.

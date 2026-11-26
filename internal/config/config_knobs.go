@@ -170,7 +170,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SANDBOX_CPU_LIMIT", Kind: KindInt},
 		{Name: "AURA_SANDBOX_MEMORY_LIMIT", Kind: KindInt},
 		{Name: "AURA_SANDBOX_PIDS_LIMIT", Kind: KindInt},
-		{Name: "AURA_SANDBOX_EGRESS_ALLOWLIST", Kind: KindString},
 		{Name: "AURA_SANDBOX_IMAGE", Kind: KindString},
 		{Name: "AURA_SIGNIN_BROWSER_IMAGE", Kind: KindString},
 		{Name: "AURA_SANDBOX_EGRESS_IMAGE", Kind: KindString},

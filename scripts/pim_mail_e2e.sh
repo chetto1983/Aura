@@ -5,7 +5,8 @@
 # a private Docker network. The published PIM image runs with the operator configuration in
 # internal/mcp/testdata/pim-mail-appsettings.json and the same OAuth contract as the CI
 # calendar_integration job. Three unread mails are seeded, the tier runs, and the briefing
-# baseline renders the PIM's real payloads. Not a CI job: CI has no mail server.
+# baseline renders the PIM's real payloads. The same run holds the PIM to the change feed
+# internal/pimwatch reads (internal/mcp/pim_contract_live_test.go).
 #
 # Usage: bash scripts/pim_mail_e2e.sh   (needs Docker, Go and python3; ports 3025, 3143, 8093, 18090)
 set -euo pipefail
@@ -71,7 +72,7 @@ PY
 echo "==> seeded 3 unread mails into operator@aura.test"
 
 AURA_PIM_MCP_URL=http://127.0.0.1:8093/ PIM_E2E_BUNDLE="$WORK/bundle.json" \
-  go test -count=1 -tags pim_mail_e2e -run TestPIMMailEndToEnd -v ./internal/mcp/
+  go test -race -count=1 -tags pim_mail_e2e -run TestPIMMailEndToEnd -v ./internal/mcp/
 
 echo "==> the briefing baseline over the PIM's real payloads"
 python3 scripts/briefing_baseline.py "$WORK/bundle.json" | tee "$WORK/baseline.txt"

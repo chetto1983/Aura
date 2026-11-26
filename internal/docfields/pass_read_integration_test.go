@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -30,9 +29,10 @@ type passageResponses struct {
 
 func recordPassageResponses(t *testing.T) *passageResponses {
 	t.Helper()
-	target, err := url.Parse(os.Getenv("ARCADEDB_URL"))
+	raw := arcadeURLOrSkip(t)
+	target, err := url.Parse(raw)
 	if err != nil || target.Host == "" {
-		t.Skip("ARCADEDB_URL not set")
+		t.Fatalf("ARCADEDB_URL %q is not a URL with a host: %v", raw, err)
 	}
 	seen := &passageResponses{rowsByKey: map[string]int{}}
 	proxy := httputil.NewSingleHostReverseProxy(target)

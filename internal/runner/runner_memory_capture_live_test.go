@@ -270,10 +270,13 @@ func (f liveCaptureFixture) runner(
 		t.Fatalf("create capture conversation: %v", err)
 	}
 	pause := newFakePauseStore()
+	// The auto-title worker calls the model too; on the agent's own scripted client it
+	// races the agent for the first turn and takes the tool calls away from it.
+	title := agenttest.NewFakeClient(agenttest.TextChunks("stop", "Memory capture"))
 	return New(Deps{
 		Conv: conv, Pause: pause, ApprovalExpiry: pause, Identity: newFakeIdentityStore(),
 		CacheMetrics: newFakeCacheMetricStore(), ToolInvocations: newFakeToolInvocationStore(),
-		Client: client, Registry: f.registry, MemoryCaptureQueue: queue,
+		Client: agenttest.TitleClient{Main: client, Title: title}, Registry: f.registry, MemoryCaptureQueue: queue,
 		LLM:    llm.Config{Model: "capture-live", ContextWindow: 1_000_000, MaxOutputTokens: 32_768},
 		RunDir: t.TempDir(), PreviewCap: 16_384, TitleTimeout: time.Second, StopTimeout: time.Second,
 	})
@@ -470,7 +473,8 @@ func TestMemoryCaptureLive_TerminalBarrier(t *testing.T) {
 		done <- nil
 	}()
 
-	first := <-gate.durable
+	var first, second AcceptedCapture
+	withinFor(t, 30*time.Second, "the first durable sequence", func() { first = <-gate.durable })
 	if first.SourceKind != CaptureSourceExplicitFact {
 		t.Fatalf("first durable sequence = %+v, want explicit fact", first)
 	}
@@ -482,7 +486,7 @@ func TestMemoryCaptureLive_TerminalBarrier(t *testing.T) {
 	}
 	gate.release <- struct{}{}
 
-	second := <-gate.durable
+	withinFor(t, 30*time.Second, "the second durable sequence", func() { second = <-gate.durable })
 	if second.SourceKind != CaptureSourceDurableArtifact {
 		t.Fatalf("second durable sequence = %+v, want durable artifact", second)
 	}
@@ -494,7 +498,9 @@ func TestMemoryCaptureLive_TerminalBarrier(t *testing.T) {
 	}
 	gate.release <- struct{}{}
 
-	if err := <-done; err != nil {
+	var turnErr error
+	withinFor(t, 30*time.Second, "the terminal live turn", func() { turnErr = <-done })
+	if err := turnErr; err != nil {
 		t.Fatalf("terminal live turn after durability: %v", err)
 	}
 	toolEndEvent(t, events, memoryUpsertFactModelName)

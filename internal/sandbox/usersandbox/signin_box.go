@@ -43,7 +43,7 @@ func (b *DockerBackend) StartSignIn(ctx context.Context, s SignInSpec, prepare S
 	if _, err = b.cli.ContainerStart(ctx, owner.ID, client.ContainerStartOptions{}); err != nil {
 		return box, fmt.Errorf("start sign-in sidecar: %w", err)
 	}
-	if err = b.startEgress(ctx, name+"-egress", owner.ID, s.Egress, signInLabels(s.Session, "egress")); err != nil {
+	if err = b.startEgress(ctx, name+"-egress", owner.ID, signInLabels(s.Session, "egress")); err != nil {
 		return box, err
 	}
 	if prepare != nil {

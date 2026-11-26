@@ -43,13 +43,19 @@ func musrEnvOrSkip(t *testing.T, key string) string {
 	t.Helper()
 	v := os.Getenv(key)
 	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("musr_e2e requires %s, but it is unset under CI — a skipped acceptance "+
-				"tier must not pass as green; wire it in ci.yml", key)
-		}
-		t.Skipf("musr_e2e requires %s; bring the full stack up and set it", key)
+		musrUnavailable(t, "musr_e2e requires "+key)
 	}
 	return v
+}
+
+// musrUnavailable skips locally and fails under CI: a skipped acceptance tier must not pass
+// as green.
+func musrUnavailable(t *testing.T, why string) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf("%s, but it is missing under CI; wire it in ci.yml", why)
+	}
+	t.Skipf("%s; bring the full stack up and set it", why)
 }
 
 // musrMigratedPool applies roles + migrations against the shared aura DB and returns an

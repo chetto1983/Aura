@@ -2,13 +2,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { expect, test, type Request } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { auraCommand } from './support/auraCli';
 import { collectBrowserHealth } from './support/browserHealth';
 
 const live = process.env.AURA_E2E_LIVE_GRAPH === '1';
 const execFileAsync = promisify(execFile);
 
 async function memoryCLI(...args: string[]): Promise<string> {
-  const result = await execFileAsync('docker', ['exec', 'aura', 'aura', 'memory', ...args], {
+  const [program, argv] = auraCommand(['memory', ...args]);
+  const result = await execFileAsync(program, argv, {
     timeout: 30_000,
   });
   return result.stdout;

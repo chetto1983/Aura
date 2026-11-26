@@ -30,7 +30,6 @@ var ErrSignInNeedsTheFloor = errors.New("sandbox: a sign-in needs the egress flo
 type SignInSpec struct {
 	Session, IdentityID, DesktopImage, SidecarImage, AuthURL string
 	CockpitOrigin, StreamOrigin                              string
-	Egress                                                   EgressPolicy
 }
 
 // SignInBox exposes only the callback/relay sidecar to trusted adapters.

@@ -5,22 +5,11 @@
 # network layer: full public internet (D-04) minus RFC1918 + the 169.254.169.254 metadata
 # IP + the shared-services Docker bridge (D-05).
 #
-# Two enforcement jobs (37-RESEARCH Pattern 6):
-#
-#   1. Always-on FILTER-TABLE floor: the entrypoint applies the Go-generated nftables ruleset
-#      from $AURA_EGRESS_FLOOR_RULESET with `nft -f -`. This is the bespoke nft floor the
-#      research recommends as the primary mechanism (and the A1 fallback for the
-#      OpenSandbox fit-risk). It never touches the nat table, which the FQDN mode below owns.
-#
-#   2. Opt-in tightened FQDN allowlist: Alibaba OpenSandbox's egress component (DNS proxy +
-#      iptables REDIRECT in the NAT table + dynamic nftables allow-sets). When the
-#      OpenSandbox egress binary is present at /usr/local/bin/opensandbox-egress AND
-#      $OPENSANDBOX_EGRESS_MODE is set, the entrypoint execs it (foreground) after the floor
-#      is applied. Build it from a PINNED OpenSandbox source commit into that path to enable
-#      FQDN mode (RESEARCH Package Legitimacy — Approved-with-caveat: pin the source commit +
-#      digest-pin the resulting image). The default build ships the floor only, so
-#      `docker build -f docker/aura-egress/Dockerfile -t aura-egress:build .` is deterministic
-#      and needs no network fetch of a third-party repo.
+# One enforcement job (37-RESEARCH Pattern 6): an always-on FILTER-TABLE floor. The
+# entrypoint applies the Go-generated nftables ruleset from $AURA_EGRESS_FLOOR_RULESET with
+# `nft -f -`; it never touches the nat table. An opt-in OpenSandbox FQDN allowlist mode was
+# removed on 2026-11-25: no build ever baked its binary in, so asking for it only made the
+# sidecar exit at boot.
 #
 # Digest-pinned base (D-13), the same pin as docker/aura-sandbox/Dockerfile. Dependabot
 # refreshes it when bookworm-slim moves, before Hub can collect the superseded manifest.
@@ -32,8 +21,7 @@ FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d
 # also takes the fixes the base itself lacks.
 ARG APT_WEEK=""
 
-# nftables is the ONLY hard dependency of the floor. ca-certificates + curl are kept so a
-# later OpenSandbox FQDN build layer (or a supervisor fetching allow/deny lists) has TLS.
+# nftables is the ONLY dependency of the floor; ca-certificates lets apt itself use https.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
@@ -41,12 +29,10 @@ RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         nftables \
-        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# The entrypoint: apply the always-on filter-table floor, then either hand off to OpenSandbox
-# (FQDN mode) or block so the sidecar stays a tracked, always-present container the
-# DockerBackend tears down with the box. Inlined here so the image is a single self-contained
+# The entrypoint: apply the always-on filter-table floor, then block so the sidecar stays a
+# tracked, always-present container the DockerBackend tears down with the box. Inlined here so the image is a single self-contained
 # file (no sibling script in the plan's file set).
 #
 # The floor is applied to the SHARED box netns (this container joined it via
@@ -67,20 +53,8 @@ fi
 printf '%s' "$AURA_EGRESS_FLOOR_RULESET" | nft -f -
 echo "aura-egress: filter-table floor applied"
 
-# Opt-in tightened FQDN allowlist. Only runs when the OpenSandbox egress binary was baked in
-# AND the mode env is set (buildEgressSidecar sets it only for a configured allowlist).
-# OpenSandbox reads OPENSANDBOX_EGRESS_RULES from the environment.
-if [ -n "${OPENSANDBOX_EGRESS_MODE:-}" ]; then
-    if [ -x /usr/local/bin/opensandbox-egress ]; then
-        echo "aura-egress: starting OpenSandbox egress (mode=${OPENSANDBOX_EGRESS_MODE})"
-        exec /usr/local/bin/opensandbox-egress
-    fi
-    echo "aura-egress: FATAL: FQDN mode requested but /usr/local/bin/opensandbox-egress is not baked into this image — rebuild with the pinned OpenSandbox egress binary" >&2
-    exit 1
-fi
-
-# Floor-only: keep the sidecar alive so it is tracked and torn down with the box.
-echo "aura-egress: floor-only mode — holding netns"
+# Keep the sidecar alive so it is tracked and torn down with the box.
+echo "aura-egress: floor applied — holding netns"
 exec sleep infinity
 EOF
 

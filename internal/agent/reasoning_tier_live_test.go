@@ -1,7 +1,7 @@
 //go:build reasoning_live
 
-// Live validation of the SHIPPED agent wiring: a real LlmAgent with the granite
-// embedder wired resolves its reasoning tier through the embedding classifier
+// Live validation of the SHIPPED agent wiring: a real LlmAgent with the embedding
+// sidecar wired resolves its reasoning tier through the embedding classifier
 // (readTurn). readTurn never asks the teacher (the runner does, in the background), and
 // the client refuses every request all the same. Proves the production path — not a spike
 // harness — uses the local classifier on the OpenRouter gate.
@@ -24,7 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-func graniteBase() string {
+func embedBase() string {
 	if v := os.Getenv("AURA_EMBED_BASE_URL"); v != "" {
 		return v
 	}
@@ -32,14 +32,17 @@ func graniteBase() string {
 }
 
 func TestAdaptiveReasoningTierLive(t *testing.T) {
-	if resp, err := http.Get(graniteBase() + "/health"); err != nil {
-		t.Skipf("granite sidecar unreachable: %v", err)
+	if resp, err := http.Get(embedBase() + "/health"); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("embedding sidecar unreachable under CI: %v", err)
+		}
+		t.Skipf("embedding sidecar unreachable: %v", err)
 	} else {
 		_ = resp.Body.Close()
 	}
 
 	embedder := &embeddings.Client{
-		BaseURL:    graniteBase(),
+		BaseURL:    embedBase(),
 		Client:     &http.Client{Timeout: 30 * time.Second},
 		Dimensions: config.DefaultEmbedDimensions,
 	}

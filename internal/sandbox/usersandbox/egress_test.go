@@ -8,7 +8,6 @@
 package usersandbox
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ import (
 // everything else (policy accept = full public internet, D-04). The floor uses only the
 // filter table (no nat), so the nat-table FQDN mode never changes it.
 func TestEgress_FloorRuleset(t *testing.T) {
-	sc, err := buildEgressSidecar(EgressPolicy{Floor: true}, "box-abc")
+	sc, err := buildEgressSidecar("box-abc")
 	if err != nil {
 		t.Fatalf("buildEgressSidecar: %v", err)
 	}
@@ -62,20 +61,13 @@ func TestEgress_FloorRuleset(t *testing.T) {
 	if !slices.Contains(sc.Env, envFloorRuleset+"="+ruleset) {
 		t.Errorf("floor ruleset must be carried in the sidecar env under %s", envFloorRuleset)
 	}
-	// Floor-only (no allowlist) => no OpenSandbox FQDN mode.
-	if sc.FQDNMode {
-		t.Errorf("floor-only policy must not enable FQDN mode")
-	}
-	if envValue(sc.Env, envOpenSandboxMode) != "" {
-		t.Errorf("floor-only policy must not set %s", envOpenSandboxMode)
-	}
 }
 
 // TestEgress_CapOnSidecarOnly asserts NET_ADMIN is granted to the sidecar spec and that the
 // box HostConfig (toHostConfig) never carries any added capability — the box stays
 // net-unprivileged (D-07); only the sidecar can program the netns.
 func TestEgress_CapOnSidecarOnly(t *testing.T) {
-	sc, err := buildEgressSidecar(EgressPolicy{Floor: true}, "box-cap")
+	sc, err := buildEgressSidecar("box-cap")
 	if err != nil {
 		t.Fatalf("buildEgressSidecar: %v", err)
 	}
@@ -87,66 +79,17 @@ func TestEgress_CapOnSidecarOnly(t *testing.T) {
 	}
 
 	// The box itself must never gain a capability — assert against the single pinned-safe
-	// translator, for an adversarial spec that (fruitlessly) asks for an allowlist box.
-	hc := toHostConfig(SandboxSpec{
-		IdentityID: "box-cap",
-		Egress:     EgressPolicy{Floor: true, FQDNAllowlist: []string{"pypi.org"}},
-	})
+	// translator.
+	hc := toHostConfig(SandboxSpec{IdentityID: "box-cap"})
 	if len(hc.CapAdd) != 0 {
 		t.Fatalf("box HostConfig must never add capabilities, got CapAdd=%v", hc.CapAdd)
 	}
 }
 
-// TestEgress_AllowlistFromPolicy proves the sidecar's OpenSandbox rules are built from the
-// CONFIGURED EgressPolicy.FQDNAllowlist (the config-sourced list from 37-05 specFor), NOT an
-// inline default: a policy carrying exactly {registry.example, *.pypi.org} yields an
-// OpenSandbox allow-list of exactly those hosts (T-37-06-CONFIGDROP).
-func TestEgress_AllowlistFromPolicy(t *testing.T) {
-	want := []string{"registry.example", "*.pypi.org"}
-	sc, err := buildEgressSidecar(EgressPolicy{FQDNAllowlist: want}, "box-allow")
-	if err != nil {
-		t.Fatalf("buildEgressSidecar: %v", err)
-	}
-	if !sc.FQDNMode {
-		t.Fatalf("a configured allowlist must enable FQDN mode")
-	}
-	if got := envValue(sc.Env, envOpenSandboxMode); got != openSandboxModeDNSNFT {
-		t.Fatalf("%s = %q, want %q", envOpenSandboxMode, got, openSandboxModeDNSNFT)
-	}
-
-	rulesJSON := envValue(sc.Env, envOpenSandboxRules)
-	if rulesJSON == "" {
-		t.Fatalf("%s must be set in FQDN mode", envOpenSandboxRules)
-	}
-	var rules openSandboxRules
-	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
-		t.Fatalf("unmarshal %s: %v (raw=%q)", envOpenSandboxRules, err, rulesJSON)
-	}
-	if !slices.Equal(rules.Allow, want) {
-		t.Fatalf("OpenSandbox allow = %v, want exactly the configured %v", rules.Allow, want)
-	}
-
-	// The floor is STILL present under FQDN mode (the tenancy boundary is unconditional).
-	if !strings.Contains(sc.FloorRuleset, "ip daddr "+rfc1918Ten) {
-		t.Errorf("floor must remain in force under FQDN mode:\n%s", sc.FloorRuleset)
-	}
-}
-
-// envValue returns the value of key in a "KEY=VALUE" env slice, or "" if absent.
-func envValue(env []string, key string) string {
-	prefix := key + "="
-	for _, e := range env {
-		if value, found := strings.CutPrefix(e, prefix); found {
-			return value
-		}
-	}
-	return ""
-}
-
 // TestEgress_RefusesEmptyBoxID: the sidecar joins the box's network namespace by the box's
 // id, so without one there is no namespace for the floor to filter.
 func TestEgress_RefusesEmptyBoxID(t *testing.T) {
-	if _, err := buildEgressSidecar(EgressPolicy{Floor: true}, ""); err == nil {
+	if _, err := buildEgressSidecar(""); err == nil {
 		t.Fatal("buildEgressSidecar must refuse an empty boxID")
 	}
 }

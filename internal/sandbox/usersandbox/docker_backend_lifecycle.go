@@ -357,9 +357,9 @@ func (b *DockerBackend) EnsureImage(ctx context.Context) error {
 	return b.ensureImage(ctx, b.image)
 }
 
-// EnsureEgressImage is the DISCRETIONARY egress-sidecar counterpart to EnsureImage. specFor
-// (router.go) sets Egress.Floor:true on every strict-profile box, so an unreachable egress
-// image produces the identical silent tool-surface failure EnsureImage targets for the box
+// EnsureEgressImage is the DISCRETIONARY egress-sidecar counterpart to EnsureImage. Every box
+// gets the floor sidecar when an egress image is configured, so an unreachable egress image
+// produces the identical silent tool-surface failure EnsureImage targets for the box
 // image — but D-03 names only AURA_SANDBOX_IMAGE as Fatal, so the boot preflight treats this
 // as advisory (WARN), never Fatal. An empty egressImage (WithEgress("") never called) is a
 // no-op success: no sidecar is wired, so there is nothing to ensure.

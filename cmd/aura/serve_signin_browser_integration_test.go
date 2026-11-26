@@ -31,7 +31,7 @@ func TestClosingTheSignInPageEndsTheFlowAndItsContainers(t *testing.T) {
 	cfg.AuthulaSecret = strings.Repeat("a", 64)
 	cfg.Sandbox.BrowserMaxActive = 2
 	router := buildSandboxRouter(cfg, nil)
-	browser := &sandboxSignInBrowser{router: router, image: cfg.Sandbox.SignInBrowserImage, sidecarImage: cfg.Sandbox.Image, policy: usersandbox.EgressPolicy{Floor: true}}
+	browser := &sandboxSignInBrowser{router: router, image: cfg.Sandbox.SignInBrowserImage, sidecarImage: cfg.Sandbox.Image}
 	login := browserlogin.New(t.Context(), browser, browserlogin.Options{})
 	browser.owns, browser.cancel = login.Owns, login.Cancel
 	service.signIn = &signInRuntime{login: login, browser: browser, port: 8444}

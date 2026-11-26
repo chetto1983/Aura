@@ -25,6 +25,7 @@ package agui
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,6 +36,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -259,6 +261,9 @@ func newGarageClient(t *testing.T) *garageadmin.Client {
 	if err != nil {
 		t.Fatalf("garageadmin.New: %v", err)
 	}
+	// The admin client rides http.DefaultTransport; its keep-alive reader would outlive the
+	// test and trip the package's goleak.VerifyTestMain.
+	t.Cleanup(http.DefaultClient.CloseIdleConnections)
 	return c
 }
 
@@ -306,8 +311,12 @@ func TestProvisioningSagaResumable(t *testing.T) {
 		if !fs.dirsExist(t, id) {
 			t.Fatal("per-identity dirs missing after the recovery resume")
 		}
+		// Counted as the identity: migration 0087's fail-closed RLS hides every
+		// identity_object_store row from a session without app.current_identity.
 		var rows int
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM aura.identity_object_store WHERE identity_id=$1::uuid`, id).Scan(&rows); err != nil {
+		if err := db.WithIdentityTxRaw(ctx, pool, id, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM aura.identity_object_store WHERE identity_id=$1::uuid`, id).Scan(&rows)
+		}); err != nil {
 			t.Fatalf("count object-store rows: %v", err)
 		}
 		if rows != 1 {
