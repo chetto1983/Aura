@@ -64,10 +64,11 @@ func TestCalendarSubjectIsTheToolAlone(t *testing.T) {
 }
 
 // TestAliasedCalendarToolKeepsItsOwnSubject: a PIM mounted under another namespace keys its
-// grants on its own registered name, the same rule as under the built-in one.
+// grants on its own registered name, the same rule as under the built-in one. The arguments
+// carry a stale `action`, so a subjectFor that read it for an aliased PIM tool fails here.
 func TestAliasedCalendarToolKeepsItsOwnSubject(t *testing.T) {
 	t.Parallel()
-	got := subjectFor(tools.Spec{Name: "work__send_email"}, json.RawMessage(`{"to":["a@b.c"]}`))
+	got := subjectFor(tools.Spec{Name: "work__send_email"}, json.RawMessage(`{"action":"delete_event","to":["a@b.c"]}`))
 	if got != (grantSubject{Tool: "work__send_email"}) {
 		t.Fatalf("subjectFor = %+v, want the aliased tool alone", got)
 	}
