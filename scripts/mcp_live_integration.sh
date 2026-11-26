@@ -76,7 +76,7 @@ done
 
 ARCADE_IMAGE="$(sed -nE 's/^    image: (arcadedata\/arcadedb:[^[:space:]]+)$/\1/p' compose.yaml | head -1)"
 [ -n "$ARCADE_IMAGE" ] || { echo "FATAL: no arcadedb image in compose.yaml" >&2; exit 1; }
-PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5}"
+PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:68f8935ce8df6d8c18315d8e7ad617aac7768410}"
 WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
 random_hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
 # A pulled image has a registry digest; a locally built override (AURA_PIM_MCP_DEV_IMAGE) has none,
