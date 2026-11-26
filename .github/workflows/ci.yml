@@ -2725,3 +2725,55 @@ jobs:
           name: test-ledger-${{ github.job }}
           path: ${{ env.AURA_TEST_LEDGER_DIR }}
           if-no-files-found: error
+
+  # The test ledger (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.3): what every test job
+  # above executed, against what the tree declares and .github/test_ledger_allow.txt excuses. It is
+  # report-only until the allowlist is written from its first run on master (plan task C1); a run it
+  # cannot judge at all (an artifact it cannot read) still fails it.
+  test-ledger:
+    name: Test ledger (report-only)
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs:
+      - build-and-lint
+      - unit-test
+      - capability-eval
+      - cache-invariant
+      - observability-contract
+      - integration-test
+      - musr-e2e
+      - web-integration-test
+      - knowledge-integration-test
+      - arcadedb-integration-test
+      - ingest-sidecar-test
+      - ingest-reconcile-e2e
+      - reasoning-tier-test
+      - multimodal-integration-test
+      - whatsapp-integration-test
+      - calendar-integration-test
+      - pim-mail-e2e
+      - mcp-live-integration-test
+      - web-test
+      - web-e2e
+      - race-db-integration-gates
+      - sandbox-docker-integration
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download every job's test ledger
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-ledger-*
+          path: ${{ runner.temp }}/test-ledger
+
+      - name: Judge the run
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: go run ./cmd/testledger check --artifacts "$RUNNER_TEMP/test-ledger" --needs "$NEEDS" --report-only

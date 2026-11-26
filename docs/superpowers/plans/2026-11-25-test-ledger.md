@@ -155,6 +155,10 @@ them by file, and discovery then runs those 37 tests twice.
 - [x] Move the four functions with their tests; `cmd/aura`'s static check imports them until Part C.
 - [x] Unit tests: constraint parsing (`a && !b`, `a || b`), `func TestXxx(*testing.T)` only (not helpers, not `Benchmark`/`Fuzz`), files ignored by the go tool.
 
+*Done 2026-11-26.* `gatingTags` stays in `cmd/aura`: the ledger does not use it, and the deadcode
+production gate reports a production export that only the static check (a test) calls. It goes with
+the static check in Part C.
+
 ### Task B2: Result readers
 
 **Files:** `internal/testledger/results.go` + test, `testdata/` cut from the 2026-11-25 logs
@@ -174,7 +178,7 @@ them by file, and discovery then runs those 37 tests twice.
 
 **Files:** `cmd/testledger/main.go`, `.github/workflows/ci.yml`
 
-- [ ] `test-ledger` job: `needs:` every test job, `if: ${{ !cancelled() }}`, downloads `test-ledger-*`, runs `go run ./cmd/testledger check --report-only`, writes the counts, every allowlist entry and every violation to `$GITHUB_STEP_SUMMARY`.
+- [x] `test-ledger` job: `needs:` every test job, `if: ${{ !cancelled() }}`, downloads `test-ledger-*`, runs `go run ./cmd/testledger check --report-only`, writes the counts, every allowlist entry and every violation to `$GITHUB_STEP_SUMMARY`.
 - [ ] Merge; read the first `master` summary; write the dated verification file with the violation list.
 
 ## Part C: enforce and retire

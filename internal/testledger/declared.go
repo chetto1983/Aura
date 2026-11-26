@@ -9,7 +9,6 @@ import (
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -112,33 +111,4 @@ func BuildConstraint(src []byte) (constraint.Expr, error) {
 		}
 	}
 	return nil, nil
-}
-
-// GatingTags lists, sorted, the tags expr needs SET to select a file: those under an even number of
-// negations. A tag that only appears negated (//go:build !web_integration) keeps its file in the
-// default run, so it gates nothing out.
-func GatingTags(expr constraint.Expr) []string {
-	tags := map[string]bool{}
-	gating(expr, false, tags)
-	if len(tags) == 0 {
-		return nil
-	}
-	return slices.Sorted(maps.Keys(tags))
-}
-
-func gating(expr constraint.Expr, negated bool, out map[string]bool) {
-	switch e := expr.(type) {
-	case *constraint.TagExpr:
-		if !negated {
-			out[e.Tag] = true
-		}
-	case *constraint.NotExpr:
-		gating(e.X, !negated, out)
-	case *constraint.AndExpr:
-		gating(e.X, negated, out)
-		gating(e.Y, negated, out)
-	case *constraint.OrExpr:
-		gating(e.X, negated, out)
-		gating(e.Y, negated, out)
-	}
 }

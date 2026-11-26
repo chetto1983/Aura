@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"go/build/constraint"
 	goversion "go/version"
+	"maps"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -34,7 +35,7 @@ func tierTestFiles(root string, rels []string, toolchain goToolchainTags) ([]tie
 	files := make([]tierTestFile, 0, len(declared))
 	for _, d := range declared {
 		f := tierTestFile{rel: d.Rel, dir: d.Dir, expr: d.Expr, tests: d.Tests}
-		for _, tag := range testledger.GatingTags(d.Expr) {
+		for _, tag := range gatingTags(d.Expr) {
 			if !toolchain.decides(tag) {
 				f.gating = append(f.gating, tag)
 			}
@@ -159,4 +160,33 @@ func (g goToolchainTags) decides(tag string) bool {
 		return true
 	}
 	return strings.HasPrefix(tag, "goexperiment.") || constraint.GoVersion(&constraint.TagExpr{Tag: tag}) != ""
+}
+
+// gatingTags lists, sorted, the tags expr needs SET to select a file: those under an even number of
+// negations. A tag that only appears negated (//go:build !web_integration) keeps its file in the
+// default run, so it gates nothing out.
+func gatingTags(expr constraint.Expr) []string {
+	tags := map[string]bool{}
+	gating(expr, false, tags)
+	if len(tags) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(tags))
+}
+
+func gating(expr constraint.Expr, negated bool, out map[string]bool) {
+	switch e := expr.(type) {
+	case *constraint.TagExpr:
+		if !negated {
+			out[e.Tag] = true
+		}
+	case *constraint.NotExpr:
+		gating(e.X, !negated, out)
+	case *constraint.AndExpr:
+		gating(e.X, negated, out)
+		gating(e.Y, negated, out)
+	case *constraint.OrExpr:
+		gating(e.X, negated, out)
+		gating(e.Y, negated, out)
+	}
 }

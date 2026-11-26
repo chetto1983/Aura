@@ -38,28 +38,6 @@ func TestBuildConstraint(t *testing.T) {
 	}
 }
 
-func TestGatingTags(t *testing.T) {
-	cases := map[string][]string{
-		"a && !b":          {"a"},
-		"a || b":           {"a", "b"},
-		"!(a && !c)":       {"c"},
-		"!web_integration": nil,
-		"b && a && b":      {"a", "b"},
-	}
-	for src, want := range cases {
-		expr, err := BuildConstraint([]byte("//go:build " + src + "\n\npackage x\n"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := GatingTags(expr); !slices.Equal(got, want) {
-			t.Errorf("%s: got %v, want %v", src, got, want)
-		}
-	}
-	if got := GatingTags(nil); got != nil {
-		t.Errorf("no constraint gates nothing, got %v", got)
-	}
-}
-
 func TestTestFuncs(t *testing.T) {
 	src := `package x
 
