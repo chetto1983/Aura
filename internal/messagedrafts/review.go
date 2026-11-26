@@ -43,9 +43,10 @@ func (d Draft) reviewed() (reviewArgs, error) {
 	return args, err
 }
 
-// withoutAction removes the multiplexed tool's "action" key from a draft stored before the PIM split.
-// The strict decode would otherwise stop at it, and jsonb orders keys shortest first, so it stops
-// after to, cc and body but before subject and accountId: the history would lose both.
+// withoutAction removes the multiplexed tool's "action" key from a draft stored before the PIM split,
+// so the strict decode refuses a legacy draft only for a key the review cannot show, not for the
+// action every such draft carries. The decoder records an unknown key and still decodes the rest of
+// the object, so the account and subject read either way.
 func withoutAction(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
