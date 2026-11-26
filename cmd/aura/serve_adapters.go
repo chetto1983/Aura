@@ -42,7 +42,7 @@ import (
 // manifest path lists the tool's Spec without a half-wired store that would panic on a
 // nil-pointer method call.
 func newTaskTool(ts *cronTaskStore, notifier cron.Notifier, deploymentZone string, reg *tools.Registry, senders messagedrafts.SenderDirectory) *tools.TaskTool {
-	t := &tools.TaskTool{DeploymentZone: deploymentZone}
+	t := &tools.TaskTool{DeploymentZone: deploymentZone, CancelApprovals: &tools.TaskCancelApprovals{}}
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier

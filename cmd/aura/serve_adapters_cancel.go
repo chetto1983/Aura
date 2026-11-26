@@ -14,6 +14,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -85,4 +86,15 @@ func (s *cronTaskStore) cancelTarget(ctx context.Context, id string) (string, to
 	}
 	task.Payload = string(payload)
 	return identityID, task, nil
+}
+
+// newTaskCancelResumeHook records an accept of a relayed task cancel challenge into the task
+// tool's own store. Like the shell's hook it checks no capability: the cancel runs inside the
+// calling identity, and the store refuses a task that identity does not own.
+func newTaskCancelResumeHook(task *tools.TaskTool) runner.ResumeHook {
+	if task == nil || task.CancelApprovals == nil {
+		return nil
+	}
+	return newChallengeResumeHook(task.CancelApprovals.ApproveChallenge, task.CancelApprovals.DiscardChallenge,
+		tools.TaskCancelApprovalContext, "approval_sha256", nil)
 }
