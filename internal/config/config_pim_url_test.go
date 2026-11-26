@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/sidecarurl"
 )
 
 // The cockpit relay and the mail watch append "/admin/..." to this base, so a trailing slash
@@ -41,13 +41,13 @@ func TestSidecarURLsDefaultToWhereTheManagerMountsThem(t *testing.T) {
 	} {
 		t.Setenv("AURA_IN_CONTAINER", tc.inContainer)
 		cfg := LoadDB()
-		if cfg.CalendarMCPURL != tc.pim || cfg.CalendarMCPURL != mcpmanager.PIMSidecarBaseURL() {
+		if cfg.CalendarMCPURL != tc.pim || cfg.CalendarMCPURL != sidecarurl.PIM() {
 			t.Errorf("AURA_IN_CONTAINER=%q: CalendarMCPURL = %q, want %q, the manager's %q",
-				tc.inContainer, cfg.CalendarMCPURL, tc.pim, mcpmanager.PIMSidecarBaseURL())
+				tc.inContainer, cfg.CalendarMCPURL, tc.pim, sidecarurl.PIM())
 		}
-		if cfg.WhatsAppBridgeURL != tc.bridge || cfg.WhatsAppBridgeURL != mcpmanager.WhatsAppBridgeBaseURL() {
+		if cfg.WhatsAppBridgeURL != tc.bridge || cfg.WhatsAppBridgeURL != sidecarurl.WhatsAppBridge() {
 			t.Errorf("AURA_IN_CONTAINER=%q: WhatsAppBridgeURL = %q, want %q, the manager's %q",
-				tc.inContainer, cfg.WhatsAppBridgeURL, tc.bridge, mcpmanager.WhatsAppBridgeBaseURL())
+				tc.inContainer, cfg.WhatsAppBridgeURL, tc.bridge, sidecarurl.WhatsAppBridge())
 		}
 	}
 }

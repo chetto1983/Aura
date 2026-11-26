@@ -98,6 +98,7 @@
     "github.com/chetto1983/aura/internal/settings": {"mode": "target"},
     "github.com/chetto1983/aura/internal/setup": {"mode": "target"},
     "github.com/chetto1983/aura/internal/share": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/sidecarurl": {"mode": "target"},
     "github.com/chetto1983/aura/internal/skillacl": {"mode": "target"},
     "github.com/chetto1983/aura/internal/skilladapters": {"mode": "target"},
     "github.com/chetto1983/aura/internal/skills": {"mode": "target"},

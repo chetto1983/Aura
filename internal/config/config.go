@@ -17,8 +17,8 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/llm"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/secret"
+	"github.com/chetto1983/aura/internal/sidecarurl"
 	"github.com/joho/godotenv"
 )
 
@@ -257,7 +257,7 @@ type Config struct {
 
 	// Cockpit WhatsApp device-linking endpoint. This is the bridge management plane,
 	// separate from the OAuth-protected MCP resource server.
-	WhatsAppBridgeURL   string // AURA_WHATSAPP_BRIDGE_URL — tenant gateway base, default mcpmanager.WhatsAppBridgeBaseURL()
+	WhatsAppBridgeURL   string // AURA_WHATSAPP_BRIDGE_URL — tenant gateway base, default sidecarurl.WhatsAppBridge()
 	WhatsAppBridgeToken string // AURA_WHATSAPP_BRIDGE_TOKEN — private bridge credential, never an MCP bearer
 
 	// MCPSandboxOrigin is the SECOND origin the cockpit frames MCP Apps views from
@@ -271,7 +271,7 @@ type Config struct {
 
 	// Cockpit "Connect Google Calendar" endpoint. Authentication comes from the
 	// identity-scoped OAuth grant used by the generic remote MCP transport.
-	CalendarMCPURL string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default mcpmanager.PIMSidecarBaseURL()
+	CalendarMCPURL string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default sidecarurl.PIM()
 
 	// Directory shared with the appliance's host updater (internal/hostupdate).
 	UpdateStateDir string // AURA_UPDATE_STATE_DIR — default DefaultUpdateStateDir
@@ -519,10 +519,8 @@ func loadBase() *Config {
 		MultimodalTimeoutSec: envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
 		TTSMaxChars:          envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
 
-		// The sidecars' defaults are the MCP manager's, which mounts them: Compose DNS in the
-		// appliance, the loopback publish for a native Aura. A fixed Compose name here left a
-		// native Aura with a calendar that mounted and a mail relay with no host to dial.
-		WhatsAppBridgeURL:   envDefault("AURA_WHATSAPP_BRIDGE_URL", mcpmanager.WhatsAppBridgeBaseURL()),
+		// The sidecars' defaults are where the MCP manager mounts them (internal/sidecarurl).
+		WhatsAppBridgeURL:   envDefault("AURA_WHATSAPP_BRIDGE_URL", sidecarurl.WhatsAppBridge()),
 		WhatsAppBridgeToken: os.Getenv("AURA_WHATSAPP_BRIDGE_TOKEN"),
 
 		// No default: an origin guessed by Aura would be wrong for every deployment
@@ -531,7 +529,7 @@ func loadBase() *Config {
 		MCPSandboxPort:   envutil.IntDefault("AURA_MCP_SANDBOX_PORT", 8444),
 
 		// Callers append "/admin/...": a trailing slash would make it "//admin/...", a 404.
-		CalendarMCPURL: strings.TrimRight(envDefault("AURA_PIM_MCP_URL", mcpmanager.PIMSidecarBaseURL()), "/"),
+		CalendarMCPURL: strings.TrimRight(envDefault("AURA_PIM_MCP_URL", sidecarurl.PIM()), "/"),
 		UpdateStateDir: envDefault("AURA_UPDATE_STATE_DIR", DefaultUpdateStateDir),
 
 		// Default OFF: the onboarding saga refuses a 2nd identity until an operator
