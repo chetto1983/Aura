@@ -56,6 +56,13 @@ disposable_stack_guard_name "$DB"
 
 PG_PORT=5434
 ARCADE_PORT=2490
+PG_CONTAINER=aura-postgres-mcp-live
+ARCADE=aura-arcadedb-mcp-live
+PIM=aura-pim-mcp-live
+WHATSAPP=aura-whatsapp-mcp-live
+# What a previous run killed before its trap ran left behind would hold the ports below. Only this
+# script's own names are removed.
+docker rm -f -v "$PG_CONTAINER" "$ARCADE" "$PIM" "$WHATSAPP" >/dev/null 2>&1 || true
 for port in "$ARCADE_PORT" "$PG_PORT" 8092 8093 8094 8096 9080; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
     echo "FATAL: 127.0.0.1:$port is already in use" >&2
@@ -67,9 +74,6 @@ ARCADE_IMAGE="$(sed -nE 's/^    image: (arcadedata\/arcadedb:[^[:space:]]+)$/\1/
 [ -n "$ARCADE_IMAGE" ] || { echo "FATAL: no arcadedb image in compose.yaml" >&2; exit 1; }
 PIM_IMAGE="${AURA_PIM_MCP_DEV_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:bcab36e2a4f0c18ead2aed4205485c22b3d530f5}"
 WHATSAPP_IMAGE="${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}"
-ARCADE=aura-arcadedb-mcp-live
-PIM=aura-pim-mcp-live
-WHATSAPP=aura-whatsapp-mcp-live
 random_hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
 # A pulled image has a registry digest; a locally built override (AURA_PIM_MCP_DEV_IMAGE) has none,
 # and indexing its empty RepoDigests is a template error: report its image ID instead.
@@ -99,13 +103,13 @@ teardown() {
   wait 2>/dev/null
   # The WhatsApp image writes the store as root; empty it, dotfiles included, from inside.
   docker exec "$WHATSAPP" find /app/whatsapp-bridge/store -mindepth 1 -delete >/dev/null 2>&1
-  docker rm -f "$PIM" "$WHATSAPP" "$ARCADE" >/dev/null 2>&1
+  docker rm -f -v "$PIM" "$WHATSAPP" "$ARCADE" >/dev/null 2>&1
   rm -rf "$WORK"
   disposable_stack_teardown
 }
 trap teardown EXIT
 
-disposable_stack_bring_up_local "$DB" "$PG_PASSWORD" aura-postgres-mcp-live "$PG_PORT"
+disposable_stack_bring_up_local "$DB" "$PG_PASSWORD" "$PG_CONTAINER" "$PG_PORT"
 disposable_stack_export_env "$PG_PASSWORD"
 
 # compose.yaml's own JAVA_OPTS form: the empty brackets after the database name are
