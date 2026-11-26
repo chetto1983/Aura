@@ -46,6 +46,11 @@ export const approvalEn = {
         dataKept: 'kept',
         dataDeleted: 'deleted in your box',
       },
+      task: {
+        cancel:
+          'Approve cancelling a task not scheduled in this chat?\ntask: {{task}}\nkind: {{kind}}\nschedule: {{schedule}}\nnext run: {{next}}\npayload: {{payload}}\nsha256: {{digest}}',
+        noNextRun: 'none',
+      },
     },
     // The gateway's approval scopes (amendment #127). It ships a stable code and an
     // English fallback; these are the words the cockpit puts on the buttons.
@@ -122,6 +127,11 @@ export const approvalIt = {
         mcpDisabled: 'disattivato — {{reason}}',
         dataKept: 'conservati',
         dataDeleted: 'eliminati nel tuo box',
+      },
+      task: {
+        cancel:
+          "Approva l'annullamento di un'attività non pianificata in questa chat?\nattività: {{task}}\ntipo: {{kind}}\npianificazione: {{schedule}}\nprossima esecuzione: {{next}}\ncontenuto: {{payload}}\nsha256: {{digest}}",
+        noNextRun: 'nessuna',
       },
     },
     scope: {

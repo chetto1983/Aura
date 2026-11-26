@@ -161,12 +161,47 @@ describe('approvalQuestion', () => {
     expect(approvalQuestion(kept, i18n.t)).toContain('\ndati del plugin: conservati\n');
   });
 
+  it('renders a task cancel card in either language, translating only its own words', async () => {
+    const params = {
+      task: '019f9349-e0e5-77cc-9639-804bcf88b968',
+      kind: 'reminder',
+      schedule: 'at',
+      next: 'none',
+      payload: '{"text": "[aura-misura] tasks (0): none"}',
+      digest: 'deadbeef',
+    };
+    const row = approval({ presentation: { key: 'approval.task.cancel', params } });
+
+    await i18n.changeLanguage('en');
+    expect(approvalQuestion(row, i18n.t)).toBe(
+      'Approve cancelling a task not scheduled in this chat?\ntask: 019f9349-e0e5-77cc-9639-804bcf88b968\nkind: reminder\nschedule: at\nnext run: none\npayload: {"text": "[aura-misura] tasks (0): none"}\nsha256: deadbeef',
+    );
+
+    await i18n.changeLanguage('it');
+    expect(approvalQuestion(row, i18n.t)).toBe(
+      'Approva l\'annullamento di un\'attività non pianificata in questa chat?\nattività: 019f9349-e0e5-77cc-9639-804bcf88b968\ntipo: reminder\npianificazione: at\nprossima esecuzione: nessuna\ncontenuto: {"text": "[aura-misura] tasks (0): none"}\nsha256: deadbeef',
+    );
+    const scheduled = approval({
+      presentation: {
+        key: 'approval.task.cancel',
+        params: { ...params, next: '2030-01-01T09:30:00Z' },
+      },
+    });
+    expect(approvalQuestion(scheduled, i18n.t)).toContain(
+      '\nprossima esecuzione: 2030-01-01T09:30:00Z\n',
+    );
+  });
+
   it('falls back verbatim for unknown or incomplete metadata', () => {
     for (const presentation of [
       { key: 'approval.forged', params: {} },
       { key: 'approval.shell.command', params: { cwd: '/' } },
       { key: 'approval.plugin.install', params: { plugin: '"p" ""' } },
       { key: 'approval.plugin.remove', params: { plugin: '"p" ""', digest: 'd' } },
+      {
+        key: 'approval.task.cancel',
+        params: { task: 't', kind: 'reminder', next: 'none', digest: 'd' },
+      },
     ]) {
       const row = approval({ presentation });
       expect(approvalQuestion(row, i18n.t)).toBe(row.question);
