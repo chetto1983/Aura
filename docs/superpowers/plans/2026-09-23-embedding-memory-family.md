@@ -1,5 +1,8 @@
 # Embedding model change — memory family (plan 2 of 5) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 2065b5666..435eedbf1, plus follow-ups.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -95,7 +98,7 @@ The spec's Files table put the pass in `memory_backfill.go` and the gate in `mem
   - `func (r *Route) Embed(ctx, texts) ([][]float64, error)`
   - `func (r *Route) Space(ctx) (Space, error)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `internal/embeddings/client_test.go` (add `"errors"` and `"strconv"` to its imports):
 
@@ -248,12 +251,12 @@ func TestRouteWithoutAKeyHasNoSpace(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/embeddings/ -run 'TestClientReadsTheCredential|TestClientRefusesAHosted|TestRejectsInput|TestNewRoute|TestRoute' -count=1"`
 Expected: FAIL at build time: `unknown field Credential`, `undefined: ErrNoCredential`, `undefined: RejectsInput`, `undefined: NewRoute`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/embeddings/client.go`:
 
@@ -418,12 +421,12 @@ func (r *Route) Space(ctx context.Context) (Space, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/embeddings/ -count=1"`
 Expected: `ok  github.com/chetto1983/aura/internal/embeddings`. The whole package runs because the status error changed every non-2xx path.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/embeddings/client.go internal/embeddings/fit.go internal/embeddings/route.go internal/embeddings/client_test.go internal/embeddings/route_test.go
@@ -467,7 +470,7 @@ EOF
   - `memoryBatchBackend.EmbedStatements(ctx, []string) map[string]storedVector`
   - `memoryBatchFact.EmbedSpace string`
 
-- [ ] **Step 1: Write the integration helper and the failing tests**
+- [x] **Step 1: Write the integration helper and the failing tests**
 
 Create the workspace script (the workspace comes from `sdd-workspace`):
 
@@ -781,12 +784,12 @@ func TestMemorySpaceStampsFactsAndFindsTheUnstampedThroughTheIndex(t *testing.T)
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ -run 'TestEmbedStored|TestEmbedOne|TestUpsertFactStamps|TestFactSchemaStamps|TestNewMemoryEmbedder' -count=1"`
 Expected: FAIL at build time: `undefined: controlInput`, `undefined: DenseEmbedder`, `undefined: NewMemoryEmbedder`, `c.embedStored undefined`.
 
-- [ ] **Step 3: Implement the embedder, the stamp and the stored-embedding helper**
+- [x] **Step 3: Implement the embedder, the stamp and the stored-embedding helper**
 
 Replace `internal/arcadedb/embedding.go` entirely:
 
@@ -1027,7 +1030,7 @@ func (c *Client) embedDistinct(ctx context.Context, statements []string) map[str
 }
 ```
 
-- [ ] **Step 4: Stamp the fact writes**
+- [x] **Step 4: Stamp the fact writes**
 
 `internal/arcadedb/memory_vector.go`:
 - `vectorSchemaStatements` returns the existing two statements `append`ed with `spaceStampStatements(factEdgeType)...`.
@@ -1121,7 +1124,7 @@ func (c *Client) storedStatementVectors(ctx context.Context, statements []string
 		storedVector{vector: fact.Embedding, space: fact.EmbedSpace}.createClause(params)
 ```
 
-- [ ] **Step 5: Move every caller and fake to the new seam**
+- [x] **Step 5: Move every caller and fake to the new seam**
 
 Production callers:
 - `cmd/arcadedb-mcp/main.go:67`:
@@ -1223,7 +1226,7 @@ func (agentMemoryLiveUnavailableEmbedder) Space(context.Context) (embeddings.Spa
 	}
 ```
 
-- [ ] **Step 6: Run the unit tests, then the integration test**
+- [x] **Step 6: Run the unit tests, then the integration test**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/embeddings/ ./internal/arcadedb/ ./cmd/arcadedb-mcp/ -count=1 && go vet -tags 'arcadedb_integration retrieval_eval document_live_e2e' ./internal/arcadedb/ ./internal/documents/ ./cmd/arcadedb-mcp/ ./cmd/aura/"`
 Expected: `ok` for the three packages and a silent vet (the tagged files compile).
@@ -1234,7 +1237,7 @@ Expected: `ok`.
 Run: `wsl -e bash .superpowers/sdd/2026-09-23-embedding-memory-family/arcade-it.sh 'MemorySpace|ReEmbedAllFacts|MemoryBatchLive|MemoryVectorAnswers'`
 Expected: `--- PASS: TestMemorySpaceStampsFactsAndFindsTheUnstampedThroughTheIndex`, `--- PASS: TestReEmbedAllFactsReachesTheWholeCorpusNotTheFirstBatch`, and none `SKIP`ped for a missing `ARCADEDB_URL`. A test that needs the embedding sidecar may skip locally; say so in the task report.
 
-- [ ] **Step 7: Record the stamp's two rules in the spec**
+- [x] **Step 7: Record the stamp's two rules in the spec**
 
 In `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md` §2, after the first bullet, add:
 
@@ -1247,7 +1250,7 @@ In `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md` §2, aft
   re-embeds, never the newer one.
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/arcadedb/embedding.go internal/arcadedb/embedding_space.go internal/arcadedb/memory_embed_stored.go \
@@ -1300,7 +1303,7 @@ EOF
   - `func (c *Client) embedChangedTurns(ctx, turns []ConversationTurnProjection, answered map[int]string) map[int]storedVector`
   - `storedTurnVectorsStatement` now selects turns with a vector or a stamp.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `internal/arcadedb/memory_conversation_test.go`, rewrite the table and the detection of `TestConversationProjectionReplayEmbedsOnlyWhatChanged`:
 - The table gets `wantCleared bool` in place of `wantRemoved`, plus a `refuse bool` column.
@@ -1420,12 +1423,12 @@ In `TestConversationSchemaStatements` (`memory_conversation_test.go:25-28`) add 
 
 In `internal/arcadedb/memory_vector_test.go` delete `TestEmbedStatementIsFailSoft`; `TestEmbedOneIsFailSoft` (Task 2) replaces it.
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ -run 'TestConversationProjection|TestUpsertReasoningTrace|TestReasoningSchema|TestConversationSchema' -count=1"`
 Expected: FAIL. The refused case writes no stamp, and the batching test sees three calls of one text. The trace upsert has no `embed_space`, and the schema tests lack the stamp.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `internal/arcadedb/embedding_space.go`:
 
@@ -1551,7 +1554,7 @@ Test updates that follow from the rule "removing a vector removes its stamp":
 	}
 ```
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ ./internal/runner/ -run 'Conversation|Reasoning|EmbedOne|Projection' -count=1"`
 Expected: `ok` for both packages.
@@ -1559,7 +1562,7 @@ Expected: `ok` for both packages.
 Run: `wsl -e bash .superpowers/sdd/2026-09-23-embedding-memory-family/arcade-it.sh 'ConversationProjectionLive|ReasoningGraphLive'`
 Expected: every listed test `PASS`, none `SKIP`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/arcadedb/embedding_space.go internal/arcadedb/memory_conversation.go internal/arcadedb/memory_reasoning.go \
@@ -1606,7 +1609,7 @@ EOF
   - `type ReasoningSearchResult struct{ Traces []ReasoningTrace; RetrievalPath, Reason string }`
   - `func (c *Client) SearchReasoningTraces(ctx, identityID, query string, limit int) (ReasoningSearchResult, error)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `internal/arcadedb/memory_fakeserver_test.go`:
 
@@ -1872,12 +1875,12 @@ func TestMemoryGateLiveFollowsTheStamps(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ ./cmd/arcadedb-mcp/ -run 'MemoryGate|ServesLexically|NamesItsPath|NamesTheSide|CarriesTheRetrievalReason' -count=1"`
 Expected: FAIL at build time: `undefined: otherSpace`, `client.memoryGate undefined`, `result.RetrievalPath undefined (type []ReasoningTrace)`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `internal/arcadedb/embedding_space.go` (add imports `"context"`, `"fmt"`, `"sync"`, `"time"`):
 
@@ -2104,7 +2107,7 @@ Update the tests that answer statements in sequence:
 
 Run the packages. Every remaining failure must be a sequence shift caused by the three gate counts; fix it by wrapping the bodies in `openMemoryGate`. Any other failure is a defect: debug it rather than adapting the test.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ ./cmd/arcadedb-mcp/ -count=1"`
 Expected: `ok` for both.
@@ -2112,7 +2115,7 @@ Expected: `ok` for both.
 Run: `wsl -e bash .superpowers/sdd/2026-09-23-embedding-memory-family/arcade-it.sh 'MemoryGateLive|MemoryRecallLive|MemoryVector'`
 Expected: `--- PASS: TestMemoryGateLiveFollowsTheStamps` and no `SKIP` for a missing `ARCADEDB_URL`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/arcadedb/embedding_space.go internal/arcadedb/client.go internal/arcadedb/memory_vector.go \
@@ -2153,7 +2156,7 @@ Before the second `git add`, check its list: it must contain only test files thi
 - Consumes: `RecallMemory` (open and semantic modes).
 - Produces: nothing new. `ConversationTurnHit` and `conversationTurnHitFromRow` stay, because recall uses them.
 
-- [ ] **Step 1: Move each test off the dead function**
+- [x] **Step 1: Move each test off the dead function**
 
 `internal/runner/runner_memory_projection_test.go:91-97` read the turn back from a fake that echoes a canned row to every query, so it proved only the fake's canned row. It now asserts what the projector sent. The handler records the turn upsert's params:
 
@@ -2219,7 +2222,7 @@ The read-back becomes:
 
 Delete `TestConversationProjectionSearchFailsClosedAcrossIdentity`. Recall's identity scoping is covered by `TestReasoningRecallIdentity` and the recall tests, and the live test above covers turns. Delete the `fuseConversationTurnRIDsStatement` entry in `TestEveryHybridStatementReranksItsFusion`.
 
-- [ ] **Step 2: Delete the production code and run**
+- [x] **Step 2: Delete the production code and run**
 
 Delete the seven symbols listed under Files from `internal/arcadedb/memory_conversation.go`, and drop imports that become unused (`sort` if nothing else uses it).
 
@@ -2229,7 +2232,7 @@ Expected: `ok` for the three packages and a silent vet.
 Run: `wsl -e bash .superpowers/sdd/2026-09-23-embedding-memory-family/arcade-it.sh 'ConversationProjectionLive'`
 Expected: every test `PASS`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/arcadedb/memory_conversation.go internal/arcadedb/memory_conversation_test.go \
@@ -2269,7 +2272,7 @@ EOF
   - `TenantBackfill.rotation atomic.Uint64`
   - `func kickMemoryEmbedBackfill(ctx, tasks memorySweepTasks) error`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `internal/arcadedb/memory_embed_pass_test.go`. `passServer` is an in-memory ArcadeDB for the three memory types that honours the pass's selection (type, stamp, cursor, batch) and its sqlscript/UPDATE writes:
 
@@ -2769,12 +2772,12 @@ func TestKickMemoryEmbedBackfillRunsTheSweepNow(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ -run 'TestPass|TestTenantBackfill|TestEmbedMissingFacts' -count=1; go test ./cmd/aura/ -run TestKickMemoryEmbedBackfill -count=1"`
 Expected: FAIL at build time: `reembedMemory undefined`, `undefined: rotated`, `undefined: kickMemoryEmbedBackfill`.
 
-- [ ] **Step 3: Implement the pass**
+- [x] **Step 3: Implement the pass**
 
 In `internal/arcadedb/embedding_space.go`, `memorySpaceType` gains the fields the pass needs:
 
@@ -3093,7 +3096,7 @@ In `cmd/aura/serve.go`, after the `seedMemoryEmbedBackfillSweep` block:
 	}
 ```
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./internal/arcadedb/ ./internal/cron/handlers/ ./cmd/arcadedb-mcp/ -count=1 && go test ./cmd/aura/ -run 'Kick|Backfill|Memory' -count=1"`
 Expected: `ok` for every package.
@@ -3101,7 +3104,7 @@ Expected: `ok` for every package.
 Run: `wsl -e bash .superpowers/sdd/2026-09-23-embedding-memory-family/arcade-it.sh 'MemoryPassLive|ReEmbedAllFacts|MemorySpace|MemoryGateLive'`
 Expected: all `PASS`, none `SKIP`.
 
-- [ ] **Step 5: Record the pass's rules and the rebuild cost in the spec**
+- [x] **Step 5: Record the pass's rules and the rebuild cost in the spec**
 
 In the spec §5 "Failures" bullet list, after the refusal bullet, add:
 
@@ -3122,7 +3125,7 @@ In "What this design does not prove" add:
   another space, starting one tenant later.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/arcadedb/memory_embed_pass.go internal/arcadedb/embedding_space.go internal/arcadedb/memory_vector.go \
@@ -3168,7 +3171,7 @@ EOF
   - `chatEnv.memoryEmbedder arcadedb.DenseEmbedder`
   - `bootSpace(embedder arcadedb.DenseEmbedder, timeout time.Duration) (embeddings.Space, error)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `cmd/aura/memory_embedder_test.go`:
 
@@ -3242,12 +3245,12 @@ Update the existing tests to the new signatures:
 - `cmd/aura/serve_memory_backfill_test.go`: `backfillEnv` sets `memoryEmbedder: arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil),`.
 - `cmd/arcadedb-mcp/boot_settings_test.go`, `TestBootSpaceGivesUpOnAStalledSidecar`: the call becomes `bootSpace(arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: srv.URL}, nil), 50*time.Millisecond)`. Add the `arcadedb` import.
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/aura/ -run 'MemoryEmbedder|MemoryCapture|ChatConversationProjector|ChatReasoningMemory|Backfill' -count=1; go test ./cmd/arcadedb-mcp/ -run BootSpace -count=1"`
 Expected: FAIL at build time: `undefined: memoryEmbedder`, `too many arguments in call to newChatTenantClients`, `cannot use … as config.EmbedConfig` in `bootSpace`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `cmd/aura/memory_embedder.go`:
 
@@ -3348,12 +3351,12 @@ Its imports gain `arcadedb` and drop anything unused. The width now comes from t
 
 `cmd/arcadedb-mcp/main.go`: `space, spaceErr := bootSpace(embedder, bootAttestTimeout)`.
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `wsl -e bash -lc "cd /mnt/d/Aura && go test ./cmd/aura/ -run 'MemoryEmbedder|MemoryCapture|ChatConversationProjector|ChatReasoningMemory|Backfill|Kick' -count=1 && go test ./cmd/arcadedb-mcp/ -count=1 && go vet -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' ./cmd/aura/ ./cmd/arcadedb-mcp/"`
 Expected: `ok` for both packages and a silent vet. The tag set is the harness's build line (`cmd/aura/two_identity_memory_harness_test.go:1`), so vet compiles it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/aura/memory_embedder.go cmd/aura/memory_embedder_test.go cmd/aura/chat_boot.go cmd/aura/chat_memory_projection.go \

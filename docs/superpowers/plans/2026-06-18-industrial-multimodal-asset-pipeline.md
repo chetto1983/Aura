@@ -1,5 +1,8 @@
 # Industrial Multimodal Asset Pipeline Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. b918f9a78..86871d1e0, merged in 809fc6b7d.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -99,7 +102,7 @@ Each wave is independently testable and should be committed separately.
 - Create: `internal/assets/store_test.go`
 - Modify generated: `internal/db/sqlc/assets.sql.go`, `internal/db/sqlc/models.go`
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 Create `internal/db/migrations/0020_assets.up.sql`:
 
@@ -184,7 +187,7 @@ DROP TABLE IF EXISTS aura.asset_events;
 DROP TABLE IF EXISTS aura.assets;
 ```
 
-- [ ] **Step 2: Add sqlc queries**
+- [x] **Step 2: Add sqlc queries**
 
 Create `internal/db/queries/assets.sql`:
 
@@ -307,7 +310,7 @@ INSERT INTO aura.asset_events (
 );
 ```
 
-- [ ] **Step 3: Generate sqlc**
+- [x] **Step 3: Generate sqlc**
 
 Run:
 
@@ -329,7 +332,7 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 sqlc generate
 ```
 
-- [ ] **Step 4: Add asset domain types**
+- [x] **Step 4: Add asset domain types**
 
 Create `internal/assets/types.go`:
 
@@ -429,7 +432,7 @@ type Result struct {
 }
 ```
 
-- [ ] **Step 5: Implement Postgres store**
+- [x] **Step 5: Implement Postgres store**
 
 Create `internal/assets/store.go`:
 
@@ -607,7 +610,7 @@ func mapRow(row sqlc.AuraAssets) (Asset, error) {
 If generated sqlc field names differ by capitalization, change only the field selectors in
 `store.go`; keep public `assets.Asset` field names as written above.
 
-- [ ] **Step 6: Add store tests**
+- [x] **Step 6: Add store tests**
 
 Create `internal/assets/store_test.go` using the repo's existing Postgres integration pattern:
 
@@ -670,7 +673,7 @@ Implement `migratedPool` and `seedIdentity` using the same helpers already used 
 integration tests. If there is no package-local helper, copy the minimal setup from
 `internal/documents/store_integration_test.go`.
 
-- [ ] **Step 7: Run backend generation and tests**
+- [x] **Step 7: Run backend generation and tests**
 
 Run:
 
@@ -686,7 +689,7 @@ ok   github.com/chetto1983/aura/internal/assets
 ok   github.com/chetto1983/aura/internal/db
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add internal/db/migrations/0020_assets.*.sql internal/db/queries/assets.sql internal/db/sqlc internal/assets/types.go internal/assets/store.go internal/assets/store_test.go
@@ -710,7 +713,7 @@ git commit -m "feat: add asset lifecycle store"
 - Modify: `compose.yaml`
 - Modify: `cmd/aura/container_artifacts_test.go`
 
-- [ ] **Step 1: Add config fields and tests**
+- [x] **Step 1: Add config fields and tests**
 
 Modify `internal/config/config.go` by adding fields to `Config`:
 
@@ -757,7 +760,7 @@ TelegramLocalBotAPI:       envBoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 Add `TestLoadDBAssetObjectStoreDefaultsAndOverrides` in `internal/config/config_test.go`.
 Assert the defaults above, then set env overrides and assert exact values.
 
-- [ ] **Step 2: Add object-store interfaces**
+- [x] **Step 2: Add object-store interfaces**
 
 Create `internal/objectstore/types.go`:
 
@@ -814,7 +817,7 @@ func AssetKey(identityID, assetID string) string {
 }
 ```
 
-- [ ] **Step 3: Add fake and filesystem implementations**
+- [x] **Step 3: Add fake and filesystem implementations**
 
 Create `internal/objectstore/fake.go` with a concurrency-safe map keyed by `bucket + "/" + key`.
 It must implement all `Store` methods and return `io.NopCloser(bytes.NewReader(copy))` from
@@ -854,7 +857,7 @@ func TestFakeRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Add S3/Garage implementation**
+- [x] **Step 4: Add S3/Garage implementation**
 
 Add dependencies:
 
@@ -884,7 +887,7 @@ func NewS3(ctx context.Context, cfg S3Config) (*S3Store, error)
 `PublicEndpoint` is non-empty, rewrite only the scheme/host of the presigned URL after signing
 when Garage is exposed through the same host path; leave query parameters intact.
 
-- [ ] **Step 5: Add compose and env wiring**
+- [x] **Step 5: Add compose and env wiring**
 
 Modify `.env.example` with the new object store and asset knobs. Use empty secrets for examples:
 
@@ -934,7 +937,7 @@ so tests and local development do not depend on Garage bootstrapping.
 
 Update `cmd/aura/container_artifacts_test.go` to assert the new Aura env keys and `garage:`.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```powershell
 go test ./internal/objectstore ./internal/config ./cmd/aura
@@ -949,7 +952,7 @@ ok   github.com/chetto1983/aura/internal/config
 ok   github.com/chetto1983/aura/cmd/aura
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add go.mod go.sum internal/objectstore internal/config .env.example compose.yaml cmd/aura/container_artifacts_test.go
@@ -968,7 +971,7 @@ git commit -m "feat: add Garage object store foundation"
 - Create: `internal/assets/service_test.go`
 - Create: `internal/assets/context_test.go`
 
-- [ ] **Step 1: Implement limits**
+- [x] **Step 1: Implement limits**
 
 Create `internal/assets/limits.go`:
 
@@ -1039,7 +1042,7 @@ func (l Limits) Validate(modality Modality, fileName string, size int64) error {
 
 Add tests for PDF accepted, `.exe` refused, image limit, audio limit, and unknown modality.
 
-- [ ] **Step 2: Define processor interfaces**
+- [x] **Step 2: Define processor interfaces**
 
 Create `internal/assets/processor.go`:
 
@@ -1072,7 +1075,7 @@ func (p ProcessorSet) For(modality Modality) Processor {
 }
 ```
 
-- [ ] **Step 3: Implement service orchestration**
+- [x] **Step 3: Implement service orchestration**
 
 Create `internal/assets/service.go`:
 
@@ -1265,7 +1268,7 @@ func normalizeMIME(raw, fileName string) string {
 Implement `newAssetID` in the same file using `uuid.NewString()` and import
 `github.com/google/uuid`.
 
-- [ ] **Step 4: Implement protected context builder**
+- [x] **Step 4: Implement protected context builder**
 
 Create `internal/assets/context.go`:
 
@@ -1330,7 +1333,7 @@ func truncateRunes(value string, max int) string {
 }
 ```
 
-- [ ] **Step 5: Add service and context tests**
+- [x] **Step 5: Add service and context tests**
 
 Create tests that prove:
 
@@ -1344,7 +1347,7 @@ Create tests that prove:
 
 Use `objectstore.NewFake()` and an in-memory fake `StoreBackend`.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```powershell
 go test ./internal/assets ./internal/objectstore
@@ -1357,7 +1360,7 @@ ok   github.com/chetto1983/aura/internal/assets
 ok   github.com/chetto1983/aura/internal/objectstore
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add internal/assets internal/objectstore
@@ -1376,7 +1379,7 @@ git commit -m "feat: add asset service and prompt context"
 - Modify: `cmd/aura/serve_webui.go`
 - Modify composition wiring in `cmd/aura/serve.go` or the file that builds `agui.NewServer`
 
-- [ ] **Step 1: Add AG-UI server dependency**
+- [x] **Step 1: Add AG-UI server dependency**
 
 Modify `internal/agui/server.go`:
 
@@ -1400,7 +1403,7 @@ func (s *Server) SetAssetService(service AssetService) { s.assets = service }
 
 Import `github.com/chetto1983/aura/internal/assets`.
 
-- [ ] **Step 2: Add asset API routes and handlers**
+- [x] **Step 2: Add asset API routes and handlers**
 
 Create `internal/agui/assets_api.go`:
 
@@ -1474,7 +1477,7 @@ Implement the other handlers with the same thin pattern:
 
 Add `s.registerAssetRoutes(mux)` in `Server.Mux()`.
 
-- [ ] **Step 3: Wire parent mux and capability gate**
+- [x] **Step 3: Wire parent mux and capability gate**
 
 Modify `cmd/aura/serve_webui.go`:
 
@@ -1504,7 +1507,7 @@ mux.Handle("DELETE /api/assets/{id}", agui.RequireCapability(aguiHandler, auth, 
 
 Keep read routes under `RequireAuth` only through the whole mux.
 
-- [ ] **Step 4: Decode `/agent/run` Aura extension**
+- [x] **Step 4: Decode `/agent/run` Aura extension**
 
 Modify `internal/agui/server.go`.
 
@@ -1563,7 +1566,7 @@ if len(req.Aura.AttachmentIDs) > 0 {
 
 This keeps `lastUserMessage` string-only.
 
-- [ ] **Step 5: Add tests**
+- [x] **Step 5: Add tests**
 
 In `internal/agui/assets_api_test.go`, build fake asset service and assert:
 
@@ -1579,7 +1582,7 @@ In `internal/agui/server_run_test.go`, add:
 - structured multimodal `Message.Content` still returns the existing unsupported-content 400.
 - attachment id belonging to another thread returns 404.
 
-- [ ] **Step 6: Wire real service in daemon**
+- [x] **Step 6: Wire real service in daemon**
 
 In the serve composition root, construct:
 
@@ -1603,7 +1606,7 @@ aguiServer.SetAssetService(assetSvc)
 Put `buildObjectStore` in a focused `cmd/aura/assets.go` file. It should return filesystem-dev,
 S3/Garage, or an error for unknown backend.
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 ```powershell
 go test ./internal/agui ./cmd/aura
@@ -1616,7 +1619,7 @@ ok   github.com/chetto1983/aura/internal/agui
 ok   github.com/chetto1983/aura/cmd/aura
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add internal/agui cmd/aura
@@ -1632,7 +1635,7 @@ git commit -m "feat: expose asset upload APIs"
 - Create: `internal/assets/document_processor_test.go`
 - Modify: `cmd/aura/docs.go` or add `cmd/aura/document_processor_wiring.go`
 
-- [ ] **Step 1: Implement document processor**
+- [x] **Step 1: Implement document processor**
 
 Create `internal/assets/document_processor.go`:
 
@@ -1719,7 +1722,7 @@ func writeTempAsset(src io.Reader, fileName string) (string, func(), error) {
 }
 ```
 
-- [ ] **Step 2: Add tests**
+- [x] **Step 2: Add tests**
 
 Create `internal/assets/document_processor_test.go` with:
 
@@ -1750,7 +1753,7 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 
 Define `recordingIngestor` in the test.
 
-- [ ] **Step 3: Wire document processor into serve**
+- [x] **Step 3: Wire document processor into serve**
 
 Reuse the existing `newRuntimeDocumentIngestor(chat.cfg, chat.pool)`:
 
@@ -1761,7 +1764,7 @@ assetSvc.Processors.Document = &assets.DocumentProcessor{
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```powershell
 go test ./internal/assets ./cmd/aura
@@ -1774,7 +1777,7 @@ ok   github.com/chetto1983/aura/internal/assets
 ok   github.com/chetto1983/aura/cmd/aura
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add internal/assets cmd/aura
@@ -1798,7 +1801,7 @@ git commit -m "feat: process document assets"
 - Modify: `web/src/chat/__tests__/sseAdapter.test.ts`
 - Modify: `web/src/i18n/resources.ts`
 
-- [ ] **Step 1: Add web types and API client**
+- [x] **Step 1: Add web types and API client**
 
 Create `web/src/chat/attachments/types.ts`:
 
@@ -1848,7 +1851,7 @@ Create `web/src/chat/attachments/api.ts` with `presignAsset`, `finalizeAsset`, `
 `promoteAsset`, and `deleteAsset`. Use `fetch` with `credentials: 'same-origin'` and throw the
 sanitized body text on non-OK, matching `sseAdapter.errorDetail`.
 
-- [ ] **Step 2: Add upload hook**
+- [x] **Step 2: Add upload hook**
 
 Create `web/src/chat/attachments/useAttachmentUploads.ts`.
 
@@ -1889,7 +1892,7 @@ function putWithProgress(
 }
 ```
 
-- [ ] **Step 3: Add attachment chips and cards**
+- [x] **Step 3: Add attachment chips and cards**
 
 Create `AttachmentChip.tsx`:
 
@@ -1903,7 +1906,7 @@ Create `AttachmentCard.tsx`:
 - Shows filename, status, summary/error.
 - Provides retry/remove only when the parent passes handlers.
 
-- [ ] **Step 4: Extend `streamRun`**
+- [x] **Step 4: Extend `streamRun`**
 
 Modify `web/src/chat/sseAdapter.ts`:
 
@@ -1936,7 +1939,7 @@ Add a unit test that calls `streamRun` with two ids and asserts fetch body conta
 {"aura":{"attachment_ids":["asset-1","asset-2"]}}
 ```
 
-- [ ] **Step 5: Wire composer and chat runtime**
+- [x] **Step 5: Wire composer and chat runtime**
 
 Modify `ExternalStoreChat.tsx`:
 
@@ -1955,7 +1958,7 @@ Modify `Composer.tsx`:
 
 Keep text-only send behavior when there are no attachments.
 
-- [ ] **Step 6: Add i18n copy**
+- [x] **Step 6: Add i18n copy**
 
 Modify `web/src/i18n/resources.ts`:
 
@@ -1975,7 +1978,7 @@ attachments: {
 
 Add Italian equivalents under `it`.
 
-- [ ] **Step 7: Add tests**
+- [x] **Step 7: Add tests**
 
 Add Vitest tests:
 
@@ -1985,7 +1988,7 @@ Add Vitest tests:
 - `sseAdapter.test.ts`: attachment ids are included in `/agent/run` body.
 - `Composer.test.tsx`: file input calls `addFiles`; paste calls `addFiles`; send disabled while blocking.
 
-- [ ] **Step 8: Run web tests**
+- [x] **Step 8: Run web tests**
 
 ```powershell
 cd web
@@ -2002,7 +2005,7 @@ typecheck exits 0
 lint exits 0
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```powershell
 git add web/src/chat web/src/i18n/resources.ts
@@ -2022,7 +2025,7 @@ git commit -m "feat: add web attachment uploads"
 - Modify: `internal/channels/telegram/sidecar.go`
 - Modify: `cmd/aura/serve_channels.go`
 
-- [ ] **Step 1: Move reusable config shape**
+- [x] **Step 1: Move reusable config shape**
 
 Keep `telegram.MultimodalConfig` for Telegram, but add conversion helpers so `assets` processors
 do not import the Telegram package. Create small config structs in `internal/assets`:
@@ -2047,7 +2050,7 @@ type STTConfig struct {
 }
 ```
 
-- [ ] **Step 2: Implement image processor**
+- [x] **Step 2: Implement image processor**
 
 Create `internal/assets/image_processor.go` by adapting the existing Telegram `photoClient`
 logic:
@@ -2061,7 +2064,7 @@ logic:
 Test with `httptest.Server` that asserts `/chat/completions` receives one text part and one
 base64 image URL part.
 
-- [ ] **Step 3: Implement audio processor**
+- [x] **Step 3: Implement audio processor**
 
 Create `internal/assets/audio_processor.go` by adapting Telegram `voiceClient.postTranscription`:
 
@@ -2072,7 +2075,7 @@ Create `internal/assets/audio_processor.go` by adapting Telegram `voiceClient.po
 
 Test with `httptest.Server` that reads multipart and returns `{"text":"ciao"}`.
 
-- [ ] **Step 4: Wire processors**
+- [x] **Step 4: Wire processors**
 
 In serve composition:
 
@@ -2083,12 +2086,12 @@ assetSvc.Processors.Audio = assets.NewAudioProcessor(objectStore, sttConfigFrom(
 
 Add `visionConfigFrom` and `sttConfigFrom` helpers near existing `multimodalConfig`.
 
-- [ ] **Step 5: Keep Telegram tests green**
+- [x] **Step 5: Keep Telegram tests green**
 
 If moving shared helpers affects Telegram, update `photo_test.go`, `voice_test.go`, and
 `multimodal_integration_test.go` imports without changing Telegram behavior.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```powershell
 go test ./internal/assets ./internal/channels/telegram ./cmd/aura
@@ -2102,7 +2105,7 @@ ok   github.com/chetto1983/aura/internal/channels/telegram
 ok   github.com/chetto1983/aura/cmd/aura
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add internal/assets internal/channels/telegram cmd/aura
@@ -2120,7 +2123,7 @@ git commit -m "feat: process image and audio assets"
 - Modify: `internal/channels/telegram/bot_dispatch_media_test.go`
 - Modify: `cmd/aura/serve_channels.go`
 
-- [ ] **Step 1: Add Telegram asset dependency**
+- [x] **Step 1: Add Telegram asset dependency**
 
 In `internal/channels/telegram/bot.go`, add:
 
@@ -2140,7 +2143,7 @@ Assets assetIngress
 If importing `internal/assets` creates an unwanted cycle, define a Telegram-local request struct
 and adapt in `cmd/aura/serve_channels.go`.
 
-- [ ] **Step 2: Add asset service Telegram helper**
+- [x] **Step 2: Add asset service Telegram helper**
 
 In `internal/assets`, add:
 
@@ -2169,7 +2172,7 @@ Implementation:
 - Start `process`.
 - Return the accepted asset.
 
-- [ ] **Step 3: Make Telegram download streaming**
+- [x] **Step 3: Make Telegram download streaming**
 
 Modify `bot_dispatch_file.go`:
 
@@ -2181,7 +2184,7 @@ func openTelegramFile(filer botFiler, file *tele.File) (io.ReadCloser, error) {
 
 Keep `downloadFile` only for old tests during transition, then remove call sites.
 
-- [ ] **Step 4: Refactor document/photo/voice handlers**
+- [x] **Step 4: Refactor document/photo/voice handlers**
 
 In `onDocument`, replace `payload, err := downloadFile(...)` with:
 
@@ -2207,13 +2210,13 @@ on the asset service or by passing `asset.ID` into a Telegram helper that builds
 
 Apply equivalent refactors to `onPhoto` and `onVoice`. Preserve current fail copy strings.
 
-- [ ] **Step 5: Wire identity mapping**
+- [x] **Step 5: Wire identity mapping**
 
 Use the linked Aura identity id when available from the Telegram store. If the existing Telegram
 store only gives chat/account rows, add a store method that returns the linked `identity_id` for
 the chat. Do not use `telegram:<chatID>` as `identity_id`; keep that only in `source_ref`.
 
-- [ ] **Step 6: Add tests**
+- [x] **Step 6: Add tests**
 
 Update `bot_dispatch_media_test.go`:
 
@@ -2223,7 +2226,7 @@ Update `bot_dispatch_media_test.go`:
 - asset ingress error sends the existing fail copy and does not start a turn.
 - test fake reader tracks read calls so the handler does not call `io.ReadAll`.
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 ```powershell
 go test ./internal/channels/telegram ./internal/assets ./cmd/aura
@@ -2237,7 +2240,7 @@ ok   github.com/chetto1983/aura/internal/assets
 ok   github.com/chetto1983/aura/cmd/aura
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add internal/channels/telegram internal/assets cmd/aura
@@ -2254,7 +2257,7 @@ git commit -m "feat: route Telegram media through assets"
 - Modify: `web/src/chat/attachments/*`
 - Modify: relevant tests
 
-- [ ] **Step 1: Attach assets to thread replay**
+- [x] **Step 1: Attach assets to thread replay**
 
 Extend `GET /threads/{id}/messages` or add a companion `GET /api/assets?thread_id=...` call in
 web replay. Prefer the companion call first because it avoids changing AG-UI message snapshots.
@@ -2263,7 +2266,7 @@ In `ExternalStoreChat`, after `fetchThreadMessages(threadId)`, also load thread 
 sent asset cards beside matching user turns by timestamp/order. If exact turn association is
 needed, add `turn_seq` or `message_id` to `assets.metadata` in the send path before replay.
 
-- [ ] **Step 2: Add retry/promote/delete UI**
+- [x] **Step 2: Add retry/promote/delete UI**
 
 Use existing API functions:
 
@@ -2273,7 +2276,7 @@ Use existing API functions:
 
 Show these controls only when the current user owns the asset and the status allows the action.
 
-- [ ] **Step 3: Add status polling backoff**
+- [x] **Step 3: Add status polling backoff**
 
 Use a bounded poll interval:
 
@@ -2284,7 +2287,7 @@ Use a bounded poll interval:
 
 Test with fake timers.
 
-- [ ] **Step 4: Run focused web tests**
+- [x] **Step 4: Run focused web tests**
 
 ```powershell
 cd web
@@ -2299,7 +2302,7 @@ chat tests pass
 typecheck exits 0
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/chat
@@ -2317,7 +2320,7 @@ git commit -m "feat: polish attachment lifecycle UI"
 - Create or modify: `scripts/asset_smoke.sh`
 - Modify: `web/e2e/chat.spec.ts` if adding upload E2E
 
-- [ ] **Step 1: Add operator docs**
+- [x] **Step 1: Add operator docs**
 
 Create `docs/asset-pipeline.md` with:
 
@@ -2331,7 +2334,7 @@ Create `docs/asset-pipeline.md` with:
 Update `docs/document-ingestion.md` to say documents can now enter through assets as well as CLI
 or Telegram.
 
-- [ ] **Step 2: Add smoke script**
+- [x] **Step 2: Add smoke script**
 
 Create `scripts/asset_smoke.sh`:
 
@@ -2369,7 +2372,7 @@ echo "asset did not become searchable in time: $asset_id" >&2
 exit 1
 ```
 
-- [ ] **Step 3: Run full local gates**
+- [x] **Step 3: Run full local gates**
 
 Run:
 
@@ -2392,7 +2395,7 @@ lint exits 0
 build exits 0
 ```
 
-- [ ] **Step 4: Run live smoke**
+- [x] **Step 4: Run live smoke**
 
 With Postgres, Neo4j, MarkItDown, Garage, and Aura running:
 
@@ -2409,7 +2412,7 @@ Expected:
 }
 ```
 
-- [ ] **Step 5: Commit docs and smoke**
+- [x] **Step 5: Commit docs and smoke**
 
 ```powershell
 git add docs/asset-pipeline.md docs/document-ingestion.md scripts/asset_smoke.sh web/e2e/chat.spec.ts docs/aura-quality-snapshot.md
@@ -2420,15 +2423,15 @@ git commit -m "docs: document asset pipeline operations"
 
 ## Final Verification Checklist
 
-- [ ] `git diff --check` passes.
-- [ ] `go test ./internal/assets ./internal/objectstore ./internal/agui ./internal/channels/telegram ./cmd/aura` passes.
-- [ ] `cd web; npm run test -- src/chat --coverage.enabled=false` passes.
-- [ ] `cd web; npm run typecheck` passes.
-- [ ] `cd web; npm run lint` passes.
-- [ ] `cd web; npm run build` passes.
-- [ ] `bash scripts/asset_smoke.sh <sample.pdf>` passes against a live local stack.
-- [ ] Web upload of a PDF reaches `searchable`, and an agent answer can use `document_search`.
-- [ ] Telegram voice/photo/document creates asset rows and object-store objects.
+- [x] `git diff --check` passes.
+- [x] `go test ./internal/assets ./internal/objectstore ./internal/agui ./internal/channels/telegram ./cmd/aura` passes.
+- [x] `cd web; npm run test -- src/chat --coverage.enabled=false` passes.
+- [x] `cd web; npm run typecheck` passes.
+- [x] `cd web; npm run lint` passes.
+- [x] `cd web; npm run build` passes.
+- [x] `bash scripts/asset_smoke.sh <sample.pdf>` passes against a live local stack.
+- [x] Web upload of a PDF reaches `searchable`, and an agent answer can use `document_search`.
+- [x] Telegram voice/photo/document creates asset rows and object-store objects.
 
 ## Plan Self-Review Notes
 

@@ -1,5 +1,8 @@
 # Document Status Vocabulary Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 38d78e403, 6fc0fb384, 9c8dd9d81, 29a263000. They live on the Go control plane that 2026-08-06-document-pipeline-rewrite largely replaced.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -64,7 +67,7 @@ Migration 0093:279-288 remaps legacy in-flight rows `processing → converting`.
 - Produces: `DocumentStatus` (12 constants), `DocumentVersionStatus` (16 constants), `AllDocumentStatuses []DocumentStatus`, `AllDocumentVersionStatuses []DocumentVersionStatus`. `DocumentVersion.Status` and `RecordAssetVersionRequest.VersionStatus` change type from `string` to `DocumentVersionStatus`.
 - Consumes: `pipelineDisposablePool(t *testing.T) *pgxpool.Pool` from `internal/documents/pipeline_store_integration_helpers_test.go:18`.
 
-- [ ] **Step 1: Add the enumeration slice the test needs, over today's (wrong) constants**
+- [x] **Step 1: Add the enumeration slice the test needs, over today's (wrong) constants**
 
 Append to `internal/documents/catalog_types.go`, directly after the existing `DocumentStatus` const block ending at line 46:
 
@@ -89,7 +92,7 @@ And directly above it, the placeholder type the slice needs to compile:
 type DocumentVersionStatus string
 ```
 
-- [ ] **Step 2: Write the failing conformance test**
+- [x] **Step 2: Write the failing conformance test**
 
 Create `internal/documents/status_vocabulary_integration_test.go`:
 
@@ -180,7 +183,7 @@ func constraintValues(
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run:
 ```bash
@@ -193,7 +196,7 @@ Expected: FAIL, twice —
 
 If the run finishes in under a second, the tier skipped — export the composed DSNs and re-run. A skip is not a red.
 
-- [ ] **Step 4: Create the corrected vocabulary file**
+- [x] **Step 4: Create the corrected vocabulary file**
 
 Create `internal/documents/catalog_status.go`:
 
@@ -287,7 +290,7 @@ var (
 )
 ```
 
-- [ ] **Step 5: Strip the old block out of `catalog_types.go` and type the two fields**
+- [x] **Step 5: Strip the old block out of `catalog_types.go` and type the two fields**
 
 Delete lines 26-46 of `internal/documents/catalog_types.go` (the `DocumentStatus` type comment, the type, and its whole const block) plus the `AllDocumentStatuses` / `AllDocumentVersionStatuses` / `DocumentVersionStatus` additions from Step 1. They now live in `catalog_status.go`.
 
@@ -303,7 +306,7 @@ At `catalog_types.go:174`, inside `RecordAssetVersionRequest`:
 	VersionStatus      DocumentVersionStatus
 ```
 
-- [ ] **Step 6: Correct the six production call sites**
+- [x] **Step 6: Correct the six production call sites**
 
 `internal/documents/catalog_service.go:126` and `:166` — both read `req.Status = DocumentStatusDraft`:
 ```go
@@ -331,7 +334,7 @@ At `catalog_types.go:174`, inside `RecordAssetVersionRequest`:
 		VersionStatus:    documents.DocumentVersionStatusStored,
 ```
 
-- [ ] **Step 7: Fix the two conversion sites the new types break**
+- [x] **Step 7: Fix the two conversion sites the new types break**
 
 `internal/documents/catalog_store.go:366`, inside `catalogVersionFromSQL` (sqlc row is `string`):
 ```go
@@ -343,7 +346,7 @@ At `catalog_types.go:174`, inside `RecordAssetVersionRequest`:
 			SizeBytes: req.SizeBytes, Status: string(req.VersionStatus),
 ```
 
-- [ ] **Step 8: Update the five tests that pin the retired literals**
+- [x] **Step 8: Update the five tests that pin the retired literals**
 
 Each pins a value the schema forbids, so the test is the broken thing — record that in the commit message.
 
@@ -380,7 +383,7 @@ Each pins a value the schema forbids, so the test is the broken thing — record
 			Status:     documents.DocumentStatusAccepted,
 ```
 
-- [ ] **Step 9: Run the conformance test to verify it passes**
+- [x] **Step 9: Run the conformance test to verify it passes**
 
 Run:
 ```bash
@@ -388,7 +391,7 @@ wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /m
 ```
 Expected: PASS, both constraints.
 
-- [ ] **Step 10: Run the full package suites, unit and integration, with the race detector**
+- [x] **Step 10: Run the full package suites, unit and integration, with the race detector**
 
 Run:
 ```bash
@@ -396,7 +399,7 @@ wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /m
 ```
 Expected: PASS throughout. `go build` catches cross-vocabulary confusion (e.g. `VersionStatus: documents.DocumentStatusStored`) as a compile error, because the two are now distinct named types — that is what the type change buys. It does NOT catch an illegal string literal (`VersionStatus: "processing"`): Go assigns untyped string constants to any string-derived named type, so that still compiles clean. The recurrence guard against an illegal literal is `TestDocumentVocabulariesMatchTheDatabase`, not the compiler.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add internal/documents/catalog_status.go internal/documents/catalog_types.go \
@@ -446,7 +449,7 @@ EOF
 
 `DocumentTab` keeps its `'processing'` member. That is a **UI** name meaning "in flight", not a status value — it is a translated tab label, and renaming it would churn i18n keys in both `en` and `it` for no gain. Only the predicate behind it changes.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace `web/src/documents/__tests__/documentViewModel.test.ts:67-72` with:
 
@@ -469,7 +472,7 @@ Replace `web/src/documents/__tests__/documentViewModel.test.ts:67-72` with:
   });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run (Windows, from `D:\Aura\web`):
 ```bash
@@ -477,7 +480,7 @@ npm run test -- src/documents/__tests__/documentViewModel.test.ts
 ```
 Expected: FAIL — `'dead_letter'`, `'converting'`, `'projecting'`, `'accepted'` are not assignable to `DocumentStatus`, and the in-flight cases return `false`.
 
-- [ ] **Step 3: Correct the union**
+- [x] **Step 3: Correct the union**
 
 `web/src/documents/documentApi.ts:2-10`:
 
@@ -497,7 +500,7 @@ export type DocumentStatus =
   | 'deleted';
 ```
 
-- [ ] **Step 4: Correct the predicate and the tone map**
+- [x] **Step 4: Correct the predicate and the tone map**
 
 `web/src/documents/documentViewModel.ts:52`:
 
@@ -526,7 +529,7 @@ export function statusToneFor(status: DocumentStatus): StatusTone {
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run:
 ```bash
@@ -534,7 +537,7 @@ npm run test -- src/documents/__tests__/documentViewModel.test.ts
 ```
 Expected: PASS.
 
-- [ ] **Step 6: Run the full web gate**
+- [x] **Step 6: Run the full web gate**
 
 Run, from `D:\Aura\web`:
 ```bash
@@ -542,7 +545,7 @@ npm run lint && npx tsc --noEmit && npm run test
 ```
 Expected: PASS. `tsc` is what catches any other consumer of the union — a `status === 'processing'` comparison elsewhere becomes an error against the new type.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/src/documents/documentApi.ts web/src/documents/documentViewModel.ts \

@@ -1,5 +1,8 @@
 # Tool approval policy: `ask` and `deny` per identity
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. Acceptance items 1-4 measured on one model, in docs/superpowers/verification/2026-10-10-lab-vm-wave1-acceptance.md.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
@@ -115,4 +118,4 @@
 ### Task 7: Closing
 
 - [x] `make file-size`, `go vet ./...`, `go build ./...`, `go test -race ./internal/gateway/ ./internal/approvalpolicies/ ./internal/agui/ ./cmd/aura/`, the `db_integration` tier for the touched packages, `golangci-lint run ./internal/gateway/... ./internal/approvalpolicies/... ./internal/agui/... ./cmd/aura/...`.
-- [ ] Lab-VM acceptance (spec, Testing, items 1-4): open; each run leaves its file in `docs/superpowers/verification/`.
+- [x] Lab-VM acceptance (spec, Testing, items 1-4): open; each run leaves its file in `docs/superpowers/verification/`.

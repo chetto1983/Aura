@@ -1,5 +1,8 @@
 # Tool Media Rendering Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 4d9139e..19d9239, with media E2E 4/4.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -42,7 +45,7 @@
 - Consumes: `AssetSource.streamUrl(assetId)` and stored `asset.MIMEType` after the existing owner/share gate.
 - Produces: `PreviewKind = 'audio'` for an explicit safe MIME allowlist; `AudioPreview` passes the active source URL and filename to Elements `AudioPlayer` and retains the Aura download link.
 
-- [ ] **Step 1: Write failing API and UI tests.** Request `Range: bytes=2-5` for owned and public-share `audio/mpeg`, `audio/mp3`, `audio/ogg`, `audio/wav`, `audio/x-wav`, `audio/webm`, `audio/mp4`, `audio/m4a`, `audio/x-m4a`; require `206`, correct `Content-Range`, `nosniff`, inline type, HEAD, and `416` out-of-range. Verify cross-owner/share 404, HTML/SVG 415, audio preview error and inert download. Test that `audio/webm;codecs=opus` is parsed to the bare allowed type.
+- [x] **Step 1: Write failing API and UI tests.** Request `Range: bytes=2-5` for owned and public-share `audio/mpeg`, `audio/mp3`, `audio/ogg`, `audio/wav`, `audio/x-wav`, `audio/webm`, `audio/mp4`, `audio/m4a`, `audio/x-m4a`; require `206`, correct `Content-Range`, `nosniff`, inline type, HEAD, and `416` out-of-range. Verify cross-owner/share 404, HTML/SVG 415, audio preview error and inert download. Test that `audio/webm;codecs=opus` is parsed to the bare allowed type.
 
 ```go
 req := httptest.NewRequest(http.MethodGet, "/api/assets/"+ownedAudioID+"/stream", nil)
@@ -52,16 +55,16 @@ server.ServeHTTP(rec, withPrincipal(req, ownerID))
 if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Range") != "bytes 2-5/8" { t.Fatalf("range: %d %q", rec.Code, rec.Header().Get("Content-Range")) }
 ```
 
-- [ ] **Step 2: Run `go test ./internal/agui -run 'Test.*(AssetStream|ShareStream)' -count=1` and focused Vitest; confirm failures.**
-- [ ] **Step 3: Implement the closed allowlist and player.** Refactor `videoStreamType` to a media-type classifier used by both authenticated and share handlers; leave ownership checks before `ServeContent`. Keep existing video behavior. Route safe audio MIME to `audio` in `previewKind`, lazy-load `AudioPreview`, use `new URL(streamUrl(assetId), location.origin).href` only for a same-origin stream route, and mount `<AudioPlayer src={src} title={fileName} />`. Adapt the copied player's underlying `<audio>` with an error callback that selects `PreviewError`. Keep the existing download control beside it.
+- [x] **Step 2: Run `go test ./internal/agui -run 'Test.*(AssetStream|ShareStream)' -count=1` and focused Vitest; confirm failures.**
+- [x] **Step 3: Implement the closed allowlist and player.** Refactor `videoStreamType` to a media-type classifier used by both authenticated and share handlers; leave ownership checks before `ServeContent`. Keep existing video behavior. Route safe audio MIME to `audio` in `previewKind`, lazy-load `AudioPreview`, use `new URL(streamUrl(assetId), location.origin).href` only for a same-origin stream route, and mount `<AudioPlayer src={src} title={fileName} />`. Adapt the copied player's underlying `<audio>` with an error callback that selects `PreviewError`. Keep the existing download control beside it.
 
 ```ts
 const STREAMABLE_AUDIO = new Set(['audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/mp4', 'audio/m4a', 'audio/x-m4a']);
 // The Go allowlist mirrors these values after mime.ParseMediaType; reject all other media.
 ```
 
-- [ ] **Step 4: Run focused Go/Vitest, web typecheck, and the authenticated/share Range fixture.** Inspect `audio` on a narrow viewport and seek twice.
-- [ ] **Step 5: Commit only audio-stream/player files.** Use `feat(assets): stream authorized audio in cockpit`.
+- [x] **Step 4: Run focused Go/Vitest, web typecheck, and the authenticated/share Range fixture.** Inspect `audio` on a narrow viewport and seek twice.
+- [x] **Step 5: Commit only audio-stream/player files.** Use `feat(assets): stream authorized audio in cockpit`.
 
 ### Task 2: Image and video presentation over Aura's asset layer
 
@@ -74,7 +77,7 @@ const STREAMABLE_AUDIO = new Set(['audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio
 - Consumes: `useBlobPreview` for authorized images, `AssetSource.streamUrl` for video, existing `PreviewError` and `EditMediaButton`.
 - Produces: completed image and video views with title/source and unchanged Aura download/edit actions; generation's queued/progress view is unchanged until an asset exists.
 
-- [ ] **Step 1: Write failing tests.** Cover image `blob:` URL and revocation, natural image proportions, portrait/square video on a narrow viewport, no `autoplay` attribute after mount/reload, source-tier URLs, media load error, SVG MIME with `.png` filename, and retained edit/download controls.
+- [x] **Step 1: Write failing tests.** Cover image `blob:` URL and revocation, natural image proportions, portrait/square video on a narrow viewport, no `autoplay` attribute after mount/reload, source-tier URLs, media load error, SVG MIME with `.png` filename, and retained edit/download controls.
 
 ```tsx
 render(<VideoPreview assetId="v1" fileName="portrait.mp4" mimeType="video/mp4" />);
@@ -83,16 +86,16 @@ expect(video).not.toHaveAttribute('autoplay');
 expect(video).toHaveAttribute('src', '/api/assets/v1/stream');
 ```
 
-- [ ] **Step 2: Run focused renderer Vitest and confirm failures.**
-- [ ] **Step 3: Adapt the copied frames.** Use Tool UI Image only after `useBlobPreview` resolves; change its `ratio="auto"` handling to natural `<img>` sizing and add `onError` fallback. Adapt the copied Elements `VideoPlayer` to expose its underlying `<video>` error and select `PreviewError`; use `ratio="auto"`, no autoplay, and the stream URL. Preserve `GeneratedImagePreview` zoom, copy, download and edit behavior. Keep local artifact fallback for missing asset ID and unsupported MIME.
+- [x] **Step 2: Run focused renderer Vitest and confirm failures.**
+- [x] **Step 3: Adapt the copied frames.** Use Tool UI Image only after `useBlobPreview` resolves; change its `ratio="auto"` handling to natural `<img>` sizing and add `onError` fallback. Adapt the copied Elements `VideoPlayer` to expose its underlying `<video>` error and select `PreviewError`; use `ratio="auto"`, no autoplay, and the stream URL. Preserve `GeneratedImagePreview` zoom, copy, download and edit behavior. Keep local artifact fallback for missing asset ID and unsupported MIME.
 
 ```tsx
 return <VideoPlayer src={streamUrl(assetId)} title={fileName} ratio="auto" />;
 // The wrapper handles media error and shows PreviewError; it does not alter src.
 ```
 
-- [ ] **Step 4: Run focused Vitest, `npm --prefix web run typecheck`, and authenticated/share visual checks.** Verify a completed generation retains the same asset actions.
-- [ ] **Step 5: Commit only image/video presentation files.** Use `feat(chat): frame completed images and video with selected components`.
+- [x] **Step 4: Run focused Vitest, `npm --prefix web run typecheck`, and authenticated/share visual checks.** Verify a completed generation retains the same asset actions.
+- [x] **Step 5: Commit only image/video presentation files.** Use `feat(chat): frame completed images and video with selected components`.
 
 ### Task 3: Dimension-backed gallery and media end-to-end gate
 
@@ -106,15 +109,15 @@ return <VideoPlayer src={streamUrl(assetId)} title={fileName} ratio="auto" />;
 - Consumes: two or more trusted `aura.artifact`/completed-generation asset descriptors in one assistant turn and the active `AssetSource`.
 - Produces: `groupTrustedImages(items: readonly GalleryCandidate[]): readonly GalleryItem[][]`, where `GalleryCandidate = GalleryItem & { turnId: string }` and `GalleryItem = { assetId: string; src: string; width: number; height: number; alt: string }`. Group by assistant-turn ID only when every member has positive decoded width and height; otherwise render individual image cards. The lightbox and downloads use the same tier's URLs.
 
-- [ ] **Step 1: Write failing gallery tests.** Two trusted images become one gallery after decode; a single image, missing asset ID, rejected MIME, zero dimension, cross-turn pair, or failed image load stays in individual/fallback cards. A public-share lightbox must request its share-scoped URLs, and Escape must close only the lightbox.
+- [x] **Step 1: Write failing gallery tests.** Two trusted images become one gallery after decode; a single image, missing asset ID, rejected MIME, zero dimension, cross-turn pair, or failed image load stays in individual/fallback cards. A public-share lightbox must request its share-scoped URLs, and Escape must close only the lightbox.
 
 ```tsx
 expect(groupTrustedImages([{turnId:'t1',assetId:'a',width:400,height:300},{turnId:'t1',assetId:'b',width:200,height:500}])).toHaveLength(1);
 expect(groupTrustedImages([{turnId:'t1',assetId:'a',width:0,height:300}])).toHaveLength(0);
 ```
 
-- [ ] **Step 2: Run the gallery Vitest file and confirm failure.**
-- [ ] **Step 3: Implement grouping and dimensions.** Derive grouping only from trusted event descriptors already attached to tool parts. Decode image dimensions client-side after authorized load; never write guessed metadata into the asset store. Bound gallery count and image dimensions, preserve source order, and fall back to each image card when any member fails. Adapt Tool UI gallery to natural dimensions, small widths, and Aura lightbox focus/escape behavior.
+- [x] **Step 2: Run the gallery Vitest file and confirm failure.**
+- [x] **Step 3: Implement grouping and dimensions.** Derive grouping only from trusted event descriptors already attached to tool parts. Decode image dimensions client-side after authorized load; never write guessed metadata into the asset store. Bound gallery count and image dimensions, preserve source order, and fall back to each image card when any member fails. Adapt Tool UI gallery to natural dimensions, small widths, and Aura lightbox focus/escape behavior.
 
 ```ts
 type GalleryItem = { assetId: string; src: string; width: number; height: number; alt: string };
@@ -123,5 +126,5 @@ const complete = items.every((item) => item.width > 0 && item.height > 0 && Numb
 if (!complete) return []; // caller renders existing individual cards
 ```
 
-- [ ] **Step 4: Run focused Vitest, web typecheck and the media Playwright scenario.** Exercise authenticated audio Range seeking, public-share audio, portrait video reload, image failure, and gallery lightbox; record actual stack behavior before PRD edits.
-- [ ] **Step 5: Commit only gallery/E2E files and perform a whole-wave review.** Use `feat(chat): group trusted images with real dimensions`.
+- [x] **Step 4: Run focused Vitest, web typecheck and the media Playwright scenario.** Exercise authenticated audio Range seeking, public-share audio, portrait video reload, image failure, and gallery lightbox; record actual stack behavior before PRD edits.
+- [x] **Step 5: Commit only gallery/E2E files and perform a whole-wave review.** Use `feat(chat): group trusted images with real dimensions`.

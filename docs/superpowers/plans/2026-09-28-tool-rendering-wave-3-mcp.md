@@ -1,5 +1,8 @@
 # MCP and Evidence Tool Rendering Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 7451e7e..e8e188e.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -43,7 +46,7 @@
 - Consumes: bridge `policy.recipeSource`, actual raw MCP tool name and validated calendar action; ledger `ListByConversation(ctx, conversationID)` end rows.
 - Produces: runtime-only `tools.Spec.TrustedRecipeSource` set by the trusted bridge, plus host-only result metadata `aura_display_source` with exact recipe source, tool and action. Live `PreviewInput.TrustedMCP *TrustedMCP` comes from that bridge-owned marker; replay obtains it only when the marker matches the call and an owner-scoped ledger end fact. `NormalizeToolPreview` uses it for MCP cases; native cases are unchanged.
 
-- [ ] **Step 1: Write failing trust and parity tests.** A trusted memory call gets a marker; an arbitrary mounted server using the same tool name does not. A trusted calendar action marker contains the actual action, and a client-supplied `aura_display_source` argument cannot change it. For snapshot, pair assistant/tool turns with an end ledger fact and compare live/replay display JSON; remove/mismatch the fact and require raw fallback.
+- [x] **Step 1: Write failing trust and parity tests.** A trusted memory call gets a marker; an arbitrary mounted server using the same tool name does not. A trusted calendar action marker contains the actual action, and a client-supplied `aura_display_source` argument cannot change it. For snapshot, pair assistant/tool turns with an end ledger fact and compare live/replay display JSON; remove/mismatch the fact and require raw fallback.
 
 ```go
 fact := toolinvocations.Event{ToolCallID:"m1", ToolName:"memory__memory_search", Event:toolinvocations.EventEnd,
@@ -52,8 +55,8 @@ fact := toolinvocations.Event{ToolCallID:"m1", ToolName:"memory__memory_search",
 // the same history with nil facts must leave m1.display absent.
 ```
 
-- [ ] **Step 2: Run `go test ./internal/agent/mcptools ./internal/agent/display ./internal/agui -run 'Test.*(MCPDisplay|DisplaySnapshot)' -count=1`; confirm failures.**
-- [ ] **Step 3: Implement metadata and the owner-scoped read.** Set `Spec.TrustedRecipeSource` only from the bridge's verified policy, never from an advertised schema. Set the result marker after `CallTool` succeeds, never from payload content. Stamp it into `ToolInvocation.Meta` through the existing result metadata path. In `handleMessages`, list invocation facts only after `GetForIdentity` succeeds; the existing `toolinvocations.Store.ListByConversation` is the read source. Match conversation, tool-call ID, tool name, event=end and marker; ignore duplicate/inconsistent facts. Pass the marker into the same normalizer used live. If the ledger read fails, serve the transcript without MCP rich displays rather than failing the thread.
+- [x] **Step 2: Run `go test ./internal/agent/mcptools ./internal/agent/display ./internal/agui -run 'Test.*(MCPDisplay|DisplaySnapshot)' -count=1`; confirm failures.**
+- [x] **Step 3: Implement metadata and the owner-scoped read.** Set `Spec.TrustedRecipeSource` only from the bridge's verified policy, never from an advertised schema. Set the result marker after `CallTool` succeeds, never from payload content. Stamp it into `ToolInvocation.Meta` through the existing result metadata path. In `handleMessages`, list invocation facts only after `GetForIdentity` succeeds; the existing `toolinvocations.Store.ListByConversation` is the read source. Match conversation, tool-call ID, tool name, event=end and marker; ignore duplicate/inconsistent facts. Pass the marker into the same normalizer used live. If the ledger read fails, serve the transcript without MCP rich displays rather than failing the thread.
 
 ```go
 type TrustedMCP struct { Recipe, Tool, Action string }
@@ -63,8 +66,8 @@ if in.TrustedMCP != nil && in.TrustedMCP.Recipe == "recipe:memory" && in.Trusted
 }
 ```
 
-- [ ] **Step 4: Run focused tests, `go test ./internal/agui ./internal/agent/display ./internal/agent/mcptools -count=1`, and a replay fixture with a changed mount list.**
-- [ ] **Step 5: Commit only provenance/rehydration files.** Use `feat(display): preserve trusted MCP source across replay`.
+- [x] **Step 4: Run focused tests, `go test ./internal/agui ./internal/agent/display ./internal/agent/mcptools -count=1`, and a replay fixture with a changed mount list.**
+- [x] **Step 5: Commit only provenance/rehydration files.** Use `feat(display): preserve trusted MCP source across replay`.
 
 ### Task 2: Memory facts, diagnostics and graph references
 
@@ -79,7 +82,7 @@ if in.TrustedMCP != nil && in.TrustedMCP.Recipe == "recipe:memory" && in.Trusted
 - Consumes: Task 1 `TrustedMCP` with `recipe:memory`; source shapes from `cmd/arcadedb-mcp` for `memory_search`, `memory_recall`, `memory_facts_about`, `memory_entities`, `graph_diagnostics`, `graph_schema`, `graph_path`.
 - Produces: bounded `KindTable`, `KindStats`, `KindCode`, or graph workspace reference; mutation calls and `memory_digest` retain row/raw receipt unless their result matches a documented bounded summary.
 
-- [ ] **Step 1: Write failing parser/card tests from the served tool schemas and result builders in `cmd/arcadedb-mcp`.** Fixtures include a fact with subject/predicate/object/validity, empty list, duplicate entity, diagnostic numeric counts, schema JSON, path with a valid graph reference, an oversized object, and a write tool whose text imitates a read result. Only exact trusted read names may produce a typed card.
+- [x] **Step 1: Write failing parser/card tests from the served tool schemas and result builders in `cmd/arcadedb-mcp`.** Fixtures include a fact with subject/predicate/object/validity, empty list, duplicate entity, diagnostic numeric counts, schema JSON, path with a valid graph reference, an oversized object, and a write tool whose text imitates a read result. Only exact trusted read names may produce a typed card.
 
 ```go
 in := PreviewInput{ToolCallID:"m1", ToolName:"memory__memory_search", ResultPreview:`{"facts":[{"statement":"A knows B","subject":"A","predicate":"knows","object":"B","sources":[]}],"retrieval":{"path":"lexical","abstained":false}}`,
@@ -88,16 +91,16 @@ p, ok := NormalizeToolPreview(in, NewRegistry())
 if !ok || p.Table == nil || len(p.Table.Rows) != 1 { t.Fatalf("memory table = %+v, %v", p, ok) }
 ```
 
-- [ ] **Step 2: Run `go test ./internal/agent/display -run TestMemory -count=1` and the new Vitest files; confirm failures.**
-- [ ] **Step 3: Implement exact parsers and cards.** Read the local server result constructors before matching each shape; do not assume all tools return the same JSON wrapper. Limit rows and cell lengths, retain validity/source fields, and show an explicit truncation count. Project diagnostics as finite numeric stats, schema as escaped JSON code, and a path only to the existing graph workspace if its reference is validated. Reuse Wave 1 DataTable adapter with Aura filter/export controls; never render fact values as Markdown/HTML.
+- [x] **Step 2: Run `go test ./internal/agent/display -run TestMemory -count=1` and the new Vitest files; confirm failures.**
+- [x] **Step 3: Implement exact parsers and cards.** Read the local server result constructors before matching each shape; do not assume all tools return the same JSON wrapper. Limit rows and cell lengths, retain validity/source fields, and show an explicit truncation count. Project diagnostics as finite numeric stats, schema as escaped JSON code, and a path only to the existing graph workspace if its reference is validated. Reuse Wave 1 DataTable adapter with Aura filter/export controls; never render fact values as Markdown/HTML.
 
 ```go
 if len(rows) > maxDisplayRows { rows = rows[:maxDisplayRows]; truncated = true }
 for _, count := range diagnostics { if count < 0 { return Payload{}, false } }
 ```
 
-- [ ] **Step 4: Run Go/Vitest/typecheck and a real memory MCP read through the cockpit, then reopen the thread.**
-- [ ] **Step 5: Commit only memory projection/card files.** Use `feat(chat): render trusted memory reads`.
+- [x] **Step 4: Run Go/Vitest/typecheck and a real memory MCP read through the cockpit, then reopen the thread.**
+- [x] **Step 5: Commit only memory projection/card files.** Use `feat(chat): render trusted memory reads`.
 
 ### Task 3: Calendar/WhatsApp reads and existing evidence owners
 
@@ -112,7 +115,7 @@ for _, count := range diagnostics { if count < 0 { return Payload{}, false } }
 - Consumes: Task 1 `TrustedMCP` for calendar's `action` and WhatsApp's exact tool name; existing `mcp_view` descriptor, `ref_id` / Source Explorer callback and trusted artifact URLs.
 - Produces: a bounded row/table/document reference for read actions where the actual result builder supports it; no new authorization or draft behavior. Current MCP Apps view remains present and clickable.
 
-- [ ] **Step 1: Write failing fixtures for the calendar fork's 29-action enum and WhatsApp fork's 15 tool names at the pinned revisions in the spec mapping.** Capture each read result shape from its server result builder before asserting a typed projection. Test a read list, an empty read, attachment path without an Aura asset, a view-bound read, an unknown action, and a destructive action with a success-shaped body. Test a web result with `ref_id` and a click opening the same Source Explorer entry.
+- [x] **Step 1: Write failing fixtures for the calendar fork's 29-action enum and WhatsApp fork's 15 tool names at the pinned revisions in the spec mapping.** Capture each read result shape from its server result builder before asserting a typed projection. Test a read list, an empty read, attachment path without an Aura asset, a view-bound read, an unknown action, and a destructive action with a success-shaped body. Test a web result with `ref_id` and a click opening the same Source Explorer entry.
 
 ```go
 in := PreviewInput{ToolCallID:"w1", ToolName:"whatsapp__send_message", ResultPreview:`{"chats":[]}`,
@@ -120,16 +123,16 @@ in := PreviewInput{ToolCallID:"w1", ToolName:"whatsapp__send_message", ResultPre
 if _, ok := NormalizeToolPreview(in, NewRegistry()); ok { t.Fatal("send result promoted to read table") }
 ```
 
-- [ ] **Step 2: Run focused Go/Vitest and confirm failures.**
-- [ ] **Step 3: Implement only shape-backed compact read displays.** Use the exact trusted action/tool allowlist, strict bounded projection, and raw fallback for unsupported shapes. Preserve `aura.mcp_view` attachment and source routing. Port Tool UI citation/link-preview markup into current evidence cards without dropping `ref_id`, `onOpenSource`, link safety, or fetched-document Markdown sanitization. Keep worker report/pane unless an Elements list passes their existing navigation/error tests.
+- [x] **Step 2: Run focused Go/Vitest and confirm failures.**
+- [x] **Step 3: Implement only shape-backed compact read displays.** Use the exact trusted action/tool allowlist, strict bounded projection, and raw fallback for unsupported shapes. Preserve `aura.mcp_view` attachment and source routing. Port Tool UI citation/link-preview markup into current evidence cards without dropping `ref_id`, `onOpenSource`, link safety, or fetched-document Markdown sanitization. Keep worker report/pane unless an Elements list passes their existing navigation/error tests.
 
 ```tsx
 <CitationBubble source={source} onOpenSource={() => onOpenSource(source.ref_id)} />
 // The copied frame can wrap this owner callback; it cannot replace ref_id with href.
 ```
 
-- [ ] **Step 4: Run Go/Vitest/typecheck and cockpit Playwright for memory, calendar view, WhatsApp view, web citation and a malformed MCP fallback, live then reloaded.** Verify row-only dispositions against the spec inventory and record actual UX measurements before PRD edits.
-- [ ] **Step 5: Commit only sidecar/evidence files.** Use `feat(chat): render trusted sidecar reads beside MCP Apps`.
+- [x] **Step 4: Run Go/Vitest/typecheck and cockpit Playwright for memory, calendar view, WhatsApp view, web citation and a malformed MCP fallback, live then reloaded.** Verify row-only dispositions against the spec inventory and record actual UX measurements before PRD edits.
+- [x] **Step 5: Commit only sidecar/evidence files.** Use `feat(chat): render trusted sidecar reads beside MCP Apps`.
 
 ### Task 4: Remaining native dispositions and the whole-wave gate
 
@@ -143,7 +146,7 @@ if _, ok := NormalizeToolPreview(in, NewRegistry()); ok { t.Fatal("send result p
 - Consumes: Wave 1 `KindTable`/row fallback, existing worker status/report, current source registry and artifact descriptors.
 - Produces: table for verified list-shaped `task`, `skill` or `plugin_pack` results; existing worker/evidence behavior for other calls. No read-only result becomes an action control.
 
-- [ ] **Step 1: Write failing tests for each list/result mode the spec names.** A `task list` with two jobs makes a bounded table; create/run/cancel are rows. `skill list` and `plugin_pack` list render only their documented fields; `skill_manage` and other mutations remain receipts. `swarm_status` preserves worker IDs, errors and navigation. `document_search` retains `ref_id`; `document_open` shows an authorized artifact link only when an asset ID exists. A response that only names a container path is raw text. `send_file` retains its `LocalArtifactDisplay` controls, and WhatsApp `get_media_data`/`download_media` without an Aura asset ID remain receipts. Inventory all Go producers of `KindChart` and `KindTable` before changing those declarations.
+- [x] **Step 1: Write failing tests for each list/result mode the spec names.** A `task list` with two jobs makes a bounded table; create/run/cancel are rows. `skill list` and `plugin_pack` list render only their documented fields; `skill_manage` and other mutations remain receipts. `swarm_status` preserves worker IDs, errors and navigation. `document_search` retains `ref_id`; `document_open` shows an authorized artifact link only when an asset ID exists. A response that only names a container path is raw text. `send_file` retains its `LocalArtifactDisplay` controls, and WhatsApp `get_media_data`/`download_media` without an Aura asset ID remain receipts. Inventory all Go producers of `KindChart` and `KindTable` before changing those declarations.
 
 ```go
 if _, ok := NormalizeToolPreview(PreviewInput{ToolCallID:"t1",ToolName:"task",Arguments:`{"action":"cancel"}`,ResultPreview:"cancelled"}, NewRegistry()); ok {
@@ -151,8 +154,8 @@ if _, ok := NormalizeToolPreview(PreviewInput{ToolCallID:"t1",ToolName:"task",Ar
 }
 ```
 
-- [ ] **Step 2: Run focused display/worker/evidence tests and confirm failures.**
-- [ ] **Step 3: Implement only verified list projections and preserve owners.** Reuse Elements DataTable for actual structured rows. Keep row/raw for ambiguous schemas and action receipts. Keep existing worker pane/report unless an Elements Subagent list passes the same ID/error/navigation fixtures. Route document links through the existing source registry and asset route. If `rg 'KindChart' internal -g '*.go'` still shows definitions/tests but no producer, remove `KindChart`, the TS kind/router arm and `ChartDisplay`/its tests in the same commit; if a producer now exists, retain and test it.
+- [x] **Step 2: Run focused display/worker/evidence tests and confirm failures.**
+- [x] **Step 3: Implement only verified list projections and preserve owners.** Reuse Elements DataTable for actual structured rows. Keep row/raw for ambiguous schemas and action receipts. Keep existing worker pane/report unless an Elements Subagent list passes the same ID/error/navigation fixtures. Route document links through the existing source registry and asset route. If `rg 'KindChart' internal -g '*.go'` still shows definitions/tests but no producer, remove `KindChart`, the TS kind/router arm and `ChartDisplay`/its tests in the same commit; if a producer now exists, retain and test it.
 
 ```tsx
 return artifact?.asset_id
@@ -160,5 +163,5 @@ return artifact?.asset_id
   : <ToolResultPanel argsText={rawArgs} result={rawResult} />;
 ```
 
-- [ ] **Step 4: Run `go test ./internal/agent/display ./internal/agui -count=1`, focused Vitest, web typecheck and whole-wave Playwright.** Exercise memory, calendar/WhatsApp MCP Apps, web/document source clicks, workers, table and malformed raw fallback live and after reload. Record observations before PRD changes.
-- [ ] **Step 5: Commit only these disposition/E2E files and perform whole-wave review.** Use `feat(chat): complete remaining tool result dispositions`.
+- [x] **Step 4: Run `go test ./internal/agent/display ./internal/agui -count=1`, focused Vitest, web typecheck and whole-wave Playwright.** Exercise memory, calendar/WhatsApp MCP Apps, web/document source clicks, workers, table and malformed raw fallback live and after reload. Record observations before PRD changes.
+- [x] **Step 5: Commit only these disposition/E2E files and perform whole-wave review.** Use `feat(chat): complete remaining tool result dispositions`.

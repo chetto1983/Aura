@@ -1,5 +1,8 @@
 # MCP binary files: Aura bridge implementation plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 76a1ef087..38b96fadb. VM E2E recorded in the PRD (952830310).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -87,7 +90,7 @@
   - functions `mcp.FileFromContents(*sdkmcp.ResourceContents) (FilePart, bool)`, `mcp.NameFromURI(string) string` and `mcp.FileCapExceeded(size int64) string`;
   - `ToolPayload.Files []FilePart` and `ToolPayload.Links []*sdkmcp.ResourceLink`.
 
-- [ ] **Step 1: Write the failing tests.** Create `internal/mcp/file_test.go`:
+- [x] **Step 1: Write the failing tests.** Create `internal/mcp/file_test.go`:
 
 ```go
 package mcp
@@ -187,11 +190,11 @@ func TestDecodeToolPayload_KeepsEveryFileBlock(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `go test ./internal/mcp/ -run 'NameFromURI|FileFromContents|NotMaterialized|FileCapExceeded|KeepsEveryFileBlock'`.
+- [x] **Step 2: Run them to verify they fail.** Run: `go test ./internal/mcp/ -run 'NameFromURI|FileFromContents|NotMaterialized|FileCapExceeded|KeepsEveryFileBlock'`.
 
 Expected: build FAIL with `undefined: NameFromURI` (and `FilePart`, `payload.Files`).
 
-- [ ] **Step 3: Implement.** Create `internal/mcp/file.go`:
+- [x] **Step 3: Implement.** Create `internal/mcp/file.go`:
 
 ```go
 package mcp
@@ -324,9 +327,9 @@ Replace the body of `DecodeToolPayload` from `var b strings.Builder` to the end 
 
 The `isError` lines after it are unchanged.
 
-- [ ] **Step 4: Run the package.** Run: `go vet ./internal/mcp/`, then `go test -race -count=1 ./internal/mcp/`. Expected: `ok`. `TestDecodeToolResult_SkipsNonTextContent` still passes: the text projection is unchanged.
+- [x] **Step 4: Run the package.** Run: `go vet ./internal/mcp/`, then `go test -race -count=1 ./internal/mcp/`. Expected: `ok`. `TestDecodeToolResult_SkipsNonTextContent` still passes: the text projection is unchanged.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 cd /d/Aura
@@ -362,7 +365,7 @@ EOF
   - `tools.TurnCleanupFromContext(ctx) *TurnCleanup`, which returns nil outside a run;
   - in package `agent`: `runTurnCleanup(ctx context.Context, requestID string, cleanup *tools.TurnCleanup)`.
 
-- [ ] **Step 1: Write the failing collector tests.** Create `internal/agent/tools/turn_cleanup_test.go`:
+- [x] **Step 1: Write the failing collector tests.** Create `internal/agent/tools/turn_cleanup_test.go`:
 
 ```go
 package tools
@@ -443,9 +446,9 @@ func TestTurnCleanupAcceptsConcurrentCalls(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/tools/ -run TurnCleanup`. Expected: build FAIL with `undefined: WithTurnCleanup`.
+- [x] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/tools/ -run TurnCleanup`. Expected: build FAIL with `undefined: WithTurnCleanup`.
 
-- [ ] **Step 3: Implement the collector.** Create `internal/agent/tools/turn_cleanup.go`:
+- [x] **Step 3: Implement the collector.** Create `internal/agent/tools/turn_cleanup.go`:
 
 ```go
 package tools
@@ -522,9 +525,9 @@ func TurnCleanupFromContext(ctx context.Context) *TurnCleanup {
 }
 ```
 
-- [ ] **Step 4: Run the collector tests.** Run: `go test -race -count=1 ./internal/agent/tools/ -run TurnCleanup`. Expected: `ok`.
+- [x] **Step 4: Run the collector tests.** Run: `go test -race -count=1 ./internal/agent/tools/ -run TurnCleanup`. Expected: `ok`.
 
-- [ ] **Step 5: Write the failing agent tests.** Create `internal/agent/llm_agent_turn_cleanup_test.go`. It reuses `newIC`, `collect` and `textResponseCall` from `llm_agent_test.go`, and `askUserCall` and `newPauseIC` from `llm_agent_pause_test.go`.
+- [x] **Step 5: Write the failing agent tests.** Create `internal/agent/llm_agent_turn_cleanup_test.go`. It reuses `newIC`, `collect` and `textResponseCall` from `llm_agent_test.go`, and `askUserCall` and `newPauseIC` from `llm_agent_pause_test.go`.
 
 ```go
 package agent_test
@@ -692,11 +695,11 @@ func TestRunTurnCleanupLogsAFailureWithTheRequest(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Run them to verify they fail.** Run: `go test ./internal/agent/ -run 'TurnCleanup'`.
+- [x] **Step 6: Run them to verify they fail.** Run: `go test ./internal/agent/ -run 'TurnCleanup'`.
 
 Expected: build FAIL with `undefined: runTurnCleanup`. Once that file exists, the three `agent_test` tests fail with `cleanup ran 0 times`, because `Run` installs no collector yet.
 
-- [ ] **Step 7: Implement the drain.** Create `internal/agent/llm_agent_turn_cleanup.go`:
+- [x] **Step 7: Implement the drain.** Create `internal/agent/llm_agent_turn_cleanup.go`:
 
 ```go
 package agent
@@ -743,9 +746,9 @@ Re-read `internal/agent/llm_agent.go`, then make two edits in `Run`.
 
 It is the outermost defer, so it runs after the panic-recovering one.
 
-- [ ] **Step 8: Run the packages.** Run: `go vet ./internal/agent/ ./internal/agent/tools/`, then `go test -race -count=1 ./internal/agent/ ./internal/agent/tools/`. Expected: `ok` for both. Also check `wc -l internal/agent/llm_agent.go`: it must be 600 or fewer.
+- [x] **Step 8: Run the packages.** Run: `go vet ./internal/agent/ ./internal/agent/tools/`, then `go test -race -count=1 ./internal/agent/ ./internal/agent/tools/`. Expected: `ok` for both. Also check `wc -l internal/agent/llm_agent.go`: it must be 600 or fewer.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
 
 ```bash
 cd /d/Aura
@@ -784,7 +787,7 @@ EOF
   - `tools.MCPFileSink{Router *usersandbox.SandboxRouter}`, with `Materialize(ctx context.Context, server string, parts []mcp.FilePart) []mcp.FileOutcome`;
   - `writeBoxFile(ctx, router, h, boxPath, size, body) error`, shared with `document_open`.
 
-- [ ] **Step 1: Write the failing tests.** Create `internal/agent/tools/mcp_files_test.go`. It reuses `fakeBox` and `routerWith` from `fs_box_fake_router_test.go`.
+- [x] **Step 1: Write the failing tests.** Create `internal/agent/tools/mcp_files_test.go`. It reuses `fakeBox` and `routerWith` from `fs_box_fake_router_test.go`.
 
 ```go
 package tools
@@ -1006,9 +1009,9 @@ func TestMCPFileSinkCleanupReportsAFailedRemoval(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/tools/ -run 'MCPFile|MCPPath'`. Expected: build FAIL with `undefined: MCPFileSink`.
+- [x] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/tools/ -run 'MCPFile|MCPPath'`. Expected: build FAIL with `undefined: MCPFileSink`.
 
-- [ ] **Step 3: Share the box write.** In `internal/agent/tools/sandbox_route.go`, add `"io"` to the imports after `"fmt"`. Then append:
+- [x] **Step 3: Share the box write.** In `internal/agent/tools/sandbox_route.go`, add `"io"` to the imports after `"fmt"`. Then append:
 
 ```go
 
@@ -1032,7 +1035,7 @@ In `internal/agent/tools/document_open.go`:
 
 Then, in the comment above that call, add after its first sentence: `Nothing is buffered: an indexed document may be up to the 100 MiB ingest ceiling, and the aura container has 768 MiB in total.` This keeps the one sentence of the deleted comment that was specific to documents.
 
-- [ ] **Step 4: Implement the sink.** Create `internal/agent/tools/mcp_files.go`:
+- [x] **Step 4: Implement the sink.** Create `internal/agent/tools/mcp_files.go`:
 
 ```go
 package tools
@@ -1264,9 +1267,9 @@ func mcpPathSegment(s string) string {
 }
 ```
 
-- [ ] **Step 5: Run the package.** Run: `go vet ./internal/agent/tools/`, then `go test -race -count=1 ./internal/agent/tools/`. Expected: `ok`, with the `document_open` tests still green on the shared `writeBoxFile`.
+- [x] **Step 5: Run the package.** Run: `go vet ./internal/agent/tools/`, then `go test -race -count=1 ./internal/agent/tools/`. Expected: `ok`, with the `document_open` tests still green on the shared `writeBoxFile`.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 cd /d/Aura
@@ -1319,7 +1322,7 @@ EOF
   - `MountOptions.Files FileSink`;
   - `MountServer(processCtx, handshakeCtx, reg, name, cfg, opts MountOptions)`.
 
-- [ ] **Step 1: Write the failing tests.** Create `internal/agent/mcptools/bridge_files_test.go`:
+- [x] **Step 1: Write the failing tests.** Create `internal/agent/mcptools/bridge_files_test.go`:
 
 ```go
 package mcptools
@@ -1596,11 +1599,11 @@ In `internal/agent/mcptools/mount_test.go`, change the call at line 51 to:
 		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"}, MountOptions{})
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/mcptools/`.
+- [x] **Step 2: Run them to verify they fail.** Run: `go test ./internal/agent/mcptools/`.
 
 Expected: build FAIL with `srv.files undefined`, `undefined: preferredMIME` and `too many arguments in call to MountServer`.
 
-- [ ] **Step 3: Implement link resolution.** Create `internal/agent/mcptools/bridge_links.go`:
+- [x] **Step 3: Implement link resolution.** Create `internal/agent/mcptools/bridge_links.go`:
 
 ```go
 package mcptools
@@ -1724,7 +1727,7 @@ func (s *MountedServer) decodeResult(ctx context.Context, session *sdkmcp.Client
 
 3. In `CallTool`, change `return s.decodeResult(name, res)` inside `if callErr == nil {` to `return s.decodeResult(ctx, session, name, res)`, and change the final `return s.decodeResult(name, res)` to `return s.decodeResult(ctx, retry, name, res)`.
 
-- [ ] **Step 4: Implement the footer.** Create `internal/agent/mcptools/bridge_files.go`:
+- [x] **Step 4: Implement the footer.** Create `internal/agent/mcptools/bridge_files.go`:
 
 ```go
 package mcptools
@@ -1822,7 +1825,7 @@ func (b *bridgedTool) resultText(ctx context.Context, payload mcp.ToolPayload) (
 }
 ```
 
-- [ ] **Step 5: Wire the sink through every mount path.** In `internal/agent/mcptools/mount.go`:
+- [x] **Step 5: Wire the sink through every mount path.** In `internal/agent/mcptools/mount.go`:
 
 1. **`MountOptions`.** Add after the `OAuth` field:
 
@@ -1862,9 +1865,9 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 
 5. **`openIdentityScopedHTTPMount`.** Replace its `views *mcp.ViewCatalog` parameter with `opts MountOptions`. Add `parent.files = opts.Files` directly after `parent.identityPool = pool`, and pass `opts.Views` to its `hydrateViews`. Change its caller in `mountManagedHTTPHost` to `return openIdentityScopedHTTPMount(processCtx, handshakeCtx, reg, name, policy, opts, connect)`.
 
-- [ ] **Step 6: Run the package.** Run: `go vet ./internal/agent/mcptools/`, then `go test -race -count=1 ./internal/agent/mcptools/`. Expected: `ok`, under the package's goleak `TestMain`. Also check `wc -l internal/agent/mcptools/bridge_supervisor.go`: it must be 600 or fewer.
+- [x] **Step 6: Run the package.** Run: `go vet ./internal/agent/mcptools/`, then `go test -race -count=1 ./internal/agent/mcptools/`. Expected: `ok`, under the package's goleak `TestMain`. Also check `wc -l internal/agent/mcptools/bridge_supervisor.go`: it must be 600 or fewer.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 cd /d/Aura
@@ -1910,7 +1913,7 @@ EOF
   - `runtimeToolHandles.MCPFiles mcptools.FileSink`;
   - `mcpMountOptions(ctx context.Context, strict bool, server mcp.ManagedServer, handles *runtimeToolHandles) mcptools.MountOptions`.
 
-- [ ] **Step 1: Write the failing tests.** Create `cmd/aura/mcp_mount_options_test.go`:
+- [x] **Step 1: Write the failing tests.** Create `cmd/aura/mcp_mount_options_test.go`:
 
 ```go
 package main
@@ -1952,11 +1955,11 @@ func TestBuildRegistryWithMCP_HandsMountsTheBoxFileSink(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `go test ./cmd/aura/ -run 'MCPMountOptions|HandsMountsTheBoxFileSink'`.
+- [x] **Step 2: Run them to verify they fail.** Run: `go test ./cmd/aura/ -run 'MCPMountOptions|HandsMountsTheBoxFileSink'`.
 
 Expected: build FAIL with `unknown field MCPFiles` and `undefined: mcpMountOptions`.
 
-- [ ] **Step 3: Move the handles struct and add the field.** Cut `type runtimeToolHandles struct { … }` from `cmd/aura/main.go`: the whole declaration, from its `type` line to the closing `}` after the embedded `mediaToolHandles`. Paste it unchanged into the new `cmd/aura/runtime_tool_handles.go`:
+- [x] **Step 3: Move the handles struct and add the field.** Cut `type runtimeToolHandles struct { … }` from `cmd/aura/main.go`: the whole declaration, from its `type` line to the closing `}` after the embedded `mediaToolHandles`. Paste it unchanged into the new `cmd/aura/runtime_tool_handles.go`:
 
 ```go
 package main
@@ -1980,7 +1983,7 @@ Then, inside it, directly after the `ViewCallers mcptools.ViewCallers` field, ad
 
 Keep only the imports the moved declaration actually uses; `goimports` or the build tells you which.
 
-- [ ] **Step 4: One option builder for every managed mount.** Append to `cmd/aura/mcp_tools.go`:
+- [x] **Step 4: One option builder for every managed mount.** Append to `cmd/aura/mcp_tools.go`:
 
 ```go
 
@@ -2006,9 +2009,9 @@ In `cmd/aura/main.go` `buildRegistryWithMCP`:
 
 In `cmd/aura/mcp_live_mount.go`, replace the `mcptools.MountOptions{ Egress: …, Views: m.handles.MCPViews, OAuth: runtimeMCPOAuth(ctx), }` literal with `mcpMountOptions(ctx, m.strict, server, m.handles)`. If that literal was the file's last use of the `mcp` import, drop the import; the build says so.
 
-- [ ] **Step 5: Run the package.** Run: `go vet ./cmd/aura/`, then `go test -race -count=1 ./cmd/aura/`. Expected: `ok`. Check `wc -l cmd/aura/main.go`: it must be 600 or fewer, and is about 570 after the move.
+- [x] **Step 5: Run the package.** Run: `go vet ./cmd/aura/`, then `go test -race -count=1 ./cmd/aura/`. Expected: `ok`. Check `wc -l cmd/aura/main.go`: it must be 600 or fewer, and is about 570 after the move.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ```bash
 cd /d/Aura
@@ -2038,7 +2041,7 @@ EOF
 **Interfaces:**
 - Consumes: `MCPFileSink`, `WithTurnCleanup` and `WithRequestID`, plus the docker tier's `skipUnlessDockerdTools`, `newDockerRouter` and `ctxWith`.
 
-- [ ] **Step 1: Write the test.** Create `internal/agent/tools/mcp_files_docker_test.go`:
+- [x] **Step 1: Write the test.** Create `internal/agent/tools/mcp_files_docker_test.go`:
 
 ```go
 //go:build docker_integration
@@ -2089,13 +2092,13 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Compile the tier.** Run: `go vet -tags docker_integration ./internal/agent/tools/`. Expected: no output.
+- [x] **Step 2: Compile the tier.** Run: `go vet -tags docker_integration ./internal/agent/tools/`. Expected: no output.
 
-- [ ] **Step 3: Run it where a daemon is reachable.** Run: `go test -tags docker_integration -count=1 -run TestMCPFileSink_AFileLivesForItsTurnInARealBox ./internal/agent/tools/`.
+- [x] **Step 3: Run it where a daemon is reachable.** Run: `go test -tags docker_integration -count=1 -run TestMCPFileSink_AFileLivesForItsTurnInARealBox ./internal/agent/tools/`.
 
 Expected: `ok` when WSL reaches a Docker daemon. Otherwise the test SKIPs locally, and it runs in CI's `Sandbox docker_integration tier` job, where `skipUnlessDockerdTools` fails instead of skipping. Report which one happened; a local skip is not a pass.
 
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
 
 ```bash
 cd /d/Aura
@@ -2116,13 +2119,13 @@ EOF
 
 ### Task 7: Gates, then push
 
-- [ ] **Step 1: The pre-push gate.** First check with `git status` that no other session is mid-change in the tree; run gates alone ([[feedback_never_run_gates_against_a_busy_tree]]). Run: `make quality`.
+- [x] **Step 1: The pre-push gate.** First check with `git status` that no other session is mid-change in the tree; run gates alone ([[feedback_never_run_gates_against_a_busy_tree]]). Run: `make quality`.
 
 Expected: `ok: quality gate passed (deadcode vet build file-size …)`.
 - A `deadcode` finding on `mountStdio`, `mountStdioWithPolicy` or `(*DocumentOpen).write` means a deletion was missed.
 - A `dupl` finding in non-test code means a helper was duplicated rather than shared.
 
-- [ ] **Step 2: The coverage gate.** Bring the stack up if it is down (`make db-migrate memory-up`). Then run `unset AURA_WEB_AUTH_SECRET; bash scripts/coverage_docker.sh`; the `unset` is needed because of the `.env` leak into config tests.
+- [x] **Step 2: The coverage gate.** Bring the stack up if it is down (`make db-migrate memory-up`). Then run `unset AURA_WEB_AUTH_SECRET; bash scripts/coverage_docker.sh`; the `unset` is needed because of the `.env` leak into config tests.
 
 Expected:
 - `ok: owned coverage NN.N% >= 85%`;
@@ -2130,7 +2133,7 @@ Expected:
 
 If a package falls under its floor, add daemon-free tests for the uncovered lines. Never lower a floor.
 
-- [ ] **Step 3: Push. ASK THE OPERATOR FIRST.** A push of `master` publishes the edge image, and the appliances install it. The two fork plans must have shipped before Task 8, but the Aura push itself does not depend on them: without links or files a result behaves exactly as today. With the go, push from WSL so the lefthook gates run on the pushed commit:
+- [x] **Step 3: Push. ASK THE OPERATOR FIRST.** A push of `master` publishes the edge image, and the appliances install it. The two fork plans must have shipped before Task 8, but the Aura push itself does not depend on them: without links or files a result behaves exactly as today. With the go, push from WSL so the lefthook gates run on the pushed commit:
 
 ```bash
 cd /mnt/d/Aura
@@ -2153,20 +2156,20 @@ Prerequisites:
 
 Every step below changes the VM only through its updater. Mailbox and chat access is read-only. The operator drives the cockpit; you watch the backend ([[feedback_user_drives_frontend_e2e_no_test_identities]]).
 
-- [ ] **Step 1: Let the updater converge.** On the VM (`192.168.101.158`, via the WSL sshpass script pattern in [[reference_lab_vm_192_168_101_158]]), check `sudo systemctl list-timers` for the updater's next run and wait for it. Do not run the updater by hand. Then confirm that each running container uses the new image: compare the container's `Image` id with the pulled tag's `Id` for `aura`, `aura-pim-mcp` and `whatsapp` ([[feedback_verify_container_images_current_after_changes]]).
+- [x] **Step 1: Let the updater converge.** On the VM (`192.168.101.158`, via the WSL sshpass script pattern in [[reference_lab_vm_192_168_101_158]]), check `sudo systemctl list-timers` for the updater's next run and wait for it. Do not run the updater by hand. Then confirm that each running container uses the new image: compare the container's `Image` id with the pulled tag's `Id` for `aura`, `aura-pim-mcp` and `whatsapp` ([[feedback_verify_container_images_current_after_changes]]).
 
-- [ ] **Step 2: Mail.** Ask the operator to request, in the cockpit, a real email's PDF attachment together with a fact that needs the file itself, for example "how many pages does the PDF attached to <email> have?". Watch:
+- [x] **Step 2: Mail.** Ask the operator to request, in the cockpit, a real email's PDF attachment together with a fact that needs the file itself, for example "how many pages does the PDF attached to <email> have?". Watch:
   - the tool trace: `calendar` / `get_email_attachment`, then a footer path under `/workspace/mcp-files/<request-id>/aura-pim/`;
   - a box command that opens that path, for example `pdfinfo` or python;
   - the answer, which must match the real page count;
   - after the turn, in the operator's box container (find it with `sudo docker ps`), `ls /workspace/mcp-files` must show no directory for that request id;
   - the aura logs: `agent turn end` for the request, and no `turn cleanup failed`.
 
-- [ ] **Step 3: WhatsApp.** Repeat Step 2 with a received image ("what is in the photo <contact> sent me?") and a received document. Check that a PNG the bridge saved as `.jpg` is reported as `image/png`, and that a document keeps its sender's name.
+- [x] **Step 3: WhatsApp.** Repeat Step 2 with a received image ("what is in the photo <contact> sent me?") and a received document. Check that a PNG the bridge saved as `.jpg` is reported as `image/png`, and that a document keeps its sender's name.
 
-- [ ] **Step 4: Score and clean.** Score the run against the spec's E2E list. A score of 9.8 or more closes it; anything less goes back to the task that owns the gap. Then delete every personal copy the test produced: files the model copied elsewhere in `/workspace` during these turns, listed and removed with the operator watching. Leave nothing from the test in the box.
+- [x] **Step 4: Score and clean.** Score the run against the spec's E2E list. A score of 9.8 or more closes it; anything less goes back to the task that owns the gap. Then delete every personal copy the test produced: files the model copied elsewhere in `/workspace` during these turns, listed and removed with the operator watching. Leave nothing from the test in the box.
 
-- [ ] **Step 5: Record the measurement in the PRD.** In `prd.md` §13 "MCP integrations", add a dated paragraph (2026-MM-DD, the day of the run) that records what was measured:
+- [x] **Step 5: Record the measurement in the PRD.** In `prd.md` §13 "MCP integrations", add a dated paragraph (2026-MM-DD, the day of the run) that records what was measured:
   - per-file sizes and the turn's added latency for mail and WhatsApp;
   - that cleanup ran;
   - the request ids used as evidence.

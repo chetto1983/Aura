@@ -1,5 +1,8 @@
 # MCP binary files: WhatsApp fork implementation plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE in whatsapp-mcp (a112979..1ec0233).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -72,7 +75,7 @@
   - `auth_settings(config)` returns `AuthSettings(..., validate_token_resource=False)`;
   - `wa_build.sh deps|test|audit`, used by every later task.
 
-- [ ] **Step 1: Create the build script.** Write this to `<scratchpad>/wa_build.sh`:
+- [x] **Step 1: Create the build script.** Write this to `<scratchpad>/wa_build.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -126,7 +129,7 @@ esac
 
 Run it as `MSYS_NO_PATHCONV=1 wsl bash /mnt/c/Users/Davide/AppData/Local/Temp/claude/d--Aura/<session>/scratchpad/wa_build.sh <mode>`, where `<session>` is this session's scratchpad folder.
 
-- [ ] **Step 2: Raise the Python floors.** In `whatsapp-mcp-server/pyproject.toml`, replace:
+- [x] **Step 2: Raise the Python floors.** In `whatsapp-mcp-server/pyproject.toml`, replace:
 
 ```toml
     # mcp 2.0.0 is the SDK for the 2026-07-28 revision: stateless core, the
@@ -155,18 +158,18 @@ with:
     "anyio>=4.14.2",
 ```
 
-- [ ] **Step 3: Upgrade the lock and the Go module.** Run `wa_build.sh deps`.
+- [x] **Step 3: Upgrade the lock and the Go module.** Run `wa_build.sh deps`.
 
 Expected:
 - `go 1.27.1`;
 - whatsmeow at `v0.0.0-20260921121126-…` or later, go-sqlite3 `v1.14.52` or later, protobuf `v1.36.12` or later, x/crypto `v0.57.0` or later, x/net `v0.59.0` or later;
 - mcp `2.2.0`, anyio `4.15.1` or later, cryptography `50.0.1` or later, httpx2 `2.13.1` or later.
 
-- [ ] **Step 4: Run the suites on the new set.** Run `wa_build.sh test`.
+- [x] **Step 4: Run the suites on the new set.** Run `wa_build.sh test`.
 
 Expected: `go-exit=0`, `114 passed`, ruff `All checks passed!`, and `26 files already formatted`.
 
-- [ ] **Step 5: Write the failing test.** In `whatsapp-mcp-server/tests/test_mcp_security.py`, add `import warnings` between `import time` and `from uuid import UUID`. Then add this test directly after `test_auth_settings_publish_generic_resource_contract`:
+- [x] **Step 5: Write the failing test.** In `whatsapp-mcp-server/tests/test_mcp_security.py`, add `import warnings` between `import time` and `from uuid import UUID`. Then add this test directly after `test_auth_settings_publish_generic_resource_contract`:
 
 ```python
 def test_auth_settings_leave_the_audience_check_to_the_verifier():
@@ -184,11 +187,11 @@ def test_auth_settings_leave_the_audience_check_to_the_verifier():
     assert settings.validate_token_resource is False
 ```
 
-- [ ] **Step 6: Run it to verify it fails.** Run `wa_build.sh test`.
+- [x] **Step 6: Run it to verify it fails.** Run `wa_build.sh test`.
 
 Expected: FAIL in `test_auth_settings_leave_the_audience_check_to_the_verifier` with `MCPDeprecationWarning: AuthSettings.validate_token_resource is not set`.
 
-- [ ] **Step 7: Implement.** In `whatsapp-mcp-server/mcp_security.py`, replace the body of `auth_settings`:
+- [x] **Step 7: Implement.** In `whatsapp-mcp-server/mcp_security.py`, replace the body of `auth_settings`:
 
 ```python
 def auth_settings(config: OAuthConfig) -> AuthSettings:
@@ -202,9 +205,9 @@ def auth_settings(config: OAuthConfig) -> AuthSettings:
     )
 ```
 
-- [ ] **Step 8: Run the tests.** Run `wa_build.sh test`. Expected: `go-exit=0`, `115 passed`, ruff clean.
+- [x] **Step 8: Run the tests.** Run `wa_build.sh test`. Expected: `go-exit=0`, `115 passed`, ruff clean.
 
-- [ ] **Step 9: Pin the image and CI to the same set.**
+- [x] **Step 9: Pin the image and CI to the same set.**
 
 In `Dockerfile`:
 - replace `FROM golang:bookworm AS bridge-build` with `FROM golang:1.27.1-bookworm AS bridge-build`;
@@ -286,14 +289,14 @@ In `.github/workflows/security.yml`:
         continue-on-error: true
 ```
 
-- [ ] **Step 10: Audit.** Run `wa_build.sh audit`.
+- [x] **Step 10: Audit.** Run `wa_build.sh audit`.
 
 Expected:
 - `govulncheck`: `No vulnerabilities found.` Imported-but-unreachable findings are acceptable, and a reachable one is not.
 - `golangci-lint`: `0 issues.`
 - `pip-audit`: `No known vulnerabilities found`.
 
-- [ ] **Step 11: Commit.**
+- [x] **Step 11: Commit.**
 
 ```bash
 cd /d/tmp/aura-whatsapp-mcp
@@ -349,7 +352,7 @@ EOF
     - `seed_media(identity, message_id, chat_jid, media_type, filename=None)`;
     - `bridge_download(blob: bytes | None) -> list[tuple[str, str]]`, returning the requests it received.
 
-- [ ] **Step 1: Add the fixtures.** Replace `whatsapp-mcp-server/tests/conftest.py` with:
+- [x] **Step 1: Add the fixtures.** Replace `whatsapp-mcp-server/tests/conftest.py` with:
 
 ```python
 import sqlite3
@@ -415,7 +418,7 @@ def bridge_download(tmp_path, monkeypatch):
     return place
 ```
 
-- [ ] **Step 2: Write the failing tests.** Create `whatsapp-mcp-server/tests/test_media_files.py`:
+- [x] **Step 2: Write the failing tests.** Create `whatsapp-mcp-server/tests/test_media_files.py`:
 
 ```python
 """What download_media reports about a received file, and what it refuses to guess.
@@ -565,11 +568,11 @@ def test_the_bridge_download_gives_up_after_70_seconds(monkeypatch):
     assert seen["timeout"] == 70
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail.** Run `wa_build.sh test`.
+- [x] **Step 3: Run the tests to verify they fail.** Run `wa_build.sh test`.
 
 Expected: collection ERROR in `tests/test_media_files.py` with `ModuleNotFoundError: No module named 'media_files'`.
 
-- [ ] **Step 4: Add the metadata query.** In `whatsapp-mcp-server/whatsapp_query_messages.py`, add `from contextlib import closing` between `import sqlite3` and `from datetime import datetime`. Then append at the end of the file:
+- [x] **Step 4: Add the metadata query.** In `whatsapp-mcp-server/whatsapp_query_messages.py`, add `from contextlib import closing` between `import sqlite3` and `from datetime import datetime`. Then append at the end of the file:
 
 ```python
 
@@ -584,7 +587,7 @@ def get_media_meta(message_id: str, chat_jid: str) -> tuple[str | None, str | No
         ).fetchone()
 ```
 
-- [ ] **Step 5: Give the download a timeout.** In `whatsapp-mcp-server/whatsapp_actions.py`, below `WHATSAPP_API_BASE_URL`, add:
+- [x] **Step 5: Give the download a timeout.** In `whatsapp-mcp-server/whatsapp_actions.py`, below `WHATSAPP_API_BASE_URL`, add:
 
 ```python
 
@@ -595,7 +598,7 @@ DOWNLOAD_TIMEOUT_SECONDS = 70
 
 In `download_media`, replace `response = requests.post(url, json=payload, headers=_bridge_headers())` with `response = requests.post(url, json=payload, headers=_bridge_headers(), timeout=DOWNLOAD_TIMEOUT_SECONDS)`. Change only this call. The send calls upload a file, and their limits are a different question.
 
-- [ ] **Step 6: Implement the module.** Create `whatsapp-mcp-server/media_files.py`:
+- [x] **Step 6: Implement the module.** Create `whatsapp-mcp-server/media_files.py`:
 
 ```python
 """A received file as an MCP client sees it: its name, type and size, and the
@@ -711,11 +714,11 @@ def media_file(message_id: str, chat_jid: str) -> MediaFile | None:
 
 In `whatsapp-mcp-server/pyproject.toml`, add `"media_files",` to `[tool.setuptools] py-modules`, between `"main",` and `"mcp_config",`.
 
-- [ ] **Step 7: Run the tests.** Run `wa_build.sh test`.
+- [x] **Step 7: Run the tests.** Run `wa_build.sh test`.
 
 Expected: `go-exit=0`, all tests passed (115 plus this file's), ruff clean.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 cd /d/tmp/aura-whatsapp-mcp
@@ -763,7 +766,7 @@ EOF
   - the MCP tool `download_media -> CallToolResult`;
   - the resource template `whatsapp-media://{chat_jid}/{message_id}`.
 
-- [ ] **Step 1: Write the failing tests.** Create `whatsapp-mcp-server/tests/test_download_media_tool.py`:
+- [x] **Step 1: Write the failing tests.** Create `whatsapp-mcp-server/tests/test_download_media_tool.py`:
 
 ```python
 """download_media and its whatsapp-media:// resource, driven through a real MCP client.
@@ -965,7 +968,7 @@ async def test_middleware_leaves_listing_unbound(monkeypatch):
     assert await middleware(ctx, call_next) == "listed"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail.** Run `wa_build.sh test`.
+- [x] **Step 2: Run the tests to verify they fail.** Run `wa_build.sh test`.
 
 Expected FAILs:
 - `test_download_media_links_the_file_and_the_link_reads_back`: `ValueError` unpacking `_links(result)`, because the tool returns a dict and no link.
@@ -975,7 +978,7 @@ Expected FAILs:
 - `test_a_message_id_a_uri_cannot_carry_gets_the_file_without_a_link` and `test_a_download_whose_file_is_gone_is_reported_not_raised` fail on the missing keys in today's dict.
 - `test_a_failed_download_says_so_and_links_nothing` and `test_get_media_data_keeps_the_shape_the_view_reads` may already pass. They pin behavior that must not change.
 
-- [ ] **Step 3: Implement the result and the read.** In `whatsapp-mcp-server/media_files.py`, first extend the imports:
+- [x] **Step 3: Implement the result and the read.** In `whatsapp-mcp-server/media_files.py`, first extend the imports:
   - add `import json` before `import mimetypes`;
   - add `from typing import Any` after `from pathlib import PurePosixPath`;
   - add a third-party block between the standard-library block and `import whatsapp_actions`:
@@ -1039,7 +1042,7 @@ def _json_result(body: dict[str, Any]) -> CallToolResult:
     return CallToolResult(content=[TextContent(text=json.dumps(body, ensure_ascii=False))])
 ```
 
-- [ ] **Step 4: Wire the tool and the resource.** In `whatsapp-mcp-server/main.py`:
+- [x] **Step 4: Wire the tool and the resource.** In `whatsapp-mcp-server/main.py`:
 
 1. **Imports.** Add `from mcp_types import CallToolResult` directly after `from mcp.server.mcpserver import MCPServer`. Add `import media_files` as the first line of the local-module block, directly before `from apps_ui import CLIENT_URI, build_apps, openai_alias`. That is ruff's order: plain `import` lines come before `from` lines within a section.
 
@@ -1101,9 +1104,9 @@ class SubjectTenantMiddleware:
             return await call_next(ctx)
 ```
 
-- [ ] **Step 5: Run the tests.** Run `wa_build.sh test`. Expected: `go-exit=0`, every test passed, ruff clean.
+- [x] **Step 5: Run the tests.** Run `wa_build.sh test`. Expected: `go-exit=0`, every test passed, ruff clean.
 
-- [ ] **Step 6: Correct the docs.** In `README.md`:
+- [x] **Step 6: Correct the docs.** In `README.md`:
 
 1. **`send_file`.** Replace the parameter lines
 
@@ -1150,7 +1153,7 @@ In `AGENTS.md`, in the "Where to make changes" table, add this row after `| Chan
 | Change how received media is named, typed or served | `whatsapp-mcp-server/media_files.py` |
 ```
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ```bash
 cd /d/tmp/aura-whatsapp-mcp
@@ -1184,13 +1187,13 @@ EOF
 
 ### Task 4: Full gates, then publish
 
-- [ ] **Step 1: Run every gate on the final tree.** Run `wa_build.sh test`, then `wa_build.sh audit`.
+- [x] **Step 1: Run every gate on the final tree.** Run `wa_build.sh test`, then `wa_build.sh audit`.
 
 Expected: every result exactly as in Task 1 Steps 8 and 10, with the new tests included.
 
-- [ ] **Step 2: Read the whole change once.** Run `git log --oneline origin/main..main` and expect three commits. Then run `git diff origin/main --stat`. Nothing outside the files named in Tasks 1–3 may appear.
+- [x] **Step 2: Read the whole change once.** Run `git log --oneline origin/main..main` and expect three commits. Then run `git diff origin/main --stat`. Nothing outside the files named in Tasks 1–3 may appear.
 
-- [ ] **Step 3: Push. ASK THE OPERATOR FIRST.** Pushing `main` runs CI and `publish-image.yml`, which moves `ghcr.io/chetto1983/whatsapp-mcp:latest`, and every appliance's updater refreshes to that tag. With the go:
+- [x] **Step 3: Push. ASK THE OPERATOR FIRST.** Pushing `main` runs CI and `publish-image.yml`, which moves `ghcr.io/chetto1983/whatsapp-mcp:latest`, and every appliance's updater refreshes to that tag. With the go:
 
 ```bash
 cd /d/tmp/aura-whatsapp-mcp

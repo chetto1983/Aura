@@ -1,5 +1,8 @@
 # Video Studio audio — Plan C (waveform, voice, noise reduction, ducking) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. VM E2E green for each task. CI green on b52c69880.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -54,12 +57,12 @@
 - Consumes: `setEnvelope(project, {itemId, points})` (Plan B), `audioWindow`, `useAssetSource().assetUrl`.
 - Produces: `decodeMono(url, rate, signal?) → Promise<Float32Array>`, `mixDown(buffer) → Float32Array`, `waveformSamples(url)`, `WAVEFORM_RATE` (audioDecode.ts — Tasks 3 and 4 decode through `decodeMono`); `envelopeAt(points, time)` exported from volumeCurve.ts; `silentFilm(clip, name, clips?)` in the E2E support (Tasks 2–4).
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 Run in WSL: `cd /mnt/d/Aura/web && npm install --save-exact wavesurfer.js@8.0.1`
 Expected: `package.json` gains `"wavesurfer.js": "8.0.1"`; the lockfile resolves it with its integrity hash.
 
-- [ ] **Step 2: Write the failing pure tests**
+- [x] **Step 2: Write the failing pure tests**
 
 `web/src/videoStudio/__tests__/audioView.test.ts`:
 
@@ -277,12 +280,12 @@ describe('waveformSamples', () => {
 });
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/audioView.test.ts src/videoStudio/__tests__/audioDecode.test.ts`
 Expected: FAIL — `Failed to resolve import "../audioView"` and `"../audioDecode"`.
 
-- [ ] **Step 4: Write the pure view and the decoder**
+- [x] **Step 4: Write the pure view and the decoder**
 
 In `volumeCurve.ts`, `envelopeAt` becomes exported (the waveform draws the edges at the gain the mix plays there): change `function envelopeAt(` to `export function envelopeAt(`.
 
@@ -434,11 +437,11 @@ export function waveformSamples(url: string): Promise<Float32Array> {
 }
 ```
 
-- [ ] **Step 5: Run them to verify they pass**
+- [x] **Step 5: Run them to verify they pass**
 
 Run the Step 3 command. Expected: PASS, 12 tests.
 
-- [ ] **Step 6: Write the failing component test**
+- [x] **Step 6: Write the failing component test**
 
 `web/src/videoStudio/__tests__/AudioWaveform.test.tsx`:
 
@@ -688,12 +691,12 @@ describe('AudioWaveform', () => {
 
 (If oxlint has no `jsx-a11y/no-static-element-interactions` rule enabled, drop the disable comment; `webcheck.sh` reports an unused directive.)
 
-- [ ] **Step 7: Run it to verify it fails**
+- [x] **Step 7: Run it to verify it fails**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/AudioWaveform.test.tsx`
 Expected: FAIL — `Failed to resolve import "../AudioWaveform"`.
 
-- [ ] **Step 8: Write the component**
+- [x] **Step 8: Write the component**
 
 `web/src/videoStudio/AudioWaveform.tsx`:
 
@@ -853,11 +856,11 @@ export function AudioWaveform({
 
 (`useEffect(…, [viewKey])` reads `latest.current.view` rather than listing `view`; if oxlint's exhaustive-deps rule objects, keep the rule and depend on `viewKey` only — the key IS the value.)
 
-- [ ] **Step 9: Run it to verify it passes**
+- [x] **Step 9: Run it to verify it passes**
 
 Run the Step 7 command. Expected: PASS, 7 tests.
 
-- [ ] **Step 10: The lane draws it — failing test**
+- [x] **Step 10: The lane draws it — failing test**
 
 In `Timeline_audio.test.tsx`, mock the waveform so the lane test judges only the wiring, and add a test. Add under the existing mocks:
 
@@ -888,12 +891,12 @@ and the test, in `describe('Timeline, on the audio lanes')`, through the file's 
   });
 ```
 
-- [ ] **Step 11: Run it to verify it fails**
+- [x] **Step 11: Run it to verify it fails**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/Timeline_audio.test.tsx`
 Expected: FAIL — no waveform props recorded.
 
-- [ ] **Step 12: Wire the lane**
+- [x] **Step 12: Wire the lane**
 
 In `Timeline_audio.tsx`:
 - `AudioItemViewProps` gains `readonly assetId: string | undefined; readonly visible: number; readonly onEnvelope: (itemId: string, points: readonly EnvelopePoint[]) => void;` (import `EnvelopePoint` from `./project`, `AudioWaveform` from `./AudioWaveform`).
@@ -975,12 +978,12 @@ In `web/src/styles/video-studio-audio.css`, append:
 
 The trim handles already sit above the layer: `Handle` (Timeline_items.tsx) renders with Tailwind's `z-10`.
 
-- [ ] **Step 13: Run the lane and the whole suite**
+- [x] **Step 13: Run the lane and the whole suite**
 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio`
 Expected: PASS except the known WSL-only `videoflow_fonts.test.ts` import-attribute failure (it passes in CI).
 
-- [ ] **Step 14: Move `silentFilm` into the shared support and write the envelope E2E**
+- [x] **Step 14: Move `silentFilm` into the shared support and write the envelope E2E**
 
 In `web/e2e/support/videoStudio.ts`, add (moved from `video-studio-lane.spec.ts`, which then imports it):
 
@@ -1113,12 +1116,12 @@ test('a waveform on the lane, and an envelope point pulled to the floor, heard i
 ```
 
 
-- [ ] **Step 15: Run the envelope E2E RED on the VM's current image**
+- [x] **Step 15: Run the envelope E2E RED on the VM's current image**
 
 `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/e2e-vm.sh video-studio-envelope.spec.ts --project=chrome --reporter=line`
 Expected: FAIL — `sound-waveform` has no ellipse (the running image draws no waveform).
 
-- [ ] **Step 16: Static checks, coverage, commit, dist, push, GREEN**
+- [x] **Step 16: Static checks, coverage, commit, dist, push, GREEN**
 
 `webcheck.sh` on the touched files (tsc, oxlint 0/0, lint-contract, knip, prettier); coverage ≥ 85 % lines on `audioView.ts`, `audioDecode.ts`, `AudioWaveform.tsx`, `Timeline_audio.tsx`, `Timeline.tsx` (`cov.sh`).
 
@@ -1148,7 +1151,7 @@ git commit -m "feat(video-studio): a sound's waveform on its lane and its volume
 - Consumes: `silentFilm(clip, name, clips?)` (Task 1, e2e support); `useVoiceCapabilities()`; `addFile` in `VideoStudio.tsx`.
 - Produces: `synthesizeSpeechAudio(text, signal?) → Promise<{ blob: Blob; truncated: boolean }>`; `AudioPanel`; `AudioRecorder`. Nothing later tasks import.
 
-- [ ] **Step 1: The speech as bytes — failing test**
+- [x] **Step 1: The speech as bytes — failing test**
 
 In `voiceApi.test.ts`, import `synthesizeSpeechAudio` beside `synthesizeSpeech` and add to `describe('synthesizeSpeech')`:
 
@@ -1171,7 +1174,7 @@ In `voiceApi.test.ts`, import `synthesizeSpeechAudio` beside `synthesizeSpeech` 
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/chat/voice/voiceApi.test.ts`
 Expected: FAIL — `synthesizeSpeechAudio is not a function`.
 
-- [ ] **Step 2: Split the call**
+- [x] **Step 2: Split the call**
 
 In `voiceApi.ts`, replace `synthesizeSpeech` with:
 
@@ -1208,7 +1211,7 @@ export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech>
 
 and add one line to the file header: "The Video Studio's Text to speech takes the bytes themselves (`synthesizeSpeechAudio`) and stores them as a sound." Run the Step 1 command. Expected: PASS, every `voiceApi` test (the existing `synthesizeSpeech` tests now run through the split and still pass).
 
-- [ ] **Step 3: The strings**
+- [x] **Step 3: The strings**
 
 In `resources.videoStudioAudio.ts`, add to `videoStudioAudioEn`:
 
@@ -1252,7 +1255,7 @@ and to `videoStudioAudioIt`:
   },
 ```
 
-- [ ] **Step 4: The recorder — failing test**
+- [x] **Step 4: The recorder — failing test**
 
 `web/src/videoStudio/__tests__/AudioRecorder.test.tsx`:
 
@@ -1377,7 +1380,7 @@ describe('AudioRecorder', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/AudioRecorder.test.tsx`
 Expected: FAIL — `Failed to resolve import "../AudioRecorder"`.
 
-- [ ] **Step 5: Write the recorder**
+- [x] **Step 5: Write the recorder**
 
 `web/src/videoStudio/AudioRecorder.tsx`:
 
@@ -1486,7 +1489,7 @@ export function AudioRecorder({ onRecorded }: { readonly onRecorded: (file: File
 
 Run the Step 4 command. Expected: PASS, 4 tests.
 
-- [ ] **Step 6: The panel — failing test**
+- [x] **Step 6: The panel — failing test**
 
 `web/src/videoStudio/__tests__/VideoStudio_audioPanel.test.tsx`:
 
@@ -1650,7 +1653,7 @@ describe('AudioPanel', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/VideoStudio_audioPanel.test.tsx`
 Expected: FAIL — `Failed to resolve import "../VideoStudio_audioPanel"`.
 
-- [ ] **Step 7: Write the panel**
+- [x] **Step 7: Write the panel**
 
 `web/src/videoStudio/VideoStudio_audioPanel.tsx`:
 
@@ -1828,7 +1831,7 @@ export function AudioPanel({ open, onOpenChange, onUpload, onSound }: AudioPanel
 
 Run the Step 6 command. Expected: PASS, 9 tests.
 
-- [ ] **Step 8: The workspace opens it — failing test**
+- [x] **Step 8: The workspace opens it — failing test**
 
 In `VideoStudio_audio.test.tsx`, mock the voice (add beside the other mocks):
 
@@ -1880,7 +1883,7 @@ replace the test `offers Add audio on the rail, which opens the audio picker` wi
 (import `within` from `@testing-library/react`.) Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/VideoStudio_audio.test.tsx`
 Expected: FAIL — no dialog named "Add a sound".
 
-- [ ] **Step 9: Wire the workspace**
+- [x] **Step 9: Wire the workspace**
 
 In `VideoStudio.tsx`:
 - import `AudioPanel` from `./VideoStudio_audioPanel`;
@@ -1918,7 +1921,7 @@ In `video-studio-audio.css`, append:
 Run the Step 8 command, then the whole folder: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio src/chat/voice`
 Expected: PASS (except the known WSL-only `videoflow_fonts.test.ts`).
 
-- [ ] **Step 10: The fixture the CI stack speaks with**
+- [x] **Step 10: The fixture the CI stack speaks with**
 
 The CI stack runs no voice (voice.spec.ts header), so the E2E answers `/api/tts` there with the bytes the lab VM's own TTS gave for the first fixture phrase — `spikes/video-studio-audio/out/phrase-1.bin`, an MP3 (`ID3` header) that `tts-phrases.sh` saved verbatim, git-ignored in the spike:
 
@@ -1932,7 +1935,7 @@ and add the row to the fixtures' README table:
 | `speech-phrase.mp3` | "The river runs past the old mill every morning.", as `/api/tts` answered it | The lab VM's own `POST /api/tts` (`tts-phrases.sh`, phrase 1), saved byte for byte: the E2E serves it where no voice is configured |
 ```
 
-- [ ] **Step 11: The lane spec's door moves, and the voice E2E**
+- [x] **Step 11: The lane spec's door moves, and the voice E2E**
 
 In `video-studio-lane.spec.ts`, `addMusic` opens the panel first:
 
@@ -2054,12 +2057,12 @@ test('a voice recorded through the microphone lands on a lane and in the export'
 });
 ```
 
-- [ ] **Step 12: RED on the VM's current image**
+- [x] **Step 12: RED on the VM's current image**
 
 `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/e2e-vm.sh video-studio-voice.spec.ts --project=chrome --reporter=line`
 Expected: FAIL on both — no dialog named "Add a sound" (the running image's Add audio opens the picker).
 
-- [ ] **Step 13: Static checks, coverage, commit, dist, push, GREEN**
+- [x] **Step 13: Static checks, coverage, commit, dist, push, GREEN**
 
 `webcheck.sh` on the touched files; coverage ≥ 85 % lines on `voiceApi.ts`, `AudioRecorder.tsx`, `VideoStudio_audioPanel.tsx`, `VideoStudio.tsx`.
 
@@ -2089,12 +2092,12 @@ git commit -m "feat(video-studio): record a voice or have a text read aloud onto
 - Consumes: `decodeMono(url, rate, signal?)` (Task 1, `audioDecode.ts`); `recordAnalysis`, `setAudioProperties` (`commands_audio.ts`), `setClipPresentation` (`commands.ts`); `uploadSource(file)` (`VideoStudio_sources.ts`); `deleteAsset(id)` (`chat/attachments/api.ts`).
 - Produces: `denoiseSamples(samples, signal?) → Promise<Float32Array>` and `DENOISE_RATE` (`audioClean.ts` — Task 4's speech detection runs on RNNoise's output); `NoiseReductionSwitch` and the file-private `useAnalysis()` (`Inspector_audioClean.tsx` — Task 4 adds `DuckingControls` in the same file, on the same hook); `playsCleaned(project, clip)` (`videoflow_audio.ts`).
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 Run in WSL: `cd /mnt/d/Aura/web && npm install --save-exact @sapphi-red/web-noise-suppressor@0.4.1`
 Expected: `"@sapphi-red/web-noise-suppressor": "0.4.1"` in `package.json`; `ls node_modules/@sapphi-red/web-noise-suppressor/dist` lists `rnnoise.wasm`, `rnnoise_simd.wasm`, `rnnoiseWorklet.js` (the paths S3 imported with `?url`).
 
-- [ ] **Step 2: The compile — failing tests**
+- [x] **Step 2: The compile — failing tests**
 
 In `videoflow_audio.test.ts`, import `playsCleaned` beside `addAudioItems`, and add a helper plus tests:
 
@@ -2202,7 +2205,7 @@ and add to `describe('toVideoJSON')`:
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/videoflow_audio.test.ts src/videoStudio/__tests__/videoflow.test.ts`
 Expected: FAIL — `playsCleaned` is not exported; the cleaned sound still plays `m`; no `clip-1#clean` layer.
 
-- [ ] **Step 3: Write the compile**
+- [x] **Step 3: Write the compile**
 
 In `videoflow_audio.ts`:
 - import `clipStarts` and `type VideoItem` from `./project` beside the existing imports;
@@ -2279,7 +2282,7 @@ In `videoflow.ts`: import `playsCleaned` beside `addAudioItems`, and in `addClip
 
 Run the Step 2 command. Expected: PASS.
 
-- [ ] **Step 4: RNNoise in the browser — failing tests**
+- [x] **Step 4: RNNoise in the browser — failing tests**
 
 `web/src/videoStudio/__tests__/audioClean.test.ts`:
 
@@ -2473,7 +2476,7 @@ describe('cleanedFile', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/audioClean.test.ts`
 Expected: FAIL — `Failed to resolve import "../audioClean"`.
 
-- [ ] **Step 5: Write it**
+- [x] **Step 5: Write it**
 
 `web/src/videoStudio/audioClean.ts`:
 
@@ -2565,11 +2568,11 @@ export async function cleanedFile(url: string, name: string, signal?: AbortSigna
 
 Run the Step 4 command. Expected: PASS, 6 tests.
 
-- [ ] **Step 6: The strings**
+- [x] **Step 6: The strings**
 
 In `resources.videoStudioAudio.ts`, `videoStudioAudioEn` gains `denoise: 'Noise reduction'`, `cleaning: 'Cleaning the sound…'`, `cleanFailed: 'Noise reduction failed: {{reason}}'`; `videoStudioAudioIt` gains `denoise: 'Riduzione del rumore'`, `cleaning: 'Pulizia del suono…'`, `cleanFailed: 'Riduzione del rumore non riuscita: {{reason}}'`.
 
-- [ ] **Step 7: The switch — failing tests**
+- [x] **Step 7: The switch — failing tests**
 
 `web/src/videoStudio/__tests__/Inspector_audioClean.test.tsx`:
 
@@ -2798,7 +2801,7 @@ describe('NoiseReductionSwitch', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/Inspector_audioClean.test.tsx`
 Expected: FAIL — `Failed to resolve import "../Inspector_audioClean"`.
 
-- [ ] **Step 8: Write the switch**
+- [x] **Step 8: Write the switch**
 
 `web/src/videoStudio/Inspector_audioClean.tsx`:
 
@@ -2938,7 +2941,7 @@ export function NoiseReductionSwitch({ project, target, onCommand }: NoiseReduct
 
 Run the Step 7 command. Expected: PASS, 8 tests.
 
-- [ ] **Step 9: Both Audio tabs show it — failing test**
+- [x] **Step 9: Both Audio tabs show it — failing test**
 
 `Inspector_audio.test.tsx` renders the real `Inspector` through its `mount(selectedId)` and names controls by key (its `react-i18next` mock answers the key). Add to `describe('Inspector, on a sound')`:
 
@@ -2962,7 +2965,7 @@ and to `describe('Inspector, on a clip Audio tab')`:
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/Inspector_audio.test.tsx`
 Expected: FAIL — no switch named `videoStudio.audio.denoise`.
 
-- [ ] **Step 10: Mount it**
+- [x] **Step 10: Mount it**
 
 In `Inspector_audio.tsx`:
 - import `NoiseReductionSwitch` from `./Inspector_audioClean`;
@@ -2995,7 +2998,7 @@ In `Inspector_clip.tsx:440`: `<ClipAudioControls project={props.project} clip={p
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio`
 Expected: PASS (except the known WSL-only `videoflow_fonts.test.ts`).
 
-- [ ] **Step 11: The denoise E2E**
+- [x] **Step 11: The denoise E2E**
 
 `web/e2e/video-studio-denoise.spec.ts`:
 
@@ -3085,12 +3088,12 @@ test('noise reduction drops the noise between phrases and keeps the phrases', as
 });
 ```
 
-- [ ] **Step 12: RED on the VM's current image**
+- [x] **Step 12: RED on the VM's current image**
 
 `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/e2e-vm.sh video-studio-denoise.spec.ts --project=chrome --reporter=line`
 Expected: FAIL — no switch named "Noise reduction" (after the first export, which the running image already does).
 
-- [ ] **Step 13: Static checks, coverage, commit, dist, push, GREEN**
+- [x] **Step 13: Static checks, coverage, commit, dist, push, GREEN**
 
 `webcheck.sh` on the touched files (knip must see `denoiseSamples` and `DENOISE_RATE` used — `DENOISE_RATE` by the test and by `cleanedFile`; `denoiseSamples` by `cleanedFile` until Task 4 imports it); coverage ≥ 85 % lines on `audioClean.ts`, `Inspector_audioClean.tsx`, `Inspector_audio.tsx`, `Inspector_clip.tsx`, `videoflow_audio.ts`, `videoflow.ts`. Check that the dist carries the WASM as files of its own origin: after `build.sh`, `ls internal/webui/dist/assets | grep -E 'rnnoise|Worklet'` lists `rnnoise-*.wasm`, `rnnoise_simd-*.wasm` and `rnnoiseWorklet-*.js`, and none of them is referenced by the entry chunk (`grep -l rnnoise internal/webui/dist/assets/index-*.js` finds nothing — only the lazy `audioClean` chunk names them).
 
@@ -3121,7 +3124,7 @@ git commit -m "feat(video-studio): noise reduction on clips and sounds, cleaned 
 - Consumes: `decodeMono` (Task 1); `denoiseSamples`, `DENOISE_RATE` (Task 3, `audioClean.ts`); `useAnalysis` (Task 3, private to `Inspector_audioClean.tsx`, where `DuckingControls` goes); `recordAnalysis`, `setAudioProperties` (`commands_audio.ts`, whose `checkRanges` already bounds ducking to −24…−3 dB and 0.1…2 s); `silentFilm` (Task 1, e2e support).
 - Produces: `detectSpeech(url, signal?) → Promise<SpeechWindow[]>`; `speechFromFrames(voiced, frameSeconds)`; `duckAt(duck, t)`; `unheardSources(project, itemId) → ProjectSource[]`; `DuckingControls`. The last task of the plan: nothing consumes them after it.
 
-- [ ] **Step 1: Add the dependency and declare it**
+- [x] **Step 1: Add the dependency and declare it**
 
 Run in WSL: `cd /mnt/d/Aura/web && npm install --save-exact @echogarden/fvad-wasm@0.2.0`
 Expected: `"@echogarden/fvad-wasm": "0.2.0"`; `node_modules/@echogarden/fvad-wasm/` holds `fvad.js` and `fvad.wasm` (and no declarations).
@@ -3149,7 +3152,7 @@ declare module '@echogarden/fvad-wasm' {
 }
 ```
 
-- [ ] **Step 2: The frames as windows — failing test**
+- [x] **Step 2: The frames as windows — failing test**
 
 `web/src/videoStudio/__tests__/speechWindows.test.ts`:
 
@@ -3195,7 +3198,7 @@ describe('speechFromFrames', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/speechWindows.test.ts`
 Expected: FAIL — `Failed to resolve import "../speechWindows"`.
 
-- [ ] **Step 3: Write it**
+- [x] **Step 3: Write it**
 
 `web/src/videoStudio/speechWindows.ts`:
 
@@ -3230,7 +3233,7 @@ export function speechFromFrames(voiced: readonly boolean[], frameSeconds: numbe
 
 Run the Step 2 command. Expected: PASS, 4 tests.
 
-- [ ] **Step 4: Speech detection in the browser — failing test**
+- [x] **Step 4: Speech detection in the browser — failing test**
 
 `web/src/videoStudio/__tests__/audioSpeech.test.ts`:
 
@@ -3356,7 +3359,7 @@ describe('detectSpeech', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/audioSpeech.test.ts`
 Expected: FAIL — `Failed to resolve import "../audioSpeech"`.
 
-- [ ] **Step 5: Write it**
+- [x] **Step 5: Write it**
 
 `web/src/videoStudio/audioSpeech.ts`:
 
@@ -3430,7 +3433,7 @@ export async function detectSpeech(url: string, signal?: AbortSignal): Promise<S
 
 Run the Step 4 command. Expected: PASS, 4 tests.
 
-- [ ] **Step 6: The ducking factor — failing tests**
+- [x] **Step 6: The ducking factor — failing tests**
 
 In `volumeCurve.test.ts`, import `duckAt` beside the existing imports and add:
 
@@ -3475,7 +3478,7 @@ describe('duckAt', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/volumeCurve.test.ts`
 Expected: FAIL — `duckAt` is not exported.
 
-- [ ] **Step 7: Write it**
+- [x] **Step 7: Write it**
 
 In `volumeCurve.ts`, add after the `CurveInput` interface's `envelope` field:
 
@@ -3517,7 +3520,7 @@ and `gainAt` returns `input.volume * Math.max(0, fade) * envelopeAt(input.envelo
 
 Run the Step 6 command. Expected: PASS.
 
-- [ ] **Step 8: Speech besides a sound, in the compile — failing tests**
+- [x] **Step 8: Speech besides a sound, in the compile — failing tests**
 
 In `videoflow_audio.test.ts`, import `unheardSources` beside the others and add:
 
@@ -3608,7 +3611,7 @@ describe('ducking in the compile', () => {
 Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/videoflow_audio.test.ts`
 Expected: FAIL — `unheardSources` is not exported; the bed has no ducking keyframes.
 
-- [ ] **Step 9: Write it**
+- [x] **Step 9: Write it**
 
 In `videoflow_audio.ts`:
 - import `clipTimelineDuration` and `type ProjectSource` from `./project` (beside `clipStarts`, `sourceOf`, …), and `type Ducking` beside `volumeKeyframes, type CurveInput`;
@@ -3698,7 +3701,7 @@ function duckingOf(project: VideoProject, item: AudioItem): Ducking | undefined 
 
 Run the Step 8 command. Expected: PASS.
 
-- [ ] **Step 10: The strings**
+- [x] **Step 10: The strings**
 
 `videoStudioAudioEn` gains:
 
@@ -3722,7 +3725,7 @@ Run the Step 8 command. Expected: PASS.
   listenAgain: 'Ascolta i suoni aggiunti dopo',
 ```
 
-- [ ] **Step 11: The controls — failing tests**
+- [x] **Step 11: The controls — failing tests**
 
 In `Inspector_audioClean.test.tsx`, import `DuckingControls` beside `NoiseReductionSwitch`, mock the detector beside the other mocks:
 
@@ -3843,7 +3846,7 @@ describe('DuckingControls', () => {
 (import `within` from `@testing-library/react`.) Run: `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio/__tests__/Inspector_audioClean.test.tsx`
 Expected: FAIL — `DuckingControls` is not exported.
 
-- [ ] **Step 12: Write the controls, and mount them**
+- [x] **Step 12: Write the controls, and mount them**
 
 In `Inspector_audioClean.tsx`, add the imports (`AudioDucking`, `AudioItem` types from `./project`; `unheardSources` from `./videoflow_audio`; `Slider` from `@/components/ui/slider`) and:
 
@@ -3984,7 +3987,7 @@ In `Inspector_audio.tsx`, the sound's Audio tab renders, after the `NoiseReducti
 Run the Step 11 command, then `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/vtf.sh src/videoStudio`
 Expected: PASS (except the known WSL-only `videoflow_fonts.test.ts`).
 
-- [ ] **Step 13: The ducking E2E**
+- [x] **Step 13: The ducking E2E**
 
 `web/e2e/video-studio-ducking.spec.ts`:
 
@@ -4070,12 +4073,12 @@ test('the music goes 12 dB down under speech, over ramps as long as the softness
 });
 ```
 
-- [ ] **Step 14: RED on the VM's current image**
+- [x] **Step 14: RED on the VM's current image**
 
 `MSYS_NO_PATHCONV=1 wsl bash <scratchpad>/e2e-vm.sh video-studio-ducking.spec.ts --project=chrome --reporter=line`
 Expected: FAIL — no switch named "Lower under speech".
 
-- [ ] **Step 15: Static checks, coverage, commit, dist, push, GREEN**
+- [x] **Step 15: Static checks, coverage, commit, dist, push, GREEN**
 
 `webcheck.sh` on the touched files; coverage ≥ 85 % lines on `speechWindows.ts`, `audioSpeech.ts`, `volumeCurve.ts`, `videoflow_audio.ts`, `Inspector_audioClean.tsx`, `Inspector_audio.tsx`. After `build.sh`, `ls internal/webui/dist/assets | grep fvad` lists the WASM as a file of its own, reached only from the lazy `audioSpeech` chunk.
 

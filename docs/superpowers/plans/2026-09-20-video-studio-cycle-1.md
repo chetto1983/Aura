@@ -1,5 +1,8 @@
 # Studio Video Studio, cycle 1 — Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 7521bf227..f73f27b0e. Recorded in docs/superpowers/verification/2026-09-20-video-studio.md.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -56,11 +59,11 @@ The spec gates on this: spike 107 composed ONE video layer, so multi-clip audio 
 **Interfaces:**
 - Produces: the numbers Task 5 needs — whether one decoded buffer per source is required, and the nudge that holds at 30 fps.
 
-- [ ] **Step 1: Reuse the spike 107 harness**
+- [x] **Step 1: Reuse the spike 107 harness**
 
 The harness is `.planning/spikes/107-studio-timeline-editor/app/` and it already has VideoFlow installed, the local-font override (`src/fonts.js`) and a compose lab (`src/ComposeLab.jsx`). Run `npm install` there if `node_modules/` is gone. Add a scenario rather than a new app.
 
-- [ ] **Step 2: Build the two-clip scenario**
+- [x] **Step 2: Build the two-clip scenario**
 
 In `app/src/project.js`, beside `buildComposition`, add:
 
@@ -88,7 +91,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/.planning/spikes/108-video-stud
   -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /m/clip-b.mp4
 ```
 
-- [ ] **Step 3: Render it and watch the memory**
+- [x] **Step 3: Render it and watch the memory**
 
 `run-audio.mjs` drives the harness with Playwright (import from `file:///D:/Repo/Aura/web/node_modules/playwright/index.mjs`, `chromium.launch({ channel: 'chrome' })`), exactly as spike 107's runners do. Per render, record:
 
@@ -98,7 +101,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/.planning/spikes/108-video-stud
 
 Expected, if the review is right: 3 decodes for 2 sources — the same file decoded once per layer.
 
-- [ ] **Step 4: Probe the result**
+- [x] **Step 4: Probe the result**
 
 ```bash
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/.planning/spikes/108-video-studio-audio/out:/m" jrottenberg/ffmpeg:7.1-alpine \
@@ -107,15 +110,15 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/.planning/spikes/108-video-stud
 
 Record: duration ≈ 8 s, one audio stream, and that the third clip is silent (decode the audio and check the RMS of its last two seconds, or read it with mediabunny in the page).
 
-- [ ] **Step 5: Re-measure the nudge at 30 fps**
+- [x] **Step 5: Re-measure the nudge at 30 fps**
 
 Spike 107 found that without `sourceStart + 0.0001` ten frames of 96 repeat the previous one, at 24 fps. Render the two-clip scenario twice, with and without the nudge, and compare frames at the cut points (grab frames with ffmpeg at `0:03.9`, `0:04.0`, `0:04.1` and diff them). Record whether the nudge is still needed, and whether it is still `0.1 ms` at 30 fps.
 
-- [ ] **Step 6: Write the README and the MANIFEST row**
+- [x] **Step 6: Write the README and the MANIFEST row**
 
 `.planning/spikes/108-video-studio-audio/README.md` in spike 105's format (`spike: 108`, `idea: studio-media-editing`, `type: standard`, a verdict), with sections What This Validates / How to Run / Investigation Trail / Results. Results must answer, in numbers: how many decodes per render, the peak heap, the render time, whether the audio is right, and the nudge at 30 fps. End with **the decision for Task 5**: one decoded buffer per source, or per layer as VideoFlow does it.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add .planning/spikes/108-video-studio-audio .planning/spikes/MANIFEST.md
@@ -134,7 +137,7 @@ git commit -m "docs(spike-108): measure multi-clip audio and the cut nudge at 30
 **Interfaces:**
 - Produces: `VideoProject`, `ProjectSource`, `VideoItem`, `OverlayItem`, `OverlayTrack`, `clipStarts(project): number[]`, `projectDuration(project): number`, `clipAt(project, time): VideoItem | undefined`, `overlayWindow(project, item): { start: number; end: number }`, `sourceOf(project, item): ProjectSource`, `emptyProject(name, size, fps): VideoProject`.
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
 ```bash
 cd web
@@ -144,7 +147,7 @@ npm install --save dnd-timeline@^3.1.1 immer@^11.1.18
 
 Expected: `package-lock.json` changes; `npm run deadcode` will flag all five as unused until Task 5 and Task 6 import them — add them to `ignoreDependencies` in `web/knip.json` in this task's commit and remove each entry in the task that first imports it.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `web/src/videoStudio/__tests__/project.test.ts`:
 
@@ -206,12 +209,12 @@ describe('an overlay follows its clip', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/project.test.ts`
 Expected: FAIL — `Cannot find module '../project'`.
 
-- [ ] **Step 4: Write the model**
+- [x] **Step 4: Write the model**
 
 `web/src/videoStudio/project.ts`:
 
@@ -326,12 +329,12 @@ export function sourceOf(project: VideoProject, sourceId: string): ProjectSource
 }
 ```
 
-- [ ] **Step 5: Run the test again**
+- [x] **Step 5: Run the test again**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/project.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Gates and commit**
+- [x] **Step 6: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio
@@ -350,7 +353,7 @@ cd .. && git commit web/src/videoStudio/project.ts web/src/videoStudio/__tests__
 - Consumes: everything Task 2 produces.
 - Produces: `addClip`, `trimClip`, `splitAt`, `removeRange`, `moveClip`, `setMuted`, `addOverlay`, `setProperty`, `removeItem`, and `CommandRefusal` (an `Error` subclass carrying `reasonKey`, an i18n key).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/videoStudio/__tests__/commands.test.ts`:
 
@@ -430,12 +433,12 @@ describe('setMuted', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/commands.test.ts`
 Expected: FAIL — `Cannot find module '../commands'`.
 
-- [ ] **Step 3: Write the commands**
+- [x] **Step 3: Write the commands**
 
 `web/src/videoStudio/commands.ts`. Every command is `(project, args) => project`, returns a new project and never mutates its input. A refusal is:
 
@@ -462,12 +465,12 @@ The commands, with the rules the spec sets:
 
 Keep the file under 600 lines; if it approaches, split the overlay commands into `commands.overlay.ts` and re-export.
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/commands.test.ts`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 5: Gates and commit**
+- [x] **Step 5: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio && npx vitest run src/videoStudio
@@ -486,7 +489,7 @@ cd .. && git commit web/src/videoStudio/commands.ts web/src/videoStudio/__tests_
 - Consumes: `VideoProject`, the commands.
 - Produces: `createHistory(initial): History`, with `apply(fn: (p: VideoProject) => VideoProject): VideoProject`, `undo(): VideoProject`, `redo(): VideoProject`, `canUndo: boolean`, `canRedo: boolean`, `current: VideoProject`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -526,12 +529,12 @@ describe('history', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/history.test.ts`
 Expected: FAIL — `Cannot find module '../history'`.
 
-- [ ] **Step 3: Write it with immer patches**
+- [x] **Step 3: Write it with immer patches**
 
 ```ts
 import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
@@ -551,12 +554,12 @@ interface Step {
 
 `apply` runs one command and pushes one step. `transaction` runs a whole gesture — the caller's function may run any number of commands — and pushes the single step between its start and its end, which is how a 30-event drag stays one undo.
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/history.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Gates and commit**
+- [x] **Step 5: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio && npm run deadcode
@@ -575,11 +578,11 @@ cd .. && git commit web/src/videoStudio/history.ts web/src/videoStudio/__tests__
 - Consumes: `VideoProject`, `clipStarts`, `overlayWindow`, `sourceOf`; the asset URL helper the cockpit already uses for media (`/api/assets/<id>/download`).
 - Produces: `toVideoJSON(project, urls): Promise<VideoJSON>`, `exportProject(project, urls, { onProgress, signal }): Promise<Blob>`, `useLocalFonts(renderer): Renderer`.
 
-- [ ] **Step 1: Read what the spike proved before writing anything**
+- [x] **Step 1: Read what the spike proved before writing anything**
 
 Read `.planning/spikes/107-studio-timeline-editor/app/src/project.js` (the fluent API: `new VideoFlow({ name, width, height, fps, backgroundColor })`, `$.addVideo(props, settings)`, `$.addText`, `$.addImage(...).animate(from, to, opts)`, `$.wait('4s')`, `$.compile()`), `app/src/fonts.js` (the `loadFont` override — there is no config option) and `app/src/ComposeLab.jsx` (`new BrowserRenderer(json)`, `await renderer.exportVideo({ worker, onProgress })`, `renderer.destroy()`). Read spike 108's README for the audio decision.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 The test mocks `@videoflow/core` and `@videoflow/renderer-browser` and asserts the SHAPE we hand them, which is what breaks:
 
@@ -612,12 +615,12 @@ describe('toVideoJSON', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/videoflow.test.ts`
 Expected: FAIL — `Cannot find module '../videoflow'`.
 
-- [ ] **Step 4: Write the adapter**
+- [x] **Step 4: Write the adapter**
 
 It owns four things, each with the comment that says why:
 
@@ -626,12 +629,12 @@ It owns four things, each with the comment that says why:
 3. **One decoded buffer per source**, if spike 108 says VideoFlow decodes per layer: build the composition so that clips sharing a source share one decode. If the spike says otherwise, write down that it does not, and why.
 4. **Export**: `new BrowserRenderer(json)`, `exportVideo({ worker: true, onProgress })`, `destroy()` in a `finally`, and an `AbortSignal` that calls `destroy()` — the previous cycle shipped an editor that kept transcoding after its dialog closed, and this one starts with the abort wired.
 
-- [ ] **Step 5: Run the test again**
+- [x] **Step 5: Run the test again**
 
 Run: `cd web && npx vitest run src/videoStudio/__tests__/videoflow.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 6: Gates and commit**
+- [x] **Step 6: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio && npm run deadcode
@@ -650,23 +653,23 @@ cd .. && git commit web/src/videoStudio/videoflow.ts web/src/videoStudio/__tests
 - Consumes: `VideoProject`, `clipStarts`, `overlayWindow`; `dnd-timeline`.
 - Produces: `<Timeline project selectedId onSelect onCommand onScrub playhead />`, where `onCommand` receives a command thunk `(p: VideoProject) => VideoProject` — the workspace decides whether it is a transaction.
 
-- [ ] **Step 1: Read dnd-timeline's contract**
+- [x] **Step 1: Read dnd-timeline's contract**
 
 `web/node_modules/dnd-timeline/dist/index.d.ts`. It hands the shell a `span` on `onDragEnd` and nothing else: the insert-versus-overlap semantics are ours, and Task 3 already made them. Zoom is ours too — there is no pinch gesture, which the spec says out loud.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Assert behaviour, not pixels: a drag that ends over another clip emits a `moveClip` thunk with the right index; a trim handle emits `trimClip` with source-media seconds; a click emits `onSelect`; the ruler's marks are at the zoom's step; the playhead sits where the time says; the zoom buttons change the step and never go below one second per screen.
 
-- [ ] **Step 3: Run it and watch it fail** — `Cannot find module '../Timeline'`.
+- [x] **Step 3: Run it and watch it fail** — `Cannot find module '../Timeline'`.
 
-- [ ] **Step 4: Write the component**
+- [x] **Step 4: Write the component**
 
 Lanes top to bottom: the video lane, then one row per overlay track. Items are 44 px tall minimum with 44 px hit areas on the trim handles — the touch floor from the previous cycle. Keyboard: arrows move the playhead a frame, shift-arrows a second, and the handles are sliders with `aria-valuenow` in seconds, exactly as `VideoTimeline` does it in `web/src/mediaEdit/VideoTimeline.tsx` — read it and follow it.
 
-- [ ] **Step 5: Run the test again** — PASS.
+- [x] **Step 5: Run the test again** — PASS.
 
-- [ ] **Step 6: Gates and commit**
+- [x] **Step 6: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio && npx vitest run src/videoStudio && npm run deadcode
@@ -685,19 +688,19 @@ cd .. && git commit web/src/videoStudio/Timeline.tsx web/src/videoStudio/__tests
 - Consumes: `VideoProject`, `clipAt`, `overlayWindow`, the commands, `@videoflow/renderer-dom`.
 - Produces: `<Stage project time selectedId onSelect onCommand />`, `<Inspector project selectedId onCommand />`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Stage: it mounts a `DomRenderer` on the host, calls `loadVideo` with the compiled project once, `seek`s when the time prop changes, `destroy`s on unmount, and a drag on the selection box emits `setProperty` with the new position — clamped to the frame. Mock `@videoflow/renderer-dom` the way Task 5's test mocks the core.
 
 Inspector: for a clip it shows start, end and mute, and each field emits its command on commit — Enter or blur, and an invalid value restores, exactly as `web/src/mediaEdit/TimeField.tsx` does (reuse it). For a text overlay it shows the text, the size, the colour and the animation; for an image overlay the scale and the animation.
 
-- [ ] **Step 2: Run them and watch them fail.**
+- [x] **Step 2: Run them and watch them fail.**
 
-- [ ] **Step 3: Write the two components.** No Konva: the selection box is a positioned `div` and the drag is pointer events, which is also the only live-feedback path in the editor.
+- [x] **Step 3: Write the two components.** No Konva: the selection box is a positioned `div` and the drag is pointer events, which is also the only live-feedback path in the editor.
 
-- [ ] **Step 4: Run the tests again** — PASS.
+- [x] **Step 4: Run the tests again** — PASS.
 
-- [ ] **Step 5: Gates and commit**
+- [x] **Step 5: Gates and commit**
 
 ```bash
 cd web && npx tsc --noEmit -p . && npx oxlint --type-aware src/videoStudio && npx prettier --check src/videoStudio && npx vitest run src/videoStudio
@@ -717,29 +720,29 @@ cd .. && git commit web/src/videoStudio/Stage.tsx web/src/videoStudio/Inspector.
 - Consumes: everything above; `presignAsset` and the upload helpers in `web/src/chat/attachments/upload.ts`; `probeVideo` from `web/src/mediaEdit/videoMedia.ts`.
 - Produces: the route the Studio opens, and `loadProject(assetId)` / `saveProject(project)`.
 
-- [ ] **Step 1: The strings**
+- [x] **Step 1: The strings**
 
 `resources.videoStudio.ts` with `videoStudio.*`: the title, the lane names, every command's button, the refusal sentences keyed exactly as `CommandRefusal.reasonKey` (`videoStudio.refusal.trimPastSource`, `.splitOnBoundary`, `.emptyRange`, `.overlayOverlap`, `.sourceMissing`, `.sourceUndecodable`, `.sourceMissingAsset`), the export progress and its failures, and the save states. English and Italian, both complete: the parity test fails otherwise.
 
-- [ ] **Step 2: The project file**
+- [x] **Step 2: The project file**
 
 `projectStore.ts` saves the project as a `.json` asset through the presign path the attachments already use, and loads it by asset id. It is a document, so it lands in `chat/` — the media folder is for the sources. Test: a round trip preserves the project exactly, and a load of a project whose source asset is gone returns the project with that source marked missing.
 
-- [ ] **Step 3: The probe at the door**
+- [x] **Step 3: The probe at the door**
 
 Adding a source probes it first with `probeVideo`, which the single-clip editor already ships. A source the browser cannot decode is refused with `videoStudio.refusal.sourceUndecodable` — VideoFlow would otherwise disable the layer and render black frames with no error. Test it with a `probeVideo` that rejects.
 
-- [ ] **Step 4: The workspace**
+- [x] **Step 4: The workspace**
 
 `VideoStudio.tsx` holds the history, the selection and the playhead; passes `onCommand` to the three panels; catches `CommandRefusal` and shows `t(error.reasonKey)`; runs the export with a progress bar (`role="progressbar"`, the values the previous cycle's review asked for) and a cancel that aborts; downloads with `downloadBlob` from `web/src/mediaEdit/download.ts`.
 
-- [ ] **Step 5: The entrances**
+- [x] **Step 5: The entrances**
 
 In the Studio, a button that opens the editor on a new project seeded with the selected result. In `VideoEditor.tsx`, one way forward — "Open in the editor" — which creates a project from the clip being trimmed. Neither replaces the quick editor.
 
-- [ ] **Step 6: Run the tests** — every file under 600 lines, `npx vitest run src/videoStudio src/i18n`.
+- [x] **Step 6: Run the tests** — every file under 600 lines, `npx vitest run src/videoStudio src/i18n`.
 
-- [ ] **Step 7: Gates and commit**
+- [x] **Step 7: Gates and commit**
 
 ```bash
 cd web && npm run lint && npm run typecheck && npm run format:check && npm run deadcode && npm run dup
@@ -754,20 +757,20 @@ cd .. && git commit web/src/videoStudio web/src/i18n/resources.videoStudio.ts we
 - Create: `web/e2e/video-studio.spec.ts`, `web/e2e/fixtures/video-studio/clip-a.mp4`, `web/e2e/fixtures/video-studio/clip-b.mp4`, `docs/superpowers/verification/2026-09-20-video-studio.md`
 - Modify: `internal/webui/dist/**` (rebuilt)
 
-- [ ] **Step 1: The fixtures** — two 4 s clips with audio, made with the ffmpeg commands from Task 1, a few hundred KB each. `.gitattributes` already marks `*.mp4 binary`.
+- [x] **Step 1: The fixtures** — two 4 s clips with audio, made with the ffmpeg commands from Task 1, a few hundred KB each. `.gitattributes` already marks `*.mp4 binary`.
 
-- [ ] **Step 2: The spec**
+- [x] **Step 2: The spec**
 
 Three cases, driven through the real UI:
 1. two clips and a title, exported and downloaded; the file read back with mediabunny — duration 8 s ± 0.1, the size the project asks for, and the title present in a frame inside its window and absent outside it;
 2. a source the browser cannot decode (the HEVC fixture from the previous cycle) refused at the door with the translated sentence;
 3. a network log with **zero** off-origin requests for the whole session.
 
-- [ ] **Step 3: Run it** — `npx playwright test e2e/video-studio.spec.ts --project=chrome --project=mobile-chrome`. On the phone project, the lanes scroll and the fields work; whatever cannot be done with a thumb is skipped with the reason named in the skip, not hidden.
+- [x] **Step 3: Run it** — `npx playwright test e2e/video-studio.spec.ts --project=chrome --project=mobile-chrome`. On the phone project, the lanes scroll and the fields work; whatever cannot be done with a thumb is skipped with the reason named in the skip, not hidden.
 
-- [ ] **Step 4: Full gates** — from `web/`: `npm run lint && npm run typecheck && npm run format:check && npm run deadcode && npm run dup && npm test`. Coverage ≥ 85 % on all four metrics.
+- [x] **Step 4: Full gates** — from `web/`: `npm run lint && npm run typecheck && npm run format:check && npm run deadcode && npm run dup && npm test`. Coverage ≥ 85 % on all four metrics.
 
-- [ ] **Step 5: The bundle**
+- [x] **Step 5: The bundle**
 
 ```bash
 cd web && npm run build
@@ -777,11 +780,11 @@ grep -l "VideoFlow" ../internal/webui/dist/assets/*.js | head -3
 ```
 Expected: `0` in the entry chunk; VideoFlow only in the VideoStudio chunk, which is lazy like the other two editors.
 
-- [ ] **Step 6: Live verification**
+- [x] **Step 6: Live verification**
 
 Push, wait for the edge image, update the appliance (`docker compose pull aura && docker compose up -d aura && docker compose up -d --no-deps --force-recreate aura-migrate`), then on `https://localhost`: build a project from two Studio results, add a title, export, and play the downloaded file. Record it in `docs/superpowers/verification/2026-09-20-video-studio.md` with the revision, the numbers, the screenshots, and what it does not prove (long projects, Safari, a real phone).
 
-- [ ] **Step 7: Commit and push**
+- [x] **Step 7: Commit and push**
 
 ```bash
 git add web/e2e/video-studio.spec.ts web/e2e/fixtures/video-studio internal/webui/dist docs/superpowers/verification/2026-09-20-video-studio.md

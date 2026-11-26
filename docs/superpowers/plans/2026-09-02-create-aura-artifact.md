@@ -1,5 +1,8 @@
 # create-aura Artifact Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. T1-T7 (6ec4a62..9bc57aba2). The final review's I2-I8 went to the operator and have not been traced since.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -71,7 +74,7 @@ definition closes at line 604 and the imperative section starts at line 606 with
 - Produces: `install.sh` can be `source`d, defining every function and exiting before any
   side effect. Later tasks rely on this to test `download_file` and the config parser.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/install_lib_test.sh`:
 
@@ -94,13 +97,13 @@ declare -F set_env_value >/dev/null || { echo "FAIL: set_env_value undefined aft
 echo "ok: install.sh sources cleanly and defines its functions"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/install_lib_test.sh`
 Expected: FAIL — without the guard the source proceeds into `preflight_hw` and beyond,
 either erroring on a missing dependency or attempting a real install.
 
-- [ ] **Step 3: Insert the guard**
+- [x] **Step 3: Insert the guard**
 
 In `scripts/install.sh`, immediately after the closing `}` of the last function (line 604)
 and before `preflight_hw` (line 606), insert:
@@ -116,17 +119,17 @@ if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
 fi
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/install_lib_test.sh`
 Expected: `ok: install.sh sources cleanly and defines its functions`
 
-- [ ] **Step 5: Verify executing still works**
+- [x] **Step 5: Verify executing still works**
 
 Run: `bash scripts/install.sh --help`
 Expected: the usage block, exit 0. This proves the guard does not break execution.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/install.sh scripts/install_lib_test.sh
@@ -152,7 +155,7 @@ so that path is unchanged."
   variable is non-empty, and falls back to `curl "${RAW_BASE}/<src>"` otherwise. Task 5's
   artifact sets the variable; nothing else does.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `scripts/install_lib_test.sh`, before its final `echo`:
 
@@ -191,13 +194,13 @@ fi
 echo "ok: download_file prefers the payload and still falls back to the network"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/install_lib_test.sh`
 Expected: FAIL — `download_file did not copy from AURA_PAYLOAD_DIR`, because the current
 body only curls.
 
-- [ ] **Step 3: Replace the function body**
+- [x] **Step 3: Replace the function body**
 
 In `scripts/install.sh`, replace lines 205-213 with:
 
@@ -225,12 +228,12 @@ download_file() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/install_lib_test.sh`
 Expected: both `ok:` lines.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/install.sh scripts/install_lib_test.sh
@@ -257,7 +260,7 @@ and curl | bash keep working from the same implementation."
   `CFG_OPENROUTER_API_KEY`, `CFG_EMBED_IMAGE`, `CFG_EMBED_NGL`. Absent keys become the
   empty string. Task 4 consumes these.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/install_config_test.sh`:
 
@@ -314,12 +317,12 @@ fi
 echo "ok: parse_install_config reads the v1 format and fails closed"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/install_config_test.sh`
 Expected: FAIL with `parse_install_config: command not found`.
 
-- [ ] **Step 3: Add the parser and the flag**
+- [x] **Step 3: Add the parser and the flag**
 
 In `scripts/install.sh`, add near the other variable defaults (after line 24):
 
@@ -385,12 +388,12 @@ And extend `usage()` (line 27) with:
   --config PATH  read answers from an absolute-path config file (see the spec)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/install_config_test.sh`
 Expected: `ok: parse_install_config reads the v1 format and fails closed`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/install.sh scripts/install_config_test.sh
@@ -417,7 +420,7 @@ as root and resolving it against an unknown cwd is how the wrong one gets read."
 - Produces: `apply_install_config` writes the non-empty `CFG_*` values into `.env`. Empty
   values are left alone, so an operator's existing choice is never cleared.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `scripts/install_config_test.sh` before its final `echo`:
 
@@ -445,12 +448,12 @@ cd "$repo_root"
 echo "ok: apply_install_config writes only what the config actually carries"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/install_config_test.sh`
 Expected: FAIL with `apply_install_config: command not found`.
 
-- [ ] **Step 3: Add the applier and wire it**
+- [x] **Step 3: Add the applier and wire it**
 
 Add beside `parse_install_config`:
 
@@ -485,12 +488,12 @@ And immediately after the existing `write_env_if_missing` call (line 656), add:
 apply_install_config
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/install_config_test.sh`
 Expected: all three `ok:` lines.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/install.sh scripts/install_config_test.sh
@@ -518,7 +521,7 @@ never that the operator's own value should be cleared."
   startup script sets `AURA_PAYLOAD_DIR` to the extraction directory and execs
   `install.sh` with the caller's arguments.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/build_installer_test.sh`:
 
@@ -561,13 +564,13 @@ done < <(grep '^download_file ' "$repo_root/scripts/install.sh" | awk '{print $2
 echo "ok: the artifact self-checks and its payload round-trips"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/build_installer_test.sh`
 Expected: FAIL — `scripts/build_installer.sh` does not exist. (If makeself is absent the
 test SKIPs; install it with `apt-get install -y makeself` before proceeding.)
 
-- [ ] **Step 3: Write the builder**
+- [x] **Step 3: Write the builder**
 
 Create `scripts/build_installer.sh`:
 
@@ -623,12 +626,12 @@ chmod +x "$output"
 echo "ok: wrote $output"
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/build_installer_test.sh`
 Expected: `ok: the artifact self-checks and its payload round-trips`
 
-- [ ] **Step 5: Add the Make target**
+- [x] **Step 5: Add the Make target**
 
 In `Makefile`, add to the `.PHONY` line and as a target:
 
@@ -637,7 +640,7 @@ installer-artifact:
 	bash scripts/build_installer.sh dist/install-appliance.run
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 mkdir -p dist && echo 'install-appliance.run' > dist/.gitignore
@@ -669,7 +672,7 @@ reproducible-output guarantee. The gate therefore watches the **inputs**.
 - Produces: `scripts/payload_manifest_gate.sh` exits non-zero when the 25 files' hashes, or
   the set of files itself, differ from `scripts/payload_manifest.txt`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/payload_manifest_gate.sh`:
 
@@ -709,17 +712,17 @@ fi
 echo "ok: payload matches its manifest ($(wc -l < "$manifest") files)"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `bash scripts/payload_manifest_gate.sh`
 Expected: FAIL — `scripts/payload_manifest.txt is missing`.
 
-- [ ] **Step 3: Generate the manifest**
+- [x] **Step 3: Generate the manifest**
 
 Run: `bash scripts/payload_manifest_gate.sh --write`
 Expected: `ok: wrote 25 payload hashes`
 
-- [ ] **Step 4: Verify the gate now passes, and that it catches drift**
+- [x] **Step 4: Verify the gate now passes, and that it catches drift**
 
 ```bash
 bash scripts/payload_manifest_gate.sh           # expect: ok: payload matches its manifest (25 files)
@@ -729,14 +732,14 @@ git checkout -- observability/tempo/tempo.yml
 bash scripts/payload_manifest_gate.sh           # expect: ok again
 ```
 
-- [ ] **Step 5: Add the Make target**
+- [x] **Step 5: Add the Make target**
 
 ```make
 payload-manifest:
 	bash scripts/payload_manifest_gate.sh --write
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/payload_manifest.txt scripts/payload_manifest_gate.sh Makefile
@@ -762,7 +765,7 @@ output, so diffing the artifact would flap and be disabled."
 - Consumes: Tasks 1, 3, 5 and 6's scripts.
 - Produces: nothing later depends on.
 
-- [ ] **Step 1: Add the steps**
+- [x] **Step 1: Add the steps**
 
 In `.github/workflows/ci.yml`, in the step block that runs
 `bash scripts/coverage_profile_gate_test.sh` and its siblings, append:
@@ -782,14 +785,14 @@ And add a separate step before it, so the artifact test does not silently SKIP:
         run: bash scripts/build_installer_test.sh
 ```
 
-- [ ] **Step 2: Verify the SKIP cannot hide a failure**
+- [x] **Step 2: Verify the SKIP cannot hide a failure**
 
 Run locally: `command -v makeself || echo "absent"`. `build_installer_test.sh` exits 0 with
 `SKIP:` when makeself is absent, which is right for a developer laptop and wrong for CI —
 the explicit install step above is what stops it being a falsely-green job. This mirrors
 the project's no-skip-as-green rule.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/ci.yml

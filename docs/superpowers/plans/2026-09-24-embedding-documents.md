@@ -1,5 +1,8 @@
 # Embedding model change — documents family (plan 4 of 5) Implementation Plan
 
+**Closed (2026-11-26):** done, as the Status below records; its boxes had never been ticked, and are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-15):** DONE. 228bd8324..0cf8ff13a.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -131,7 +134,7 @@ The spec is the measurement registry: it records first, then the code follows. E
 - Consumes: nothing.
 - Produces: the baseline table (in the spec) that plan 5's E2E compares against; the §8/§9 text every later task cites.
 
-- [ ] **Step 1: Record today's `document_search` on the VM**
+- [x] **Step 1: Record today's `document_search` on the VM**
 
 Write `$SCRATCH/q25.sh`:
 
@@ -189,7 +192,7 @@ Run: `cd $SCRATCH && MSYS_NO_PATHCONV=1 wsl -e bash r.sh q25.sh > plan4-baseline
 Expected: an `image:` line and 15 query lines, none with `ERROR`, then one stamp-count line per type.
 - If `aura docs search` fails inside the container, stop and report. This baseline is the "nothing broke" gate the operator asked for, so any substitute for it must be agreed first.
 
-- [ ] **Step 2: Check the media routes that the deploy's re-extraction needs**
+- [x] **Step 2: Check the media routes that the deploy's re-extraction needs**
 
 Plan 3's deploy re-extracts every document once (spec §6). A document whose re-extraction fails keeps its old, unstamped rows, and those keep the whole documents family lexical until someone fixes the file. The VM's 7 `videoplayback.mp4` need speech-to-text and its 3 screenshots need vision.
 
@@ -208,7 +211,7 @@ Expected: a non-empty fingerprint, and no `NoVisionRoute` or `media indexer exit
 - **If either failure line appears, stop and report to the operator before Task 2.** The fix is the media route, not this plan, and shipping plan 3+4 onto a broken media route would leave documents lexical after the deploy.
 - If the logs are empty, `docker logs` may have stopped at a truncated line (memory `reference_docker_logs_stops_at_truncated_json_line`). Read the container's `LogPath` raw with `sudo tail -c 200000`.
 
-- [ ] **Step 3: Amend §8 of the spec**
+- [x] **Step 3: Amend §8 of the spec**
 
 Replace the whole §8 body (from `` `HostRetriever.Retrieve` serves documents lexically `` through `…and the response says so.`) with:
 
@@ -264,7 +267,7 @@ It says nothing about a single-leg lexical answer while the dense leg is unavail
 results are candidates, and the status says so.
 ```
 
-- [ ] **Step 4: Amend §9 of the spec**
+- [x] **Step 4: Amend §9 of the spec**
 
 Replace the §9 body with:
 
@@ -283,7 +286,7 @@ existing measurement procedure (the 2026-09-02 and 2026-09-09 calibrations behin
 uses.
 ```
 
-- [ ] **Step 5: Record the baseline and the Files rows**
+- [x] **Step 5: Record the baseline and the Files rows**
 
 Add at the end of §8 a sub-section with the Step 1 output as a table:
 
@@ -306,7 +309,7 @@ In the Files table, replace the row `` | `internal/arcadedb/client.go` | 420 | f
 | `cmd/aura/document_retrieval_wiring.go` | 42 | the document route; live key |
 ```
 
-- [ ] **Step 6: Record what the §8 measurement does not prove**
+- [x] **Step 6: Record what the §8 measurement does not prove**
 
 Add to "What this design does not prove", after the "Lexical-mode quality" bullet:
 
@@ -319,7 +322,7 @@ Add to "What this design does not prove", after the "Lexical-mode quality" bulle
   of 2 means "two terms", which was not measured.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git commit -m "docs(spec): record the lexical floor and per-space floors plan 4 measured
@@ -352,7 +355,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- docs/su
   - `var embeddingGemmaSpace string`;
   - `FactSearchResult.FloorsReason`, `RecallResult.FloorsReason`.
 
-- [ ] **Step 1: Let the stub embedder name any space**
+- [x] **Step 1: Let the stub embedder name any space**
 
 In `internal/arcadedb/memory_vector_test.go`, add a `space string` field to `stubEmbedder`, and change its `Space` method to:
 
@@ -366,7 +369,7 @@ func (s *stubEmbedder) Space(context.Context) (embeddings.Space, error) {
 }
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `internal/arcadedb/relevance_floors_test.go`:
 
@@ -484,12 +487,12 @@ func TestRecallNamesFloorsNeverMeasuredForItsSpace(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -run "Floors" -count=1'`
 Expected: build failure. `embeddingGemmaSpace`, `floorsFor`, `denseFloors`, `bindDenseFloors`, `ReasonUncalibratedFloors` and `FloorsReason` are undefined.
 
-- [ ] **Step 4: Create `internal/arcadedb/relevance_floors.go`**
+- [x] **Step 4: Create `internal/arcadedb/relevance_floors.go`**
 
 ```go
 package arcadedb
@@ -575,7 +578,7 @@ func (limits MemoryLimits) bindDenseFloors(params map[string]any, space string) 
 }
 ```
 
-- [ ] **Step 5: The two floors lose their defaults in `client.go`**
+- [x] **Step 5: The two floors lose their defaults in `client.go`**
 
 In `MemoryLimits`, the three consecutive fields `DenseMaxDistance`, `LexicalMinScore`, `MinRelevance` (lines 52-54) become:
 
@@ -593,7 +596,7 @@ In `defaultMemoryLimits`, delete the comment block that starts `// 0.72 is the m
 
 In `normalized()`, delete the two lines that default `DenseMaxDistance` and `MinRelevance`. `validate()` stays: a negative override is still refused.
 
-- [ ] **Step 6: Memory's dense reads bind floors by space**
+- [x] **Step 6: Memory's dense reads bind floors by space**
 
 In `memory_vector.go`, add to `FactSearchResult`, after `Reason string`:
 
@@ -639,7 +642,7 @@ After `result, err := c.hydrateRecallRanking(...)` and its error check, add:
 	}
 ```
 
-- [ ] **Step 7: The defaults test follows the new contract**
+- [x] **Step 7: The defaults test follows the new contract**
 
 In `client_test.go` `TestNewDefaultsMemoryLimits`, replace `DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,` with `LexicalMinScore: 2,`, and add above the `want` literal:
 
@@ -648,7 +651,7 @@ In `client_test.go` `TestNewDefaultsMemoryLimits`, replace `DenseMaxDistance: 0.
 	// for the reader's space, read at query time (relevance_floors.go, spec §9).
 ```
 
-- [ ] **Step 8: Run the tests and the package**
+- [x] **Step 8: Run the tests and the package**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -count=1 && go vet ./internal/arcadedb/ ./cmd/arcadedb-mcp/ && go build ./...'`
 Expected:
@@ -660,7 +663,7 @@ If `TestEmbeddingGemmaFloorsAreKeyedByTheSpaceTheVMAttests` fails on the ID, the
 
 Check line counts: `wc -l internal/arcadedb/memory_recall.go internal/arcadedb/memory_vector.go` both ≤ 600.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add internal/arcadedb/relevance_floors.go internal/arcadedb/relevance_floors_test.go
@@ -691,7 +694,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- interna
   - `(*Client).documentsDenseOpen(ctx, space) (bool, error)`;
   - `Client.documentGate spaceGate`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `internal/arcadedb/embedding_space_test.go`:
 
@@ -779,12 +782,12 @@ func TestDocumentsDenseOpenAsksTheIdentitysOwnDatabase(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -run "DocumentGate|DocumentsDenseOpen" -count=1'`
 Expected: build failure: `documentsDenseOpen` and `DocumentsDenseOpen` are undefined.
 
-- [ ] **Step 3: Generalize the gate in `embedding_space.go`**
+- [x] **Step 3: Generalize the gate in `embedding_space.go`**
 
 Replace everything from `// otherSpace matches a row` down to the end of `memoryDenseOpen` (lines 91-145) with:
 
@@ -904,12 +907,12 @@ In `client.go`, after the `memoryGate spaceGate` field, add:
 	documentGate spaceGate
 ```
 
-- [ ] **Step 4: Run the tests and the package**
+- [x] **Step 4: Run the tests and the package**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -count=1 && go vet ./internal/arcadedb/'`
 Expected: `ok`, and every existing memory gate test still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git commit -m "feat(arcadedb): gate the documents family on its own stamps
@@ -955,7 +958,7 @@ After this task a dense read goes through the gate, and its two statements see o
   - `RetrievalControlPlane.DocumentsDenseOpen`, `RetrievalControlPlane.RouteDocumentCards(ctx, CardQuery)`;
   - `cmd/aura newQueryEmbedder(cfg *config.Config, credential func() string) documents.QueryEmbedder`.
 
-- [ ] **Step 1: Write the failing arcadedb tests**
+- [x] **Step 1: Write the failing arcadedb tests**
 
 In `document_retrieval_test.go`, give `fusedFixtureQuery` a space:
 
@@ -1048,12 +1051,12 @@ Every existing call must carry the space, or it fails on the missing space inste
   - the calls are at lines 44, 69, 96, 118, 133, 141, 145, 149, 153, 270 and 292.
 - In `document_cards_missing_type_test.go:38`, add `"es1-docs"` after `documentCardVector()`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -run "Document" -count=1'`
 Expected: build failure. `FusedCandidateQuery.Space` and `FloorsCalibrated` are unknown, and `DocumentCardsScoped` has too many arguments.
 
-- [ ] **Step 3: The documents row of the floors table**
+- [x] **Step 3: The documents row of the floors table**
 
 In `relevance_floors.go`, add `documents denseFloors` to `calibration`, and `documents: denseFloors{maxDistance: 0.72, minRelevance: 0.32},` to `embeddingGemmaFloors`. Move into its doc comment the two measurement paragraphs from `document_schema.go`: the `DenseMaxDistance` one, "0.72 is the midpoint of a measured band…", and the `RelevanceFloor` one, from "RelevanceFloor is the abstention gate…" through "…not a shared constant.". Introduce them with `// Documents, 2026-09-09, the live 1079-passage corpus:`. Then add:
 
@@ -1075,7 +1078,7 @@ In `document_schema.go`:
 - delete the `DenseMaxDistance` and `RelevanceFloor` fields of `DocumentIndexConfig` with their comments. No caller ever set them: `document_index_wiring.go` sets `Dimensions` and `MaxRetrievalCandidates` only.
 - delete the constants `defaultDocumentDenseMaxDistance` and `defaultDocumentRelevanceFloor` and the two `normalized()` lines that used them.
 
-- [ ] **Step 4: Bind the space in both dense statements**
+- [x] **Step 4: Bind the space in both dense statements**
 
 In `document_retrieval.go`, add to `FusedCandidateQuery`, after `Embedding []float64`:
 
@@ -1134,7 +1137,7 @@ Keep the lines that set `embedding`, `query`, `fetch` and `candidates`. The spac
 
 In the `PassageCandidate.FusedScore` comment, replace "bounded below by RelevanceFloor" with "bounded below by the documents' relevance floor (relevance_floors.go)". In the `fusedStatement` comment, replace "See RelevanceFloor." with "See embeddingGemmaFloors."
 
-- [ ] **Step 5: The card leg takes the space; the test-only wrapper goes**
+- [x] **Step 5: The card leg takes the space; the test-only wrapper goes**
 
 In `document_cards.go`:
 - delete `DocumentCards` (it had no production caller);
@@ -1183,12 +1186,12 @@ func (d *DocumentIndex) DocumentCardsScoped(
 
 The rest of the body is unchanged from `rows, err := client.Query(ctx, documentCardStatement(where, filter.Limit), params)` on.
 
-- [ ] **Step 6: Run the arcadedb suite**
+- [x] **Step 6: Run the arcadedb suite**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -count=1'`
 Expected: `ok`. `go build ./...` still fails in `internal/documents`, which Steps 7-11 fix.
 
-- [ ] **Step 7: Write the failing documents tests**
+- [x] **Step 7: Write the failing documents tests**
 
 In `internal/documents/retrieval_test.go`, update the fakes (import `embeddings`):
 
@@ -1349,12 +1352,12 @@ func TestRetrieveWithoutACredentialIsAnEmbeddingDegradation(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Run them to verify they fail**
+- [x] **Step 8: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/documents/ -count=1'`
 Expected: build failure: `CardQuery`, `DegradationSpaceMismatch`, `DegradationSpaceCheck` and `FloorsReason` are undefined.
 
-- [ ] **Step 9: `internal/documents/retrieval_space.go`**
+- [x] **Step 9: `internal/documents/retrieval_space.go`**
 
 ```go
 package documents
@@ -1422,7 +1425,7 @@ func (r *HostRetriever) denseQuery(ctx context.Context, identityID, query string
 }
 ```
 
-- [ ] **Step 10: `retrieval.go` and `retrieval_cards.go`**
+- [x] **Step 10: `retrieval.go` and `retrieval_cards.go`**
 
 In `retrieval.go`:
 - Change `HostRetriever.Embedder` to `Embedder QueryEmbedder`, and delete `embedQuery` (its job is in `denseQuery`).
@@ -1544,7 +1547,7 @@ func retrievalCards(found []arcadedb.DocumentCard) []RetrievalCard {
 }
 ```
 
-- [ ] **Step 11: Callers the compiler names**
+- [x] **Step 11: Callers the compiler names**
 
 - `cmd/aura/document_retrieval_wiring.go` (add the `internal/embeddings` import):
   - replace `Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),` with `Embedder: newQueryEmbedder(cfg, func() string { return cfg.LLM.APIKey }),`. The boot key is what `embeddingClient` sent; Task 7 makes it live.
@@ -1572,7 +1575,7 @@ func newQueryEmbedder(cfg *config.Config, credential func() string) documents.Qu
 
 - Any other test the compiler names (`retrieval_neighbours_test.go`, `retrieval_degradation_test.go`) builds unchanged: the fake embedder now has `Space`.
 
-- [ ] **Step 12: Run everything this task touched**
+- [x] **Step 12: Run everything this task touched**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go build ./... && go vet ./internal/arcadedb/ ./internal/documents/ ./cmd/aura/ && go vet -tags retrieval_eval ./internal/documents/ && go test ./internal/arcadedb/ ./internal/documents/ -count=1 && go test ./internal/agent/tools/ -run "Document" -count=1 && go test ./cmd/aura/ -run "Document|Retriev|Docs" -count=1'`
 Expected:
@@ -1582,7 +1585,7 @@ Expected:
 
 Check: `wc -l internal/documents/retrieval.go internal/arcadedb/document_retrieval.go internal/arcadedb/document_cards.go` all ≤ 600.
 
-- [ ] **Step 13: Commit**
+- [x] **Step 13: Commit**
 
 ```bash
 git add internal/documents/retrieval_space.go internal/documents/retrieval_space_test.go
@@ -1620,7 +1623,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- interna
   - `func (d *DocumentIndex) LexicalCandidates(ctx context.Context, filter CandidateFilter, query string) ([]PassageCandidate, error)`;
   - `func (d *DocumentIndex) LexicalDocumentCards(ctx context.Context, filter CandidateFilter, query string) ([]DocumentCard, error)`.
 
-- [ ] **Step 1: Copy Lucene's stop lists byte for byte**
+- [x] **Step 1: Copy Lucene's stop lists byte for byte**
 
 The measurement run already saved both files, verified by sha256, in `$SCRATCH/stop/`. Copy them:
 
@@ -1634,7 +1637,7 @@ Expected: `23e3d7c9d977756e5dd8ae9a120b51a468f904e79ea12bd084dcccfbba70ac5f` for
 - If `$SCRATCH/stop` is gone, re-extract read-only with `$SCRATCH/q24.sh` (it prints base64) and decode.
 - The files must stay LF. Check with `tr -dc '\r' < file | wc -c` → `0`: a CRLF checkout would change the hash.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `internal/arcadedb/document_lexical_test.go`:
 
@@ -1805,12 +1808,12 @@ func TestLexicalReadsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
 
 `resultBody` and `candidateFixture` are the existing helpers in `document_retrieval_test.go`. The `var index` declared before `testDocumentIndex` is the pattern `TestCandidateLocatorRoundTripsStrictly` uses: the closure reads `index` only when a request arrives, after it is assigned.
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -run "Stopword|LexicalQuery|LexicalReads|LexicalCandidates|LexicalDocumentCards" -count=1'`
 Expected: build failure: `italianStopwords`, `lexicalQuery`, `LexicalCandidates`, `RetrievalLegLexical` and the rest are undefined.
 
-- [ ] **Step 4: The lexical leg in `document_retrieval.go`**
+- [x] **Step 4: The lexical leg in `document_retrieval.go`**
 
 Replace the `RetrievalLegFused` constant block with:
 
@@ -1863,7 +1866,7 @@ In `decodeCandidate`, replace everything from `if leg != RetrievalLegFused {` th
 	*target = &score
 ```
 
-- [ ] **Step 5: `internal/arcadedb/document_lexical.go`**
+- [x] **Step 5: `internal/arcadedb/document_lexical.go`**
 
 ```go
 package arcadedb
@@ -2049,12 +2052,12 @@ func lexicalCardStatement(field, where string, limit int) string {
 }
 ```
 
-- [ ] **Step 6: Run the tests and the package**
+- [x] **Step 6: Run the tests and the package**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/arcadedb/ -count=1 && go vet ./internal/arcadedb/ && go build ./...'`
 Expected: `ok`. Whether ArcadeDB accepts the two-key `ORDER BY` on a `$score` alias is proved live in Task 8. The earlier VM measurement used the one-key form.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/arcadedb/stopwords/italian_stop.txt internal/arcadedb/stopwords/english_stop.txt internal/arcadedb/document_lexical.go internal/arcadedb/document_lexical_test.go
@@ -2088,7 +2091,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- interna
   - `PassageIndex.LexicalCandidates(context.Context, arcadedb.CandidateFilter, string) ([]arcadedb.PassageCandidate, error)`;
   - `ProductionRetrievalProfile = "arcadedb-fused-card-v3"`.
 
-- [ ] **Step 1: Extend the fakes**
+- [x] **Step 1: Extend the fakes**
 
 In `retrieval_test.go`, add `lexicalQuery string` to `fakeRetrievalControl`, and:
 
@@ -2122,7 +2125,7 @@ func (f *fakePassageIndex) LexicalCandidates(
 }
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `internal/documents/retrieval_lexical_test.go`:
 
@@ -2256,12 +2259,12 @@ In `TestHostRetrieverDegradationIsExplicit`:
 - delete the `{"embedding", …, DegradationEmbedding}` row and the `if test.reason == DegradationEmbedding { … }` block;
 - rewrite the leading comment to say that a refused passage index leaves only the cards. The embedding case is now lexical mode, pinned by `TestLexicalModeAnswersEveryDenseFailure`.
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./internal/documents/ -run "LexicalMode|DegradationIsExplicit" -count=1'`
 Expected: build failure: `RetrievalLexicalOnly` is undefined. After adding only that constant, the table fails with `Status degraded_card_only`.
 
-- [ ] **Step 4: Rank by the leg's own score**
+- [x] **Step 4: Rank by the leg's own score**
 
 In `retrieval_rank.go`, replace
 
@@ -2287,7 +2290,7 @@ and in `mergePassage` replace `if candidate.FusedScore != nil { evidence.Score =
 	}
 ```
 
-- [ ] **Step 5: `internal/documents/retrieval_lexical.go`**
+- [x] **Step 5: `internal/documents/retrieval_lexical.go`**
 
 ```go
 package documents
@@ -2348,7 +2351,7 @@ func (c *ArcadeRetrievalControlPlane) LexicalDocumentCards(ctx context.Context, 
 }
 ```
 
-- [ ] **Step 6: `Retrieve` chooses its mode once**
+- [x] **Step 6: `Retrieve` chooses its mode once**
 
 In `retrieval.go`:
 - Set `ProductionRetrievalProfile = "arcadedb-fused-card-v3"`: the leg set changed.
@@ -2404,7 +2407,7 @@ In `retrieval.go`:
 
 The abstention and ranking tail that follows is unchanged. It reads `fused`, which is now either leg's passages. In its long comment, replace "Both legs now score the same reranked cosine and BOTH are cut by the same RelevanceFloor" with "In dense mode both legs score the same reranked cosine and both are cut by the same relevance floor; in lexical mode both are cut by the same BM25 floor".
 
-- [ ] **Step 7: Run everything this task touched**
+- [x] **Step 7: Run everything this task touched**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go build ./... && go vet ./internal/documents/ ./cmd/aura/ && go vet -tags retrieval_eval ./internal/documents/ && go test ./internal/documents/ ./internal/arcadedb/ -count=1 && go test ./internal/agent/tools/ -run "Document" -count=1 && go test ./cmd/aura/ -run "Document|Retriev|Docs" -count=1'`
 Expected:
@@ -2412,7 +2415,7 @@ Expected:
 - the whole `./internal/documents/` suite stays green, so every dense test (citations, scope, neighbours, card lane, duplicates) is unchanged;
 - `wc -l internal/documents/retrieval.go` ≤ 600.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/documents/retrieval_lexical.go internal/documents/retrieval_lexical_test.go
@@ -2454,7 +2457,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- interna
   - `chatEnv.documentEmbedder`;
   - `documentQueryTimeout(cfg *config.Config) time.Duration`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `cmd/aura/document_retrieval_wiring_test.go`:
 
@@ -2532,12 +2535,12 @@ func TestLogEmbeddingSpaceNamesTheFamily(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go test ./cmd/aura/ -run "DocumentQuery|LogEmbeddingSpace|MemoryEmbedder|LogMemorySpace" -count=1'`
 Expected: build failure: `liveKey`, `wireDocumentQueryEmbedder`, `runtimeToolHandles.Documents` and `logEmbeddingSpace` are undefined.
 
-- [ ] **Step 3: One live key, one boot log**
+- [x] **Step 3: One live key, one boot log**
 
 In `memory_embedder.go`:
 
@@ -2574,7 +2577,7 @@ func logEmbeddingSpace(logger *slog.Logger, family string, embedder arcadedb.Den
 
 Rename `memorySpaceBootTimeout` to `spaceBootTimeout`. Update `TestLogMemorySpaceNamesTheDaemonsSpace` to call `logEmbeddingSpace(…, "memory", …)`: the function was renamed, and the assertion `space=es1-daemon` is unchanged.
 
-- [ ] **Step 4: Wire the live key after the runtime exists**
+- [x] **Step 4: Wire the live key after the runtime exists**
 
 In `main.go`, add to `runtimeToolHandles`:
 
@@ -2645,7 +2648,7 @@ In `serve.go:345`, replace the `logMemorySpace` call with:
 
 Delete `cmd/aura/embedding_client.go`: its two callers are gone. In `internal/runner/runner_deps.go`, replace the comment line `documents.EmbeddingClient built over the resolved config.EmbedRoute` and the one after it with `the daemon's document query route (embeddings.Route over config.EmbedRoute, key read live)`.
 
-- [ ] **Step 5: Run everything this task touched**
+- [x] **Step 5: Run everything this task touched**
 
 Run: `wsl -e bash -c 'export PATH=$HOME/.local/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && go build ./... && go vet ./cmd/aura/ ./internal/runner/ && go test ./cmd/aura/ -run "DocumentQuery|LogEmbeddingSpace|MemoryEmbedder|NewHostDocumentRetriever|Registry|Docs" -count=1 && go test ./internal/documents/ ./internal/runner/ -count=1'`
 Expected:
@@ -2653,7 +2656,7 @@ Expected:
 - `wc -l cmd/aura/main.go` ≤ 600 (one field added, one line saved);
 - `git grep -n "embeddingClient(\|documentHTTPClient(" -- cmd` prints nothing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git rm -q cmd/aura/embedding_client.go
@@ -2681,7 +2684,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- cmd/aur
 - Consumes: everything above, through exported names only (`arcadedb.New`, `NewDocumentIndex`, `DocumentsDenseOpen`, `FusedCandidates`, `documents.HostRetriever`, `ArcadeRetrievalControlPlane`, `QueryEmbedder`).
 - Produces: nothing new in production code.
 
-- [ ] **Step 1: The tunnel runner**
+- [x] **Step 1: The tunnel runner**
 
 Write `$SCRATCH/arcade-vm.sh`:
 
@@ -2705,7 +2708,7 @@ for _ in $(seq 1 20); do curl -s -m 2 -o /dev/null http://127.0.0.1:12480/api/v1
 go test -tags "${3:-arcadedb_integration}" "${2:-./internal/arcadedb/}" -run "$1" -count=1 -v 2>&1 | tail -80
 ```
 
-- [ ] **Step 2: Write the live test**
+- [x] **Step 2: Write the live test**
 
 Create `internal/arcadedb/document_space_live_integration_test.go`:
 
@@ -3038,7 +3041,7 @@ func TestDocumentSpaceLiveGateOpensOnceTheLibraryIsWhole(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run it on the VM's ArcadeDB**
+- [x] **Step 3: Run it on the VM's ArcadeDB**
 
 Run: `cd $SCRATCH && MSYS_NO_PATHCONV=1 wsl -e bash arcade-vm.sh DocumentSpaceLive`
 Expected: three `--- PASS` lines, and runtimes above a second (a sub-second tier is a skip tell).
@@ -3056,7 +3059,7 @@ S docker exec aura-arcadedb ls /home/arcadedb/databases | grep -c aura_documents
 Run: `cd $SCRATCH && MSYS_NO_PATHCONV=1 wsl -e bash r.sh q27.sh`
 Expected: `0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add internal/arcadedb/document_space_live_integration_test.go

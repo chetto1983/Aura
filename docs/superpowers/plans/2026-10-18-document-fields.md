@@ -1,5 +1,9 @@
 # Document fields implementation plan
 
+**Closed (2026-11-26):** step 7's re-run became Task 3 of `2026-10-23-document-search-lists.md`, where the
+operator replaced the scored run with the agent's check. Its boxes had never been ticked; they are now,
+so the plan no longer reads as open.
+
 **Status (2026-10-23):** PARTIAL. Task 0 measured in ffa66d6a9
 (`verification/2026-10-18-document-fields-mirror.md`); T1-T12 in 2c9923ec3..dfc4f5e13; Task 13
 steps 1-6 in 28fa1f13d..4a46a87e2 (`verification/2026-10-18-document-fields.md`, final review's
@@ -608,7 +612,7 @@ writes beside its code.
 - [x] **Step 5. Final review** by one fresh reviewer, on the range, this plan, the spec and the
   Review Focus. Fix its findings test-first.
 - [x] **Step 6. Push. Merge to master** on the operator's word.
-- [ ] **Step 7. The lab VM.** The real agent answers the set through `document_search` with
+- [x] **Step 7. The lab VM.** The real agent answers the set through `document_search` with
   filters, after the operator reviewed the library in the view. The score must be above 9.8, with
   the dated file. The operator runs it.
 
