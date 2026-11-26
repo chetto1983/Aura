@@ -128,7 +128,7 @@ scripts/go_test_ledger_test.sh
 
 ### Task C1: The allowlist from the measured list
 
-- [ ] Each violation from B4 either gets fixed (wire it, or fix the test with the reason) or an entry with a class the operator accepts. Expected from 2026-11-25: the paid and measurement tags, the Telegram live tier (`outward`), the desktop-only/mobile-only Playwright tests (`platform`), the 32 GB soak (`platform`), the 19 manual Playwright specs of spec §10.2 (`paid`, `outward`).
+- [ ] Each violation from B4 either gets fixed (wire it, or fix the test with the reason) or an entry with a class the operator accepts. Expected from 2026-11-25: the paid and measurement tags, the Telegram live tier (`outward`), the desktop-only/mobile-only Playwright tests (`platform`), the 32 GB soak (`platform`), the 16 manual Playwright specs of spec §10.2 (15 `paid`, `remote-access-live` `outward`), and the Telegram live tier, which runs only in the nightly `live-outward.yml` (`outward`).
 
 ### Task C2: Enforce
 

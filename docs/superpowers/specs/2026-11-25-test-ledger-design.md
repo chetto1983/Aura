@@ -201,8 +201,8 @@ skips either go through it or become `platform` entries.
 | multimodal audio skip-as-green | the job fails when a sidecar never comes up |
 | seven unguarded tagged-tier skips | fail under `$CI` through each package's existing guard |
 | `TestEgress_FQDNAllowlist` | removed with the OpenSandbox FQDN mode no image could run (operator, 2026-11-25); a set `AURA_SANDBOX_EGRESS_ALLOWLIST` fails boot |
-| Telegram live tier | stays manual: `outward` (operator, 2026-11-25) |
-| 27 gated Playwright spec files (§10.2) | 8 wired in Web E2E; 19 stay manual as `paid` or `outward` |
+| Telegram live tier | nightly in `live-outward.yml`, where a missing secret fails it; `ci.yml` compiles it (operator, 2026-11-26) |
+| 27 gated Playwright spec files (§10.2) | 11 wired in Web E2E; 16 stay manual as `paid` or `outward` |
 
 The glob runner of §4.4 was not needed for the Python self-tests (discovery covers them); the
 shell self-tests are still listed by hand, and the ledger is what catches one left out.
@@ -268,6 +268,12 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
    (Cloudflare) and the two paperless specs that create a second identity, because provisioning resolves
    the bot's name with a live Telegram `getMe` (`internal/agui/onboarding_provision.go`), which no CI
    token can answer.
+   *Updated 2026-11-26 (operator):* the two paperless identity specs run in Web E2E against a local
+   `getMe` fake and a strict, isolation-on serve; `native-media-live` runs there with a local vision
+   model (Qwen2.5-VL-3B, the only candidate at ten turns out of ten); `remote-access-live` stays
+   manual, an attended acceptance; the Telegram live tier runs nightly in `live-outward.yml`. That makes
+   11 wired, 15 `paid` and 1 `outward` (measurements:
+   `docs/superpowers/verification/2026-11-26-test-ledger-open-points.md`).
 
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
@@ -276,3 +282,8 @@ cablalo"). Of the 11 that are not paid, the 8 stack-only specs are wired; the 3 
 no CI holds (`remote-access`: Cloudflare; `paperless-first-import` and `paperless-isolation`: a live
 Telegram `getMe`) stay manual with the Telegram tier as `outward`, a classification the operator has still
 to confirm (§10.2).
+
+Answered 2026-11-26: a test registered under a condition is a lint error (§4.1); the paperless identity
+specs run against a `getMe` fake, with no product change; the Telegram live tier runs nightly where a
+missing secret fails it; `remote-access-live` stays manual; `native-media-live` runs on Qwen2.5-VL-3B
+despite its research-only licence, as a CI fixture (§10.2).
