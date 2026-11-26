@@ -25,8 +25,9 @@ func TestNoMountedWhatsAppRefusesTheScheduledDraft(t *testing.T) {
 }
 
 // A scheduled email rides the PIM's send_email tool; the retired multiplexed calendar tool is
-// not a mount it can be drafted against. A nil store refuses the draft before any query, which
-// shows the call got past the route and the target.
+// not a mount it can be drafted against. The context carries no identity, so Create refuses the
+// draft before any query and the nil store is never reached, which shows the call got past the
+// route and the target.
 func TestAScheduledEmailRidesTheSendEmailTool(t *testing.T) {
 	t.Parallel()
 	in := tools.ScheduledMessageDraft{
