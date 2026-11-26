@@ -1,0 +1,51 @@
+{"Time":"2026-11-26T10:55:26.403740335Z","Action":"start","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass"}
+{"Time":"2026-11-26T10:55:26.406164237Z","Action":"run","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Test":"TestPass"}
+{"Time":"2026-11-26T10:55:26.406230008Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Test":"TestPass","Output":"=== RUN   TestPass\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.406263485Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Test":"TestPass","Output":"    pass_test.go:5: fixture pass\n"}
+{"Time":"2026-11-26T10:55:26.406272185Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Test":"TestPass","Output":"--- PASS: TestPass (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.406276881Z","Action":"pass","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Test":"TestPass","Elapsed":0}
+{"Time":"2026-11-26T10:55:26.406286275Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.406630344Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Output":"ok  \tgithub.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass\t0.002s\n"}
+{"Time":"2026-11-26T10:55:26.406665494Z","Action":"pass","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/pass","Elapsed":0.003}
+{"Time":"2026-11-26T10:55:26.633917085Z","Action":"start","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail"}
+{"Time":"2026-11-26T10:55:26.635882527Z","Action":"run","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Test":"TestFail"}
+{"Time":"2026-11-26T10:55:26.635924135Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Test":"TestFail","Output":"=== RUN   TestFail\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.635945993Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Test":"TestFail","Output":"    fail_test.go:5: fixture failure\n","OutputType":"error"}
+{"Time":"2026-11-26T10:55:26.63595341Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Test":"TestFail","Output":"--- FAIL: TestFail (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.635956387Z","Action":"fail","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Test":"TestFail","Elapsed":0}
+{"Time":"2026-11-26T10:55:26.635962795Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.63624994Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Output":"FAIL\tgithub.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail\t0.002s\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.636280442Z","Action":"fail","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/fail","Elapsed":0.002}
+{"Time":"2026-11-26T10:55:26.845664818Z","Action":"start","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip"}
+{"Time":"2026-11-26T10:55:26.848092999Z","Action":"run","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Test":"TestSkip"}
+{"Time":"2026-11-26T10:55:26.848161373Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Test":"TestSkip","Output":"=== RUN   TestSkip\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.848181744Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Test":"TestSkip","Output":"    skip_test.go:5: fixture skip\n"}
+{"Time":"2026-11-26T10:55:26.848187675Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Test":"TestSkip","Output":"--- SKIP: TestSkip (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.848190898Z","Action":"skip","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Test":"TestSkip","Elapsed":0}
+{"Time":"2026-11-26T10:55:26.848197143Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:26.848428184Z","Action":"output","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Output":"ok  \tgithub.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip\t0.002s\n"}
+{"Time":"2026-11-26T10:55:26.848474207Z","Action":"pass","Package":"github.com/chetto1983/aura/scripts/testdata/go_test_ledger/skip","Elapsed":0.003}
+{"Time":"2026-11-26T10:55:27.124466447Z","Action":"start","Package":"github.com/chetto1983/aura/internal/testledger"}
+{"Time":"2026-11-26T10:55:27.126467997Z","Action":"run","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint"}
+{"Time":"2026-11-26T10:55:27.12652886Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint","Output":"=== RUN   TestBuildConstraint\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126575088Z","Action":"run","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/and-not"}
+{"Time":"2026-11-26T10:55:27.12657989Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/and-not","Output":"=== RUN   TestBuildConstraint/and-not\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126585226Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/and-not","Output":"--- PASS: TestBuildConstraint/and-not (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126588062Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/and-not","Elapsed":0}
+{"Time":"2026-11-26T10:55:27.126596725Z","Action":"run","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/or"}
+{"Time":"2026-11-26T10:55:27.126598346Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/or","Output":"=== RUN   TestBuildConstraint/or\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126600948Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/or","Output":"--- PASS: TestBuildConstraint/or (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126603915Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/or","Elapsed":0}
+{"Time":"2026-11-26T10:55:27.126606453Z","Action":"run","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/none"}
+{"Time":"2026-11-26T10:55:27.126608333Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/none","Output":"=== RUN   TestBuildConstraint/none\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126610636Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/none","Output":"--- PASS: TestBuildConstraint/none (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126612503Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/none","Elapsed":0}
+{"Time":"2026-11-26T10:55:27.126614665Z","Action":"run","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/after_the_package_clause_it_is_a_comment"}
+{"Time":"2026-11-26T10:55:27.126617009Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/after_the_package_clause_it_is_a_comment","Output":"=== RUN   TestBuildConstraint/after_the_package_clause_it_is_a_comment\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126622146Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/after_the_package_clause_it_is_a_comment","Output":"--- PASS: TestBuildConstraint/after_the_package_clause_it_is_a_comment (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126631513Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint/after_the_package_clause_it_is_a_comment","Elapsed":0}
+{"Time":"2026-11-26T10:55:27.126634868Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint","Output":"--- PASS: TestBuildConstraint (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.126637976Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Test":"TestBuildConstraint","Elapsed":0}
+{"Time":"2026-11-26T10:55:27.126641948Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-26T10:55:27.12683911Z","Action":"output","Package":"github.com/chetto1983/aura/internal/testledger","Output":"ok  \tgithub.com/chetto1983/aura/internal/testledger\t0.002s\n"}
+{"Time":"2026-11-26T10:55:27.127045877Z","Action":"pass","Package":"github.com/chetto1983/aura/internal/testledger","Elapsed":0.003}

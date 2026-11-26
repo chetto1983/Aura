@@ -1,0 +1,341 @@
+{
+  "config": {
+    "argv": [
+      "/tmp/claude-0/-home-user-Aura/4b1e258e-fcb0-59b4-a0a3-9d74cdaaa68e/scratchpad/node24/bin/node",
+      "/home/runner/work/Aura/Aura/web/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "/tmp/claude-0/-home-user-Aura/4b1e258e-fcb0-59b4-a0a3-9d74cdaaa68e/scratchpad/pwlocal/playwright.config.ts",
+      "--project=chrome",
+      "--project=mobile-chrome",
+      "--workers=1",
+      "--retries=0",
+      "e2e/attachment-filename.spec.ts",
+      "e2e/remote-access-live.spec.ts"
+    ],
+    "configFile": "/tmp/claude-0/-home-user-Aura/4b1e258e-fcb0-59b4-a0a3-9d74cdaaa68e/scratchpad/pwlocal/playwright.config.ts",
+    "rootDir": "/home/runner/work/Aura/Aura/web/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "ci": {
+        "commitHref": "undefined/undefined/commit/undefined",
+        "buildHref": "undefined/undefined/actions/runs/undefined"
+      },
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/runner/work/Aura/Aura/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "actualWorkers": 1
+        },
+        "id": "chrome",
+        "name": "chrome",
+        "testDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "testIgnore": [
+          "**/remote-access-live.spec.ts"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/home/runner/work/Aura/Aura/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "actualWorkers": 1
+        },
+        "id": "mobile-chrome",
+        "name": "mobile-chrome",
+        "testDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "testIgnore": [
+          "**/remote-access-live.spec.ts"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/runner/work/Aura/Aura/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "actualWorkers": 1
+        },
+        "name": "chrome",
+        "testDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "snapshotDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "testIgnore": "**/remote-access-live.spec.ts",
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "https://127.0.0.1:9443",
+          "trace": "off",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "ignoreHTTPSErrors": true,
+          "serviceWorkers": "block",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.8154.6 Safari/537.36",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1920,
+            "height": 1080
+          },
+          "deviceScaleFactor": 1,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "chromium",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium"
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "chrome"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/home/runner/work/Aura/Aura/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "actualWorkers": 1
+        },
+        "name": "mobile-chrome",
+        "testDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "snapshotDir": "/home/runner/work/Aura/Aura/web/e2e",
+        "testIgnore": "**/remote-access-live.spec.ts",
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "https://127.0.0.1:9443",
+          "trace": "off",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "ignoreHTTPSErrors": true,
+          "serviceWorkers": "block",
+          "userAgent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.8154.6 Mobile Safari/537.36",
+          "viewport": {
+            "width": 393,
+            "height": 727
+          },
+          "screen": {
+            "width": 393,
+            "height": 851
+          },
+          "deviceScaleFactor": 2.75,
+          "isMobile": true,
+          "hasTouch": true,
+          "defaultBrowserType": "chromium",
+          "launchOptions": {
+            "executablePath": "/opt/pw-browsers/chromium"
+          }
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "mobile-chrome"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "github",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/tmp/claude-0/-home-user-Aura/4b1e258e-fcb0-59b4-a0a3-9d74cdaaa68e/scratchpad/ledger-pw/playwright-26862.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.65.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "attachment-filename.spec.ts",
+      "file": "attachment-filename.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a chat attachment carries its real name to the object store",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 31229,
+                  "error": {
+                    "message": "TimeoutError: page.waitForResponse: Timeout 30000ms exceeded while waiting for event \"response\"",
+                    "stack": "TimeoutError: page.waitForResponse: Timeout 30000ms exceeded while waiting for event \"response\"\n    at /home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts:37:26",
+                    "location": {
+                      "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                      "column": 26,
+                      "line": 37
+                    },
+                    "snippet": "  35 |   await expect(page.getByRole('textbox', { name: /Ask Aura/ })).toBeVisible({ timeout: 30_000 });\n  36 |\n> 37 |   const presigned = page.waitForResponse(\n     |                          ^\n  38 |     (res) =>\n  39 |       new URL(res.url()).pathname === '/api/assets/presign' && res.request().method() === 'POST',\n  40 |     { timeout: 30_000 },"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                        "column": 26,
+                        "line": 37
+                      },
+                      "message": "TimeoutError: page.waitForResponse: Timeout 30000ms exceeded while waiting for event \"response\"\n\n  35 |   await expect(page.getByRole('textbox', { name: /Ask Aura/ })).toBeVisible({ timeout: 30_000 });\n  36 |\n> 37 |   const presigned = page.waitForResponse(\n     |                          ^\n  38 |     (res) =>\n  39 |       new URL(res.url()).pathname === '/api/assets/presign' && res.request().method() === 'POST',\n  40 |     { timeout: 30_000 },\n    at /home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts:37:26"
+                    },
+                    {
+                      "location": {
+                        "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                        "column": 25,
+                        "line": 44
+                      },
+                      "message": "Error: page.waitForResponse: Test ended.\n\n  42 |   // The PUT goes straight to Garage. Its request proves the browser carried the signed\n  43 |   // metadata header; its response proves Garage accepted the same signed upload.\n> 44 |   const uploaded = page.waitForResponse(\n     |                         ^\n  45 |     (res) =>\n  46 |       res.request().method() === 'PUT' &&\n  47 |       res.request().headers()['x-amz-meta-filename'] !== undefined,\n    at /home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts:44:25"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-26T10:54:05.951Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/home/runner/work/Aura/Aura/web/test-results/attachment-filename-a-chat-58537-al-name-to-the-object-store-chrome/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/runner/work/Aura/Aura/web/test-results/attachment-filename-a-chat-58537-al-name-to-the-object-store-chrome/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                    "column": 26,
+                    "line": 37
+                  }
+                }
+              ],
+              "status": "unexpected"
+            },
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "one upload path, proven once on desktop",
+                  "location": {
+                    "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                    "line": 20,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "mobile-chrome",
+              "projectName": "mobile-chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 4,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-26T10:54:37.844Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "one upload path, proven once on desktop",
+                      "location": {
+                        "file": "/home/runner/work/Aura/Aura/web/e2e/attachment-filename.spec.ts",
+                        "line": 20,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "e7f42f8cb93cbf03101d-916893ffa24bf51286c4",
+          "file": "attachment-filename.spec.ts",
+          "line": 23,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-26T10:54:05.371Z",
+    "duration": 32565.938000000002,
+    "expected": 0,
+    "skipped": 1,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

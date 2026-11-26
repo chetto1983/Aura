@@ -159,7 +159,7 @@ them by file, and discovery then runs those 37 tests twice.
 
 **Files:** `internal/testledger/results.go` + test, `testdata/` cut from the 2026-11-25 logs
 
-- [ ] One reader per format, each returning units `{suite, id, status}`; a top-level Go test is `pkg TestName`, a subtest (`/` in the name) is ignored.
+- [x] One reader per format, each returning units `{suite, id, status}`; a top-level Go test is `pkg TestName`, a subtest (`/` in the name) is ignored.
 - [ ] Union across files: executed if any file has `pass` or `fail` for the unit.
 
 ### Task B3: The allowlist and the check
