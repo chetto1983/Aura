@@ -43,7 +43,11 @@ remove_orphan_volumes() { :; }
 image_id() { echo image-id; }
 # The real one where the sandbox is unpinned: it must not reach docker at all.
 stale_boxes() { if [[ "${PINS}" == 0 ]]; then updater_stale_boxes; else echo "${STALE}"; fi; }
-wait_healthy() { echo "wait_healthy $1" >>"$calls"; }
+# die-after-restart: aura never turns healthy again once restarted.
+wait_healthy() {
+  [[ ! -e die-after-restart || "$(tail -1 "$calls")" != 'docker compose restart aura' ]] || exit 9
+  echo "wait_healthy $1" >>"$calls"
+}
 
 # The stack, as files in the case's directory, on a clock in tenths of a second: created-<svc>
 # and started-aura hold times, absent-<svc> marks a service not running here, and blank-<svc>
@@ -332,3 +336,30 @@ started_reads() { grep -cx 'docker inspect --format {{.State.StartedAt}} aura-id
   [[ "$(started_reads)" == 0 ]] || fail "aura's start time was read although no sidecar moved"
 )
 echo "ok: a sidecar created as aura started is not newer, and aura's start time is read once, and only when needed"
+
+# (10) The record of what the sidecars ran before the apply exists to outlive a tick that dies, and
+# only that: a decision taken, whether to restart (awaited) or not to, clears it.
+record=mcp_sidecars.recorded
+(
+  PAYLOAD=0 && new_case record-after-restart
+  SIDECAR_MOVES=aura-pim-mcp && apply
+  expect_restarts 1 "the restart that clears the record"
+  [[ ! -e "$record" ]] || fail "the record outlived an apply that restarted aura and saw it healthy"
+)
+(
+  PAYLOAD=0 && new_case record-after-no-op
+  apply
+  [[ ! -e "$record" ]] || fail "the record outlived an apply that replaced nothing"
+)
+(
+  PAYLOAD=1 && new_case record-after-dead-tick
+  AURA_RECREATE=1 UP_RECREATES=aura-pim-mcp FAIL_AT=caddy && apply_dies "caddy never turned healthy"
+  [[ -e "$record" ]] || fail "a tick that died before its decision lost the record"
+)
+(
+  PAYLOAD=0 && new_case record-after-dead-restart
+  SIDECAR_MOVES=aura-pim-mcp && touch die-after-restart && apply_dies "aura never turned healthy after the restart"
+  [[ "$(restarts)" == 1 ]] || fail "aura was not restarted once before the tick died: $(cat "$calls")"
+  [[ -e "$record" ]] || fail "a tick that died awaiting the restart lost the record"
+)
+echo "ok: the record is cleared by a decision taken, and kept by a tick that dies before it"
