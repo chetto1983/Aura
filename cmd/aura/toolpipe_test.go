@@ -79,6 +79,10 @@ func (*toolPipeTaskStore) ListScheduledTasks(context.Context) ([]tools.Scheduled
 	return nil, nil
 }
 
+func (*toolPipeTaskStore) CancelTarget(_ context.Context, id string) (tools.ScheduledTask, error) {
+	return tools.ScheduledTask{ID: id}, nil
+}
+
 func (*toolPipeTaskStore) CancelScheduledTask(context.Context, string) error {
 	return nil
 }

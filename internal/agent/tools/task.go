@@ -74,6 +74,9 @@ type ScheduledTask struct {
 	PausedReason        string
 	ConsecutiveFailures int
 	TelegramRecipients  []int64
+	// OriginConversationID is the conversation that scheduled the task, "" for one scheduled
+	// from the CLI or the cockpit. Only CancelTarget reads it.
+	OriginConversationID string
 }
 
 // CreateTaskInput carries a resolved, validated task the tool asks the store to
@@ -110,6 +113,9 @@ type CreateTaskInput struct {
 type taskStore interface {
 	CreateScheduledTask(ctx context.Context, in CreateTaskInput) (ScheduledTask, error)
 	ListScheduledTasks(ctx context.Context) ([]ScheduledTask, error)
+	// CancelTarget reads the task CancelScheduledTask would stop, origin included, and
+	// refuses what it would refuse.
+	CancelTarget(ctx context.Context, id string) (ScheduledTask, error)
 	CancelScheduledTask(ctx context.Context, id string) error
 	RunScheduledTaskNow(ctx context.Context, id string) error
 	PauseScheduledTask(ctx context.Context, id string) error

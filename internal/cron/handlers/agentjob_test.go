@@ -43,6 +43,10 @@ func (*agentJobTaskStore) ListScheduledTasks(context.Context) ([]tools.Scheduled
 	return nil, nil
 }
 
+func (*agentJobTaskStore) CancelTarget(_ context.Context, id string) (tools.ScheduledTask, error) {
+	return tools.ScheduledTask{ID: id}, nil
+}
+
 func (*agentJobTaskStore) CancelScheduledTask(context.Context, string) error { return nil }
 
 func (*agentJobTaskStore) RunScheduledTaskNow(context.Context, string) error { return nil }

@@ -42,6 +42,9 @@ func (f *fakeTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInpu
 func (f *fakeTaskStore) ListScheduledTasks(context.Context) ([]ScheduledTask, error) {
 	return f.listRows, f.listErr
 }
+func (f *fakeTaskStore) CancelTarget(_ context.Context, id string) (ScheduledTask, error) {
+	return ScheduledTask{ID: id}, nil
+}
 func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error {
 	f.cancelled = id
 	return f.cancelErr
