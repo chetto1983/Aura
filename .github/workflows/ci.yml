@@ -2513,6 +2513,19 @@ jobs:
           fi
           bash scripts/web_e2e_ci.sh --project=chrome --workers=1 e2e/native-media-live.spec.ts
 
+      - name: Playwright TLS mailbox spec (GreenMail over TLS, a PIM that trusts it)
+        # Settings connects a mailbox only over TLS, and the job's PIM trusts no mail certificate,
+        # so it gives way to the fixture's on the same port (scripts/pim_tls_mail_up.sh). Only
+        # the TLS test is selected: the spec's real-agent mail test is paid, and its credentials
+        # test already ran in the first Playwright step.
+        env:
+          AURA_E2E_PIM_TLS_MAIL: "1"
+        run: |
+          docker rm -f aura-pim-web-ci
+          AURA_PIM_MCP_DEV_IMAGE="$AURA_PIM_MCP_IMAGE" bash scripts/pim_tls_mail_up.sh
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1 e2e/mcp-cockpit-live.spec.ts \
+            --grep 'connects a mailbox over TLS'
+
       # scripts/web_e2e_ci.sh keeps each aura serve's log under $RUNNER_TEMP and nothing read them:
       # run 45792411148 failed on a model turn whose tool calls and token counts were in a log no
       # one could open afterwards.
@@ -2528,6 +2541,7 @@ jobs:
         if: always()
         run: |
           docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci aura-vision-ci || true
+          bash scripts/pim_tls_mail_up.sh down || true
           docker compose down
 
       - name: Upload the test ledger
