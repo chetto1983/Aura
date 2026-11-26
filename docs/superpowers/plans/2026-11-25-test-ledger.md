@@ -84,7 +84,9 @@ so the helper keeps `-C dir` ahead of `-json`. Seven mutants of the helper (each
 - [x] Inventory first: `git grep -nE 'go test' -- .github Makefile scripts` and list each invocation CI reaches; the list goes in the commit body.
 - [x] Replace each with the helper; `agent_memory_eval.py` writes the `go test -json` it already collects into the ledger dir.
 - [x] Each test job sets `AURA_TEST_LEDGER_DIR` and uploads it as `test-ledger-${{ github.job }}` with `if: always()`.
-- [ ] Run locally the scripts that can run here (`musr_e2e.sh`, `pim_mail_e2e.sh`) and check their jsonl.
+- [x] Run locally the scripts that can run here (`musr_e2e.sh`, `pim_mail_e2e.sh`) and check their jsonl.
+  Checked on CI, not locally: on `master` run 45866028711, `musr-e2e.jsonl` holds 41 passing tests and
+  `pim-mail.jsonl` 1, and the gate read both.
 
 *Done 2026-11-26.* The inventory differed from the file list above: `microcompact_smoke.sh` and
 `ingest_media_e2e.sh` are launched by no workflow, `capability_eval.py` collects `go test -json` too and
@@ -179,7 +181,9 @@ the static check in Part C.
 **Files:** `cmd/testledger/main.go`, `.github/workflows/ci.yml`
 
 - [x] `test-ledger` job: `needs:` every test job, `if: ${{ !cancelled() }}`, downloads `test-ledger-*`, runs `go run ./cmd/testledger check --report-only`, writes the counts, every allowlist entry and every violation to `$GITHUB_STEP_SUMMARY`.
-- [ ] Merge; read the first `master` summary; write the dated verification file with the violation list.
+- [x] Merge; read the first `master` summary; write the dated verification file with the violation list.
+  `docs/superpowers/verification/2026-11-26-test-ledger-first-master-report.md`: run 45866028711, 153
+  violations, each with what closes it.
 
 ## Part C: enforce and retire
 
@@ -198,9 +202,11 @@ runs every live step with `--project=chrome`.
 ### Task C2: Enforce
 
 - [x] Drop `--report-only`. A fixture run in the self-test proves the gate fails on a declared-but-unexecuted test and on an unexcused skip.
-- [ ] CI green on the PR; merge on the operator's word.
+- [x] CI green on the PR; merge on the operator's word. #284, merged as `e5d3f5127`.
 
 ### Task C3: Retire the static check
 
-- [ ] Delete `cmd/aura/tier_runners*_test.go` and `.github/manual_test_tiers.txt`; update the references (`git grep -n 'manual_test_tiers\|tier_runners'`), the babysit skill's table included.
+- [x] Delete `cmd/aura/tier_runners*_test.go` and `.github/manual_test_tiers.txt`; update the references (`git grep -n 'manual_test_tiers\|tier_runners'`), the babysit skill's table included.
+  The references left are this plan, the spec and the 2026-11-25 inventory, which describe it as history;
+  the babysit skill never named it.
 - [ ] Verification file of the closing run.
