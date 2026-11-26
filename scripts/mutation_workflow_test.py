@@ -131,20 +131,39 @@ class GoGroupJobTest(unittest.TestCase):
     def test_a_failing_group_does_not_cancel_its_siblings(self) -> None:
         self.assertIn("fail-fast: false", self.body)
 
-    def test_each_group_restores_measures_its_scopes_and_exports_without_saving(self) -> None:
+    def test_each_group_restores_measures_saves_its_own_cache_and_exports(self) -> None:
         restore = step_index(self.steps, "actions/cache/restore@", f"path: {GO_CACHE}")
         run = step_index(self.steps, "python3 scripts/critical_mutation_gate.py")
+        save = step_index(self.steps, "actions/cache/save@", f"path: {GO_CACHE}")
         upload = step_index(self.steps, "actions/upload-artifact@")
         self.assertLess(restore, run)
-        self.assertLess(run, upload)
-        self.assertIn("github.sha", self.steps[restore])
-        self.assertIn("restore-keys:", self.steps[restore])
+        self.assertLess(run, save)
+        self.assertLess(save, upload)
         self.assertIn("--measure-scopes ${{ matrix.scopes }}", self.steps[run])
         self.assertIn(f"--go-cache-dir {GO_CACHE}", self.steps[run])
         self.assertIn("--export-dir artifacts/go-mutation-group", self.steps[run])
         self.assertIn("name: go-mutation-${{ matrix.group }}", self.steps[upload])
         self.assertIn("if: always()", self.steps[upload])
-        self.assertNotIn("actions/cache/save@", self.body, "only the aggregate saves the cache")
+
+    def test_each_group_restores_its_own_key_then_falls_back_to_the_group_then_any_entry(self) -> None:
+        step = self.steps[step_index(self.steps, "actions/cache/restore@", f"path: {GO_CACHE}")]
+        prefix = "go-mutation-v1-${{ runner.os }}-"
+        self.assertIn("id: go_mutation_cache", step)
+        self.assertIn(
+            f"key: {prefix}${{{{ matrix.group }}}}-${{{{ github.sha }}}}-${{{{ github.run_attempt }}}}", step
+        )
+        listed = re.search(r"restore-keys: \|\n((?: {12}.+\n?)+)", step).group(1)
+        self.assertEqual(
+            [line.strip() for line in listed.splitlines()],
+            [f"{prefix}${{{{ matrix.group }}}}-", prefix],
+        )
+
+    def test_each_group_saves_on_cancel_under_the_key_it_restored_with(self) -> None:
+        step = self.steps[step_index(self.steps, "actions/cache/save@", f"path: {GO_CACHE}")]
+        # !cancelled() is false once a push cancels the run, and the measurements would be lost.
+        self.assertIn("if: always() && steps.go_mutation_cache.outputs.cache-hit != 'true'", step)
+        self.assertNotIn("cancelled()", step)
+        self.assertIn("key: ${{ steps.go_mutation_cache.outputs.cache-primary-key }}", step)
 
 
 class AggregateJobTest(unittest.TestCase):
@@ -169,14 +188,10 @@ class AggregateJobTest(unittest.TestCase):
         self.assertIn(f"--go-cache-dir {GO_CACHE}", self.steps[run])
         self.assertLess(max(go, stryker), run)
 
-    def test_the_aggregate_saves_the_merged_cache_once(self) -> None:
-        lookup = step_index(self.steps, "actions/cache/restore@", "lookup-only: true")
-        save = step_index(self.steps, "actions/cache/save@")
-        self.assertIn(f"path: {GO_CACHE}", self.steps[lookup])
-        self.assertIn(f"path: {GO_CACHE}", self.steps[save])
-        self.assertIn("if: always()", self.steps[save])
-        self.assertIn("cache-hit != 'true'", self.steps[save])
-        self.assertLess(save, step_index(self.steps, "actions/upload-artifact@", "critical-mutation"))
+    def test_the_aggregate_neither_saves_nor_looks_up_the_cache(self) -> None:
+        # Each group saves its own entries; a save here would only run when nothing was cancelled.
+        self.assertNotIn("actions/cache", self.body)
+        self.assertNotIn("lookup-only", self.body)
 
     def test_the_evidence_artifact_carries_exactly_one_report(self) -> None:
         upload = self.steps[step_index(self.steps, "actions/upload-artifact@", "name: critical-mutation")]
