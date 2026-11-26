@@ -71,6 +71,11 @@ ARCADE=aura-arcadedb-mcp-live
 PIM=aura-pim-mcp-live
 WHATSAPP=aura-whatsapp-mcp-live
 random_hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
+# A pulled image has a registry digest; a locally built override (AURA_PIM_MCP_DEV_IMAGE) has none,
+# and indexing its empty RepoDigests is a template error: report its image ID instead.
+image_identity() {
+  docker image inspect "$1" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}'
+}
 PG_PASSWORD="$(random_hex 16)"
 ARCADE_PASSWORD="$(random_hex 16)"
 ARCADEDB_URL="http://127.0.0.1:$ARCADE_PORT"
@@ -196,8 +201,7 @@ for tenant in d1111111-1111-4111-8111-111111111111 d2222222-2222-4222-8222-22222
 done
 docker exec "$WHATSAPP" chmod -R a+rwX /app/whatsapp-bridge/store
 
-echo "==> PIM $(docker image inspect "$PIM_IMAGE" --format '{{index .RepoDigests 0}}')," \
-  "WhatsApp $(docker image inspect "$WHATSAPP_IMAGE" --format '{{index .RepoDigests 0}}')," \
+echo "==> PIM $(image_identity "$PIM_IMAGE"), WhatsApp $(image_identity "$WHATSAPP_IMAGE")," \
   "database $DB on 127.0.0.1:$PG_PORT, ArcadeDB $ARCADE_IMAGE on $ARCADEDB_URL"
 AURA_AUTHULA_DSN="$AURA_DB_URL" AURA_AUTHULA_SECRET="$AUTHULA_SECRET" \
   AURA_WHATSAPP_STORE_ROOT="$STORE" WHATSAPP_BRIDGE_TOKEN="$BRIDGE_TOKEN" \
