@@ -535,9 +535,9 @@ export AURA_DOCUMENT_E2E_ACCESS_KEY="$access_key"
 export AURA_DOCUMENT_E2E_SECRET_KEY="$secret_key"
 export AURA_DOCUMENT_E2E_OBJECTSTORE_ENDPOINT="http://127.0.0.1:3900"
 
-go test -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundTrip$' \
+bash scripts/go_test_ledger.sh ingest-reconcile -tags db_integration -run '^TestMigrate0102BackfillsDecisionPolicyRoundTrip$' \
   -timeout 3m -v ./internal/db
-go test -tags document_live_e2e -run '^TestDocumentProductionAgentE2E$' \
+bash scripts/go_test_ledger.sh ingest-reconcile -tags document_live_e2e -run '^TestDocumentProductionAgentE2E$' \
   -timeout 5m -v ./cmd/aura
 
 echo "== Native document retrieval release eval: owned 23-file corpus / 20 qrels =="
@@ -577,10 +577,10 @@ export AURA_BENCH_PILOT="$retrieval_fixture/qrels.json"
 export AURA_BENCH_OUT="$retrieval_report_dir/fusion.json"
 export AURA_BENCH_CANDIDATE="$candidate_sha"
 
-go test -count=1 -tags retrieval_eval \
+bash scripts/go_test_ledger.sh ingest-reconcile -count=1 -tags retrieval_eval \
   -run '^Test(BenchmarkMetricsSupportMultipleGoldDocsAndExposeRegression|FusionBenchmark)$' \
   -timeout 35m -v ./internal/documents
-go test -count=1 -tags document_live_e2e -run '^TestDocumentCorpusAgentEval$' \
+bash scripts/go_test_ledger.sh ingest-reconcile -count=1 -tags document_live_e2e -run '^TestDocumentCorpusAgentEval$' \
   -timeout 35m -v ./cmd/aura
 
 python3 - "$AURA_BENCH_OUT" <<'PY'

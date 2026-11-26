@@ -72,7 +72,7 @@ PY
 echo "==> seeded 3 unread mails into operator@aura.test"
 
 AURA_PIM_MCP_URL=http://127.0.0.1:8093/ PIM_E2E_BUNDLE="$WORK/bundle.json" \
-  go test -race -count=1 -tags pim_mail_e2e -run TestPIMMailEndToEnd -v ./internal/mcp/
+  bash scripts/go_test_ledger.sh pim-mail -race -count=1 -tags pim_mail_e2e -run TestPIMMailEndToEnd -v ./internal/mcp/
 
 echo "==> the briefing baseline over the PIM's real payloads"
 python3 scripts/briefing_baseline.py "$WORK/bundle.json" | tee "$WORK/baseline.txt"

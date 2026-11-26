@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="1" tests="6"><testcase classname="pkg.tests.test_mixed" name="test_passes" /><testcase classname="pkg.tests.test_mixed" name="test_fails"><failure message="assert False">def test_fails():
+&gt;       assert False
+E       assert False
+
+pkg/tests/test_mixed.py:9: AssertionError</failure></testcase><testcase classname="pkg.tests.test_mixed" name="test_skips"><skipped type="pytest.skip" message="fixture skip">/tmp/claude-0/-home-user-Aura/4b1e258e-fcb0-59b4-a0a3-9d74cdaaa68e/scratchpad/pytest-mixed/pkg/tests/test_mixed.py:12: fixture skip</skipped></testcase><testcase classname="pkg.tests.test_mixed" name="test_param[1]" /><testcase classname="pkg.tests.test_mixed" name="test_param[2]" /><testcase classname="pkg.tests.test_mixed.TestGroup" name="test_in_class" /></testsuite></testsuites>

@@ -15,7 +15,7 @@ mkdir -p "${COVDIR}" "$(dirname "${PROFILE}")" "$(dirname "${REPORT}")"
 echo "==> docker coverage gate: owned sandbox surfaces >= ${MIN}%"
 # One covdata directory lets Go merge blocks emitted by all package test binaries
 # without concatenating profiles or counting -coverpkg blocks more than once.
-if ! go test -tags docker_integration -count=1 -p 1 -covermode=atomic \
+if ! bash scripts/go_test_ledger.sh docker-coverage-gate -tags docker_integration -count=1 -p 1 -covermode=atomic \
   -coverpkg=./internal/sandbox/usersandbox/...,./internal/agent/tools/... \
   ./internal/sandbox/usersandbox/... ./internal/agent/tools/... ./cmd/aura/... \
   -args -test.gocoverdir="${COVDIR}"; then

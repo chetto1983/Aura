@@ -105,6 +105,7 @@
     "github.com/chetto1983/aura/internal/steer": {"mode": "target"},
     "github.com/chetto1983/aura/internal/steer/steertest": {"mode": "target"},
     "github.com/chetto1983/aura/internal/swarm": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/testledger": {"mode": "target"},
     "github.com/chetto1983/aura/internal/toolinvocations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "target"},
     "github.com/chetto1983/aura/internal/utf8cut": {"mode": "target"},

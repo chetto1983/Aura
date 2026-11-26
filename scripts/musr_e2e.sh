@@ -231,6 +231,11 @@ export AURA_EMBED_DIMENSIONS="${AURA_EMBED_DIMENSIONS:-768}"
 export AURA_SKILL_EXPORT_DIR="${AURA_SKILL_EXPORT_DIR:-/tmp/aura-musr-skills-export}"
 export AURA_RUN_DIR="${AURA_RUN_DIR:-/tmp/aura-musr-run}"
 mkdir -p "$AURA_SKILL_EXPORT_DIR" "$AURA_RUN_DIR"
+# The arm below makes scripts/go_test_ledger.sh refuse an unset ledger directory, so a local run
+# records into its own; a real CI run keeps the refusal and must set it (ci.yml does).
+if [ -z "${CI:-}" ]; then
+  export AURA_TEST_LEDGER_DIR="${AURA_TEST_LEDGER_DIR:-/tmp/aura-musr-test-ledger}"
+fi
 # No-skip-as-green arm: musrEnvOrSkip/envOrSkip t.Fatal on a missing var under CI=true
 # instead of silently skipping the tier (CLAUDE.md).
 export CI=true
@@ -252,36 +257,36 @@ fi
 
 # --- 8. The tagged tiers: acceptance E2E, then the MCP-boundary memory test ----------
 echo "==> two-identity cross-deny E2E (5 tags, ./cmd/aura/)"
-go test -race -count=1 -p 1 \
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 \
   -tags 'db_integration garage_integration authula_integration musr_e2e arcadedb_integration' \
   -run 'TestTwoIdentityCrossDeny|TestTwoIdentityTelegramLinksCrossDeny|TestProvisionLoginIsolatedRun|TestIdentityCreateProvisionsEveryPlane|TestTwoRolesTracer|TestEnsureForIdentityRestoresAgainstALiveGarage|TestAssetRoundTripKeepsTheOriginal' \
   ./cmd/aura/
 
 echo "==> memory cross-deny and forget at the MCP boundary (arcadedb_integration, ./cmd/arcadedb-mcp/)"
-go test -race -count=1 -p 1 \
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 \
   -tags 'arcadedb_integration' \
   -run 'TestMemoryCrossDenyThroughTheMCPBoundary|TestForgetDetachesOneActorsSourceAfterD10SplitLeavesTheOther' \
   ./cmd/arcadedb-mcp/
 
 # --- 8b. The other live tiers this stack carries ------------------------------------
 echo "==> provisioning saga and asset cross-deny against live Garage (./internal/agui/, ./internal/assets/)"
-go test -race -count=1 -p 1 \
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 \
   -tags 'db_integration garage_integration' \
   -run 'TestProvisioningSagaResumable|TestAssetObjectStoreCrossDenyLive' \
   ./internal/agui/ ./internal/assets/
 
 echo "==> Garage Admin API v2 client (garage_integration, ./internal/objectstore/garageadmin/)"
-go test -race -count=1 -p 1 -tags 'garage_integration' ./internal/objectstore/garageadmin/
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 -tags 'garage_integration' ./internal/objectstore/garageadmin/
 
 echo "==> runner memory capture and projection on live ArcadeDB (./internal/runner/)"
-go test -race -count=1 -p 1 \
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 \
   -tags 'db_integration arcadedb_integration' \
   -run 'TestMemoryCaptureLive_|TestConversationProjectionLiveCrashRecovery' \
   ./internal/runner/
 
 # Last: booting aura serve retires the legacy `local` identity in this database.
 echo "==> the served binary's smoke (serve_smoke, ./cmd/aura/)"
-go test -race -count=1 -p 1 -tags 'serve_smoke' -run 'TestServeSmoke' ./cmd/aura/
+bash scripts/go_test_ledger.sh musr-e2e -race -count=1 -p 1 -tags 'serve_smoke' -run 'TestServeSmoke' ./cmd/aura/
 
 # --- 9. Teardown happens via the EXIT trap registered in step 2 ----------------------
 MUSR_END_EPOCH=$(date +%s)

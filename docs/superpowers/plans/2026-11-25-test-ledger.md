@@ -63,35 +63,88 @@ scripts/go_test_ledger_test.sh
 
 **Files:** `scripts/go_test_ledger.sh`, `scripts/go_test_ledger_test.sh`, `Makefile` (`evidence-contracts` runs the self-test)
 
-- [ ] Write the self-test first: a passing, a failing and a skipping fixture package under `scripts/testdata/go_test_ledger/`; assert the jsonl holds `pass`, `fail`, `skip` events, the printed log equals `go test -v`'s, and the exit status is `go test`'s (non-zero on the failing fixture).
-- [ ] Implement: `set -o pipefail; go test -json "$@" | tee "$AURA_TEST_LEDGER_DIR/$label.jsonl" | jq -rj 'select(.Action=="output").Output'`; refuse an unset `AURA_TEST_LEDGER_DIR` under `$CI`.
-- [ ] `bash scripts/go_test_ledger_test.sh` passes.
+- [x] Write the self-test first: a passing, a failing and a skipping fixture package under `scripts/testdata/go_test_ledger/`; assert the jsonl holds `pass`, `fail`, `skip` events, the printed log equals `go test -v`'s, and the exit status is `go test`'s (non-zero on the failing fixture).
+- [x] Implement: `set -o pipefail; go test -json "$@" | tee "$AURA_TEST_LEDGER_DIR/$label.jsonl" | jq -rj 'select(.Action=="output").Output'`; refuse an unset `AURA_TEST_LEDGER_DIR` under `$CI`.
+- [x] `bash scripts/go_test_ledger_test.sh` passes.
+
+*Done 2026-11-26, with four changes from what was measured.* (1) go1.27.4 reports a compile error as
+`build-output` events, not `output` ones, so the filter above dropped it from the log: the helper prints
+both, and a fourth fixture that does not compile holds it there. With `-v` the same error goes to stderr,
+so the log equals `-v`'s stderr then stdout, less the go command's closing bare `FAIL`, which has no event
+(the exit status carries it). (2) `tee -a`: a label used twice in a job appends instead of erasing the
+first run. (3) Outside `$CI` an unset `AURA_TEST_LEDGER_DIR` runs plain `go test`, so local `make` output
+stays as it is. (4) `go test` takes `-C` only as its first flag (`tools/deadexport` runs that way in CI),
+so the helper keeps `-C dir` ahead of `-json`. Seven mutants of the helper (each change above undone, no
+`pipefail`, `-json` outside CI, any label) are each killed by the self-test.
 
 ### Task A2: Every CI go test goes through it
 
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/skills.yml`, `Makefile`, the CI-launched `scripts/*.sh` (`musr_e2e.sh`, `mcp_live_integration.sh`, `coverage_gate.sh`, `docker_coverage_gate.sh`, `ingest_*_e2e.sh`, `pim_mail_e2e.sh`, `microcompact_smoke.sh`), `scripts/agent_memory_eval.py`
 
-- [ ] Inventory first: `git grep -nE 'go test' -- .github Makefile scripts` and list each invocation CI reaches; the list goes in the commit body.
-- [ ] Replace each with the helper; `agent_memory_eval.py` writes the `go test -json` it already collects into the ledger dir.
-- [ ] Each test job sets `AURA_TEST_LEDGER_DIR` and uploads it as `test-ledger-${{ github.job }}` with `if: always()`.
+- [x] Inventory first: `git grep -nE 'go test' -- .github Makefile scripts` and list each invocation CI reaches; the list goes in the commit body.
+- [x] Replace each with the helper; `agent_memory_eval.py` writes the `go test -json` it already collects into the ledger dir.
+- [x] Each test job sets `AURA_TEST_LEDGER_DIR` and uploads it as `test-ledger-${{ github.job }}` with `if: always()`.
 - [ ] Run locally the scripts that can run here (`musr_e2e.sh`, `pim_mail_e2e.sh`) and check their jsonl.
+
+*Done 2026-11-26.* The inventory differed from the file list above: `microcompact_smoke.sh` and
+`ingest_media_e2e.sh` are launched by no workflow, `capability_eval.py` collects `go test -json` too and
+writes it as `agent_memory_eval.py` does (both through `scripts/test_ledger.py`), and `live-outward.yml`
+runs one. `scripts/tagged_tier_compile.sh` stays as it is: its `-run '^$'` compiles and executes no test.
+The Makefile's own `go test` recipes are reached by no workflow and stay plain. `AURA_TEST_LEDGER_DIR` is
+set once per workflow (`/tmp/aura-test-ledger`), and every job that runs a test ends with the upload
+(`if-no-files-found: error`): 17 in `ci.yml`, one each in `skills.yml` and `live-outward.yml`. Measured
+on the unit tier (124 packages, 15,583 passing tests), the raw stream is 18 MB and 1.3 MB compressed, so
+the file keeps every event. The static check in `cmd/aura/tier_runners*_test.go` reads `go test` from
+workflow text, so until Part C retires it, it reads `go_test_ledger.sh LABEL ARGS` as `go test ARGS`
+(one fixture case). Run here: the no-CGO unit step (3,741 tests recorded) and `pim_mail_e2e.sh` live
+(`TestPIMMailEndToEnd` recorded). `musr_e2e.sh` was not run here: CI runs it on the PR.
 
 ### Task A3: JavaScript and Python suites
 
 **Files:** `web/playwright.config.ts`, `web/package.json`, `packages/create-aura/package.json`, `Makefile` (`ingest-test`), `.github/workflows/ci.yml`
 
-- [ ] Playwright: `['json', { outputFile }]` beside `github` when `AURA_TEST_LEDGER_DIR` is set.
-- [ ] Vitest (both packages): `--reporter=default --reporter=json --outputFile.json=…`.
-- [ ] pytest: `--collect-only -q` into the ledger dir (the declared node ids), then the run with `--junitxml`.
-- [ ] One local run of each, report files inspected.
+- [x] Playwright: `['json', { outputFile }]` beside `github` when `AURA_TEST_LEDGER_DIR` is set.
+- [x] Vitest (both packages): `--reporter=default --reporter=json --outputFile.json=…`.
+- [x] pytest: `--collect-only -q` into the ledger dir (the declared node ids), then the run with `--junitxml`.
+- [x] One local run of each, report files inspected.
+
+*Done 2026-11-26, in the configs rather than on the command line.* Vitest puts `github-actions` among its
+default reporters only when none is configured, so a `--reporter` flag would have dropped the annotations:
+each `vitest.config.ts` appends `json` to `configDefaults.reporters` instead. Web E2E calls Playwright five
+times in one job, so each run writes `playwright-<pid>.json`. Stryker loads `web/vitest.config.ts` and
+keeps its reporters, so its job clears `AURA_TEST_LEDGER_DIR` (mutants are not ledger units). pytest runs in
+the ingest container (root), which mounts the ledger dir. `web-test`, `web-e2e` and `ingest-sidecar-test`
+upload it as the Go jobs do. Run here with the directory set: create-aura (114 tests, 12 files), web
+(4,275 tests in 426 files, the CI count; 13 voice tests fail on this shell's Node 22 and pass on Node 24,
+CI's), a Playwright `--list` (one `playwright-<pid>.json`, the `github` reporter intact), and the ingest
+suite (273 collected, 273 in the JUnit report; run with pytest preinstalled in a scratch image, because
+containers here cannot reach PyPI).
 
 ### Task A4: The shell self-test runner
 
 **Files:** `scripts/run_script_tests.sh`, its self-test, `.github/workflows/ci.yml`, `Makefile`
 
-- [ ] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
-- [ ] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
-- [ ] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` and subdirectories that are packages (an `__init__.py`; none today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a self-test in a non-package subdirectory fails the gate as declared and not executed rather than going unseen.
+- [x] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
+- [x] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
+- [x] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` and subdirectories that are packages (an `__init__.py`; none today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a self-test in a non-package subdirectory fails the gate as declared and not executed rather than going unseen.
+
+*Done 2026-11-26.* `build-and-lint` runs every discovered self-test in one step, last, after the Go
+toolchain, deadcode, makeself and the Caddy image are in place; the separate self-test steps, the
+security-scan loop, the installer/updater list and the four `make *-contract` calls are gone from it.
+Six are left with `--except` to the job that has their prerequisite, which runs them by name through the
+same runner: `cache_invariant_negative`, `observability_sidecar_check`, `extractor_matrix` and
+`ingest_image_contract` (the ingest image; before, only the publish workflow ran it), `sandbox_image_contract`,
+and `cloudflared_image_contract`, whose image only `publish-aura-edge.yml` builds and which therefore
+records nothing yet (Part B must name it). Discovery found one self-test no workflow ran,
+`cloudflare_remote_access_probe_test.sh`; it passes. `make evidence-contracts` and the `*-contract`
+targets stay as local entry points, and CI no longer calls them. Python: no JUnit writer without a new
+dependency, so `scripts/unittest_ledger.py` is the same discovery with a result class that writes
+`<test id> pass|fail|skip` lines to `python-tests.txt`. Measured: 37 of 43 self-tests in the
+`build-and-lint` step in 33 s here, 33 passing and four failing only for what this container lacks and
+the job provides (makeself, the Caddy image, deadcode, a non-root user; deadcode and the non-root run
+then pass); 239 Python test ids recorded where unittest reports `Ran 276`, because
+`agent_memory_eval_test.py` re-imports eight test classes so that `make agent-memory-eval-contract` runs
+them by file, and discovery then runs those 37 tests twice.
 
 ## Part B: judge
 
@@ -99,29 +152,33 @@ scripts/go_test_ledger_test.sh
 
 **Files:** `internal/testledger/declared.go` + test; `cmd/aura/tier_runners_files_test.go` (the moved functions go)
 
-- [ ] Move the four functions with their tests; `cmd/aura`'s static check imports them until Part C.
-- [ ] Unit tests: constraint parsing (`a && !b`, `a || b`), `func TestXxx(*testing.T)` only (not helpers, not `Benchmark`/`Fuzz`), files ignored by the go tool.
+- [x] Move the four functions with their tests; `cmd/aura`'s static check imports them until Part C.
+- [x] Unit tests: constraint parsing (`a && !b`, `a || b`), `func TestXxx(*testing.T)` only (not helpers, not `Benchmark`/`Fuzz`), files ignored by the go tool.
+
+*Done 2026-11-26.* `gatingTags` stays in `cmd/aura`: the ledger does not use it, and the deadcode
+production gate reports a production export that only the static check (a test) calls. It goes with
+the static check in Part C.
 
 ### Task B2: Result readers
 
 **Files:** `internal/testledger/results.go` + test, `testdata/` cut from the 2026-11-25 logs
 
-- [ ] One reader per format, each returning units `{suite, id, status}`; a top-level Go test is `pkg TestName`, a subtest (`/` in the name) is ignored.
-- [ ] Union across files: executed if any file has `pass` or `fail` for the unit.
+- [x] One reader per format, each returning units `{suite, id, status}`; a top-level Go test is `pkg TestName`, a subtest (`/` in the name) is ignored.
+- [x] Union across files: executed if any file has `pass` or `fail` for the unit.
 
 ### Task B3: The allowlist and the check
 
 **Files:** `internal/testledger/allow.go`, `check.go` + tests; `.github/test_ledger_allow.txt` (empty at first)
 
-- [ ] Violations, each with a test: declared-not-executed; unexcused skip of a unit no job executed; stale entry (matches nothing, or matches a unit some job executed); a collected pytest node id absent from the JUnit report; a Vitest or Playwright test file absent from its report; a shell self-test with no result line; a needed job with no artifact.
-- [ ] Classes are exactly `paid`, `outward`, `measure`, `platform`; any other is a parse error.
-- [ ] Mutation ≥70% on `check.go` (`go-mutesting`), recorded in the commit body.
+- [x] Violations, each with a test: declared-not-executed; unexcused skip of a unit no job executed; stale entry (matches nothing, or matches a unit some job executed); a collected pytest node id absent from the JUnit report; a Vitest or Playwright test file absent from its report; a shell self-test with no result line; a needed job with no artifact.
+- [x] Classes are exactly `paid`, `outward`, `measure`, `platform`; any other is a parse error.
+- [x] Mutation ≥70% on `check.go` (`go-mutesting`), recorded in the commit body.
 
 ### Task B4: The gate job, report-only
 
 **Files:** `cmd/testledger/main.go`, `.github/workflows/ci.yml`
 
-- [ ] `test-ledger` job: `needs:` every test job, `if: ${{ !cancelled() }}`, downloads `test-ledger-*`, runs `go run ./cmd/testledger check --report-only`, writes the counts, every allowlist entry and every violation to `$GITHUB_STEP_SUMMARY`.
+- [x] `test-ledger` job: `needs:` every test job, `if: ${{ !cancelled() }}`, downloads `test-ledger-*`, runs `go run ./cmd/testledger check --report-only`, writes the counts, every allowlist entry and every violation to `$GITHUB_STEP_SUMMARY`.
 - [ ] Merge; read the first `master` summary; write the dated verification file with the violation list.
 
 ## Part C: enforce and retire

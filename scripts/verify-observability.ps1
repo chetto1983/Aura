@@ -362,7 +362,8 @@ $ciPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $ciText = Get-Content -LiteralPath $ciPath -Raw
 Assert-Observability ($ciText.Contains('pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly')) 'CI must run the same observability verifier entry point'
 Assert-Observability ($ciText.Contains('pwsh -NoProfile -File scripts/verify-observability.Tests.ps1')) 'CI must run observability negative fixtures'
-Assert-Observability ($ciText.Contains('bash scripts/observability_sidecar_check_test.sh')) 'CI must run the scheduled scrape-check contract'
+# The self-test runs through scripts/run_script_tests.sh, which records it for the test ledger.
+Assert-Observability ($ciText.Contains('bash scripts/run_script_tests.sh scripts/observability_sidecar_check_test.sh')) 'CI must run the scheduled scrape-check contract'
 $makeText = Get-Content -LiteralPath (Join-Path $repoRoot 'Makefile') -Raw
 Assert-Observability ($makeText.Contains('bash scripts/observability_sidecar_check.sh')) 'Makefile must expose the live scrape check'
 $sidecarCheckPath = Join-Path $repoRoot 'scripts/observability_sidecar_check.sh'

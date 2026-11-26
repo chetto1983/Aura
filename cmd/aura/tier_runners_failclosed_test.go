@@ -128,6 +128,20 @@ jobs:
 			},
 		},
 		{
+			// The test ledger's recorder runs `go test ARGS` for `go_test_ledger.sh LABEL ARGS`,
+			// from a step and from inside a script alike.
+			name: "the test ledger's recorder is go test",
+			files: map[string]string{
+				".github/workflows/ci.yml": ciWorkflow(
+					"bash scripts/go_test_ledger.sh step -tags ledger_step ./x",
+					"bash scripts/gate.sh"),
+				"scripts/gate.sh":           "bash scripts/go_test_ledger.sh inner -tags ledger_script -run TestScript ./x\n",
+				"scripts/go_test_ledger.sh": "go test -json \"$@\"\n",
+				"x/step_test.go":            taggedTest("ledger_step", "TestStep"),
+				"x/script_test.go":          taggedTest("ledger_script", "TestScript"),
+			},
+		},
+		{
 			// C1: the script exits before its go test; the route override strips the credit.
 			name: "a route override strips the credit",
 			files: map[string]string{

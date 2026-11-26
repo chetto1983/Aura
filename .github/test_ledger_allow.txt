@@ -1,0 +1,10 @@
+# The test ledger's allowlist (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.5):
+#
+#   <suite> | <selector> | <class> | <reason>
+#
+# suite: go, playwright, vitest, pytest, python or script. selector: the unit's id or file; a Go
+# test is "<package dir> <TestName>", a Playwright file may end in " [<project>]". class: paid,
+# outward, measure or platform, and nothing else: there is no "pending". An entry that matches
+# nothing, or a test some job executed, is itself a violation.
+#
+# Empty until the first report-only run on master lists what to excuse (plan task C1).

@@ -1,0 +1,39 @@
+{
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "create-aura CLI"
+          ],
+          "fullName": "create-aura CLI runs a local hardware preflight, collects the settings, installs, and cleans up",
+          "status": "passed",
+          "title": "runs a local hardware preflight, collects the settings, installs, and cleans up",
+          "duration": 5.664333999999997,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "create-aura CLI"
+          ],
+          "fullName": "create-aura CLI preflights the remote target over SSH, then collects the settings and installs there",
+          "status": "passed",
+          "title": "preflights the remote target over SSH, then collects the settings and installs there",
+          "duration": 1.9614129999999932,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1795687075469,
+      "endTime": 1795687075497.5364,
+      "status": "passed",
+      "message": "",
+      "name": "/home/runner/work/Aura/Aura/packages/create-aura/src/__tests__/cli.test.ts"
+    }
+  ]
+}

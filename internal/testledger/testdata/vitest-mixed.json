@@ -1,0 +1,42 @@
+{
+  "testResults": [
+    {
+      "name": "/home/runner/work/Aura/Aura/web/src/mixed.test.ts",
+      "status": "failed",
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "mixed"
+          ],
+          "title": "passes",
+          "fullName": "mixed passes",
+          "status": "passed"
+        },
+        {
+          "ancestorTitles": [
+            "mixed"
+          ],
+          "title": "fails",
+          "fullName": "mixed fails",
+          "status": "failed"
+        },
+        {
+          "ancestorTitles": [
+            "mixed"
+          ],
+          "title": "is skipped",
+          "fullName": "mixed is skipped",
+          "status": "skipped"
+        },
+        {
+          "ancestorTitles": [
+            "mixed"
+          ],
+          "title": "is a todo",
+          "fullName": "mixed is a todo",
+          "status": "todo"
+        }
+      ]
+    }
+  ]
+}

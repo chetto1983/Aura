@@ -21,6 +21,12 @@ concurrency:
   group: live-outward
   cancel-in-progress: false
 
+env:
+  # Every go test a job runs goes through scripts/go_test_ledger.sh, which records its events here;
+  # the job's last step uploads the directory as test-ledger-<job>
+  # (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2).
+  AURA_TEST_LEDGER_DIR: /tmp/aura-test-ledger
+
 jobs:
   telegram-live:
     name: Telegram live Bot-API (telegram_integration tier, operator bot)
@@ -42,4 +48,12 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
-        run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
+        run: bash scripts/go_test_ledger.sh telegram-live -race -count=1 -tags telegram_integration ./internal/channels/telegram/
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error

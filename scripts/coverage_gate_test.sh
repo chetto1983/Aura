@@ -66,6 +66,7 @@ run_gate() {
   local profile="$TMP/profile-${covered}.out"
   local report="$TMP/report-${covered}.json"
   PATH="$TMP/bin:$PATH" \
+    AURA_TEST_LEDGER_DIR="$TMP/ledger" \
     FAKE_COVERED="$covered" \
     FAKE_TOTAL=31527 \
     FAKE_ARGS_LOG="$TMP/go-test-${covered}.args" \
