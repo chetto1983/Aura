@@ -75,7 +75,7 @@ func receivedKeys(m map[string]json.RawMessage) string {
 // safeKey also strips U+2028 and U+2029, which are not control characters but end a line.
 func safeKey(k string) string {
 	k = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == ' ' || r == ' ' {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
 			return '?'
 		}
 		return r

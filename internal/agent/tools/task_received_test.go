@@ -174,12 +174,12 @@ func TestScheduleRefusalForAnAbsentFieldSaysItIsMissing(t *testing.T) {
 // start a forged line in the refusal like a newline would.
 func TestScheduleRefusalStripsLineAndParagraphSeparators(t *testing.T) {
 	t.Parallel()
-	args := `{"action":"schedule","kind":"reminder","a b":1,"c d":1}`
+	args := `{"action":"schedule","kind":"reminder","a\u2028b":1,"c\u2029d":1}`
 	_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(), []byte(args))
 	if err == nil {
 		t.Fatal("accepted")
 	}
-	if msg := err.Error(); strings.ContainsAny(msg, "  ") || !strings.Contains(msg, "action, a?b, c?d, kind") {
+	if msg := err.Error(); strings.ContainsAny(msg, "\u2028\u2029") || !strings.Contains(msg, "action, a?b, c?d, kind") {
 		t.Fatalf("separators reached the refusal: %q", msg)
 	}
 }
