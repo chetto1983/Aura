@@ -140,9 +140,10 @@ line per file, and replaces today's hand-kept lists (`ci.yml:99`, the make `*-co
 self-test runs because it exists. Tests that need a built image (`cloudflare_caddy_origin_test.sh` needs
 `aura-caddy`) get it from the same job.
 
-Python self-tests run through `make evidence-contracts`' `unittest discover -s scripts`, which reaches the
-top level and any subdirectory that is a package (has an `__init__.py`; none does today), and report to
-the ledger as JUnit. Their declared set is wider on purpose, `scripts/**/*_test.py`: a self-test in a
+Python self-tests run through `scripts/unittest_ledger.py`, the same `unittest discover -s scripts`,
+which reaches the top level and any subdirectory that is a package (has an `__init__.py`; none does
+today), and writes one `<test id> pass|fail|skip` line per test (no JUnit writer without a new
+dependency). Their declared set is wider on purpose, `scripts/**/*_test.py`: a self-test in a
 subdirectory that is not a package is then declared and not executed, a violation, instead of a file
 nothing sees.
 

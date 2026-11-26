@@ -88,7 +88,7 @@ so the helper keeps `-C dir` ahead of `-json`. Seven mutants of the helper (each
 
 *Done 2026-11-26.* The inventory differed from the file list above: `microcompact_smoke.sh` and
 `ingest_media_e2e.sh` are launched by no workflow, `capability_eval.py` collects `go test -json` too and
-writes it as `agent_memory_eval.py` does (both through `scripts/go_test_ledger.py`), and `live-outward.yml`
+writes it as `agent_memory_eval.py` does (both through `scripts/test_ledger.py`), and `live-outward.yml`
 runs one. `scripts/tagged_tier_compile.sh` stays as it is: its `-run '^$'` compiles and executes no test.
 The Makefile's own `go test` recipes are reached by no workflow and stay plain. `AURA_TEST_LEDGER_DIR` is
 set once per workflow (`/tmp/aura-test-ledger`), and every job that runs a test ends with the upload
@@ -124,9 +124,27 @@ containers here cannot reach PyPI).
 
 **Files:** `scripts/run_script_tests.sh`, its self-test, `.github/workflows/ci.yml`, `Makefile`
 
-- [ ] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
-- [ ] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
-- [ ] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` and subdirectories that are packages (an `__init__.py`; none today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a self-test in a non-package subdirectory fails the gate as declared and not executed rather than going unseen.
+- [x] Discover every tracked `scripts/**/*_test.sh` (`git ls-files`), run each, and write one result line per file (`<path> pass|fail|skip <seconds>`) into the ledger dir; a file that exits 77 is a skip.
+- [x] Replace the hand-kept lists it covers: the `security_scan` loop and the installer/updater list in `ci.yml`, the shell lines of `make evidence-contracts`, the `*-contract` recipes. A self-test that needs a prerequisite only another job has (a built image, a non-root user, `makeself`) runs there through the same runner, with a path filter argument, so each file still writes exactly one line somewhere.
+- [x] Python self-tests stay with `make evidence-contracts`' discovery; their unittest results go to the ledger as JUnit. Discovery reaches top-level `scripts/*_test.py` and subdirectories that are packages (an `__init__.py`; none today); the declared set is `scripts/**/*_test.py` (spec §4.4), so a self-test in a non-package subdirectory fails the gate as declared and not executed rather than going unseen.
+
+*Done 2026-11-26.* `build-and-lint` runs every discovered self-test in one step, last, after the Go
+toolchain, deadcode, makeself and the Caddy image are in place; the separate self-test steps, the
+security-scan loop, the installer/updater list and the four `make *-contract` calls are gone from it.
+Six are left with `--except` to the job that has their prerequisite, which runs them by name through the
+same runner: `cache_invariant_negative`, `observability_sidecar_check`, `extractor_matrix` and
+`ingest_image_contract` (the ingest image; before, only the publish workflow ran it), `sandbox_image_contract`,
+and `cloudflared_image_contract`, whose image only `publish-aura-edge.yml` builds and which therefore
+records nothing yet (Part B must name it). Discovery found one self-test no workflow ran,
+`cloudflare_remote_access_probe_test.sh`; it passes. `make evidence-contracts` and the `*-contract`
+targets stay as local entry points, and CI no longer calls them. Python: no JUnit writer without a new
+dependency, so `scripts/unittest_ledger.py` is the same discovery with a result class that writes
+`<test id> pass|fail|skip` lines to `python-tests.txt`. Measured: 37 of 43 self-tests in the
+`build-and-lint` step in 33 s here, 33 passing and four failing only for what this container lacks and
+the job provides (makeself, the Caddy image, deadcode, a non-root user; deadcode and the non-root run
+then pass); 239 Python test ids recorded where unittest reports `Ran 276`, because
+`agent_memory_eval_test.py` re-imports eight test classes so that `make agent-memory-eval-contract` runs
+them by file, and discovery then runs those 37 tests twice.
 
 ## Part B: judge
 

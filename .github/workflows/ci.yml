@@ -77,9 +77,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: CI go-packages lint self-test
-        run: bash scripts/check_ci_go_packages_test.sh
-
       - name: CI go-packages lint
         run: bash scripts/check_ci_go_packages.sh
 
@@ -91,60 +88,24 @@ jobs:
           python3 -m pip install --user --quiet ruff==0.17.1
           bash scripts/ruff.sh check .
 
-      - name: Workflow pin gate self-test
-        run: bash scripts/workflow_pin_gate_test.sh
-
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
 
-      # security-scan.yml runs once a week, so its scripts are tested here, where a change to
-      # them or to compose.yaml lands.
-      - name: Weekly security scan scripts self-test
-        run: for test in scripts/security_scan/*_test.sh; do bash "$test"; done
+      - name: Python self-tests (unittest discovery over scripts/, each test recorded)
+        run: PYTHONPATH=scripts python3 scripts/unittest_ledger.py
 
-      - name: Disposable-stack library self-test
-        run: bash scripts/lib/disposable_stack_test.sh
+      - name: Payload manifest gate
+        run: bash scripts/payload_manifest_gate.sh
 
-      - name: EmbeddingGemma cache helper self-test
-        run: make embedding-model-contract
-      - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)
-        run: make llm-model-contract
-      - name: Decision model fetch contract (pinned size + sha256, d1-3B + LICENSE)
-        run: make decide-model-contract
+      - name: Build the Caddy image cloudflare_caddy_origin_test.sh runs (real Caddy, no network)
+        # The publish workflow was the only one to build it, so the test ran nowhere before
+        # 2026-11-25. Built here from this commit; the self-tests step below runs the test.
+        run: docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
 
-      - name: Vision model fetch contract (pinned size + sha256, Qwen2.5-VL-3B + mmproj)
-        run: make vision-model-contract
-
-      - name: Production-evidence contract tests
-        run: |
-          make evidence-contracts
-          bash scripts/install_lib_test.sh
-          bash scripts/install_config_test.sh
-          bash scripts/appliance_posture_test.sh
-          bash scripts/install_preflight_test.sh
-          bash scripts/aura_image_update_test.sh
-          bash scripts/aura_update_consent_test.sh
-          bash scripts/aura_image_home_test.sh
-          bash scripts/aura_update_mcp_restart_test.sh
-          bash scripts/publish_images_test.sh
-          bash scripts/cloudflare_update_test.sh
-          bash scripts/cloudflare_tunnel_live_e2e_test.sh
-          bash scripts/payload_manifest_gate.sh
-
-      - name: Caddy keeps the secure origin through the shipped routes (real Caddy, no network)
-        # cloudflare_caddy_origin_test.sh needs the Caddy image, which only the publish
-        # workflow built, so the test ran nowhere before 2026-11-25. Built here from this commit.
-        run: |
-          docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
-          bash scripts/cloudflare_caddy_origin_test.sh
-
-      # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh
-      # SKIPs with exit 0 when it's absent (right for a laptop, a falsely-green job here).
+      # makeself is not preinstalled on GitHub's ubuntu runners, and build_installer_test.sh
+      # (run by the self-tests step below) needs it.
       - name: Install makeself (the artifact packer)
         run: sudo apt-get update && sudo apt-get install -y makeself
-
-      - name: Installer artifact self-check and payload round-trip
-        run: bash scripts/build_installer_test.sh
 
       - name: Definitive audit closure gate
         run: PYTHONPATH=scripts python3 scripts/audit_closure_gate.py
@@ -162,9 +123,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Tagged tier compile gate self-test
-        run: bash scripts/tagged_tier_compile_test.sh
 
       - name: Compile every discovered Aura tier
         run: bash scripts/tagged_tier_compile.sh
@@ -194,20 +152,32 @@ jobs:
       - name: deadcode
         # The -test run catches what nothing calls; the production run (deadcode
         # without -test plus tools/deadexport, linux and windows) catches what only
-        # tests call, against scripts/deadcode_production_allowlist.txt. Its
-        # self-test runs first so a gate that can no longer fail is caught before it
-        # reports green.
+        # tests call, against scripts/deadcode_production_allowlist.txt. Its self-test,
+        # like every gate's here, runs in the self-tests step below and fails the job.
         run: |
           go install golang.org/x/tools/cmd/deadcode@v0.48.0
           go build -C tools/deadexport -o "$RUNNER_TEMP/deadexport" .
           bash scripts/deadcode_gate.sh "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)
-          DEADCODE_BIN="$(go env GOPATH)/bin/deadcode" DEADEXPORT_BIN="$RUNNER_TEMP/deadexport" bash scripts/deadcode_production_gate_test.sh
           bash scripts/deadcode_production_gate.sh "$(go env GOPATH)/bin/deadcode" "$RUNNER_TEMP/deadexport"
 
       - name: golangci-lint
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
           "$(go env GOPATH)/bin/golangci-lint" run --timeout=5m $(bash scripts/go_packages.sh)
+
+      # Every tracked scripts/**/*_test.sh, found by scripts/run_script_tests.sh, so a new one runs
+      # because it exists: llm-model-contract's test had no job for two weeks (Makefile). It runs
+      # last, after the Go toolchain, deadcode, makeself and the Caddy image are in place. The ones
+      # excepted need what only another job has, and that job runs them by name.
+      - name: Shell self-tests (every scripts/**/*_test.sh)
+        run: |
+          bash scripts/run_script_tests.sh \
+            --except scripts/cache_invariant_negative_test.sh \
+            --except scripts/observability_sidecar_check_test.sh \
+            --except scripts/extractor_matrix_test.sh \
+            --except scripts/ingest_image_contract_test.sh \
+            --except scripts/sandbox_image_contract_test.sh \
+            --except scripts/cloudflared_image_contract_test.sh
 
       - name: Upload the test ledger
         if: always()
@@ -323,7 +293,15 @@ jobs:
       - name: cache invariant gate (negative)
         # Continuously proves the gate is NOT silently green: a mutated messages[0]
         # MUST make the gate exit 1 with `mutated` (SC#5, Pitfall #3).
-        run: bash scripts/cache_invariant_negative_test.sh
+        run: bash scripts/run_script_tests.sh scripts/cache_invariant_negative_test.sh
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   vulncheck:
     name: Supply-chain vulnerability scan (govulncheck)
@@ -355,10 +333,18 @@ jobs:
         run: pwsh -NoProfile -File scripts/verify-observability.Tests.ps1
 
       - name: Scheduled scrape-check contract
-        run: bash scripts/observability_sidecar_check_test.sh
+        run: bash scripts/run_script_tests.sh scripts/observability_sidecar_check_test.sh
 
       - name: Deployable observability contract
         run: pwsh -NoProfile -File scripts/verify-observability.ps1 -StaticOnly
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   integration-test:
     name: Integration tests (db_integration tag)
@@ -1138,13 +1124,14 @@ jobs:
       - name: Run the ingestion sidecar suite
         run: make ingest-test
 
-      - name: Extractor format matrix (hard AND silent failures)
+      - name: Extractor format matrix (hard AND silent failures) and the image contract
         # The suite above proves the chunker and the passage contract; it does not open a
         # single .pdf, .xls or .odt. This does, on the committed fixture set, and scores
         # the failure that has no error message: a format that yields plausible text in
         # which the canary sentence is reflowed or gone. It reuses the image make
-        # ingest-test just built, so it costs seconds and needs no service of its own.
-        run: bash scripts/extractor_matrix_test.sh
+        # ingest-test just built, so it costs seconds and needs no service of its own. The image's
+        # own contract (ingest_image_contract_test.sh) ran only where the image is published.
+        run: bash scripts/run_script_tests.sh scripts/extractor_matrix_test.sh scripts/ingest_image_contract_test.sh
 
       - name: Tear down
         if: always()
@@ -2686,7 +2673,7 @@ jobs:
         # `python3 -m pip install ...` works despite PEP 668 (PIP_BREAK_SYSTEM_PACKAGES=1),
         # and agent-browser refuses to run without Aura's per-identity state key and keeps its
         # state on /workspace. A network install would test the runner's egress, not the image.
-        run: bash scripts/sandbox_image_contract_test.sh
+        run: bash scripts/run_script_tests.sh scripts/sandbox_image_contract_test.sh
 
       - name: Pre-pull the box images
         # DockerBackend.ensureImage would pull these on first use; doing it here makes a
