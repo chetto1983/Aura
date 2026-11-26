@@ -11,10 +11,11 @@ import (
 )
 
 // TestSDKNoisyHelperProcess is the SDK helper server behind a line of npm output on stdout,
-// as a self-installing server prints on its first start. It is not a test.
+// as a self-installing server prints on its first start. It is not a test, and returns outside
+// the child like TestSDKHelperProcess.
 func TestSDKNoisyHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_MCP_SDK_HELPER") != "1" {
-		t.Skip("helper process: only runs when re-exec'd as an MCP server")
+		return
 	}
 	fmt.Println("added 39 packages, and audited 40 packages in 3s")
 	if err := newSDKFixtureServer(1, 0).Run(context.Background(), &sdkmcp.StdioTransport{}); err != nil {

@@ -185,11 +185,19 @@ the static check in Part C.
 
 ### Task C1: The allowlist from the measured list
 
-- [ ] Each violation from B4 either gets fixed (wire it, or fix the test with the reason) or an entry with a class the operator accepts. Expected from 2026-11-25: the paid and measurement tags, the Telegram live tier (`outward`), the desktop-only/mobile-only Playwright tests (`platform`), the 32 GB soak (`platform`), the 16 manual Playwright specs of spec §10.2 (15 `paid`, `remote-access-live` `outward`), and the Telegram live tier, which runs only in the nightly `live-outward.yml` (`outward`).
+- [x] Each violation from B4 either gets fixed (wire it, or fix the test with the reason) or an entry with a class the operator accepts. Expected from 2026-11-25: the paid and measurement tags, the Telegram live tier (`outward`), the desktop-only/mobile-only Playwright tests (`platform`), the 32 GB soak (`platform`), the 16 manual Playwright specs of spec §10.2 (15 `paid`, `remote-access-live` `outward`), and the Telegram live tier, which runs only in the nightly `live-outward.yml` (`outward`).
+
+*Done 2026-11-26*, from the report-only run on b448b0ae5 (153 violations). The five MUSR RED tests
+were deleted (operator); two helper processes now return instead of skipping; the cloudflared image
+contract and the cockpit's TLS mailbox test were wired. The other 144 are 77 entries: 26 `paid`,
+4 `outward`, 17 `measure`, 30 `platform`. Two differ from the expectation above:
+`management-key-onboarding-live` is `outward` (§4.5 names the OpenRouter management key), so §10.2's
+15 `paid` are 14 files here, and the live specs' `mobile-chrome` units are `platform` because Web E2E
+runs every live step with `--project=chrome`.
 
 ### Task C2: Enforce
 
-- [ ] Drop `--report-only`. A fixture run in the self-test proves the gate fails on a declared-but-unexecuted test and on an unexcused skip.
+- [x] Drop `--report-only`. A fixture run in the self-test proves the gate fails on a declared-but-unexecuted test and on an unexcused skip.
 - [ ] CI green on the PR; merge on the operator's word.
 
 ### Task C3: Retire the static check

@@ -116,7 +116,8 @@ func startSDKHTTPServer(t *testing.T, toolCount, pageSize int) (*httptest.Server
 }
 
 // TestSDKHelperProcess is a REAL SDK MCP server over stdio, re-exec'd as a child by
-// sdkHelperServer below. It is not a test.
+// sdkHelperServer below. It is not a test: outside the child it returns, as every helper
+// process in this repository does, instead of reporting a skip no job could clear.
 //
 // The pre-SDK helper in client_open_test.go hand-rolls JSON-RPC and silently ignores
 // any method it does not recognise, so an SDK client stalls against it — a fake wire
@@ -125,7 +126,7 @@ func startSDKHTTPServer(t *testing.T, toolCount, pageSize int) (*httptest.Server
 // stdio path is real.
 func TestSDKHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_MCP_SDK_HELPER") != "1" {
-		t.Skip("helper process: only runs when re-exec'd as an MCP server")
+		return
 	}
 	toolCount, err := strconv.Atoi(os.Getenv("AURA_MCP_SDK_HELPER_TOOLS"))
 	if err != nil || toolCount <= 0 {
