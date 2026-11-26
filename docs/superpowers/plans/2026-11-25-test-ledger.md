@@ -103,10 +103,22 @@ workflow text, so until Part C retires it, it reads `go_test_ledger.sh LABEL ARG
 
 **Files:** `web/playwright.config.ts`, `web/package.json`, `packages/create-aura/package.json`, `Makefile` (`ingest-test`), `.github/workflows/ci.yml`
 
-- [ ] Playwright: `['json', { outputFile }]` beside `github` when `AURA_TEST_LEDGER_DIR` is set.
-- [ ] Vitest (both packages): `--reporter=default --reporter=json --outputFile.json=…`.
-- [ ] pytest: `--collect-only -q` into the ledger dir (the declared node ids), then the run with `--junitxml`.
-- [ ] One local run of each, report files inspected.
+- [x] Playwright: `['json', { outputFile }]` beside `github` when `AURA_TEST_LEDGER_DIR` is set.
+- [x] Vitest (both packages): `--reporter=default --reporter=json --outputFile.json=…`.
+- [x] pytest: `--collect-only -q` into the ledger dir (the declared node ids), then the run with `--junitxml`.
+- [x] One local run of each, report files inspected.
+
+*Done 2026-11-26, in the configs rather than on the command line.* Vitest puts `github-actions` among its
+default reporters only when none is configured, so a `--reporter` flag would have dropped the annotations:
+each `vitest.config.ts` appends `json` to `configDefaults.reporters` instead. Web E2E calls Playwright five
+times in one job, so each run writes `playwright-<pid>.json`. Stryker loads `web/vitest.config.ts` and
+keeps its reporters, so its job clears `AURA_TEST_LEDGER_DIR` (mutants are not ledger units). pytest runs in
+the ingest container (root), which mounts the ledger dir. `web-test`, `web-e2e` and `ingest-sidecar-test`
+upload it as the Go jobs do. Run here with the directory set: create-aura (114 tests, 12 files), web
+(4,275 tests in 426 files, the CI count; 13 voice tests fail on this shell's Node 22 and pass on Node 24,
+CI's), a Playwright `--list` (one `playwright-<pid>.json`, the `github` reporter intact), and the ingest
+suite (273 collected, 273 in the JUnit report; run with pytest preinstalled in a scratch image, because
+containers here cannot reach PyPI).
 
 ### Task A4: The shell self-test runner
 

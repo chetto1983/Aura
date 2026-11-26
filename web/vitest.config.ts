@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+const ledger = process.env.AURA_TEST_LEDGER_DIR;
 
 export default defineConfig({
   // The `@/` alias mirrors vite.config.ts + tsconfig.json so `@/components/ui/*`
@@ -12,6 +14,14 @@ export default defineConfig({
   // a sibling of web/, so the dev-server fs guard must allow reading one level up.
   server: { fs: { allow: ['..'] } },
   test: {
+    // With AURA_TEST_LEDGER_DIR set, a JSON report joins Vitest's own reporters, github-actions
+    // included (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2).
+    ...(ledger
+      ? {
+          reporters: [...configDefaults.reporters, 'json'],
+          outputFile: { json: `${ledger}/vitest-web.json` },
+        }
+      : {}),
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],

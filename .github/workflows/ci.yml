@@ -1150,6 +1150,14 @@ jobs:
         if: always()
         run: docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   ingest-reconcile-e2e:
     name: Ingestion reconciliation (add/modify/delete, live Garage + ArcadeDB)
     runs-on: ubuntu-latest
@@ -1784,6 +1792,14 @@ jobs:
         if: always()
         run: docker compose down
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
   # Node-24 jobs, all blocking on every PR (D-16), all in the single unified workflow
   # (D-17 — no separate web.yml). Only web-lint keeps a `dorny/paths-filter` guard: it
@@ -1794,14 +1810,6 @@ jobs:
   # boundaries ≥70% killed each, measured by the jobs before it), web-e2e (Playwright).
   # The committed-dist freshness job was retired (PRD amendment #193): the appliance
   # image builds web/ itself in its webbuild stage.
-
-      - name: Upload the test ledger
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: test-ledger-${{ github.job }}
-          path: ${{ env.AURA_TEST_LEDGER_DIR }}
-          if-no-files-found: error
 
   web-lint:
     name: Web lint (Oxlint --max-warnings=0 + prettier + tsc)
@@ -1874,11 +1882,20 @@ jobs:
       - name: create-aura Vitest
         run: cd packages/create-aura && npm ci && npm test
 
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
+
   # Mutation evidence arrives from parallel jobs and is judged once. Stryker and three groups
   # of Go scopes run on runners of their own; `web-mutation` downloads what they measured, runs
   # no mutant itself, and publishes the one candidate-bound report release readiness reads.
   # Until 2026-09-28 all of it was one serial job: 27m07s on run 36412624433 (Stryker 8m01s,
   # then the Go scopes 18m27s), the longest job of that CI run.
+
   web-mutation-stryker:
     name: Stryker mutation (frontend + media frontend)
     runs-on: ubuntu-latest
@@ -1902,6 +1919,10 @@ jobs:
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
     timeout-minutes: 185
+    # Stryker loads web/vitest.config.ts, whose JSON reporter would rewrite the ledger's report on
+    # every mutant run; mutants are not tests the ledger counts, so this job records nothing.
+    env:
+      AURA_TEST_LEDGER_DIR: ""
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -2523,6 +2544,14 @@ jobs:
         run: |
           docker rm -f aura-memory-web-ci aura-pim-web-ci aura-whatsapp-web-ci aura-vision-ci || true
           docker compose down
+
+      - name: Upload the test ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-ledger-${{ github.job }}
+          path: ${{ env.AURA_TEST_LEDGER_DIR }}
+          if-no-files-found: error
 
   # ── Race + goleak db_integration tier (was the Phase-42 compaction rollout gate) ──
   # The dark Phase-42 compaction engine was removed (Amendment #86); its evaluator,

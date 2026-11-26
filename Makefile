@@ -380,11 +380,16 @@ ingest-image:
 # databases, so it needs no MCP, and arcadedb-mcp would start the aura daemon, whose image
 # compiles the five Craft apps from source. On 2026-10-21 that cut the CI job off at its
 # 25-minute cap in the third Rust build, before a single test ran.
+#
+# With AURA_TEST_LEDGER_DIR set, pytest writes there the node ids it collects and its JUnit report
+# (docs/superpowers/specs/2026-11-25-test-ledger-design.md §4.2); the container runs as root.
+INGEST_TEST_LEDGER = $(if $(AURA_TEST_LEDGER_DIR),-v "$(AURA_TEST_LEDGER_DIR):/ledger" -e LEDGER=/ledger)
 ingest-test: memory-up-core ingest-image
 	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
 	@# The image ships without pip (docker/aura-ingest/Dockerfile); ensurepip puts the bundled
 	@# one back in this throwaway container, for pytest only.
-	@docker run --rm --network aura_default --entrypoint sh \
+	@$(if $(AURA_TEST_LEDGER_DIR),mkdir -p "$(AURA_TEST_LEDGER_DIR)")
+	@docker run --rm --network aura_default --entrypoint sh $(INGEST_TEST_LEDGER) \
 	  -v "$(CURDIR)/services/ingest:/app/ingest:ro" \
 	  -v "$(CURDIR)/scripts/fixtures/document_pipeline_e2e:/fx:ro" \
 	  -v "$(CURDIR)/scripts/fixtures/document_retrieval_eval:/eval:ro" \
@@ -398,7 +403,9 @@ ingest-test: memory-up-core ingest-image
 	  -e AURA_INGEST_S3_BUCKET=aura-ingest-test \
 	  -e AURA_INGEST_S3_ACCESS_KEY_ID=test \
 	  -e AURA_INGEST_S3_SECRET_ACCESS_KEY=test \
-	  aura-ingest:local -c 'python -m ensurepip >/dev/null && python -m pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
+	  aura-ingest:local -c 'python -m ensurepip >/dev/null && python -m pip install --quiet pytest && cd /app && \
+	    if [ -n "$${LEDGER:-}" ]; then python -m pytest ingest/tests --collect-only -q >"$$LEDGER/pytest-ingest.collected" && set -- "--junitxml=$$LEDGER/pytest-ingest.xml"; fi && \
+	    python -m pytest ingest/tests -q "$$@"'
 
 # The extractor's format matrix: every fixture format opens, and the canary sentence
 # survives verbatim and un-reflowed. Needs the image and the fixtures, nothing else --
