@@ -115,14 +115,6 @@ func (i *LiveMCPTokenIssuer) Close() error {
 	if i == nil || i.auth == nil {
 		return nil
 	}
-	i.closeOnce.Do(func() {
-		i.closeErr = errors.Join(i.auth.ClosePlugins(), i.auth.CloseSystems())
-		if eventBus := i.auth.EventBus(); eventBus != nil {
-			i.closeErr = errors.Join(i.closeErr, eventBus.Close())
-		}
-		if closer, ok := i.auth.DB().(interface{ Close() error }); ok {
-			i.closeErr = errors.Join(i.closeErr, closer.Close())
-		}
-	})
+	i.closeOnce.Do(func() { i.closeErr = closeAuthula(i.auth) })
 	return i.closeErr
 }

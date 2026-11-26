@@ -354,16 +354,20 @@ func (p *Provider) Close() error {
 	if p == nil || p.auth == nil {
 		return nil
 	}
-	p.closeOnce.Do(func() {
-		p.closeErr = errors.Join(p.auth.ClosePlugins(), p.auth.CloseSystems())
-		if eventBus := p.auth.EventBus(); eventBus != nil {
-			p.closeErr = errors.Join(p.closeErr, eventBus.Close())
-		}
-		if closer, ok := p.auth.DB().(interface{ Close() error }); ok {
-			p.closeErr = errors.Join(p.closeErr, closer.Close())
-		}
-	})
+	p.closeOnce.Do(func() { p.closeErr = closeAuthula(p.auth) })
 	return p.closeErr
+}
+
+// closeAuthula releases an Authula instance: its plugins, core systems, event bus and database.
+func closeAuthula(auth *authula.Auth) error {
+	err := errors.Join(auth.ClosePlugins(), auth.CloseSystems())
+	if eventBus := auth.EventBus(); eventBus != nil {
+		err = errors.Join(err, eventBus.Close())
+	}
+	if closer, ok := auth.DB().(interface{ Close() error }); ok {
+		err = errors.Join(err, closer.Close())
+	}
+	return err
 }
 
 // ensureAuthulaSearchPath guarantees the DSN carries search_path=authula so every
