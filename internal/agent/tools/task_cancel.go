@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // A cancel stops a task for good, and the gateway lets it through at Normal tier. So the
@@ -63,14 +63,20 @@ func taskCancelDigest(task ScheduledTask) string {
 }
 
 // taskCancelQuestion is the approval card, one value per line. The payload is the only text
-// someone else wrote, so it is capped and quoted, which escapes every newline and control
-// character: it cannot forge a line of the card.
+// someone else wrote: its whitespace runs, line breaks included, collapse to one space and every
+// other non-printable rune is dropped, so it cannot forge a line of the card. It is not Go-quoted:
+// the model copies the card verbatim into ask_user, and escaped JSON is where a copy goes wrong.
 func taskCancelQuestion(task ScheduledTask, digest string) string {
 	next := "none"
 	if !task.NextRunAt.IsZero() {
 		next = task.NextRunAt.UTC().Format(time.RFC3339)
 	}
-	payload := strings.Join(strings.Fields(task.Payload), " ")
+	payload := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, strings.Join(strings.Fields(task.Payload), " "))
 	if runes := []rune(payload); len(runes) > taskCancelPayloadRunes {
 		payload = string(runes[:taskCancelPayloadRunes]) + "…"
 	}
@@ -80,7 +86,7 @@ func taskCancelQuestion(task ScheduledTask, digest string) string {
 		"kind: " + task.Kind,
 		"schedule: " + task.ScheduleKind,
 		"next run: " + next,
-		"payload: " + strconv.Quote(payload),
+		"payload: " + payload,
 		"sha256: " + digest,
 	}, "\n")
 }

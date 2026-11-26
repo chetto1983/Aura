@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -97,5 +99,46 @@ func TestTaskToolHandleCarriesItsCancelApprovals(t *testing.T) {
 	}
 	if newTaskCancelResumeHook(handles.Task) == nil {
 		t.Fatal("the wired task tool must yield a resume hook")
+	}
+}
+
+// cancelRoundTripStore reads every task as one the CLI scheduled and counts the cancels.
+type cancelRoundTripStore struct {
+	toolPipeTaskStore
+	cancels int
+}
+
+func (s *cancelRoundTripStore) CancelScheduledTask(context.Context, string) error {
+	s.cancels++
+	return nil
+}
+
+// The wired tool and its hook share one store: the challenge the tool raises is the one the
+// operator's accept records, and the repeat then cancels once.
+func TestTaskCancelChallengeAcceptRepeatOnTheWiredTool(t *testing.T) {
+	store := &cancelRoundTripStore{}
+	task := newTaskTool(nil, nil, "", nil, nil)
+	task.Store = store
+	hook := newTaskCancelResumeHook(task)
+	ctx := tools.WithToolCallContext(t.Context(), "conv-task", "call-1", t.TempDir(), 4096)
+	args := json.RawMessage(`{"action":"cancel","task_id":"t-cli"}`)
+
+	res, err := task.Execute(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var challenge struct {
+		Question      string          `json:"question"`
+		ResumeContext json.RawMessage `json:"resume_context"`
+	}
+	if err := json.Unmarshal([]byte(res.Preview), &challenge); err != nil || challenge.Question == "" || store.cancels != 0 {
+		t.Fatalf("first call = %q (%v), cancels %d; want a challenge", res.Preview, err, store.cancels)
+	}
+	pending := askuser.Pending{ConversationID: "conv-task", Kind: tools.KindApproval, Question: challenge.Question, ResumeContext: challenge.ResumeContext}
+	if err := hook(t.Context(), pending, runner.ResponseInput{Action: askuser.ActionAccept}); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if res, err := task.Execute(ctx, args); err != nil || res.Preview != "cancelled task t-cli" || store.cancels != 1 {
+		t.Fatalf("repeat = %q, %v, cancels %d; want one cancel", res.Preview, err, store.cancels)
 	}
 }

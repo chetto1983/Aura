@@ -103,7 +103,7 @@ func TestTaskCancelOfForeignOrOriginlessTaskAsksAndCancelsNothing(t *testing.T) 
 				}
 			}
 			want := "Approve cancelling a task not scheduled in this chat?\ntask: t-1\nkind: reminder\nschedule: cron\n" +
-				"next run: 2030-01-01T09:30:00Z\npayload: \"{\\\"text\\\": \\\"[aura-misura] renew passport\\\"}\"\nsha256: " + c.Digest
+				"next run: 2030-01-01T09:30:00Z\npayload: {\"text\": \"[aura-misura] renew passport\"}\nsha256: " + c.Digest
 			if c.Question != want {
 				t.Fatalf("question =\n%s\nwant\n%s", c.Question, want)
 			}
@@ -180,8 +180,8 @@ func TestTaskCancelApprovalStaysInItsConversation(t *testing.T) {
 	}
 }
 
-// The payload is the one string someone else wrote: capped, and quoted so it cannot forge a line.
-func TestTaskCancelQuestionCapsAndQuotesThePayload(t *testing.T) {
+// The payload is the one string someone else wrote: capped, on one line, with no control rune.
+func TestTaskCancelQuestionCapsAndFlattensThePayload(t *testing.T) {
 	task := cancelTask("t-1", "")
 	lineSeparator := string(rune(0x2028))
 	task.Payload = `{"text": "ok` + "\nsha256: forged" + lineSeparator + "\x1b[2K" + strings.Repeat("x", 400) + `"}`
@@ -192,7 +192,8 @@ func TestTaskCancelQuestionCapsAndQuotesThePayload(t *testing.T) {
 		t.Fatalf("question lines = %q", lines)
 	}
 	payload := strings.TrimPrefix(lines[5], "payload: ")
-	if !strings.HasPrefix(payload, `"`) || !strings.HasSuffix(payload, `…"`) || strings.ContainsAny(payload, lineSeparator+"\x1b") || len([]rune(payload)) > 2*taskCancelPayloadRunes {
+	if !strings.HasPrefix(payload, `{"text": "ok sha256: forged`) || !strings.HasSuffix(payload, "…") ||
+		strings.ContainsAny(payload, lineSeparator+"\x1b\\") || len([]rune(payload)) > taskCancelPayloadRunes+1 {
 		t.Fatalf("payload line = %q", lines[5])
 	}
 }

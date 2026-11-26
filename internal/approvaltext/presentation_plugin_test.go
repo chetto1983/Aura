@@ -171,7 +171,7 @@ func TestRenderItalianPluginInstall(t *testing.T) {
 func TestDeriveTaskCancelCard(t *testing.T) {
 	t.Parallel()
 	question := "Approve cancelling a task not scheduled in this chat?\ntask: 019f9349-e0e5-77cc-9639-804bcf88b968\nkind: reminder\n" +
-		"schedule: at\nnext run: none\npayload: \"{\\\"text\\\": \\\"call Monica\\\"}\"\nsha256: " + pluginApprovalDigest
+		"schedule: at\nnext run: none\npayload: {\"text\": \"call Monica\"}\nsha256: " + pluginApprovalDigest
 	resume, err := json.Marshal(map[string]string{"type": "task_cancel_approval", "approval_sha256": pluginApprovalDigest})
 	if err != nil {
 		t.Fatal(err)
@@ -181,11 +181,11 @@ func TestDeriveTaskCancelCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, ok := FromContext(question, enriched)
-	if !ok || p.Key != TaskCancelKey || p.Params["next"] != "none" || p.Params["payload"] != `"{\"text\": \"call Monica\"}"` {
+	if !ok || p.Key != TaskCancelKey || p.Params["next"] != "none" || p.Params["payload"] != `{"text": "call Monica"}` {
 		t.Fatalf("task cancel card derived %+v %v", p, ok)
 	}
 	want := "Approva l'annullamento di un'attività non pianificata in questa chat?\nattività: 019f9349-e0e5-77cc-9639-804bcf88b968\ntipo: reminder\n" +
-		"pianificazione: at\nprossima esecuzione: nessuna\ncontenuto: \"{\\\"text\\\": \\\"call Monica\\\"}\"\nsha256: " + pluginApprovalDigest
+		"pianificazione: at\nprossima esecuzione: nessuna\ncontenuto: {\"text\": \"call Monica\"}\nsha256: " + pluginApprovalDigest
 	if got := RenderItalian(p, question); got != want {
 		t.Fatalf("italian =\n%s\nwant\n%s", got, want)
 	}
