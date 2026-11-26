@@ -1,0 +1,14 @@
+# CI-only compose override for web-e2e's document specs. aura serve runs on the runner HOST there,
+# and the ingest sidecar is the only indexer (internal/assets/document_processor.go), so it runs in
+# compose beside Postgres, Garage, ArcadeDB and the embedder:
+#   - the job exports AURA_OBJECTSTORE_ENDPOINT=http://127.0.0.1:3900 for the host, which inside a
+#     container points back at the container itself, so the sidecar reaches Garage by service name;
+#   - no OCR sidecar runs in CI, so the vision route is blank: an image or a scan is indexed as its
+#     card instead of failing on an unreachable endpoint (services/ingest/media.py);
+#   - a 10 s scan instead of 60 s keeps the specs' waits short.
+services:
+  aura-ingest:
+    environment:
+      AURA_OBJECTSTORE_ENDPOINT: http://garage:3900
+      MULTIMODAL_BASE_URL: ""
+      AURA_INGEST_INTERVAL_SEC: "10"

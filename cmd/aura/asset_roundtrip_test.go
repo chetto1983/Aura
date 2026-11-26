@@ -1,4 +1,4 @@
-//go:build garage_integration
+//go:build db_integration && garage_integration
 
 // The document round trip, through the composition root the daemon uses.
 //
@@ -8,24 +8,24 @@
 // in one evening: first "Telegram destroys the original", then "nothing uses the
 // catalog". Both were artefacts of testing the wrong door.
 //
-// So this uses the real one: buildAssetService, the same function serve.go:294
-// calls, over the live Postgres and the live Garage. It walks the whole loop --
-// presign, upload, finalize, process -- and then asks the only question that
-// matters for handing a spreadsheet to pandas: after all that, can the ORIGINAL
-// bytes be read back?
+// So this uses the real one: buildAssetService, the function `aura serve` builds its
+// asset service with, over the live Postgres and the live Garage. It walks presign, direct
+// upload and finalize, and then asks the only question that matters for handing a
+// spreadsheet to pandas: can the ORIGINAL bytes be read back? Processing runs in
+// the ingest sidecar from the queued job, outside this tier.
 //
-//	go test -tags garage_integration -run AssetRoundTrip -v ./cmd/aura/
+//	go test -tags 'db_integration garage_integration' -run AssetRoundTrip -v ./cmd/aura/
 package main
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,23 +46,58 @@ func roundTripEnv(t *testing.T) (*config.Config, *pgxpool.Pool) {
 	}
 	cfg, err := config.LoadServe()
 	if err != nil {
-		t.Skipf("config: %v", err)
+		t.Fatalf("config: %v", err)
 	}
 	pool, err := db.Open(context.Background(), &cfg.DB)
 	if err != nil {
-		t.Skipf("postgres: %v", err)
+		t.Fatalf("postgres: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	return cfg, pool
 }
 
+// syntheticSpreadsheet is 1 MiB of random bytes. Nothing in this tier reads the content:
+// Finalize hashes it and queues it for the ingest sidecar, so only the bytes' identity matters.
+func syntheticSpreadsheet(t *testing.T) []byte {
+	t.Helper()
+	payload := make([]byte, 1<<20)
+	if _, err := rand.Read(payload); err != nil {
+		t.Fatalf("synthetic payload: %v", err)
+	}
+	return payload
+}
+
+// roundTripOwner is a real non-shared identity, as a browser upload's owner is. The legacy
+// `local` row is no help: aura serve retires it at boot, after which an asset cannot name it.
+// Its Garage bucket and key are minted on the first presign (mintingResolver) and torn down
+// by the production provisioning port, before the identity row goes.
+func roundTripOwner(t *testing.T, cfg *config.Config, pool *pgxpool.Pool) string {
+	t.Helper()
+	restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT")
+	restoreGarageEnvOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN")
+	objects, _, _ := buildProvisioningPorts(&chatEnv{cfg: cfg, pool: pool})
+	if objects == nil {
+		t.Fatal("buildProvisioningPorts composed no object-store provisioner")
+	}
+	owner := objStoreProvSeedIdentity(t, pool)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := objects.DeprovisionObjectStore(ctx, owner); err != nil {
+			t.Errorf("deprovision the round trip's bucket: %v", err)
+		}
+	})
+	return owner
+}
+
 func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 	cfg, pool := roundTripEnv(t)
+	owner := roundTripOwner(t, cfg, pool)
 	ctx := context.Background()
 
 	objectStore, err := buildObjectStore(ctx, cfg)
 	if err != nil {
-		t.Skipf("object store: %v", err)
+		t.Fatalf("object store: %v", err)
 	}
 	service := buildAssetService(cfg, pool, objectStore, nil)
 	if service == nil {
@@ -70,19 +105,13 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 			"path that deletes the file")
 	}
 
-	path := filepath.Join(envOrDefault("AURA_BASELINE_CORPUS", "/mnt/d/tmp/baseline-corpus"),
-		"Clienti.xlsx")
-	payload, err := os.ReadFile(path)
-	if err != nil {
-		t.Skipf("fixture %s: %v", path, err)
-	}
+	payload := syntheticSpreadsheet(t)
 	sum := sha256.Sum256(payload)
 	wantHash := hex.EncodeToString(sum[:])
-	t.Logf("source: %s, %d bytes, sha256 %s…", filepath.Base(path), len(payload), wantHash[:16])
 
 	// 1. presign -- the daemon mints a URL and a pending asset row.
 	presigned, err := service.Presign(ctx, assets.PresignRequest{
-		IdentityID:        localSeededIdentityID,
+		IdentityID:        owner,
 		SourceKind:        assets.SourceWeb,
 		Scope:             assets.ScopeLibrary,
 		FileName:          "Clienti.xlsx",
@@ -93,47 +122,28 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("presign: %v", err)
 	}
-	t.Logf("1. presign  -> asset %s, bucket %s, key %s",
-		presigned.Asset.ID, presigned.Asset.ObjectBucket, presigned.Asset.ObjectKey)
 
-	// 2. upload -- straight to Garage, never through the daemon. This is the step
-	//    that looks convoluted and is not: a 30 MB spreadsheet has no business
-	//    being streamed through the API process.
+	// 2. upload -- straight to Garage, never through the daemon: a 30 MB spreadsheet has
+	//    no business being streamed through the API process.
 	if err := putPresigned(ctx, presigned, payload); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	t.Logf("2. upload   -> %d bytes PUT directly to the object store", len(payload))
 
-	// 3. finalize -- hashes, sniffs, validates limits, and queues processing.
-	asset, err := service.Finalize(ctx, localSeededIdentityID, presigned.Asset.ID)
+	// 3. finalize -- hashes, validates limits, and queues the ingestion job. Processing is
+	//    the ingest sidecar's (the ingestion reconciliation tier); nothing here consumes it.
+	asset, err := service.Finalize(ctx, owner, presigned.Asset.ID)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
-	t.Logf("3. finalize -> status %s, modality %s, %d bytes, sha256 %.16s…",
-		asset.Status, asset.Modality, asset.SizeBytes, asset.ContentHash)
-	if asset.ContentHash != "" && asset.ContentHash != wantHash {
-		t.Fatalf("sha256 mismatch: stored %s, source %s", asset.ContentHash, wantHash)
+	if asset.Status != assets.StatusAccepted {
+		t.Fatalf("finalize status = %s, want %s (hashed and queued)", asset.Status, assets.StatusAccepted)
+	}
+	if asset.ContentHash != wantHash {
+		t.Fatalf("sha256 stored %q, source %s", asset.ContentHash, wantHash)
 	}
 
-	// 4. processing -- DocumentProcessor pulls it back down, indexes it, and
-	//    records the document_versions row. It runs on a queue, so it is waited
-	//    for rather than assumed.
-	deadline := time.Now().Add(3 * time.Minute)
-	for time.Now().Before(deadline) {
-		current, err := service.GetForIdentity(ctx, asset.ID, localSeededIdentityID)
-		if err != nil {
-			t.Fatalf("poll asset: %v", err)
-		}
-		if current.Status == assets.StatusComplete || current.Status == assets.StatusFailed {
-			asset = current
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
-	t.Logf("4. process  -> status %s, document_id %q", asset.Status, asset.DocumentID)
-
-	// 5. the question the whole day was really about: is the ORIGINAL still there?
-	reader, reopened, err := service.OpenForIdentity(ctx, asset.ID, localSeededIdentityID)
+	// 4. the question this test exists for: is the ORIGINAL still there, byte for byte?
+	reader, _, err := service.OpenForIdentity(ctx, asset.ID, owner)
 	if err != nil {
 		t.Fatalf("OpenForIdentity: the original is not retrievable: %v", err)
 	}
@@ -142,13 +152,9 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	back := sha256.Sum256(got)
-	t.Logf("5. reopen   -> %d bytes, sha256 %.16s…, file %q",
-		len(got), hex.EncodeToString(back[:]), reopened.FileName)
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("the bytes came back different: %d in, %d out", len(payload), len(got))
 	}
-	t.Log("the original survives the pipeline byte for byte: a sandbox can be handed the real file")
 }
 
 func putPresigned(ctx context.Context, presigned assets.PresignResponse, payload []byte) error {
@@ -179,11 +185,4 @@ type uploadError struct {
 
 func (e *uploadError) Error() string {
 	return "presigned PUT returned " + http.StatusText(e.status) + ": " + e.body
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }

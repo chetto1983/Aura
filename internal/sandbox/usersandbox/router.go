@@ -100,17 +100,12 @@ func (r *SandboxRouter) identityID(ctx context.Context) string {
 
 // specFor builds the SandboxSpec for an identity, sourcing every knob from cfg.Sandbox (37-01)
 // rather than hardcoding: Image, the per-identity workspace volume name, the cgroup caps
-// (CPU→NanoCPUs / memory / pids), and the egress allowlist reaching EgressPolicy.FQDNAllowlist
-// on top of the always-on tenancy Floor. It is the same under every profile: every box runs
-// on runc since gVisor was retired (prd.md §12, 2026-10-11).
+// (CPU→NanoCPUs / memory / pids), and the always-on tenancy Floor. It is the same under every
+// profile: every box runs on runc since gVisor was retired (prd.md §12, 2026-10-11).
 func (r *SandboxRouter) specFor(id string) SandboxSpec {
 	return SandboxSpec{
 		IdentityID: id,
 		Image:      r.cfg.Image,
-		Egress: EgressPolicy{
-			Floor:         true,
-			FQDNAllowlist: r.cfg.EgressAllowlist,
-		},
 		Limits: Resources{
 			NanoCPUs:    int64(r.cfg.CPULimit) * nanoCPUsPerCPU,
 			MemoryBytes: r.cfg.MemoryLimit,

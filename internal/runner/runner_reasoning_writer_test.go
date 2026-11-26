@@ -80,6 +80,12 @@ func closeWriter(t *testing.T, writer *ReasoningTraceWriter, store *gatedReasoni
 // within fails the test instead of hanging it when fn blocks.
 func within(t *testing.T, what string, fn func()) {
 	t.Helper()
+	withinFor(t, 2*time.Second, what, fn)
+}
+
+// withinFor is within with the bound named, for waits on a live store.
+func withinFor(t *testing.T, d time.Duration, what string, fn func()) {
+	t.Helper()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -87,7 +93,7 @@ func within(t *testing.T, what string, fn func()) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(d):
 		t.Fatalf("%s blocked", what)
 	}
 }

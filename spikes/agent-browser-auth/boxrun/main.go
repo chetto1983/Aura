@@ -35,7 +35,7 @@ func main() {
 	backend := usersandbox.NewDockerBackend(cli, envOr("BOX_IMAGE", "aura-sandbox:spike"),
 		usersandbox.Resources{NanoCPUs: 2e9, MemoryBytes: 2 << 30, PidsLimit: 512},
 		usersandbox.WithEgress(envOr("BOX_EGRESS_IMAGE", "aura-egress:spike")))
-	spec := usersandbox.SandboxSpec{IdentityID: identity, Egress: usersandbox.EgressPolicy{Floor: true}}
+	spec := usersandbox.SandboxSpec{IdentityID: identity}
 
 	h, err := backend.Resolve(ctx, spec)
 	must(err)

@@ -105,24 +105,31 @@ test.describe('the Documenti view, live', () => {
           labels.tags = await ensureLabel(page, 'tag', tagName);
           await page.reload();
 
-          const list = page.getByRole('region', { name: 'Documenti' });
+          // The list is a region named Documenti inside the Documents surface, which carries the
+          // same name.
+          const list = page
+            .getByRole('region', { name: 'Documenti' })
+            .getByRole('region', { name: 'Documenti' });
           await expect(list.getByRole('heading', { name: 'Documenti' })).toBeVisible();
-          await expect(list.locator('.wx-row').first()).toBeVisible();
-          // The grid scrolls inside the room left to it, rather than growing past the page and
-          // taking the rows below the fold and the pager with it.
-          const fits = await list.evaluate((region) => {
-            const grid = region.querySelector('.wx-grid');
-            return (
-              grid !== null &&
-              grid.getBoundingClientRect().bottom <= region.getBoundingClientRect().bottom + 1
-            );
-          });
-          expect(fits, 'the grid stays inside the view').toBe(true);
-          const nameWidth = await list
-            .locator('.wx-header .wx-cell', { hasText: 'Nome' })
-            .evaluate((cell) => cell.getBoundingClientRect().width);
-          expect(nameWidth, 'the name column keeps a readable width').toBeGreaterThanOrEqual(150);
-          if (!device.isMobile) {
+          if (device.isMobile) {
+            // A phone lists documents as cards, not as the grid.
+            await expect(list.getByRole('listitem').first()).toBeVisible();
+          } else {
+            await expect(list.locator('.wx-row').first()).toBeVisible();
+            // The grid scrolls inside the room left to it, rather than growing past the page and
+            // taking the rows below the fold and the pager with it.
+            const fits = await list.evaluate((region) => {
+              const grid = region.querySelector('.wx-grid');
+              return (
+                grid !== null &&
+                grid.getBoundingClientRect().bottom <= region.getBoundingClientRect().bottom + 1
+              );
+            });
+            expect(fits, 'the grid stays inside the view').toBe(true);
+            const nameWidth = await list
+              .locator('.wx-header .wx-cell', { hasText: 'Nome' })
+              .evaluate((cell) => cell.getBoundingClientRect().width);
+            expect(nameWidth, 'the name column keeps a readable width').toBeGreaterThanOrEqual(150);
             // The operator drags a column's edge, and the list keeps the width it was left at.
             const header = list.locator('.wx-header .wx-cell', { hasText: 'Nome' });
             const grip = await header.locator('.wx-grip').boundingBox();
@@ -138,7 +145,10 @@ test.describe('the Documenti view, live', () => {
           }
           await shot(page, testInfo, `${device.name}-01-elenco`);
 
-          await list.getByRole('button', { name: 'Tipo', exact: true }).click();
+          // On a phone the filters sit behind one button, in a popover outside the list region.
+          if (device.isMobile)
+            await list.getByRole('button', { name: 'Filtri', exact: true }).click();
+          await page.getByRole('button', { name: 'Tipo', exact: true }).click();
           const menu = page.getByRole('dialog', { name: 'Tipo' });
           await menu.getByRole('checkbox', { name: new RegExp(typeName) }).click();
           for (const name of INVOICES) {
@@ -146,10 +156,33 @@ test.describe('the Documenti view, live', () => {
           }
           await shot(page, testInfo, `${device.name}-02-filtro-tipo`);
           await page.keyboard.press('Escape');
+          if (device.isMobile) {
+            // Escape closes only the Tipo menu; the Filtri popover stays open over the cards'
+            // checkboxes (CI, 2026-11-25) and a second Escape does not close it, so its button
+            // closes it, as a tap would.
+            const filters = page.getByRole('dialog', { name: 'Filtri' });
+            if (await filters.isVisible()) {
+              await list.getByRole('button', { name: 'Filtri', exact: true }).click();
+            }
+            await expect(filters).toBeHidden();
+          }
           await shot(page, testInfo, `${device.name}-03-filtrato`);
 
-          await list.getByRole('checkbox', { name: `Seleziona ${INVOICES[0]}` }).click();
-          await list.getByRole('checkbox', { name: `Seleziona ${INVOICES[1]}` }).click();
+          // "Rivisto, salva e avanti" opens the next document in the list's order, the indexing
+          // order, which nothing fixes: the reviewed invoice is the first shown, so it has a next
+          // one, and the other two take the bulk edit.
+          const placed = await Promise.all(
+            INVOICES.map(async (name) => {
+              const box = await list.getByRole('button', { name, exact: true }).boundingBox();
+              return { name, y: box?.y ?? Number.POSITIVE_INFINITY };
+            }),
+          );
+          const [reviewedName, ...bulkNames] = placed.sort((a, b) => a.y - b.y).map((p) => p.name);
+          if (reviewedName === undefined) throw new Error('no invoice in the filtered list');
+
+          for (const name of bulkNames) {
+            await list.getByRole('checkbox', { name: `Seleziona ${name}` }).click();
+          }
           const bar = page.getByRole('toolbar', { name: 'Modifica in blocco' });
           await bar.getByRole('button', { name: 'Tag', exact: true }).click();
           const tags = page.getByRole('dialog', { name: 'Tag, sui 2 selezionati' });
@@ -164,26 +197,28 @@ test.describe('the Documenti view, live', () => {
           await shot(page, testInfo, `${device.name}-05-conferma`);
           await confirm.getByRole('button', { name: 'Conferma' }).click();
           await expect(bar).toBeHidden();
-          for (const name of INVOICES.slice(0, 2)) {
+          for (const name of bulkNames) {
             const [doc] = await documentsNamed(page, name);
             expect(doc?.values.some((v) => v.value_key === labels.tags)).toBe(true);
           }
           await shot(page, testInfo, `${device.name}-06-applicato`);
 
-          await list.getByRole('button', { name: INVOICES[2], exact: true }).click();
-          await expect(page.getByRole('heading', { name: INVOICES[2] })).toBeVisible();
+          await list.getByRole('button', { name: reviewedName, exact: true }).click();
+          await expect(page.getByRole('heading', { name: reviewedName })).toBeVisible();
           const use = page.getByRole('button', { name: `Usa il suggerimento ${typeName}` });
           await expect(use).toBeVisible();
           // The preview is GridCraft (/apps/gridcraft/): its own loader leaves once the app
           // runs, and the workbook it is sent then paints on its canvas, which the DOM cannot
           // see, so a short wait follows.
           await expect(
-            page.frameLocator(`iframe[title="${INVOICES[2]}"]`).locator('#gridcraft_loading'),
+            page.frameLocator(`iframe[title="${reviewedName}"]`).locator('#gridcraft_loading'),
           ).toBeHidden({ timeout: 60_000 });
           await page.waitForTimeout(1_500);
           await shot(page, testInfo, `${device.name}-07-dettaglio`);
           await use.click();
-          await expect(page.getByRole('button', { name: 'Salva', exact: true })).toBeEnabled();
+          await expect(
+            page.getByRole('button', { name: 'Salva dettagli', exact: true }),
+          ).toBeEnabled();
           await shot(page, testInfo, `${device.name}-08-dettaglio-modificato`);
           // The detail is the section holding its review button: the shell's own navigation
           // carries a "Documenti" too.
@@ -191,9 +226,9 @@ test.describe('the Documenti view, live', () => {
             .locator('section')
             .filter({ has: page.getByRole('button', { name: 'Rivisto, salva e avanti' }) });
           await detail.getByRole('button', { name: 'Rivisto, salva e avanti' }).click();
-          await expect(page.getByRole('heading', { name: INVOICES[2] })).toBeHidden();
+          await expect(page.getByRole('heading', { name: reviewedName })).toBeHidden();
           await expect(detail.getByRole('heading', { level: 1 })).toBeVisible();
-          const [reviewed] = await documentsNamed(page, INVOICES[2]);
+          const [reviewed] = await documentsNamed(page, reviewedName);
           expect(reviewed?.needs_review).toBe(false);
           expect(reviewed?.values.some((v) => v.value_key === labels.type && v.accepted)).toBe(
             true,
@@ -201,7 +236,10 @@ test.describe('the Documenti view, live', () => {
           await shot(page, testInfo, `${device.name}-09-avanti`);
 
           await detail.getByRole('button', { name: 'Documenti', exact: true }).click();
-          await list.getByRole('button', { name: 'Liste e regole' }).click();
+          // On a phone the Documents navigation is a drawer behind its own button.
+          if (device.isMobile)
+            await page.getByRole('button', { name: 'Navigazione documenti' }).click();
+          await page.getByRole('link', { name: 'Organizzazione' }).click();
           await expect(page.getByRole('heading', { name: 'Liste e regole' })).toBeVisible();
           await expect(page.getByRole('heading', { name: typeName, level: 3 })).toBeVisible();
           await expect(page.getByText(/^\d+ document[oi]$/).first()).toBeVisible();

@@ -29,14 +29,6 @@ func sidecarIdentity(id string, kind BoxKind) string {
 	return id
 }
 
-// EgressPolicy is the box network egress posture. Floor is the always-on default tenancy
-// floor (drop RFC1918 + cloud metadata); FQDNAllowlist is the opt-in tightened allowlist.
-// There is deliberately no "host"/"none-with-holes" escape here.
-type EgressPolicy struct {
-	Floor         bool
-	FQDNAllowlist []string
-}
-
 // Resources is the cgroup cap set applied to the box (D-14). PidsLimit is a plain int64
 // here; the translator converts it to the moby *int64.
 type Resources struct {
@@ -55,6 +47,5 @@ type SandboxSpec struct {
 	Kind       BoxKind
 	IdentityID string
 	Image      string
-	Egress     EgressPolicy
 	Limits     Resources
 }

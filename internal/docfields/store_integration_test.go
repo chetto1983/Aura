@@ -30,7 +30,8 @@ type disposableTenants struct {
 	clients map[string]*arcadedb.Client
 }
 
-func newDisposableTenants(t *testing.T) *disposableTenants {
+// arcadeURLOrSkip returns ARCADEDB_URL, skipping locally without it and failing under CI.
+func arcadeURLOrSkip(t *testing.T) string {
 	t.Helper()
 	base := os.Getenv("ARCADEDB_URL")
 	if base == "" {
@@ -39,6 +40,12 @@ func newDisposableTenants(t *testing.T) *disposableTenants {
 		}
 		t.Skip("ARCADEDB_URL not set")
 	}
+	return base
+}
+
+func newDisposableTenants(t *testing.T) *disposableTenants {
+	t.Helper()
+	base := arcadeURLOrSkip(t)
 	admin, err := arcadedb.New(arcadedb.Config{BaseURL: base, Database: "unused", User: envOr("ARCADEDB_USER", "root"),
 		Password: os.Getenv("ARCADEDB_PASSWORD")})
 	if err != nil {

@@ -240,6 +240,9 @@ func TestAMalformedShareDoesNotCostTheGranteeTheirBox(t *testing.T) {
 	// The fault: a symlink inside the shared tree, which writeTarDir refuses by design.
 	badDir := filepath.Join(ownerRoots.Export, "bad-share")
 	if err := os.Symlink(filepath.Join(badDir, "SKILL.md"), filepath.Join(badDir, "link.md")); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("symlink unsupported on the CI host: %v", err)
+		}
 		t.Skipf("symlink unsupported on this host: %v", err)
 	}
 

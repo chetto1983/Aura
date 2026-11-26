@@ -62,8 +62,10 @@ helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" ||
 # Raise it only after checking the new tier calls THIS helper rather than curling a URL.
 # SEVEN since 2026-11-25: mcp-live-integration-test starts the memory MCP, which embeds,
 # and fetches the model through this helper (checked); it reached this gate red too.
-if [ "$helper_calls" -ne 7 ]; then
-  echo "expected all seven live embedding CI tiers to use the shared helper" >&2
+# EIGHT since 2026-11-25: web-e2e brings up the embedder for the ingest sidecar that indexes
+# the document specs' library, through this helper (checked); red on 0a609978e first.
+if [ "$helper_calls" -ne 8 ]; then
+  echo "expected all eight live embedding CI tiers to use the shared helper" >&2
   exit 1
 fi
 if grep -q 'qwen3-embedding-0[.]6b' "$workflow"; then

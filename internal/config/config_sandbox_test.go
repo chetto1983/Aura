@@ -1,7 +1,6 @@
 package config
 
 import (
-	"slices"
 	"testing"
 )
 
@@ -12,12 +11,11 @@ import (
 // fallback into an unsafe value). Lives in its own file so config_test.go stays under the
 // 600-LOC cap (CLAUDE.md NO GOD CLASS).
 func TestLoad_SandboxConfig(t *testing.T) {
-	// The seven AURA_SANDBOX_* knobs; the default subtest neutralizes any ambient host value so
+	// The six AURA_SANDBOX_* knobs; the default subtest neutralizes any ambient host value so
 	// the fallback assertions are deterministic regardless of the shell that runs the suite.
 	sandboxEnvKeys := []string{
 		"AURA_SANDBOX_IDLE_TTL_SEC", "AURA_SANDBOX_CPU_LIMIT", "AURA_SANDBOX_MEMORY_LIMIT",
-		"AURA_SANDBOX_PIDS_LIMIT", "AURA_SANDBOX_EGRESS_ALLOWLIST", "AURA_SANDBOX_IMAGE",
-		"AURA_SANDBOX_EGRESS_IMAGE",
+		"AURA_SANDBOX_PIDS_LIMIT", "AURA_SANDBOX_IMAGE", "AURA_SANDBOX_EGRESS_IMAGE",
 	}
 
 	t.Run("defaults on unset", func(t *testing.T) {
@@ -42,9 +40,6 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		if s.PidsLimit != 1024 {
 			t.Errorf("PidsLimit default: want 1024, got %d", s.PidsLimit)
 		}
-		if len(s.EgressAllowlist) != 0 {
-			t.Errorf("EgressAllowlist default: want empty (floor-only), got %v", s.EgressAllowlist)
-		}
 		if s.Image != "aura-sandbox:latest" {
 			t.Errorf("Image default: want aura-sandbox:latest, got %q", s.Image)
 		}
@@ -63,7 +58,6 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		t.Setenv("AURA_SANDBOX_CPU_LIMIT", "4")
 		t.Setenv("AURA_SANDBOX_MEMORY_LIMIT", "4294967296") // 4 GiB — exceeds int32, proves int64 parse
 		t.Setenv("AURA_SANDBOX_PIDS_LIMIT", "1024")
-		t.Setenv("AURA_SANDBOX_EGRESS_ALLOWLIST", "pypi.org, *.githubusercontent.com ,")
 		t.Setenv("AURA_SANDBOX_IMAGE", "registry.example.test/aura-sandbox@sha256:abc")
 		t.Setenv("AURA_SANDBOX_EGRESS_IMAGE", "registry.example.test/aura-egress@sha256:def")
 		cfg, err := LoadServe()
@@ -82,11 +76,6 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		}
 		if s.PidsLimit != 1024 {
 			t.Errorf("PidsLimit override: want 1024, got %d", s.PidsLimit)
-		}
-		// envSliceDefault trims each entry and drops empties: the trailing "," is dropped.
-		wantAllow := []string{"pypi.org", "*.githubusercontent.com"}
-		if !slices.Equal(s.EgressAllowlist, wantAllow) {
-			t.Errorf("EgressAllowlist override: want %v, got %v", wantAllow, s.EgressAllowlist)
 		}
 		if s.Image != "registry.example.test/aura-sandbox@sha256:abc" {
 			t.Errorf("Image override: want the digest-pinned registry ref, got %q", s.Image)

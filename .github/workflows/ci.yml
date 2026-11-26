@@ -110,27 +110,7 @@ jobs:
 
       - name: Production-evidence contract tests
         run: |
-          PYTHONPATH=scripts python3 -m unittest \
-            scripts/audit_closure_gate_test.py \
-            scripts/briefing_baseline_test.py \
-            scripts/agent_memory_eval_test.py \
-            scripts/capability_eval_test.py \
-            scripts/critical_mutation_gate_test.py \
-            scripts/go_mutation_cache_test.py \
-            scripts/mutation_workflow_test.py \
-            scripts/observability_evidence_test.py \
-            scripts/production_load_chaos_test.py \
-            scripts/release_check_run_gate_test.py \
-            scripts/release_notes_test.py \
-            scripts/release_readiness_gate_test.py \
-            scripts/security_evidence_test.py
-          bash scripts/coverage_profile_gate_test.sh
-          bash scripts/coverage_gate_test.sh
-          bash scripts/docker_coverage_gate_test.sh
-          bash scripts/restore_drill_name_test.sh
-          bash scripts/mirror_whisper_server_test.sh
-          bash scripts/tempo_blocks_repair_test.sh
-          bash scripts/web_filter_backstop_test.sh
+          make evidence-contracts
           bash scripts/install_lib_test.sh
           bash scripts/install_config_test.sh
           bash scripts/appliance_posture_test.sh
@@ -143,6 +123,13 @@ jobs:
           bash scripts/cloudflare_update_test.sh
           bash scripts/cloudflare_tunnel_live_e2e_test.sh
           bash scripts/payload_manifest_gate.sh
+
+      - name: Caddy keeps the secure origin through the shipped routes (real Caddy, no network)
+        # cloudflare_caddy_origin_test.sh needs the Caddy image, which only the publish
+        # workflow built, so the test ran nowhere before 2026-11-25. Built here from this commit.
+        run: |
+          docker build -q -f docker/caddy/Dockerfile -t aura-caddy:local .
+          bash scripts/cloudflare_caddy_origin_test.sh
 
       # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh
       # SKIPs with exit 0 when it's absent (right for a laptop, a falsely-green job here).
@@ -402,6 +389,31 @@ jobs:
         # ONE Postgres and each runs EnsureRoles+Migrate; parallel package binaries
         # deadlock on pg_advisory_lock once >2 integration packages exist.
         run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/... ./internal/documents/...
+
+      - name: Install the PostgreSQL 18 client (pg_dump must match the server)
+        # The runner ships client 16, which refuses the compose postgres:18 ("server
+        # version mismatch"). Same PGDG source as docker/aura/Dockerfile; its bin goes first
+        # on PATH so the Debian pg_wrapper cannot pick 16.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor --yes -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Live network backup (backup_live)
+        # The scheduled Postgres backup, run against this job's server: a dump artifact
+        # must land in AURA_BACKUP_DIR. It ran nowhere before 2026-11-25.
+        # `aura db migrate` first, as the appliance's aura-migrate does: the suite above
+        # migrates through its own helpers, and the 0019 down/up drill drops schema authula
+        # with the default privileges db.EnsureAuthulaReadable gives aura_migrate, so the
+        # dump failed on authula.auth_schema_migrations (measured 2026-11-25 on a93d05e9c).
+        run: |
+          go run ./cmd/aura db migrate
+          go test -tags 'db_integration backup_live' -race -count=1 -run TestBackupNetworkPostgresLive ./internal/cron/handlers/
 
       - name: Authula 0019 migration drill
         # Explicit no-skip Authula schema gate: internal/db/... above already runs it,
@@ -1280,6 +1292,11 @@ jobs:
       - name: Reasoning tier accuracy gate
         run: go test -tags reasoning_live -count=1 -v -run TestReasoningClassifierLive ./internal/agent/prompt/
 
+      - name: Adaptive reasoning tier through the shipped agent wiring
+        # A real LlmAgent with this embedder resolves its tier locally and never asks the
+        # teacher. It ran nowhere before 2026-11-25.
+        run: go test -tags reasoning_live -count=1 -v -run TestAdaptiveReasoningTierLive ./internal/agent/
+
       - name: Tear down
         if: always()
         run: docker compose down
@@ -1315,17 +1332,17 @@ jobs:
 
       - name: Compile the multimodal_integration tier (always — no-skip-as-green floor)
         # The tier ALWAYS compiles in CI (the cheap, always-green floor that proves the
-        # tagged file never rots). The live round-trip below runs only when the sidecars
-        # are reachable; the compile gate runs unconditionally.
+        # tagged file never rots), before the live round-trip below.
         run: go vet -tags multimodal_integration ./internal/channels/telegram/
 
       - name: Bring up the 9c audio sidecars (aura-stt + aura-tts)
         run: docker compose up -d aura-stt aura-tts
 
       - name: Wait for the audio sidecars healthy
-        id: audio-health
+        # A sidecar that never comes up fails the job: it used to skip the live tier and stay
+        # green. Measured on the last 40 master runs before the change: the live step ran in
+        # every one that reached it (26 success, 1 cancelled).
         run: |
-          available=1
           for svc in aura-stt aura-tts; do
             ok=""
             for i in $(seq 1 60); do
@@ -1341,16 +1358,13 @@ jobs:
               sleep 10
             done
             if [ -z "$ok" ]; then
-              echo "$svc did not become healthy; skipping live audio tier" >&2
+              echo "$svc did not become healthy" >&2
               docker logs "$svc" --tail 60 || true
-              available=0
-              break
+              exit 1
             fi
           done
-          echo "available=$available" >> "$GITHUB_OUTPUT"
 
       - name: Live multimodal_integration audio tier (TTS->STT loop)
-        if: steps.audio-health.outputs.available == '1'
         run: go test -race -count=1 -tags multimodal_integration -run '^TestLive(TTSThenSTTRoundTrip|TTSVoiceBytes)$' ./internal/channels/telegram/
 
       - name: Tear down
@@ -1575,6 +1589,31 @@ jobs:
         if: always()
         run: docker rm -f aura-pim-mcp || true
 
+  pim-mail-e2e:
+    name: PIM mail E2E (pim_mail_e2e tier, live aura-pim-mcp over GreenMail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # guards against a hung image pull
+    # The pinned PIM against a fake IMAP/SMTP server (GreenMail) on a private Docker network,
+    # through Aura's OAuth contract: the briefing's mail reads, a send that arrives, the
+    # calendar-write refusal (A1), bulk mark-read (A3), and the change feed internal/pimwatch
+    # reads. scripts/pim_mail_e2e.sh brings both containers up, seeds three unread mails, runs
+    # the tier and the briefing baseline, and removes everything on exit.
+    # NO-SKIP-AS-GREEN: the tier t.Fatals when AURA_PIM_MCP_URL is unset.
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: PIM over a fake mailbox, end to end
+        run: bash scripts/pim_mail_e2e.sh
+
   mcp-live-integration-test:
     name: Live MCP resources (mcp_live_integration tier, PIM + WhatsApp + Memory behind aura serve)
     runs-on: ubuntu-latest
@@ -1648,11 +1687,10 @@ jobs:
         run: docker compose down
 
   # ── Phase 23 frontend web jobs (FND-03/FND-06) ──────────────────────────────
-  # Five path-filtered Node-24 jobs, all blocking on every PR (D-16), all in the
-  # single unified workflow (D-17 — no separate web.yml). A `dorny/paths-filter`
-  # guard early-exits each job green when no web file changed, so Go-only PRs do
-  # not pay the npm install cost. The filter watches web/** + embedded dist +
-  # this workflow file.
+  # Node-24 jobs, all blocking on every PR (D-16), all in the single unified workflow
+  # (D-17 — no separate web.yml). Only web-lint keeps a `dorny/paths-filter` guard: it
+  # runs no tests. web-test and web-e2e run on every push, because a test behind a path
+  # filter goes unseen on the pushes it skips (2026-11-25).
   # The industrial set mirrors the Go gates: web-lint (Oxlint/tsc/prettier),
   # web-test (vitest + ≥85% coverage), web-mutation (Stryker and the critical Go
   # boundaries ≥70% killed each, measured by the jobs before it), web-e2e (Playwright).
@@ -1708,40 +1746,27 @@ jobs:
   web-test:
     name: Web unit tests (Vitest + coverage)
     runs-on: ubuntu-latest
+    # Runs on every push: a test that runs only when a path filter says so goes unseen on the
+    # pushes it skips (2026-11-25). create-aura's Vitest suite runs here too, so its tests are
+    # in this workflow and not only in create-aura-appliance.yml.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Detect web changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: changes
-        with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
-
       - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            packages/create-aura/package-lock.json
 
       - name: Vitest (FND-06)
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run test
 
-      - name: No-skip-as-green backstop (filter must not have misfired)
-        # WR-05: see web-lint — fails if the filter said web==false but a web path
-        # actually changed in the event range. Fail-open on an uncomputable range.
-        if: steps.changes.outputs.web != 'true'
-        run: |
-          bash scripts/web_filter_backstop.sh \
-            "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: create-aura Vitest
+        run: cd packages/create-aura && npm ci && npm test
 
   # Mutation evidence arrives from parallel jobs and is judged once. Stryker and three groups
   # of Go scopes run on runners of their own; `web-mutation` downloads what they measured, runs
@@ -2017,13 +2042,15 @@ jobs:
   web-e2e:
     name: Web E2E (Playwright boots aura serve over docker-compose Postgres + Garage)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     # Resolves A-SERVE-NOSTACK: `aura serve` hard-requires a Postgres pool (bootServe
     # → bootServeChatEnv → db.Open is unconditional). So the E2E provisions the stack
     # exactly like the AG-UI live smoke (integration-test job): a dummy non-empty
     # OPENROUTER_API_KEY lets config.LoadServe boot (the placeholder shell needs no
     # real key); the agent loop is never exercised — only the static "/" render is.
     # CI=true arms the no-skip-as-green guards in the surrounding scripts.
+    # It runs on every push: it boots aura serve, so a Go-only push changes what it tests.
+    # Behind a web-path filter it ran on 13 of 40 master pushes (measured 2026-11-25).
     env:
       POSTGRES_USER: aura
       POSTGRES_PASSWORD: ci-test-password
@@ -2068,30 +2095,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Detect web changes
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: changes
-        with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
-              - 'scripts/web_e2e_ci.sh'
-              # The memory sidecar is built from this commit, so its own changes must
-              # re-run the browser suite that drives it.
-              - 'cmd/arcadedb-mcp/**'
-              - 'docker/arcadedb-mcp/**'
-
       - name: Set up Go
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
@@ -2099,19 +2109,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Start Postgres (docker compose)
-        if: steps.changes.outputs.web == 'true'
         run: make db-up
 
       - name: aura db migrate
-        if: steps.changes.outputs.web == 'true'
         run: go run ./cmd/aura db migrate
 
       - name: Seed Authula E2E operator
-        if: steps.changes.outputs.web == 'true'
         run: go run ./scripts/authula_seed_e2e.go
 
       - name: Install the browser-tested MCP recipes
-        if: steps.changes.outputs.web == 'true'
         # Memory is core/default-on. Calendar and WhatsApp are appliance-default-on
         # only inside the Aura container, while this job runs aura serve on the host.
         run: |
@@ -2119,13 +2125,11 @@ jobs:
           go run ./cmd/aura mcp install whatsapp
 
       - name: Build the ArcadeDB MCP sidecar from this commit
-        if: steps.changes.outputs.web == 'true'
         # compose.yaml's build stanza tags the result with AURA_ARCADEDB_MCP_IMAGE, the
         # reference the raw `docker run` below starts.
         run: docker compose build arcadedb-mcp
 
       - name: Start live MCP OAuth resource sidecars
-        if: steps.changes.outputs.web == 'true'
         # Host networking reproduces the appliance's shared loopback namespace: Aura
         # and all three resource servers use the exact 127.0.0.1 catalog/issuer URLs.
         # The sidecars do not contact the issuer until Playwright has started Aura.
@@ -2187,15 +2191,12 @@ jobs:
           done
 
       - name: Build web dist (fresh embed source)
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npm ci && npm run build
 
       - name: Build aura binary (embeds the fresh dist)
-        if: steps.changes.outputs.web == 'true'
         run: go build -o aura ./cmd/aura
 
       - name: Start Garage objectstore (asset upload E2E)
-        if: steps.changes.outputs.web == 'true'
         env:
           AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
           AURA_OBJECTSTORE_BUCKET: aura-assets
@@ -2240,28 +2241,83 @@ jobs:
           ./aura objectstore bootstrap
 
       - name: Install Playwright Chromium
-        if: steps.changes.outputs.web == 'true'
         run: cd web && npx playwright install --with-deps chromium
 
       - name: Playwright E2E (HTTPS cockpit, SC2)
         # page.request filters Secure CSRF/session cookies from HTTP 127.0.0.1.
         # The runner preserves the web cwd, CI exports, and full browser matrix while
         # using the existing TLS proxy and bounded /healthz readiness on its HTTPS origin.
-        if: steps.changes.outputs.web == 'true'
-        # TEMP-harvest (revert after committing the PNGs, playbook 64ba3ec4/ecc98359):
-        # the calm-prism baselines drifted after the shell containing-block fix; CI
-        # renders with the runner's Chrome, so off-runner regeneration fails on
-        # font/build diffs. --update-snapshots regenerates them ON the runner while the
-        # rest of the suite still runs as a real gate; the artifact below is harvested.
-        run: bash scripts/web_e2e_ci.sh --update-snapshots
+        # The calm-prism baselines are the runner's own render (Chrome on ubuntu-latest);
+        # a run with --update-snapshots compares nothing, which is how they went unchecked
+        # from 2026-07-23 to 2026-11-25.
+        run: bash scripts/web_e2e_ci.sh
 
-      - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
-        if: always() && steps.changes.outputs.web == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      - name: Playwright live specs this stack can run (graph, artifact origin, skill catalogue)
+        # Gated specs that need no model and no account: the memory graph seeded through the host
+        # binary, an HTML artifact the run uploads itself, the data proxy and skills.sh search
+        # (public internet). Chrome only: they measure the server, not the layout. They ran
+        # nowhere before 2026-11-25. One worker: the catalogue spec times a cold search (under
+        # 1.5 s), which missed only when it shared the runner with the other two (2026-11-25).
+        env:
+          AURA_E2E_LIVE_GRAPH: "1"
+          AURA_E2E_LIVE_ARTIFACT: "1"
+          AURA_E2E_LIVE_CATALOG: "1"
+          AURA_E2E_AURA_CMD: ../aura
+          AURA_PROFILE: dev
+        run: >-
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1
+          e2e/graph-live-arcadedb.spec.ts e2e/origin-isolation-live.spec.ts e2e/skill-catalog-search-live.spec.ts
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: calm-prism-snapshots
-          path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
-          if-no-files-found: error
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
+
+      - name: Build the ingestion sidecar image from this commit
+        run: make ingest-image
+
+      - name: Bring up the document pipeline (embedder, speech-to-text, ingest)
+        # The ingest sidecar is the only indexer (internal/assets/document_processor.go);
+        # .github/compose.ci-web-e2e.yaml points it at Garage by service name. Speech-to-text
+        # runs the smallest Whisper model: the paperless spec checks that its WAV is indexed
+        # and plays, not what it says.
+        env:
+          COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml:.github/compose.ci-web-e2e.yaml
+          AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+          AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11960
+          AURA_EMBED_NGL: "0"
+          STT_MODEL: tiny
+        run: |
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          cp ~/.cache/aura-embed/model.gguf "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+          if ! docker compose up -d --wait --wait-timeout 600 aura-stt aura-ingest; then
+            docker compose logs --tail 80 aura-llama-embed aura-stt aura-ingest || true
+            exit 1
+          fi
+
+      - name: Seed the operator's document library
+        env:
+          AURA_PROFILE: dev
+        run: bash scripts/web_e2e_documents_seed.sh
+
+      - name: Playwright live document specs (list, filters, survival, paperless)
+        # Indexed by the sidecar, read through the cockpit and `aura docs mcp`. The two paperless
+        # specs that provision a second identity stay manual: provisioning resolves the bot's name
+        # with a live Telegram getMe (internal/agui/onboarding_provision.go). One worker: the
+        # specs share the operator's library, and with fullyParallel the paperless workflow's
+        # uploads landed inside the saved-view spec's unchanged-total check (2026-11-25).
+        env:
+          AURA_E2E_LIVE_DOCUMENTS: "1"
+          AURA_E2E_AURA_CMD: ../aura
+          AURA_PROFILE: dev
+        run: >-
+          bash scripts/web_e2e_ci.sh --project=chrome --workers=1
+          e2e/documents-live.spec.ts e2e/documents-filter-eval-live.spec.ts e2e/documents-survival-live.spec.ts
+          e2e/paperless-workflow-live.spec.ts e2e/paperless-saved-view-delete-live.spec.ts
 
       - name: Tear down
         if: always()
@@ -2413,6 +2469,11 @@ jobs:
         # named volumes and netns-sharing sidecars. Serialising keeps a failure attributable
         # to one package and keeps the runner's memory envelope predictable.
         run: bash scripts/docker_coverage_gate.sh
+
+      - name: Per-identity pip cache isolation in the box image (smoke)
+        # Two boxes on the image built above: A reuses its own wheel, B can neither read nor
+        # replace it. Offline (--no-index); it ran nowhere before 2026-11-25.
+        run: AURA_SANDBOX_TEST_IMAGE=aura-sandbox:latest go test -tags 'docker_integration smoke' -race -count=1 -run TestPipCacheIsolation ./internal/sandbox/usersandbox/
 
       - name: Upload docker_integration coverage report
         if: always()

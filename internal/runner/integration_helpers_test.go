@@ -5,7 +5,6 @@
 // identity (0004). Run via:
 //
 //	go test -tags db_integration -race ./internal/runner/ -count=1
-//	# or: bash scripts/run_runner_integration.sh -run 'Resume|Pause|Multipause'
 //
 // No-skip-as-green: envOrSkip t.Fatals under $CI when the composed DSN is unset. The
 // PoolResumeCommitter's cross-store tx cannot be unit-faked (db.WithTx begins on a
@@ -44,7 +43,7 @@ func envOrSkip(t *testing.T, key string) string {
 			t.Fatalf("integration test requires %s, but it is unset under CI — "+
 				"a skipped integration test must not pass as green; wire it in ci.yml", key)
 		}
-		t.Skipf("integration test requires %s; set it and re-run (e.g. via scripts/run_runner_integration.sh)", key)
+		t.Skipf("integration test requires %s; set it and re-run", key)
 	}
 	return v
 }

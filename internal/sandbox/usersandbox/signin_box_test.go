@@ -10,7 +10,7 @@ import (
 
 func validSignInSpec() SignInSpec {
 	return SignInSpec{Session: "signin-0123456789abcdef01234567", IdentityID: "owner", DesktopImage: "desktop:local", SidecarImage: "sidecar:local",
-		AuthURL: "https://provider.example/authorize?state=s", CockpitOrigin: "https://aura.lan:8443", StreamOrigin: "https://aura.lan:8444", Egress: EgressPolicy{Floor: true}}
+		AuthURL: "https://provider.example/authorize?state=s", CockpitOrigin: "https://aura.lan:8443", StreamOrigin: "https://aura.lan:8444"}
 }
 
 func TestSignInEnvHardensTheDesktop(t *testing.T) {

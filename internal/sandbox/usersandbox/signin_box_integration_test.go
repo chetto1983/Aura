@@ -35,7 +35,7 @@ func signInDocker(t *testing.T) (context.Context, *DockerBackend, SignInSpec) {
 	_, _ = rand.Read(id[:])
 	session := "signin-" + hex.EncodeToString(id[:])
 	s := SignInSpec{Session: session, IdentityID: "test-" + session, DesktopImage: image, SidecarImage: sidecar, AuthURL: "https://example.com",
-		CockpitOrigin: "https://aura.test:8443", StreamOrigin: "https://aura.test:8444", Egress: EgressPolicy{Floor: true}}
+		CockpitOrigin: "https://aura.test:8443", StreamOrigin: "https://aura.test:8444"}
 	b := NewDockerBackend(cli, sidecar, Resources{NanoCPUs: 1_000_000_000, MemoryBytes: 512 << 20, PidsLimit: 256}, WithEgress(egressTestImage()))
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)

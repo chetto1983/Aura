@@ -70,6 +70,9 @@ func TestScanOrphans_SymlinkNotFollowed(t *testing.T) {
 	}
 	link := filepath.Join(convRoot, "evil-symlink")
 	if err := os.Symlink(external, link); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("symlinks unavailable on the CI host: %v", err)
+		}
 		t.Skipf("symlinks unavailable on this platform: %v", err)
 	}
 

@@ -1,16 +1,13 @@
 // egress.go builds the per-box egress sidecar (SBX-04, D-03/D-05/D-07): an always-on
 // filter-table nftables floor that gives the box full public internet (Claude-Code parity,
 // D-04) while DROPping the tenancy boundary — RFC1918, the 169.254.169.254 cloud-metadata
-// IP, and the shared-services Docker bridge (D-05). The floor is FILTER-TABLE ONLY, so it
-// never depends on the nat table that the opt-in tightened FQDN allowlist (OpenSandbox
-// DNS-redirect) programs on top of it. The allowlist it enforces is the CONFIGURED one —
-// sourced by 37-05's specFor from AURA_SANDBOX_EGRESS_ALLOWLIST into
-// EgressPolicy.FQDNAllowlist — never an inline literal.
+// IP, and the shared-services Docker bridge (D-05). The floor is FILTER-TABLE ONLY. An
+// opt-in FQDN allowlist (OpenSandbox) was removed on 2026-11-25: no shipped image carried
+// its binary, so the sidecar exited at boot whenever it was configured.
 
 package usersandbox
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -51,37 +48,22 @@ const (
 // image) makes the ruleset unit-testable and the image generic.
 const envFloorRuleset = "AURA_EGRESS_FLOOR_RULESET"
 
-// OpenSandbox egress env (third-party sidecar — upstream naming kept per CLAUDE.md). Set
-// ONLY when a tightened FQDN allowlist is configured (D-06).
-const (
-	envOpenSandboxMode  = "OPENSANDBOX_EGRESS_MODE"
-	envOpenSandboxRules = "OPENSANDBOX_EGRESS_RULES"
-
-	openSandboxModeDNSNFT = "dns+nft" // recommended strict mode (DNS proxy + nftables allow-sets)
-)
-
 // EgressSidecar is the resolved spec for a per-box egress sidecar container. It shares the
 // box's network namespace (NetworkMode "container:<box>"), carries CAP_NET_ADMIN (the box
-// never does), applies the always-on filter-table floor, and — when FQDNMode is on — runs
-// the OpenSandbox egress proxy from the configured allowlist. It is a pure value built by
+// never does), and applies the always-on filter-table floor. It is a pure value built by
 // buildEgressSidecar; DockerBackend turns it into a container.
 type EgressSidecar struct {
 	Image        string   // the aura-egress image ref (default egressSidecarImage)
 	BoxID        string   // the box container id whose netns the sidecar shares
 	NetworkMode  string   // "container:<BoxID>"
 	CapAdd       []string // ["NET_ADMIN"] — sidecar only (D-07)
-	Env          []string // floor ruleset (always) + OpenSandbox env (FQDN mode only)
+	Env          []string // the floor ruleset
 	FloorRuleset string   // the filter-table nft floor (also carried in Env)
-	FQDNMode     bool     // true when a tightened allowlist is configured
 }
 
-// buildEgressSidecar builds the sidecar spec for a box from its CONFIGURED egress policy
-// (EgressPolicy.FQDNAllowlist is sourced by 37-05 specFor from AURA_SANDBOX_EGRESS_ALLOWLIST
-// — never an inline list). The always-on filter-table floor is emitted unconditionally (the
-// tenancy boundary is not optional, D-05/D-07). When the policy carries a non-empty
-// FQDNAllowlist the sidecar additionally runs OpenSandbox in dns+nft mode built from exactly
-// those hosts.
-func buildEgressSidecar(policy EgressPolicy, boxID string) (EgressSidecar, error) {
+// buildEgressSidecar builds the sidecar spec for a box. The always-on filter-table floor is
+// emitted unconditionally (the tenancy boundary is not optional, D-05/D-07).
+func buildEgressSidecar(boxID string) (EgressSidecar, error) {
 	if boxID == "" {
 		return EgressSidecar{}, errors.New("usersandbox: buildEgressSidecar requires a non-empty boxID")
 	}
@@ -96,27 +78,12 @@ func buildEgressSidecar(policy EgressPolicy, boxID string) (EgressSidecar, error
 		FloorRuleset: floor,
 	}
 
-	if len(policy.FQDNAllowlist) == 0 {
-		return sc, nil
-	}
-
-	// A tightened allowlist is configured — OpenSandbox FQDN mode.
-	rules, err := buildOpenSandboxRules(policy.FQDNAllowlist)
-	if err != nil {
-		return EgressSidecar{}, fmt.Errorf("usersandbox: build OpenSandbox egress rules: %w", err)
-	}
-	sc.FQDNMode = true
-	sc.Env = append(sc.Env,
-		envOpenSandboxMode+"="+openSandboxModeDNSNFT,
-		envOpenSandboxRules+"="+rules,
-	)
 	return sc, nil
 }
 
 // buildFloorRuleset renders the always-on filter-table nft floor: default policy ACCEPT (full
 // public internet, D-04) with an explicit DROP for the metadata IP, each RFC1918 range, and
-// the shared-services bridge (D-05). It is filter-table ONLY (no nat), so the nat-table FQDN
-// mode can be added on top of it or left out without changing it.
+// the shared-services bridge (D-05). It is filter-table ONLY (no nat).
 //
 // DNS is accepted BEFORE the drops, and that carve-out is what makes D-04 true rather than
 // nominal. A box created by DockerBackend sets no NetworkMode, so it lands on Docker's default
@@ -147,22 +114,4 @@ func buildFloorRuleset(bridgeCIDR string) string {
 	b.WriteString("\t}\n")
 	b.WriteString("}\n")
 	return b.String()
-}
-
-// openSandboxRules is the OpenSandbox egress policy document (OPENSANDBOX_EGRESS_RULES). Only
-// the allow list is populated — the configured FQDN allowlist — so an allowed host resolves
-// and everything else is DROPped by the proxy.
-type openSandboxRules struct {
-	Allow []string `json:"allow"`
-}
-
-// buildOpenSandboxRules marshals the CONFIGURED allowlist into the OpenSandbox rules JSON.
-// The hosts come straight from policy.FQDNAllowlist (config-sourced) — proving a real
-// operator config, not a test fixture, drives enforcement (T-37-06-CONFIGDROP).
-func buildOpenSandboxRules(allowlist []string) (string, error) {
-	b, err := json.Marshal(openSandboxRules{Allow: allowlist})
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }

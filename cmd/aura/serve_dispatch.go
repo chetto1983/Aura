@@ -303,6 +303,12 @@ func buildSandboxRouter(cfg *config.Config, pool *pgxpool.Pool) *usersandbox.San
 		slog.Error("aura: sandbox router built without config — EVERY tool call will be denied")
 		return usersandbox.NewSandboxRouter(nil, config.SandboxConfig{})
 	}
+	if err := config.RemovedEgressAllowlist(); err != nil {
+		// aura serve refused this at boot; `aura docs mcp` and `aura mcp add` skip the boot gates
+		// and reach this router, so it denies rather than run boxes thought to be narrowed.
+		slog.Error("aura: sandbox router refused — EVERY tool call will be denied", "err", err)
+		return usersandbox.NewSandboxRouter(nil, cfg.Sandbox)
+	}
 	// client.New does NO network I/O — it parses DOCKER_HOST, builds an *http.Client and returns
 	// (moby/moby/client@v0.5.0 client.go:191-259; API-version negotiation happens on the first
 	// request). So this error means a malformed DOCKER_HOST or unreadable TLS material, never

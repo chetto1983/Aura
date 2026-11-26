@@ -37,7 +37,7 @@ func main() {
 		usersandbox.WithBoxFiles(func(string) ([]usersandbox.BoxFile, error) {
 			return []usersandbox.BoxFile{{Path: "/run/aura/agent-browser.key", Content: []byte(hex.EncodeToString(key)), Mode: 0o600}}, nil
 		}))
-	spec := usersandbox.SandboxSpec{IdentityID: identity, Egress: usersandbox.EgressPolicy{Floor: true}}
+	spec := usersandbox.SandboxSpec{IdentityID: identity}
 	h, err := backend.Resolve(ctx, spec)
 	must(err)
 	defer func() { _ = backend.Stop(context.Background(), h) }()
