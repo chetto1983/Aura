@@ -64,8 +64,8 @@ func TestInlineReviewIsCompleteOnlyForTheSendEmailTool(t *testing.T) {
 	}
 }
 
-// A draft resolved before the PIM split keeps its "action" key, and jsonb orders keys shortest first,
-// so a strict decode stopped after to and body: its history lost the subject and the sender.
+// A draft resolved before the PIM split keeps its "action" key, which the strict decode records as
+// unknown and decodes past: its history still shows every field, the subject and the sender too.
 func TestLegacyDraftHistoryShowsSubjectAndSender(t *testing.T) {
 	t.Parallel()
 	legacy := Draft{
@@ -74,9 +74,6 @@ func TestLegacyDraftHistoryShowsSubjectAndSender(t *testing.T) {
 		SenderAddress: "me@example.com",
 		OriginalArgs: json.RawMessage(`{"cc": ["c@example.com"], "to": ["a@example.com"], "body": "Text", ` +
 			`"action": "send_email", "subject": "Hi", "accountId": "acc-1", "bodyFormat": "text"}`),
-	}
-	if _, err := legacy.reviewed(); err != nil {
-		t.Fatalf("a legacy draft's arguments do not decode: %v", err)
 	}
 	content := legacy.InlineReview()
 	if content.Recipient != "a@example.com" || content.CC != "c@example.com" || content.Subject != "Hi" ||
@@ -91,30 +88,24 @@ func TestLegacyDraftHistoryShowsSubjectAndSender(t *testing.T) {
 	}
 }
 
-// Only "action" is forgiven, and only on the legacy target: any other unknown key still fails.
-func TestLegacyDraftStillRefusesAnUnknownKey(t *testing.T) {
+// A send_email draft carrying a key the review cannot show, "action" included, is never offered
+// for an inline send: the operator would approve fields they were not shown.
+func TestSendEmailDraftWithAnUnknownKeyIsNotComplete(t *testing.T) {
 	t.Parallel()
-	legacy := Draft{
-		Target:       LegacyEmailTarget(),
-		OriginalArgs: json.RawMessage(`{"to": ["a@example.com"], "action": "send_email", "subject": "Hi", "replyTo": "x"}`),
-	}
-	if _, err := legacy.reviewed(); err == nil {
-		t.Fatal("a legacy draft with an unknown key decoded")
-	}
-	current := Draft{Target: emailSend, OriginalArgs: json.RawMessage(`{"to": ["a@example.com"], "action": "send_email"}`)}
-	if _, err := current.reviewed(); err == nil {
-		t.Fatal("a send_email draft carrying action decoded")
-	}
-	broken := Draft{Target: LegacyEmailTarget(), OriginalArgs: json.RawMessage(`[1]`)}
-	if _, err := broken.reviewed(); err == nil {
-		t.Fatal("a legacy draft whose arguments are not an object decoded")
+	for _, args := range []string{
+		`{"to": ["a@example.com"], "subject": "Hi", "body": "Text", "bodyFormat": "text", "action": "send_email"}`,
+		`{"to": ["a@example.com"], "subject": "Hi", "body": "Text", "bodyFormat": "text", "replyTo": "x"}`,
+	} {
+		if (Draft{Target: emailSend, OriginalArgs: json.RawMessage(args)}).InlineReview().Complete {
+			t.Errorf("%s is complete", args)
+		}
 	}
 }
 
-// The history only strips "action", it does not validate: a stored send the new send_email would
-// refuse still shows its account and subject. The strict decode records the unknown key and goes on
-// decoding the rest of the object.
-func TestLegacyHistoryKeepsWhatDecodesBeforeAnUnknownKey(t *testing.T) {
+// The history does not validate: a stored send the new send_email would refuse still shows its
+// account and subject, because the strict decode records an unknown key and goes on decoding the
+// rest of the object.
+func TestLegacyHistoryShowsAccountAndSubjectPastAnUnknownKey(t *testing.T) {
 	t.Parallel()
 	legacy := Draft{
 		Target: LegacyEmailTarget(),
@@ -126,6 +117,9 @@ func TestLegacyHistoryKeepsWhatDecodesBeforeAnUnknownKey(t *testing.T) {
 	}
 	if got := legacy.SendingAccount(); got != "acc-1" {
 		t.Fatalf("SendingAccount = %q, want acc-1", got)
+	}
+	if got := legacy.InlineReview().Subject; got != "Hi" {
+		t.Fatalf("Subject = %q, want Hi", got)
 	}
 }
 

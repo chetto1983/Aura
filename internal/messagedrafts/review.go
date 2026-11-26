@@ -28,39 +28,27 @@ func (d Draft) reviewed() (reviewArgs, error) {
 	if len(raw) == 0 {
 		raw = d.OriginalArgs
 	}
-	if d.Target == legacyEmailTarget {
-		var err error
-		if raw, err = withoutAction(raw); err != nil {
-			return reviewArgs{}, err
-		}
-	}
 	var args reviewArgs
 	// Additional fields (such as multipart alternatives and WhatsApp quote metadata)
-	// cannot be approved on a surface that only shows these fields.
+	// cannot be approved on a surface that only shows these fields. The decoder records
+	// an unknown key and still decodes the rest, so a draft kept from before the PIM split,
+	// "action" and all, shows its history in full.
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(&args)
 	return args, err
 }
 
-// withoutAction removes the multiplexed tool's "action" key from a draft stored before the PIM split,
-// so the strict decode refuses a legacy draft only for a key the review cannot show, not for the
-// action every such draft carries. The decoder records an unknown key and still decodes the rest of
-// the object, so the account and subject read either way.
-func withoutAction(raw json.RawMessage) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, err
-	}
-	delete(fields, "action")
-	return json.Marshal(fields)
-}
-
 // LegacyEmailArgs is a multiplexed send's stored arguments as Create stores the same call to
 // send_email: without "action", checked and canonicalised by MergeApprovedArgs. Fingerprint hashes
 // the bytes it is given, and jsonb hands them back in its own key order.
 func LegacyEmailArgs(stored json.RawMessage) (json.RawMessage, error) {
-	stripped, err := withoutAction(stored)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(stored, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "action")
+	stripped, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
