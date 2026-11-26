@@ -111,8 +111,9 @@ func TestTaskCancelOfForeignOrOriginlessTaskAsksAndCancelsNothing(t *testing.T) 
 	}
 }
 
-// With no conversation in the call (the CLI tool pipe, a bare context) an originless task is
-// still not "its own": empty never equals empty.
+// With no conversation in the call (a bare context) an originless task is still not "its own":
+// empty never equals empty. `aura toolpipe` is not this case: it stamps the reserved session
+// toolPipeSessionID (cmd/aura/toolpipe.go), so a task it scheduled is its own and any other one asks.
 func TestTaskCancelWithNoConversationAsks(t *testing.T) {
 	tool, store := newCancelTool(cancelTask("t-1", ""))
 	asChallenge(t, runCancel(t, context.Background(), tool, "t-1"))
