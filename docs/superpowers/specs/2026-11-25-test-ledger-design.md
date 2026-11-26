@@ -89,8 +89,9 @@ the file registered, skipped ones included. A test registered only under a condi
 is not registered when the condition is false, so it is in no report. The lint forbids it:
 `aura/no-conditional-test-registration` (`web/lint/aura.mjs`, an oxlint JS plugin) rejects `test`, `it` or
 `describe` registered under an `if`, a ternary, `&&` or `||` outside a test's own body, in Playwright and
-Vitest alike, and oxlint's `vitest/no-conditional-tests` backs it on Vitest; `test.skip(condition, reason)`
-registers the test and reports the skip, which the ledger sees. Measured before the rule (2026-11-26,
+Vitest alike, and oxlint's `vitest/no-conditional-tests` backs it on Vitest. `test.skip(condition, reason)`
+registers nothing itself: the tests declared around it stay registered and the report lists them as skipped,
+which the ledger sees. Measured before the rule (2026-11-26,
 validated on a fixture): 0 of 504 test files under `web/` and `packages/create-aura/` registered a test
 under a condition. `web/scripts/lint-contract.mjs` proves both rules still fire.
 
@@ -248,8 +249,10 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
 - That a test excused as `paid` or `outward` still works. The ledger keeps it visible, not green.
 - Anything about pushes that do not run the workflow (documentation-only changes under `paths-ignore`).
 - A JavaScript test whose registration the lint of §4.1 cannot see: one registered in a loop over a
-  conditional list (`for (const x of flag ? xs : [])`), or by a helper called under a condition, and any
-  test in `packages/create-aura`, which no linter runs (0 conditional registrations there, 2026-11-26).
+  conditional list (`for (const x of flag ? xs : [])`), or by a helper called under a condition; a
+  `test.skip`, `test.fixme` or `test.fail` declaration whose title and body are both variables
+  (`test.skip(title, body)`), which has the shape of an annotation; and any test in `packages/create-aura`,
+  which no linter runs (0 conditional registrations there, 2026-11-26).
   Go tests are declared from source and have no such gap.
 
 ## 10. Open questions for the operator

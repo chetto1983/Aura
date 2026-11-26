@@ -72,6 +72,25 @@ const cases = [
     code: 'import { test } from "@playwright/test"; if (process.env.LIVE === "1") { test.skip("hidden when unset", () => {}); }',
   },
   {
+    name: 'conditional-named-body',
+    rule: 'aura(no-conditional-test-registration)',
+    code: 'import { test } from "@playwright/test"; const body = () => {}; if (process.env.LIVE === "1") { test("hidden when unset", body); }',
+  },
+  {
+    name: 'conditional-named-skip',
+    rule: 'aura(no-conditional-test-registration)',
+    code: 'import { test } from "@playwright/test"; const body = () => {}; if (process.env.LIVE === "1") { test.skip("hidden when unset", body); }',
+  },
+  {
+    name: 'conditional-anonymous-group',
+    rule: 'aura(no-conditional-test-registration)',
+    code: 'import { test } from "@playwright/test"; if (process.env.LIVE === "1") { test.describe(() => {}); }',
+  },
+  {
+    name: 'conditional-annotation',
+    code: 'import { expect, test } from "@playwright/test"; const webkit = process.env.BROWSER === "webkit"; test.describe("group", () => { if (process.env.STRICT === "1") test.skip(webkit, "not on webkit"); test("reported", () => { expect(1).toBe(1); }); });',
+  },
+  {
     name: 'runtime-annotation',
     code: 'import { expect, test } from "@playwright/test"; test("annotated", () => { if (process.env.KNOWN === "1") test.fail(true, "known issue"); expect(1).toBe(1); });',
   },

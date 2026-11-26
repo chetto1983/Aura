@@ -3,10 +3,8 @@
 
 const REGISTERS = new Set(['test', 'it', 'describe']);
 // Members a registration can carry: test.only(...), test.describe.serial(...),
-// it.each([...])('name', fn), test.skip('name', fn). Several are also runtime annotations
-// (test.skip(condition, reason), test.fail(true, reason)), which register nothing: the call's
-// shape tells them apart (see registers). test.skip(condition, reason) is the sanctioned gate,
-// since the runner reports the skip.
+// it.each([...])('name', fn), test.skip('name', fn). test.skip(condition, reason) is the
+// sanctioned gate, since the runner reports the tests it skips.
 const MODIFIERS = new Set([
   'describe',
   'only',
@@ -21,7 +19,7 @@ const MODIFIERS = new Set([
 ]);
 /**
  * The slice of oxlint's ESTree a rule here reads: oxlint does not export its plugin types.
- * @typedef {{ type: string, name?: string, parent?: Node | null, callee?: Node,
+ * @typedef {{ type: string, name?: string, value?: unknown, parent?: Node | null, callee?: Node,
  *   object?: Node, property?: Node, arguments?: Node[] }} Node
  * @typedef {{ report(descriptor: { node: Node, messageId: string,
  *   data: Record<string, string> }): void }} Context
@@ -29,6 +27,9 @@ const MODIFIERS = new Set([
 
 const CONDITIONS = new Set(['IfStatement', 'ConditionalExpression', 'LogicalExpression']);
 const FUNCTIONS = new Set(['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration']);
+// Playwright also overloads these as runtime annotations, which register nothing: test.skip(),
+// test.skip(condition), test.skip(condition, reason), test.skip(callback, reason).
+const ANNOTATIONS = new Set(['test.skip', 'test.fixme', 'test.fail']);
 
 /**
  * registration names the call when it registers a test or a group: "test", "test.describe", …
@@ -47,18 +48,33 @@ function registration(callee) {
   return `${base}.${property.name}`;
 }
 
+/** @param {Node | undefined} node */
+function isTitle(node) {
+  if (node?.type === 'TemplateLiteral') return true;
+  return node?.type === 'Literal' && typeof node.value === 'string';
+}
+
 /**
- * registers names the call when it declares a test or a group. A declaration passes its body as
- * a function after the title (test(title, fn), test(title, details, fn), describe(title, fn));
- * an annotation passes none there (test.fail(true, reason)), or only a condition callback first
- * (test.skip(({ browserName }) => …, reason)).
+ * registers names the call when it declares a test or a group: a title then a body, inline or by
+ * reference (test(title, fn), test(title, details, fn)), or a group body alone (test.describe(fn)).
+ * A call that can also be an annotation declares only with a literal title or a function literal
+ * after its first argument, so test.skip(title, body) with both held in variables reads as an
+ * annotation: the one declaration this rule cannot see.
  * @param {Node} node
  * @returns {string | null}
  */
 function registers(node) {
   if (node.type !== 'CallExpression' || !node.callee) return null;
-  const body = (node.arguments ?? []).slice(1).some((argument) => FUNCTIONS.has(argument.type));
-  return body ? registration(node.callee) : null;
+  const name = registration(node.callee);
+  if (name === null) return null;
+  const args = node.arguments ?? [];
+  const first = args.at(0);
+  const rest = args.slice(1);
+  const inlineBody = rest.some((argument) => FUNCTIONS.has(argument.type));
+  const declares = ANNOTATIONS.has(name)
+    ? inlineBody || (rest.length > 0 && isTitle(first))
+    : rest.length > 0 || (first !== undefined && FUNCTIONS.has(first.type));
+  return declares ? name : null;
 }
 
 /**
