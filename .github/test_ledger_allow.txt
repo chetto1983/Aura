@@ -7,4 +7,85 @@
 # outward, measure or platform, and nothing else: there is no "pending". An entry that matches
 # nothing, or a test some job executed, is itself a violation.
 #
-# Empty until the first report-only run on master lists what to excuse (plan task C1).
+# Written from the first report-only runs (plan task C1, 2026-11-26): every entry is a test that
+# no job ran, with the reason it cannot. A file selector excuses the file's every test; where some
+# of a file's tests run, each one that does not is named.
+
+go | cmd/aura/document_agent_live_test.go | paid | document_live_e2e: a real agent over the document stack; runs in the full scope of scripts/ingest_reconcile_e2e.sh and in scripts/ingest_media_e2e.sh, both needing a real LLM key
+go | cmd/aura/tool_weight_measure_test.go | measure | measure: prints the tool manifest's token weight and asserts nothing
+go | internal/agent/live_finalize_test.go | paid | live_finalize: forced finalization against the real DeepSeek-V4/OpenRouter endpoint, operator-authorized
+go | internal/agent/live_memory_test.go | paid | live_finalize: a trusted-memory turn against the real DeepSeek-V4/OpenRouter endpoint, operator-authorized
+go | internal/agent/tools/bm25_variants_measure_test.go | measure | measure: prints BM25 variant scores and asserts nothing
+go | internal/agent/tools/search_keywords_measure_test.go | measure | measure: prints retrieval keyword scores and asserts nothing
+go | internal/agent/turn_recall_eval_test.go | paid | turn_recall_eval: asks the configured teacher model once per uncertain turn
+go | internal/agenteval/live_test.go | paid | agent_eval: every case is a real turn against a real model on the live deployment (make agent-eval)
+go | internal/arcadedb/document_card_floor_bench_test.go | measure | retrieval_eval: card cosine measurements over the real corpus
+go | internal/arcadedb/document_filter_bench_test.go | measure | retrieval_eval: dense-filter cost measurements over the real corpus
+go | internal/arcadedb/document_query_variants_bench_test.go | measure | retrieval_eval: fused-query variant measurements over the real corpus
+go | internal/channels/telegram/artifact_live_e2e_test.go | outward | live_e2e: delivers a document to a named chat through the operator's bot
+go | internal/channels/telegram/integration_test.go | outward | telegram_integration: sends to the operator's chat with the operator's bot; runs nightly in .github/workflows/live-outward.yml, which this gate does not read, and ci.yml compiles it
+go | internal/conversations/l1_measure_test.go | measure | measure: prints the L1 summary's weight and asserts nothing
+go | internal/conversations/toon_measure_test.go | measure | measure: prints TOON and optional-field weights and asserts nothing
+go | internal/cron/e2e_test.go | paid | cot_eval: the scheduler North-Star smoke drives DeepSeek-V4 over OpenRouter, operator-authorized
+go | internal/documents/retrieval_coding_questions_bench_test.go | measure | retrieval_eval: scores coding questions over the real corpus
+go | internal/documents/retrieval_fusion_bench_test.go | measure | retrieval_eval: the fusion benchmark over the real corpus, and the test of its own scorer
+go | internal/documents/retrieval_recall_bench_test.go | measure | retrieval_eval: the shipped retrieval's recall over the real corpus, scored only in the full scope of scripts/ingest_reconcile_e2e.sh, which needs a real LLM key
+go | internal/llm/openai_compat/adaptive_reasoning_live_e2e_test.go | paid | live_e2e: the reasoning tiers against DeepSeek over OpenRouter (OPENROUTER_API_KEY)
+go | internal/llm/openai_compat/ollama_live_e2e_test.go | paid | live_e2e: streaming, reasoning and tool calls against an Ollama cloud model, operator-authorized (AURA_OLLAMA_LIVE)
+go | internal/procgroup/procgroup_windows_test.go | platform | windows: every CI go test runs on Linux
+go | internal/runner/live_e2e_expiry_test.go | paid | live_e2e: a real-model runner round
+go | internal/runner/live_e2e_policy_test.go | paid | live_e2e: a real-model runner round
+go | internal/runner/live_e2e_scenarios_test.go | paid | live_e2e: real-model runner rounds
+go | internal/sandbox/usersandbox TestSoak_ConcurrentIdentities | platform | the D-14 concurrency soak needs the 32 GB appliance host (AURA_SANDBOX_SOAK_REALHOST=1), larger than a standard runner
+
+playwright | web/e2e/artifact-position-live.spec.ts | paid | a real agent delivers files across turns on a live stack (AURA_E2E_LIVE_ARTIFACT_POSITION)
+playwright | web/e2e/artifact-render-live.spec.ts | paid | a real agent renders an artifact on a live stack (AURA_E2E_LIVE_ARTIFACT with THREAD + FILE)
+playwright | web/e2e/attachment-filename.spec.ts › a chat attachment carries its real name to the object store [mobile-chrome] | platform | one upload path, proven once on desktop (the spec's own guard)
+playwright | web/e2e/background-shell-completion-real.spec.ts | paid | a real agent collects a background shell's output (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/board-layout.spec.ts › the desktop board fills its width and keeps its controls compact [mobile-chrome] | platform | desktop board geometry; mobile uses the scrolling board (the spec's own guard)
+playwright | web/e2e/board.spec.ts › a column over its limit is marked, and the cards stay [mobile-chrome] | platform | column limits are board-wide, one project owns them (the spec's own guard)
+playwright | web/e2e/browser-sidecar-live.spec.ts | paid | a real agent drives the browser sidecar (AURA_E2E_BROWSER_SIDECAR)
+playwright | web/e2e/chat-branches-live.spec.ts | paid | a real model continues a conversation tree (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › Calm Prism desktop-dark [mobile-chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › Calm Prism desktop-light [mobile-chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › Calm Prism mobile-dark [chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › Calm Prism mobile-light [chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › reflows without overflow at 320px [mobile-chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › reflows without overflow at 768px [mobile-chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism Chrome contracts › zoom, forced-colors, keyboard, and accessibility-tree smoke [mobile-chrome] | platform | a visual case is pinned to its own project (the spec's own guard)
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism combined comparisons › builds labelled same-input comparison PNGs [chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism combined comparisons › builds labelled same-input comparison PNGs [mobile-chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism evidence capture › capture desktop-dark [chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism evidence capture › capture desktop-dark [mobile-chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism evidence capture › capture mobile-dark [chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-calm-prism.spec.ts › Calm Prism evidence capture › capture mobile-dark [mobile-chrome] | measure | evidence capture and comparison PNGs, run by hand with CAPTURE_LABEL or BUILD_COMPARISONS; they assert nothing
+playwright | web/e2e/chat-real-agent.spec.ts | paid | the real-agent composer and DOCX RAG gate (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/chat-thread-switch-real.spec.ts | paid | two live real-agent runs across threads and tabs (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/craft-live.spec.ts | paid | a real model crafts files from a corpus (AURA_E2E_CRAFT)
+playwright | web/e2e/documents-filter-eval-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/documents-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/documents-survival-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/file-manager-write.spec.ts › a folder created through the widget reaches the bucket, labelled as JSON [mobile-chrome] | platform | the widget renders no Add New control on a narrow viewport (the spec's own guard)
+playwright | web/e2e/file-manager-write.spec.ts › the deployed server refuses a write that is not labelled JSON [mobile-chrome] | platform | the widget renders no Add New control on a narrow viewport (the spec's own guard)
+playwright | web/e2e/governance.spec.ts › Phase 28 — Governance boards (desktop + mobile) › the rail and the board list resize independently [mobile-chrome] | platform | both columns are lg-only (the spec's own guard)
+playwright | web/e2e/graph-expand.spec.ts › Graph expansion grows the graph in place › a double click on a node expands it [mobile-chrome] | platform | a double click is a pointer gesture; touch expands from the inspector (the spec's own guard)
+playwright | web/e2e/graph-live-arcadedb.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/live-rag-replay.spec.ts | paid | a real agent answers over an uploaded DOCX (AURA_E2E_LIVE_RAG)
+playwright | web/e2e/management-key-onboarding-live.spec.ts | outward | mints, bills and caps keys on the operator's OpenRouter account with its management key (AURA_E2E_LIVE_MANAGEMENT_KEY)
+playwright | web/e2e/mcp-cockpit-live.spec.ts › connects a mailbox over TLS from Settings, and removes it [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/mcp-cockpit-live.spec.ts › sends through the real agent from a mailbox connected in Settings [chrome] | paid | a real agent sends mail through the PIM MCP (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/mcp-cockpit-live.spec.ts › sends through the real agent from a mailbox connected in Settings [mobile-chrome] | paid | a real agent sends mail through the PIM MCP (AURA_E2E_REAL_AGENT)
+playwright | web/e2e/media-generation-live.spec.ts | paid | paid media generation, an approved acceptance run (AURA_E2E_MEDIA_GENERATION)
+playwright | web/e2e/model-settings-hot-reload-live.spec.ts | paid | real model rounds on local Ollama and llama.cpp; paid by the operator's 2026-11-25 call (spec §10.2), though it spends no credit (AURA_E2E_LIVE_MODEL_ROUTES)
+playwright | web/e2e/native-media-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/origin-isolation-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/paperless-first-import-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/paperless-isolation-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/paperless-saved-view-delete-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/paperless-workflow-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/phase32-uat.spec.ts › Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrated consumers) › ConversationSidebar renders the rich skeleton while the conversation list loads [mobile-chrome] | platform | the nav drawer is off-canvas on mobile; the skeleton is verified on desktop (the spec's own guard)
+playwright | web/e2e/phase32-uat.spec.ts › Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrated consumers) › SearchPanel renders the rich skeleton while a search is in flight [mobile-chrome] | platform | the nav drawer is off-canvas on mobile; the skeleton is verified on desktop (the spec's own guard)
+playwright | web/e2e/remote-access-live.spec.ts | outward | a Cloudflare tunnel on the operator's account; an attended acceptance (operator, 2026-11-26)
+playwright | web/e2e/skill-catalog-search-live.spec.ts [mobile-chrome] | platform | Web E2E runs the live specs on --project=chrome only
+playwright | web/e2e/studio-live.spec.ts | paid | a paid Studio run, approved per run (AURA_E2E_STUDIO)
+playwright | web/e2e/two-role-live.spec.ts | paid | a member and an admin drive real turns on an installed Aura (AURA_E2E_LIVE_TWO_ROLE)

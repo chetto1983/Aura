@@ -14,9 +14,8 @@
 // one and re-discover the next). Any failure exits non-zero naming the assertion and the
 // offending transcript path.
 //
-// GREEN (01-06 Task 2): implements the assertions the RED-phase stub left unwritten. Reuses
-// internal/agenteval.Case/Evidence verbatim for the token and required-tool checks (the
-// package's exported surface covers exactly this shape); completion, authentication and
+// It reuses internal/agenteval.Case/Evidence verbatim for the token and required-tool checks
+// (the package's exported surface covers exactly this shape); completion, authentication and
 // timing overlap are transcript-native concerns internal/agenteval has no equivalent for
 // (its Evidence comes from a Postgres-backed conversation record, not an SSE capture), so
 // those three are implemented here directly rather than mirrored loosely.
@@ -46,9 +45,8 @@ import (
 // memory_upsert_fact (cmd/arcadedb-mcp/tool_memory.go:194).
 var requiredTools = []string{"document_search", "memory__memory_upsert_fact", "shell_exec"}
 
-// tokenPattern extracts an identity's own seeded marker from her final answer. Both
-// scripts/musr_live_run.sh (the real run) and every fixture under
-// scripts/testdata/musr_live_run/ seed a marker of the exact form MUSR-<LABEL>-<hex>, so the
+// tokenPattern extracts an identity's own seeded marker from her final answer.
+// scripts/musr_live_run.sh seeds a marker of the exact form MUSR-<LABEL>-<hex>, so the
 // assert script never needs the seed value handed to it out of band -- it reads each
 // identity's own claim of her own token from her own transcript, which is also what makes
 // the cross-read check meaningful: B's transcript is asked whether it contains A's token,
@@ -89,14 +87,10 @@ type interval struct {
 }
 
 func main() {
-	fixture := flag.String("fixture", "", "run against a committed fixture under scripts/testdata/musr_live_run/<name> instead of --transcripts")
 	transcriptsDir := flag.String("transcripts", "artifacts/musr-live-run", "directory holding transcript-a.jsonl, transcript-b.jsonl, timings.jsonl")
 	flag.Parse()
 
 	dir := *transcriptsDir
-	if *fixture != "" {
-		dir = filepath.Join("scripts", "testdata", "musr_live_run", *fixture)
-	}
 
 	failures := run(dir)
 	if len(failures) > 0 {
