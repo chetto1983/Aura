@@ -32,6 +32,7 @@ func TestMCPDisplaySourceRequiresExactMarker(t *testing.T) {
 		{"extra field", map[string]any{"aura_display_source": map[string]any{"recipe": "recipe:memory", "tool": "memory_search", "admin": true}}, "alias__memory_search", `{}`},
 		{"calendar action mismatch", legacy, "alias__calendar", `{"action":"send_email"}`},
 		{"calendar wrong tool", calendar, "pim__send_email", `{}`},
+		{"calendar tool the PIM does not serve", map[string]any{"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "brand_new"}}, "pim__brand_new", `{}`},
 		{"legacy marker naming a split tool", map[string]any{"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "get_emails", "action": "get_emails"}}, "pim__get_emails", `{"action":"get_emails"}`},
 		{"split marker naming the old tool", map[string]any{"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar"}}, "pim__calendar", `{"action":"get_emails"}`},
 		{"calendar extra field", map[string]any{"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "get_emails", "admin": true}}, "pim__calendar", `{"action":"get_emails"}`},

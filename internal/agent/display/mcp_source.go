@@ -2,7 +2,10 @@ package display
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 )
 
 // TrustedMCP is a bridge-owned recipe identity attached to a completed MCP call.
@@ -18,8 +21,8 @@ type TrustedMCP struct {
 // legacyCalendarTool is the PIM's one multiplexed tool from before the split.
 const legacyCalendarTool = "calendar"
 
-// TrustedMCPFromMeta accepts the exact metadata shape the managed bridge emits.
-// Matching the model-facing name (and, for the old PIM marker, its action argument)
+// TrustedMCPFromMeta accepts the exact metadata shape the managed bridge emits, and for the
+// PIM only a tool its risk table names, as the bridge does. Matching the model-facing name (and, for the old PIM marker, its action argument)
 // stops a marker for one call from being reused on another during snapshot
 // reconstruction.
 func TrustedMCPFromMeta(meta map[string]any, toolName, arguments string) *TrustedMCP {
@@ -39,7 +42,7 @@ func TrustedMCPFromMeta(meta map[string]any, toolName, arguments string) *Truste
 	marker := &TrustedMCP{Recipe: recipe, Tool: tool}
 	switch {
 	case len(raw) == 2 && (recipe == "recipe:memory" || recipe == "recipe:whatsapp"):
-	case len(raw) == 2 && recipe == "recipe:calendar" && tool != legacyCalendarTool:
+	case len(raw) == 2 && recipe == "recipe:calendar" && slices.Contains(mcptools.CalendarToolNames(), tool):
 	case len(raw) == 3 && recipe == "recipe:calendar" && tool == legacyCalendarTool:
 		// tool_invocations is append-only, so pre-split conversations replay this shape forever.
 		action, actionOK := raw["action"].(string)
