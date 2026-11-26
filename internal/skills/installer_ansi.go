@@ -57,8 +57,9 @@ func parseCatalogHits(raw string) []CatalogHit {
 }
 
 // cliInstallCount reads the CLI's count token (226.3K) as the count it stands for and formats
-// it as the JSON catalog path does (226K, compactInstallCount), so one count reads the same
-// whichever path served it.
+// it as the JSON catalog path does (226K, compactInstallCount), so both paths print one format.
+// The token keeps one decimal, so a count next to a rounding boundary can still differ by one
+// in the last digit (226,450: the catalog says 226K, a CLI rounding to 226.5K reads back 227K).
 func cliInstallCount(number, unit string) string {
 	value, _ := strconv.ParseFloat(number, 64) // catalogEntryRe admits only digits and one fraction
 	switch unit {

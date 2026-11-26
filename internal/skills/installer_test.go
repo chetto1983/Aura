@@ -242,8 +242,8 @@ func TestInstallerSearchRunsWhenFlagOn(t *testing.T) {
 }
 
 // The CLI fallback prints its own count token (226.3K); the JSON catalog path formats the
-// number itself (226K). One count must read the same whichever path served it: Web E2E on
-// PR #282 compared the two after skills.sh outlasted its 2 s budget.
+// number itself (226K). Both paths must print one format: Web E2E on PR #282 compared the two
+// after skills.sh outlasted its 2 s budget.
 func TestInstallerSearchCLICountsReadAsTheCatalogFormatsThem(t *testing.T) {
 	t.Setenv(externalDiscoveryEnv, "1")
 	inst := newTestInstaller(t, func(context.Context, string, string, ...string) (string, error) {
