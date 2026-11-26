@@ -2,9 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/chetto1983/aura/internal/cron"
 )
 
 func TestScheduleRefusalNamesWhatArrived(t *testing.T) {
@@ -132,5 +137,80 @@ func TestScheduleRefusalForAWrongValueDoesNotClaimItIsMissing(t *testing.T) {
 				t.Errorf("refusal claims the field is missing: %q", msg)
 			}
 		})
+	}
+}
+
+// The absent twins of the wrong-value cases: a field that never arrived keeps the missing-field
+// refusal and the list of what did arrive, and is not called wrong.
+func TestScheduleRefusalForAnAbsentFieldSaysItIsMissing(t *testing.T) {
+	t.Parallel()
+	base := `"action":"schedule","kind":"reminder","payload":{"text":"x"}`
+	cases := []struct{ name, args, reason, received string }{
+		{"every_minutes absent", `{` + base + `,"schedule_kind":"every"}`, "every interval below", "action, kind, payload, schedule_kind;"},
+		{"cron absent", `{` + base + `,"schedule_kind":"cron"}`, `invalid cron expression: ""`, "action, kind, payload, schedule_kind;"},
+		{"schedule_kind absent", `{` + base + `}`, `invalid schedule kind: ""`, "action, kind, payload;"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(), []byte(c.args))
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			msg := err.Error()
+			for _, want := range []string{c.reason, "Received: " + c.received, "Put it in this same call", "No task was created"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("refusal lacks %q: %q", want, msg)
+				}
+			}
+			if strings.Contains(msg, "wrong, not missing") {
+				t.Errorf("refusal calls an absent field wrong: %q", msg)
+			}
+		})
+	}
+}
+
+// U+2028 and U+2029 end a line in JavaScript and in some renderers, so a key carrying one could
+// start a forged line in the refusal like a newline would.
+func TestScheduleRefusalStripsLineAndParagraphSeparators(t *testing.T) {
+	t.Parallel()
+	args := `{"action":"schedule","kind":"reminder","a b":1,"c d":1}`
+	_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(), []byte(args))
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	if msg := err.Error(); strings.ContainsAny(msg, "  ") || !strings.Contains(msg, "action, a?b, c?d, kind") {
+		t.Fatalf("separators reached the refusal: %q", msg)
+	}
+}
+
+// The engine's reason quotes the wrong value itself, which the model chose: a long one is cut, and
+// the instruction after it survives.
+func TestScheduleRefusalBoundsTheEchoedValue(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("v", 5000)
+	base := `"action":"schedule","kind":"reminder","payload":{"text":"x"}`
+	for _, args := range []string{
+		`{` + base + `,"schedule_kind":"cron","cron":"` + long + `"}`,
+		`{` + base + `,"schedule_kind":"every","every_minutes":10,"tz":"` + long + `"}`,
+		`{` + base + `,"schedule_kind":"at","at":"` + long + `"}`,
+		`{` + base + `,"schedule_kind":"` + long + `"}`,
+	} {
+		_, err := (&TaskTool{Store: &fakeTaskStore{}}).actionSchedule(context.Background(), []byte(args))
+		if err == nil {
+			t.Fatal("accepted")
+		}
+		if msg := err.Error(); len(msg) > 600 || !strings.Contains(msg, "...") || !strings.Contains(msg, "No task was created") {
+			t.Errorf("echoed value not bounded (len %d): %.120q", len(msg), msg)
+		}
+	}
+	// A message reaches the engine past refuseResolve, so the bound has to be the engine's own.
+	message := taskArgs{
+		Kind: "message", ScheduleKind: "at", At: time.Now().Add(time.Hour).Format(time.RFC3339), TZ: long,
+		Payload: json.RawMessage(`{"channel":"whatsapp","recipient":"1","text":"x"}`),
+	}
+	_, _, err := (&TaskTool{}).messageSchedule(message, time.Now())
+	if err == nil || len(err.Error()) > 600 || !errors.Is(err, cron.ErrInvalidTimezone) {
+		t.Fatalf("message tz refusal = %v (len %d), want a bounded ErrInvalidTimezone", err, len(fmt.Sprint(err)))
 	}
 }

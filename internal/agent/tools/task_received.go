@@ -72,18 +72,34 @@ func receivedKeys(m map[string]json.RawMessage) string {
 	return list
 }
 
+// safeKey also strips U+2028 and U+2029, which are not control characters but end a line.
 func safeKey(k string) string {
 	k = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || r == ' ' || r == ' ' {
 			return '?'
 		}
 		return r
 	}, k)
-	if r := []rune(k); len(r) > maxReceivedKeyLen {
-		return string(r[:maxReceivedKeyLen]) + "..."
-	}
-	return k
+	return clip(k, maxReceivedKeyLen)
 }
+
+func clip(s string, maxRunes int) string {
+	if r := []rune(s); len(r) > maxRunes {
+		return string(r[:maxRunes]) + "..."
+	}
+	return s
+}
+
+// maxEngineReasonLen bounds the schedule engine's reason, which quotes the field's own value
+// (cron, tz, at, schedule_kind): the model chose it and can make it as long as it likes.
+const maxEngineReasonLen = 200
+
+// engineReason is the engine's error cut to maxEngineReasonLen, still unwrapping to it so the
+// refusal can tell which field it names.
+type engineReason struct{ err error }
+
+func (r engineReason) Error() string { return clip(r.err.Error(), maxEngineReasonLen) }
+func (r engineReason) Unwrap() error { return r.err }
 
 // refuseResolve words a resolveSchedule refusal from the arguments that arrived: a field that is
 // absent gets the missing-field refusal, a field that arrived with a bad value is named as wrong

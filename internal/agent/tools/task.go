@@ -329,18 +329,18 @@ func (t *TaskTool) resolveSchedule(a taskArgs) (resolvedSpec, time.Time, error) 
 	if a.ScheduleKind == "at" {
 		parsed, err := time.Parse(time.RFC3339, a.At)
 		if err != nil {
-			return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: at must be RFC-3339: %w", err)
+			return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: at must be RFC-3339: %w", engineReason{err})
 		}
 		at = parsed
 	}
 
 	spec, err := cron.ParseSchedule(a.ScheduleKind, a.Cron, a.EveryMinutes, at, a.TZ)
 	if err != nil {
-		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", err)
+		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", engineReason{err})
 	}
 	next, err := cron.FirstFire(spec, time.Now())
 	if err != nil {
-		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", err)
+		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", engineReason{err})
 	}
 	return resolvedSpec{
 		ScheduleKind: string(spec.Kind),
