@@ -3548,9 +3548,29 @@ This does not establish:
 
 Session termination is observed through the SDK lifecycle rather than a duplicate
 liveness poller. Mount, call, elicitation and shutdown have finite configured bounds;
-negative call timeouts cannot request unlimited execution. The production elicitation
-wiring follows decline-and-surface: identify the requesting server to the operator,
-decline the protocol request, and do not invent a blocked turn or approval row.
+negative call timeouts cannot request unlimited execution. A server's elicitation reaches
+the cockpit run that made the call as a form, which the server's schema validates field by
+field and which closes as `cancel` at its deadline. Only a call no cockpit run can be asked
+for (a scheduled job, `aura shell`) falls back to decline-and-surface: decline the protocol
+request, tell the operator on a linked channel which server asked, and invent no blocked
+turn or approval row.
+
+**Elicitation is a cockpit form; decline-and-surface is the fallback (2026-11-26, amendment #225).**
+The sentence above said the production wiring was decline-and-surface. Measured with
+`@modelcontextprotocol/server-everything` on `aura serve`, the model in the loop and the
+cockpit's API (`docs/superpowers/verification/2026-11-26-elicitation-model-in-the-loop.md`):
+the request reached the run 18 ms after the call, with its 13 fields, defaults and bounds; an
+invalid answer was refused by field (`422`); a valid one reached the server with the defaults
+of the unanswered fields; decline and the 300 s expiry reached it as `decline` and `cancel`.
+Past 60 s the call goes to the background like any slow call, the form stays open, and a late
+answer still reaches the server and the model through `tool_poll`. A scheduled job and
+`aura shell` declined at once and logged that nothing was surfaced, as no channel was linked.
+
+This does not establish:
+- the card on screen: no browser ran, so the step flow, "Use default", the Review step, the
+  countdown and a reload mid-form were not seen;
+- a fallback that reaches a channel: no Telegram account was linked;
+- the lab VM, or the multi-round-trip protocol: the server negotiated `2025-11-25`.
 
 Installing supported resolver-based stdio servers prepares a durable environment,
 resolves its executable, verifies initialize/tools-list, then persists the declaration.
