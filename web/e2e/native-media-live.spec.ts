@@ -168,7 +168,9 @@ test.describe('selected-model native media live acceptance', () => {
   test.skip(!runLive, 'set AURA_E2E_NATIVE_MEDIA=1 with a capability-advertising local primary');
 
   test('projects a current-turn Garage image into the selected primary', async ({ page }) => {
-    test.setTimeout(300_000);
+    // A cold turn on a CI runner is a ~16k-token CPU prefill: 3.8 min on one run and over 5 on
+    // the next (runs 45850621478, 45864462788). ci.yml gives Aura's turn 15 minutes too.
+    test.setTimeout(900_000);
     await gotoAuthenticated(page, '/');
     const threadID = await createConversation(page);
     let assetID = '';

@@ -188,9 +188,8 @@ test('runs the built-in MCP servers on credentials Aura issues itself', async ({
   }
 });
 
-// CI does not run these two yet: the fixture needs the PIM image of PR #5 (aura-pim-mcp), which is
-// unpublished. Wiring ci.yml's web-e2e job to scripts/pim_tls_mail_up.sh belongs to task L1 step 1
-// of docs/superpowers/plans/2026-11-20-pim-account-connect-repair.md, once that image is out.
+// ci.yml's web-e2e job runs the first of these two against scripts/pim_tls_mail_up.sh, on chrome.
+// The second drives a real agent and stays manual (.github/test_ledger_allow.txt).
 const tlsMailSkip = 'run scripts/pim_tls_mail_up.sh, then set AURA_E2E_PIM_TLS_MAIL=1';
 
 test('connects a mailbox over TLS from Settings, and removes it', async ({ page }, testInfo) => {

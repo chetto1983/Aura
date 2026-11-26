@@ -28,6 +28,7 @@ blocked test: it is usually waiting on a retry loop whose error is permanent.
 | `No files were found with the provided path: artifacts/production-readiness/...` | The test step before it failed and never wrote the report |
 | `critical-mutation-gate: FAIL: <scope>: no measurement of its current inputs` | The `Go mutation (<group>)` matrix job for that scope failed or was cancelled; fix that job |
 | CodeQL `neutral`, "configuration not found" | The PR's analysis had not uploaded yet; not a finding |
+| Test ledger: `` `job` <name>: ended failure `` or `uploaded no test-ledger artifact` | That job failed or was cancelled before its upload; fix that job |
 
 ## Jobs
 
@@ -56,6 +57,7 @@ Go package lists come from `bash scripts/go_packages.sh`, never a bare `./...`
 | Web lint / unit / Stryker / E2E | `cd web && npm ci && npm run lint && npm run typecheck`, `npm run test`, `npm run mutation`; E2E boots `aura serve` | Playwright E2E needs Postgres + Garage |
 | Skills gate / Skills mutation (`skills.yml`) | see `.github/workflows/skills.yml` | db_integration + fuzz + snippet exec |
 | CodeQL (`codeql.yml`) | none locally | Also runs weekly on schedule |
+| Test ledger | Download the run's `test-ledger-*` artifacts, one directory each, into DIR; link `/home/runner/work/Aura/Aura` to the checkout, since the reports name the runner's paths; then `go run ./cmd/testledger check --artifacts DIR --workspace /home/runner/work/Aura/Aura --report-only` | A violation is a declared test no job ran, a skip no entry in `.github/test_ledger_allow.txt` excuses, or a stale entry: wire or fix the test, or add an entry in one of the four classes |
 
 ## Known root causes
 
