@@ -35,19 +35,21 @@ func TestSidecarURLsDefaultToWhereTheManagerMountsThem(t *testing.T) {
 	t.Setenv("AURA_WHATSAPP_BRIDGE_URL", "")
 	t.Setenv("AURA_PIM_MCP_PORT", "9093")
 	t.Setenv("AURA_WHATSAPP_BRIDGE_PORT", "9094")
-	for _, tc := range []struct{ inContainer, pim, bridge string }{
-		{"1", "http://aura-pim-mcp:8080", "http://whatsapp:8081"},
-		{"", "http://127.0.0.1:9093", "http://127.0.0.1:9094"},
+	for _, tc := range []struct{ name, inContainer, pim, bridge string }{
+		{"container", "1", "http://aura-pim-mcp:8080", "http://whatsapp:8081"},
+		{"native", "", "http://127.0.0.1:9093", "http://127.0.0.1:9094"},
 	} {
-		t.Setenv("AURA_IN_CONTAINER", tc.inContainer)
-		cfg := LoadDB()
-		if cfg.CalendarMCPURL != tc.pim || cfg.CalendarMCPURL != sidecarurl.PIM() {
-			t.Errorf("AURA_IN_CONTAINER=%q: CalendarMCPURL = %q, want %q, the manager's %q",
-				tc.inContainer, cfg.CalendarMCPURL, tc.pim, sidecarurl.PIM())
-		}
-		if cfg.WhatsAppBridgeURL != tc.bridge || cfg.WhatsAppBridgeURL != sidecarurl.WhatsAppBridge() {
-			t.Errorf("AURA_IN_CONTAINER=%q: WhatsAppBridgeURL = %q, want %q, the manager's %q",
-				tc.inContainer, cfg.WhatsAppBridgeURL, tc.bridge, sidecarurl.WhatsAppBridge())
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AURA_IN_CONTAINER", tc.inContainer)
+			cfg := LoadDB()
+			if cfg.CalendarMCPURL != tc.pim || cfg.CalendarMCPURL != sidecarurl.PIM() {
+				t.Errorf("CalendarMCPURL = %q, want %q, where the manager mounts it (%q)",
+					cfg.CalendarMCPURL, tc.pim, sidecarurl.PIM())
+			}
+			if cfg.WhatsAppBridgeURL != tc.bridge || cfg.WhatsAppBridgeURL != sidecarurl.WhatsAppBridge() {
+				t.Errorf("WhatsAppBridgeURL = %q, want %q, where the manager mounts it (%q)",
+					cfg.WhatsAppBridgeURL, tc.bridge, sidecarurl.WhatsAppBridge())
+			}
+		})
 	}
 }
