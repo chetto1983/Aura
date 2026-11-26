@@ -254,17 +254,12 @@ func TestHeldOutPIMQueriesKeepTheirFloor(t *testing.T) {
 			t.Logf("miss (%s) %q -> %v, want one of %v", c.Lang, c.Query, got, c.Gold)
 		}
 	}
-	total, floor := 0, 0
 	for lang, want := range heldOutPIMFloor {
-		total, floor = total+hits[lang], floor+want
 		if hits[lang] < want {
 			t.Errorf("%s: %d held-out cases in the top 5, floor %d", lang, hits[lang], want)
 		}
 	}
-	t.Logf("held-out PIM cases in the top 5: %d/%d (floor %d)", total, len(set.Cases), floor)
-	if total < floor {
-		t.Errorf("held-out total %d, floor %d", total, floor)
-	}
+	t.Logf("held-out PIM cases in the top 5: %v of %d", hits, len(set.Cases))
 }
 
 func TestToolSearchGate_RealCorpus(t *testing.T) {

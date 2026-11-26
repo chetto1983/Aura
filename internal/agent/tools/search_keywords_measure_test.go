@@ -7,7 +7,10 @@
 //
 // testdata/blind_eval_2026-10-06.json was written by a separate agent that saw only the
 // tool names and summaries in deferred_manifest.json — not the ranker, not the tests, not
-// the keywords, which were fixed before the set was opened. It is blind ONCE: anyone who
+// the keywords, which then covered only Aura's own tools and were fixed before the set was
+// opened. Its four PIM rows are not blind: on 2026-11-24 their gold moved to the split PIM's
+// tools and the PIM's keywords were written with the set already open, so the PIM's blind
+// evidence is pim_heldout_2026-11-24.json. The rest of the set is blind ONCE: anyone who
 // tunes the keywords against its misses spends that, and must write a new set to measure
 // the next change. Negatives are the queries of a family scored on a corpus without that
 // family, plus requests no tool serves; for them the right answer is an empty ranking.

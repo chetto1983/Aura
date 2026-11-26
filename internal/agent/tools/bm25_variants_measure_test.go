@@ -6,8 +6,9 @@
 //	go test -tags measure ./internal/agent/tools -run TestMeasureBM25Variants -v
 //
 // The shipped gate corpus (search_gate_test.go) scores high on its own cases (its floors
-// are in TestToolSearchGate_RealCorpus), but it is a REGRESSION suite: amendment #194 added the six phrasings that had just failed in
-// production, so the ranker has been tuned against it. heldOutCases below were written
+// are in TestToolSearchGate_RealCorpus), but it is a REGRESSION suite: amendment #194
+// added the six phrasings that had just failed in production, so the ranker has been
+// tuned against it. heldOutCases below were written
 // against the tool inventory and never used to tune anything.
 //
 // English only, deliberately. The model knows the tool surface is English and writes its
