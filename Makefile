@@ -213,6 +213,7 @@ web-quality: web-lint web-test web-mutation
 # were, until 2026-11-25).
 evidence-contracts:
 	PYTHONPATH=scripts python3 -m unittest discover -s scripts -t scripts -p '*_test.py'
+	bash scripts/go_test_ledger_test.sh
 	bash scripts/coverage_profile_gate_test.sh
 	bash scripts/coverage_gate_test.sh
 	bash scripts/docker_coverage_gate_test.sh

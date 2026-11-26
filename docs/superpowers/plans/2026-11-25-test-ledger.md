@@ -63,9 +63,19 @@ scripts/go_test_ledger_test.sh
 
 **Files:** `scripts/go_test_ledger.sh`, `scripts/go_test_ledger_test.sh`, `Makefile` (`evidence-contracts` runs the self-test)
 
-- [ ] Write the self-test first: a passing, a failing and a skipping fixture package under `scripts/testdata/go_test_ledger/`; assert the jsonl holds `pass`, `fail`, `skip` events, the printed log equals `go test -v`'s, and the exit status is `go test`'s (non-zero on the failing fixture).
-- [ ] Implement: `set -o pipefail; go test -json "$@" | tee "$AURA_TEST_LEDGER_DIR/$label.jsonl" | jq -rj 'select(.Action=="output").Output'`; refuse an unset `AURA_TEST_LEDGER_DIR` under `$CI`.
-- [ ] `bash scripts/go_test_ledger_test.sh` passes.
+- [x] Write the self-test first: a passing, a failing and a skipping fixture package under `scripts/testdata/go_test_ledger/`; assert the jsonl holds `pass`, `fail`, `skip` events, the printed log equals `go test -v`'s, and the exit status is `go test`'s (non-zero on the failing fixture).
+- [x] Implement: `set -o pipefail; go test -json "$@" | tee "$AURA_TEST_LEDGER_DIR/$label.jsonl" | jq -rj 'select(.Action=="output").Output'`; refuse an unset `AURA_TEST_LEDGER_DIR` under `$CI`.
+- [x] `bash scripts/go_test_ledger_test.sh` passes.
+
+*Done 2026-11-26, with four changes from what was measured.* (1) go1.27.4 reports a compile error as
+`build-output` events, not `output` ones, so the filter above dropped it from the log: the helper prints
+both, and a fourth fixture that does not compile holds it there. With `-v` the same error goes to stderr,
+so the log equals `-v`'s stderr then stdout, less the go command's closing bare `FAIL`, which has no event
+(the exit status carries it). (2) `tee -a`: a label used twice in a job appends instead of erasing the
+first run. (3) Outside `$CI` an unset `AURA_TEST_LEDGER_DIR` runs plain `go test`, so local `make` output
+stays as it is. (4) `go test` takes `-C` only as its first flag (`tools/deadexport` runs that way in CI),
+so the helper keeps `-C dir` ahead of `-json`. Seven mutants of the helper (each change above undone, no
+`pipefail`, `-json` outside CI, any label) are each killed by the self-test.
 
 ### Task A2: Every CI go test goes through it
 

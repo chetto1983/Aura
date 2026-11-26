@@ -98,9 +98,11 @@ under a condition. `web/scripts/lint-contract.mjs` proves both rules still fire.
 ### 4.2 Recording
 
 - **Go.** One helper, `scripts/go_test_ledger.sh <label> <go test args…>`, runs
-  `go test -json "$@" | tee "$AURA_TEST_LEDGER_DIR/<label>.jsonl" | jq -rj 'select(.Action=="output").Output'`
-  under `pipefail`. The log reads exactly as `go test -v` does today (the babysit skill keeps working) and
-  the exit status is `go test`'s. No new dependency: `jq` is on the runners, `gotestsum` is not
+  `go test -json "$@" | tee -a "$AURA_TEST_LEDGER_DIR/<label>.jsonl"` into a `jq` that prints the `output`
+  and `build-output` events, under `pipefail`. The log reads as `go test -v` does today (the babysit skill
+  keeps working), compile errors included: go1.27.4 reports them as `build-output`, not `output` (measured
+  2026-11-26), so a filter on `output` alone hid them. The only line missing is the go command's closing
+  bare `FAIL`, which has no event; the exit status is `go test`'s. No new dependency: `jq` is on the runners, `gotestsum` is not
   (`Makefile:76` installs it locally only). Every `go test` in `ci.yml`, in the make targets it calls and in
   the scripts those launch goes through the helper. One that does not is not in the ledger and fails it.
   `scripts/agent_memory_eval.py` already collects `go test -json`; it writes the same file.
