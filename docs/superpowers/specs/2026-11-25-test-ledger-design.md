@@ -7,9 +7,9 @@
   (`3e83b15`, `cb5a571`, `35ee3d2`, `442c205`), once the ledger is green on `master` (§8).
 - **Operator decisions already taken (2026-11-25):** the 15 `unwired — owner decision pending` entries all
   run in CI; the asset round-trip uses a synthetic file, not a corpus; the static check is retired when the
-  ledger works; no test may go unnoticed. The ledger meets that for every suite but one case: a
-  JavaScript test registered only under a condition that was false in CI never reaches a report (§9),
-  and its safeguard is the operator's choice (§10.1).
+  ledger works; no test may go unnoticed. For JavaScript that rests on a lint rule as well as on the
+  ledger: a test registered only under a condition that was false in CI would never reach a report, so
+  registering one under a condition is a lint error (§4.1, operator, 2026-11-26).
 
 ## 1. Why
 
@@ -86,8 +86,14 @@ The JavaScript suites are declared by file, not by a listing command: measured o
 names 3,744 tests while the CI run executes 4,275, because parameterised and generated tests exist only at
 run time. A file that never reaches the report is the violation; inside a file the report lists every test
 the file registered, skipped ones included. A test registered only under a condition (`if (flag) test(…)`)
-is not registered when the condition is false, so it is in no report: §9 states the limit, §10 asks how to
-close it.
+is not registered when the condition is false, so it is in no report. The lint forbids it:
+`aura/no-conditional-test-registration` (`web/lint/aura.mjs`, an oxlint JS plugin) rejects `test`, `it` or
+`describe` registered under an `if`, a ternary, `&&` or `||` outside a test's own body, in Playwright and
+Vitest alike, and oxlint's `vitest/no-conditional-tests` backs it on Vitest. `test.skip(condition, reason)`
+registers nothing itself: the tests declared around it stay registered and the report lists them as skipped,
+which the ledger sees. Measured before the rule (2026-11-26,
+validated on a fixture): 0 of 504 test files under `web/` and `packages/create-aura/` registered a test
+under a condition. `web/scripts/lint-contract.mjs` proves both rules still fire.
 
 ### 4.2 Recording
 
@@ -196,8 +202,8 @@ skips either go through it or become `platform` entries.
 | multimodal audio skip-as-green | the job fails when a sidecar never comes up |
 | seven unguarded tagged-tier skips | fail under `$CI` through each package's existing guard |
 | `TestEgress_FQDNAllowlist` | removed with the OpenSandbox FQDN mode no image could run (operator, 2026-11-25); a set `AURA_SANDBOX_EGRESS_ALLOWLIST` fails boot |
-| Telegram live tier | stays manual: `outward` (operator, 2026-11-25) |
-| 27 gated Playwright spec files (§10.2) | 8 wired in Web E2E; 19 stay manual as `paid` or `outward` |
+| Telegram live tier | nightly in `live-outward.yml`, where a missing secret fails it; `ci.yml` compiles it (operator, 2026-11-26) |
+| 27 gated Playwright spec files (§10.2) | 11 wired in Web E2E; 16 stay manual as `paid` or `outward` |
 
 The glob runner of §4.4 was not needed for the Python self-tests (discovery covers them); the
 shell self-tests are still listed by hand, and the ledger is what catches one left out.
@@ -242,15 +248,18 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
   critical mutation gates (≥70% killed) remain the check on assertion strength, and only on their scopes.
 - That a test excused as `paid` or `outward` still works. The ledger keeps it visible, not green.
 - Anything about pushes that do not run the workflow (documentation-only changes under `paths-ignore`).
-- A JavaScript test registered only under a condition that was false in CI: it reaches no report, so the
-  ledger cannot see it (§4.1). Go tests are declared from source and have no such gap.
+- A JavaScript test whose registration the lint of §4.1 cannot see: one registered in a loop over a
+  conditional list (`for (const x of flag ? xs : [])`), or by a helper called under a condition; a
+  `test.skip`, `test.fixme` or `test.fail` declaration whose title and body are both variables
+  (`test.skip(title, body)`), which has the shape of an annotation; and any test in `packages/create-aura`,
+  which no linter runs (0 conditional registrations there, 2026-11-26).
+  Go tests are declared from source and have no such gap.
 
 ## 10. Open questions for the operator
 
-1. **Conditionally registered JavaScript tests (§4.1, §9).** Declare JavaScript tests from source, as Go is,
-   so a test behind `if (flag) test(…)` is in the declared set; or keep the report as the inventory and
-   accept the limit, with a lint rule that forbids registering a test inside a condition (`test.skip(cond)`
-   registers it and reports the skip, which the ledger sees).
+1. *(answered 2026-11-26)* **Conditionally registered JavaScript tests.** The report stays the inventory
+   and a lint rule forbids registering a test under a condition (§4.1). Declaring from source was set
+   aside: tests generated in a loop (`for (const width of [1440, 390])`) take names computed at run time.
 2. *(answered, see below)* The gated Playwright specs, re-measured the same day from the `--list` JSON
    and each file's guard: 24 `*-live` files and 3 `*-real` files. The first count, 22, held only the files
    skipped at collection (19 `*-live`, 3 `*-real`); four `*-live` files gate inside the test
@@ -262,6 +271,12 @@ on an unexcused skip, delete `cmd/aura/tier_runners*_test.go` (about 1,960 lines
    (Cloudflare) and the two paperless specs that create a second identity, because provisioning resolves
    the bot's name with a live Telegram `getMe` (`internal/agui/onboarding_provision.go`), which no CI
    token can answer.
+   *Updated 2026-11-26 (operator):* the two paperless identity specs run in Web E2E against a local
+   `getMe` fake and a strict, isolation-on serve; `native-media-live` runs there with a local vision
+   model (Qwen2.5-VL-3B, the only candidate at ten turns out of ten); `remote-access-live` stays
+   manual, an attended acceptance; the Telegram live tier runs nightly in `live-outward.yml`. That makes
+   11 wired, 15 `paid` and 1 `outward` (measurements:
+   `docs/superpowers/verification/2026-11-26-test-ledger-open-points.md`).
 
 Answered 2026-11-25: the 15 entries all run in CI; the asset round trip uses a synthetic file; the static
 check retires once the ledger works; the Telegram live tier stays manual; the Calm Prism baselines are
@@ -270,3 +285,8 @@ cablalo"). Of the 11 that are not paid, the 8 stack-only specs are wired; the 3 
 no CI holds (`remote-access`: Cloudflare; `paperless-first-import` and `paperless-isolation`: a live
 Telegram `getMe`) stay manual with the Telegram tier as `outward`, a classification the operator has still
 to confirm (§10.2).
+
+Answered 2026-11-26: a test registered under a condition is a lint error (§4.1); the paperless identity
+specs run against a `getMe` fake, with no product change; the Telegram live tier runs nightly where a
+missing secret fails it; `remote-access-live` stays manual; `native-media-live` runs on Qwen2.5-VL-3B
+despite its research-only licence, as a CI fixture (§10.2).

@@ -51,7 +51,7 @@ Go package lists come from `bash scripts/go_packages.sh`, never a bare `./...`
 | Agent Memory MRS | `make db-migrate`, `docker compose up -d arcadedb`, `make agent-memory-eval` | Live ArcadeDB + EmbeddingGemma |
 | Ingestion sidecar / reconciliation | `make ingest-test` / `make ingest-image` with Garage | Live stores |
 | Web tools (SSRF + web_integration) | `bash scripts/ssrf_smoke.sh`, `go test -race -tags web_integration ./internal/web/` | Needs SearXNG |
-| Telegram / WhatsApp / Calendar / Multimodal tiers | `go test -race -tags <tier>_integration ...` (see the job) | Under `$CI` a missing env var is `t.Fatal`, never a skip |
+| WhatsApp / Calendar / Multimodal tiers | `go test -race -tags <tier>_integration ...` (see the job) | Under `$CI` a missing env var is `t.Fatal`, never a skip. Telegram only compiles in `ci.yml`; its live tier runs nightly in `live-outward.yml`, which fails without the `TELEGRAM_BOT_TOKEN` and `AURA_E2E_CHAT_ID` secrets |
 | Reasoning tier accuracy | `go test -tags reasoning_live -run TestReasoningClassifierLive ./internal/agent/prompt/` | Real embedder |
 | Web lint / unit / Stryker / E2E | `cd web && npm ci && npm run lint && npm run typecheck`, `npm run test`, `npm run mutation`; E2E boots `aura serve` | Playwright E2E needs Postgres + Garage |
 | Skills gate / Skills mutation (`skills.yml`) | see `.github/workflows/skills.yml` | db_integration + fuzz + snippet exec |
