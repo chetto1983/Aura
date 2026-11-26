@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -50,5 +51,13 @@ func TestSendingAddressUsesListAccountsTool(t *testing.T) {
 	unmounted := pimSenders{reg: tools.NewRegistry(), runDir: t.TempDir(), previewCap: 4096}
 	if _, _, err := unmounted.SendingAddress(context.Background(), "t__lavoro"); err == nil || !strings.Contains(err.Error(), "list_accounts") {
 		t.Fatalf("SendingAddress with no list_accounts mounted = %v, want an error naming it", err)
+	}
+}
+
+// The operator reads what a missing list_accounts means, with the missing tool kept as its cause.
+func TestNoListAccountsMeansEmailIsNotConnected(t *testing.T) {
+	_, err := pimAccountListing(context.Background(), tools.NewRegistry())
+	if err == nil || !strings.HasPrefix(err.Error(), "email is not connected") || !errors.Is(err, errListAccountsNotMounted) {
+		t.Fatalf("pimAccountListing with no list_accounts mounted = %v, want email is not connected", err)
 	}
 }

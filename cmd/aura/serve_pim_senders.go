@@ -34,12 +34,14 @@ func (p pimSenders) SendingAddress(ctx context.Context, accountID string) (strin
 	return senderIn(listing, accountID)
 }
 
+var errListAccountsNotMounted = errors.New("the PIM's list_accounts tool is not mounted")
+
 // pimAccountListing runs the list_accounts tool the calendar recipe mounted, found by recipe and
 // never by name. ctx must already carry a tool-call context.
 func pimAccountListing(ctx context.Context, reg *tools.Registry) (string, error) {
 	tool, ok := reg.ByTrustedRecipe("recipe:calendar", "list_accounts")
 	if !ok {
-		return "", errors.New("the PIM's list_accounts tool is not mounted")
+		return "", fmt.Errorf("email is not connected: %w", errListAccountsNotMounted)
 	}
 	result, err := tool.Execute(ctx, json.RawMessage(`{}`))
 	if err != nil {
