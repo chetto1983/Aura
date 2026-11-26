@@ -148,9 +148,11 @@ type approvalPrompt struct {
 }
 
 // required is Aura's own text, marked trusted so the model copies the question and
-// resume_context exactly, as shell_exec's challenge is (spec 2026-10-12). The question quotes
-// and caps every string someone else wrote, and json.Marshal's HTML-safe encoding keeps <, >
-// and & out of the payload.
+// resume_context exactly, as shell_exec's challenge is (spec 2026-10-12). The caller's question
+// keeps every string someone else wrote from forging a line: plugin_pack quotes and caps them
+// (plugins.Review.Question), the task cancel card flattens and caps its payload without quoting it
+// (flatText), so that text still reaches the model inside this trusted result. json.Marshal's
+// HTML-safe encoding keeps <, > and & out of the payload.
 func (p approvalPrompt) required(digest, question string, repeat map[string]any) ToolResult {
 	code := p.name + "_required"
 	payload := map[string]any{
