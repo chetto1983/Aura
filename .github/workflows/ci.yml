@@ -2518,8 +2518,12 @@ jobs:
         # so it gives way to the fixture's on the same port (scripts/pim_tls_mail_up.sh). Only
         # the TLS test is selected: the spec's real-agent mail test is paid, and its credentials
         # test already ran in the first Playwright step.
+        # Aura's Settings relay reaches the PIM through AURA_PIM_MCP_URL, whose default is the
+        # compose service name (internal/config/config.go); the MCP mount resolves 127.0.0.1:8093
+        # by itself outside a container (internal/mcp/manager/catalog.go), so only the relay needs it.
         env:
           AURA_E2E_PIM_TLS_MAIL: "1"
+          AURA_PIM_MCP_URL: http://127.0.0.1:8093
         run: |
           docker rm -f aura-pim-web-ci
           AURA_PIM_MCP_DEV_IMAGE="$AURA_PIM_MCP_IMAGE" bash scripts/pim_tls_mail_up.sh
