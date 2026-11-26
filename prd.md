@@ -3550,10 +3550,14 @@ Session termination is observed through the SDK lifecycle rather than a duplicat
 liveness poller. Mount, call, elicitation and shutdown have finite configured bounds;
 negative call timeouts cannot request unlimited execution. A server's elicitation reaches
 the cockpit run that made the call as a form, which the server's schema validates field by
-field and which closes as `cancel` at its deadline. Only a call no cockpit run can be asked
-for (a scheduled job, `aura shell`) falls back to decline-and-surface: decline the protocol
-request, tell the operator on a linked channel which server asked, and invent no blocked
-turn or approval row.
+field and which closes as `cancel` at its deadline. A run shows at most
+`elicit.MaxOpenQuestions` (4) forms, and a server session holds at most as many requests;
+past either cap the request is declined without a form. A request whose schema the form
+cannot show, or whose run cannot be told apart, is declined at once with a notice
+(`elicit.RefusalUnrenderable`, `elicit.RefusalAmbiguousRun`). Only a call no cockpit run can
+be asked for (a scheduled job, `aura shell`) falls back to decline-and-surface: decline the
+protocol request, tell the operator on a linked channel which server asked, and invent no
+blocked turn or approval row.
 
 **Elicitation is a cockpit form; decline-and-surface is the fallback (2026-11-26, amendment #225).**
 The sentence above said the production wiring was decline-and-surface. Measured with
@@ -3567,6 +3571,10 @@ answer still reaches the server and the model through `tool_poll`. A scheduled j
 `aura shell` declined at once and logged that nothing was surfaced, as no channel was linked.
 
 This does not establish:
+- what a real model does: every model answer was written by hand, so whether a model polls
+  after the 60 s handoff, and so receives a late answer, or ends its turn first is not shown;
+- the caps and the two refusals above, which are read from the code
+  (`internal/agui/run_elicitation.go`, `internal/agent/mcptools/elicitation.go`), not measured;
 - the card on screen: no browser ran, so the step flow, "Use default", the Review step, the
   countdown and a reload mid-form were not seen;
 - a fallback that reaches a channel: no Telegram account was linked;
