@@ -152,8 +152,8 @@ them by file, and discovery then runs those 37 tests twice.
 
 **Files:** `internal/testledger/declared.go` + test; `cmd/aura/tier_runners_files_test.go` (the moved functions go)
 
-- [ ] Move the four functions with their tests; `cmd/aura`'s static check imports them until Part C.
-- [ ] Unit tests: constraint parsing (`a && !b`, `a || b`), `func TestXxx(*testing.T)` only (not helpers, not `Benchmark`/`Fuzz`), files ignored by the go tool.
+- [x] Move the four functions with their tests; `cmd/aura`'s static check imports them until Part C.
+- [x] Unit tests: constraint parsing (`a && !b`, `a || b`), `func TestXxx(*testing.T)` only (not helpers, not `Benchmark`/`Fuzz`), files ignored by the go tool.
 
 ### Task B2: Result readers
 

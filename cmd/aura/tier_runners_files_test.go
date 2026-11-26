@@ -2,24 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"go/ast"
 	"go/build/constraint"
-	"go/parser"
-	"go/token"
 	goversion "go/version"
-	"maps"
-	"os"
 	"os/exec"
-	"path"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
-	"unicode"
-	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/testledger"
 )
 
 // The test-file side of tier_runners_test.go: which tracked test files sit behind a
@@ -32,111 +23,25 @@ type tierTestFile struct {
 	tests    []string
 }
 
-// tierTestFiles reads every tracked test file the go tool would build. A file is behind a
-// feature tag when its constraint needs a tag set that the go command does not set by
-// itself. Test names are read only in directories that hold such a file: a helper-only
-// tagged file runs when a test compiled beside it does, untagged ones included.
+// tierTestFiles reads every tracked test file the go tool would build
+// (testledger.DeclaredGo). A file is behind a feature tag when its constraint needs a tag set
+// that the go command does not set by itself.
 func tierTestFiles(root string, rels []string, toolchain goToolchainTags) ([]tierTestFile, error) {
-	var files []tierTestFile
-	taggedDirs := map[string]bool{}
-	for _, rel := range rels {
-		if ignoredByGoTool(rel) {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		expr, err := goBuildConstraint(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", rel, err)
-		}
-		tags := map[string]bool{}
-		gatingTags(expr, false, tags)
-		f := tierTestFile{rel: rel, dir: path.Dir(rel), expr: expr}
-		for _, tag := range slices.Sorted(maps.Keys(tags)) {
+	declared, err := testledger.DeclaredGo(root, rels)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]tierTestFile, 0, len(declared))
+	for _, d := range declared {
+		f := tierTestFile{rel: d.Rel, dir: d.Dir, expr: d.Expr, tests: d.Tests}
+		for _, tag := range testledger.GatingTags(d.Expr) {
 			if !toolchain.decides(tag) {
 				f.gating = append(f.gating, tag)
 			}
 		}
-		if len(f.gating) > 0 {
-			taggedDirs[f.dir] = true
-		}
 		files = append(files, f)
 	}
-	fset := token.NewFileSet()
-	for i := range files {
-		if !taggedDirs[files[i].dir] {
-			continue
-		}
-		parsed, err := parser.ParseFile(fset, filepath.Join(root, files[i].rel), nil, parser.SkipObjectResolution)
-		if err != nil {
-			return nil, err
-		}
-		files[i].tests = testFuncs(parsed)
-	}
 	return files, nil
-}
-
-// ignoredByGoTool follows `go help packages`: directories named testdata and names
-// starting with "." or "_" are never built.
-func ignoredByGoTool(rel string) bool {
-	return slices.ContainsFunc(strings.Split(rel, "/"), func(part string) bool {
-		return part == "testdata" || strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_")
-	})
-}
-
-// testFuncs lists the TestXxx functions `go test -run` selects from; TestMain always runs
-// and is not one of them.
-func testFuncs(file *ast.File) []string {
-	var tests []string
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name.Name == "TestMain" {
-			continue
-		}
-		rest, ok := strings.CutPrefix(fn.Name.Name, "Test")
-		if r, _ := utf8.DecodeRuneInString(rest); ok && (rest == "" || !unicode.IsLower(r)) {
-			tests = append(tests, fn.Name.Name)
-		}
-	}
-	return tests
-}
-
-func goBuildConstraint(src []byte) (constraint.Expr, error) {
-	for line := range strings.Lines(string(src)) {
-		line = strings.TrimSpace(line)
-		if constraint.IsGoBuild(line) {
-			return constraint.Parse(line)
-		}
-		if strings.HasPrefix(line, "package ") {
-			break
-		}
-	}
-	return nil, nil
-}
-
-// gatingTags collects the tags expr needs SET to select a file: those under an even number
-// of negations. A tag that only appears negated (//go:build !web_integration) keeps its
-// file in the default run, so it gates nothing out.
-func gatingTags(expr constraint.Expr, negated bool, out map[string]bool) {
-	switch e := expr.(type) {
-	case *constraint.TagExpr:
-		if !negated {
-			out[e.Tag] = true
-		}
-	case *constraint.NotExpr:
-		gatingTags(e.X, !negated, out)
-	case *constraint.AndExpr:
-		gatingTags(e.X, negated, out)
-		gatingTags(e.Y, negated, out)
-	case *constraint.OrExpr:
-		gatingTags(e.X, negated, out)
-		gatingTags(e.Y, negated, out)
-	}
 }
 
 // fileCoverage says which invocations execute f. An invocation executes a test of f when
