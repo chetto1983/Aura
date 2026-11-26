@@ -2309,26 +2309,29 @@ jobs:
         # live Telegram getMe (internal/agui/onboarding_provision.go). The getMe is answered by a
         # local fake that api.telegram.org resolves to, and aura serve trusts its throwaway CA
         # through SSL_CERT_FILE, so the product runs unchanged (scripts/web_e2e_telegram_fake.sh).
-        # The strict profile refuses the sample object-store key, so a CI-only one is imported.
-        # The ingest sidecar is paused until the first-import spec has uploaded its file: the spec
-        # pins a Library that mounted before any ingest status (its header says why).
+        # The strict profile refuses the sample object-store key, so a key made for this run is
+        # imported; the bot token only has to look like one, since the fake checks none. The
+        # first-import spec pauses the ingest sidecar before its identity exists and resumes it
+        # after its upload, on every attempt: it pins a Library that mounted before any ingest
+        # status (its header says why).
         env:
           AURA_E2E_LIVE_DOCUMENTS: "1"
           AURA_E2E_AURA_CMD: ../aura
+          AURA_E2E_INGEST_PAUSE_CMD: docker stop aura-ingest
           AURA_E2E_INGEST_RESUME_CMD: docker start aura-ingest
           AURA_PROFILE: single_user_hardened
           AURA_MUSR_ISOLATION: "true"
           AURA_EMBED_MODEL_DIR: /tmp/aura-ci-cache/llama.cpp/llama.cpp
-          AURA_OBJECTSTORE_ACCESS_KEY: GK7e2e0a11ce5eed0000000001
-          AURA_OBJECTSTORE_SECRET_KEY: "7e2e0a11ce5eed000000000000000000000000000000000000000000000000e1"
-          TELEGRAM_BOT_TOKEN: "123456:aura-ci-fake"
         run: |
+          AURA_OBJECTSTORE_ACCESS_KEY="GK$(openssl rand -hex 12)"
+          AURA_OBJECTSTORE_SECRET_KEY="$(openssl rand -hex 32)"
+          TELEGRAM_BOT_TOKEN="0:$(openssl rand -hex 16)"
+          export AURA_OBJECTSTORE_ACCESS_KEY AURA_OBJECTSTORE_SECRET_KEY TELEGRAM_BOT_TOKEN
           docker compose exec -T garage /garage key import --yes -n aura-web-e2e-strict \
             "$AURA_OBJECTSTORE_ACCESS_KEY" "$AURA_OBJECTSTORE_SECRET_KEY" >/dev/null
           docker compose exec -T garage /garage bucket allow --read --write --owner \
             "$AURA_OBJECTSTORE_BUCKET" --key "$AURA_OBJECTSTORE_ACCESS_KEY" >/dev/null
           bundle="$(sudo bash scripts/web_e2e_telegram_fake.sh "$RUNNER_TEMP/telegram-fake")"
-          docker stop aura-ingest >/dev/null
           SSL_CERT_FILE="$bundle" bash scripts/web_e2e_ci.sh --project=chrome --workers=1 \
             e2e/paperless-first-import-live.spec.ts e2e/paperless-isolation-live.spec.ts
 

@@ -37,7 +37,7 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = _answer
     do_POST = _answer
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(self, message_format: str, *args: object) -> None:
         # The request line carries the bot token: log the method name only.
         method = self.command or "?"
         sys.stderr.write(f"telegram-fake: {method} {self.path.rsplit('/', 1)[-1]}\n")

@@ -11,9 +11,15 @@ test.use({ trace: 'off', video: 'off', screenshot: 'off' });
 // The regression this pins (564aa3bc4) is a Library mounted while the identity has never been
 // indexed (`indexing: null`) that missed the first status. That state lasts only until the ingest
 // supervisor starts the new identity's reconciler, every AURA_INGEST_SUPERVISOR_INTERVAL, so a
-// run without it raced the supervisor and lost on a fast stack. CI pauses the sidecar before the
-// identity exists and names here the command that resumes it, once the file is uploaded.
+// run without it raced the supervisor and lost on a fast stack. CI names the commands that pause
+// the sidecar before the identity exists and resume it once the file is uploaded; each attempt,
+// a retry included, runs both.
+const pauseIngest = process.env.AURA_E2E_INGEST_PAUSE_CMD?.trim() ?? '';
 const resumeIngest = process.env.AURA_E2E_INGEST_RESUME_CMD?.trim() ?? '';
+
+function shell(command: string): void {
+  if (command !== '') execFileSync('sh', ['-c', command], { stdio: 'inherit' });
+}
 
 test('a first Files import refreshes an already mounted empty Library', async ({
   page,
@@ -33,8 +39,11 @@ test('a first Files import refreshes an already mounted empty Library', async ({
   let created = false;
   let tenant: Page | undefined;
   let source: string | undefined;
+  let paused = false;
   await openPaperless(page);
   try {
+    shell(pauseIngest);
+    paused = pauseIngest !== '';
     await createIdentity(page, email, password);
     created = true;
     tenant = await signInAs(browser, baseURL, email, password);
@@ -55,7 +64,7 @@ test('a first Files import refreshes an already mounted empty Library', async ({
       async (response) => {
         if (new URL(response.url()).pathname !== '/api/documents/ingestion') return false;
         const snapshot = (await response.json()) as { indexing: IngestionState | null };
-        return snapshot.indexing !== null;
+        return snapshot.indexing?.status === 'ready';
       },
       { timeout: indexingTimeout },
     );
@@ -78,7 +87,8 @@ test('a first Files import refreshes an already mounted empty Library', async ({
     expect(uploaded.status).toBe(200);
     expect(uploaded.body.id).toBe(`/${name}`);
     source = uploaded.body.id.slice(1);
-    if (resumeIngest !== '') execFileSync('sh', ['-c', resumeIngest], { stdio: 'inherit' });
+    shell(resumeIngest);
+    paused = false;
     const completed = (await (await completedResponse).json()) as { indexing: IngestionState };
     expect(completed.indexing).toMatchObject({ status: 'ready', in_progress: 0, errors: 0 });
     expect(completed.indexing.finished).toBeGreaterThan(0);
@@ -108,6 +118,8 @@ test('a first Files import refreshes an already mounted empty Library', async ({
       contentType: 'image/png',
     });
   } finally {
+    // A failed attempt must not leave the sidecar paused for the specs after it.
+    if (paused) shell(resumeIngest);
     try {
       if (tenant && source) await cleanFiles(tenant, [source]);
     } finally {
