@@ -202,6 +202,11 @@ The revised steps:
 - [x] **R4. The live check.** The sweep is run against a stack with a stale and an interrupted draft, and
   what it changed is recorded in a dated verification file, with message content left out.
   Done: `docs/superpowers/verification/2026-11-26-message-draft-recovery-sweep.md`.
+- [x] **R5. The pre-upgrade send.** A review stored in the multiplexed shape, as an Aura from before the
+  PIM split wrote it, is rewritten by `pimsplit.Upgrade` and then sent through the runner's own resolve:
+  `send_email` runs once with the message and without its `action`, the answer is the send's result, and
+  a second send is refused (`TestAReviewDraftedBeforeThePIMSplitSendsAfterIt`, `internal/runner`). With
+  the upgrade skipped the same review is unavailable, as the VM's would have been.
 
 Out of this revision, and still open: the cockpit Playwright scenario of Step 1. It needs a model that
 calls `send_email`, so it is a run with the `aura-model-in-the-loop` skill, not CI. The real-stack smoke
