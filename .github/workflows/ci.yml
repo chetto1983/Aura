@@ -1149,6 +1149,8 @@ jobs:
     name: Ingestion reconciliation (add/modify/delete, live Garage + ArcadeDB)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # No test-ledger upload here: the reconcile scope stops before the script's go test calls
+    # (scripts/ingest_reconcile_e2e.sh line 509), so this job records no test (run 45839224188).
     # Amendment #118 says CocoIndex's own target reconciliation gives Aura add, modify and
     # delete "with zero code of ours". Until now NOTHING in CI tested that claim: the
     # sidecar job runs the Python unit suite, and scripts/ingest_reconcile_e2e.sh -- which
@@ -1281,14 +1283,6 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
-
-      - name: Upload the test ledger
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: test-ledger-${{ github.job }}
-          path: ${{ env.AURA_TEST_LEDGER_DIR }}
-          if-no-files-found: error
 
   reasoning-tier-test:
     name: Reasoning tier accuracy (reasoning_live, real embedder)
@@ -2746,7 +2740,6 @@ jobs:
       - knowledge-integration-test
       - arcadedb-integration-test
       - ingest-sidecar-test
-      - ingest-reconcile-e2e
       - reasoning-tier-test
       - multimodal-integration-test
       - whatsapp-integration-test
