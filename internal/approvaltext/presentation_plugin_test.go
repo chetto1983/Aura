@@ -199,3 +199,26 @@ func TestDeriveTaskCancelCard(t *testing.T) {
 		t.Fatalf("a card with a line missing derived %+v", p)
 	}
 }
+
+// Telegram translates only the words a card owns. A task payload is the operator's own text, so a
+// payload that happens to end like a plugin list ("): none") stays verbatim.
+func TestRenderItalianKeepsATaskPayloadVerbatim(t *testing.T) {
+	t.Parallel()
+	question := "Approve cancelling a task not scheduled in this chat?\ntask: t-1\nkind: reminder\nschedule: at\n" +
+		"next run: none\npayload: tasks (0): none\nsha256: " + pluginApprovalDigest
+	resume, err := json.Marshal(map[string]string{"type": "task_cancel_approval", "approval_sha256": pluginApprovalDigest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched, err := Enrich(question, resume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := FromContext(question, enriched)
+	if !ok {
+		t.Fatal("the task card derived nothing")
+	}
+	if got := RenderItalian(p, question); !strings.Contains(got, "\ncontenuto: tasks (0): none\n") {
+		t.Fatalf("italian rewrote the payload:\n%s", got)
+	}
+}

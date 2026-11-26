@@ -128,9 +128,10 @@ func renderCardItalian(p Presentation) string {
 	return strings.Join(append(lines, "sha256: "+p.Params["digest"]), "\n")
 }
 
-// italianCardValue translates a card's whole-value words: an empty list, the mcp state, what
-// happens to the plugin's data and a task with no next run. Words inside a list stay as the
-// card wrote them, beside the plugin's own quoted strings.
+// italianCardValue translates the words a card owns: an empty plugin list, the mcp state, what
+// happens to the plugin's data and a task with no next run. Words inside a list stay as the card
+// wrote them, beside the plugin's own quoted strings, and every other value (a task's payload
+// above all, the operator's own text) is rendered verbatim.
 func italianCardValue(param, value string) string {
 	switch param {
 	case "mcp":
@@ -151,7 +152,7 @@ func italianCardValue(param, value string) string {
 		if value == "none" {
 			return "nessuna"
 		}
-	default:
+	case "skills", "connectors", "skipped", "notes":
 		if count, ok := strings.CutSuffix(value, "): none"); ok {
 			return count + "): nessuno"
 		}
