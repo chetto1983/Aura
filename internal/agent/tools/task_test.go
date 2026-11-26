@@ -17,7 +17,11 @@ type fakeTaskStore struct {
 	createID  string
 	listRows  []ScheduledTask
 	listErr   error
+	// targets are the rows CancelTarget reads, by id; an unknown id reads as a task with no origin.
+	targets   map[string]ScheduledTask
+	targetErr error
 	cancelled string
+	cancels   int
 	cancelErr error
 	ranNow    string
 	runNowErr error
@@ -43,10 +47,14 @@ func (f *fakeTaskStore) ListScheduledTasks(context.Context) ([]ScheduledTask, er
 	return f.listRows, f.listErr
 }
 func (f *fakeTaskStore) CancelTarget(_ context.Context, id string) (ScheduledTask, error) {
-	return ScheduledTask{ID: id}, nil
+	if task, ok := f.targets[id]; ok {
+		return task, f.targetErr
+	}
+	return ScheduledTask{ID: id, Kind: "reminder", ScheduleKind: "at", Status: "active"}, f.targetErr
 }
 func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error {
 	f.cancelled = id
+	f.cancels++
 	return f.cancelErr
 }
 func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error {
@@ -286,11 +294,14 @@ func TestTaskPayloadPreviewIsSingleLineAndBounded(t *testing.T) {
 	}
 }
 
+// The cancel half cancels a task its own conversation scheduled: any other one asks first
+// (task_cancel_test.go).
 func TestTaskCancelRunNow(t *testing.T) {
-	store := &fakeTaskStore{}
+	store := &fakeTaskStore{targets: map[string]ScheduledTask{"c1": {ID: "c1", OriginConversationID: "conv-C"}}}
 	tool := &TaskTool{Store: store}
+	ctx := WithToolCallContext(context.Background(), "conv-C", "call-1", t.TempDir(), 2048)
 
-	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"cancel","task_id":"c1"}`)); err != nil {
+	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"cancel","task_id":"c1"}`)); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	if store.cancelled != "c1" {

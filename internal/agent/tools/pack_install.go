@@ -2,9 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,6 +42,8 @@ type PluginApprovals = ApprovalStore[PluginAction]
 // PluginApprovalContext is the resume_context type of a plugin approval.
 const PluginApprovalContext = "plugin_pack_approval"
 
+var pluginApprovalPrompt = approvalPrompt{tool: "plugin_pack", name: "plugin_approval", contextType: PluginApprovalContext}
+
 var (
 	errNoPluginBackend = errors.New("plugin_pack: installing, upgrading and removing plugins is not available here — " +
 		"this deployment has no plugin backend (it needs AURA_PLUGINS_DIR, a database and a skills directory)")
@@ -78,7 +77,7 @@ func (t *PackTool) install(ctx context.Context, a packArgs) (ToolResult, error) 
 	}
 	session := SessionIDFromContext(ctx)
 	if a.Commit != "" || a.Digest != "" {
-		if t.Approvals.Consume(session, pluginApprovalDigest("install", a.Ref, a.Commit, a.Digest)) {
+		if t.Approvals.Consume(session, approvalDigest("install", a.Ref, a.Commit, a.Digest)) {
 			report, err := t.Backend.Install(ctx, actor, plugins.InstallRequest{Ref: a.Ref, Commit: a.Commit, Digest: a.Digest})
 			if err != nil && !report.Started() {
 				return ToolResult{}, fmt.Errorf("plugin_pack install %s: %w", a.Ref, err)
@@ -98,14 +97,14 @@ func (t *PackTool) install(ctx context.Context, a packArgs) (ToolResult, error) 
 		return NewResult(ctx, fmt.Sprintf("Plugin %s is already installed at %s (%s). The repository's default branch has %s (%s). "+
 			"To move to it: plugin_pack action=upgrade name=%s.\n", rec.Name, rec.Version, rec.Commit, review.Version, review.Commit, rec.Name))
 	}
-	digest := pluginApprovalDigest("install", review.Ref, review.Commit, review.Digest)
+	digest := approvalDigest("install", review.Ref, review.Commit, review.Digest)
 	question, err := review.Question(digest)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("plugin_pack install %s: %w", review.Ref, err)
 	}
 	challenge := t.Approvals.CreateChallenge(session, digest, question,
 		PluginAction{Action: "install", Ref: review.Ref, Commit: review.Commit, Digest: review.Digest})
-	return pluginApprovalRequired(challenge, map[string]any{
+	return pluginApprovalPrompt.required(challenge.Digest, challenge.Question, map[string]any{
 		"action": "install", "ref": review.Ref, "commit": review.Commit, "digest": review.Digest,
 	}), nil
 }
@@ -126,7 +125,7 @@ func (t *PackTool) remove(ctx context.Context, a packArgs) (ToolResult, error) {
 		return ToolResult{}, fmt.Errorf("plugin_pack: %q is not installed", name)
 	}
 	session := SessionIDFromContext(ctx)
-	digest := pluginApprovalDigest("remove", rec.Name, rec.Commit, strconv.FormatBool(a.DeleteData))
+	digest := approvalDigest("remove", rec.Name, rec.Commit, strconv.FormatBool(a.DeleteData))
 	if a.Commit == rec.Commit && t.Approvals.Consume(session, digest) {
 		report, err := t.Backend.Remove(ctx, actor, rec.Name, a.DeleteData)
 		if err != nil && !report.Started() {
@@ -140,39 +139,9 @@ func (t *PackTool) remove(ctx context.Context, a packArgs) (ToolResult, error) {
 	}
 	challenge := t.Approvals.CreateChallenge(session, digest, question,
 		PluginAction{Action: "remove", Name: rec.Name, Commit: rec.Commit, DeleteData: a.DeleteData})
-	return pluginApprovalRequired(challenge, map[string]any{
+	return pluginApprovalPrompt.required(challenge.Digest, challenge.Question, map[string]any{
 		"action": "remove", "name": rec.Name, "commit": rec.Commit, "delete_data": a.DeleteData,
 	}), nil
-}
-
-func pluginApprovalDigest(parts ...string) string {
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return hex.EncodeToString(sum[:])
-}
-
-// pluginApprovalRequired is Aura's own text, marked trusted so the model copies the question
-// and resume_context exactly, as shell_exec's challenge is (spec 2026-10-12). Every string
-// the plugin controls is quoted and capped in the question (plugins.Review.Question), and
-// json.Marshal's HTML-safe encoding keeps <, > and & out of the payload.
-func pluginApprovalRequired(c ApprovalChallenge[PluginAction], repeat map[string]any) ToolResult {
-	payload := map[string]any{
-		"error":           "plugin_approval_required",
-		"approval_sha256": c.Digest,
-		"question":        c.Question,
-		"repeat":          repeat,
-		"resume_context":  map[string]string{"type": PluginApprovalContext, "approval_sha256": c.Digest},
-		"message": "This needs the operator's approval. Call ask_user with kind=\"approval\", question exactly equal to the question field " +
-			"and resume_context exactly equal to the resume_context field. After the operator accepts, call plugin_pack again with " +
-			"exactly the arguments in repeat. If they decline, do not retry.",
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		raw = []byte(`{"error":"plugin_approval_required"}`)
-	}
-	return ToolResult{
-		Preview: string(raw), Bytes: len(raw),
-		Provenance: &ToolResultProvenance{Source: "aura:plugin_approval", Trust: TrustTrusted},
-	}
 }
 
 // installReport is the account of an install. One that stopped part way says why first, then

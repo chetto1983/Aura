@@ -2,31 +2,34 @@ package approvaltext
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 )
 
-// maxPluginLineBytes bounds one line of a plugin card, which the backend caps at 3500 bytes
-// in all (internal/plugins card.go).
-const maxPluginLineBytes = 4096
+// maxCardLineBytes bounds one line of a line card, which the plugin backend caps at 3500 bytes
+// in all (internal/plugins card.go) and the task cancel card well under that.
+const maxCardLineBytes = 4096
 
-// pluginLine is one line of a plugin approval card after its header: the param it derives
-// into, the English prefix the card writes, and the Italian one Telegram renders.
-type pluginLine struct {
+// cardLine is one line of a line card after its header: the param it derives into, the English
+// prefix the card writes, and the Italian one Telegram renders.
+type cardLine struct {
 	param, prefix, italian string
 }
 
-type pluginCard struct {
+// lineCard is an approval question written as a header, one `prefix: value` line per param and
+// a closing `sha256: <digest>` line.
+type lineCard struct {
 	key, header, italianHeader string
-	lines                      []pluginLine
+	lines                      []cardLine
 }
 
 // pluginCards mirror plugins.Review.Question and plugins.RemovalQuestion line by line. A
 // question that is not exactly one of them — a forged line, a card the backend cut short —
 // derives nothing and renders verbatim.
-var pluginCards = []pluginCard{
+var pluginCards = []lineCard{
 	{
 		key: PluginInstallKey, header: "Approve plugin install?", italianHeader: "Approva l'installazione del plugin?",
-		lines: []pluginLine{
+		lines: []cardLine{
 			{"plugin", "plugin: ", "plugin: "},
 			{"source", "source: ", "origine: "},
 			{"skills", "skills ", "competenze "}, //nolint:misspell // "competenze" is the Italian plural of "competenza", not English "competence".
@@ -38,7 +41,7 @@ var pluginCards = []pluginCard{
 	},
 	{
 		key: PluginRemoveKey, header: "Approve plugin removal?", italianHeader: "Approva la rimozione del plugin?",
-		lines: []pluginLine{
+		lines: []cardLine{
 			{"plugin", "plugin: ", "plugin: "},
 			{"source", "source: ", "origine: "},
 			{"skills", "skills ", "competenze "}, //nolint:misspell // "competenze" is the Italian plural of "competenza", not English "competence".
@@ -48,22 +51,36 @@ var pluginCards = []pluginCard{
 	},
 }
 
-func pluginCardFor(key string) (pluginCard, bool) {
-	for _, card := range pluginCards {
+// taskCancelCards mirror the task tool's cancel approval (tools.taskCancelQuestion).
+var taskCancelCards = []lineCard{{
+	key:           TaskCancelKey,
+	header:        "Approve cancelling a task not scheduled in this chat?",
+	italianHeader: "Approva l'annullamento di un'attività non pianificata in questa chat?",
+	lines: []cardLine{
+		{"task", "task: ", "attività: "},
+		{"kind", "kind: ", "tipo: "},
+		{"schedule", "schedule: ", "pianificazione: "},
+		{"next", "next run: ", "prossima esecuzione: "},
+		{"payload", "payload: ", "contenuto: "},
+	},
+}}
+
+func cardFor(key string) (lineCard, bool) {
+	for _, card := range slices.Concat(pluginCards, taskCancelCards) {
 		if card.key == key {
 			return card, true
 		}
 	}
-	return pluginCard{}, false
+	return lineCard{}, false
 }
 
-func derivePlugin(question string, fields map[string]json.RawMessage) (Presentation, bool) {
+func deriveCard(question string, fields map[string]json.RawMessage, cards []lineCard) (Presentation, bool) {
 	digest := RootString(fields, "approval_sha256")
 	if digest == "" {
 		return Presentation{}, false
 	}
 	got := strings.Split(question, "\n")
-	for _, card := range pluginCards {
+	for _, card := range cards {
 		if len(got) != len(card.lines)+2 || got[0] != card.header || got[len(got)-1] != "sha256: "+digest {
 			continue
 		}
@@ -81,20 +98,20 @@ func derivePlugin(question string, fields map[string]json.RawMessage) (Presentat
 	return Presentation{}, false
 }
 
-func pluginLimits(key string) map[string]int {
-	card, ok := pluginCardFor(key)
+func cardLimits(key string) map[string]int {
+	card, ok := cardFor(key)
 	if !ok {
 		return nil
 	}
 	limits := map[string]int{"digest": maxShortParamBytes}
 	for _, line := range card.lines {
-		limits[line.param] = maxPluginLineBytes
+		limits[line.param] = maxCardLineBytes
 	}
 	return limits
 }
 
-func pluginRequired(key string) []string {
-	card, _ := pluginCardFor(key)
+func cardRequired(key string) []string {
+	card, _ := cardFor(key)
 	required := []string{"digest"}
 	for _, line := range card.lines {
 		required = append(required, line.param)
@@ -102,19 +119,19 @@ func pluginRequired(key string) []string {
 	return required
 }
 
-func renderPluginItalian(p Presentation) string {
-	card, _ := pluginCardFor(p.Key)
+func renderCardItalian(p Presentation) string {
+	card, _ := cardFor(p.Key)
 	lines := []string{card.italianHeader}
 	for _, line := range card.lines {
-		lines = append(lines, line.italian+italianPluginValue(line.param, p.Params[line.param]))
+		lines = append(lines, line.italian+italianCardValue(line.param, p.Params[line.param]))
 	}
 	return strings.Join(append(lines, "sha256: "+p.Params["digest"]), "\n")
 }
 
-// italianPluginValue translates the card's whole-value words: an empty list, the mcp state
-// and what happens to the plugin's data. Words inside a list stay as the card wrote them,
-// beside the plugin's own quoted strings.
-func italianPluginValue(param, value string) string {
+// italianCardValue translates a card's whole-value words: an empty list, the mcp state, what
+// happens to the plugin's data and a task with no next run. Words inside a list stay as the
+// card wrote them, beside the plugin's own quoted strings.
+func italianCardValue(param, value string) string {
 	switch param {
 	case "mcp":
 		if value == "enabled" {
@@ -129,6 +146,10 @@ func italianPluginValue(param, value string) string {
 			return "conservati"
 		case "deleted in your box":
 			return "eliminati nel tuo box"
+		}
+	case "next":
+		if value == "none" {
+			return "nessuna"
 		}
 	default:
 		if count, ok := strings.CutSuffix(value, "): none"); ok {
