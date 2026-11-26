@@ -22,9 +22,9 @@ type TrustedMCP struct {
 const legacyCalendarTool = "calendar"
 
 // TrustedMCPFromMeta accepts the exact metadata shape the managed bridge emits, and for the
-// PIM only a tool its risk table names, as the bridge does. Matching the model-facing name (and, for the old PIM marker, its action argument)
-// stops a marker for one call from being reused on another during snapshot
-// reconstruction.
+// PIM only a tool its risk table names, as the bridge does. Matching the model-facing name
+// (and, for the old PIM marker, its action argument) stops a marker for one call from being
+// reused on another during snapshot reconstruction.
 func TrustedMCPFromMeta(meta map[string]any, toolName, arguments string) *TrustedMCP {
 	raw, ok := meta["aura_display_source"].(map[string]any)
 	if !ok {
