@@ -209,4 +209,5 @@ runs every live step with `--project=chrome`.
 - [x] Delete `cmd/aura/tier_runners*_test.go` and `.github/manual_test_tiers.txt`; update the references (`git grep -n 'manual_test_tiers\|tier_runners'`), the babysit skill's table included.
   The references left are this plan, the spec and the 2026-11-25 inventory, which describe it as history;
   the babysit skill never named it.
-- [ ] Verification file of the closing run.
+- [x] Verification file of the closing run: `docs/superpowers/verification/2026-11-26-test-ledger-closing-run.md`
+  (run 45892030387 on `ce16d43f3`, 0 violations).
