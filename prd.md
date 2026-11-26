@@ -387,7 +387,8 @@ text.
   cockpit briefing read mail and events with no reservation error.
 
 Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown:
-- a pre-upgrade draft that names an account sending after the upgrade (the one on the VM had expired);
+- a pre-upgrade draft that names an account sending after the upgrade. The one on the VM was still
+  `pending`, but its `expires_at` had passed;
 - a headless briefing;
 - any route but the two of that day.
 
@@ -3516,9 +3517,13 @@ This does not establish:
 - **The fix.** The updater now restarts `aura` once, at the end of an apply that moved a running MCP
   sidecar's image (`0dac06ddb`..`7e379a89d`).
 
-Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown: that fix on
-the lab VM, which is still owed. Nor a sidecar-only apply that dies after the sidecar moved, which is
-parked.
+**The fix on the lab VM, 2026-11-26.** The update to the `8f97396` pin replaced `aura-pim-mcp` and
+`arcadedb-mcp` after `aura` started. The updater then restarted `aura` once, by itself. Aura mounted
+29 calendar tools.
+
+Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown:
+- the boot case, a boot followed by an apply, which should not restart `aura`: no reboot was measured;
+- a sidecar-only apply that dies after the sidecar moved, which is parked.
 
 The cockpit offers no authorization for a sidecar Aura signs itself (2026-10-14). Measured on
 the lab VM, the panel had treated memory, calendar and whatsapp as somebody else's OAuth server:
@@ -4374,18 +4379,19 @@ This does not establish:
 mail behind `calendar`. The email route calls `list_accounts`, then its own `send_email` tool, with
 `accountId` and no `action`.
 - **The live reminder.** It was scheduled in the cockpit and fired at 14:11:46 UTC.
-  - The PIM answered "Email sent successfully", from the operator's personal account.
+  - The PIM answered "Email sent successfully".
+  - The mail went from the operator's personal account to that account's own address: a self-send,
+    from the recipient's own account.
   - The one-shot was deleted, and no pending notification was left.
 - **The first attempt failed upstream of Aura.** OpenRouter served the day's DeepSeek route through one
   provider, which dropped `payload` from `task` calls and invented a `task_id`. A replay with the
   provider pinned measured that provider at 13 of 22 calls correct, DeepSeek at 11 of 11 and Fireworks
   at 5 of 5. `task` requires only `action`, so the dropped field was schema-valid, and OpenRouter's
   quality routing did not see it. The operator switched the primary model. Refusals now name the keys
-  that arrived (`4adc35b33`..`f74a9328e`).
+  that arrived (`4adc35b33`, `5a763b058`, `f74a9328e`).
 
 Ledger: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`. Not shown:
-- whether the sending account was the one whose address is the recipient's. The ledger records only
-  which account sent;
+- more than one account and one route: the self-send was measured once;
 - a route other than the one switched to;
 - the PIM's warning, on every notify, about the Microsoft account's sending address. It is queued, not
   explained.
@@ -4679,8 +4685,9 @@ failed open leaves the run as before. Not shown: the lab VM.
 
 *Amended 2026-11-25.* Since the PIM split, the PIM's reads are their own tools with non-mutating
 specs (`calendar__get_emails`, `calendar__get_calendar_events`), so they no longer enter the reservation
-funnel. `board` still has a mutating spec (`internal/agent/tools/board.go`). On the lab VM, a cockpit briefing turn called `board`, then
-`calendar__get_calendar_events` twice, then `calendar__get_emails`. Every call ended `ok`, with no
+funnel. `board` still has a mutating spec (`internal/agent/tools/board.go`). On the lab VM, a
+cockpit briefing turn called `board`, then `calendar__get_calendar_events` twice, then
+`calendar__get_emails`. Every call ended `ok`, with no
 reservation error (`docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`). Not shown:
 - a headless `agent_job` briefing. This failure was headless, and the check was a cockpit turn in a
   conversation.

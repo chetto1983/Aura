@@ -122,8 +122,9 @@ records each one, so a sync knows to keep it.
   is the stricter side: a tool the fork adds before Aura classifies it is denied in an unattended run.
   Without the raise, it would be reserved and run. The lab VM run showed the Destructive tier withholding
   known tools. `bulk_delete_emails` (checks 2 and 9) and `delete_event` (check 4) were each withheld
-  behind an approval, and ran once the operator approved them. Not shown live: an unknown tool. The
-  raised floor is unit-tested only. Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
+  behind an approval, and ran once each was approved in the cockpit. Not shown live: an unknown tool.
+  The raised floor is unit-tested only. Evidence:
+  `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 - Read tools become non-mutating. That is the point: they leave the operation-reservation funnel that once
   denied briefing reads. They become callable from the MCP Apps view's read-only callbacks.
 - `neverLoaded` for `recipe:calendar` stays: about 29 tools is above the slot rule anyway.
@@ -166,8 +167,12 @@ records each one, so a sync knows to keep it.
   - **Not shown.** Other models, the DeepSeek route itself, and more than 4 samples.
 
   Check 4 found the same gap on `create_event`, where the PIM fell back to the first account. Pin
-  `8f97396` makes `accountId` required on `create_event` and `create_contact`, but its live re-measure is
-  still owed. Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
+  `8f97396` makes `accountId` required on `create_event` and `create_contact`.
+  - **Re-measured on 2026-11-26.** With no account named, Aura called `list_accounts`, asked which
+    calendar to use, and created the event with `accountId`.
+  - **Not shown.** A model that omits `accountId` meeting the new refusal live.
+
+  Evidence: `docs/superpowers/verification/2026-11-25-pim-tool-split-vm-checks.md`.
 
 ### 5.4 Display and cockpit
 
@@ -305,8 +310,8 @@ draft target, and the fork's suite against Dovecot and GreenMail.
    Sent copy lands.
 3. A briefing turn reads mail and events with no reservation error.
 4. An event is created, read and deleted through its reference.
-5. *(Amended 2026-11-25, to match the operator's decision of 2026-10-10.)* A `deny` on a PIM tool that is not drafted (for example
-   `calendar__list_calendars`) refuses it. A `deny` on `calendar__send_email` still lets Aura draft the
+5. *(Amended 2026-11-25, to match the operator's decision of 2026-10-10.)* A `deny` on a PIM tool
+   that is not drafted (for example `calendar__list_calendars`) refuses it. A `deny` on `calendar__send_email` still lets Aura draft the
    send, and a draft the operator confirms passes the deny (PRD §5, decision of 2026-10-10). A tool-wide
    `deny` on `calendar` set before the upgrade becomes a `deny` on each of the 29 tools. The original
    wording, "refuses `calendar__send_email`", contradicted the 2026-10-10 decision.

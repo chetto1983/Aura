@@ -2,12 +2,15 @@
 
 Continues `2026-11-24-pim-tool-split.md`. Plan: `docs/superpowers/plans/2026-11-23-pim-tool-split.md`
 (Task C8 steps 4–5). Spec: `docs/superpowers/specs/2026-11-23-pim-tool-split-design.md` §7, checks 1–10.
-Lab VM `192.168.101.158`.
+The run was on the lab VM. A last section adds the re-measure of 2026-11-26.
 
-Checks 2, 3, 4, 5, 7, 9 and 10 ran in the cockpit, through Claude in Chrome, with the operator present.
-Check 8 is read from the live send turns at 13:29 and 13:41. For checks 1 and 6, the ledger records the result
-and not the method. The facts below come from the SDD ledger of the run. Mail and events went only between the operator's own accounts,
-and every measurement mail and event was deleted afterwards. This file holds counts and yes/no.
+Checks 2, 3, 4, 5, 7, 9 and 10 ran in the cockpit, through Claude in Chrome, with the operator
+present. Check 8 is read from the live send turns at 13:29 and 13:41. For checks 1 and 6, the ledger
+records the result and not the method.
+
+The facts below come from the SDD ledger of the run. Mail and events went only between the operator's
+own accounts, and every measurement mail and event was deleted afterwards. This file holds counts and
+yes/no.
 
 ## The release on the VM
 
@@ -71,9 +74,10 @@ mounted server=calendar tools=29`.
 
 What this does not show:
 - **A raw `tools/list`.** The evidence is Aura's mount log and its registry, read after the restart.
-- **The updater fix on the VM.** The live proof is still owed on the lab VM, in two parts:
-  - a PIM replacement through the updater leaves 29 calendar tools with no manual restart;
-  - a boot followed by an apply does not restart `aura`.
+- **The updater fix on the VM.** On 2026-11-25 its live proof was still owed, in two parts:
+  - a PIM replacement through the updater leaves 29 calendar tools with no manual restart. The re-measure
+    of 2026-11-26 shows this (last section);
+  - a boot followed by an apply does not restart `aura`. This is still not shown.
 - **The parked case.** If an apply moves only a sidecar and dies after that, Aura keeps a stale tool set
   until the next update or reboot. That case is parked, not fixed.
 
@@ -136,8 +140,8 @@ At the pin of the day, `accountId` on `create_event` was optional and fell back 
 
 What this does not show:
 - whether the model left `accountId` out, or the provider dropped it (see check 9);
-- the fix. Pin `8f97396` (below) makes `accountId` required on `create_event` and `create_contact`. The
-  live re-measure is still owed.
+- the fix. Pin `8f97396` (below) makes `accountId` required on `create_event` and `create_contact`. Its
+  re-measure is in the 2026-11-26 section.
 
 ## §7 check 5: PASS for the per-tool denies, on the amended wording. Carry-over not shown live
 
@@ -169,7 +173,7 @@ The VM held 2 email drafts from before the upgrade. Their upgrade outcomes match
 |---|---|---|
 | pending, from 2026-10-10, with an account | rewritten to the `send_email` shape: `accountId` yes, `action` key no, still `pending` | the rewrite, yes. **That it sends afterwards: no.** Its `expires_at` passed on 2026-10-10, so it cannot be approved |
 | pending, no account | expired, outcome `account_required` | yes |
-| scheduled email draft, with an account | none existed on the VM | no |
+| scheduled email draft, with an account | not recorded. The report's two drafts are the two above, so none appears to have existed | no |
 
 What this does not show:
 - **A pre-upgrade draft that sends after the upgrade.** No test shows it either: the `pimsplit` tests stop
@@ -210,9 +214,9 @@ ratchet in `2026-11-24-pim-tool-split.md` is the only measure of that.
 - **The cockpit reminder.** The operator asked in the cockpit for a reminder by email in 5 minutes.
   - 4 of 4 `task schedule` calls carried only `action`, `kind`, `schedule_kind` and `tz`: no `at`, no
     `payload.text` and no `notify`. Each was refused: "a reminder needs payload.text".
-  - After more calls with no arguments, the agent scheduled a complete one.
-  - The ledger puts the calls with missing arguments at 8 in one line, and at 4 plus 6 in another. The
-    dedup guard blocked some of them.
+  - Between 13:46 and 13:51, the agent made 8 calls with missing arguments: those 4, then later
+    attempts. The dedup guard blocked some of them. Then the agent scheduled a complete one.
+  - A separate turn made 6 calls of its own on the same refusal.
 - **The controller's task.** Meanwhile, the controller scheduled a reminder of its own with `aura task
   schedule --kind reminder --notify email`.
 - **The cancels.** On the operator's next message, the agent ran `task list` and then `task cancel` on
@@ -239,8 +243,8 @@ Neither task fired, so the check was not measured.
 - **Why OpenRouter did not catch it.** `task` requires only `action`, so a dropped `payload` is still
   schema-valid. OpenRouter's quality routing (Auto Exacto) counts only invalid JSON, unknown tool names
   and schema mismatches, so it does not see this fault.
-- **The operator's response.** The operator switched the primary model. A draft report for the provider
-  was prepared for the operator.
+- **The operator's response.** The operator switched the primary model. A draft report on the provider
+  fault was prepared, for the operator to send to OpenRouter.
 
 **Re-run, on the new route: PASS.**
 
@@ -252,6 +256,7 @@ Neither task fired, so the check was not measured.
 | Notifier email route | PIM `list_accounts`, then the post-split `send_email` |
 | `send_email` result | "Email sent successfully" at 14:11:49.761, not an error |
 | Sending account | the operator's personal account |
+| Recipient | that same account's own address, a self-send: yes, from the recipient's own account |
 | One-shot task deleted | 14:11:49.780 |
 | `pending_notifications` | 0 |
 
@@ -265,8 +270,8 @@ route scheduled it.
   2 mails. They were approved once, and the PIM deleted 2 of 2.
 
 What this does not show:
-- **"From the recipient's own account".** The ledger records which account sent. It does not record
-  whether that account's address is the recipient's.
+- **More than one account and one route.** The self-send was measured once, with one account, on one
+  route.
 - **A reminder on the DeepSeek route served by a provider other than Wafer.**
 
 ## §7 check 10: the count. 0 of 4 drafts without an account
@@ -299,7 +304,7 @@ What this does not show:
 
 ## Follow-ups that landed the same day
 
-- **Task schedule refusals name what arrived** (`4adc35b33`..`f74a9328e`).
+- **Task schedule refusals name what arrived** (`4adc35b33`, `5a763b058`, `f74a9328e`).
   - A refusal now names the keys it received and the missing field.
   - It no longer tells the model to ask the operator for text that the request already carried.
   - A value that is present but bad gets "fix the value", not the missing-field text.
@@ -309,10 +314,14 @@ What this does not show:
     an error that names `list_accounts`.
   - The first-account fallback is removed.
   - Fork CI on that revision passed 2188 of 2188 tests, and the image was published.
-  - **Still owed:** the live re-measure from the cockpit (`create_event` with no account named), after
-    the operator applies the update.
-- **The push.** `7e379a89d..f74a9328e` was pushed. CI on `f74a9328e` was still running when the ledger
-  closed, so its result is not recorded here.
+  - **Red in Aura's CI.** The pin commit `7f8f07d03` turned one job red: "Calendar PIM MCP"
+    (`calendar_integration` tier). Its `pimToolRequired` still pinned `create_event` and
+    `create_contact` without `accountId`. `68ddb22f8` fixed it.
+  - The live re-measure from the cockpit is in the 2026-11-26 section.
+- **The push.** `7e379a89d..f74a9328e` was pushed.
+  - **CI on `f74a9328e`.** One red job, the "Calendar PIM MCP" job above. Every other job was green.
+  - **The fix.** `68ddb22f8` is on origin.
+  - **Origin head `afe374df1`.** All green.
 
 ## Observations queued, not fixed in this release
 
@@ -334,5 +343,43 @@ What this does not show:
 
 - **The deferred roster's size on the appliance.** Task C8 asked for it, and the ledger does not record
   it. The only figures are the C7 corpus's, in `2026-11-24-pim-tool-split.md`.
-- **The pin `8f97396` on the VM,** or the updater fix on the VM.
+- **The pin `8f97396` on the VM,** or the updater fix on the VM, on 2026-11-25. Both are in the next
+  section.
 - **More than one VM.** The VM is a single appliance, with the operator's three accounts.
+
+## Re-measure, 2026-11-26 07:15–07:22 UTC: pin `8f97396` and the updater fix on the VM
+
+The operator applied the update.
+
+**The updater.**
+
+| | Result |
+|---|---|
+| `aura` recreated | 07:15:47 |
+| Replaced after `aura` started | the whole-stack `up` replaced `aura-pim-mcp` (`8fbd799` → `8f97396`) and `arcadedb-mcp` |
+| Updater log | "aura: restarting it to remount arcadedb-mcp aura-pim-mcp, replaced after it started" |
+| `aura` restarts | 1, at 07:17:53 |
+| Updater result | "Aura image update completed; the appliance is healthy" |
+| Old PIM image | removed |
+| `calendar__*` tools in Aura's registry | 29 |
+| `calendar__calendar` | absent |
+| Calendar mount log | `mcp live mounted … tools=29` |
+
+This is the incident of 2026-11-25, converged by the updater with no manual restart.
+
+**`create_event` with no account named.**
+- **The request.** In the cockpit: create an event tomorrow at 10:00, for 30 minutes, naming no account.
+- **The calls.** Aura loaded `create_event`, then called `list_accounts`.
+- **The choice.** Aura asked the operator which calendar to use. It offered only the 2 accounts that can
+  write a calendar.
+- **The result.** `create_event` ran with `accountId` set to the personal account, and succeeded.
+- **The clean-up.** The gateway withheld `delete_event` as destructive. Its arguments were verified to
+  be the event just created. It was approved once, and the event was deleted.
+
+What this does not show:
+- **The new refusal, live.** The route of the day never left `accountId` out, so no model that omits it
+  met the refusal on the VM.
+- **The updater's boot case.** No reboot was measured: a boot followed by an apply that should not
+  restart `aura`.
+
+**Observation (UI).** The approval card rendered below the fold, and the chat did not scroll to it.
