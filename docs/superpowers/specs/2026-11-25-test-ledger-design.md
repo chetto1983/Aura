@@ -184,6 +184,11 @@ rules 2 and 3). The 59 local "env var or skip" helpers
 `internal/testenv.Require(t, keys...)`: skip locally, `t.Fatal` under `$CI`. The 16 unguarded tagged-tier
 skips either go through it or become `platform` entries.
 
+*Done 2026-11-26* ([plan](../plans/2026-11-26-testenv.md)). Counted by behaviour there were 97 helpers in
+54 directories and 15 inline sites, not 59: the 59 was a name count. They gate through `internal/testenv`
+(`Require(t, key)`, one key at a time because every caller uses the value, and `Unavailable`,
+`Executable`, `Symlink`, `Dockerd`, `EnforcingBridge`); no test reads `$CI` itself.
+
 ## 5. Where each measured hole landed (PR #280)
 
 | Hole | Landing |
