@@ -55,12 +55,8 @@ func taskSummary(kind string, payload json.RawMessage) string {
 	var fields map[string]any
 	_ = json.Unmarshal(payload, &fields)
 	value, _ := fields[field].(string)
-	value = strings.Join(strings.Fields(value), " ")
-	if value == "" {
+	if value = flatText(value, taskSummaryMaxRunes); value == "" {
 		return "(no goal)"
-	}
-	if runes := []rune(value); len(runes) > taskSummaryMaxRunes {
-		value = string(runes[:taskSummaryMaxRunes]) + "…"
 	}
 	return value
 }

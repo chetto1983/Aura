@@ -282,15 +282,21 @@ func TestTaskList(t *testing.T) {
 	}
 }
 
+// The list, the cancel card and the approval summary flatten text the same way: one line, no
+// control or format rune (a bidi override would reorder what the operator reads), one ellipsis.
 func TestTaskPayloadPreviewIsSingleLineAndBounded(t *testing.T) {
 	t.Parallel()
 
-	got := taskPayloadPreview(strings.Repeat("x", taskPayloadPreviewRunes+20) + "\nsecret")
-	if strings.Contains(got, "\n") {
-		t.Fatalf("task payload preview contains a newline: %q", got)
+	bidi := string(rune(0x202e))
+	got := taskPayloadPreview(bidi + strings.Repeat("x", taskPayloadPreviewRunes+20) + "\nsecret")
+	if strings.ContainsAny(got, "\n"+bidi) {
+		t.Fatalf("task payload preview holds a newline or a format rune: %q", got)
 	}
-	if len([]rune(got)) != taskPayloadPreviewRunes+3 || !strings.HasSuffix(got, "...") {
-		t.Fatalf("task payload preview length/suffix = %d/%q", len([]rune(got)), got[len(got)-3:])
+	if len([]rune(got)) != taskPayloadPreviewRunes+1 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("task payload preview length/suffix = %d/%q", len([]rune(got)), string([]rune(got)[len([]rune(got))-1:]))
+	}
+	if summary := taskSummary("reminder", json.RawMessage(`{"text":"a`+bidi+`b"}`)); summary != "ab" {
+		t.Fatalf("approval summary = %q, want the format rune dropped", summary)
 	}
 }
 

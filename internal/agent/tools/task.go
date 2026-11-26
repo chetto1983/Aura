@@ -401,12 +401,7 @@ func renderTaskList(rows []ScheduledTask) string {
 const taskPayloadPreviewRunes = 500
 
 func taskPayloadPreview(payload string) string {
-	payload = strings.Join(strings.Fields(payload), " ")
-	runes := []rune(payload)
-	if len(runes) <= taskPayloadPreviewRunes {
-		return payload
-	}
-	return string(runes[:taskPayloadPreviewRunes]) + "..."
+	return flatText(payload, taskPayloadPreviewRunes)
 }
 
 func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
