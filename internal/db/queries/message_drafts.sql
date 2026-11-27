@@ -60,8 +60,27 @@ SET status = 'uncertain', outcome_code = 'interrupted',
     resolved_at = now(), updated_at = now()
 WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND status = 'dispatching'
-  AND dispatch_started_at <= now() - interval '30 minutes'
+  AND dispatch_started_at <= now() - make_interval(secs => sqlc.arg(interrupted_after_secs)::float8)
 RETURNING *;
+
+-- The recovery sweep: what Reconcile does to one draft when it is read, done to every draft of
+-- one identity that nobody reads again. A scheduled draft is left to its task, which expires it
+-- when its time comes (ExpireScheduledMessageDraft).
+-- name: ExpireStaleMessageDrafts :many
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id)
+  AND status = 'pending' AND send_at IS NULL AND expires_at <= now()
+RETURNING id;
+
+-- name: MarkAbandonedMessageDraftDispatchesUncertain :many
+UPDATE aura.message_drafts
+SET status = 'uncertain', outcome_code = 'interrupted',
+    resolved_at = now(), updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id)
+  AND status = 'dispatching'
+  AND dispatch_started_at <= now() - make_interval(secs => sqlc.arg(interrupted_after_secs)::float8)
+RETURNING id;
 
 -- A scheduled draft's review fixes what will be sent, before its time; the task sends it then
 -- (migration 0155). An immediate draft is never approved, only claimed.

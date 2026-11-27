@@ -254,6 +254,10 @@ type Querier interface {
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	// A scheduled draft whose time came unreviewed, or whose approval outlived its review.
 	ExpireScheduledMessageDraft(ctx context.Context, arg ExpireScheduledMessageDraftParams) (AuraMessageDrafts, error)
+	// The recovery sweep: what Reconcile does to one draft when it is read, done to every draft of
+	// one identity that nobody reads again. A scheduled draft is left to its task, which expires it
+	// when its time comes (ExpireScheduledMessageDraft).
+	ExpireStaleMessageDrafts(ctx context.Context, identityID pgtype.UUID) ([]pgtype.UUID, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
 	// Only a label with that exact name and no description of its own: what the person wrote stays.
@@ -660,6 +664,7 @@ type Querier interface {
 	// https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
 	LockSteerConversation(ctx context.Context, conversationID string) error
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
+	MarkAbandonedMessageDraftDispatchesUncertain(ctx context.Context, arg MarkAbandonedMessageDraftDispatchesUncertainParams) ([]pgtype.UUID, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error

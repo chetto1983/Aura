@@ -2,21 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 const approvalExpiryBatchSize = 100
-
-type approvalExpiryIdentityLister interface {
-	ListIdentities(context.Context) ([]identity.Identity, error)
-}
 
 type approvalExpiryRunner interface {
 	ExpirePendingApprovals(context.Context, time.Time, int) (int, error)
@@ -24,7 +17,7 @@ type approvalExpiryRunner interface {
 
 func newApprovalExpirySweeper(
 	run approvalExpiryRunner,
-	identities approvalExpiryIdentityLister,
+	identities runtimeIdentityLister,
 	ttl time.Duration,
 ) *conversations.Sweeper {
 	interval := approvalExpiryInterval(ttl)
@@ -60,7 +53,7 @@ func approvalExpiryInterval(ttl time.Duration) time.Duration {
 
 func expireApprovalsByIdentity(
 	ctx context.Context,
-	identities approvalExpiryIdentityLister,
+	identities runtimeIdentityLister,
 	run approvalExpiryRunner,
 	cutoff time.Time,
 	limit int,
@@ -68,21 +61,11 @@ func expireApprovalsByIdentity(
 	if identities == nil || run == nil {
 		return 0, fmt.Errorf("approval expiry is not configured")
 	}
-	owners, err := identities.ListIdentities(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("list identities: %w", err)
-	}
 	total := 0
-	var errs []error
-	for _, owner := range owners {
-		if owner.ID == "" || owner.Deactivated {
-			continue
-		}
-		expired, err := run.ExpirePendingApprovals(identityctx.WithIdentityID(ctx, owner.ID), cutoff, limit)
+	err := eachActiveIdentity(ctx, identities, func(ctx context.Context, _ string) error {
+		expired, err := run.ExpirePendingApprovals(ctx, cutoff, limit)
 		total += expired
-		if err != nil {
-			errs = append(errs, fmt.Errorf("identity %s: %w", owner.ID, err))
-		}
-	}
-	return total, errors.Join(errs...)
+		return err
+	})
+	return total, err
 }

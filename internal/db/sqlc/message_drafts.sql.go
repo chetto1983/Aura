@@ -323,6 +323,37 @@ func (q *Queries) ExpireScheduledMessageDraft(ctx context.Context, arg ExpireSch
 	return i, err
 }
 
+const expireStaleMessageDrafts = `-- name: ExpireStaleMessageDrafts :many
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE identity_id = $1
+  AND status = 'pending' AND send_at IS NULL AND expires_at <= now()
+RETURNING id
+`
+
+// The recovery sweep: what Reconcile does to one draft when it is read, done to every draft of
+// one identity that nobody reads again. A scheduled draft is left to its task, which expires it
+// when its time comes (ExpireScheduledMessageDraft).
+func (q *Queries) ExpireStaleMessageDrafts(ctx context.Context, identityID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, expireStaleMessageDrafts, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findMessageReviewBoundary = `-- name: FindMessageReviewBoundary :one
 WITH RECURSIVE accepted AS (
     SELECT answer.seq, d.status = 'approved' AND task.status = 'active' AS live
@@ -641,23 +672,59 @@ func (q *Queries) ListPendingMessageDrafts(ctx context.Context, arg ListPendingM
 	return items, nil
 }
 
+const markAbandonedMessageDraftDispatchesUncertain = `-- name: MarkAbandonedMessageDraftDispatchesUncertain :many
+UPDATE aura.message_drafts
+SET status = 'uncertain', outcome_code = 'interrupted',
+    resolved_at = now(), updated_at = now()
+WHERE identity_id = $1
+  AND status = 'dispatching'
+  AND dispatch_started_at <= now() - make_interval(secs => $2::float8)
+RETURNING id
+`
+
+type MarkAbandonedMessageDraftDispatchesUncertainParams struct {
+	IdentityID           pgtype.UUID `json:"identity_id"`
+	InterruptedAfterSecs float64     `json:"interrupted_after_secs"`
+}
+
+func (q *Queries) MarkAbandonedMessageDraftDispatchesUncertain(ctx context.Context, arg MarkAbandonedMessageDraftDispatchesUncertainParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, markAbandonedMessageDraftDispatchesUncertain, arg.IdentityID, arg.InterruptedAfterSecs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markInterruptedMessageDraftUncertain = `-- name: MarkInterruptedMessageDraftUncertain :one
 UPDATE aura.message_drafts
 SET status = 'uncertain', outcome_code = 'interrupted',
     resolved_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND status = 'dispatching'
-  AND dispatch_started_at <= now() - interval '30 minutes'
+  AND dispatch_started_at <= now() - make_interval(secs => $3::float8)
 RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at, scheduled_task_id, send_at, sender_address
 `
 
 type MarkInterruptedMessageDraftUncertainParams struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
+	ID                   pgtype.UUID `json:"id"`
+	IdentityID           pgtype.UUID `json:"identity_id"`
+	InterruptedAfterSecs float64     `json:"interrupted_after_secs"`
 }
 
 func (q *Queries) MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error) {
-	row := q.db.QueryRow(ctx, markInterruptedMessageDraftUncertain, arg.ID, arg.IdentityID)
+	row := q.db.QueryRow(ctx, markInterruptedMessageDraftUncertain, arg.ID, arg.IdentityID, arg.InterruptedAfterSecs)
 	var i AuraMessageDrafts
 	err := row.Scan(
 		&i.ID,

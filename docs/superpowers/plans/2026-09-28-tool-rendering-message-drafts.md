@@ -165,3 +165,50 @@ RETURNING id;
 
 - [ ] **Step 4: Run Go unit + DB integration + race, web typecheck/Vitest, and authenticated Playwright with fake sidecars; then do a real-stack smoke with a controlled test inbox/chat.** Record actual call count, effective args and receipts without logging message content. Amend `prd.md` only to reflect measured behavior.
 - [ ] **Step 5: Commit recovery/tests and measured PRD amendment separately if needed; perform whole-branch review.** Use `feat(gateway): reconcile uncertain outbound sends` for the code commit.
+
+### Task 4, revised (2026-11-26)
+
+Re-read against today's code before any line is written. Since 09-28 the drafts gained scheduled sends
+(migration 0155) and the PIM split rewrote pre-upgrade drafts (`internal/pimsplit`). What exists and
+what does not:
+
+- **Per-draft reconciliation exists.** `Store.Reconcile` expires a pending draft past `expires_at` and
+  makes a dispatch older than 30 minutes `uncertain` (`interrupted`), and no second send can be claimed
+  from either. The runner calls it only when a draft is resumed or listed. On the lab VM a draft stayed
+  `pending` 46 days past its expiry (`verification/2026-11-25-pim-tool-split-vm-checks.md`, "Stale
+  pending drafts").
+- **No sweep exists.** Nothing reconciles a draft that nobody opens again.
+- **The pre-upgrade send is half proven.** `pimsplit`'s tests stop where the rewritten draft is claimed and
+  matches what a dispatch recomputes ("What this does not show", same file).
+
+The revised steps:
+
+- [x] **R1. Recover, per identity.** `Store.Recover(ctx, owner)` runs two set-based updates in the
+  owner's RLS transaction. The first expires immediate pending drafts past `expires_at`; scheduled ones
+  stay with their task, which expires them at `send_at` (`ExpireScheduledMessageDraft`). The second makes
+  every `dispatching` draft whose dispatch began before the cutoff `uncertain`, `interrupted`. The
+  30-minute rule moves into one Go constant that both `Reconcile` and `Recover` pass to SQL, so it is
+  written once. No MCP call, no state back to `pending`.
+- [x] **R2. The sweep.** `cmd/aura` runs `Recover` for every active identity at boot and every minute.
+  It follows the approval-expiry sweeper (`cmd/aura/approval_expiry.go`) and logs counts only, never
+  message content.
+- [x] **R3. Tests.**
+  - db_integration: `Recover` expires and interrupts exactly the rows it should. It leaves alone fresh
+    pending drafts, recent dispatches, scheduled pending drafts, terminal rows and another identity's
+    rows. A second run changes nothing, and neither recovered draft can be claimed.
+  - Kill/restart: a draft claimed (`dispatching`) by one runner, with no outcome written, is recovered
+    after a restart. Its review resumes as uncertain, "do not retry", with no tool call made.
+  - Unit tests of the sweep's identity loop.
+- [x] **R4. The live check.** The sweep is run against a stack with a stale and an interrupted draft, and
+  what it changed is recorded in a dated verification file, with message content left out.
+  Done: `docs/superpowers/verification/2026-11-26-message-draft-recovery-sweep.md`.
+- [x] **R5. The pre-upgrade send.** A review stored in the multiplexed shape, as an Aura from before the
+  PIM split wrote it, is rewritten by `pimsplit.Upgrade` and then sent through the runner's own resolve:
+  `send_email` runs once with the message and without its `action`, the answer is the send's result, and
+  a second send is refused (`TestAReviewDraftedBeforeThePIMSplitSendsAfterIt`, `internal/runner`). With
+  the upgrade skipped the same review is unavailable, as the VM's would have been.
+
+Out of this revision, and still open: the cockpit Playwright scenario of Step 1. It needs a model that
+calls `send_email`, so it is a run with the `aura-model-in-the-loop` skill, not CI. The real-stack smoke
+against a controlled inbox also stays open. A swept draft's card disappears on the next load; a cockpit
+that is open while the sweep runs keeps showing it until then.

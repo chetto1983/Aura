@@ -163,6 +163,8 @@ func runServe(args []string) {
 	env.sweeper.Start(ctx)
 	env.approvalExpirySweeper.SweepNow(ctx)
 	env.approvalExpirySweeper.Start(ctx)
+	env.messageDraftRecovery.SweepNow(ctx)
+	env.messageDraftRecovery.Start(ctx)
 	env.steerQueueSweeper.SweepNow(ctx)
 	env.steerQueueSweeper.Start(ctx)
 	env.assetProcessingWorker.Start(ctx)
@@ -582,6 +584,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		setupSrv:                  setupSrv,
 		sweeper:                   sweeper,
 		approvalExpirySweeper:     approvalExpirySweeper,
+		messageDraftRecovery:      newMessageDraftRecoverySweeper(messagedrafts.NewStore(chat.pool), chat.identity),
 		steerQueueSweeper:         steerQueueSweeper,
 		assetProcessingWorker:     assetProcessingWorker,
 		delegationWorker:          delegationWorker,

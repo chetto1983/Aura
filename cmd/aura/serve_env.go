@@ -58,6 +58,9 @@ type serveEnv struct {
 	// approvalExpirySweeper closes unanswered approval pauses through Runner's atomic
 	// resume committer. It is owner-scoped and disabled when the configured TTL is <=0.
 	approvalExpirySweeper *conversations.Sweeper
+	// messageDraftRecovery closes the message drafts nobody reopens: reviews past their expiry and
+	// dispatches past the cutoff, per identity, at boot and every minute.
+	messageDraftRecovery *conversations.Sweeper
 	// steerQueueSweeper expires due aura.steer_queue rows (D-07/D-08), writing a
 	// readable conversation trace per expired row. Unscoped across identities (the
 	// table carries no RLS, migration 0103); disabled when both configured TTLs are

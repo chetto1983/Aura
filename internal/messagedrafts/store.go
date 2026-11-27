@@ -247,7 +247,7 @@ func (s *Store) Reconcile(ctx context.Context, ownerID, draftID string) (Draft, 
 			return draft, nil
 		}
 	case StatusDispatching:
-		if draft.DispatchStartedAt.IsZero() || draft.DispatchStartedAt.After(time.Now().Add(-30*time.Minute)) {
+		if draft.DispatchStartedAt.IsZero() || draft.DispatchStartedAt.After(time.Now().Add(-interruptedAfter)) {
 			return draft, nil
 		}
 		interrupted = true
@@ -263,7 +263,9 @@ func (s *Store) Reconcile(ctx context.Context, ownerID, draftID string) (Draft, 
 		var row sqlc.AuraMessageDrafts
 		var updateErr error
 		if interrupted {
-			row, updateErr = q.MarkInterruptedMessageDraftUncertain(ctx, sqlc.MarkInterruptedMessageDraftUncertainParams{ID: id, IdentityID: owner})
+			row, updateErr = q.MarkInterruptedMessageDraftUncertain(ctx, sqlc.MarkInterruptedMessageDraftUncertainParams{
+				ID: id, IdentityID: owner, InterruptedAfterSecs: interruptedAfter.Seconds(),
+			})
 		} else {
 			row, updateErr = q.ExpireMessageDraft(ctx, sqlc.ExpireMessageDraftParams{ID: id, IdentityID: owner})
 		}
