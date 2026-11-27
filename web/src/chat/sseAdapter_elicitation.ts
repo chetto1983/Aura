@@ -36,6 +36,8 @@ export interface ElicitationQuestion {
   /** The name Aura mounted the server under, never one the server gave itself. */
   readonly server: string;
   readonly tool?: string;
+  /** The call the form arrived in, when only one call can own it. */
+  readonly tool_call_id?: string;
   readonly message: string;
   readonly fields: readonly ElicitationField[];
   readonly deadline: string;
@@ -96,12 +98,14 @@ function isField(value: unknown): value is ElicitationField {
 export function elicitationQuestionOf(value: unknown): ElicitationQuestion | null {
   if (!isRecord(value)) return null;
   const { run_id: runId, id, server, tool, message, deadline, refusal } = value;
+  const toolCallId = value.tool_call_id;
   if (typeof runId !== 'string' || typeof id !== 'string' || typeof server !== 'string') {
     return null;
   }
   if (typeof message !== 'string' || typeof deadline !== 'string' || !optional(tool, isString)) {
     return null;
   }
+  if (!optional(toolCallId, isString)) return null;
   if (!optional(refusal, (code) => typeof code === 'string' && REFUSALS.includes(code))) {
     return null;
   }
@@ -116,6 +120,7 @@ export function elicitationQuestionOf(value: unknown): ElicitationQuestion | nul
     deadline,
     fields,
     ...(typeof tool === 'string' ? { tool } : {}),
+    ...(typeof toolCallId === 'string' ? { tool_call_id: toolCallId } : {}),
     ...(typeof refusal === 'string' ? { refusal: refusal as ElicitationRefusal } : {}),
   };
 }

@@ -8,8 +8,9 @@ import type {
 // useThreadElicitations holds the thread's MCP forms as the stream tells them: a question
 // arrives, and its resolution settles it. The server persists nothing. A reload gets the forms
 // back from the attach's replay, or from the run's own list when the replay no longer reaches
-// them (ExternalStoreChat_liveRun). A settled form stays as its receipt until the next run, as
-// an ask_user receipt does.
+// them (ExternalStoreChat_liveRun). A settled form that names the call it arrived in becomes
+// that call's receipt, drawn in the call's row for as long as the thread is open. One that
+// names no call stays above the composer until the next run, as an ask_user receipt does.
 
 export type ElicitationOutcome = 'accepted' | 'declined' | 'cancelled' | 'expired';
 
@@ -51,6 +52,24 @@ export interface ThreadForms {
   readonly scope: symbol;
   readonly items: readonly ElicitationItem[];
   readonly retired: ReadonlySet<string>;
+  /** The receipts drawn in their call's row. Only grows: a later run does not take them. */
+  readonly anchored: readonly ElicitationItem[];
+}
+
+const isAnchored = (item: ElicitationItem) =>
+  item.outcome !== undefined && item.question.tool_call_id !== undefined;
+
+/** The forms drawn above the composer: the open ones, and receipts that name no call. */
+export function unanchored(forms: ThreadForms): readonly ElicitationItem[] {
+  return forms.items.filter((item) => !isAnchored(item));
+}
+
+/** Copies each newly settled form that names its call into the anchored receipts. Returns
+ *  forms itself when there is none. */
+export function anchorReceipts(forms: ThreadForms): ThreadForms {
+  const held = new Set(forms.anchored.map((item) => item.question.id));
+  const fresh = forms.items.filter((item) => isAnchored(item) && !held.has(item.question.id));
+  return fresh.length === 0 ? forms : { ...forms, anchored: [...forms.anchored, ...fresh] };
 }
 
 /**
@@ -86,7 +105,13 @@ function replaceItems(current: ThreadForms, items: readonly ElicitationItem[]): 
   for (const item of current.items) {
     if (!live.has(item.question.run_id)) retired.add(item.question.run_id);
   }
-  return { ...current, items, retired };
+  // Every settlement arrives through here, so a receipt is anchored in the same update that
+  // settles it, before a later question in the same batch can drop it with its run.
+  return anchorReceipts({ ...current, items, retired });
+}
+
+function emptyForms(scope: symbol): ThreadForms {
+  return { scope, items: [], retired: new Set(), anchored: [] };
 }
 
 export function useThreadElicitations(
@@ -94,12 +119,15 @@ export function useThreadElicitations(
   isRunning: boolean,
   liveRunId: string | undefined,
 ): {
+  /** The forms drawn above the composer. */
   readonly items: readonly ElicitationItem[];
+  /** The receipts drawn in their call's row. */
+  readonly receipts: readonly ElicitationItem[];
   readonly onSignal: (signal: ElicitationSignal) => void;
   readonly onSnapshot: (runId: string, questions: readonly ElicitationQuestion[]) => void;
 } {
   const scope = useMemo(() => Symbol(threadId), [threadId]);
-  const [state, setState] = useState<ThreadForms>({ scope, items: [], retired: new Set() });
+  const [state, setState] = useState<ThreadForms>(() => emptyForms(scope));
   const onSignal = useCallback(
     (signal: ElicitationSignal) => {
       setState((current) => {
@@ -132,8 +160,8 @@ export function useThreadElicitations(
   );
   // Adjusted while rendering, the way React adjusts state that follows a prop (react.dev, "You
   // Might Not Need an Effect"): the settled list is stored so a later run cannot bring it back.
-  const current = state.scope === scope ? state : { scope, items: [], retired: new Set<string>() };
+  const current = state.scope === scope ? state : emptyForms(scope);
   const settled = settleForms(current, isRunning, liveRunId);
   if (settled !== state) setState(settled);
-  return { items: settled.items, onSignal, onSnapshot };
+  return { items: unanchored(settled), receipts: settled.anchored, onSignal, onSnapshot };
 }

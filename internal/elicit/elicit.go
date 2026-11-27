@@ -60,14 +60,17 @@ type Field struct {
 
 // Question is the bounded form and its server-side resolved schema.
 type Question struct {
-	ID       string               `json:"id"`
-	Server   string               `json:"server"`
-	Tool     string               `json:"tool,omitempty"`
-	Message  string               `json:"message"`
-	Fields   []Field              `json:"fields"`
-	Deadline time.Time            `json:"deadline"`
-	Refusal  string               `json:"refusal,omitempty"`
-	Schema   *jsonschema.Resolved `json:"-"`
+	ID     string `json:"id"`
+	Server string `json:"server"`
+	Tool   string `json:"tool,omitempty"`
+	// ToolCallID is the call the form arrived in, when only one call can own it: the
+	// cockpit draws the settled form inside that call's row.
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+	Message    string               `json:"message"`
+	Fields     []Field              `json:"fields"`
+	Deadline   time.Time            `json:"deadline"`
+	Refusal    string               `json:"refusal,omitempty"`
+	Schema     *jsonschema.Resolved `json:"-"`
 }
 
 // Answer carries the operator's decision and accepted content.

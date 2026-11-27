@@ -63,6 +63,12 @@ describe('elicitationSignalValue', () => {
     });
   });
 
+  it('reads the call a question arrived in', () => {
+    const inCall = { ...QUESTION, tool_call_id: 'call-7' };
+    expect(elicitationQuestionOf(inCall)).toEqual(inCall);
+    expect(elicitationQuestionOf({ ...QUESTION, tool_call_id: 7 })).toBeNull();
+  });
+
   it('reads a refusal, whose fields the server sends as null', () => {
     const refused = { ...QUESTION, fields: null, message: '', refusal: 'unrenderable' };
     expect(elicitationSignalValue(custom('aura.elicitation', refused))).toEqual({

@@ -133,6 +133,7 @@ func decideElicitation(ctx context.Context, server string, consent ElicitationCo
 
 	r := routeFor(ctx, req.Session)
 	q, err := questionFor(server, r.tool, params)
+	q.ToolCallID = r.toolCallID()
 	switch {
 	case err != nil:
 		out := refuse(ctx, r, consent, q, elicit.RefusalUnrenderable, timeout)

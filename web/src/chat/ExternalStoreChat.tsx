@@ -18,6 +18,7 @@ import {
 import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
 import { useThreadMessageDrafts } from '../approvals/useThreadMessageDrafts';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
+import { ToolCallReceiptsProvider } from '../questions/ToolCallReceipts';
 import { useThreadElicitations } from '../questions/useThreadElicitations';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer } from './Composer';
@@ -412,114 +413,116 @@ export function ExternalStoreChat({
           (the "Sources (N)" button + the citation click-through), one registry. */}
       <CollectedJobsContext.Provider value={collectedJobs}>
         <SourceExplorerProvider>
-          <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
-            {/* relative: the tool rows' sr-only status words are position:absolute, and with no
+          <ToolCallReceiptsProvider receipts={elicitations.receipts}>
+            <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
+              {/* relative: the tool rows' sr-only status words are position:absolute, and with no
                 positioned ancestor here they escaped this scroller into ArtifactWorkspace's
                 overflow-hidden wrapper, which the browser then scrolled when a card closed,
                 lifting the composer off the bottom (lab VM, 2026-11-27). */}
-            <ThreadViewport
-              className="relative min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
-              openAt={openAt?.threadId === threadId ? openAt : undefined}
-              messages={messages}
-              historyReady={
-                historyReadiness.threadId === threadId && historyReadiness.status === 'ready'
-              }
-            >
-              <AuiIf condition={(s) => s.thread.isEmpty}>
-                <div className="grid h-full place-items-center py-8 text-center">
-                  <div className="flex flex-col items-center gap-3 px-6">
-                    <h2 className="font-display text-4xl font-medium text-text sm:text-5xl">
-                      {t('chat.empty.thread.heading')}
-                    </h2>
-                    <p className="max-w-sm text-sm text-text-muted">
-                      {t('chat.empty.thread.body')}
-                    </p>
-                    {historyReadiness.threadId === threadId &&
-                    historyReadiness.status === 'ready' ? (
-                      <EmptyThreadStarters onRequestDraftPrompt={onRequestDraftPrompt} />
-                    ) : null}
+              <ThreadViewport
+                className="relative min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
+                openAt={openAt?.threadId === threadId ? openAt : undefined}
+                messages={messages}
+                historyReady={
+                  historyReadiness.threadId === threadId && historyReadiness.status === 'ready'
+                }
+              >
+                <AuiIf condition={(s) => s.thread.isEmpty}>
+                  <div className="grid h-full place-items-center py-8 text-center">
+                    <div className="flex flex-col items-center gap-3 px-6">
+                      <h2 className="font-display text-4xl font-medium text-text sm:text-5xl">
+                        {t('chat.empty.thread.heading')}
+                      </h2>
+                      <p className="max-w-sm text-sm text-text-muted">
+                        {t('chat.empty.thread.body')}
+                      </p>
+                      {historyReadiness.threadId === threadId &&
+                      historyReadiness.status === 'ready' ? (
+                        <EmptyThreadStarters onRequestDraftPrompt={onRequestDraftPrompt} />
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              </AuiIf>
+                </AuiIf>
 
-              <ThreadPrimitive.Messages>
-                {({ message }) => (
-                  <>
-                    {message.role === 'user' ? (
-                      <UserMessage
-                        onAssetRetry={handleAssetRetry}
-                        onAssetPromote={handleAssetPromote}
-                      />
-                    ) : (
-                      <AssistantMessage />
-                    )}
-                    {/* The marker belongs BETWEEN two turns, so it is drawn after the last
+                <ThreadPrimitive.Messages>
+                  {({ message }) => (
+                    <>
+                      {message.role === 'user' ? (
+                        <UserMessage
+                          onAssetRetry={handleAssetRetry}
+                          onAssetPromote={handleAssetPromote}
+                        />
+                      ) : (
+                        <AssistantMessage />
+                      )}
+                      {/* The marker belongs BETWEEN two turns, so it is drawn after the last
                       message the summary speaks for rather than as a message of its own —
                       a synthetic entry in the list would be one the runtime could branch
                       from, edit, or hand to a re-run. */}
-                    {message.id === compaction.anchorId ? (
-                      <CompactionMarker state={compaction.state} />
-                    ) : null}
-                  </>
-                )}
-              </ThreadPrimitive.Messages>
-            </ThreadViewport>
+                      {message.id === compaction.anchorId ? (
+                        <CompactionMarker state={compaction.state} />
+                      ) : null}
+                    </>
+                  )}
+                </ThreadPrimitive.Messages>
+              </ThreadViewport>
 
-            {/* Running-status row: role="status" announces the active turn politely. */}
-            {isRunning ? (
-              <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
-                {t('chat.running')}
-              </p>
-            ) : null}
+              {/* Running-status row: role="status" announces the active turn politely. */}
+              {isRunning ? (
+                <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
+                  {t('chat.running')}
+                </p>
+              ) : null}
 
-            <CompactionStatus
-              running={compaction.running}
-              failure={compaction.failure}
-              onDismiss={compaction.dismissFailure}
-            />
+              <CompactionStatus
+                running={compaction.running}
+                failure={compaction.failure}
+                onDismiss={compaction.dismissFailure}
+              />
 
-            {/* D-10: a live detached run no longer blocks Send — this hint just orients the
+              {/* D-10: a live detached run no longer blocks Send — this hint just orients the
               operator toward the redirect control Composer now renders. */}
-            {liveRunId !== undefined && liveRunId.length > 0 ? (
-              <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
-                {t('chat.liveRun.hint')}
-              </p>
-            ) : null}
-            <SteerNotice notice={steer.notice} refusal={steer.refusal} />
+              {liveRunId !== undefined && liveRunId.length > 0 ? (
+                <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
+                  {t('chat.liveRun.hint')}
+                </p>
+              ) : null}
+              <SteerNotice notice={steer.notice} refusal={steer.refusal} />
 
-            <ThreadApprovalCards
-              approvals={threadApprovals.approvals}
-              messageDrafts={messageDrafts}
-              elicitations={elicitations.items}
-              isStreaming={isRunning}
-              onResolutionStarted={threadApprovals.onResolutionStarted}
-              onResolutionFailed={threadApprovals.onResolutionFailed}
-              onResolved={(resolution) => {
-                setMessages((prev) => refuseDeclinedCall(prev, resolution));
-                return threadApprovals.onResolved(resolution);
-              }}
-            />
-            <Composer
-              inputRef={composerInputRef}
-              onInputAvailable={setComposerInput}
-              approvalLocked={threadApprovals.isPending || messageDrafts.isPending}
-              sendBlocked={false} // D-10: a live run redirects (steerAvailable) instead of blocking.
-              steerAvailable
-              onSteerSubmit={(steerText) =>
-                void steer.trySend(steerText).then((steered) => {
-                  if (!steered) runtime.thread.append(steerText);
-                })
-              }
-              returnedDraft={steer.refusal}
-              draftPrompt={draftPrompt}
-              onDraftPromptConsumed={onDraftPromptConsumed}
-              skills={skills}
-              onCommand={compaction.runCommand}
-              effort={effort}
-              effortLevels={reasoningCaps.levels}
-              onEffortChange={setEffort}
-            />
-          </ThreadPrimitive.Root>
+              <ThreadApprovalCards
+                approvals={threadApprovals.approvals}
+                messageDrafts={messageDrafts}
+                elicitations={elicitations.items}
+                isStreaming={isRunning}
+                onResolutionStarted={threadApprovals.onResolutionStarted}
+                onResolutionFailed={threadApprovals.onResolutionFailed}
+                onResolved={(resolution) => {
+                  setMessages((prev) => refuseDeclinedCall(prev, resolution));
+                  return threadApprovals.onResolved(resolution);
+                }}
+              />
+              <Composer
+                inputRef={composerInputRef}
+                onInputAvailable={setComposerInput}
+                approvalLocked={threadApprovals.isPending || messageDrafts.isPending}
+                sendBlocked={false} // D-10: a live run redirects (steerAvailable) instead of blocking.
+                steerAvailable
+                onSteerSubmit={(steerText) =>
+                  void steer.trySend(steerText).then((steered) => {
+                    if (!steered) runtime.thread.append(steerText);
+                  })
+                }
+                returnedDraft={steer.refusal}
+                draftPrompt={draftPrompt}
+                onDraftPromptConsumed={onDraftPromptConsumed}
+                skills={skills}
+                onCommand={compaction.runCommand}
+                effort={effort}
+                effortLevels={reasoningCaps.levels}
+                onEffortChange={setEffort}
+              />
+            </ThreadPrimitive.Root>
+          </ToolCallReceiptsProvider>
         </SourceExplorerProvider>
       </CollectedJobsContext.Provider>
     </AssistantRuntimeProvider>

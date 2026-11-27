@@ -10,6 +10,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -52,6 +53,48 @@ func TestClassicElicitationAsksTheOneRunInFlight(t *testing.T) {
 	}
 	if q := asker.question(t); q.Tool != "ask_name" {
 		t.Fatalf("tool = %q, want the open call's", q.Tool)
+	}
+}
+
+// The cockpit draws a settled form inside the row of the call it arrived in, so the
+// question names that call. Measured on the lab VM 2026-11-27: without it, the receipts
+// stacked under the model's answer, away from their calls.
+func TestAFormNamesTheToolCallItArrivedIn(t *testing.T) {
+	for name, fixture := range map[string]struct {
+		opts    *sdkmcp.ServerOptions
+		handler sdkmcp.ToolHandler
+	}{
+		"mrtr":    {nil, mrtrAsk("what is your name", nameForm())},
+		"classic": {classicOnly, classicAsk},
+	} {
+		t.Run(name, func(t *testing.T) {
+			asker := newFakeAsker(acceptName("Ada"), 0)
+			srv, _ := elicitingMount(t, fixture.opts, declining(), map[string]sdkmcp.ToolHandler{"ask_name": fixture.handler})
+
+			ctx := tools.WithToolCallContext(elicit.WithAsker(context.Background(), asker), "conversation-1", "call-7", t.TempDir(), 0)
+			if _, err := srv.CallToolText(ctx, "ask_name", nil); err != nil {
+				t.Fatal(err)
+			}
+			if q := asker.question(t); q.ToolCallID != "call-7" {
+				t.Fatalf("tool_call_id = %q, want the call the form arrived in", q.ToolCallID)
+			}
+		})
+	}
+}
+
+// A classic request with two of one run's calls open on the session could belong to
+// either, so it names neither: the cockpit keeps that receipt above the composer.
+func TestAClassicFormWithTwoOpenCallsNamesNeither(t *testing.T) {
+	asker := newFakeAsker(acceptName("Ada"), 0)
+	run := elicit.WithAsker(context.Background(), asker)
+	first := tools.WithToolCallContext(run, "conversation-1", "call-1", t.TempDir(), 0)
+	second := tools.WithToolCallContext(run, "conversation-1", "call-2", t.TempDir(), 0)
+
+	if got := sharedSession(t, declining(), first, second); got != "hello Ada" {
+		t.Fatalf("CallToolText = %q; one run's two calls still ask that run", got)
+	}
+	if q := asker.question(t); q.ToolCallID != "" {
+		t.Fatalf("tool_call_id = %q, want none when two calls are open", q.ToolCallID)
 	}
 }
 

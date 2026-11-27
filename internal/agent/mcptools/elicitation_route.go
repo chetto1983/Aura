@@ -9,6 +9,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/pausable"
@@ -77,6 +78,15 @@ func routeFor(ctx context.Context, session *sdkmcp.ClientSession) route {
 		r.asker = run.asker
 	}
 	return r
+}
+
+// toolCallID is the call the request belongs to, when one call can own it; with two
+// or more open calls on a classic session, none can be named.
+func (r route) toolCallID() string {
+	if len(r.calls) != 1 {
+		return ""
+	}
+	return tools.ToolCallIDFromContext(r.calls[0])
 }
 
 // fallbackContext is the context the fallback consent is asked on: an open call's,

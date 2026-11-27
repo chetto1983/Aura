@@ -11,6 +11,7 @@ import {
 } from '@assistant-ui/react';
 import { useCapabilities } from '../admin/useAdmin';
 import { BrowserLiveView } from '../browserLive/BrowserLiveView';
+import { ToolCallReceipts } from '../questions/ToolCallReceipts';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
@@ -483,29 +484,36 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
         },
       ];
     });
+    // A collapsed group hides its rows, so its calls' form receipts go under the group.
     return (
-      <ToolGroup
-        members={members}
-        onOpenSource={(memberDisplay, refId) => {
-          openSources(memberDisplay.sources ?? [], refId);
-        }}
-      />
+      <>
+        <ToolGroup
+          members={members}
+          onOpenSource={(memberDisplay, refId) => {
+            openSources(memberDisplay.sources ?? [], refId);
+          }}
+        />
+        <ToolCallReceipts toolCallIds={run.ids} />
+      </>
     );
   }
 
   return (
-    <ToolActivityCard
-      toolName={toolName}
-      argsText={argsText}
-      partStatus={status}
-      {...(resultText !== undefined ? { result: resultText } : {})}
-      {...(isError !== undefined ? { isError } : {})}
-      {...(part.refused === true ? { refused: true } : {})}
-      {...(part.awaitingInput === true ? { awaitingInput: true } : {})}
-      {...(startedAt !== undefined ? { startedAt } : {})}
-      {...(finishedAt !== undefined ? { finishedAt } : {})}
-      {...(display !== undefined ? { display, onOpenSource } : {})}
-      {...(mcpView !== undefined ? { mcpView } : {})}
-    />
+    <>
+      <ToolActivityCard
+        toolName={toolName}
+        argsText={argsText}
+        partStatus={status}
+        {...(resultText !== undefined ? { result: resultText } : {})}
+        {...(isError !== undefined ? { isError } : {})}
+        {...(part.refused === true ? { refused: true } : {})}
+        {...(part.awaitingInput === true ? { awaitingInput: true } : {})}
+        {...(startedAt !== undefined ? { startedAt } : {})}
+        {...(finishedAt !== undefined ? { finishedAt } : {})}
+        {...(display !== undefined ? { display, onOpenSource } : {})}
+        {...(mcpView !== undefined ? { mcpView } : {})}
+      />
+      <ToolCallReceipts toolCallIds={[toolCallId]} />
+    </>
   );
 };

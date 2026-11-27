@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ElicitationQuestion } from '../../chat/sseAdapter_elicitation';
 import {
+  anchorReceipts,
   applyElicitationSignal,
   settleForms,
+  unanchored,
   useThreadElicitations,
   type ElicitationItem,
   type ThreadForms,
@@ -75,6 +77,7 @@ describe('settleForms', () => {
     scope: Symbol('t-1'),
     items,
     retired: new Set(retired),
+    anchored: [],
   });
 
   it('changes nothing while the live run holds every form', () => {
@@ -103,7 +106,66 @@ describe('settleForms', () => {
   });
 });
 
+describe('anchorReceipts', () => {
+  const inCall = (id: string, toolCallId: string, runId = 'run-1') => ({
+    kind: 'question' as const,
+    question: { ...question(id, runId), tool_call_id: toolCallId },
+  });
+  const base = (items: readonly ElicitationItem[]): ThreadForms => ({
+    scope: Symbol('t-1'),
+    items,
+    retired: new Set(),
+    anchored: [],
+  });
+
+  // Measured on the lab VM 2026-11-27: the receipts stacked under the model's answer.
+  it("moves a settled form that names its call into that call's receipts", () => {
+    const forms = anchorReceipts(base(fold(inCall('a', 'call-1'), resolved('a', 'decline'))));
+    expect(forms.anchored.map((item) => [item.question.id, item.outcome])).toEqual([
+      ['a', 'declined'],
+    ]);
+    expect(unanchored(forms)).toEqual([]);
+  });
+
+  it('leaves an open form, and a receipt with no call, where they are', () => {
+    const forms = anchorReceipts(
+      base(fold(inCall('a', 'call-1'), asked('b'), resolved('b', 'accept'))),
+    );
+    expect(forms.anchored).toEqual([]);
+    expect(unanchored(forms).map((item) => item.question.id)).toEqual(['a', 'b']);
+  });
+
+  it('keeps an anchored receipt after the next run drops its run, and adds it once', () => {
+    const first = anchorReceipts(base(fold(inCall('a', 'call-1'), resolved('a', 'accept'))));
+    const again = anchorReceipts(first);
+    expect(again).toBe(first);
+    const nextRun = anchorReceipts(
+      settleForms({ ...first, retired: new Set(['run-1']) }, true, undefined),
+    );
+    expect(nextRun.items).toEqual([]);
+    expect(nextRun.anchored.map((item) => item.question.id)).toEqual(['a']);
+  });
+});
+
 describe('useThreadElicitations', () => {
+  it("keeps a call's receipt when the next run's question lands in the same batch", () => {
+    const { result } = renderHook(() => useThreadElicitations('t-1', true, undefined));
+    act(() => {
+      result.current.onSignal({
+        kind: 'question',
+        question: { ...question('a', 'run-1'), tool_call_id: 'call-1' },
+      });
+    });
+    act(() => {
+      result.current.onSignal(resolved('a', 'decline'));
+      result.current.onSignal(asked('b', 'run-2'));
+    });
+    expect(result.current.items.map((item) => item.question.id)).toEqual(['b']);
+    expect(result.current.receipts.map((item) => [item.question.id, item.outcome])).toEqual([
+      ['a', 'declined'],
+    ]);
+  });
+
   it('forgets an old thread and rejects its late callbacks', () => {
     const { result, rerender } = renderHook(
       ({ threadId }) => useThreadElicitations(threadId, true, undefined),
