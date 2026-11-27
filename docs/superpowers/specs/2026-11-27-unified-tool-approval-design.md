@@ -319,7 +319,8 @@ The evidence is `.superpowers/sdd/approval-unify/plan-validation-{codereview,adv
    a call whose approval record is open, whether pending, accepted or running. The same holds for the display. On the
    accept path the model sees exactly one tool message per call id.
 2. **The hard deny stays first.** `server_production`, or no responder, is denied before any authorization or grant
-   is read, as today (WR-01). Under `server_production` nothing is ever parked. An "always" grant never lets a
+   is read, as today (WR-01). Under `server_production` the **gateway source** never parks. Tool-sourced approvals keep reaching the operator on
+every profile, as they do today ("what needs approval does not change"). An "always" grant never lets a
    headless run through.
 3. **When an accepted call runs.** An accepted call runs only when:
    - no card of the same parked assistant turn is still pending;
