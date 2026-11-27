@@ -191,8 +191,20 @@ func (r *Runner) resolveImmediateMessage(ctx context.Context, ownerID string, dr
 		if content == "" {
 			content = reviewedMessageAnswer(draft.Status)
 		}
+		if draft.Status != messagedrafts.StatusFailed {
+			content = withOperatorEdits(draft, content)
+		}
 	}
 	return draft, content, nil
+}
+
+// withOperatorEdits puts the fields the review changed ahead of the answer, so the model knows
+// what went out rather than what it asked for.
+func withOperatorEdits(draft messagedrafts.Draft, answer string) string {
+	if note := draft.OperatorEdits(); note != "" {
+		return note + "\n\n" + answer
+	}
+	return answer
 }
 
 func (r *Runner) pendingForMessageDraft(ctx context.Context, draft messagedrafts.Draft) (askuser.Pending, error) {

@@ -136,7 +136,9 @@ func TestApprovingAScheduledDraftActivatesItsTaskAndSendsNothing(t *testing.T) {
 	if s.spy.executions != 0 {
 		t.Fatalf("the review sent the message %d times", s.spy.executions)
 	}
-	if got := s.answer(t); !strings.HasPrefix(got, "scheduled message approved: it will be sent at ") {
+	// The review changed the message, so the model is told so ahead of the approval.
+	edited := "The operator edited your message before approving it. These fields differ from your call: message = \"Edited\".\n\n"
+	if got := s.answer(t); !strings.HasPrefix(got, edited+"scheduled message approved: it will be sent at ") {
 		t.Fatalf("answer = %q", got)
 	}
 }

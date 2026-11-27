@@ -77,8 +77,8 @@ func (r *Runner) resolveScheduledMessage(ctx context.Context, ownerID string, dr
 		if err := r.messageTasks.ActivateReviewedMessage(ctx, ownerID, draft.ScheduledTaskID); err != nil {
 			return draft, "", err
 		}
-		return draft, fmt.Sprintf("scheduled message approved: it will be sent at %s, and its outcome reported on the task's notify route (task %s)",
-			draft.SendAt.UTC().Format(time.RFC3339), draft.ScheduledTaskID), nil
+		return draft, withOperatorEdits(draft, fmt.Sprintf("scheduled message approved: it will be sent at %s, and its outcome reported on the task's notify route (task %s)",
+			draft.SendAt.UTC().Format(time.RFC3339), draft.ScheduledTaskID)), nil
 	default:
 		return draft, "", messagedrafts.ErrUnavailable
 	}
