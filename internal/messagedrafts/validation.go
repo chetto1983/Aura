@@ -74,17 +74,16 @@ func MergeApprovedArgs(target Target, original, overrides json.RawMessage) (json
 	if err != nil {
 		return nil, err
 	}
-	var allowedOriginal, editable map[string]bool
+	var allowedOriginal map[string]bool
 	switch target {
 	case emailTarget:
 		allowedOriginal = fieldSet("accountId", "to", "cc", "subject", "body", "bodyFormat", "textBody", "htmlBody", "attachments")
-		editable = fieldSet("to", "cc", "subject", "body", "textBody", "htmlBody")
 	case whatsAppTarget:
 		allowedOriginal = fieldSet("recipient", "message", "quoted_message_id", "quoted_sender_jid", "quoted_content")
-		editable = fieldSet("recipient", "message")
 	default:
 		return nil, errInvalidDraftArgs
 	}
+	editable := fieldSet(editableFields(target)...)
 	if err := rejectUnknownFields(base, allowedOriginal); err != nil {
 		return nil, err
 	}
