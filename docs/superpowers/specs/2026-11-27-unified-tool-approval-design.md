@@ -257,7 +257,7 @@ The unit and integration tests cover:
 - deny policy before park;
 - grants skip the park;
 - headless gives a refusal, never a park;
-- siblings are dropped;
+- siblings that need no approval run in the same turn, a sequential batch keeping its order, and a turn that also calls `ask_user` keeps today's precedence (see "Siblings");
 - several parks in one turn;
 - the strict-profile ledger records one start and one end with the resolving operator;
 - every resolve surface;
