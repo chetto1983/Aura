@@ -30,8 +30,29 @@ which the old line (finish reason and tool count) could not split.
   Aura's `session_id` reaches OpenRouter.
 - On every call most of the time passed before the first token: 88%, 88% and 60%.
 
+## The Telegram thread, and one other provider
+
+The same request, "Cerca nella tua memoria cosa sai di ArcadeDB e riassumilo in una riga.", sent from the
+operator's Telegram Web to the VM's bot, whose single conversation holds about 92k tokens:
+
+| Route | Calls | Prompt | Cached | duration_ms | first_token_ms | Provider (OpenRouter's page) | Cost per call |
+|---|---|---|---|---|---|---|---|
+| default | 2 | 92 498, 94 044 | 0, 0 | 45 153, 50 177 | 43 607, 44 301 | Darkbloom: latency 43.2 s, 1.8 tok/s | $0.00245 |
+| `:nitro` | 1 | 94 093 | 0 | 4 505 | 4 197 | PrimeIntellect, Priority tier: latency 3.5 s, 26.9 tok/s | $0.014 |
+
+- OpenRouter serves `thinkingmachines/inkling-2-mini` from six endpoints; Darkbloom is the cheapest
+  ($0.02625/M prompt against $0.0375-0.15/M, public endpoints list), and default routing weights providers
+  by price.
+- `:nitro` was set for the run from the cockpit (Settings, model routing, free text in the model picker),
+  and `AURA_LLM_MODEL` was set back to `thinkingmachines/inkling-2-mini` afterwards (checked in
+  `aura.settings`, 16:03:08 UTC).
+- On this thread the default route spent 96 s on a two-call turn; the slowness of the Telegram turns is the
+  serving provider reading a 92k-token prompt with nothing cached.
+
 ## What this does not establish
 
+- **The `:nitro` route at length**: one call, without a tool, and its cache was not exercised (0 cached).
+  Its cost is about 5.7 times Darkbloom's per uncached call.
 - **Why a call misses the cache.** Call 2 went to the same provider as call 1 with the same prefix and read
   nothing from cache; call 3 read 18 432. Whether Darkbloom writes its cache asynchronously, or something
   else applies, is not measured.
