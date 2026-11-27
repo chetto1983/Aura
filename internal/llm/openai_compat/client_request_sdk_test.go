@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -60,6 +61,39 @@ func TestSDKRequestCapabilityEnvelope(t *testing.T) {
 				}
 			} else if hasProvider || hasSession {
 				t.Fatalf("%s received OpenRouter-only fields: %#v", provider, body)
+			}
+		})
+	}
+}
+
+// OpenRouter reads both as the p50 when sent as plain numbers inside `provider`
+// (docs/features/provider-routing). Measured on the lab VM 2026-11-27: the cheapest
+// endpoint took 45 s a call where a priority one took 4.5 s.
+func TestOpenRouterProviderCarriesSpeedPreferences(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		cfg                llm.Config
+		want               map[string]any
+		wantNoProviderBody bool
+	}{
+		{"both", llm.Config{Provider: "openrouter", OpenRouterPreferredMinThroughput: 20, OpenRouterPreferredMaxLatencySec: 10},
+			map[string]any{"data_collection": "deny", "preferred_min_throughput": float64(20), "preferred_max_latency": float64(10)}, false},
+		{"neither", llm.Config{Provider: "openrouter"}, map[string]any{"data_collection": "deny"}, false},
+		{"throughput only", llm.Config{Provider: "openrouter", OpenRouterPreferredMinThroughput: 20},
+			map[string]any{"data_collection": "deny", "preferred_min_throughput": float64(20)}, false},
+		{"not openrouter", llm.Config{Provider: "llamacpp", OpenRouterPreferredMinThroughput: 20}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := captureSDKBody(t, tc.cfg, llm.Request{Model: "m", Messages: []llm.Message{{Role: llm.RoleUser, Content: "ciao"}}})
+			got, has := body["provider"].(map[string]any)
+			if tc.wantNoProviderBody {
+				if has {
+					t.Fatalf("a non-OpenRouter route sent provider = %#v", got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("provider = %#v, want %#v", got, tc.want)
 			}
 		})
 	}

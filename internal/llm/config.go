@@ -98,6 +98,11 @@ const (
 	// envOpenRouterMiddleOut arms the fix-plan 1.11 overflow belt (see
 	// Config.OpenRouterMiddleOut). Default OFF.
 	envOpenRouterMiddleOut = "AURA_LLM_OPENROUTER_MIDDLE_OUT"
+	// EnvOpenRouterPreferredMinThroughput and EnvOpenRouterPreferredMaxLatencySec name the
+	// two provider speed preferences (Config.OpenRouterPreferred*); exported for the hot
+	// settings reloader.
+	EnvOpenRouterPreferredMinThroughput = "AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT"
+	EnvOpenRouterPreferredMaxLatencySec = "AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC"
 )
 
 // Config is the resolved LLM configuration (D-22). APIKey is a plain field set
@@ -181,6 +186,14 @@ type Config struct {
 	// (llamacpp target never sets the wire key regardless of this knob).
 	// AURA_LLM_OPENROUTER_MIDDLE_OUT.
 	OpenRouterMiddleOut bool
+
+	// OpenRouterPreferredMinThroughput (tokens/s) and OpenRouterPreferredMaxLatencySec ask
+	// OpenRouter to try last the providers below them over its rolling 5-minute p50, never to
+	// exclude one (docs/features/provider-routing). 0 sends nothing. Measured on the lab VM
+	// 2026-11-27: price-weighted routing put a 94k-token call on an endpoint that took 45 s,
+	// where a priority one took 4.5 s.
+	OpenRouterPreferredMinThroughput int
+	OpenRouterPreferredMaxLatencySec int
 }
 
 // Validate rejects timeout/token settings that would disable bounded calls or context
@@ -495,6 +508,23 @@ func applyEnvOverrides(cfg *Config) error {
 	} else if ok {
 		cfg.StreamIdleTimeoutSec = v
 	}
+	if err := nonNegativeEnvInt(EnvOpenRouterPreferredMinThroughput, &cfg.OpenRouterPreferredMinThroughput); err != nil {
+		return err
+	}
+	return nonNegativeEnvInt(EnvOpenRouterPreferredMaxLatencySec, &cfg.OpenRouterPreferredMaxLatencySec)
+}
+
+// nonNegativeEnvInt sets field from key when key is set; a negative or malformed value
+// is refused with the key named.
+func nonNegativeEnvInt(key string, field *int) error {
+	v, ok, err := envInt(key)
+	if err != nil || !ok {
+		return err
+	}
+	if v < 0 {
+		return fmt.Errorf("%s must not be negative, got %d", key, v)
+	}
+	*field = v
 	return nil
 }
 

@@ -54,7 +54,7 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 	}
 	var requestOpts []option.RequestOption
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetOpenRouter {
-		requestOpts = append(requestOpts, option.WithJSONSet("provider", map[string]string{"data_collection": "deny"}))
+		requestOpts = append(requestOpts, option.WithJSONSet("provider", openRouterProvider(c.cfg)))
 		if req.SessionID != "" {
 			requestOpts = append(requestOpts, option.WithJSONSet("session_id", req.SessionID))
 		}
@@ -66,6 +66,20 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 		requestOpts = append(requestOpts, option.WithJSONSet("transforms", []string{"middle-out"}))
 	}
 	return params, requestOpts, mediaCounts{native: len(native), tool: toolImages}, nil
+}
+
+// openRouterProvider is the `provider` object of an OpenRouter request: no data collection
+// always, and the speed preferences when the operator set them. OpenRouter reads a plain
+// number as the p50 of its rolling 5-minute statistics (docs/features/provider-routing).
+func openRouterProvider(cfg llm.Config) map[string]any {
+	provider := map[string]any{"data_collection": "deny"}
+	if cfg.OpenRouterPreferredMinThroughput > 0 {
+		provider["preferred_min_throughput"] = cfg.OpenRouterPreferredMinThroughput
+	}
+	if cfg.OpenRouterPreferredMaxLatencySec > 0 {
+		provider["preferred_max_latency"] = cfg.OpenRouterPreferredMaxLatencySec
+	}
+	return provider
 }
 
 func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.ContentProjection) []llm.ProjectedRequestPart {
