@@ -1,6 +1,11 @@
 # Nightly appliance update: implementation plan
 
-**Status (2026-10-24):** Tasks 1–3 done on the branch. Task 4 needs the lab VM, Task 5 needs
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1–3 are on `master` (`7b1a23ecc`). Task 4,
+the lab VM run, has no artifact: the PRD's correction of 2026-10-26 is a reading of
+`deploy/aura-update-consent.sh`, not a measurement on the VM, and no verification file exists. Task 5
+waits on Task 4.
+
+**Earlier status (2026-10-24):** Tasks 1–3 done on the branch. Task 4 needs the lab VM, Task 5 needs
 Task 4.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, task by task, with
