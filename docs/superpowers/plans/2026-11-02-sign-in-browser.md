@@ -1,5 +1,7 @@
 # Sign-in in a real browser (Slice 1) — Implementation Plan
 
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-7 and Task 11 Steps 0, 2, 4, 6 landed; Tasks 8-10 are SUPERSEDED (withdrawn 2026-11-03, Google keeps its Web-client callback). Open: S5 (ElevenLabs loopback, needs an account), Step 3's recorded read-back (`verification/2026-11-03-sign-in-browser-live.md` holds only the operator's acceptance of Linear, Notion and Canva) and Step 5's green gates per SHA.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A person connects any OAuth MCP server from the cockpit, signing in inside a real desktop Chromium that runs in their own container, with no relay page in the path of a server that can register a loopback redirect. The operator retained the working Google Web-client callback flow on 2026-11-03; Tasks 8–10 are withdrawn.

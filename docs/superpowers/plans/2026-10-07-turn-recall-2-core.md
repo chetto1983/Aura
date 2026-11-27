@@ -1,6 +1,6 @@
 # Turn recall, plan 2 of 3: the decision path and its memory
 
-**Status (2026-10-15):** PARTIAL. Tasks 1-6 and 9 landed, with migration 0137 and the VM E2E (docs/verification/turn-recall-vm-e2e-2026-10-07.md). The frozen final split of the eval never ran: Task 7 Steps 6-7 and Task 8's gate.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-6, 8 and 9 landed (1bb3c0630..05ccf5906, migration 0137, mutation scope `turn_reading`, VM E2E `docs/verification/turn-recall-vm-e2e-2026-10-07.md`, PRD amendment). The frozen final split never ran (`docs/verification/turn-recall-frozen-eval.md`: postponed): Task 7 Steps 6-7 and Task 8's gate need a new, newly dated set with more same-language uncertain pairs, then the single paid run.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -1,5 +1,7 @@
 # The urgency centroid in shadow: implementation plan
 
+**Status (2026-11-27, verified on code):** DONE. Tasks 1-9 landed (ee2bd9a46, ed9d59956, 9067cfe26, 37d5e89ff, 2631ad292, 65f632a6b), the first live run is `verification/2026-11-03-urgency-centroid-shadow-live.md`, the PRD amendment is in `prd.md`, and mutation scopes landed in 4eccce239. The seven-day promotion gate is outside this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans, task by task, on `master`. Steps use checkbox syntax.
 
 **Goal:** every mail the watch decides also gets the tier a per-identity centroid would give, written beside the verdict with what the scoring needs, shown in the decisions view where it differs from the ladder, and counted by a read-only report. Nothing it says reaches a verdict, an alert or the digest.

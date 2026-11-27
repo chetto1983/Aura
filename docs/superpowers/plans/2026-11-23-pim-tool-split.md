@@ -1,5 +1,7 @@
 # The PIM's tools, one per operation again: implementation plan
 
+**Status (2026-11-27, verified on code):** DONE. Parts A, B and C landed (45bdb11ff..713e5e169, fork 8fbd799, migrations 0158/0159, aa7f4329e, 7f8f07d03, a53395eab) and the lab VM checks are in `verification/2026-11-24-pim-tool-split.md` and `2026-11-25-pim-tool-split-vm-checks.md`. Not shown live: a boot followed by an apply not restarting `aura`, and carry-over of an old deny.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The PIM advertises its 29 operations as 29 tools, and Aura keys risk, approvals, drafts, host calls and display on the tool name, with the operators' stored rules and drafts carried across.

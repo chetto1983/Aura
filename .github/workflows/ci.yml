@@ -2374,6 +2374,21 @@ jobs:
         # from 2026-07-23 to 2026-11-25.
         run: bash scripts/web_e2e_ci.sh
 
+      - name: Keep the screenshots of a failed visual check
+        # A failed toHaveScreenshot leaves the runner's render (-actual) and the difference (-diff)
+        # in test-results: the evidence to review, and the only source of a new baseline, which is
+        # the runner's own render. On 2026-11-27 an intended change to an approval card had none.
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: web-e2e-screenshots
+          path: |
+            web/test-results/**/*-actual.png
+            web/test-results/**/*-diff.png
+            web/test-results/**/*-expected.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Playwright live specs this stack can run (graph, artifact origin, skill catalogue)
         # Gated specs that need no model and no account: the memory graph seeded through the host
         # binary, an HTML artifact the run uploads itself, the data proxy and skills.sh search

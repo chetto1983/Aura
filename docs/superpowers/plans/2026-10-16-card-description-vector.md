@@ -1,6 +1,8 @@
 # Card description vector implementation plan
 
-**Status (2026-10-16):** PARTIAL.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 0-9 landed (6a8f1aaf9..97fec747e, b026a5c4d) and 97fec747e is on origin/master; Task 10 (count appliance media, publish edge, upload `.go`/`.tsx` on the lab VM, `verification/2026-10-16-card-description-vm.md`) has no artifact and is open (live run).
+
+**Earlier status (2026-10-16):** PARTIAL.
 - **Landed on master:** Tasks 0 to 8, in 6a8f1aaf9, 84ac521f0, bba43ff65, 39a9f7290, 8ec1df3ed,
   a70640dad, b33096b3d, 003fd665d, 97fec747e, and, after the operator's ruling on the route,
   the PRD amendment before b026a5c4d and b026a5c4d itself. The measurements before them are

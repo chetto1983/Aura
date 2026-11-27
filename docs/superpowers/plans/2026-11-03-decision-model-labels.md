@@ -1,5 +1,7 @@
 # The decision model labels unsorted mail: implementation plan
 
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-9 landed (b9360174e, 44a072faf..d1447fdaf, ce730376e, 9d2f174e1, b9a0e3b94). Task 10, the live run on the lab VM and its `decision-model-live` verification file, has no artifact.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans, task by task, on `master`. Steps use checkbox syntax.
 
 **Goal:** a mail no rule labelled gets one of the identity's described labels from a decision model, local or on OpenRouter. The label brings its tier within the people floor. Labels gain a description and keep or discard. Discarded mail leaves the decisions list and is counted in the digest. The verdict keeps what the model said, and a report counts G4.

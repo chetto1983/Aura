@@ -1,6 +1,8 @@
 # The PIM's mail and calendar rows M1, M2, M9, C1, C2, C3: implementation plan
 
-**Status:** v2, 2026-11-26. Not started, not reviewed. v1 (2026-11-23) was written against the
+**Status (2026-11-27, verified on code):** NOT STARTED. Fork `main` is still `68f8935`: no `OutboundMime`, no draft tools, recurrence is read-only, and Aura has no draft tool names, so P1-P8, A1, A2, L1 and L2 are all open.
+
+**Earlier status:** v2, 2026-11-26. Not started, not reviewed. v1 (2026-11-23) was written against the
 multiplexed `calendar` tool, which the PIM tool split removed (`specs/2026-11-23-pim-tool-split-design.md`,
 landed in the fork as change 4 of `AURA-FORK.md` and in Aura as migrations 0158/0159). As that spec's §6
 asks, v2 reconciles this plan with it: the new operations become new tools, not new actions, and the
