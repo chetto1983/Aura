@@ -117,9 +117,10 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(workspace.className).toContain('overflow-hidden');
     expect(workspace.parentElement?.className).toContain('graph-workspace-container');
     // The filters track is a variable, not a hard 18rem: it is the graph's sidebar and it
-    // drag-resizes like the chat rail. `auto` is the handle's own track.
+    // drag-resizes like the chat rail. `auto` is the handle's own track. The inspector's 20rem
+    // track is there before any selection, so selecting never resizes the canvas.
     expect(workspace.className).toContain(
-      'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)]',
+      'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem]',
     );
     expect(workspace.getAttribute('style')).toContain('--graph-filters-w: 288px');
     expect(screen.getByRole('separator', { name: 'Resize the filters column' })).toBeTruthy();
@@ -128,8 +129,11 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     const canvas = workspace.querySelector('.graph-workspace__canvas');
     expect(canvas?.className).toContain('min-h-0');
     expect(canvas?.className).not.toContain('min-h-[46svh]');
-    expect(screen.getByLabelText('Select a node').className).toContain('hidden');
-    expect(screen.getByLabelText('Select a node').className).not.toContain('lg:block');
+    // Nothing selected: no sheet on a narrow screen, the empty column on desktop.
+    const inspector = screen.getByLabelText('Select a node');
+    expect(inspector.getAttribute('data-open')).toBe('false');
+    expect(inspector.className).toContain('hidden lg:block');
+    expect(inspector.className).toContain('lg:col-start-4');
     // The schema fallback was NOT taken because the overview contained memory.
     expect(fetchGraphSchema).not.toHaveBeenCalled();
   });
@@ -255,11 +259,12 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(filterCalls);
     });
     expect(screen.getByLabelText('Node types').getAttribute('data-open')).toBe('false');
-    // Select a node via the path-strip node list (the non-hover access path) → inspector opens.
+    // Select a node via the path-strip node list (the non-hover access path) → inspector opens,
+    // in the column that was already there: the workspace grid does not change, so the canvas
+    // keeps its size and a double click's second click lands where the first did.
+    const gridBefore = screen.getByTestId('graph-workspace').className;
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
-    expect(screen.getByTestId('graph-workspace').className).toContain(
-      'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem]',
-    );
+    expect(screen.getByTestId('graph-workspace').className).toBe(gridBefore);
     expect(screen.getByLabelText('Select a node').getAttribute('data-open')).toBe('true');
     expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label
   });
