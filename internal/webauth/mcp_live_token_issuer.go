@@ -47,7 +47,7 @@ func NewLiveMCPTokenIssuer(dsn, secret string) (_ *LiveMCPTokenIssuer, err error
 	config := authulaconfig.NewConfig(
 		authulaconfig.WithAppName("Aura MCP live integration"),
 		authulaconfig.WithBasePath(basePath),
-		authulaconfig.WithSecret(secret),
+		authulaconfig.WithSecret(authulaKey(secret)),
 		authulaconfig.WithDatabase(authulamodels.DatabaseConfig{
 			Provider: "postgres", URL: isolatedDSN, MaxOpenConns: 2, MaxIdleConns: 1,
 		}),
