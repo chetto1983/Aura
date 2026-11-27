@@ -26,18 +26,15 @@ func TestAppendTurn_AutoSeqConcurrentSerializes(t *testing.T) {
 	start := make(chan struct{})
 	errs := make(chan error, writers)
 	var wg sync.WaitGroup
-	for i := 0; i < writers; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for i := range writers {
+		wg.Go(func() {
 			<-start
 			errs <- s.AppendTurn(ctx, AppendTurnParams{
 				ConversationID: convID,
 				Role:           llm.RoleUser,
 				Content:        fmt.Sprintf("turn %02d", i),
 			})
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

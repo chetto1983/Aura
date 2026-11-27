@@ -269,8 +269,7 @@ func TestReservationFailBlocks(t *testing.T) {
 	if v.Decision != Deny {
 		t.Fatalf("verdict = %q, want deny (reservation failed)", v.Decision)
 	}
-	var denied *ErrDenied
-	if !errors.As(err, &denied) {
+	if _, ok := errors.AsType[*ErrDenied](err); !ok {
 		t.Fatalf("err = %v, want *ErrDenied", err)
 	}
 	if spy.count != 0 {
@@ -465,8 +464,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	if pv.Decision != Deny {
 		t.Fatalf("production verdict = %q, want deny", pv.Decision)
 	}
-	var denied *ErrDenied
-	if !errors.As(perr, &denied) {
+	if _, ok := errors.AsType[*ErrDenied](perr); !ok {
 		t.Fatalf("production err = %v, want *ErrDenied", perr)
 	}
 	if prodSpy.count != 0 {

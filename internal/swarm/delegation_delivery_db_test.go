@@ -159,14 +159,12 @@ func TestNudgeOnceUnderConcurrency(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			d := &DelegationDelivery{Channel: channel, Nudge: adapter, Pending: pending, NudgeAfter: time.Minute}
 			if _, err := d.NudgeUndrained(context.Background(), time.Now().Add(time.Hour), 10); err != nil {
 				t.Errorf("NudgeUndrained: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -64,7 +64,7 @@ func TestSearch_Live(t *testing.T) {
 	const attempts = 3
 	var contractProven bool
 	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
+	for attempt := range attempts {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 3 * time.Second)
 		}

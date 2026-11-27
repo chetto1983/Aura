@@ -76,10 +76,10 @@ func migratedRunnerPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// seedLocalIdentity re-seeds the local identity + wildcard grant (idempotent). Migration
-// 0004 seeds these, but a parallel session intermittently wipes them; re-seeding keeps the
-// FK-dependent conversation/pause writes robust (an FK 23503 is an env fault, not a code
-// defect).
+// seedLocalIdentity re-seeds the local identity (idempotent). Migration 0004 seeds it, but a
+// parallel session intermittently wipes it; re-seeding keeps the FK-dependent conversation/pause
+// writes robust (an FK 23503 is an env fault, not a code defect). It grants no capability: the
+// runner reads none, and migration 0121 retired the '*' grant this seed used to write back.
 func seedLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := ownerCtx()
@@ -87,16 +87,6 @@ func seedLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1, 'local', 'system') ON CONFLICT DO NOTHING`,
 		localIdentityID); err != nil {
 		t.Fatalf("seed identity: %v", err)
-	}
-	// Scoped: aura.capability_grants is fail-closed as of migration 0087, so a bare pool
-	// INSERT is refused.
-	if err := db.WithIdentityTxRaw(ctx, pool, localIdentityID, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx,
-			`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1, '*') ON CONFLICT DO NOTHING`,
-			localIdentityID)
-		return e
-	}); err != nil {
-		t.Fatalf("seed grant: %v", err)
 	}
 }
 

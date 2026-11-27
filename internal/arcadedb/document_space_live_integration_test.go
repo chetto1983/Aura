@@ -288,8 +288,8 @@ func TestDocumentSpaceLiveFusedLegNeverRanksAnotherSpace(t *testing.T) {
 	seedLiveLibrary(t, client, liveSchema)
 	_, index := liveRetriever(t, client)
 	candidates, err := index.FusedCandidates(context.Background(), arcadedb.FusedCandidateQuery{
-		CandidateFilter: arcadedb.CandidateFilter{IdentityID: liveIdentity, Limit: 10},
-		Query:           "durable grants prompt engineering", Embedding: liveQuery, Space: liveSpace,
+		IdentityID: liveIdentity, Limit: 10,
+		Query: "durable grants prompt engineering", Embedding: liveQuery, Space: liveSpace,
 	})
 	if err != nil {
 		t.Fatalf("FusedCandidates: %v", err)

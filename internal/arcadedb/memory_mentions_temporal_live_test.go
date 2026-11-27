@@ -39,7 +39,7 @@ func TestHistoricalMentionSurvivesSweep(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	request := MemoryGraphPathRequest{MemoryGraphRequest: MemoryGraphRequest{Relations: "mentions", AsOf: "2026-02-01T00:00:00Z"}, Source: "Origin", Target: "Bridge", MaxDepth: 1}
+	request := MemoryGraphPathRequest{Relations: "mentions", AsOf: "2026-02-01T00:00:00Z", Source: "Origin", Target: "Bridge", MaxDepth: 1}
 	before, err := client.MemoryGraphPath(t.Context(), request)
 	if err != nil || !before.Found {
 		t.Fatalf("reconstructed historical path=%+v err=%v", before, err)
@@ -77,7 +77,7 @@ func TestConcurrentMentionSupportsRemainDistinct(t *testing.T) {
 	}
 	errors := make(chan error, 8)
 	var workers sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		workers.Add(1)
 		go func(i int) {
 			defer workers.Done()
@@ -115,7 +115,7 @@ func TestMentionRecordSurvivesActualSupersession(t *testing.T) {
 	if _, err := client.LinkMentions(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	request := MemoryGraphPathRequest{MemoryGraphRequest: MemoryGraphRequest{Relations: "mentions", AsOf: "2026-03-01T00:00:00Z"}, Source: first.Subject, Target: "ChronologyBridge", MaxDepth: 1}
+	request := MemoryGraphPathRequest{Relations: "mentions", AsOf: "2026-03-01T00:00:00Z", Source: first.Subject, Target: "ChronologyBridge", MaxDepth: 1}
 	before, err := client.MemoryGraphPath(t.Context(), request)
 	if err != nil || !before.Found {
 		t.Fatalf("before=%+v err=%v", before, err)

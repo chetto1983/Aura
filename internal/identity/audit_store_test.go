@@ -19,30 +19,11 @@ package identity
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 )
-
-// seedThrowawayIdentity inserts a non-seeded identity and returns its UUID, so an
-// audit row's new_identity_id and a capability list have a real owner. Cleaned up
-// via t.Cleanup (the append-only audit rows referencing it are left — a fresh
-// identity per run keeps the suite isolated).
-func seedThrowawayIdentity(t *testing.T, ctx context.Context, pool interface {
-	QueryRow(context.Context, string, ...any) interface {
-		Scan(...any) error
-	}
-}, name string) string {
-	t.Helper()
-	var id string
-	if err := pool.QueryRow(ctx,
-		"INSERT INTO aura.identities (id, name, kind) VALUES (gen_random_uuid(), $1, 'service') "+
-			"ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id::text", name,
-	).Scan(&id); err != nil {
-		t.Fatalf("seed identity %q: %v", name, err)
-	}
-	return id
-}
 
 // TestIdentityAuditImmutable proves ONBD-01a's append-only guarantee: a coherent
 // INSERT round-trips, and a subsequent UPDATE/DELETE/TRUNCATE as aura_app is denied
@@ -198,10 +179,5 @@ func TestListCapabilities(t *testing.T) {
 }
 
 func contains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

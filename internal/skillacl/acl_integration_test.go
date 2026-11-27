@@ -19,6 +19,7 @@ package skillacl
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -369,10 +370,5 @@ func TestACLRefusesAGrantOverSomebodyElsesSkill(t *testing.T) {
 }
 
 func containsID(ids []string, want string) bool {
-	for _, id := range ids {
-		if id == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, want)
 }

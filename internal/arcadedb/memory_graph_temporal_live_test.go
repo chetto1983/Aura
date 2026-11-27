@@ -58,7 +58,7 @@ func TestMemoryGraphTemporalLive(t *testing.T) {
 		{"reverse", "2026-07-01T00:00:00Z", "facts", "Destination", "Origin", "IN", 4, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := client.MemoryGraphPath(t.Context(), MemoryGraphPathRequest{MemoryGraphRequest: MemoryGraphRequest{AsOf: tc.at, Relations: tc.relations}, Source: tc.source, Target: tc.target, Direction: tc.direction, MaxDepth: tc.depth})
+			out, err := client.MemoryGraphPath(t.Context(), MemoryGraphPathRequest{AsOf: tc.at, Relations: tc.relations, Source: tc.source, Target: tc.target, Direction: tc.direction, MaxDepth: tc.depth})
 			if err != nil {
 				t.Fatal(err)
 			}

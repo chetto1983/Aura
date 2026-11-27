@@ -124,7 +124,7 @@ func TestLiveMeteoCaraglio(t *testing.T) {
 	reg := registryForLive(t)
 
 	failures := 0
-	for i := 0; i < meteoRuns; i++ {
+	for i := range meteoRuns {
 		answer, ok := runMeteoOnce(t, client, cfg, reg)
 		if !ok || strings.TrimSpace(answer) == "" {
 			failures++
@@ -261,12 +261,11 @@ func jsonObjectCandidates(content string) []string {
 	if strings.HasPrefix(content, "{") {
 		out = append(out, content)
 	}
-	if i := strings.Index(content, "```"); i >= 0 {
-		rest := content[i+3:]
+	if _, rest, ok := strings.Cut(content, "```"); ok {
 		rest = strings.TrimPrefix(rest, "json")
 		rest = strings.TrimPrefix(rest, "JSON")
-		if j := strings.Index(rest, "```"); j >= 0 {
-			body := strings.TrimSpace(rest[:j])
+		if body, _, ok := strings.Cut(rest, "```"); ok {
+			body = strings.TrimSpace(body)
 			if strings.HasPrefix(body, "{") {
 				out = append(out, body)
 			}

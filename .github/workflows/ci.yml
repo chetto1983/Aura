@@ -169,6 +169,9 @@ jobs:
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
           "$(go env GOPATH)/bin/golangci-lint" run --timeout=5m $(bash scripts/go_packages.sh)
+          # Files behind a build tag compile only when it is set; the untagged run above still
+          # covers the files a tag excludes (!web_integration).
+          "$(go env GOPATH)/bin/golangci-lint" run --timeout=5m --build-tags "$(bash scripts/go_build_tags.sh)" $(bash scripts/go_packages.sh)
 
       # Every tracked scripts/**/*_test.sh, found by scripts/run_script_tests.sh, so a new one runs
       # because it exists: llm-model-contract's test had no job for two weeks (Makefile). It runs

@@ -375,7 +375,7 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 		},
 		{
 			Name: "not-paid", Question: "Usa document_search sui miei documenti. Elenca tutti gli ID delle fatture il cui " +
-				"stato e' diverso da pagata, incluse contestata e scaduta.",
+				"stato e' diverso da pagata, incluse contestata e scaduta.", //nolint:misspell // Italian "incluse" (included), not "includes".
 			AnswerContains: []string{"2026_005", "2026_006", "2026_009", "2026_011", "2026_013"},
 		},
 		{
@@ -408,7 +408,7 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 		},
 		{
 			Name: "scanned-pdf-ocr", Question: "Usa document_search sul verbale scansionato italiano. " +
-				"Dammi codice pratica, importo approvato e responsabile esattamente come compaiono nel documento.",
+				"Dammi codice pratica, importo approvato e responsabile esattamente come compaiono nel documento.", //nolint:misspell // Italian "responsabile" (person in charge), not "responsible".
 			AnswerContains: []string{"ITALIA-7391", "48270", "GIULIA BIANCHI"},
 		},
 	}
@@ -428,7 +428,7 @@ func TestDocumentCorpusAgentEval(t *testing.T) {
 			Name: "public-constitution-pdf", Question: "Usa document_search soltanto per individuare il PDF " +
 				"della Costituzione caricato, poi document_open per aprire l'originale e un solo shell_exec con " +
 				"pdftotext per cercare la nota (1) dell'articolo 58 nel testo completo. Considera le parole " +
-				"sillabate a fine riga. Indica la data della legge costituzionale che ha modificato l'articolo e " +
+				"sillabate a fine riga. Indica la data della legge costituzionale che ha modificato l'articolo e " + //nolint:misspell // Italian "modificato" (amended), not "modification".
 				"il numero e la data della Gazzetta Ufficiale. Rispondi solo con questi dati.",
 			AnswerContains:       []string{"18 ottobre 2021", "251", "20 ottobre 2021"},
 			RequiredTools:        []string{"document_search"},

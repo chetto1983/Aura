@@ -92,13 +92,14 @@ func TestFailedDeletionSurvivesDesiredWritesAndCredentialReplacement(t *testing.
 					t.Error("diagnostic cleared before retry attempted deletion")
 				}
 			}
-			if mode == "disable" {
+			switch mode {
+			case "disable":
 				if err = engine.Disable(t.Context(), "admin"); err != nil {
 					t.Fatal(err)
 				}
-			} else if mode == "retry" {
+			case "retry":
 				_, err = engine.SaveDesired(t.Context(), failed.Generation, failed.Desired, "admin")
-			} else {
+			default:
 				secrets, e := settings.NewStore(pool, strings.Repeat("ab", 32))
 				if e != nil {
 					t.Fatal(e)

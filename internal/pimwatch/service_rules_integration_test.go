@@ -314,7 +314,7 @@ func TestLabelsAreManagedThroughTheService(t *testing.T) {
 	if _, err := r.service.LabelID(ctx, r.identity, "nobody"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unknown name: %v", err)
 	}
-	if updated, err := r.service.UpdateLabel(ctx, r.identity, first.ID, LabelPatch{Name: ptr("Clienti"), Tier: ptr(TierNow)}); err != nil || updated.Tier != TierNow {
+	if updated, err := r.service.UpdateLabel(ctx, r.identity, first.ID, LabelPatch{Name: new("Clienti"), Tier: new(TierNow)}); err != nil || updated.Tier != TierNow {
 		t.Fatalf("updated = %+v, %v", updated, err)
 	}
 	for _, bad := range []struct {
@@ -339,7 +339,7 @@ func TestUpdatingALabelKeepsItsDescriptionAndDiscard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Name: ptr("Clienti"), Tier: ptr(TierNow)}); err != nil {
+	if _, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Name: new("Clienti"), Tier: new(TierNow)}); err != nil {
 		t.Fatal(err)
 	}
 	labels, err := r.store.Labels(ctx, r.identity)
@@ -350,7 +350,7 @@ func TestUpdatingALabelKeepsItsDescriptionAndDiscard(t *testing.T) {
 	if labels[0] != want {
 		t.Fatalf("label = %+v, want %+v", labels[0], want)
 	}
-	if _, err := r.service.UpdateLabel(ctx, r.identity, uuid.NewString(), LabelPatch{Name: ptr("x")}); !errors.Is(err, ErrNotFound) {
+	if _, err := r.service.UpdateLabel(ctx, r.identity, uuid.NewString(), LabelPatch{Name: new("x")}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown label: %v", err)
 	}
 }
@@ -398,11 +398,11 @@ func TestALabelPatchChangesOnlyWhatItSendsAndFindsAnUppercaseId(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renamed, err := r.service.UpdateLabel(ctx, r.identity, strings.ToUpper(label.ID), LabelPatch{Name: ptr("Clienti")})
+	renamed, err := r.service.UpdateLabel(ctx, r.identity, strings.ToUpper(label.ID), LabelPatch{Name: new("Clienti")})
 	if err != nil || renamed.Name != "Clienti" || renamed.Tier != TierToday || renamed.Description != "Customers." || !renamed.Discard {
 		t.Fatalf("renamed = %+v, %v", renamed, err)
 	}
-	edited, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Description: ptr("New."), Discard: ptr(false), Tier: ptr(Tier(""))})
+	edited, err := r.service.UpdateLabel(ctx, r.identity, label.ID, LabelPatch{Description: new("New."), Discard: new(false), Tier: new(Tier(""))})
 	if err != nil || edited.Name != "Clienti" || edited.Tier != "" || edited.Description != "New." || edited.Discard {
 		t.Fatalf("edited = %+v, %v", edited, err)
 	}
@@ -411,5 +411,3 @@ func TestALabelPatchChangesOnlyWhatItSendsAndFindsAnUppercaseId(t *testing.T) {
 		t.Fatalf("a long description: %v", err)
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -61,12 +62,7 @@ func (c tierCase) primary() string          { return c.accept[0] }
 func (c tierCase) strict() bool             { return len(c.accept) == 1 }
 
 func (c tierCase) ok(got string) bool {
-	for _, want := range c.accept {
-		if got == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.accept, got)
 }
 
 // liveCorpus is the held-out set, deliberately BROADER than the intents the classifier's
@@ -116,7 +112,7 @@ var liveCorpus = []tierCase{
 	// over a real file, and the tier must follow the WORK, not the sentence length.
 	one("quanti clienti ho a Torino nel file Clienti.xlsx?", "high"),
 	one("somma gli imponibili di tutte le fatture del 2025", "high"),
-	one("confronta il preventivo con la fattura e dimmi cosa non torna", "high"),
+	one("confronta il preventivo con la fattura e dimmi cosa non torna", "high"), //nolint:misspell // Italian "preventivo" (quote), not "prevention".
 	// Retrieval INSIDE a document is not computation OVER one, and labelling this `high`
 	// alongside the three above was my error, not the classifier's: finding a calibration
 	// procedure in a manual is open-and-read, where the aggregates are open-and-compute.

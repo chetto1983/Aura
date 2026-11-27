@@ -27,10 +27,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// strp returns a pointer to s, for askuser.InsertParams' *string fencing/attribution
-// fields (nil means SQL NULL; a set field must be addressable).
-func strp(s string) *string { return &s }
-
 // insertWorkerPause inserts one pause carrying D-12's fencing id and D-13's
 // host-written level identity (OwningWorkerID) directly — the shape a future
 // background-worker writer (51-06b) will produce. ownerWorker/actionID empty means
@@ -43,10 +39,10 @@ func insertWorkerPause(t *testing.T, pause *askuser.Store, convID, toolCallID, o
 		Question: "need input?", ToolCallID: toolCallID,
 	}
 	if ownerWorker != "" {
-		p.OwningWorkerID = strp(ownerWorker)
+		p.OwningWorkerID = new(ownerWorker)
 	}
 	if actionID != "" {
-		p.PendingActionID = strp(actionID)
+		p.PendingActionID = new(actionID)
 	}
 	if err := pause.Insert(ownerCtx(), p); err != nil {
 		t.Fatalf("insert worker pause: %v", err)
@@ -231,8 +227,8 @@ func TestPausedStateWorkerAttributionExclusive(t *testing.T) {
 	err := pauseStore.Insert(ctx, askuser.InsertParams{
 		Token: token, ConversationID: convID, Kind: "clarification",
 		Question: "dual-attribution?", ToolCallID: "call-dual",
-		OwningWorkerID:     strp("w5"),
-		ProxiedFromChildID: strp("w6"),
+		OwningWorkerID:     new("w5"),
+		ProxiedFromChildID: new("w6"),
 	})
 	if err == nil {
 		t.Fatal("insert with BOTH owning_worker_id and proxied_from_child_id set must fail closed (paused_states_worker_attribution_exclusive)")
