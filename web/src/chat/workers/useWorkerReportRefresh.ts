@@ -5,7 +5,9 @@ import { useWatchWorker } from './workerWatchControls';
 
 // Live turns have client IDs; snapshots have database IDs. Replacing the IDs of
 // the same turns makes assistant-ui create edit branches. Match the unchanged
-// user sequence by position (including repeated prompts), never by text alone.
+// user sequence by position (including repeated prompts), never by text alone,
+// and every assistant message after it by position: a resumed turn holds two live
+// (the paused call, then the resume), and a snapshot may hold more than the live turn.
 export function preserveMessageIDs(
   previous: readonly ThreadMessageLike[],
   snapshot: ThreadMessageLike[],
@@ -29,13 +31,14 @@ export function preserveMessageIDs(
     if (target === undefined) return;
     const id = previous[index]?.id;
     if (id !== undefined) aliases.set(target, id);
-    const assistant = previous[index + 1];
-    if (
-      assistant?.role === 'assistant' &&
-      assistant.id !== undefined &&
-      snapshot[target + 1]?.role === 'assistant'
-    )
-      aliases.set(target + 1, assistant.id);
+    for (
+      let step = 1;
+      previous[index + step]?.role === 'assistant' && snapshot[target + step]?.role === 'assistant';
+      step++
+    ) {
+      const assistantID = previous[index + step]?.id;
+      if (assistantID !== undefined) aliases.set(target + step, assistantID);
+    }
   });
   return snapshot.map((message, index) => {
     const id = aliases.get(index);

@@ -157,3 +157,29 @@ it('preserves distinct live IDs for repeated prompts while appending a durable r
   expect(preserveMessageIDs(before, [...after, user('new-user')])).toBeInstanceOf(Array);
   expect(preserveMessageIDs(before, [...after, user('new-user')])[0]?.id).toBe('msg-1');
 });
+
+// Measured on the lab VM 2026-11-27: after every answer to ask_user the reply showed "2 / 2".
+// A resumed turn holds two assistant messages live (the paused call, then the resume), and the
+// second one took its database id, so the runtime kept the live one as a sibling branch.
+it('keeps the live id of every assistant message of a resumed turn', () => {
+  const message = (id: string, role: 'user' | 'assistant'): ThreadMessageLike => ({
+    id,
+    role,
+    content: id,
+  });
+  const before = [
+    message('live-u', 'user'),
+    message('paused', 'assistant'),
+    message('resumed', 'assistant'),
+  ];
+  const after = [
+    { ...message('msg-1', 'user'), content: 'live-u' },
+    message('msg-2', 'assistant'),
+    message('msg-4', 'assistant'),
+  ];
+  expect(preserveMessageIDs(before, after).map((m) => m.id)).toEqual([
+    'live-u',
+    'paused',
+    'resumed',
+  ]);
+});
