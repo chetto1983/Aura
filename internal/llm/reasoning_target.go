@@ -25,6 +25,9 @@ const (
 	ReasoningTargetOllama
 	// ReasoningTargetChatGPT uses the official Responses reasoning controls.
 	ReasoningTargetChatGPT
+	// ReasoningTargetAnthropic is the native Claude Messages API (adaptive thinking,
+	// output_config.effort).
+	ReasoningTargetAnthropic
 )
 
 // String names the target for logs. Without it an operator reading
@@ -41,6 +44,8 @@ func (k ReasoningTargetKind) String() string {
 		return "ollama"
 	case ReasoningTargetChatGPT:
 		return ChatGPTProvider
+	case ReasoningTargetAnthropic:
+		return AnthropicProvider
 	default:
 		return "none"
 	}
@@ -58,6 +63,9 @@ func (k ReasoningTargetKind) String() string {
 func ReasoningTarget(provider, baseURL string) ReasoningTargetKind {
 	if strings.EqualFold(provider, ChatGPTProvider) && baseURL == ChatGPTBaseURL {
 		return ReasoningTargetChatGPT
+	}
+	if strings.EqualFold(provider, AnthropicProvider) && baseURL == AnthropicBaseURL {
+		return ReasoningTargetAnthropic
 	}
 	if strings.EqualFold(provider, "llamacpp") {
 		return ReasoningTargetLlamaCpp

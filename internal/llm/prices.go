@@ -34,6 +34,18 @@ type Price struct {
 	// $2.889. Billing every prompt token at the full rate yields $7.86 — a 2.7x
 	// over-report. With the cache rate the same arithmetic yields $3.32.
 	CacheReadPer1M float64 `json:"cache_read_per_1m"`
+	// CacheWritePer1M is the rate for prompt tokens written to the cache
+	// (`pricing.input_cache_write`, the 5-minute tier). Zero means none is published.
+	CacheWritePer1M float64 `json:"cache_write_per_1m,omitempty"`
+	// LongPrompt replaces every rate above once a prompt reaches MinPromptTokens.
+	LongPrompt *LongPromptPrice `json:"long_prompt,omitempty"`
+}
+
+// LongPromptPrice is the rate card a model switches to for prompts of at least
+// MinPromptTokens (`pricing.overrides[]`).
+type LongPromptPrice struct {
+	MinPromptTokens                                          int
+	InputPer1M, OutputPer1M, CacheReadPer1M, CacheWritePer1M float64
 }
 
 // CostUSDValue reports the numeric turn cost in USD and an ok flag, with the D-18/D-23

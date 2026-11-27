@@ -98,6 +98,9 @@ func (c *Config) Spend(ctx context.Context) (Spend, error) {
 	if c.Provider == ChatGPTProvider {
 		return Spend{}, fmt.Errorf("%w: ChatGPT plan exposes no per-key spend", ErrSpendSubscriptionIncluded)
 	}
+	if c.Provider == AnthropicProvider {
+		return Spend{}, fmt.Errorf("%w: see the Claude Console", ErrSpendUnavailable)
+	}
 	switch ReasoningTarget(c.Provider, c.BaseURL) {
 	case ReasoningTargetLlamaCpp:
 		return Spend{}, fmt.Errorf("%w: local backend bills nothing", ErrSpendNotApplicable)

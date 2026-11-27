@@ -52,11 +52,7 @@ type modelsWire struct {
 			MaxCompletionTokens int `json:"max_completion_tokens"`
 			ContextLength       int `json:"context_length"`
 		} `json:"top_provider"`
-		Pricing struct {
-			Prompt         string `json:"prompt"`
-			Completion     string `json:"completion"`
-			InputCacheRead string `json:"input_cache_read"`
-		} `json:"pricing"`
+		Pricing pricingWire `json:"pricing"`
 		// The model card's own sampling set. Present on 264 of 424 models (measured
 		// 2026-09-03); absent is normal and means the model states no preference.
 		DefaultParameters map[string]float64 `json:"default_parameters"`
@@ -191,13 +187,10 @@ func FetchModelProfile(
 			if err != nil {
 				return ModelProfileMetadata{}, fmt.Errorf("%w: completion rate for %q: %v", ErrModelProfileUnavailable, want, err)
 			}
-			cache, _ := ratePer1M(m.Pricing.InputCacheRead)
 			return ModelProfileMetadata{
-				ContextWindow:   m.ContextLength,
-				MaxOutputTokens: m.TopProvider.MaxCompletionTokens,
-				Price: Price{
-					InputPer1M: in, OutputPer1M: out, CacheReadPer1M: cache,
-				},
+				ContextWindow:             m.ContextLength,
+				MaxOutputTokens:           m.TopProvider.MaxCompletionTokens,
+				Price:                     m.Pricing.price(in, out),
 				HasPrice:                  true,
 				Sampling:                  samplingDefaultsFromNumbers(m.DefaultParameters),
 				SupportedReasoningEfforts: ClampAdvertisedEfforts(reasoningEffortTokens(m.Reasoning)),
@@ -321,6 +314,9 @@ func BaseModelID(model string) string {
 func (c *Config) ResolveModelProfile(ctx context.Context) error {
 	if c.Provider == ChatGPTProvider {
 		return c.ResolveChatGPTProfile()
+	}
+	if c.Provider == AnthropicProvider {
+		return c.ResolveAnthropicProfile()
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	defer client.CloseIdleConnections()

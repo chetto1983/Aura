@@ -174,6 +174,9 @@ func NewContentCapabilitySource(cfg Config, ttl time.Duration) ContentCapability
 			source.ttl = ttl
 		}
 		return source
+	case ReasoningTargetChatGPT, ReasoningTargetAnthropic:
+		// Read in the provider's own client from the resolved route snapshot.
+		return nil
 	default:
 		return nil
 	}

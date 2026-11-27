@@ -456,3 +456,13 @@ func TestApplyAdaptiveEffortClampsAndSkipsAnEmptyEffort(t *testing.T) {
 		t.Fatalf("an empty effort set reasoning %+v", untouched.Reasoning)
 	}
 }
+
+func TestIsReasoningTargetIncludesAnthropic(t *testing.T) {
+	t.Parallel()
+	if !IsReasoningTarget(llm.AnthropicProvider, llm.AnthropicBaseURL) {
+		t.Fatal("the official Anthropic endpoint must be a reasoning target")
+	}
+	if IsReasoningTarget(llm.AnthropicProvider, "https://custom.proxy") {
+		t.Fatal("a foreign endpoint must not be")
+	}
+}

@@ -47,3 +47,16 @@ func TestChatGPTReasoningCapabilitiesMandatoryAndUnknown(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileReasoningCapsServeAnthropic(t *testing.T) {
+	cfg := Config{Provider: AnthropicProvider, BaseURL: AnthropicBaseURL, ReasoningMandatory: true,
+		SupportedReasoningEfforts: []ReasoningEffort{ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortHigh}}
+	source := NewReasoningCapabilitySource(cfg, time.Hour)
+	if _, ok := source.(*profileReasoningCaps); !ok {
+		t.Fatalf("Anthropic capability source = %T, want *profileReasoningCaps", source)
+	}
+	got, _, detected := source.AllowedEfforts(context.Background())
+	if want := []ReasoningEffort{ReasoningEffortLow, ReasoningEffortHigh}; !detected || !slices.Equal(got, want) {
+		t.Fatalf("capabilities %v, detected %v, want %v", got, detected, want)
+	}
+}

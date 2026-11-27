@@ -50,3 +50,24 @@ func TestReasoningEffortMax(t *testing.T) {
 		t.Errorf("string(ReasoningEffortMax) = %q, want %q", got, "max")
 	}
 }
+
+func TestReasoningTargetAnthropicNeedsTheFixedEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, baseURL string
+		want                    llm.ReasoningTargetKind
+	}{
+		{"official endpoint", llm.AnthropicProvider, llm.AnthropicBaseURL, llm.ReasoningTargetAnthropic},
+		{"case insensitive provider", "Anthropic", llm.AnthropicBaseURL, llm.ReasoningTargetAnthropic},
+		{"foreign endpoint", llm.AnthropicProvider, "https://custom.proxy", llm.ReasoningTargetNone},
+		{"empty endpoint", llm.AnthropicProvider, "", llm.ReasoningTargetNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := llm.ReasoningTarget(tc.provider, tc.baseURL); got != tc.want {
+				t.Fatalf("ReasoningTarget(%q, %q) = %v, want %v", tc.provider, tc.baseURL, got, tc.want)
+			}
+		})
+	}
+	if got := llm.ReasoningTargetAnthropic.String(); got != "anthropic" {
+		t.Fatalf("String() = %q", got)
+	}
+}

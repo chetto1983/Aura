@@ -94,8 +94,7 @@ func FetchModelCatalog(
 			in, inErr := ratePer1M(m.Pricing.Prompt)
 			out, outErr := ratePer1M(m.Pricing.Completion)
 			if inErr == nil && outErr == nil {
-				cache, _ := ratePer1M(m.Pricing.InputCacheRead)
-				entry.Price = Price{InputPer1M: in, OutputPer1M: out, CacheReadPer1M: cache}
+				entry.Price = m.Pricing.price(in, out)
 				entry.HasPrice = true
 			}
 		}

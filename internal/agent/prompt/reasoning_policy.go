@@ -121,7 +121,7 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 // choosing a tier that no other backend ever received (see ApplyAdaptiveEffort).
 func IsReasoningTarget(provider, baseURL string) bool {
 	switch llm.ReasoningTarget(provider, baseURL) {
-	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama, llm.ReasoningTargetChatGPT:
+	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama, llm.ReasoningTargetChatGPT, llm.ReasoningTargetAnthropic:
 		return true
 	default:
 		return false
