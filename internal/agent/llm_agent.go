@@ -88,6 +88,8 @@ type LlmAgent struct {
 	ledgerConvID string
 
 	history []llm.Message
+	// loadedHistory is loadedHistoryCount of the constructed history, fixed for the run.
+	loadedHistory int
 
 	// recoveryAttempts is the per-run recovery gate (D-08): a COUNTER, never a
 	// one-shot boolean latch (CrewAI #1656 anti-pattern). The FIRST early-
@@ -435,6 +437,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			endLLM(nil)
+			a.keepRoundHint(req)
 			slog.Info("agent llm call end", "request_id", requestID, "thread_id", a.sessionID, "finish_reason", finish, "tool_calls", len(calls))
 			if finish == llm.FinishContentFilter {
 				turnReason = a.endOnRefusal(ic, spanID, requestID, text, &turnU, yield)

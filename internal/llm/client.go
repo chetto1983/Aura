@@ -150,6 +150,16 @@ type Request struct {
 	// client ignores it (Slice 13 LLMRouter does the Anthropic-native translation).
 	ToolsCacheControl string
 
+	// StablePrefixMessages and LoadedHistoryMessages are set by the builder on the
+	// anthropic route only; zero elsewhere. StablePrefixMessages counts the leading
+	// messages that reach the next request of the run byte for byte (everything but the
+	// per-round hint); LoadedHistoryMessages counts the leading messages that came from
+	// the conversation store, before the current user message. Both are positions in
+	// Messages, and the wire client puts a cache breakpoint at the end of each.
+	// omitempty keeps a command hook's stdin unchanged on every other route.
+	StablePrefixMessages  int `json:",omitempty"`
+	LoadedHistoryMessages int `json:",omitempty"`
+
 	// ToolChoice is a provider-neutral tool-selection directive interpreted at the
 	// wire layer, not here. Empty (the default) means "auto" — byte-identical to
 	// the historical hardcoded behavior. "none" forces a tool-free synthesis turn:

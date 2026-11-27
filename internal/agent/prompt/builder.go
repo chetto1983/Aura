@@ -49,6 +49,11 @@ type Budget struct {
 	// 5.8k-token prefix, a live turn still called shell_exec unloaded and spent 2.6s
 	// on the refusal.
 	DeferredTools string
+	// LoadedHistory is how many leading history messages came from the conversation
+	// store, recorded once when the run starts. It is never rendered and never makes
+	// the hint present: the builder only copies it to Request.LoadedHistoryMessages on
+	// the anthropic route.
+	LoadedHistory int
 }
 
 // deferredToolsRubric prefixes the roster inside <deferred_tools>. It is a
@@ -128,7 +133,7 @@ func (b Budget) block() string {
 // into the callable manifest (Claude Code parity); nil hides every deferred tool.
 func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, activated map[string]struct{}) llm.Request {
 	req := b.buildBase(history, reg, cfg, budget, activated)
-	injectCacheControl(&req, provider)
+	injectCacheControl(&req, provider, len(history), budget.LoadedHistory)
 	return req
 }
 
@@ -138,7 +143,7 @@ func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provid
 func (b *PromptBuilder) BuildWithAdaptiveEffort(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, effort llm.ReasoningEffort, activated map[string]struct{}) llm.Request {
 	req := b.buildBase(history, reg, cfg, budget, activated)
 	ApplyAdaptiveEffort(&req, provider, cfg, effort)
-	injectCacheControl(&req, provider)
+	injectCacheControl(&req, provider, len(history), budget.LoadedHistory)
 	return req
 }
 
@@ -152,7 +157,7 @@ func (b *PromptBuilder) BuildWithAdaptiveEffort(history []llm.Message, reg *tool
 func (b *PromptBuilder) BuildWithReasoningOverride(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, effort llm.ReasoningEffort, activated map[string]struct{}) llm.Request {
 	req := b.buildBase(history, reg, cfg, budget, activated)
 	ApplyFixedReasoning(&req, provider, cfg, effort)
-	injectCacheControl(&req, provider)
+	injectCacheControl(&req, provider, len(history), budget.LoadedHistory)
 	return req
 }
 

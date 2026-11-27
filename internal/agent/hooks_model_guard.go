@@ -68,6 +68,10 @@ func validateModelHookMutation(before, after *llm.Request) error {
 		return protectedModelHookFieldError("session_id")
 	case before.ToolsCacheControl != after.ToolsCacheControl:
 		return protectedModelHookFieldError("tools_cache_control")
+	case before.StablePrefixMessages != after.StablePrefixMessages:
+		return protectedModelHookFieldError("stable_prefix_messages")
+	case before.LoadedHistoryMessages != after.LoadedHistoryMessages:
+		return protectedModelHookFieldError("loaded_history_messages")
 	case before.ToolChoice != after.ToolChoice:
 		return protectedModelHookFieldError("tool_choice")
 	default:

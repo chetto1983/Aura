@@ -40,6 +40,7 @@ func (a *LlmAgent) roundBudget(ic InvocationContext) prompt.Budget {
 	// for the same reason as Sources: the cached prefix is the wrong distance from
 	// the decision.
 	budget.DeferredTools = a.registry.DeferredRoster(a.activated)
+	budget.LoadedHistory = a.loadedHistory
 	return budget
 }
 

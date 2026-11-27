@@ -64,7 +64,9 @@ func (a *LlmAgent) readTurn(ctx context.Context) (TurnDecision, turnRead) {
 	decision := TurnDecision{RouteKey: routeKey(a.cfg), PolicyVersion: turnPolicyVersion}
 	var read turnRead
 	target := prompt.IsReasoningTarget(a.cfg.Provider, a.cfg.BaseURL)
-	adaptive := a.cfg.AdaptiveReasoning && target
+	// The anthropic route holds the Composer effort for the whole turn: no classifier.
+	adaptive := a.cfg.AdaptiveReasoning && target &&
+		llm.ReasoningTarget(a.cfg.Provider, a.cfg.BaseURL) != llm.ReasoningTargetAnthropic
 	greeting := a.turnReading.Standalone && prompt.IsTrivialGreeting(user)
 
 	var recall TurnRecall

@@ -140,11 +140,58 @@ func TestCacheControlSeam(t *testing.T) {
 		t.Parallel()
 		req := llm.Request{Model: "m", Messages: hist}
 		snapshot := req
-		injectCacheControl(&req, "openrouter")
+		injectCacheControl(&req, "openrouter", len(hist), 1)
 		if !reflect.DeepEqual(req, snapshot) {
 			t.Fatalf("injectCacheControl mutated request under openrouter: got %+v want %+v", req, snapshot)
 		}
 	})
+
+	fiveMessages := []llm.Message{
+		{Role: llm.RoleSystem, Content: "system prefix"},
+		{Role: llm.RoleUser, Content: "stored question"},
+		{Role: llm.RoleAssistant, Content: "stored answer"},
+		{Role: llm.RoleUser, Content: "current question"},
+		{Role: llm.RoleTool, ToolCallID: "c1", Content: "tool result"},
+	}
+	hint := Budget{Used: 1, Remaining: 9, CurrentTime: "10:00", LoadedHistory: 3}
+
+	t.Run("anthropic marks the stable prefix before the hint", func(t *testing.T) {
+		t.Parallel()
+		req := b.Build(fiveMessages, reg, "anthropic", cfg, hint, nil)
+		if len(req.Messages) != 6 {
+			t.Fatalf("messages = %d, want 5 history + 1 hint", len(req.Messages))
+		}
+		if req.StablePrefixMessages != 5 || req.LoadedHistoryMessages != 3 {
+			t.Fatalf("stable=%d loaded=%d, want 5 and 3", req.StablePrefixMessages, req.LoadedHistoryMessages)
+		}
+		plain := b.Build(fiveMessages, reg, "anthropic", cfg, Budget{LoadedHistory: 3}, nil)
+		if len(plain.Messages) != 5 || plain.StablePrefixMessages != 5 {
+			t.Fatalf("no hint: messages=%d stable=%d, want the whole request stable", len(plain.Messages), plain.StablePrefixMessages)
+		}
+		for _, build := range []llm.Request{
+			b.BuildWithAdaptiveEffort(fiveMessages, reg, "anthropic", cfg, hint, llm.ReasoningEffortHigh, nil),
+			b.BuildWithReasoningOverride(fiveMessages, reg, "anthropic", cfg, hint, llm.ReasoningEffortHigh, nil),
+		} {
+			if build.StablePrefixMessages != 5 || build.LoadedHistoryMessages != 3 {
+				t.Fatalf("effort builder: stable=%d loaded=%d, want 5 and 3", build.StablePrefixMessages, build.LoadedHistoryMessages)
+			}
+		}
+	})
+
+	t.Run("openrouter leaves it zero", func(t *testing.T) {
+		t.Parallel()
+		req := b.Build(fiveMessages, reg, "openrouter", cfg, hint, nil)
+		if req.StablePrefixMessages != 0 || req.LoadedHistoryMessages != 0 {
+			t.Fatalf("openrouter: stable=%d loaded=%d, want both zero", req.StablePrefixMessages, req.LoadedHistoryMessages)
+		}
+	})
+}
+
+func TestLoadedHistoryNeverMakesTheHintPresent(t *testing.T) {
+	req := NewPromptBuilder().Build(seedHistory(), testRegistry(), "anthropic", testConfig(), Budget{LoadedHistory: 1}, nil)
+	if len(req.Messages) != len(seedHistory()) {
+		t.Fatalf("messages = %d, want no hint appended for LoadedHistory alone", len(req.Messages))
+	}
 }
 
 // The card's sampling has to survive the builder, or it is configured and then dropped
