@@ -3615,6 +3615,25 @@ This does not establish:
   unit test (`TestBackgroundCallsCountTheWindowAgainOnceTheHoldEnds`);
 - the lab VM, its other mounts, a fallback that reaches a channel, or the multi-round-trip path.
 
+**On the lab VM, with its own model; a settled form stays in its call's row (2026-11-27, amendment
+#228).** Measured on the VM through its updater, the cockpit driven in the operator's session
+(`docs/superpowers/verification/2026-11-27-lab-vm-drafts-elicitation-composer.md`): server-everything
+negotiated `2026-07-28`, so the multi-round-trip path ran; a form submitted after 116 s closed `ok`
+in its turn, with one `mcp elicitation resolved` line and none of the typed values in the log; a
+decline and the 300 s expiry reached the real model as `decline` and `cancel`; memory, calendar and
+whatsapp mounted with the same tool counts before and after. A turn from Telegram had no asker: the
+notice naming the server and its fields reached the chat, the server read a decline, and no card
+appeared in the cockpit. The question now carries `tool_call_id`, the call it arrived in, when
+exactly one call can own it (the multi-round-trip path, or a classic session with one open call);
+the cockpit draws the settled form inside that call's row, where the VM showed it.
+
+This does not establish:
+- the classic path on the VM, or a classic session with two open calls, whose form names no call
+  (`TestAClassicFormWithTwoOpenCallsNamesNeither`, a unit test);
+- that a model tells an automatic decline from the operator's: on Telegram it reported that the user
+  had refused;
+- a receipt after a reload: the server keeps no record of a settled form, so none is drawn.
+
 Installing supported resolver-based stdio servers prepares a durable environment,
 resolves its executable, verifies initialize/tools-list, then persists the declaration.
 Failed verification does not save a broken server. Preparation and mounting restrict
