@@ -121,8 +121,11 @@ log in as `operator@aura.test` / `fake-pass`, then `select("INBOX", readonly=Tru
 ## 4. Traps, each measured
 
 - **Two hours is the most a background command lives.** `dockerd` started that way was stopped at
-  the limit on 2026-11-27, and every container with it. Start `dockerd` again, `docker start`
-  the core containers, rerun `pim_up.sh`, and restart the daemon.
+  the limit on 2026-11-27, and every container with it. The hand endpoint, the memory sidecar and
+  the daemon reach the same limit. Start `dockerd` again, `docker start` the core containers, then
+  bring up again whatever ran in the background (steps 4 to 6). Rerunning `pim_up.sh` recreates
+  GreenMail empty, with only the three seeded mails: what the scenario sent before is gone, so a
+  run that reads the mailbox starts again after it.
 - **A parked request is not a hang.** Use `pending.sh`, never `ls | tail`: on 2026-10-31,
   `req-4` hid behind newer files.
 - **A daemon stopped mid-turn leaves its request parked.** Answer it with any `resp-N.json` to
