@@ -126,3 +126,21 @@ func TestCostUSDValue(t *testing.T) {
 		}
 	})
 }
+
+func TestPriceForSwitchesAtTheThreshold(t *testing.T) {
+	long := &llm.LongPromptPrice{MinPromptTokens: 100_000, InputPer1M: 2, OutputPer1M: 10, CacheReadPer1M: 0.2, CacheWritePer1M: 2.5}
+	short := llm.Price{InputPer1M: 1, OutputPer1M: 5, CacheReadPer1M: 0.1, CacheWritePer1M: 1.25, LongPrompt: long}
+	if got := short.For(99_999); got != short {
+		t.Fatalf("below the threshold: %+v", got)
+	}
+	want := llm.Price{InputPer1M: 2, OutputPer1M: 10, CacheReadPer1M: 0.2, CacheWritePer1M: 2.5}
+	for _, prompt := range []int{100_000, 400_000} {
+		if got := short.For(prompt); got != want {
+			t.Fatalf("at %d: %+v", prompt, got)
+		}
+	}
+	flat := llm.Price{InputPer1M: 3, OutputPer1M: 15}
+	if got := flat.For(1_000_000); got != flat {
+		t.Fatalf("a flat price changed: %+v", got)
+	}
+}

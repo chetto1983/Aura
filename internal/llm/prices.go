@@ -48,6 +48,16 @@ type LongPromptPrice struct {
 	InputPer1M, OutputPer1M, CacheReadPer1M, CacheWritePer1M float64
 }
 
+// For is the rate card that bills one call whose prompt is promptTokens long: the long
+// prompt rates once the prompt reaches their threshold, p itself below it.
+func (p Price) For(promptTokens int) Price {
+	long := p.LongPrompt
+	if long == nil || promptTokens < long.MinPromptTokens {
+		return p
+	}
+	return Price{InputPer1M: long.InputPer1M, OutputPer1M: long.OutputPer1M, CacheReadPer1M: long.CacheReadPer1M, CacheWritePer1M: long.CacheWritePer1M}
+}
+
 // CostUSDValue reports the numeric turn cost in USD and an ok flag, with the D-18/D-23
 // precedence below. It is the shared core for both the displayed footer (CostUSD) and
 // the persisted cost (runner persistence), so the two never disagree.

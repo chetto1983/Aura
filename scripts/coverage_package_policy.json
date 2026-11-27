@@ -57,6 +57,7 @@
     "github.com/chetto1983/aura/internal/ingestsupervisor": {"mode": "target"},
     "github.com/chetto1983/aura/internal/keylock": {"mode": "target"},
     "github.com/chetto1983/aura/internal/llm": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/llm/anthropic": {"mode": "target"},
     "github.com/chetto1983/aura/internal/llm/chatgpt": {"mode": "target"},
     "github.com/chetto1983/aura/internal/llm/openai_compat": {"mode": "target"},
     "github.com/chetto1983/aura/internal/mcp": {"mode": "target"},

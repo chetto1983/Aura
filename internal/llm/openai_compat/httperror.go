@@ -161,8 +161,14 @@ func newHTTPError(resp *http.Response) *HTTPError {
 	return e
 }
 
+// responseRequestID reads the provider's support reference: x-request-id on OpenAI-shaped
+// backends, request-id on Anthropic.
 func responseRequestID(resp *http.Response) string {
-	id := strings.Join(strings.Fields(resp.Header.Get("x-request-id")), " ")
+	id := resp.Header.Get("x-request-id")
+	if id == "" {
+		id = resp.Header.Get("request-id")
+	}
+	id = strings.Join(strings.Fields(id), " ")
 	if len(id) > 128 {
 		id = id[:128]
 	}

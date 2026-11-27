@@ -53,6 +53,10 @@ var patterns = []*struct {
 	{regexp.MustCompile(`(?i)(authorization\s*[:=]\s*)[^\r\n]+`), "${1}" + Placeholder},
 	// A bare Bearer credential not preceded by the Authorization keyword.
 	{regexp.MustCompile(`(?i)(bearer\s+)[^\s,;"']+`), "${1}" + Placeholder},
+	// Anthropic keys, sk-ant-api03-… and sk-ant-admin01-…: the dashes and underscores in
+	// them stop the sk- pattern below after "ant". An `x-api-key: …` header value is
+	// already caught by the inline api-key assignment pattern at the end.
+	{regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{16,}`), Placeholder},
 	// OpenAI / OpenRouter keys: sk-… and sk-or-…. Opaque, so there is no key to keep.
 	{regexp.MustCompile(`sk-(?:or-)?[A-Za-z0-9]{16,}`), Placeholder},
 	// AWS access key ids (permanent IAM keys and temporary STS credentials).

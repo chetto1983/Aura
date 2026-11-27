@@ -20,3 +20,16 @@ func TestDirectPlanAdmissionErrorRetainsDetailAndRequestID(t *testing.T) {
 		t.Fatal("request identifier is not bounded to one line")
 	}
 }
+
+// Anthropic names the support reference request-id, not x-request-id.
+func TestRequestIDFallsBackToTheAnthropicHeader(t *testing.T) {
+	response := &http.Response{Header: http.Header{}}
+	response.Header.Set("request-id", "req_011")
+	if got := responseRequestID(response); got != "req_011" {
+		t.Fatalf("request-id not read: %q", got)
+	}
+	response.Header.Set("x-request-id", "req-openai")
+	if got := responseRequestID(response); got != "req-openai" {
+		t.Fatalf("x-request-id must win when both are sent: %q", got)
+	}
+}
