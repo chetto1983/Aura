@@ -413,8 +413,12 @@ export function ExternalStoreChat({
       <CollectedJobsContext.Provider value={collectedJobs}>
         <SourceExplorerProvider>
           <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
+            {/* relative: the tool rows' sr-only status words are position:absolute, and with no
+                positioned ancestor here they escaped this scroller into ArtifactWorkspace's
+                overflow-hidden wrapper, which the browser then scrolled when a card closed,
+                lifting the composer off the bottom (lab VM, 2026-11-27). */}
             <ThreadViewport
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
+              className="relative min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
               openAt={openAt?.threadId === threadId ? openAt : undefined}
               messages={messages}
               historyReady={

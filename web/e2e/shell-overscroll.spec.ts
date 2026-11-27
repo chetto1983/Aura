@@ -8,8 +8,11 @@ import { gotoAuthenticated } from './auth';
 // LONG chat the spans resolve to the ICB at their deep static Y, escape every
 // overflow clip, and extend document.documentElement.scrollHeight past the viewport
 // — a scrollable dead band the shell (h-[100dvh] overflow-hidden) was supposed to
-// prevent. The fix makes .aura-shell position:relative so its overflow-hidden clips
-// them. This test fails (docScrollHeight >> innerHeight) without that fix.
+// prevent. The first fix made .aura-shell position:relative so its overflow-hidden clips
+// them. This test fails (docScrollHeight >> innerHeight) without that fix. A later
+// relative wrapper (ArtifactWorkspace) caught them closer, inside a box the browser can
+// still scroll, so the message viewport is now relative itself and keeps them in its
+// own scroll range (2026-11-27).
 //
 // It uses a MOCKED long conversation with many settled tool-call turns (each renders
 // a ToolActivityCard carrying an sr-only status word), so it needs no live agent and
@@ -95,5 +98,26 @@ for (const vp of [
     // viewport (a stray absolute descendant escaping the clip breaks this).
     expect(geo.docScrollHeight, JSON.stringify(geo)).toBeLessThanOrEqual(geo.innerHeight + 1);
     expect(geo.bodyScrollHeight, JSON.stringify(geo)).toBeLessThanOrEqual(geo.innerHeight + 1);
+
+    // The same spans must not overflow any clip between the composer and the shell either.
+    // Measured on the lab VM 2026-11-27: they extended ArtifactWorkspace's overflow-hidden
+    // wrapper to 1661 px of a 1040 px box, and declining a form scrolled it by 448 px, so the
+    // whole chat column, composer included, rose off the bottom of the screen.
+    const overflowing = await page.evaluate(() => {
+      const found: string[] = [];
+      let el = document.querySelector('textarea')?.parentElement ?? null;
+      while (el !== null && el !== document.body) {
+        const overflowY = getComputedStyle(el).overflowY;
+        if (
+          (overflowY === 'hidden' || overflowY === 'clip') &&
+          el.scrollHeight > el.clientHeight + 1
+        ) {
+          found.push(`${el.className} ${String(el.scrollHeight)}>${String(el.clientHeight)}`);
+        }
+        el = el.parentElement;
+      }
+      return found;
+    });
+    expect(overflowing).toEqual([]);
   });
 }
