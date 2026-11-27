@@ -516,6 +516,29 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(calls[0]?.body).toEqual({ action: 'accept', content: 'No' });
   });
 
+  // Measured 2026-11-27: a Yes/No approval from the model asked to review a scope it has not got.
+  it.each([
+    [
+      'the gateway offers scopes',
+      [{ label: 'Approve once', value: 'gateway_scope:once:board' }],
+      true,
+    ],
+    ['the reply is free text', undefined, true],
+    ['the model offers its own options', ['Yes', 'No'], false],
+  ] as const)('warns about scope and consequence only when %s', (_case, options, warns) => {
+    renderCard({
+      approval: approval({
+        token: 't-scope',
+        conversation_id: 'c-1',
+        kind: 'approval',
+        ...(options !== undefined ? { options: [...options] } : {}),
+      }),
+    });
+    expect(screen.queryByText('Review the scope and consequence before continuing.') !== null).toBe(
+      warns,
+    );
+  });
+
   it('two options with one value are still two rows, and the chosen one is shown', async () => {
     renderCard({
       approval: approval({

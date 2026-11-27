@@ -158,9 +158,12 @@ describe('ExternalStoreChat approval gate', () => {
         kind: 'approval',
         terminal: true,
       };
+      // The review line belongs to a scope to review: the gateway's rows. An approval offering
+      // the model's own options carries none (2026-11-27).
       const pendingRow: Approval = {
         ...row('pending', 'Current approval'),
         kind: 'approval',
+        options: [{ label: 'Approve once', value: 'gateway_scope:once:board' }],
       };
       vi.stubGlobal('fetch', approvalsFetch([terminalRow, pendingRow], []));
       renderChat(<ExternalStoreChat threadId="c-1" />);

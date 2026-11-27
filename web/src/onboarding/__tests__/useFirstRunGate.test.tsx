@@ -25,6 +25,7 @@ function gate(linkRequested = false) {
 describe('useFirstRunGate', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it.each([
@@ -88,5 +89,41 @@ describe('useFirstRunGate', () => {
       result.current.close();
     });
     expect(result.current.open).toBe(false);
+  });
+
+  // A reload used to open it again over the cockpit, a server's form included (2026-11-27).
+  it('stays closed for the rest of the session once closed', async () => {
+    vi.mocked(fetchOnboardingStatus).mockResolvedValue({ ...NOTHING_OWED, required: true });
+    const first = gate();
+    await waitFor(() => {
+      expect(first.result.current.open).toBe(true);
+    });
+    act(() => {
+      first.result.current.close();
+    });
+    first.unmount();
+
+    const reloaded = gate();
+    await waitFor(() => {
+      expect(fetchOnboardingStatus).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(reloaded.result.current.open).toBe(false);
+    expect(reloaded.onOpen).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a required route step', { ...NOTHING_OWED, routeRequired: true }, false],
+    ['a ?onboarding=1 link', { ...NOTHING_OWED, required: true }, true],
+  ])('opens after a dismissal for %s', async (_case, status, linkRequested) => {
+    sessionStorage.setItem('aura.onboarding.dismissed', '1');
+    vi.mocked(fetchOnboardingStatus).mockResolvedValue(status);
+    const { result } = gate(linkRequested);
+
+    await waitFor(() => {
+      expect(result.current.open).toBe(true);
+    });
   });
 });

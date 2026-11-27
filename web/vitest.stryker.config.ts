@@ -30,6 +30,7 @@ const mutationTests = [
   'src/questions/__tests__/elicitationSteps.test.ts',
   'src/questions/__tests__/useCountdown.test.ts',
   'src/questions/__tests__/ElicitationCard.test.tsx',
+  'src/questions/__tests__/useElicitationDraft.test.ts',
   'src/chat/artifacts/artifactMeta.test.ts',
   'src/chat/artifacts/PreviewModal.test.tsx',
   'src/chat/artifacts/renderers/sourcePreview.test.tsx',
@@ -40,6 +41,7 @@ const mutationTests = [
   // iOS's home-screen app saves through the share sheet (prd.md §3).
   'src/chat/artifacts/SaveFileLink.test.tsx',
   'src/lib/__tests__/installedApp.test.ts',
+  'src/lib/__tests__/sessionValue.test.ts',
   'src/chat/voice/speechAdapter.test.ts',
   'src/chat/voice/dictationAdapter.test.ts',
   'src/chat/displays/__tests__/SourcesButton.test.tsx',

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readSessionValue, writeSessionValue } from '../lib/sessionValue';
 import { fetchOnboardingStatus, type OnboardingStatus } from './onboardingApi';
+
+// A ref alone remembered the dismissal for one page load, so every reload opened the setup again
+// over whatever the operator was doing, a server's form included (measured 2026-11-27).
+const DISMISSED_KEY = 'aura.onboarding.dismissed';
 
 export interface FirstRunGateOptions {
   /** A ?onboarding=1 link asked for the setup. */
@@ -18,10 +23,11 @@ export interface FirstRunGate {
 }
 
 /**
- * useFirstRunGate opens first-run setup once per session: when the daemon says the profile is
- * still owed or an admin's route step is required, or when a ?onboarding=1 link asked for it. A
- * link opens it only once the status is read, or fails to be, so the route step knows whether it
- * is required.
+ * useFirstRunGate opens first-run setup once per browser session: when the daemon says the
+ * profile is still owed or an admin's route step is required, or when a ?onboarding=1 link asked
+ * for it. A link opens it only once the status is read, or fails to be, so the route step knows
+ * whether it is required. Closing it holds for the session, except against a link or a required
+ * route, which has no Close.
  */
 export function useFirstRunGate({
   linkRequested,
@@ -50,7 +56,8 @@ export function useFirstRunGate({
     };
     void fetchOnboardingStatus().then(
       (next) => {
-        if (linked.current || next.required || next.routeRequired) openWith(next);
+        const owed = next.required && readSessionValue(DISMISSED_KEY) === undefined;
+        if (linked.current || owed || next.routeRequired) openWith(next);
       },
       () => {
         if (linked.current) openWith(undefined);
@@ -62,6 +69,7 @@ export function useFirstRunGate({
   }, [onOpen]);
 
   const close = useCallback(() => {
+    writeSessionValue(DISMISSED_KEY, '1');
     setOpen(false);
   }, []);
   return { open, status, close };
