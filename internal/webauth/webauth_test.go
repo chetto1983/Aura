@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	coreerrors "github.com/Authula/authula/core/errors"
 	authulamodels "github.com/Authula/authula/models"
 	authulaservices "github.com/Authula/authula/services"
 )
@@ -92,7 +93,10 @@ func (f fakeSession) GetByToken(_ context.Context, hashed string) (*authulamodel
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.byToken[hashed], nil
+	if s := f.byToken[hashed]; s != nil {
+		return s, nil
+	}
+	return nil, coreerrors.ErrSessionNotFound
 }
 func (fakeSession) GetByID(context.Context, string) (*authulamodels.Session, error) { return nil, nil }
 func (fakeSession) Create(context.Context, string, string, *string, *string, time.Duration) (*authulamodels.Session, error) {
