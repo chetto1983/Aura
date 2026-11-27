@@ -166,8 +166,11 @@ func scopeFromOptions(options []ScopeOption, answer string) ApprovalScope {
 		if answer != o.Value && answer != o.Label {
 			continue
 		}
-		code, _ := strings.CutPrefix(o.Value, scopeOptionPrefix)
-		scope, _, _ := strings.Cut(code, ":")
+		code, coded := strings.CutPrefix(o.Value, scopeOptionPrefix)
+		scope, _, withSubject := strings.Cut(code, ":")
+		if !coded || !withSubject {
+			return ScopeOnce
+		}
 		switch s := ApprovalScope(scope); s {
 		case ScopeSession, ScopeAlways:
 			return s

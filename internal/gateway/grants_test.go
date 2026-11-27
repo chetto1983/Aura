@@ -365,6 +365,18 @@ func TestProductionRefusesEveryScope(t *testing.T) {
 	if grants.granted != 0 {
 		t.Fatalf("production wrote %d durable grant(s)", grants.granted)
 	}
+	for _, s := range []ApprovalScope{ScopeSession, ScopeAlways} {
+		got := g.RecordGrant(context.Background(), GrantRequest{
+			ConversationID: testKey().ConversationID, IdentityID: testIdentity, OperatorID: testIdentity,
+			Tool: "skill_manage", Action: "delete", Scope: s,
+		})
+		if got != ScopeOnce {
+			t.Fatalf("RecordGrant(%s) under production = %q, want once", s, got)
+		}
+	}
+	if _, ok := g.approvals.SessionGrant(testKey().ConversationID, grantSubject{Tool: "skill_manage", Action: "delete"}); ok || grants.granted != 0 {
+		t.Fatal("RecordGrant under production recorded a grant")
+	}
 }
 
 // assertReservedScope checks the reservation start recorded which standing grant let the
