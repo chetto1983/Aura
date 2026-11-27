@@ -9,6 +9,10 @@
   - Approach A, a native provider on Anthropic's Messages API ("sì, vai con A").
   - One house key for every identity, set by the admin ("1, chiave unica della casa").
 - **Measurement this rests on:** §3, taken on 2026-11-27 with the operator's own key, revoked the same hour.
+- **Risk tier: medium-high.** A new provider on the agent's hot path, two new fields on the
+  provider-neutral `llm.Message`/`llm.Chunk`, and a new sealed setting.
+- **Schema:** one migration, a nullable `jsonb` column on the conversation turns for the thinking replay
+  (§5.5), numbered at landing.
 
 ## 1. Why
 
@@ -172,8 +176,9 @@ the source at that tag on 2026-11-27). The SDK pins `anthropic-version: 2026-10-
 - Thinking is `adaptive` on every request. `display: summarized` when `ShowReasoning` is on, `omitted`
   otherwise.
 - `Request.Reasoning.Effort` maps to `output_config.effort`. `minimal` sends `low`. `none` sends
-  `thinking: disabled` only when the model's capabilities say `disabled` is supported, and otherwise the
-  lowest supported effort. An effort the model does not list is clamped to the nearest it does.
+  the lowest supported effort: this route never sends `thinking: disabled`, so a tool loop never has
+  thinking switched off halfway (§7.5). An effort the model does not list is clamped to the nearest it
+  does.
 - The model profile reads `SupportedReasoningEfforts` from `capabilities.effort` and sets
   `ReasoningMandatory` when `thinking.types.disabled` is unsupported, so the Composer offers only what the
   model accepts.
@@ -191,8 +196,14 @@ order, with the `tool_use` they preceded.
   for the tool calls (and for a pause), unchanged and unread.
 - The Anthropic client replays it verbatim ahead of that message's `tool_use` blocks; every other client
   ignores it, so their wire requests stay byte-identical.
-- Wherever history outlives the process (a pause resumed later), the field is persisted with the message.
-  Outside a tool loop, thinking from completed turns may be dropped (docs) and is not stored.
+- History outlives the process: a resumed pause and every new user turn reload it from the conversation's
+  turns, stored as columns (`role`, `content`, `tool_call_id`, `tool_calls jsonb`, migration 0005;
+  `internal/conversations/store.go`, `LoadHistory`). The field therefore needs a nullable `jsonb` column
+  on that table, written with the assistant tool-call turn and read back by `LoadHistory` — a migration,
+  numbered at landing (`ls internal/db/migrations/ | tail -1`). Turns from other routes leave it NULL.
+- A conversation that started on another route carries tool-call turns with no thinking and ids minted
+  by another provider. The client sends them as plain `tool_use` blocks; measurement §7.1 checks that
+  the API accepts them.
 
 ### 5.6 Prompt caching
 
@@ -218,10 +229,17 @@ order, with the `tool_use` they preceded.
   `max_tokens`, efforts and mandatory reasoning from `capabilities`, image and PDF input for the content
   capability source.
 - Prices: no Anthropic endpoint publishes them. The arm reads the list price from OpenRouter's public
-  catalogue for the same model (no key; Aura already parses it), with a cache-write rate added to
-  `llm.Price`. When no catalogue entry matches, the cost status is unknown, never $0. The id mapping
-  (`claude-opus-5-5` ↔ OpenRouter's id) is measured in the plan's first task. Haiku 5.5's higher rate
-  above 100k prompt tokens is applied, not averaged away.
+  catalogue for the same model (no key; Aura already parses it). Measured 2026-11-27 on
+  `GET https://openrouter.ai/api/v1/models`:
+  - the ids map by turning the version's dash into a dot under `anthropic/`: `claude-opus-5-5` ↔
+    `anthropic/claude-opus-5.5`, likewise `sonnet-5.5`, `haiku-5.5`, `fable-5.2`;
+  - every one publishes `prompt`, `completion`, `input_cache_read`, `input_cache_write` (5 min) and
+    `input_cache_write_1h`, matching Anthropic's pricing page (Sonnet 5.5: 2 / 10 / 0.10 / 2.50 / 4 USD per
+    MTok);
+  - Haiku 5.5 adds `overrides: [{min_prompt_tokens: 100000, prompt, completion, input_cache_read,
+    input_cache_write, input_cache_write_1h}]`, the long-prompt rate.
+  `llm.Price` gains the cache-write rates and the long-prompt override. When no catalogue entry matches,
+  the cost is unknown, never $0 (§7.4).
 - `Config.Spend` answers "unavailable: see the Claude Console" on this route; a standard key has no spend
   endpoint.
 
@@ -250,7 +268,8 @@ image input.
   5. the turn's cost recorded with cache reads and writes priced;
   6. the key replaced in Settings and the next turn using it, no restart;
   7. no key: the refusal card, no network call;
-  8. switch back to OpenRouter: wire requests byte-identical to before the change.
+  8. switch back to OpenRouter: wire requests byte-identical to before the change;
+  9. a conversation with tool history from OpenRouter continued on Claude, and the reverse.
 - The PRD records the measurement, citing this spec, and what it does not prove.
 
 ## 7. Decisions taken after the builder check (controller's calls; the operator may overturn them)
@@ -262,8 +281,10 @@ image input.
      (`dedupeSameMessageCalls`), and on a pause only the pausing calls kept (`pauseToolCalls`);
    - whether the per-round hint, merged as text into the user message that carries the `tool_result`
      blocks, ends the turn for thinking (prior blocks stripped) or not;
-   - the OpenRouter catalogue id for each Anthropic model, and whether it publishes a cache-write and a
-     long-prompt rate.
+   - whether a history carrying tool-call turns from another route (OpenRouter-minted ids, no thinking)
+     is accepted ahead of a new Claude turn;
+   - that the Console balance moves by the probe's computed cost (the premise that a key spends the
+     plan's credit).
    The verdicts go into this spec before the adapter task starts.
 2. **Replay holds the original signed blocks, never a rewrite.** The replay field carries the thinking
    and redacted-thinking blocks exactly as streamed (`ToParam()` of those blocks only). Aura's tool-call
@@ -276,7 +297,10 @@ image input.
 4. **Cost is computed per call, in the client.** `Usage.Cost` is set on each call from the route's
    price, so the turn sums per-call costs (`agent/turn_usage.go`) and Haiku 5.5's long-prompt rate
    applies per request, never to the turn's total. A rate the catalogue does not publish is never typed
-   into Aura: a call that needs it reports no cost, and the turn's cost is unknown rather than wrong.
+   into Aura. Today one priced call is enough for `turn_usage.go` to report a turn cost, and with none
+   `runner_persist.go` re-prices the summed tokens from the table. On this route both change: any call
+   without a cost makes the whole turn's cost unknown, and the table fallback never runs on summed
+   tokens.
 5. **Aura's per-turn effort classifier is off on this route.** Claude's adaptive thinking already decides
    how much to think, and each effort change invalidates the message cache (§3). The effort is the one
    the Composer shows, held for the conversation; the model's default when nobody picked one. Overrun
