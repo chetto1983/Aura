@@ -57,21 +57,31 @@ Read over IMAP, read-only, after the run:
 | `colleague@aura.test` | 2: `m1` from the first attempt and `n1` from the second, each with the operator's edited subject and body, not the model's originals |
 | `anna@client.test`, `colleage@aura.test` | none: GreenMail lists only `operator@` and `colleague@` as users, so nothing was ever delivered to either |
 
-## Found and not fixed: the operator's edit is invisible afterwards
+## The operator's edit, invisible afterwards, then fixed
 
-Two places still show the model's original call, not what was sent:
+In the run above, two places still showed the model's original call instead of what was sent. The tool result
+for `n1` was `{"success": true, "messageId": …}`, so the model believed it had written to `colleage@` about a
+meeting "alle 10". After a reload, the row's REQUEST block showed the original arguments under a `Done` result,
+and the edited recipient appeared nowhere on screen.
 
-- **The model.** The tool result for `n1` was `{"success": true, "messageId": …}`. The model is not told the
-  recipient, subject or body were changed, so it believes it wrote to `colleage@` about a meeting "alle 10".
-- **The replayed tool row.** After a reload, the row's REQUEST block shows the original arguments under a `Done`
-  result. The edited recipient appears nowhere on screen once the card has gone.
+On the operator's go-ahead, the answer to a reviewed send now opens with the fields the review changed and the
+values that went out (`messagedrafts.Draft.OperatorEdits`). It does so for a sent or uncertain send, and for an
+approved scheduled one, but not for a failed one. Measured with one `send_email` (`e1`), recipient and body
+edited on the card:
 
-The spec asks that "the model sees the actual send outcome" and for a receipt "in live and replay". The
-outcome is there; what was sent is not. This changes what the model reads, so it is left for a decision.
+| | Result |
+|---|---|
+| What the model read | `The operator edited your message before approving it. These fields differ from your call: to = ["colleague@aura.test"]; body = "La riunione di lunedì è confermata, ma alle 11.".` followed by the send's own result |
+| The row after a reload | REQUEST still shows the model's call; RESULT opens with the same line ([screenshot](2026-11-27-message-drafts-cockpit/edited-receipt-after-fix.png)) |
+| An unedited send | the answer is the send's result alone, as before (`TestAReviewDraftedBeforeThePIMSplitSendsAfterIt`) |
+
+The REQUEST block keeps the model's own call: it is what the model asked for, and the RESULT now says what went
+out instead.
 
 ## What this does not show
 
-- **A real model.**
+- **A real model.** Whether a model reads the edit line and reports the edited message is its own choice; here
+  it was mine.
 - **WhatsApp.** No bridge ran; the spec asks for both families.
 - **A foreign identity, and a public share.** A second identity needs a real Telegram token
   (`aura identity create`), and public sharing is off on this profile. Both remain covered by the API tests only.

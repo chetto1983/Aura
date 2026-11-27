@@ -374,6 +374,21 @@ with `no_effect` and the model reads "message was not sent". Only a failure afte
 refused, and only the error type otherwise, since a transport error may echo the recipient or the
 text.
 
+**The model learns what the operator changed (2026-11-27, amendment #227).** Measured in the
+cockpit with the model in the loop and the PIM over GreenMail
+(`docs/superpowers/verification/2026-11-27-message-drafts-cockpit.md`): the operator rewrote a
+send's recipient and text, the edited mail went out, and the model read only the send's result,
+`{"success": true, …}`. It went on believing its own recipient and text had gone out, and after a
+reload the tool row showed only the model's call. The answer to a reviewed send now opens with the
+fields the review changed and the values that went out (`messagedrafts.Draft.OperatorEdits`), for a
+sent, uncertain or approved scheduled message. A failed send and an unedited one read as before.
+The same run found that a second send in the same round lost its review, fixed in the AG-UI
+translator, which now reads every pause of a round.
+
+This does not establish:
+- what a real model does with that line: every model answer was written by hand;
+- WhatsApp: no bridge ran, so only email was measured.
+
 **The PIM is one tool per operation, measured on the lab VM 2026-11-25.**
 - **The change.** Since `442c2058d`, the PIM advertises its 29 operations as 29 tools:
   `calendar__send_email`, `calendar__get_emails`, and so on. The gateway, message drafts, host-built
