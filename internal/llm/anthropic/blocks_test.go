@@ -298,7 +298,7 @@ func markers(t *testing.T, body map[string]any) []string {
 	for _, m := range messagesOf(t, body) {
 		for _, b := range blocksOf(t, m) {
 			if cc := b["cache_control"]; cc != nil {
-				if !reflect.DeepEqual(cc, map[string]any{"type": "ephemeral", "ttl": "5m"}) {
+				if !reflect.DeepEqual(cc, map[string]any{"type": "ephemeral"}) {
 					t.Fatalf("cache_control %#v", cc)
 				}
 				label := b["type"].(string)

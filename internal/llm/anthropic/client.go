@@ -30,7 +30,9 @@ type Client struct {
 	key        KeySource
 	httpClient *http.Client
 	baseURL    string
-	logger     *slog.Logger
+	// logger is resolved at each request, so the request line follows the default logger
+	// the process installs after the client was built.
+	logger func() *slog.Logger
 }
 
 var _ llm.Client = (*Client)(nil)
@@ -41,7 +43,7 @@ func New(cfg llm.Config, key KeySource) *Client {
 }
 
 func newClient(cfg llm.Config, key KeySource, hc *http.Client, baseURL string) *Client {
-	return &Client{cfg: cfg, key: key, httpClient: hc, baseURL: baseURL, logger: slog.Default()}
+	return &Client{cfg: cfg, key: key, httpClient: hc, baseURL: baseURL, logger: slog.Default}
 }
 
 func (c *Client) readKey(ctx context.Context) (string, error) {

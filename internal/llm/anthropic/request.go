@@ -16,8 +16,9 @@ const minMaxTokens = 16_384
 // efforts is output_config.effort's vocabulary, lowest first.
 var efforts = []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortMedium, llm.ReasoningEffortHigh, llm.ReasoningEffortXHigh, llm.ReasoningEffortMax}
 
-// ephemeral is the 5-minute breakpoint every marker on this route carries.
-var ephemeral = anthropic.BetaCacheControlEphemeralParam{TTL: anthropic.BetaCacheControlEphemeralTTLTTL5m}
+// ephemeral is the breakpoint every marker on this route carries: the shape the wire probe
+// measured, whose TTL defaults to 5 minutes.
+var ephemeral = anthropic.NewBetaCacheControlEphemeralParam()
 
 type builtRequest struct {
 	params   anthropic.BetaMessageNewParams

@@ -41,7 +41,7 @@ func fixtureClient(t *testing.T, cfg llm.Config, handler http.HandlerFunc) *Clie
 	hc.Transport = transport
 	t.Cleanup(hc.CloseIdleConnections)
 	client := newClient(cfg, staticKey(houseKey), hc, server.URL)
-	client.logger = slog.New(slog.DiscardHandler)
+	client.logger = func() *slog.Logger { return slog.New(slog.DiscardHandler) }
 	return client
 }
 
@@ -180,12 +180,18 @@ func TestSDKIgnoresTheEnvironment(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-env-decoy-key-0000000000")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "env-decoy-token")
 	t.Setenv("ANTHROPIC_BASE_URL", decoy.URL)
+	// Explicit options outrank the other variables anyway; only WithoutEnvironmentDefaults
+	// keeps the SDK from adding these headers to every request.
+	t.Setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Env-Decoy: leaked")
 	client, sent := recordingClient(t, testConfig(), textReply("ok"))
 	chunks := drain(t, client, userRequest("hi"))
 	if chunks[0].Text != "ok" || decoyHits.Load() != 0 {
 		t.Fatalf("chunks %#v decoy hits %d", chunks, decoyHits.Load())
 	}
 	header := (<-sent).header
+	if decoyHeader := header.Get("X-Env-Decoy"); decoyHeader != "" {
+		t.Fatalf("ANTHROPIC_CUSTOM_HEADERS reached the wire: %q", decoyHeader)
+	}
 	if auth, apiKey := header.Get("Authorization"), header.Get("X-Api-Key"); auth != "Bearer "+houseKey || apiKey != "" {
 		t.Fatalf("credential headers: authorization %q x-api-key %q", auth, apiKey)
 	}
@@ -345,7 +351,8 @@ func TestRequestLogLineCarriesNoContentOrKey(t *testing.T) {
 		writeEvents(w, append(events, messageDelta("tool_use", 50), messageStop())...)
 	})
 	var buf bytes.Buffer
-	client.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	client.logger = func() *slog.Logger { return logger }
 	client.cfg.Prices = map[string]llm.Price{"claude-sonnet-5-5": {InputPer1M: 2, OutputPer1M: 10, CacheReadPer1M: 0.1, CacheWritePer1M: 2.5}}
 	req := replayRequest()
 	req.Reasoning.Effort = llm.ReasoningEffortHigh

@@ -52,5 +52,5 @@ func (c *Client) logRequest(built builtRequest, message *anthropic.BetaMessage, 
 	} else {
 		attrs = append(attrs, "cost_usd", "unknown")
 	}
-	c.logger.Info("anthropic request", attrs...)
+	c.logger().Info("anthropic request", attrs...)
 }
