@@ -1,5 +1,11 @@
 # Sign-in in a real browser (Slice 1) — Implementation Plan
 
+**Status (2026-11-27):** DONE except S5. Tasks 1-7 landed on 2026-11-03 (`f89680c9f`, `9d20a9d54` among
+them); Tasks 8-10 were withdrawn. Task 11: the operator accepted Linear and Notion on the lab VM, and said
+the Canva trial already worked (`docs/superpowers/verification/2026-11-03-sign-in-browser-live.md`); the
+local gates passed there, and the mutation scopes `signin_flow`, `signin_options` and `signin_proxy` run
+in CI. Still open: S5, ElevenLabs' direct-loopback trial, unmeasured, so ElevenLabs keeps the relay.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A person connects any OAuth MCP server from the cockpit, signing in inside a real desktop Chromium that runs in their own container, with no relay page in the path of a server that can register a loopback redirect. The operator retained the working Google Web-client callback flow on 2026-11-03; Tasks 8–10 are withdrawn.

@@ -1,5 +1,12 @@
 # The urgency centroid in shadow: implementation plan
 
+**Status (2026-11-27):** DONE. Tasks 1-8 landed on 2026-11-03 (`ee2bd9a46`..`65f632a6b`, the CLI report in
+`2631ad292`). Task 9 ran on the lab VM the same day:
+`docs/superpowers/verification/2026-11-03-urgency-centroid-shadow-live.md`. The mutation gap that file left
+open (`bank.go`, `centroid.go`, `shadow_report.go`) closed on 2026-11-26 in #292
+(`2026-11-26-mutation-scopes-backlog.md`). The checkboxes below were never ticked; this line, not they, is
+the record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans, task by task, on `master`. Steps use checkbox syntax.
 
 **Goal:** every mail the watch decides also gets the tier a per-identity centroid would give, written beside the verdict with what the scoring needs, shown in the decisions view where it differs from the ladder, and counted by a read-only report. Nothing it says reaches a verdict, an alert or the digest.

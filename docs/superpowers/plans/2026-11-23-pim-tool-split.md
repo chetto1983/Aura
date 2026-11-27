@@ -1,5 +1,13 @@
 # The PIM's tools, one per operation again: implementation plan
 
+**Status (2026-11-27):** DONE, with two §7 checks short. Part A shipped as `713e5e169` and Part B in the fork,
+both recorded in `docs/superpowers/verification/2026-11-24-pim-tool-split.md`. Part C landed with migrations
+0158 and 0159 (`9221badf4`) and the PRD in `7547cf730`. The lab VM checks are in
+`2026-11-25-pim-tool-split-vm-checks.md`, re-measured on 2026-11-26 on pin `8f97396`. Check 6 is PARTIAL: no
+draft made before the upgrade was seen to send after it. Check 5 did not show a pre-upgrade deny carried
+across. Also not shown on the VM: a boot followed by an apply leaves `aura` running. The checkboxes below
+were mostly never ticked; this line, not they, is the record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The PIM advertises its 29 operations as 29 tools, and Aura keys risk, approvals, drafts, host calls and display on the tool name, with the operators' stored rules and drafts carried across.
