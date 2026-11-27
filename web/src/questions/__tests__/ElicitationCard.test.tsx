@@ -151,6 +151,24 @@ describe('ElicitationCard', () => {
     vi.useRealTimers();
   });
 
+  // Measured 2026-11-27: a reload brought the form back at step 1, empty.
+  it('keeps what was typed across a reload, and forgets it once the form is settled', () => {
+    const first = renderCard({ question: question() });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ada' } });
+    click('Next');
+    expect(screen.getByText('Step 2 of 5')).toBeTruthy();
+    first.unmount();
+
+    const reloaded = renderCard({ question: question() });
+    expect(screen.getByText('Step 2 of 5')).toBeTruthy();
+    click('Back');
+    expect(screen.getByRole('textbox')).toHaveProperty('value', 'Ada');
+    reloaded.rerender(
+      <ElicitationCard item={{ question: question(), outcome: 'declined' }} isStreaming />,
+    );
+    expect(sessionStorage.length).toBe(0);
+  });
+
   it('walks one step per field, reviews every answer, and submits only from Review', async () => {
     const posts: Post[] = [];
     stubAnswers(posts);

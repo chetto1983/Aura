@@ -30,6 +30,7 @@ const mutationTests = [
   'src/questions/__tests__/elicitationSteps.test.ts',
   'src/questions/__tests__/useCountdown.test.ts',
   'src/questions/__tests__/ElicitationCard.test.tsx',
+  'src/questions/__tests__/useElicitationDraft.test.ts',
   'src/chat/artifacts/artifactMeta.test.ts',
   'src/chat/artifacts/PreviewModal.test.tsx',
   'src/chat/artifacts/renderers/sourcePreview.test.tsx',

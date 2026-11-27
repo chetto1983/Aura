@@ -15,7 +15,6 @@ import {
   fieldTitle,
   firstFailingStep,
   hasValue,
-  initialValues,
   itemsHint,
   optionsFor,
   selectedIds,
@@ -25,6 +24,7 @@ import {
   type FieldValue,
   type FieldValues,
 } from './elicitationSteps';
+import { useElicitationDraft } from './useElicitationDraft';
 import type { ElicitationItem, ElicitationOutcome } from './useThreadElicitations';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -64,8 +64,6 @@ export function ElicitationCard({ item, isStreaming }: ElicitationCardProps) {
   const baseId = useId();
   const { question, outcome } = item;
   const { fields } = question;
-  const [step, setStep] = useState(0);
-  const [values, setValues] = useState<FieldValues>(() => initialValues(fields));
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<ElicitationAction | null>(null);
@@ -74,6 +72,7 @@ export function ElicitationCard({ item, isStreaming }: ElicitationCardProps) {
   const titleId = `${baseId}-title`;
   const labels = { yes: t('questionCard.yes'), no: t('questionCard.no') };
   const settled = outcome !== undefined || question.refusal !== undefined || closed !== null;
+  const { step, setStep, values, setValues } = useElicitationDraft(question, settled);
   useEffect(() => {
     if (closed !== 'visible' || outcome !== undefined) return;
     const controller = new AbortController();
