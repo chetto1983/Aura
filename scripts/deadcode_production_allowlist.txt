@@ -28,3 +28,6 @@ github.com/chetto1983/aura/internal/sandbox/usersandbox.DockerBackend.SpoolDir  
 github.com/chetto1983/aura/internal/skills.Writer.Owner                                cmd/aura tests assert which identity a writer writes as
 github.com/chetto1983/aura/internal/swarm.DelegationClaimLoop.Wait                     tests join in-flight workers; the daemon never waits
 github.com/chetto1983/aura/internal/utf8cut.Ellipsize                                  only internal/agenteval truncates with it
+
+# Built ahead of its caller by a plan in progress; the task that wires it removes the entry.
+github.com/chetto1983/aura/internal/toolapprovals                                      wired in Task 4 (unified approval)

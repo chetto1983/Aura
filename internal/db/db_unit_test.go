@@ -403,8 +403,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0157 drops the skill catalog's always_apply copy and its index (amendment #224).
 	// 0158 lets an email draft target the PIM's send_email tool, beside the multiplexed shape.
 	// 0159 adds aura.data_upgrades, so the PIM split's Go rewrite runs once.
-	if head != 159 {
-		t.Fatalf("MigrationHead=%d, want embedded head 159", head)
+	// 0160 adds aura.tool_approvals, the parked tool call's record, and its revert guard.
+	if head != 160 {
+		t.Fatalf("MigrationHead=%d, want embedded head 160", head)
 	}
 }
 

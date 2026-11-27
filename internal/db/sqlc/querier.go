@@ -172,6 +172,10 @@ type Querier interface {
 	// A retried turn parks the same model call again: it must find this row, not add a second
 	// (migration 0155, decision 30). No row back means GetTaskByOriginCall has it.
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
+	// The one-shot decision of a parked call: only a pending record moves, so a second resolve
+	// matches no row. Run in the identity transaction that also resumes the pause (migration 0160's
+	// trigger needs the record decided first).
+	DecideToolApproval(ctx context.Context, arg DecideToolApprovalParams) (AuraToolApprovals, error)
 	DeclineMessageDraft(ctx context.Context, arg DeclineMessageDraftParams) (AuraMessageDrafts, error)
 	// Deactivating an identity declines every scheduled draft it has not sent (decision 37).
 	DeclineScheduledMessageDraftsForOwner(ctx context.Context, identityID pgtype.UUID) error
@@ -375,6 +379,7 @@ type Querier interface {
 	HasAcceptedTaskApprovalForIdentity(ctx context.Context, arg HasAcceptedTaskApprovalForIdentityParams) (bool, error)
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HasGatewayApprovalGrant(ctx context.Context, arg HasGatewayApprovalGrantParams) (bool, error)
+	HasToolResultAfterSeq(ctx context.Context, arg HasToolResultAfterSeqParams) (bool, error)
 	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
@@ -429,6 +434,7 @@ type Querier interface {
 	InsertSkillAudit(ctx context.Context, arg InsertSkillAuditParams) (AuraSkillAudit, error)
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
+	InsertToolApproval(ctx context.Context, arg InsertToolApprovalParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
 	// Coding verification evidence ledger (migration 0094).
 	//
@@ -575,6 +581,8 @@ type Querier interface {
 	// mirrors ListTurnsBySeq so turnFromRow projects it unchanged.
 	ListManagedHistoryHead(ctx context.Context, conversationID pgtype.UUID) ([]ListManagedHistoryHeadRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
+	ListOpenToolApprovalCalls(ctx context.Context, arg ListOpenToolApprovalCallsParams) ([]ListOpenToolApprovalCallsRow, error)
+	ListOpenToolApprovals(ctx context.Context, arg ListOpenToolApprovalsParams) ([]AuraToolApprovals, error)
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	ListPIMWatchAccountVerdicts(ctx context.Context, arg ListPIMWatchAccountVerdictsParams) ([]AuraPimWatchVerdicts, error)
 	ListPIMWatchAccounts(ctx context.Context, identityID pgtype.UUID) ([]AuraPimWatchAccounts, error)
@@ -625,10 +633,12 @@ type Querier interface {
 	// (orphan_scan.go) reconciles the live .content files against this referenced
 	// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
 	ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error)
+	ListStaleAcceptedToolApprovals(ctx context.Context, arg ListStaleAcceptedToolApprovalsParams) ([]AuraToolApprovals, error)
 	// One history page, newest first, optionally of one kind. before_id is the last row of the
 	// previous page; an id the owner does not hold compares as NULL and yields an empty page.
 	ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error)
 	ListTelegramAccountsByIdentity(ctx context.Context, identityID pgtype.UUID) ([]AuraTelegramAccounts, error)
+	ListToolApprovalsOfTurn(ctx context.Context, arg ListToolApprovalsOfTurnParams) ([]AuraToolApprovals, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	// The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
 	// in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
@@ -909,6 +919,8 @@ type Querier interface {
 	// A row still on an earlier day starts over at what this page told.
 	TallyPIMWatchAlerts(ctx context.Context, arg TallyPIMWatchAlertsParams) error
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
+	// A compare-and-set move; the Go side admits only the pairs of the state table.
+	TransitionToolApproval(ctx context.Context, arg TransitionToolApprovalParams) (int64, error)
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
 	// 51-06b (Task 2): the resume observer's un-park, once the worker's pause has been
 	// answered. The conditional UPDATE (status must still be 'awaiting_input') IS the

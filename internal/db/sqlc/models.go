@@ -930,6 +930,32 @@ type AuraTelegramSetupPending struct {
 	ConsumedAt      pgtype.Timestamptz `json:"consumed_at"`
 }
 
+type AuraToolApprovals struct {
+	ID                 pgtype.UUID        `json:"id"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	PauseToken         pgtype.UUID        `json:"pause_token"`
+	AssistantSeq       int32              `json:"assistant_seq"`
+	CallIndex          int32              `json:"call_index"`
+	ToolCallID         string             `json:"tool_call_id"`
+	ToolName           string             `json:"tool_name"`
+	Source             string             `json:"source"`
+	ExecuteArgs        []byte             `json:"execute_args"`
+	ExecuteFingerprint string             `json:"execute_fingerprint"`
+	ReviewBinding      string             `json:"review_binding"`
+	RanNote            string             `json:"ran_note"`
+	Brief              string             `json:"brief"`
+	GrantTool          string             `json:"grant_tool"`
+	GrantAction        string             `json:"grant_action"`
+	Status             string             `json:"status"`
+	ApprovalScope      pgtype.Text        `json:"approval_scope"`
+	OperatorID         pgtype.UUID        `json:"operator_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	DecidedAt          pgtype.Timestamptz `json:"decided_at"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+	FinishedAt         pgtype.Timestamptz `json:"finished_at"`
+}
+
 // Append-only tool invocation ledger: start/end facts for dispatched tools with args, timestamps, status, bytes, sidecar path, exit code, and typed metadata.
 type AuraToolInvocations struct {
 	ID                pgtype.UUID        `json:"id"`
