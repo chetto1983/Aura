@@ -106,8 +106,8 @@ github.com/ThreeDotsLabs/watermill-sqlite/test v0.1.1 h1:bYzMJz8m+fY56z5tfpseTNI
 github.com/ThreeDotsLabs/watermill-sqlite/test v0.1.1/go.mod h1:FZC2Afdhlqp8dtaqHxrSmHqWBC2az3mDbAq6D/fdCT8=
 github.com/ThreeDotsLabs/watermill-sqlite/wmsqlitezombiezen v0.1.2 h1:22sRqgmkgOPK917+p17I6yxyeEjPZHDgI2jVx921h4Q=
 github.com/ThreeDotsLabs/watermill-sqlite/wmsqlitezombiezen v0.1.2/go.mod h1:hAS4p6c6pXWZicLcD5Fy0KY1sZ3/k9ZSLI1YHs1xPIk=
-github.com/adhocore/gronx v1.20.8 h1:eJsn6gOqleelmI8orCCuwI9OYbuQUTaFflCFoxMaJlk=
-github.com/adhocore/gronx v1.20.8/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
+github.com/adhocore/gronx v1.20.9 h1:R+SBcckNLNpDwCaiQZxpB5QO/CZ9AE48oGRKbl1tKR0=
+github.com/adhocore/gronx v1.20.9/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
 github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9 h1:DQFhA6IAPabs7cQ/Ryv1DfhfnGQ5cZLCBtf8YRqx2FY=
 github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9/go.mod h1:ERAMOexUee4AIuoxksuuGoEcHl3aqLwaazjGwlR9ZCI=
 github.com/agnivade/levenshtein v1.2.2 h1:fI8RgiztYX1Nn5pBHHqQ9EMCCklhrmXqPRIedFmx5M4=
@@ -636,8 +636,8 @@ github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOF
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/oklog/ulid v1.3.1 h1:EGfNDEx6MqHz8B3uNV6QAib1UR2Lm97sHi3ocA6ESJ4=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
-github.com/openai/openai-go/v3 v3.105.0 h1:XX0QDIaMlBDr9iYGKXGgWYFtOFF5ffO4SqtfxBGJSiM=
-github.com/openai/openai-go/v3 v3.105.0/go.mod h1:dYJy3sozy5kqizqdbtk1xKLr2WBPDaw8woVu+cWmQIA=
+github.com/openai/openai-go/v3 v3.106.0 h1:F5gWWDbF+tqE2tMz5OgntySQSRJJJAFPv4Ld9864nc0=
+github.com/openai/openai-go/v3 v3.106.0/go.mod h1:dYJy3sozy5kqizqdbtk1xKLr2WBPDaw8woVu+cWmQIA=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
