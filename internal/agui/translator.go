@@ -133,6 +133,11 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			textStreamed = true
 			return true
 		}
+		// A round raises its pauses back to back (agent emitPauses), and each must be read for
+		// the runner to persist it: stopping at the first left a second send_email's draft with
+		// no pause and no place in history (measured 2026-11-27). The run ends with them all at
+		// the first event that is not one, or at the end of the stream.
+		var interrupts []types.Interrupt
 		for ev, err := range seq {
 			if err != nil {
 				if !closeRuns() {
@@ -143,6 +148,9 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			}
 			if ev == nil {
 				continue
+			}
+			if len(interrupts) > 0 && ev.Actions.AwaitingInput == nil {
+				break
 			}
 			eventTime = ev.Timestamp
 
@@ -166,15 +174,14 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				continue
 			}
 
-			// A pause closes any open run, then ends the run with an interrupt
-			// outcome and STOPS — no trailing success RUN_FINISHED.
+			// A pause closes any open run; the run then ends with an interrupt outcome and no
+			// trailing success RUN_FINISHED.
 			if ai := ev.Actions.AwaitingInput; ai != nil {
-				if !closeRuns() {
+				if len(interrupts) == 0 && !closeRuns() {
 					return
 				}
-				yield(events.NewRunFinishedEventWithOptions(threadID, runID,
-					events.WithInterruptOutcome([]types.Interrupt{interruptFrom(ai)})), nil)
-				return
+				interrupts = append(interrupts, interruptFrom(ai))
+				continue
 			}
 
 			// Tool lifecycle interrupts an open run first.
@@ -334,6 +341,10 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				}
 				textStreamed = true
 			}
+		}
+		if len(interrupts) > 0 {
+			yield(events.NewRunFinishedEventWithOptions(threadID, runID, events.WithInterruptOutcome(interrupts)), nil)
+			return
 		}
 		if !closeRuns() {
 			return
