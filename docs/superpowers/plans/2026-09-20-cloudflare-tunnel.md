@@ -1,6 +1,6 @@
 # Cloudflare Tunnel Remote Access Implementation Plan
 
-**Status (2026-10-31):** PARTIAL. Tasks 1-5 and the Task 7 review landed. A registered domain now exists: `docs/superpowers/plans/2026-10-27-remote-access-wizard.md` walked the path to `healthy` on it (2026-10-31), but Task 6's live journeys still never ran, and review finding F-1, cloudflared reaching the databases, has not been re-measured.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-5 and the Task 7 review landed, and Task 6's hermetic wizard spec, installer contract and docs exist (19e28dd00, 471969a1d); the live public/token-refresh/restart journeys never ran, though the 2026-10-31 wizard walk reached `healthy` on a real domain. F-1 was re-measured in a Linux container (`verification/2026-11-26-f1-tunnel-reach-local.md`: gateway port reachable) and its closure plan `2026-11-26-f1-tunnel-reach.md` is not started.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

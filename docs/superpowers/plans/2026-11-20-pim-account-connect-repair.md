@@ -1,6 +1,8 @@
 # Connecting and repairing a mail account: implementation plan
 
-**Status:** v2, 2026-11-20. v1 was reviewed the same day by three reviewers: grounding (RED: 5 critical, 1 high), adversarial (YELLOW: 5 high) and cross-source against Thunderbird, Thunderbird for Android, MailKit and DataProtection (YELLOW: 4 high). Their reports are in `docs/superpowers/plans/validation/2026-11-20-pim-account-connect-repair-{grounding,adversarial,crosssource}.md`. The operator then decided four points ("Apri Impostazioni a tutti", "TLS obbligatoria per account nuovi e modificati", "SMTP: si salva, con avviso", "indirizzi privati solo per l'admin"), recorded as spec amendments A1, A2, A4 and A5. **v1→v2:**
+**Status (2026-11-27, verified on code):** PARTIAL. P1-P5 landed in the fork (afded9a..7b304a9, merged as 7ca4c89) and A1-A2, W1-W4, G1 in Aura (107ae5268, 5186c1489, aa9254d4f, 366c990ad); L1 ran on 2026-11-23 (`verification/2026-11-23-pim-account-connect-repair-live.md`) without the member steps 7-8, and its finding 1 (a wrong Aruba password reads as unreachable) has no fork fix.
+
+**Earlier status:** v2, 2026-11-20. v1 was reviewed the same day by three reviewers: grounding (RED: 5 critical, 1 high), adversarial (YELLOW: 5 high) and cross-source against Thunderbird, Thunderbird for Android, MailKit and DataProtection (YELLOW: 4 high). Their reports are in `docs/superpowers/plans/validation/2026-11-20-pim-account-connect-repair-{grounding,adversarial,crosssource}.md`. The operator then decided four points ("Apri Impostazioni a tutti", "TLS obbligatoria per account nuovi e modificati", "SMTP: si salva, con avviso", "indirizzi privati solo per l'admin"), recorded as spec amendments A1, A2, A4 and A5. **v1→v2:**
 - Every CRITICAL and HIGH finding is folded in.
 - The MEDIUM and LOW findings are folded in except the ones listed under "Not taken".
 - New tasks: P4 (the watch logs the server's line) and the `HttpError` change in W1.
