@@ -361,6 +361,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				llmEnd.End(err)
 				activeLLMEnd = nil
 			}
+			callStarted := time.Now()
 			ch, err := a.streamWithOpenRetry(llmCtx, req, requestID)
 			if err != nil {
 				endLLM(err)
@@ -438,7 +439,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 			endLLM(nil)
 			a.keepRoundHint(req)
-			slog.Info("agent llm call end", "request_id", requestID, "thread_id", a.sessionID, "finish_reason", finish, "tool_calls", len(calls))
+			a.logCallEnd(requestID, callStarted, out, len(calls))
 			if finish == llm.FinishContentFilter {
 				turnReason = a.endOnRefusal(ic, spanID, requestID, text, &turnU, yield)
 				return

@@ -7,7 +7,9 @@ package agent
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
@@ -15,15 +17,23 @@ import (
 
 // roundOutput is everything one drained stream produced. providerState is the
 // opaque record the provider client asked to get back on this round's assistant
-// message; nil on every route that sends none.
+// message; nil on every route that sends none. firstChunkAt is when the first text,
+// reasoning or tool call arrived: zero when none did.
 type roundOutput struct {
 	text          string
 	calls         []llm.ToolCall
 	finish        string
 	usage         llm.Usage
 	providerState json.RawMessage
+	firstChunkAt  time.Time
 	stopped       bool
 	streamErr     error
+}
+
+func (out *roundOutput) markFirstChunk() {
+	if out.firstChunkAt.IsZero() {
+		out.firstChunkAt = time.Now()
+	}
 }
 
 // consume drains one stream: it re-emits each text delta as a chunk Event and each
@@ -69,6 +79,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"cached_tokens":     c.Usage.CachedTokens,
 			})
 		case c.ToolCall != nil:
+			out.markFirstChunk()
 			out.calls = append(out.calls, *c.ToolCall)
 			reasoningtrace.Record("agent_consume_tool_call_chunk", map[string]any{
 				"request_id": requestID,
@@ -87,6 +98,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"bytes":      len(c.ProviderState),
 			})
 		case c.Text != "":
+			out.markFirstChunk()
 			b.WriteString(c.Text)
 			reasoningtrace.Record("agent_consume_text_chunk", map[string]any{
 				"request_id": requestID,
@@ -98,6 +110,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				return stop()
 			}
 		case c.Reasoning != "":
+			out.markFirstChunk()
 			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
 			// returned text (what persistence reads) must stay reasoning-free (#57).
 			reasoningtrace.Record("agent_consume_reasoning_chunk", map[string]any{
@@ -119,4 +132,22 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		}
 	}
 	return end(false, nil)
+}
+
+// logCallEnd records one completed model call: how long it took from opening the stream,
+// when the first content arrived (the provider's prompt read, absent when none came), and
+// how much of the prompt the provider served from its cache. Without these a slow turn could
+// not be split from the logs (lab VM, 2026-11-27).
+func (a *LlmAgent) logCallEnd(requestID string, started time.Time, out roundOutput, calls int) {
+	attrs := []any{
+		"request_id", requestID, "thread_id", a.sessionID, "model", a.cfg.Model,
+		"finish_reason", out.finish, "tool_calls", calls,
+		"duration_ms", time.Since(started).Milliseconds(),
+		"prompt_tokens", out.usage.PromptTokens, "cached_tokens", out.usage.CachedTokens,
+		"completion_tokens", out.usage.CompletionTokens,
+	}
+	if !out.firstChunkAt.IsZero() {
+		attrs = append(attrs, "first_token_ms", out.firstChunkAt.Sub(started).Milliseconds())
+	}
+	slog.Info("agent llm call end", attrs...)
 }
