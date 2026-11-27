@@ -151,13 +151,20 @@ func (f *fixture) decide(owner string, d Decision) (Record, error) {
 	return rec, err
 }
 
-// walk moves a record through states, in order, and returns it re-read.
+// walk moves a record through states, in order, and returns it re-read. An accept goes through
+// DecideTx, the only way a record is accepted.
 func (f *fixture) walk(r Record, states ...Status) Record {
 	f.t.Helper()
 	from := r.Status
 	for _, to := range states {
-		if err := f.store.Transition(f.ctx, f.owner, r.ID, from, to); err != nil {
-			f.t.Fatalf("transition %s -> %s: %v", from, to, err)
+		var err error
+		if from == StatusPending && to == StatusAccepted {
+			_, err = f.decide(f.owner, Decision{PauseToken: r.PauseToken, To: to, Scope: "once", OperatorID: f.owner})
+		} else {
+			err = f.store.Transition(f.ctx, f.owner, r.ID, from, to)
+		}
+		if err != nil {
+			f.t.Fatalf("%s -> %s: %v", from, to, err)
 		}
 		from = to
 	}
@@ -229,7 +236,7 @@ func TestTransitionsFollowTheTable(t *testing.T) {
 	f := newFixture(t)
 	reach := map[Status][]Status{StatusAccepted: {StatusAccepted}, StatusRunning: {StatusAccepted, StatusRunning}}
 	allowed := []struct{ from, to Status }{
-		{StatusPending, StatusAccepted}, {StatusPending, StatusDeclined}, {StatusPending, StatusExpired},
+		{StatusPending, StatusDeclined}, {StatusPending, StatusExpired},
 		{StatusPending, StatusNotRun}, {StatusPending, StatusCancelled},
 		{StatusAccepted, StatusRunning}, {StatusAccepted, StatusNotRun}, {StatusAccepted, StatusCancelled},
 		{StatusRunning, StatusDone}, {StatusRunning, StatusUnknown}, {StatusRunning, StatusNotRun},
@@ -251,10 +258,11 @@ func TestTransitionsFollowTheTable(t *testing.T) {
 		owner, id string
 		from, to  Status
 	}{
-		"pending -> running": {f.owner, pending.ID, StatusPending, StatusRunning},
-		"done -> running":    {f.owner, done.ID, StatusDone, StatusRunning},
-		"a stale from":       {f.owner, accepted.ID, StatusPending, StatusDeclined},
-		"a malformed record": {f.owner, "nope", StatusAccepted, StatusRunning},
+		"pending -> accepted, by id": {f.owner, pending.ID, StatusPending, StatusAccepted},
+		"pending -> running":         {f.owner, pending.ID, StatusPending, StatusRunning},
+		"done -> running":            {f.owner, done.ID, StatusDone, StatusRunning},
+		"a stale from":               {f.owner, accepted.ID, StatusPending, StatusDeclined},
+		"a malformed record":         {f.owner, "nope", StatusAccepted, StatusRunning},
 	} {
 		if err := f.store.Transition(f.ctx, try.owner, try.id, try.from, try.to); !errors.Is(err, ErrUnavailable) {
 			t.Errorf("%s: err = %v, want ErrUnavailable", name, err)
@@ -351,7 +359,7 @@ func TestRecordsAreOwnerScoped(t *testing.T) {
 	if err != nil || len(stale) != 0 {
 		t.Fatalf("foreign stale = %+v, %v", stale, err)
 	}
-	if err := f.store.Transition(f.ctx, foreign, rec.ID, StatusPending, StatusAccepted); !errors.Is(err, ErrUnavailable) {
+	if err := f.store.Transition(f.ctx, foreign, rec.ID, StatusPending, StatusDeclined); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("foreign transition: err = %v", err)
 	}
 	if _, err := f.decide(foreign, Decision{PauseToken: rec.PauseToken, To: StatusAccepted}); !errors.Is(err, ErrUnavailable) {

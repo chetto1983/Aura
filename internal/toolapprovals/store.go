@@ -44,9 +44,13 @@ const (
 	SourceGateway Source = "gateway"
 )
 
-// transitions is the state table; not_run from running is a hook's refusal of an approved call.
+// decisions are the answers DecideTx gives a pending record. Only DecideTx accepts, inside the
+// resume transaction; a by-id Transition never does.
+var decisions = []Status{StatusAccepted, StatusDeclined, StatusExpired, StatusNotRun, StatusCancelled}
+
+// transitions is the by-id state table; not_run from running is a hook's refusal of an approved call.
 var transitions = map[Status][]Status{
-	StatusPending:  {StatusAccepted, StatusDeclined, StatusExpired, StatusNotRun, StatusCancelled},
+	StatusPending:  {StatusDeclined, StatusExpired, StatusNotRun, StatusCancelled},
 	StatusAccepted: {StatusRunning, StatusNotRun, StatusCancelled},
 	StatusRunning:  {StatusDone, StatusUnknown, StatusNotRun},
 }
@@ -122,7 +126,7 @@ func (s *Store) InsertTx(ctx context.Context, q *sqlc.Queries, in Input) error {
 
 // DecideTx is the one-shot answer to a pending record; a second answer gets ErrUnavailable.
 func (s *Store) DecideTx(ctx context.Context, q *sqlc.Queries, d Decision) (Record, error) {
-	if !slices.Contains(transitions[StatusPending], d.To) {
+	if !slices.Contains(decisions, d.To) {
 		return Record{}, ErrUnavailable
 	}
 	token, err := parseKey(d.PauseToken)
@@ -198,7 +202,7 @@ func (s *Store) StaleAccepted(ctx context.Context, ownerID string, decidedBefore
 // TransitionTx moves one record from one state to the next, if the state table has that move
 // and the record is still in from.
 func (s *Store) TransitionTx(ctx context.Context, q *sqlc.Queries, id string, from, to Status) error {
-	if !slices.Contains(transitions[from], to) {
+	if !allowed(from, to) {
 		return ErrUnavailable
 	}
 	key, err := parseKey(id)
@@ -217,6 +221,9 @@ func (s *Store) TransitionTx(ctx context.Context, q *sqlc.Queries, id string, fr
 
 // Transition is TransitionTx in an identity transaction of its own.
 func (s *Store) Transition(ctx context.Context, ownerID, id string, from, to Status) error {
+	if !allowed(from, to) {
+		return ErrUnavailable
+	}
 	if _, err := parseKey(ownerID); err != nil {
 		return err
 	}
@@ -224,6 +231,8 @@ func (s *Store) Transition(ctx context.Context, ownerID, id string, from, to Sta
 		return s.TransitionTx(ctx, q, id, from, to)
 	})
 }
+
+func allowed(from, to Status) bool { return slices.Contains(transitions[from], to) }
 
 // ResultCommitted is whether the record's call already has its tool turn after the parked turn.
 // An earlier turn with the same call id answered another round's call.

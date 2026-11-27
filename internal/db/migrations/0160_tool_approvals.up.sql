@@ -13,6 +13,9 @@
 --
 -- The states: pending -> accepted | declined | expired | not_run | cancelled;
 -- accepted -> running | not_run | cancelled; running -> done | unknown | not_run.
+--
+-- The conversation FK is not identity-scoped (aura.conversations has no unique (id, identity_id));
+-- the only writer is the runner's CommitPause, in the conversation owner's identity transaction.
 CREATE TABLE aura.tool_approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   identity_id uuid NOT NULL REFERENCES aura.identities(id) ON DELETE CASCADE,
@@ -71,6 +74,7 @@ CREATE POLICY tool_approvals_require_identity ON aura.tool_approvals
 -- SECURITY DEFINER, as aura.conversation_owner (0103) is: the function runs as aura_migrate,
 -- which owns aura.tool_approvals and so is not filtered by its RLS; search_path is pinned per
 -- the PostgreSQL manual, "Writing SECURITY DEFINER Functions Safely".
+-- No GRANT EXECUTE: PostgreSQL checks EXECUTE on a trigger function at CREATE TRIGGER, not when it fires (measured: 55000 raised as aura_app).
 CREATE FUNCTION aura.refuse_resume_of_pending_tool_approval() RETURNS trigger
     LANGUAGE plpgsql
     SECURITY DEFINER

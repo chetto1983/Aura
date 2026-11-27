@@ -36,14 +36,16 @@ func TestMalformedInputIsUnavailableBeforeAnyQuery(t *testing.T) {
 			_, err := store.DecideTx(ctx, nil, Decision{PauseToken: token, To: StatusAccepted, OperatorID: "x"})
 			return err
 		},
-		"open, malformed owner":          func() error { _, err := store.Open(ctx, "x", conv); return err },
-		"open calls, malformed conv":     func() error { _, err := store.OpenCalls(ctx, owner, "x"); return err },
-		"decided, malformed owner":       func() error { _, err := store.Decided(ctx, "x", conv, 4); return err },
-		"stale, malformed owner":         func() error { _, err := store.StaleAccepted(ctx, "x", time.Now()); return err },
-		"transition, malformed owner":    func() error { return store.Transition(ctx, "x", token, StatusAccepted, StatusRunning) },
-		"transition, pending -> running": func() error { return store.TransitionTx(ctx, nil, token, StatusPending, StatusRunning) },
-		"transition, done -> running":    func() error { return store.TransitionTx(ctx, nil, token, StatusDone, StatusRunning) },
-		"transition, malformed record":   func() error { return store.TransitionTx(ctx, nil, "x", StatusAccepted, StatusRunning) },
+		"open, malformed owner":       func() error { _, err := store.Open(ctx, "x", conv); return err },
+		"open calls, malformed conv":  func() error { _, err := store.OpenCalls(ctx, owner, "x"); return err },
+		"decided, malformed owner":    func() error { _, err := store.Decided(ctx, "x", conv, 4); return err },
+		"stale, malformed owner":      func() error { _, err := store.StaleAccepted(ctx, "x", time.Now()); return err },
+		"transition, malformed owner": func() error { return store.Transition(ctx, "x", token, StatusAccepted, StatusRunning) },
+		// Refused before the identity transaction opens: the store has no pool here.
+		"transition, pending -> accepted": func() error { return store.Transition(ctx, owner, token, StatusPending, StatusAccepted) },
+		"transition, pending -> running":  func() error { return store.TransitionTx(ctx, nil, token, StatusPending, StatusRunning) },
+		"transition, done -> running":     func() error { return store.TransitionTx(ctx, nil, token, StatusDone, StatusRunning) },
+		"transition, malformed record":    func() error { return store.TransitionTx(ctx, nil, "x", StatusAccepted, StatusRunning) },
 		"result committed, malformed owner": func() error {
 			_, err := store.ResultCommitted(ctx, "x", Record{Input: input})
 			return err

@@ -4,12 +4,14 @@ package db
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -85,7 +87,8 @@ WHERE tgrelid = 'aura.paused_states'::regclass AND NOT tgisinternal AND tgfoid =
 	}
 }
 
-// assert0160Checks inserts as the migrate-owning admin, past RLS, so only the CHECKs refuse.
+// assert0160Checks inserts as the migrate-owning admin, past RLS, so only the constraints refuse,
+// each with its own SQLSTATE.
 func assert0160Checks(t *testing.T, ctx context.Context, admin *pgxpool.Pool) {
 	t.Helper()
 	var identity string
@@ -96,14 +99,17 @@ func assert0160Checks(t *testing.T, ctx context.Context, admin *pgxpool.Pool) {
 	if _, err := admin.Exec(ctx, `INSERT INTO aura.conversations (id, identity_id) VALUES ($1, $2)`, conv, identity); err != nil {
 		t.Fatal(err)
 	}
-	insert := func(index int, status, scope, args string, decided, started bool) error {
+	insertInto := func(conversation string, index int, status, scope, args string, decided, started bool) error {
 		_, err := admin.Exec(ctx, `INSERT INTO aura.tool_approvals
 (identity_id, conversation_id, pause_token, assistant_seq, call_index, tool_call_id, tool_name, source,
  execute_args, execute_fingerprint, status, approval_scope, decided_at, started_at)
 VALUES ($1, $2, $3, 4, $4, 'call', 'shell_exec', 'tool', $5::jsonb, repeat('a', 64), $6, NULLIF($7, ''),
  CASE WHEN $8 THEN now() END, CASE WHEN $9 THEN now() END)`,
-			identity, conv, uuid.NewString(), index, args, status, scope, decided, started)
+			identity, conversation, uuid.NewString(), index, args, status, scope, decided, started)
 		return err
+	}
+	insert := func(index int, status, scope, args string, decided, started bool) error {
+		return insertInto(conv, index, status, scope, args, decided, started)
 	}
 	if err := insert(0, "pending", "", `{}`, false, false); err != nil {
 		t.Fatalf("a pending record was refused: %v", err)
@@ -111,18 +117,26 @@ VALUES ($1, $2, $3, 4, $4, 'call', 'shell_exec', 'tool', $5::jsonb, repeat('a', 
 	if err := insert(1, "running", "session", `{}`, true, true); err != nil {
 		t.Fatalf("a running record was refused: %v", err)
 	}
-	for name, bad := range map[string]func() error{
-		"a negative call index":       func() error { return insert(-1, "pending", "", `{}`, false, false) },
-		"an unknown status":           func() error { return insert(2, "approved", "", `{}`, true, false) },
-		"an unknown scope":            func() error { return insert(3, "accepted", "forever", `{}`, true, false) },
-		"non-object arguments":        func() error { return insert(4, "pending", "", `[]`, false, false) },
-		"a decided record, undated":   func() error { return insert(5, "declined", "", `{}`, false, false) },
-		"a pending record, dated":     func() error { return insert(6, "pending", "", `{}`, true, false) },
-		"a running record, unstarted": func() error { return insert(7, "running", "", `{}`, true, false) },
-		"the same slot twice":         func() error { return insert(0, "pending", "", `{}`, false, false) },
+	const check, unique, foreignKey = "23514", "23505", "23503"
+	for name, bad := range map[string]struct {
+		insert func() error
+		code   string
+	}{
+		"a negative call index":       {func() error { return insert(-1, "pending", "", `{}`, false, false) }, check},
+		"an unknown status":           {func() error { return insert(2, "approved", "", `{}`, true, false) }, check},
+		"an unknown scope":            {func() error { return insert(3, "accepted", "forever", `{}`, true, false) }, check},
+		"non-object arguments":        {func() error { return insert(4, "pending", "", `[]`, false, false) }, check},
+		"a decided record, undated":   {func() error { return insert(5, "declined", "", `{}`, false, false) }, check},
+		"a pending record, dated":     {func() error { return insert(6, "pending", "", `{}`, true, false) }, check},
+		"a running record, unstarted": {func() error { return insert(7, "running", "", `{}`, true, false) }, check},
+		"the same slot twice":         {func() error { return insert(0, "pending", "", `{}`, false, false) }, unique},
+		"an unknown conversation": {func() error {
+			return insertInto(uuid.NewString(), 0, "pending", "", `{}`, false, false)
+		}, foreignKey},
 	} {
-		if bad() == nil {
-			t.Errorf("%s was admitted", name)
+		var pgErr *pgconn.PgError
+		if err := bad.insert(); !errors.As(err, &pgErr) || pgErr.Code != bad.code {
+			t.Errorf("%s: err = %v, want SQLSTATE %s", name, err, bad.code)
 		}
 	}
 }
