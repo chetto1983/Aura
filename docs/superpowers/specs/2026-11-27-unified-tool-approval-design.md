@@ -131,10 +131,16 @@ Deny policies are checked before any review, so a denied call is refused, never 
   It lives in the pause's `resume_context` under one new type, or in a dedicated table if the plan finds the
   context too small or too exposed. That choice is the builder's, and the plan states it. No in-memory challenge
   remains.
-- **Siblings.** These follow the existing park rule. Calls in the same assistant turn that do not need approval are
-  dropped, unrun and unanswered, and the model re-emits them later (map R3). Several calls needing approval in one
-  turn give one card each, and the turn continues only when all are resolved. A turn with `ask_user` keeps today's
-  precedence (map R4).
+- **Siblings (amended 2026-11-27 after plan validation).** Calls in the same assistant turn that need no approval
+  **run in that turn**, as in OpenAI Agents, Vercel AI and LangChain (cross-source review). Only the calls that need
+  approval are parked.
+  - **Why.** Dropping the siblings cost at least one extra model round, with no guarantee the model would emit them
+    again.
+  - **Scope.** The rule applies to every park source in this project's mechanism.
+  - **Ordering.** A sequential batch keeps its order: a call that comes after a parked call in that batch still
+    runs. Its result is committed with the pause.
+  - **Several parked calls** in one turn give one card each.
+  - **`ask_user`.** A turn that also calls `ask_user` keeps today's precedence (map R4).
 - **Who never parks.** Headless and delegated runs: no person (`personPresent` false), swarm workers, agent_job and
   background delegation. There:
   - a gateway-sourced need is denied with `no_approver` as today;
@@ -304,6 +310,38 @@ Then live on the VM, as dated files in `docs/superpowers/verification/`:
 5. **Decline gives no new UI.** The decline result carries the operator's words only when a surface already sent
    some content. No reason field is added in this project.
 6. **Ungated destructive actions** are listed by the plan, not gated (see Model doctrine).
+
+## Amendments after the plan's three-reviewer validation (2026-11-27, controller's rulings)
+
+The evidence is `.superpowers/sdd/approval-unify/plan-validation-{codereview,adversarial,crosssource}-2026-11-27.md`.
+
+1. **History repair.** The history loader's repair (`repairManagedToolMessagePairs`) must not give a stand-in result to
+   a call whose approval record is open, whether pending, accepted or running. The same holds for the display. On the
+   accept path the model sees exactly one tool message per call id.
+2. **The hard deny stays first.** `server_production`, or no responder, is denied before any authorization or grant
+   is read, as today (WR-01). Under `server_production` nothing is ever parked. An "always" grant never lets a
+   headless run through.
+3. **When an accepted call runs.** An accepted call runs only when:
+   - no card of the same parked assistant turn is still pending;
+   - that turn is the last one on the conversation's path, followed only by its own tool results.
+
+   In every other case:
+   - a background wake (a steer, a completion) never runs an accepted record;
+   - a new user message closes the turn's pending and accepted records as "not run";
+   - an accepted record expires on a TTL the plan sets, and is then closed "not run".
+4. **Reviews get the call context.** A review receives the call's context (conversation and call id) at park time,
+   exactly as the host-review seam does. Session grants, the foreign-cancel check and the shell's working directory
+   depend on it.
+5. **The record key.** A record is keyed on the pause token plus the assistant turn, never on
+   (conversation, tool_call_id), because call ids repeat across rounds.
+6. **Hooks.** A `BeforeTool` hook that rewrites or refuses an accepted call makes the call refused, with a result the
+   model can read. The call is never swapped.
+7. **Decline wording** ends: "Do not retry this call unless the operator asks again."
+8. **Phase 1 prompt.** It keeps working with the three tool challenges that still exist in Phase 1: "unless a tool's
+   result tells you to relay its approval". The final wording lands with Phase 2. Phase 1's live check measures one
+   destructive `shell_exec` under the Phase 1 prompt.
+9. **Executed arguments.** When the arguments that ran differ from the model's (shell cwd, plugin pin), the tool
+   result says what ran.
 
 ## Open for the builder
 
