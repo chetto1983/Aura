@@ -69,6 +69,10 @@ var AllowedKeys = map[string]KeyMeta{
 	// and because it is a percentage, which is the one form of this number a person can
 	// judge without knowing the tokenizer.
 	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": {Kind: KindInt, Label: "Compact history at % of window"},
+	// OpenRouter's soft provider thresholds (provider.preferred_*): a slower provider is
+	// tried last, never excluded. 0 sends nothing.
+	"AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT":  {Kind: KindInt, Label: "OpenRouter: preferred minimum throughput (tokens/s)"},
+	"AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC": {Kind: KindInt, Label: "OpenRouter: preferred maximum latency (seconds)"},
 	// The agent-loop budget (amendment #188): hot like the model profile, so the
 	// operator who needs more than the shipped 25 steps for one real delegation no
 	// longer recreates the container to get them.

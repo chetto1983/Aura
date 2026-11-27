@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -168,6 +169,44 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 	r.runtime.Replace(nil, reverted)
 	if _, ok := r.EffectiveValue("AURA_LOOP_MAX_STEPS"); ok {
 		t.Fatal("an unpinned loop budget must fall through to the process env, not report 0")
+	}
+}
+
+// The OpenRouter speed preferences are profile rows like the compaction trigger: a pinned row
+// publishes, an absent row reverts to the boot value, and a value OpenRouter cannot read is
+// refused before it is stored.
+func TestPrimaryLLMRouteReloaderResolvesOpenRouterSpeedPreferences(t *testing.T) {
+	fallback := validFallbackLLMConfig()
+	fallback.OpenRouterPreferredMinThroughput = 5
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: llm.NewRuntime(nil, fallback)}
+	got, err := r.resolve(map[string]string{
+		llm.EnvOpenRouterPreferredMinThroughput: "20",
+		llm.EnvOpenRouterPreferredMaxLatencySec: " 10 ",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OpenRouterPreferredMinThroughput != 20 || got.OpenRouterPreferredMaxLatencySec != 10 {
+		t.Fatalf("resolved = %d/%d, want 20/10", got.OpenRouterPreferredMinThroughput, got.OpenRouterPreferredMaxLatencySec)
+	}
+	r.runtime.Replace(nil, got)
+	for key, want := range map[string]string{llm.EnvOpenRouterPreferredMinThroughput: "20", llm.EnvOpenRouterPreferredMaxLatencySec: "10"} {
+		if v, ok := r.EffectiveValue(key); !ok || v != want {
+			t.Fatalf("effective %s = (%q,%v), want %q", key, v, ok, want)
+		}
+	}
+	reverted, err := r.resolve(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverted.OpenRouterPreferredMinThroughput != 5 || reverted.OpenRouterPreferredMaxLatencySec != 0 {
+		t.Fatalf("delete fallback = %d/%d, want the boot 5/0", reverted.OpenRouterPreferredMinThroughput, reverted.OpenRouterPreferredMaxLatencySec)
+	}
+	for _, bad := range []string{"abc", "-5"} {
+		_, err := r.resolve(map[string]string{llm.EnvOpenRouterPreferredMinThroughput: bad}, nil)
+		if err == nil || !strings.Contains(err.Error(), llm.EnvOpenRouterPreferredMinThroughput) {
+			t.Fatalf("%q: err = %v, want a refusal naming the key", bad, err)
+		}
 	}
 }
 

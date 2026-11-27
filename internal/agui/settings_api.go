@@ -39,18 +39,20 @@ import (
 // background window and ceiling with it (prd.md §15). Every other allow-listed key is
 // boot-bound and reports itself as such.
 var hotLLMProfileKeys = map[string]struct{}{
-	"AURA_LLM_PROVIDER":                       {},
-	"AURA_LLM_BASE_URL":                       {},
-	"AURA_LLM_MODEL":                          {},
-	"AURA_LLM_MAX_TOKENS":                     {},
-	"AURA_MODEL_CONTEXT_WINDOW":               {},
-	"AURA_MODEL_MAX_OUTPUT_TOKENS":            {},
-	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": {},
-	"OPENROUTER_API_KEY":                      {},
-	"AURA_LOOP_MAX_STEPS":                     {},
-	"AURA_LOOP_MAX_WALLCLOCK_SEC":             {},
-	"AURA_LOOP_BACKGROUND_AFTER_SEC":          {},
-	"AURA_LOOP_BACKGROUND_MAX_SEC":            {},
+	"AURA_LLM_PROVIDER":                         {},
+	"AURA_LLM_BASE_URL":                         {},
+	"AURA_LLM_MODEL":                            {},
+	"AURA_LLM_MAX_TOKENS":                       {},
+	"AURA_MODEL_CONTEXT_WINDOW":                 {},
+	"AURA_MODEL_MAX_OUTPUT_TOKENS":              {},
+	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":   {},
+	"AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT":  {},
+	"AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC": {},
+	"OPENROUTER_API_KEY":                        {},
+	"AURA_LOOP_MAX_STEPS":                       {},
+	"AURA_LOOP_MAX_WALLCLOCK_SEC":               {},
+	"AURA_LOOP_BACKGROUND_AFTER_SEC":            {},
+	"AURA_LOOP_BACKGROUND_MAX_SEC":              {},
 }
 
 // Application state of one setting row, reported per item so the cockpit can say
