@@ -124,11 +124,14 @@ coordinator frame reports a thread's latest run, swarm or not. It passes the sna
 `preserveMessageIDs`, which kept the live id of a user message and of the **first** assistant message after
 it. A resumed turn holds two live (the paused call, then the resume), so the second took its database id and
 the runtime kept the live one as a sibling. Fix: every assistant message after a user message is matched by
-position (`web/src/chat/workers/useWorkerReportRefresh.ts`), with a test that failed before it.
+position (`web/src/chat/workers/useWorkerReportRefresh.ts`), with a test that failed before it. Measured
+again on the VM at `f6322eb88`, which carries it: one choice answered in a fresh conversation, "Hai scelto:
+montagna.", no branch picker, and the resumed reply kept its live id through the refresh after the run.
 
 ## What this does not establish
 
-- **The branch fix on the VM.** It is a unit test and the reasoning above; it was not run on the VM.
+- **The branch fix beyond one answer**: it was measured on one choice question, not on an approval or a
+  conversation with several answers.
 - **A receipt after a reload.** The server keeps no record of a settled form, so a reload shows none; the tool
   row is the lasting record. Seen here too, as `2026-11-27-cockpit-card-fixes.md` predicted.
 - **The classic path on the VM**, and a classic session with two open calls: its form names no call, which is
