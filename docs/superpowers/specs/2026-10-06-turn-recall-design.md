@@ -402,7 +402,7 @@ the already-required operator decision is made on the concrete measured report b
 | `recallRadius` | 0.10 cosine distance, document template | Candidate; similarities alone do not establish valid reuse |
 | `recallNeighbours` | 5 per eligible pool | Bounded candidate count; labels filtered before top-k; validate duplicates and ANN recall |
 | `preloadMax` | 3 | Observed maximum in the small VM sample; validate schema-token cost and unused preloads |
-| `recallTimeout` | 500 ms | Proposed total recall budget; historical SQL-only 7 ms does not validate it |
+| `recallTimeout` | 2 s | Raised from the unmeasured 500 ms on 2026-11-27: the lab VM's hosted embedding route alone took 0.39-0.98 s (2026-11-01), so every recall timed out. Where the time goes inside the recall is still unmeasured |
 | `denseSearchTimeout` | 500 ms | Proposed dense build/query wait budget; cold-build feasibility unmeasured |
 | teacher timeout | `defaultTeacherTimeout` 30 s, background (amendment 2026-10-07; was a synchronous `reasoningRouterTimeout` of at most 2 s, measured too short) | candidate; the VM rerun measures the unbounded teacher latency |
 

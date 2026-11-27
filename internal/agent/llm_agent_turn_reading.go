@@ -19,8 +19,10 @@ const (
 	// (spec, "Constants").
 	teacherMargin = 0.075
 	// recallTimeout bounds the whole recall: client acquisition, space checks, the embedding
-	// and every pool query. Proposed, not measured (spec, "Constants").
-	recallTimeout = 500 * time.Millisecond
+	// and every pool query. The first 500 ms was never measured; on the lab VM the hosted
+	// embedding route alone answered in 0.39-0.98 s (2026-11-01), so every turn recall timed
+	// out. 2 s is the operator's ruling of 2026-11-27, still not a measured split.
+	recallTimeout = 2 * time.Second
 	// preloadMax is how many remembered deferred tools load before round 1: the most a tool
 	// turn used in the lab VM's small sample. Every one adds its schema to the request.
 	preloadMax = 3
