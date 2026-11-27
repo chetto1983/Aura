@@ -5677,8 +5677,8 @@ or from a live service, and the replay used today's closures for older commits.
 Mutation evidence is measured in parallel (652ba82d7). Stryker, three groups of Go scopes and the
 gate are separate CI jobs. The groups are balanced on cold CI durations: elicitation_route alone
 (534-577 s), media_clamp with media_watcher (449-475 s), the five small scopes (201 s). Each scope
-still runs alone on its runner. The gate job runs no mutant: it merges the groups' entries, fails
-on a missing or stale one, and saves the cache once. A scope a group job measured on the candidate
+still runs alone on its runner. The gate job runs no mutant: it merges the groups' entries and fails
+on a missing or stale one; each group job saves its own cache (2026-11-26, below). A scope a group job measured on the candidate
 has no `reused_from`. Skills measures validator.go and writer.go in two jobs beside its gate.
 Measured 2026-09-28 on b52c69880 (CI run 36419041159, Skills run 36419041053) against 3dc8fd7ef
 (runs 36412624433, 36412624404). Both measured the same six Go scopes and reused identity_isolation
@@ -5693,6 +5693,30 @@ their closure too). Not shown: this is one run each, so queueing and runner spee
 general (writer.go took 276 s here, 509 s on run 36412624404); Stryker's work differs by push
 (6,406 of 6,653 mutants reused here); and the gate failing closed on a missing group artifact is
 shown by unit tests with fakes, not by a CI run.
+
+Each Go mutation group saves its own cache since a54afb796 (2026-11-26). Until then only the gate
+job saved the merged cache. `concurrency: cancel-in-progress` cancels a master run on every push,
+and a cancelled run never reached the gate, so every finished group's measurements were lost. The
+key is `go-mutation-v1-<os>-<group>-<sha>-<run_attempt>`, restored by group prefix, then by the
+generic prefix. The save step runs under `if: always()`.
+
+Measured 2026-11-27:
+- Master run 45912274480 was cancelled at 00:10:15. All three groups ran their save step in 1-2 s,
+  after the cancelled measure step.
+- The next run, 45915129607, took 3 min 34 s for turn-reading, against 26 min 23 s for a full
+  measure in run 45918008118.
+- On 231143339 (run 45866028711) all three groups saved, with entries of about
+  68-77 KB.
+
+The same day, an offline spike showed that a test-binary fingerprint is unsound
+(docs/superpowers/verification/2026-11-26-mutation-cache-binary-fingerprint-spike.md): tests
+that read Go source as text change outcome on edits the binary does not see. The closure
+fingerprint stays.
+
+Not shown:
+- A save after a job's own `timeout-minutes`, as opposed to a cancel.
+- That a scope still running when the run is cancelled is ever saved. It is not: only finished
+  scopes have an entry.
 
 MRS is an operational reliability score with a strict threshold above 96.5 and hard
 gates for integrity, isolation, provenance, live MCP, embedding contract, abstention,
