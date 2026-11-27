@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/openai/openai-go/v3/packages/ssestream"
 )
 
@@ -23,7 +24,7 @@ func consumeSDKStream(ctx context.Context, stream *ssestream.Stream[openai.ChatC
 	}
 	var accumulator openai.ChatCompletionAccumulator
 	var usage *llm.Usage
-	finishReason := ""
+	finishReason, provider := "", ""
 	for stream.Next() {
 		chunk := stream.Current()
 		if !accumulator.AddChunk(chunk) {
@@ -42,10 +43,16 @@ func consumeSDKStream(ctx context.Context, stream *ssestream.Stream[openai.ChatC
 				finishReason = choice.FinishReason
 			}
 		}
+		if named := extraString(chunk.JSON.ExtraFields, "provider"); named != "" {
+			provider = named
+		}
 		if chunk.JSON.Usage.Valid() {
 			value := sdkUsage(chunk.Usage)
 			usage = &value
 		}
+	}
+	if usage != nil {
+		usage.ResponseID, usage.Provider = accumulator.ID, provider
 	}
 	if idle.firedIdle() {
 		emit(llm.Chunk{Err: ErrStreamIdleTimeout})
@@ -91,16 +98,25 @@ func consumeSDKStream(ctx context.Context, stream *ssestream.Stream[openai.ChatC
 
 func sdkReasoningDelta(delta openai.ChatCompletionChunkChoiceDelta) string {
 	for _, key := range []string{"reasoning", "reasoning_content"} {
-		field, ok := delta.JSON.ExtraFields[key]
-		if !ok || field.Raw() == "" || field.Raw() == "null" {
-			continue
-		}
-		var value string
-		if json.Unmarshal([]byte(field.Raw()), &value) == nil && value != "" {
+		if value := extraString(delta.JSON.ExtraFields, key); value != "" {
 			return value
 		}
 	}
 	return ""
+}
+
+// extraString reads a string field the SDK's schema does not declare; empty when absent,
+// null or not a string.
+func extraString(fields map[string]respjson.Field, key string) string {
+	field, ok := fields[key]
+	if !ok || field.Raw() == "" || field.Raw() == "null" {
+		return ""
+	}
+	var value string
+	if json.Unmarshal([]byte(field.Raw()), &value) != nil {
+		return ""
+	}
+	return value
 }
 
 func sdkUsage(usage openai.CompletionUsage) llm.Usage {

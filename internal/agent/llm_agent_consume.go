@@ -135,9 +135,10 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 }
 
 // logCallEnd records one completed model call: how long it took from opening the stream,
-// when the first content arrived (the provider's prompt read, absent when none came), and
-// how much of the prompt the provider served from its cache. Without these a slow turn could
-// not be split from the logs (lab VM, 2026-11-27).
+// when the first content arrived (the provider's prompt read, absent when none came), how
+// much of the prompt the provider served from its cache, and the response id and upstream
+// provider when the stream names them. Without these a slow turn could not be split from the
+// logs (lab VM, 2026-11-27).
 func (a *LlmAgent) logCallEnd(requestID string, started time.Time, out roundOutput, calls int) {
 	attrs := []any{
 		"request_id", requestID, "thread_id", a.sessionID, "model", a.cfg.Model,
@@ -148,6 +149,12 @@ func (a *LlmAgent) logCallEnd(requestID string, started time.Time, out roundOutp
 	}
 	if !out.firstChunkAt.IsZero() {
 		attrs = append(attrs, "first_token_ms", out.firstChunkAt.Sub(started).Milliseconds())
+	}
+	if out.usage.ResponseID != "" {
+		attrs = append(attrs, "response_id", out.usage.ResponseID)
+	}
+	if out.usage.Provider != "" {
+		attrs = append(attrs, "provider", out.usage.Provider)
 	}
 	slog.Info("agent llm call end", attrs...)
 }

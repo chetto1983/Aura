@@ -82,6 +82,12 @@ type Usage struct {
 	//
 	// Zero on a per-call Usage from a provider — only the turn aggregate sets it.
 	ContextTokens int
+	// ResponseID and Provider name one call so it can be looked up at the provider afterwards:
+	// on OpenRouter the generation id (GET /api/v1/generation returns the provider that served
+	// it, its latency and its cached tokens) and the upstream named on the stream, when it is.
+	// Empty when the stream carries none; never summed into a turn.
+	ResponseID string
+	Provider   string
 }
 
 // Chunk is one streamed delta from the LLM. Exactly one of Text, Reasoning,

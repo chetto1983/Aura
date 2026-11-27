@@ -49,7 +49,7 @@ func TestLLMCallEndLogsItsTimeAndTheCache(t *testing.T) {
 		Client: slowFirstChunkClient{wait: wait, chunks: []llm.Chunk{
 			{Text: "ciao"},
 			{FinishReason: "stop"},
-			{Usage: &llm.Usage{PromptTokens: 92578, CompletionTokens: 48, CachedTokens: 2048}},
+			{Usage: &llm.Usage{PromptTokens: 92578, CompletionTokens: 48, CachedTokens: 2048, ResponseID: "gen-1", Provider: "Inkling"}},
 		}},
 		LLM:        llm.Config{Model: "inkling", Provider: "openrouter", TotalTimeoutSec: 30},
 		Registry:   tools.NewRegistry(),
@@ -67,7 +67,7 @@ func TestLLMCallEndLogsItsTimeAndTheCache(t *testing.T) {
 	}
 
 	line := callEndLine(t, logs.String())
-	for _, want := range []string{"model=inkling", "prompt_tokens=92578", "cached_tokens=2048", "completion_tokens=48"} {
+	for _, want := range []string{"model=inkling", "prompt_tokens=92578", "cached_tokens=2048", "completion_tokens=48", "response_id=gen-1", "provider=Inkling"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("call line lacks %q:\n%s", want, line)
 		}
