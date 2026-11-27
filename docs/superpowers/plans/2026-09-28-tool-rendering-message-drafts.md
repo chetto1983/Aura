@@ -1,6 +1,6 @@
 # Editable Outbound Message Drafts Implementation Plan
 
-**Status (2026-10-15):** PARTIAL. Tasks 1-3 landed (66612038b..4a8413040). Task 4's restart sweep, kill/restart test and cockpit Playwright scenario did not. An interrupted draft is reconciled only on resume.
+**Status (2026-11-27):** PARTIAL. Tasks 1-3 landed (66612038b..4a8413040), and the revised Task 4 (R1–R5, below). The cockpit scenario and the controlled-inbox smoke ran for email on 2026-11-27 (`docs/superpowers/verification/2026-11-27-message-drafts-cockpit.md`): they found a second send of the same round lost, fixed in the AG-UI translator. Still open: WhatsApp, a foreign identity and a public share live, and how an operator's edit reaches the model and the replayed tool row (a finding of that run).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -208,7 +208,8 @@ The revised steps:
   a second send is refused (`TestAReviewDraftedBeforeThePIMSplitSendsAfterIt`, `internal/runner`). With
   the upgrade skipped the same review is unavailable, as the VM's would have been.
 
-Out of this revision, and still open: the cockpit Playwright scenario of Step 1. It needs a model that
-calls `send_email`, so it is a run with the `aura-model-in-the-loop` skill, not CI. The real-stack smoke
-against a controlled inbox also stays open. A swept draft's card disappears on the next load; a cockpit
+Out of this revision: the cockpit Playwright scenario of Step 1, which needs a model that calls
+`send_email`, and the real-stack smoke against a controlled inbox. Both ran for email on 2026-11-27 with the
+`aura-model-in-the-loop` skill (`docs/superpowers/verification/2026-11-27-message-drafts-cockpit.md`); WhatsApp
+stays open. A swept draft's card disappears on the next load; a cockpit
 that is open while the sweep runs keeps showing it until then.
