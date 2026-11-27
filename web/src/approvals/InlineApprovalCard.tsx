@@ -115,8 +115,11 @@ export function InlineApprovalCard({
   const destructive = isApproval && isDestructiveApproval(approval);
   const choosing = options.length > 0;
   const chosenOption = chosen === null ? undefined : options[chosen];
-  const verb =
-    isApproval && offersOnlyScopes(options) ? 'questionCard.approve' : 'approval.card.answer';
+  const scoped = isApproval && offersOnlyScopes(options);
+  const verb = scoped ? 'questionCard.approve' : 'approval.card.answer';
+  // The scope warning belongs to the gateway's rows, and to a free-text approval (spec
+  // 2026-07-15); an approval offering the model's own options has no scope to review.
+  const warns = scoped || (isApproval && !choosing);
 
   function submit(action: ResolveAction, content?: string, shown = '') {
     attemptSequence.current += 1;
@@ -225,7 +228,7 @@ export function InlineApprovalCard({
 
   return frame(
     <>
-      {isApproval ? <p className="text-xs text-text-muted">{t('approval.frame.review')}</p> : null}
+      {warns ? <p className="text-xs text-text-muted">{t('approval.frame.review')}</p> : null}
       {choosing ? (
         <QuestionOptions
           labelledBy={`${baseId}-title`}
