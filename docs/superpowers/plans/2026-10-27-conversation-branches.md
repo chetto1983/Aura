@@ -161,16 +161,17 @@ stack with `aura-llm`.
 
 ### Task 7 — Gates
 - [x] `make quality`: lint, deadcode, file-size, race, vuln. Green at `1aa073a`.
-- [ ] `bash scripts/coverage_docker.sh` with the package policy. Re-pin only after checking.
-  Left to CI's coverage gate on the PR.
-- [ ] Mutation ≥ 70% (`go-mutesting`) on:
+- [x] `bash scripts/coverage_docker.sh` with the package policy. Left to CI's coverage gate, which
+  holds `internal/runner` at its exact 85% target: green on master `03e78459c` (2026-11-27, run
+  45918008118).
+- [x] Mutation ≥ 70% (`go-mutesting`) on:
   - `store_append.go` (the branch derivation): 100%;
-  - `runner_context.go`: 58.3%. All nine survivors are in code this plan did not touch (the
-    compaction summarizer, the memory context and recall, the profile block);
-    `loadTurnHistory` has none;
+  - `runner_context.go`: 97.2% (35/36) on 2026-11-27, from 58.3% (21/36). The tests added cover
+    code this plan did not touch (the compaction summarizer, the memory context and recall, the
+    profile block); the one survivor is equivalent
+    (`docs/superpowers/verification/2026-11-27-runner-context-mutation.md`);
   - the snapshot projection (`internal/agui/server_display_tree.go`): 100%, measured on 2026-11-26
-    (`docs/superpowers/verification/2026-11-26-mutation-scopes-backlog.md`). The item stays open on
-    `runner_context.go` alone.
+    (`docs/superpowers/verification/2026-11-26-mutation-scopes-backlog.md`).
 - [x] Stryker on `ExternalStoreChat_tree.ts`: 93.5%. `messageSeq.ts` 93.1%,
   `sseAdapter_snapshot.ts` 76.7%.
 

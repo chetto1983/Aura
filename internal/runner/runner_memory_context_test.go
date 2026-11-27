@@ -68,7 +68,7 @@ func TestLoadMemoryContextFailureDoesNotBlockTheTurn(t *testing.T) {
 		"missing identity": {ctx: context.Background(), provider: &memoryContextFake{content: "fact"}},
 		"provider error": {
 			ctx:      identityctx.WithIdentityID(context.Background(), "identity-a"),
-			provider: &memoryContextFake{err: errors.New("offline")},
+			provider: &memoryContextFake{content: "stale digest", err: errors.New("offline")},
 		},
 		"empty digest": {
 			ctx:      identityctx.WithIdentityID(context.Background(), "identity-a"),
@@ -101,6 +101,9 @@ func TestLoadMemoryContext_PreloadInjectsRecall(t *testing.T) {
 	}
 	if !strings.Contains(got.Content, memoryRecallHeader) || !strings.Contains(got.Content, "recalled fact") {
 		t.Fatalf("recall section missing: %q", got.Content)
+	}
+	if !strings.Contains(got.Content, memoryContextFooter+"\n"+memoryRecallHeader) {
+		t.Fatalf("the two sections are not one newline apart: %q", got.Content)
 	}
 }
 
@@ -146,7 +149,7 @@ func TestLoadMemoryContext_PreservesTrustedMemoryAndNeutralizesForgedBoundaries(
 }
 
 func TestLoadMemoryContext_PreloadFailSoftKeepsDigest(t *testing.T) {
-	provider := &memoryContextFake{content: "digest fact", searchErr: errors.New("search offline")}
+	provider := &memoryContextFake{content: "digest fact", searchOut: "stale recall", searchErr: errors.New("search offline")}
 	r := &Runner{memoryContext: provider, memoryPreloadEnabled: true}
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
 
@@ -157,8 +160,8 @@ func TestLoadMemoryContext_PreloadFailSoftKeepsDigest(t *testing.T) {
 	if !strings.Contains(got.Content, "digest fact") {
 		t.Fatalf("digest must survive a preload error: %q", got.Content)
 	}
-	if strings.Contains(got.Content, memoryRecallHeader) {
-		t.Fatalf("no recall fence on preload error: %q", got.Content)
+	if strings.Contains(got.Content, memoryRecallHeader) || strings.Contains(got.Content, "stale recall") {
+		t.Fatalf("no recall on preload error: %q", got.Content)
 	}
 }
 
@@ -171,8 +174,8 @@ func TestLoadMemoryContext_PreloadOnlyWhenDigestEmpty(t *testing.T) {
 	if got == nil {
 		t.Fatal("a recall-only result must still inject memory")
 	}
-	if strings.Contains(got.Content, memoryContextHeader) {
-		t.Fatalf("no digest fence when the digest is empty: %q", got.Content)
+	if strings.Contains(got.Content, memoryContextHeader) || !strings.HasPrefix(got.Content, memoryRecallHeader) {
+		t.Fatalf("a recall alone must open the block, with no digest fence: %q", got.Content)
 	}
 	if !strings.Contains(got.Content, memoryRecallHeader) || !strings.Contains(got.Content, "recalled fact") {
 		t.Fatalf("recall section missing: %q", got.Content)
@@ -193,5 +196,43 @@ func TestLoadMemoryContext_NilUserMsgSkipsPreload(t *testing.T) {
 	}
 	if got.BeforeCurrentUser {
 		t.Fatal("a nil user message must not set BeforeCurrentUser")
+	}
+}
+
+func TestLoadMemoryContext_BlankUserMessageSkipsPreload(t *testing.T) {
+	provider := &memoryContextFake{content: "digest fact", searchOut: "recalled fact"}
+	r := &Runner{memoryContext: provider, memoryPreloadEnabled: true}
+	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
+
+	got := r.loadMemoryContext(ctx, new("  \n\t "))
+	if provider.searchCalls != 0 {
+		t.Fatalf("a blank user message must not be searched, got %d calls", provider.searchCalls)
+	}
+	if got == nil || strings.Contains(got.Content, memoryRecallHeader) {
+		t.Fatalf("a blank user message keeps the digest alone: %+v", got)
+	}
+}
+
+// Both legs are fail-soft, so the log is the only way to tell an outage from a memory with
+// nothing to say (runner_context.go, measured 2026-09-03).
+func TestLoadMemoryContextLogsWhatItAssembledAndWhatFailed(t *testing.T) {
+	logs := captureLogs(t)
+	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
+
+	(&Runner{memoryContext: &memoryContextFake{content: "fact"}}).loadMemoryContext(context.Background(), new("hi"))
+	failing := &memoryContextFake{err: errors.New("graph offline"), searchErr: errors.New("search offline")}
+	(&Runner{memoryContext: failing, memoryPreloadEnabled: true}).loadMemoryContext(ctx, new("hi"))
+	(&Runner{memoryContext: &memoryContextFake{content: "digest fact"}}).loadMemoryContext(ctx, new("hi"))
+
+	out := logs.String()
+	for _, want := range []string{
+		`msg="conversation memory context has no identity"`,
+		`msg="conversation memory context unavailable"`, "graph offline",
+		`msg="conversation memory preload unavailable"`, "search offline",
+		`msg="conversation memory context assembled"`, "digest_bytes=11 recall_bytes=0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %q:\n%s", want, out)
+		}
 	}
 }
