@@ -18,7 +18,8 @@ export interface ThreadApprovalCardsProps {
   readonly approvals: readonly Approval[];
   readonly messageDrafts?: ThreadMessageDrafts;
   /** A mounted MCP server's forms for this thread, in arrival order. useThreadElicitations
-   *  drops them with their run, so each one here is still worth showing. */
+   *  drops an unanswered form with its run and a receipt with the next run, so each one here
+   *  is still worth showing. */
   readonly elicitations?: readonly ElicitationItem[];
   readonly isStreaming?: boolean;
   readonly onResolutionStarted?: (attempt: ApprovalResolutionAttempt) => void;

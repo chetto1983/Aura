@@ -8,7 +8,8 @@ import type {
 // useThreadElicitations holds the thread's MCP forms as the stream tells them: a question
 // arrives, and its resolution settles it. The server persists nothing. A reload gets the forms
 // back from the attach's replay, or from the run's own list when the replay no longer reaches
-// them (ExternalStoreChat_liveRun).
+// them (ExternalStoreChat_liveRun). A settled form stays as its receipt until the next run, as
+// an ask_user receipt does.
 
 export type ElicitationOutcome = 'accepted' | 'declined' | 'cancelled' | 'expired';
 
@@ -46,23 +47,37 @@ export function applyElicitationSignal(
   );
 }
 
-/**
- * The cards still worth showing once the thread stops streaming: only those of the run the
- * server still names live. A form never outlives its run, and a tab can miss the resolution
- * that says so: a Stop aborts the stream first, and a cut stream loses whatever was in flight.
- */
-export function keepLiveRun(
-  items: readonly ElicitationItem[],
-  liveRunId: string | undefined,
-): readonly ElicitationItem[] {
-  const kept = items.filter((item) => item.question.run_id === liveRunId);
-  return kept.length === items.length ? items : kept;
-}
-
-interface ThreadForms {
+export interface ThreadForms {
   readonly scope: symbol;
   readonly items: readonly ElicitationItem[];
   readonly retired: ReadonlySet<string>;
+}
+
+/**
+ * The forms as the thread's run state leaves them. Once the thread stops streaming, every run but
+ * the one the server still names live has ended: it is retired, so a late replay cannot bring it
+ * back, and its unanswered forms go, since a form never outlives its run and a tab can miss the
+ * resolution that says so (a Stop aborts the stream first, a cut stream loses what was in
+ * flight). Its receipts stay. While a run streams, the receipts of retired runs go: the thread
+ * runs one run at a time, so a new one has started. Returns forms itself when nothing changes.
+ */
+export function settleForms(
+  forms: ThreadForms,
+  isRunning: boolean,
+  liveRunId: string | undefined,
+): ThreadForms {
+  if (isRunning) {
+    const items = forms.items.filter((item) => !forms.retired.has(item.question.run_id));
+    return items.length === forms.items.length ? forms : { ...forms, items };
+  }
+  const ended = forms.items
+    .map((item) => item.question.run_id)
+    .filter((runId) => runId !== liveRunId && !forms.retired.has(runId));
+  const items = forms.items.filter(
+    (item) => item.question.run_id === liveRunId || item.outcome !== undefined,
+  );
+  if (ended.length === 0 && items.length === forms.items.length) return forms;
+  return { ...forms, items, retired: new Set([...forms.retired, ...ended]) };
 }
 
 function replaceItems(current: ThreadForms, items: readonly ElicitationItem[]): ThreadForms {
@@ -116,10 +131,9 @@ export function useThreadElicitations(
     [scope],
   );
   // Adjusted while rendering, the way React adjusts state that follows a prop (react.dev, "You
-  // Might Not Need an Effect"): the pruned list is stored so a later run cannot bring it back.
-  const held = state.scope === scope ? state.items : [];
-  const items = isRunning ? held : keepLiveRun(held, liveRunId);
-  if (state.scope !== scope) setState({ scope, items, retired: new Set() });
-  else if (items !== held) setState(replaceItems(state, items));
-  return { items, onSignal, onSnapshot };
+  // Might Not Need an Effect"): the settled list is stored so a later run cannot bring it back.
+  const current = state.scope === scope ? state : { scope, items: [], retired: new Set<string>() };
+  const settled = settleForms(current, isRunning, liveRunId);
+  if (settled !== state) setState(settled);
+  return { items: settled.items, onSignal, onSnapshot };
 }
