@@ -2724,10 +2724,21 @@ jobs:
         # wget+timeout the egress reachability probes shell out to, python:3-slim backs the
         # routed-snippet exec. This is also why the job sets no AURA_SANDBOX_IMAGE — one
         # global override would break whichever package it is not the right image for.
+        # lscr.io refuses a burst with "error from registry: retry-after: <1ms": three runs on
+        # 2026-11-27 failed on the chromium pull alone. A pull is idempotent, so each image
+        # gets three tries before the step fails.
         run: |
-          docker pull busybox:stable
-          docker pull python:3-slim
-          docker pull "$AURA_SIGNIN_BROWSER_IMAGE"
+          pull() {
+            for attempt in 1 2 3; do
+              if docker pull "$1"; then return 0; fi
+              [ "$attempt" = 3 ] || sleep $((attempt * 10))
+            done
+            echo "docker pull $1 failed after 3 attempts" >&2
+            return 1
+          }
+          pull busybox:stable
+          pull python:3-slim
+          pull "$AURA_SIGNIN_BROWSER_IMAGE"
 
       - name: docker_integration tier (box lifecycle + egress floor + routed host tools)
         # -p 1: the three packages share ONE daemon and each creates and destroys containers,
