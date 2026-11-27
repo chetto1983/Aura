@@ -20,6 +20,8 @@ export type SettingsKey =
   | 'AURA_LLM_MODEL'
   | 'AURA_LLM_BASE_URL'
   | 'AURA_LLM_PROVIDER'
+  | 'AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT'
+  | 'AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC'
   | 'AURA_OPENROUTER_SERVICES_CAP_USD'
   | 'AURA_OPENROUTER_MANAGEMENT_KEY'
   | 'AURA_LLM_MAX_TOKENS'
@@ -64,6 +66,22 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     kind: 'string',
     labelKey: 'settings.fields.primaryBaseUrl',
     placeholder: OPENROUTER_BASE_URL,
+  },
+  // OpenRouter's soft provider thresholds (provider.preferred_*). Hot: a save reaches the next
+  // call. Measured on the lab VM 2026-11-27: the cheapest provider took 45 s a call.
+  {
+    key: 'AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT',
+    kind: 'int',
+    labelKey: 'settings.fields.openRouterMinThroughput',
+    placeholder: '0',
+    helpKey: 'settings.help.openRouterProviderSpeed',
+  },
+  {
+    key: 'AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC',
+    kind: 'int',
+    labelKey: 'settings.fields.openRouterMaxLatency',
+    placeholder: '0',
+    helpKey: 'settings.help.openRouterProviderSpeed',
   },
   // The monthly cap of the key Aura mints for speech, embeddings and vision. It comes BEFORE the
   // management key on purpose: a save writes the rows outside the hot profile in this order, so

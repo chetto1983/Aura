@@ -182,6 +182,8 @@ export const settingsEn = {
         "Creates each person's own OpenRouter key and reads the account's spend. It can't run models.",
       openRouterServicesCap:
         'The monthly cap, in USD, of the key Aura mints for speech, embeddings and vision the first time OpenRouter is connected.',
+      openRouterProviderSpeed:
+        'OpenRouter only. Providers below this are tried last, never excluded. 0 sends nothing.',
       mediaModel: "Runs on OpenRouter with each person's own key, whatever route the chat uses.",
       embedCloudApiKey:
         'Sent only to the endpoint above, never to OpenRouter. Leave it empty to keep the saved key.',
@@ -211,6 +213,8 @@ export const settingsEn = {
     fields: {
       primaryModel: 'Primary model',
       primaryBaseUrl: 'Primary base URL',
+      openRouterMinThroughput: 'OpenRouter: preferred min speed (tokens/s)',
+      openRouterMaxLatency: 'OpenRouter: preferred max latency (s)',
       primaryProvider: 'Primary provider',
       openRouterServicesCap: 'Services key monthly cap (USD)',
       openRouterManagementKey: 'OpenRouter management key',
@@ -433,6 +437,8 @@ export const settingsIt = {
         "Crea la chiave OpenRouter di ogni persona e legge la spesa dell'account. Non può usare i modelli.",
       openRouterServicesCap:
         'Il limite mensile, in USD, della chiave che Aura crea per voce, embedding e visione la prima volta che OpenRouter viene collegato.',
+      openRouterProviderSpeed:
+        'Solo OpenRouter. I provider sotto soglia vengono provati per ultimi, mai esclusi. 0 non invia niente.',
       mediaModel: 'Gira su OpenRouter con la chiave di ogni persona, qualunque rotta usi la chat.',
       embedCloudApiKey:
         "Inviata solo all'endpoint qui sopra, mai a OpenRouter. Lasciala vuota per tenere quella salvata.",
@@ -462,6 +468,8 @@ export const settingsIt = {
     fields: {
       primaryModel: 'Modello primario',
       primaryBaseUrl: 'URL base primario',
+      openRouterMinThroughput: 'OpenRouter: velocità minima preferita (token/s)',
+      openRouterMaxLatency: 'OpenRouter: latenza massima preferita (s)',
       primaryProvider: 'Provider primario',
       openRouterServicesCap: 'Limite mensile chiave dei servizi (USD)',
       openRouterManagementKey: 'Chiave di gestione OpenRouter',

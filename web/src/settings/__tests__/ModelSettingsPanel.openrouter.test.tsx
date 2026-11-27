@@ -108,6 +108,40 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
     }
   });
 
+  // Measured on the lab VM 2026-11-27: the cheapest provider took 45 s a call. The two soft
+  // thresholds ride the hot profile, so a save reaches the next call without a restart.
+  it('saves the provider speed preferences through the hot-profile batch', async () => {
+    const calls = stubSettingsAPI();
+    await mount(<ModelSettingsPanel groups={['routing']} onComplete={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('OpenRouter: preferred min speed (tokens/s)'), {
+      target: { value: '20' },
+    });
+    fireEvent.change(screen.getByLabelText('OpenRouter: preferred max latency (s)'), {
+      target: { value: '10' },
+    });
+    expect(
+      screen.getAllByText(
+        'OpenRouter only. Providers below this are tried last, never excluded. 0 sends nothing.',
+      ),
+    ).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    expect(calls.filter((call) => call.method === 'PUT')).toEqual([
+      {
+        url: '/api/settings/llm-profile',
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT: '20',
+            AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC: '10',
+          },
+        }),
+      },
+    ]);
+  });
+
   it('never shows the services key Aura mints', async () => {
     stubSettingsAPI();
     await mount(<ModelSettingsPanel groups={['routing']} />);
