@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	coreerrors "github.com/Authula/authula/core/errors"
 	authulamodels "github.com/Authula/authula/models"
 	"github.com/chetto1983/aura/internal/testenv"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -71,9 +72,14 @@ func TestSessionLifetime_Live(t *testing.T) {
 			t.Fatalf("set %s: %v", column, xerr)
 		}
 	}
+	// A missing session reads as nil. Authula 1.51 reports it as ErrSessionNotFound where 1.50
+	// answered (nil, nil): core/repositories/bun_session_repository.go, GetByToken.
 	reload := func(t *testing.T, raw string) *authulamodels.Session {
 		t.Helper()
 		sess, gerr := core.SessionService.GetByToken(ctx, core.TokenService.Hash(raw))
+		if errors.Is(gerr, coreerrors.ErrSessionNotFound) {
+			return nil
+		}
 		if gerr != nil {
 			t.Fatalf("reload session: %v", gerr)
 		}

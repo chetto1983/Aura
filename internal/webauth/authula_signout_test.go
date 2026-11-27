@@ -10,11 +10,14 @@ package webauth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	coreerrors "github.com/Authula/authula/core/errors"
 )
 
 func TestAuthulaSignOutRevokesTheSession(t *testing.T) {
@@ -30,8 +33,10 @@ func TestAuthulaSignOutRevokesTheSession(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sign-out answered %d %s, want 200", rec.Code, strings.TrimSpace(rec.Body.String()))
 	}
-	if sess, err := provider.CoreServices().SessionService.GetByToken(ctx, hashed); err != nil || sess != nil {
-		t.Fatalf("session after sign-out = %+v (err %v), want none", sess, err)
+	// Authula 1.51 reports a missing session as ErrSessionNotFound, where 1.50 answered (nil, nil):
+	// core/repositories/bun_session_repository.go, GetByToken.
+	if sess, err := provider.CoreServices().SessionService.GetByToken(ctx, hashed); !errors.Is(err, coreerrors.ErrSessionNotFound) {
+		t.Fatalf("session after sign-out = %+v (err %v), want ErrSessionNotFound", sess, err)
 	}
 	if !clearsCookie(rec.Result().Cookies(), SessionCookieName) {
 		t.Errorf("sign-out did not clear %s; Set-Cookie: %q", SessionCookieName, rec.Header().Values("Set-Cookie"))
