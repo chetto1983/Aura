@@ -1,6 +1,6 @@
 # MCP elicitation and the question card: implementation plan
 
-**Status (2026-11-26):** PARTIAL. Tasks 1-9 landed (895d27248..e235d1daa). Task 10 ran locally with the model in the loop and the cockpit's API (`docs/superpowers/verification/2026-11-26-elicitation-model-in-the-loop.md`), and PRD amendment #225 records it. Its lab VM steps, the card on screen and a surfaced fallback are still open.
+**Status (2026-11-27):** PARTIAL. Tasks 1-9 landed (895d27248..e235d1daa). Task 10 ran locally with the model in the loop and the cockpit's API (`docs/superpowers/verification/2026-11-26-elicitation-model-in-the-loop.md`, PRD amendment #225), then in a browser after the background window was made to hold during a form (`docs/superpowers/verification/2026-11-27-elicitation-window-and-cards.md`, amendment #226): steps 4 to 6 are measured locally, card by card. Its lab VM steps (1 to 3, 7 to 9), the surfaced fallback and the score are still open.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

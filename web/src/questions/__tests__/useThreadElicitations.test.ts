@@ -3,9 +3,10 @@ import { act, renderHook } from '@testing-library/react';
 import type { ElicitationQuestion } from '../../chat/sseAdapter_elicitation';
 import {
   applyElicitationSignal,
-  keepLiveRun,
+  settleForms,
   useThreadElicitations,
   type ElicitationItem,
+  type ThreadForms,
 } from '../useThreadElicitations';
 
 function question(id: string, runId = 'run-1'): ElicitationQuestion {
@@ -69,11 +70,36 @@ describe('applyElicitationSignal', () => {
   });
 });
 
-describe('keepLiveRun', () => {
-  it("keeps only the live run's cards, and the same list when nothing goes", () => {
-    const items = fold(asked('a', 'run-1'), asked('b', 'run-1'));
-    expect(keepLiveRun(items, 'run-1')).toBe(items);
-    expect(keepLiveRun(items, undefined)).toEqual([]);
+describe('settleForms', () => {
+  const forms = (items: readonly ElicitationItem[], retired: string[] = []): ThreadForms => ({
+    scope: Symbol('t-1'),
+    items,
+    retired: new Set(retired),
+  });
+
+  it('changes nothing while the live run holds every form', () => {
+    const held = forms(fold(asked('a', 'run-1'), asked('b', 'run-1')));
+    expect(settleForms(held, false, 'run-1')).toBe(held);
+    expect(settleForms(held, true, 'run-1')).toBe(held);
+  });
+
+  // Measured 2026-11-27: the receipts went with their run, a few seconds after the answer.
+  it('keeps the receipts of an ended run, drops its open forms, and retires it', () => {
+    const settled = settleForms(
+      forms(fold(asked('a', 'run-1'), resolved('a', 'decline'), asked('b', 'run-1'))),
+      false,
+      undefined,
+    );
+    expect(settled.items.map((item) => [item.question.id, item.outcome])).toEqual([
+      ['a', 'declined'],
+    ]);
+    expect([...settled.retired]).toEqual(['run-1']);
+  });
+
+  it("drops a retired run's receipts once the next run streams", () => {
+    const receipts = forms(fold(asked('a', 'run-1'), resolved('a', 'accept')), ['run-1']);
+    expect(settleForms(receipts, true, undefined).items).toEqual([]);
+    expect(settleForms(receipts, false, undefined)).toBe(receipts);
   });
 });
 
@@ -165,6 +191,27 @@ describe('useThreadElicitations', () => {
       ['b', 'accepted'],
       ['c', undefined],
     ]);
+  });
+
+  it('shows a receipt after its run ends, until the next run, and never revives the run', () => {
+    const { result, rerender } = renderHook(
+      ({ isRunning }) => useThreadElicitations('t-1', isRunning, undefined),
+      { initialProps: { isRunning: true } },
+    );
+    act(() => {
+      result.current.onSignal(asked('a', 'run-1'));
+      result.current.onSignal(resolved('a', 'cancel', true));
+    });
+    rerender({ isRunning: false });
+    expect(result.current.items.map((item) => [item.question.id, item.outcome])).toEqual([
+      ['a', 'expired'],
+    ]);
+    act(() => {
+      result.current.onSignal(asked('late', 'run-1'));
+    });
+    expect(result.current.items.map((item) => item.question.id)).toEqual(['a']);
+    rerender({ isRunning: true });
+    expect(result.current.items).toEqual([]);
   });
 
   // A Stop aborts the stream before the cancel's resolution can arrive: the form still goes

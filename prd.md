@@ -3580,6 +3580,26 @@ This does not establish:
 - a fallback that reaches a channel: no Telegram account was linked;
 - the lab VM, or the multi-round-trip protocol: the server negotiated `2025-11-25`.
 
+**A held form stops the background window too (2026-11-27, amendment #226).** #225 measured a
+form left open past 60 s moving its call to the background: the window
+(`AURA_LOOP_BACKGROUND_AFTER_SEC`) was the one clock a held form did not stop. It now runs on the
+call's pausable clock (`internal/agent/tools/background_calls.go`), so the call stays in its turn
+while the operator answers, and #225's sentence on the handoff no longer holds. Measured with
+server-everything, the cockpit in Chromium and the model in the loop
+(`docs/superpowers/verification/2026-11-27-elicitation-window-and-cards.md`): a form submitted
+209 s after the call, one declined at 44 s and one expired at 300 s each reached the model in the
+same turn, with the call's ledger row `ok` and no `tool_poll`. The same run saw the card: the step
+counter, "Use default" on defaulted fields, "Choose 1 to 3." with Next grey at four choices, the
+Review step with Submit only there, the countdown, and the "Declined." and "Expired: cancelled
+automatically." receipts. A reload at step 3 brought the form back through the run's list with its
+deadline, but not the answers typed before it.
+
+This does not establish:
+- what a real model does with the result;
+- a call that keeps running after its form: that the window counts again once the hold ends is a
+  unit test (`TestBackgroundCallsCountTheWindowAgainOnceTheHoldEnds`);
+- the lab VM, its other mounts, a fallback that reaches a channel, or the multi-round-trip path.
+
 Installing supported resolver-based stdio servers prepares a durable environment,
 resolves its executable, verifies initialize/tools-list, then persists the declaration.
 Failed verification does not save a broken server. Preparation and mounting restrict
@@ -4286,7 +4306,8 @@ MCP lifecycle says a client should always enforce). Both are rows in `aura.setti
 in the cockpit's turn-budget pane beside the steps and wallclock caps and live the same
 way: the Settings profile publishes them, and every turn's budget is built from them. A
 save whose ceiling is not above its window is refused, because every turn after it would
-fail to build its budget. When it settles, the existing
+fail to build its budget. Time a call spends on a server's form (§13) counts toward neither:
+the window runs on the call's pausable clock (amendment #226). When it settles, the existing
 background-completion dispatcher wakes the conversation -- a third source beside the shell
 and the video watcher -- and the model reads the result once with `tool_poll`, which also
 cancels a call no longer wanted. The wrapper sits where every agent tool call already

@@ -64,6 +64,9 @@ if (typeof Range !== 'undefined' && typeof Element !== 'undefined') {
   }
 }
 
+// Session storage outlives a test in jsdom: a form's draft (useElicitationDraft) or a dismissed
+// setup (useFirstRunGate) written by one test would otherwise reach the next.
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
 });

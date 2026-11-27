@@ -116,19 +116,21 @@ type callOutcome struct {
 
 // Execute runs tool for the turn ctx belongs to. A call that settles within window is
 // returned exactly as Execute would return it; one still running is moved to the
-// background, bounded by ceiling, and the model gets its task id instead.
+// background, bounded by ceiling, and the model gets its task id instead. The window runs
+// on the ceiling's clock, so time the operator spends on a server's form counts toward
+// neither.
 func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawMessage, window, ceiling time.Duration, complete BackgroundCallResultHook) (ToolResult, error, bool) {
 	call := detachCall(ctx, ceiling)
+	windowCtx, closeWindow := pausable.WithDeadline(context.Background(), time.Now().Add(window), call.clock)
+	defer closeWindow()
 	// Unbuffered: whichever way the call goes, this turn or settle receives its outcome.
 	done := make(chan callOutcome)
 	go runCall(call.ctx, tool, args, done)
 
-	timer := time.NewTimer(window)
-	defer timer.Stop()
 	select {
 	case out := <-done:
 		return call.finishInline(ctx, out)
-	case <-timer.C:
+	case <-windowCtx.Done():
 	}
 	// A call that settled as the window closed is not worth a wake.
 	select {
@@ -152,16 +154,18 @@ func (b *BackgroundCalls) Execute(ctx context.Context, tool Tool, args json.RawM
 // detachedCall is a call's own context: the turn's values without its cancellation,
 // bounded by the ceiling, and following the turn's cancellation until promotion stops
 // it. The ceiling is pausable like the call timeout it replaces: an operator answering
-// a server's form does not spend it.
+// a server's form holds clock and does not spend it.
 type detachedCall struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	follow  func() bool
 	cleanup *TurnCleanup
+	clock   *pausable.Clock
 }
 
 func detachCall(turn context.Context, ceiling time.Duration) detachedCall {
-	bounded, cancelBound := pausable.WithTimeout(context.WithoutCancel(turn), ceiling)
+	clock := pausable.NewClock(nil)
+	bounded, cancelBound := pausable.WithDeadline(context.WithoutCancel(turn), time.Now().Add(ceiling), clock)
 	ctx, cancelCall := context.WithCancelCause(bounded)
 	// A call gets cleanup of its own only inside a turn: with none, nothing would ever
 	// run it, and the MCP file sink must keep refusing files nobody removes.
@@ -175,6 +179,7 @@ func detachCall(turn context.Context, ceiling time.Duration) detachedCall {
 		ctx:     ctx,
 		follow:  follow,
 		cleanup: cleanup,
+		clock:   clock,
 		cancel: func() {
 			follow()
 			cancelCall(context.Canceled)
