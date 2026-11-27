@@ -40,6 +40,7 @@ const mutationTests = [
   // iOS's home-screen app saves through the share sheet (prd.md §3).
   'src/chat/artifacts/SaveFileLink.test.tsx',
   'src/lib/__tests__/installedApp.test.ts',
+  'src/lib/__tests__/sessionValue.test.ts',
   'src/chat/voice/speechAdapter.test.ts',
   'src/chat/voice/dictationAdapter.test.ts',
   'src/chat/displays/__tests__/SourcesButton.test.tsx',

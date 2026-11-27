@@ -1,26 +1,15 @@
 import { useState, type ReactNode } from 'react';
+import { readSessionValue, writeSessionValue } from '../lib/sessionValue';
 import { UpdateCenterContext, type DeferOutcome, type UpdateCenter } from './updateCenterContext';
 import { awaitsDecision, deferredUntil } from './updateModel';
 import { useSystemUpdate } from './useSystemUpdate';
 
 const DISMISSED_KEY = 'aura.update.dismissedRev';
 
-function readDismissed(): string | undefined {
-  try {
-    return window.sessionStorage.getItem(DISMISSED_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeDismissed(rev: string | undefined): void {
-  try {
-    if (rev === undefined) window.sessionStorage.removeItem(DISMISSED_KEY);
-    else window.sessionStorage.setItem(DISMISSED_KEY, rev);
-  } catch {
-    // Storage refused (private mode, blocked site data): the choice lasts until the reload.
-  }
-}
+const readDismissed = () => readSessionValue(DISMISSED_KEY);
+const writeDismissed = (rev: string | undefined) => {
+  writeSessionValue(DISMISSED_KEY, rev);
+};
 
 // The admin dialog opens by itself once per build and browser session. A dismissal is
 // remembered against the build it dismissed, so a newer build asks again; a decision clears
