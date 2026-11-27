@@ -1,6 +1,6 @@
 # Native Docker Engine Implementation Plan
 
-**Status (2026-10-15):** NOT STARTED. Only the spec and the plan landed (fc08527bd, 1e28a452f). Task 1 (runsc) is moot: gVisor was retired on 2026-10-11.
+**Status (2026-11-27, verified on code):** NOT STARTED. Only the spec and the plan landed (fc08527bd, 1e28a452f). Task 1 (runsc) is SUPERSEDED, gVisor was retired on 2026-10-11; `scripts/install.sh` has no CUDA provisioning, create-aura is still 0.2.16 and `deploy/windows` does not exist, so Tasks 2-7 are open.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

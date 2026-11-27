@@ -1,6 +1,8 @@
 # Browser sidecar implementation plan
 
-**Status (2026-10-15):** PARTIAL.
+**Status (2026-11-27, verified on code):** PARTIAL. Code landed and is on master and in v1.2.0 (7f0242a2d..6a3290e2f, fix pass 965bb3328..db5336994); acceptance is recorded only as the operator's confirmation (`verification/2026-10-15-browser-sidecar-check.md`), and the re-run of predicates 6 and 8 after the fix pass has no artifact (live run).
+
+**Earlier status (2026-10-15):** PARTIAL.
 - **Landed:** 7f0242a2d, 5c3104b81, f5e5b7b74, 150cf3f65 and 6a3290e2f.
 - **Measured:** on the VM the shell no longer holds browser credentials, and the operator confirmed
   the acceptance predicates.

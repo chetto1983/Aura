@@ -215,7 +215,7 @@ type Config struct {
 	// Authula web-auth provider knobs (docs/cockpit-overhaul/05-authula-auth-SPEC.md).
 	// Authula is the only provider: aura serve builds an Authula-only auth boundary.
 	AuthulaDatabaseURL      string // AURA_AUTHULA_DATABASE_URL — Postgres DSN for the authula schema; empty default → derived from AURA_DB_URL with ?search_path=authula
-	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret Authula derives its HMAC/token keys from (required when provider=authula)
+	AuthulaSecret           string // AURA_AUTHULA_SECRET — 32-byte hex secret whose sha256 encrypts Authula's JWKS signing keys and TOTP secrets (required when provider=authula)
 	AuthulaOperatorIdentity string // AURA_AUTHULA_OPERATOR_IDENTITY — optional legacy Aura identity fallback for Authula operator linking
 	AuthulaRateLimitMax     int    // AURA_AUTHULA_RATE_LIMIT_MAX — credential attempts per minute before Authula throttles (default 30)
 

@@ -1,11 +1,12 @@
 # Mail and calendar watch, backend — Implementation Plan
 
-**Status (2026-11-27):** PARTIAL. Tasks 1-15 are on `master` (the first, `d2b0a0765`, on 2026-11-01). Task 16
-ran on the lab VM on 2026-11-02 with the published PIM, through the cockpit and Telegram:
-`docs/superpowers/verification/2026-11-02-mail-watch-live.md`. Three items of Task 16 are still open: the
-`pim_contract_live` test against the real sidecar, `mail_watch enable` on a real turn, and G3 itself, zero
-missed and zero duplicated over five working days per adapter. The status of 2026-11-01, a branch nobody
-had pushed, is in git history.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-15 are merged to master; Task 16's `pim_contract_live` now runs inside `scripts/pim_mail_e2e.sh` in CI (07cc23ed6), and the digest, crash, revoke and Telegram checks are in `verification/2026-11-02-mail-watch-live.md`. Open (live): `enable` through `mail_watch` on a real turn, the pause after three failures, and G3's five working days.
+
+**Earlier status (2026-11-01):** Tasks 1–14 are built and verified on branch `mail-watch`, in the worktree
+`D:\tmp\aura-mail-watch-wt`, off `master` at `feeca6797`. Nothing is pushed or merged: the operator has forbidden
+pushes. Task 15, the React cockpit, is built against a mocked API and has not met a live stack. Task 16, the lab-VM run
+(G3), needs the published PIM image and is owed. The whole backend has run once on a real sidecar over Dovecot, with a
+parked model: `docs/superpowers/verification/2026-11-01-mail-watch-stack.md`.
 
 > **The planner built this code, RED then GREEN, in a scratch copy, and the verified commits are the implementation.**
 > There is no transcription pass. Each task names the commit that carries it. To land it, merge the branch once the

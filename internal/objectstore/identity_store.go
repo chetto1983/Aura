@@ -16,7 +16,7 @@ import (
 )
 
 // keyDerivationInfo domain-separates the object-store wrapping key from every other
-// use of AURA_AUTHULA_SECRET (Authula HMAC/token keys). HKDF with this info label
+// use of AURA_AUTHULA_SECRET (Authula's at-rest encryption key). HKDF with this info label
 // means the per-identity S3 secret's KEK is cryptographically distinct from the
 // secret's other derivations, so compromising one derivation does not reveal another.
 const keyDerivationInfo = "aura-objectstore-identity-key-v1"

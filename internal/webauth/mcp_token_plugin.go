@@ -58,7 +58,7 @@ func (p *mcpTokenPlugin) Init(ctx *models.PluginContext) error {
 	options.ApplyDefaults()
 	jwksRepo := repositories.NewBunJWKSRepository(ctx.DB)
 	refreshRepo := repositories.NewRefreshTokenRepository(ctx.DB)
-	keyService := jwtservices.NewKeyService(jwksRepo, ctx.Logger, coreToken, ctx.GetConfig().Secret)
+	keyService := jwtservices.NewKeyService(jwksRepo, ctx.Logger, coreToken)
 	cacheService := jwtservices.NewCacheService(jwksRepo, nil, ctx.Logger, options.JWKSCacheTTL)
 	if err := keyService.GenerateKeysIfMissing(context.Background()); err != nil {
 		return fmt.Errorf("webauth: initialize MCP signing key: %w", err)

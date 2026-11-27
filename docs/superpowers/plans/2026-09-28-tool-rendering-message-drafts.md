@@ -1,6 +1,6 @@
 # Editable Outbound Message Drafts Implementation Plan
 
-**Status (2026-10-15):** PARTIAL. Tasks 1-3 landed (66612038b..4a8413040). Task 4's restart sweep, kill/restart test and cockpit Playwright scenario did not. An interrupted draft is reconciled only on resume.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-3 landed (66612038b..4a8413040) and Task 4 was revised and landed as R1-R5 (4c02b7b93, dfa011b4b, 4dcd509d3, 9b3c6b4aa; sweep proof in `verification/2026-11-26-message-draft-recovery-sweep.md`). Open: the cockpit Playwright scenario with the model calling `send_email` (needs the model-in-the-loop skill) and the real-stack proof with a GreenMail test mailbox.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

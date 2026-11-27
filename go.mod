@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3
-	github.com/Authula/authula v1.50.1
+	github.com/Authula/authula v1.51.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/PaulSonOfLars/gotg_md2html v0.0.0-20260314092343-61634cbfb443
 	github.com/adhocore/gronx v1.20.8

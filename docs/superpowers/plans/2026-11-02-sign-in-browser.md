@@ -1,10 +1,6 @@
 # Sign-in in a real browser (Slice 1) — Implementation Plan
 
-**Status (2026-11-27):** DONE except S5. Tasks 1-7 landed on 2026-11-03 (`f89680c9f`, `9d20a9d54` among
-them); Tasks 8-10 were withdrawn. Task 11: the operator accepted Linear and Notion on the lab VM, and said
-the Canva trial already worked (`docs/superpowers/verification/2026-11-03-sign-in-browser-live.md`); the
-local gates passed there, and the mutation scopes `signin_flow`, `signin_options` and `signin_proxy` run
-in CI. Still open: S5, ElevenLabs' direct-loopback trial, unmeasured, so ElevenLabs keeps the relay.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-7 and Task 11 Steps 0, 2, 4, 6 landed; Tasks 8-10 are SUPERSEDED (withdrawn 2026-11-03, Google keeps its Web-client callback). Open: S5 (ElevenLabs loopback, needs an account), Step 3's recorded read-back (`verification/2026-11-03-sign-in-browser-live.md` holds only the operator's acceptance of Linear, Notion and Canva) and Step 5's green gates per SHA.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

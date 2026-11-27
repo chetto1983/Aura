@@ -21,6 +21,8 @@ package webauth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -83,8 +85,8 @@ const authPoolMaxConns = 5
 // Config is the wiring input for New. DSN is the Postgres connection string for the
 // authula schema; if it lacks a search_path it is forced to search_path=authula so
 // Authula's bare users/sessions/accounts tables can never collide with aura.* or
-// public (H1). Secret is the 32-byte hex Authula uses to derive its HMAC/token keys
-// (AURA_AUTHULA_SECRET). TrustedOrigins seeds the CSRF Fetch-Metadata origin check.
+// public (H1). Secret is the 32-byte hex (AURA_AUTHULA_SECRET) Authula derives its
+// token-encryption key from (see authulaKey). TrustedOrigins seeds the CSRF Fetch-Metadata origin check.
 // RateLimitMax optionally overrides the credential-attempt ceiling per one-minute
 // in-memory window; zero keeps the production default.
 type Config struct {
@@ -130,7 +132,7 @@ func New(cfg Config) (_ *Provider, err error) {
 	authCfg := authulaconfig.NewConfig(
 		authulaconfig.WithAppName("Aura"),
 		authulaconfig.WithBasePath(basePath),
-		authulaconfig.WithSecret(cfg.Secret),
+		authulaconfig.WithSecret(authulaKey(cfg.Secret)),
 		authulaconfig.WithDatabase(authulamodels.DatabaseConfig{
 			Provider:     "postgres",
 			URL:          dsn,
@@ -399,3 +401,15 @@ const (
 	authulaSchema = "authula"
 	basePath      = "/auth"
 )
+
+// authulaKey turns the operator's 64-hex AURA_AUTHULA_SECRET into the standard padded
+// Base64 of 32 bytes that Authula v1.51 requires (core/security.DecodeSecret). SHA-256 of
+// the secret string is exactly the key Authula v1.50 derived for token encryption, so
+// the JWKS signing keys and TOTP secrets already encrypted stay decryptable. It hashes the
+// bytes v1.50 hashed, untrimmed (config.Load does not trim): trimming would orphan them for a
+// padded value. AUTHULA_SECRET / AUTHULA_SECRETS in the process env override WithSecret and
+// would bypass this function.
+func authulaKey(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return base64.StdEncoding.EncodeToString(sum[:])
+}

@@ -1,9 +1,6 @@
 # The decision model labels unsorted mail: implementation plan
 
-**Status (2026-11-27):** PARTIAL. Tasks 1-9 landed on 2026-11-05 (`b9360174e`, migration 0153, through
-`646c505e7`), with the decision model's mutation scopes in CI. Task 10, the live run on the lab VM, never
-ran: no `decision-model-live` verification file exists, and the PRD's G4 (two weeks live) is still the gate.
-The checkboxes below were never ticked; this line, not they, is the record.
+**Status (2026-11-27, verified on code):** PARTIAL. Tasks 1-9 landed (b9360174e, 44a072faf..d1447fdaf, ce730376e, 9d2f174e1, b9a0e3b94). Task 10, the live run on the lab VM and its `decision-model-live` verification file, has no artifact.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans, task by task, on `master`. Steps use checkbox syntax.
 
