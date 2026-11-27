@@ -50,6 +50,13 @@ Folded in:
    scope files named; Task 10 pushes before it deploys; the probe measures cross-turn caching and silent
    loss, not only refusals.
 
+## v2 → v3 (after Task 1, 2026-11-27)
+
+The wire probe (`docs/superpowers/verification/2026-11-27-anthropic-wire-probe.md`) confirmed decisions 1-3
+and the sanitizing, sampling and PDF constraints, and added decision 11: a breakpoint at the end of the
+loaded history makes caching across turns work without persisting anything. The spec carries the
+amendment as §0.
+
 ## Decisions taken while writing this plan
 
 1. **Inside a run, the prefix of every replayed thinking block stays byte-stable.** On this route
@@ -96,6 +103,12 @@ Folded in:
 9. **The house key copies the management-key pattern** (`modelSettingsDefs.ts:83-90`), not
    `OPENROUTER_API_KEY`, which Aura mints and never shows (`settings_api_authz.go:11`).
 10. **`chatGPTReasoningCaps` becomes `profileReasoningCaps`** (refactor on touch), serving both routes.
+11. **A breakpoint at the end of the loaded history** (measured, spec §0 point 4). The agent records, when a
+    run starts, how many history messages came from the store before the current user message; the
+    builder turns that into `Request.LoadedHistoryMessages`, counted in `req.Messages` (system prompt
+    included). The client marks the last block of message `LoadedHistoryMessages-1`. With tools, system,
+    loaded history and stable tail that is four breakpoints, the API's maximum; when the loaded-history
+    and stable-tail positions coincide (first round of a turn with no hint), only one marker is sent there.
 
 ## Global Constraints
 
@@ -115,8 +128,9 @@ Folded in:
 - Effort `output_config.effort` ∈ {`low`,`medium`,`high`,`xhigh`,`max`}; `minimal`/`none` → the lowest
   in `cfg.SupportedReasoningEfforts`, `low` when that list is empty; empty → no `output_config`.
 - Cache: breakpoints on the last tool and the last system block when `ToolsCacheControl == "ephemeral"`,
-  and on the last block produced by message `StablePrefixMessages-1` (a `tool_result`, text or
-  `tool_use` block, never thinking); TTL 5 minutes.
+  on the last block produced by message `LoadedHistoryMessages-1`, and on the last block produced by
+  message `StablePrefixMessages-1` (a `tool_result`, text or `tool_use` block, never thinking); at most four;
+  TTL 5 minutes.
 - Tool ids on the wire match `^[a-zA-Z0-9_-]{1,64}$`, mapped deterministically and identically on
   `tool_use.id` and `tool_result.tool_use_id`; tool input not a JSON object → `{}`.
 - Prices per MTok from `GET https://openrouter.ai/api/v1/models` (no key), id `anthropic/` + the model id
@@ -163,7 +177,7 @@ Folded in:
 
 ---
 
-### Task 1: Measure the wire, then amend the spec
+### Task 1: Measure the wire, then amend the spec — DONE 2026-11-27
 
 **Files:**
 - Create: `spikes/anthropic-provider/probe/main.go`, `spikes/anthropic-provider/README.md`,
@@ -173,9 +187,9 @@ Folded in:
 
 **Interfaces:** Produces the verdicts later tasks rely on and the SDK in `go.mod`.
 
-- [ ] **Step 1: Ask the operator** for the OK (paid, a few cents on Sonnet 5.5 and Opus 5.5) and a fresh
+- [x] **Step 1: Ask the operator** for the OK (paid, a few cents on Sonnet 5.5 and Opus 5.5) and a fresh
   key, kept in a scratchpad file read through `-keyfile`, deleted after; the operator revokes it.
-- [ ] **Step 2: Write the probe** (`go run ./spikes/anthropic-provider/probe -keyfile <path> -model <id>
+- [x] **Step 2: Write the probe** (`go run ./spikes/anthropic-provider/probe -keyfile <path> -model <id>
   -case <name>|all`), built only with the Global Constraints' SDK options, on the Beta surface with the
   binding beta. Per case it prints status or error `Type()`, `stop_reason`, usage (input, cache read,
   cache creation, thinking tokens), `input_transformations`, and the returned block types in order.
@@ -196,15 +210,15 @@ Folded in:
   - `tool-choice-none`: `none` with tools, and a request with no tools and no `tool_choice`;
   - `pdf-in-tool-result`: a base64 PDF inside `tool_result` content;
   - `mid-stream-error`: read `packages/ssestream` at v2.15.0 and record how an `event: error` surfaces.
-- [ ] **Step 3: Run it.** Read the Console balance before and after, against the summed computed cost.
-- [ ] **Step 4: Write the verification file:** date, models, each case's raw outcome, what it does not
+- [x] **Step 3: Run it.** Read the Console balance before and after, against the summed computed cost.
+- [x] **Step 4: Write the verification file:** date, models, each case's raw outcome, what it does not
   show. No key, no key prefix beyond `sk-ant-`.
-- [ ] **Step 5: Amend the spec:** header (no migration), §2 anti-goals (thinking is dropped across a
+- [x] **Step 5: Amend the spec:** header (no migration), §2 anti-goals (thinking is dropped across a
   persisted pause and across turns, measured), §5.3-§5.7, §6 items 3-5, §7.3-§7.4, from decisions 1-6 and
   the verdicts. **Stop and report to the operator** if `loop-verbatim` or `resume-without-blocks` is
   refused, if `loop-verbatim` shows dropped blocks, or if `cross-turn-cache` reads less than the tools +
   system prefix; the operator then decides persistence or the spec changes before Task 2.
-- [ ] **Step 6: Commit** `spike(anthropic): measure the Messages wire Aura will send`.
+- [x] **Step 6: Commit** `spike(anthropic): measure the Messages wire Aura will send`.
 
 ### Task 2: The route in `internal/llm`
 
@@ -291,6 +305,8 @@ Folded in:
 **Interfaces — produces:**
 - `Request.StablePrefixMessages int`, set by the builder for provider `anthropic` only: `len(history)`
   when `buildBase` appended a hint, else `len(req.Messages)`; protected by the model-hook guard;
+- `Request.LoadedHistoryMessages int` (decision 11), set by the builder for provider `anthropic` only from
+  the count the agent records at run start; protected by the model-hook guard;
 - `func injectCacheControl(req *llm.Request, provider string, stable int)` (three call sites in
   `builder.go`).
 
@@ -299,6 +315,9 @@ Folded in:
     `StablePrefixMessages 5`); `.../openrouter leaves it zero`; the existing "never marks any history
     message" subtest unchanged;
   - `TestModelHookCannotMoveTheStablePrefix`;
+  - `TestLoadedHistoryCountExcludesTheCurrentTurn`: a run built from 6 stored messages plus a new user
+    message → every round's request has `LoadedHistoryMessages` = 6 + the system messages the builder
+    prepends; zero on `openrouter`;
   - `TestHintStaysInHistoryOnTheAnthropicRoute`: three rounds → round 3's request holds hint 1 and hint 2
     at their original positions; on `openrouter` round 3 holds only hint 3 (today's behaviour);
   - `TestAnthropicRouteHoldsTheComposerEffort`: adaptive on, no override → the classifier is never called
@@ -340,8 +359,9 @@ Folded in:
   - `TestToolIDsAreSanitizedOnBothSides` (`functions.x:0`, a 70-char id); `TestNonObjectInputBecomesEmpty`.
   - `TestTopLevelCombinatorSchemaIsFlattened` (`anyOf` at the top → `{"type":"object"}` plus the schema in
     the description); `TestDuplicateToolNamesKeepTheFirst`.
-  - `TestCacheBreakpointsLandOnToolsSystemAndTheStablePrefix` (on the last `tool_result` of message
-    `StablePrefixMessages-1`, never on the merged hint, never on thinking; at most 3 markers).
+  - `TestCacheBreakpointsLandOnToolsSystemLoadedHistoryAndTheStablePrefix` (on the last block of message
+    `LoadedHistoryMessages-1` and on the last `tool_result` of message `StablePrefixMessages-1`, never on
+    the merged hint, never on thinking; at most 4 markers; one marker when the two positions coincide).
   - `TestEffortMapping` (`""`; `high`; `none`/`minimal` → lowest; empty list → `low`).
   - `TestDisplayFollowsShowReasoning`; `TestToolChoice` (`none` with tools → `{"type":"none"}`; no tools →
     no `tool_choice`); `TestMaxTokensFloor` (0, 32, 4096 → `max(..., 32768, 16384)` capped at

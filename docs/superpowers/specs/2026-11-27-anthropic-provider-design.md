@@ -1,7 +1,8 @@
 # Claude as a primary route: a native `anthropic` provider on the house key
 
 - **Date:** 2026-11-27
-- **Status:** Proposed.
+- **Status:** Approved 2026-11-27; amended the same day by the wire probe (§0), which supersedes the
+  sections it names.
 - **Decided by the operator on 2026-11-27** in chat:
   - Aura gets Claude as a route of its own, so the chat spends the operator's Claude Console credit
     instead of OpenRouter credit ("usare il mio abbonamento Max invece di pagare a token"; the monthly
@@ -11,8 +12,48 @@
 - **Measurement this rests on:** §3, taken on 2026-11-27 with the operator's own key, revoked the same hour.
 - **Risk tier: medium-high.** A new provider on the agent's hot path, two new fields on the
   provider-neutral `llm.Message`/`llm.Chunk`, and a new sealed setting.
-- **Schema:** one migration, a nullable `jsonb` column on the conversation turns for the thinking replay
-  (§5.5), numbered at landing.
+- **Schema:** none (§0 point 3 replaces the migration first planned for §5.5).
+
+## 0. Amendment 2026-11-27: what the wire probe measured
+
+Measured on 2026-11-27 with a key the operator created for the run, on Sonnet 5.5 and Opus 5.5:
+`docs/superpowers/verification/2026-11-27-anthropic-wire-probe.md` (probe:
+`spikes/anthropic-provider/probe`). The plan (`docs/superpowers/plans/2026-11-27-anthropic-provider.md`)
+carries the decisions; this section records what changed here.
+
+1. **Thinking is bound to the prefix it was produced after** (§5.5). With the binding beta
+   (`thinking-binding-controls-2026-08-01`) and `prefix_mismatch_behavior: error`, replaying a thinking
+   block after a prefix that lost the per-round hint is a 400 ("The block is bound to a different
+   conversation"); with `drop_block` the block is dropped and reported in `input_transformations`; on GA
+   it is silently left in place today. Keeping each round's hint in the run's history gave zero
+   transformations over four rounds on both models and both display modes. So, on this route only, the
+   hint stays in the run's history; requests use the Beta surface with `drop_block`, and dropped blocks
+   are counted.
+2. **The replayed state is every block of the assistant message, in order** (§5.5), not thinking alone:
+   the probe saw `thinking, text, tool_use` interleaved in one response. A message whose calls Aura
+   shortened is sent without its state.
+3. **Nothing is persisted** (§5.5, header, done item 3). Amendment #91 forbids persisted CoT re-entering
+   the context, and the runner rebuilds turns from events, not from the agent's history. The probe showed
+   the reload shape (earlier turns without thinking or hints, a last turn rebuilt from its calls) is
+   accepted, so a resumed pause and a new turn work without the blocks; inside a run, every round gets
+   them back from memory. The anti-goal of §2 is therefore scoped to the run's tool loop.
+4. **Caching needs a third breakpoint at the end of the loaded history** (§5.6). In the steady state, with
+   earlier turns in the reload shape, each new turn read everything up to the previous turn's question
+   and re-wrote only the previous turn's tool loop (3,565 read / 220 written on turn 3). Breakpoints:
+   tools, system, end of the loaded history, last stable block before the hint: four, the maximum.
+5. **`llm.Usage` gains no cache-write count** (§5.6): the client prices each call itself, writes included.
+   A turn keeps today's partial-sum rule (§7.4 amended): on this route every call of a priced model is
+   priced, and a call with writes on a model whose catalogue has no write rate reports no cost.
+6. **Limits on this route** (§5.7): `max_tokens` is at least 16,384 (32,768 unless pinned), because
+   adaptive thinking spends inside it and a helper's 32-token cap would end in `length`; the working
+   window is the model's long-prompt threshold when its price has one (Haiku 5.5: 100,000), else 200,000,
+   unless pinned.
+7. **Measured wire facts** (§5.3): `temperature` is a 400 under API version 2026-10-21; tool ids containing
+   `.` or `:` are a 400, so ids are sanitized on both sides; a PDF inside `tool_result` is read; the
+   SDK sends `authorization: Bearer` and `anthropic-version: 2026-10-21`, and both work.
+
+What this does not show is listed in the verification file: Haiku and Fable unprobed, light thinking only,
+no streaming, no 429/529, no images, no compaction mid-run, the Console balance not read.
 
 ## 1. Why
 
@@ -55,8 +96,9 @@ Console key, used by the operator's own identities, is that case.
 **Anti-goals (failures even if it works)**
 - The house key reaching any host other than `api.anthropic.com`, or the services key reaching Anthropic.
 - A request that sends `temperature`, `top_p` or `top_k` (§3: a 400 on every current model).
-- Thinking blocks dropped inside a tool loop. The docs say this "loses the reasoning in them, even without
-  an error" — a silent quality loss no test of the happy path sees.
+- Thinking blocks dropped inside a run's tool loop. The docs say this "loses the reasoning in them, even
+  without an error" — a silent quality loss no test of the happy path sees. (Across a persisted pause or a
+  new turn they are not sent: §0 point 3.)
 - A cost shown as $0 because a price was missing.
 - An adapter written by hand over HTTP when the official Go SDK covers it
   (feedback: use the SDK, never bespoke HTTP).
