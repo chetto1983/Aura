@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -76,7 +77,7 @@ func TestApproveHardenedLedgerReEntry(t *testing.T) {
 	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
 
 	g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name,
-		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-led"})
+		tools.CallFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-led"})
 
 	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
 	if err != nil {
@@ -210,7 +211,7 @@ func TestRouteApproveProductionDeniesEvenWithLedgerApproval(t *testing.T) {
 	// Inject an approval directly into the ledger (bypassing the record guards) to isolate
 	// the deny-before-Consume ORDERING: if the deny gate ran after Consume, this would Allow.
 	g.approvals.Approve(testKey().ConversationID, gatedSpec().Name,
-		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "x"})
+		tools.CallFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "x"})
 
 	v, err := g.Decide(WithResponder(context.Background()), gatedSpec(), args, testKey())
 	if err != nil {
@@ -328,7 +329,7 @@ func TestGatewayApprovalSuccessfulConsumeLogsNothing(t *testing.T) {
 	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
 
 	g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name,
-		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-quiet"})
+		tools.CallFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-quiet"})
 
 	logs := captureSlog(t)
 	v, err := g.Decide(ctx, gatedSpec(), args, testKey())

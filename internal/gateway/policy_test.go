@@ -110,7 +110,7 @@ func TestPolicyAskReservesAReadOnlyTool(t *testing.T) {
 	}
 	if _, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID: testKey().ConversationID, Tool: "read_file",
-		ArgsFingerprint: gatewayArgsFingerprint(args), Question: payload.Question,
+		ArgsFingerprint: tools.CallFingerprint(args), Question: payload.Question,
 		Answer: "Approve once", IdentityID: testIdentity, OperatorID: "local",
 	}); err != nil {
 		t.Fatalf("ApproveChallenge: %v", err)
@@ -167,7 +167,7 @@ func TestPolicyAskOffersNoAlways(t *testing.T) {
 	always := scopeOptionValue(ScopeAlways, subjectFor(gatedSpec(), gatedArgs()))
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID: testKey().ConversationID, Tool: gatedSpec().Name,
-		ArgsFingerprint: gatewayArgsFingerprint(gatedArgs()), Question: payload.Question,
+		ArgsFingerprint: tools.CallFingerprint(gatedArgs()), Question: payload.Question,
 		Answer: always, IdentityID: testIdentity, OperatorID: "local",
 	})
 	if err != nil || scope != ScopeOnce {

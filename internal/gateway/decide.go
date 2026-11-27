@@ -12,7 +12,6 @@ import (
 	"log/slog"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -62,10 +61,14 @@ func needsPersonReason(subject grantSubject) string {
 // and any non-Strict profile short-circuit to Allow with NO store write — the
 // dev/local_trusted no-op (SC-4).
 //
-// The mutating-Allow outcomes (the not-GateRecommended auto-allow branch here AND
-// routeApprove's post-resume Verdict{Allow, OperatorID}) converge on ONE synchronous
-// store.Reserve call (reserve.go) before Allow is returned — exactly one durable
-// reservation start per executed call (GATE-03/04, D-03 point 2).
+// What the call needs is read by needFor, the half Review shares; Decide adds the writes.
+// The identity's policy outranks everything below it (prd.md §5, 2026-10-09): a deny refuses
+// even a read-only call, and an ask turns any call into a reserved, approved one.
+//
+// Every mutating Allow — an ungated write, an operator's accept, a standing grant, or
+// routeApprove's ledger re-entry — converges on ONE synchronous store.Reserve call
+// (reserve.go): exactly one durable reservation start per executed call, the operator and
+// scope (when present) folded into that one start's Meta (GATE-03/04, D-03 point 2).
 func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
 	if verdict, handled := g.decideReviewedMessage(ctx, spec, rawArgs, key); handled {
 		return verdict, nil
@@ -73,54 +76,43 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
 	}
-	if spec.Destructive {
-		spec.Mutating = true
-	}
-	tier := classify(spec, rawArgs)
-	// The identity's policy outranks everything below it (prd.md §5, 2026-10-09): a deny
-	// refuses even a read-only call, and an ask turns any call into a reserved, approved one.
-	subject := subjectFor(spec, rawArgs)
-	policy := g.policyFor(ctx, identityctx.IdentityID(ctx), subject)
-	switch policy {
-	case PolicyDeny:
-		reason := policyDenyReason(subject)
+	n := g.needFor(ctx, spec, rawArgs, key)
+	spec, tier := n.spec, n.tier
+	switch n.kind {
+	case needDeniedByPolicy:
+		reason := policyDenyReason(n.subject)
 		g.recordDenyFact(ctx, spec, key, tier, reason, map[string]any{"gateway_policy": string(PolicyDeny), "reason": "policy"})
 		return Verdict{Decision: Deny, Tier: tier, Reason: reason, Refusal: true}, nil
-	case PolicyAsk:
-		spec.Mutating = true
-	}
-	if needsPerson(subject) && !personPresent(ctx) {
-		reason := needsPersonReason(subject)
+	case needPerson:
+		reason := needsPersonReason(n.subject)
 		g.recordDenyFact(ctx, spec, key, tier, reason, map[string]any{"reason": "needs_person"})
 		return Verdict{Decision: Deny, Tier: tier, Reason: reason, Refusal: true}, nil
-	}
-	if !spec.Mutating {
-		// D-01e: a read-only tool call under a strict profile is a recorded decision-fact
-		// ONLY — no reserve→execute→append machinery. The fact is a start row (see
-		// recordDecisionFact), never an end row.
-		g.recordDecisionFact(ctx, spec, rawArgs, key, tier)
-		return Verdict{Decision: Allow, Tier: tier}, nil
-	}
-	// Mutating funnel. A GateRecommended call is routed to approve FIRST; a non-Allow
-	// outcome (Deny / Approve with an ApprovalRequest) returns immediately. Both the
-	// not-GateRecommended auto-allow AND routeApprove's post-resume Verdict{Allow,
-	// OperatorID} then converge on the SAME single reserve call — exactly ONE reservation
-	// start row per executed call, the operator_id (when present) folded into that one
-	// start's Meta (GATE-03/04 / D-03 point 2). This is the unified reserve invariant.
-	operatorID := ""
-	scope := ApprovalScope("")
-	if gated(tier) || policy == PolicyAsk {
-		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key, policy)
+	case needNoApprover:
+		// D-03a/b: production identity is never interactive, and a run with nobody on it
+		// has no one to ask. It never pauses in place.
+		g.recordDenyFact(ctx, spec, key, tier, "gateway degraded_deny: no interactive approver",
+			map[string]any{"degraded_deny": true, "reason": "no_approver"})
+		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined", Refusal: true}, nil
+	case needApproval:
+		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key, n.subject, n.policy)
 		if err != nil || v.Decision != Allow {
 			return v, err
 		}
-		operatorID, scope = v.OperatorID, v.Scope
+		n.operatorID, n.scope = v.OperatorID, v.Scope
+	case needNone:
+		if !spec.Mutating {
+			// D-01e: a read-only tool call under a strict profile is a recorded decision-fact
+			// ONLY — no reserve→execute→append machinery. The fact is a start row (see
+			// recordDecisionFact), never an end row.
+			g.recordDecisionFact(ctx, spec, rawArgs, key, tier)
+			return Verdict{Decision: Allow, Tier: tier}, nil
+		}
 	}
 	operationVerdict, proceed := g.beginOperation(ctx, spec, rawArgs, key, tier)
 	if !proceed {
 		return operationVerdict, nil
 	}
-	verdict := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope, policy)
+	verdict := g.reserve(ctx, spec, rawArgs, key, tier, n.operatorID, n.scope, n.policy)
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, nil

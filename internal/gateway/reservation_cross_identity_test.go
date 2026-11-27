@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -63,7 +64,7 @@ func (s *uniqueKeyStore) GetEnd(_ context.Context, _, _, _ string) (*toolinvocat
 func TestReservationKeyCrossIdentityDoesNotMerge(t *testing.T) {
 	spec := ordinaryWriteSpec() // reused from decide_test.go: mutating, non-gated
 	args := json.RawMessage(`{"path":"/workspace/shared.txt","content":"byte-identical"}`)
-	fp := gatewayArgsFingerprint(args)
+	fp := tools.CallFingerprint(args)
 
 	keyA := ReservationKey{
 		ConversationID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

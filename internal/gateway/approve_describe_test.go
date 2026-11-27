@@ -62,7 +62,7 @@ func TestDescriberRunsOnlyRightBeforeThePrompt(t *testing.T) {
 		}, gatedSpec(), Allow},
 		{"operator's accept", func() (*Gateway, context.Context) {
 			g, _, ctx := approvedGateway()
-			g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name, gatewayArgsFingerprint(args), approved)
+			g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name, tools.CallFingerprint(args), approved)
 			return g, ctx
 		}, gatedSpec(), Allow},
 		{"ungated call without a policy", func() (*Gateway, context.Context) {
@@ -97,7 +97,7 @@ func TestDescriberRunsOnlyRightBeforeThePrompt(t *testing.T) {
 func TestDescribedTargetStaysOnTheChallenge(t *testing.T) {
 	t.Parallel()
 	const question = "Approve skill_manage (risk=destructive)?\nThis mutating action is WITHHELD until you accept.\nargs: action, name"
-	fp := gatewayArgsFingerprint(gatedArgs())
+	fp := tools.CallFingerprint(gatedArgs())
 	tests := []struct {
 		name, label, want string
 	}{
@@ -144,7 +144,7 @@ func TestDescriberErrorRefusesBeforeAnythingIsReserved(t *testing.T) {
 	if n, m := len(store.reserves()), len(store.calls()); n != 0 || m != 0 {
 		t.Fatalf("reserved %d and recorded %d row(s) for a call refused before the prompt", n, m)
 	}
-	if _, _, ok := g.ApprovalChallengeDetails(testKey().ConversationID, "shell_exec", gatewayArgsFingerprint(args)); ok {
+	if _, _, ok := g.ApprovalChallengeDetails(testKey().ConversationID, "shell_exec", tools.CallFingerprint(args)); ok {
 		t.Fatal("a refused call left a challenge behind")
 	}
 	v, err := g.Decide(WithApprovalDescriber(ctx, &countingDescriber{target: "ls"}), ordinaryWriteSpec(), args, testKey())

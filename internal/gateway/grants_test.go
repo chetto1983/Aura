@@ -90,7 +90,7 @@ func accept(t *testing.T, g *Gateway, ctx context.Context, args json.RawMessage,
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID:  testKey().ConversationID,
 		Tool:            gatedSpec().Name,
-		ArgsFingerprint: gatewayArgsFingerprint(args),
+		ArgsFingerprint: tools.CallFingerprint(args),
 		Question:        withhold(t, g, ctx, args),
 		Answer:          answer,
 		IdentityID:      identityctx.IdentityID(ctx),
@@ -207,7 +207,7 @@ func TestGrantOnSendEmailDoesNotCoverDeleteEmail(t *testing.T) {
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 		ConversationID:  testKey().ConversationID,
 		Tool:            send.Name,
-		ArgsFingerprint: gatewayArgsFingerprint(mail),
+		ArgsFingerprint: tools.CallFingerprint(mail),
 		Question:        question,
 		Answer:          scopeOptionValue(ScopeAlways, subjectFor(send, mail)),
 		IdentityID:      testIdentity,
@@ -263,7 +263,7 @@ func TestAlwaysDegradesRatherThanLying(t *testing.T) {
 			scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
 				ConversationID:  testKey().ConversationID,
 				Tool:            gatedSpec().Name,
-				ArgsFingerprint: gatewayArgsFingerprint(args),
+				ArgsFingerprint: tools.CallFingerprint(args),
 				Question:        withhold(t, g, ctx, args),
 				Answer:          always,
 				IdentityID:      identityctx.IdentityID(ctx),
@@ -350,7 +350,7 @@ func TestProductionRefusesEveryScope(t *testing.T) {
 	scope, err := g.ApproveChallenge(context.Background(), ApprovalAccept{
 		ConversationID:  testKey().ConversationID,
 		Tool:            gatedSpec().Name,
-		ArgsFingerprint: gatewayArgsFingerprint(args),
+		ArgsFingerprint: tools.CallFingerprint(args),
 		Question:        "anything",
 		Answer:          answerFor(args, ScopeAlways),
 		IdentityID:      testIdentity,

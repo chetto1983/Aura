@@ -10,6 +10,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/approvalgrants"
@@ -141,10 +142,37 @@ func scopeOptions(s grantSubject, policy Policy) []ScopeOption {
 // minted for "calendar__delete_email" does not equal the one for "skill_manage delete", so
 // an answer lifted from another approval grants nothing here.
 func scopeForAnswer(s grantSubject, policy Policy, answer string) ApprovalScope {
-	for _, e := range scopeLabels(s, policy) {
-		if answer == scopeOptionValue(e.Scope, s) || answer == e.Label {
-			return e.Scope
+	return scopeFromOptions(scopeOptions(s, policy), answer)
+}
+
+// ScopeForAnswer resolves an operator's answer against the scope options a parked call's
+// record stored when it was parked, so the scope honoured is the one on the button they
+// pressed. Options that do not decode resolve, like any unmatched answer, to ScopeOnce.
+func ScopeForAnswer(options json.RawMessage, answer string) ApprovalScope {
+	var stored []ScopeOption
+	if json.Unmarshal(options, &stored) != nil {
+		return ScopeOnce
+	}
+	return scopeFromOptions(stored, answer)
+}
+
+// scopeFromOptions reads the scope out of the value of the option the answer names, by its
+// value or its label. A value that is not a known scope code is ScopeOnce.
+func scopeFromOptions(options []ScopeOption, answer string) ApprovalScope {
+	if answer == "" {
+		return ScopeOnce
+	}
+	for _, o := range options {
+		if answer != o.Value && answer != o.Label {
+			continue
 		}
+		code, _ := strings.CutPrefix(o.Value, scopeOptionPrefix)
+		scope, _, _ := strings.Cut(code, ":")
+		switch s := ApprovalScope(scope); s {
+		case ScopeSession, ScopeAlways:
+			return s
+		}
+		return ScopeOnce
 	}
 	return ScopeOnce
 }

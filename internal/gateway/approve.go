@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -62,10 +60,14 @@ func WithApprovalDescriber(ctx context.Context, d tools.ApprovalDescriber) conte
 	return context.WithValue(ctx, approvalDescriberCtxKey{}, d)
 }
 
-// describeTarget asks the dispatched tool what the withheld call acts on and returns the
-// answer through approvalLine, ready to keep on the challenge.
-func describeTarget(ctx context.Context, rawArgs json.RawMessage) (string, error) {
+func describerFrom(ctx context.Context) tools.ApprovalDescriber {
 	d, _ := ctx.Value(approvalDescriberCtxKey{}).(tools.ApprovalDescriber)
+	return d
+}
+
+// describeTarget asks the tool what the withheld call acts on and returns the answer through
+// approvalLine, ready to keep on the challenge or the card.
+func describeTarget(ctx context.Context, d tools.ApprovalDescriber, rawArgs json.RawMessage) (string, error) {
 	if d == nil {
 		return "", nil
 	}
@@ -83,61 +85,33 @@ type ResolvedApproval struct {
 	OperatorID string
 }
 
-// routeApprove routes a mutating GateRecommended call by responder presence (D-03),
-// mirroring shell_exec's requireShellApproval but hoisted ABOVE tool.Execute.
+// routeApprove is the challenge route of a gated call that needFor found nobody had answered
+// yet: hardened, a person present, no accept and no standing grant. The hard deny, the
+// accept and the grants are needFor's, which runs before it, so a recorded or fabricated
+// one-shot approval is never Consumed by a headless or production Decide (WR-01).
 //
-//   - server_production OR no positively-known responder → deny-with-guidance, plus a
-//     durable degraded_deny(reason=no_approver) terminal `end` decision-fact (D-03a/b,
-//     D-03 point 1 / GATE-01). Evaluated BEFORE any cross-turn Consume (WR-01
-//     deny-before-Consume): a recorded/fabricated approval can NEVER be consumed by a
-//     headless/production Decide. It NEVER pauses in place.
-//   - A CROSS-TURN ledger hit (the production carrier: newGatewayResumeHook recorded the
-//     operator's accept on a prior Turn) → Verdict{Allow, OperatorID} via a one-shot
-//     Consume keyed on the re-computed args fingerprint. Reachable only under hardened +
-//     a live responder now. NO Insert here (D-03 point 2).
-//   - single_user_hardened + a live responder + no ledger hit → ask the tool's describer, if
-//     any, then record a server-side Challenge (the gateway-generated question and the
-//     described target, keyed on the AUTHENTICATED triple) and return
-//     Verdict{Approve, ApprovalRequest} — the shell_exec-style approval-required
-//     tool RESULT (no pause sentinel). The resume hook records the operator's accept ONLY
-//     IF this challenge exists AND the operator-visible question matches it (CR-01).
-func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey, policy Policy) (Verdict, error) {
-	// WR-01 deny-before-Consume: the production/headless hard-deny is evaluated BEFORE the
-	// cross-turn Consume, so a recorded (or CR-01-fabricated) approval can NEVER be consumed
-	// on a headless/production run. D-03b: production identity is unverified pre-Phase-36, so
-	// it is never interactive; D-03a: a headless run has no positively-known responder → DENY.
-	if g.profile == config.ProfileServerProduction || !responderPresent(ctx) {
-		g.recordDenyFact(ctx, spec, key, tier, "gateway degraded_deny: no interactive approver",
-			map[string]any{"degraded_deny": true, "reason": "no_approver"})
-		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined", Refusal: true}, nil
-	}
-	// Standing grants (amendment #127) come FIRST, after the hard-deny and before the
-	// one-shot ledger: an operator who said "for this conversation" or "always" already
-	// answered this question, and reading a standing grant — unlike Consume — does not spend
-	// it. Both are keyed on the SUBJECT (tool + multiplexed action), never on the argument
-	// fingerprint, so a second delete of a DIFFERENT event is covered while a grant on
-	// calendar__delete_event still leaves calendar__send_email to be asked.
-	subject := subjectFor(spec, rawArgs)
-	if r, ok := g.approvals.SessionGrant(key.ConversationID, subject); ok && r.Approved {
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID, Scope: ScopeSession}, nil
-	}
-	// An "always" grant does not satisfy an ask: the operator who set the policy asked to be
-	// asked, which a standing grant from before the policy cannot answer.
-	if policy != PolicyAsk && g.alwaysGranted(ctx, identityctx.IdentityID(ctx), subject) {
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: "local", Scope: ScopeAlways}, nil
-	}
-	// Cross-turn ledger re-entry (D-03 point 2, the production carrier): reachable only under
-	// hardened + a live responder now. The operator resolved the relayed ask_user on a PRIOR
-	// Turn and newGatewayResumeHook recorded the ResolvedApproval (challenge + question gated).
+//   - A CROSS-TURN ledger hit (newGatewayResumeHook recorded the operator's accept on a prior
+//     Turn) → Verdict{Allow, OperatorID} via a one-shot Consume keyed on the re-computed args
+//     fingerprint. NO Insert here (D-03 point 2).
+//   - No ledger hit → ask the tool's describer, if any, then record a server-side Challenge
+//     (the gateway-generated question and the described target, keyed on the AUTHENTICATED
+//     triple) and return Verdict{Approve, ApprovalRequest} — the shell_exec-style
+//     approval-required tool RESULT (no pause sentinel). The resume hook records the
+//     operator's accept ONLY IF this challenge exists AND the operator-visible question
+//     matches it (CR-01).
+func (g *Gateway) routeApprove(
+	ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey,
+	subject grantSubject, policy Policy,
+) (Verdict, error) {
 	// The resumed re-emit Consumes the one-shot approval keyed on the re-computed args
 	// fingerprint (a tampered re-emit → different fingerprint → no hit → fail-closed) and
 	// returns Allow+OperatorID so decide.go's funnel takes the SINGLE 35-04 reservation with
 	// operator_id in Meta — never a competing Insert.
-	fp := gatewayArgsFingerprint(rawArgs)
+	fp := tools.CallFingerprint(rawArgs)
 	if r, ok := g.approvals.Consume(key.ConversationID, spec.Name, fp); ok && r.Approved {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil
 	}
-	// PITFALLS §4 / 45.1 _meta cutover: gatewayArgsFingerprint hashes the MODEL's
+	// PITFALLS §4 / 45.1 _meta cutover: the fingerprint hashes the MODEL's
 	// own arguments, upstream of any host injection. Dropping a field from a
 	// tool's schema (as the _meta identity cutover does) changes what the model
 	// emits, so an approval withheld before a deploy and resumed after it can miss
@@ -175,7 +149,7 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	// refuses the call as a failure, not as the gateway's refusal: no deny fact, nothing
 	// reserved yet, and execTool reports it as not executed. The target stays on the challenge
 	// with the withheld call's id; the question the model relays does not change.
-	target, err := describeTarget(ctx, rawArgs)
+	target, err := describeTarget(ctx, describerFrom(ctx), rawArgs)
 	if err != nil {
 		return Verdict{Tier: tier}, err
 	}
@@ -198,7 +172,7 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 // kind="approval", the same question, the same options, the tier-ordered priority, and
 // the same resume_context, then "retry the exact call only after the user accepts." The fp
 // and question are computed ONCE by routeApprove and threaded in (IN-02: a single
-// gatewayArgsFingerprint call site, and the SAME question recorded as the challenge).
+// tools.CallFingerprint call site, and the SAME question recorded as the challenge).
 //
 // It is Aura's own text, marked trusted so the model copies it without reading through an
 // HTML-escaped envelope (spec 2026-10-12): the registry's tool name, the tier, the

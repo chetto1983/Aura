@@ -18,14 +18,9 @@
 package gateway
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/chetto1983/aura/internal/canonicaljson"
 )
 
 // GatewayApprovals stores one-shot gateway approvals keyed by conversation + tool +
@@ -75,17 +70,6 @@ func NewGatewayApprovals() *GatewayApprovals {
 		pending:  map[string]gatewayChallenge{},
 		sessions: map[string]ResolvedApproval{},
 	}
-}
-
-// gatewayArgsFingerprint is the stable, cosmetic-insensitive fingerprint of a tool
-// call's raw JSON arguments: hex(sha256(canonicaljson.CanonicalArgs(rawArgs))). Two
-// byte-different-but-canonical-equal payloads share a fingerprint (so a model re-emit of
-// the SAME call matches the recorded approval, mirroring how ShellApprovalDigest
-// normalizes cwd); two semantically different payloads yield DIFFERENT fingerprints, so
-// a re-emit with tampered args never reuses the approval (T-35-06-02, fail-closed).
-func gatewayArgsFingerprint(rawArgs json.RawMessage) string {
-	sum := sha256.Sum256(canonicaljson.CanonicalArgs(string(rawArgs)))
-	return hex.EncodeToString(sum[:])
 }
 
 // Approve records an operator's ResolvedApproval for (convID, toolName, argsFingerprint)
@@ -293,7 +277,7 @@ func gatewaySessionKey(convID string, subject grantSubject) string {
 // Consume-miss diagnostic (see approve.go): distinguishing "no challenge was ever
 // issued for this tool in this conversation" (0) from "a challenge IS pending, just
 // under a different fingerprint than the one just Consumed" (>0). A tool-schema
-// change (like this cutover) shifts gatewayArgsFingerprint's input, which is hashed
+// change (like this cutover) shifts tools.CallFingerprint's input, which is hashed
 // over the MODEL's own arguments upstream of any host injection, so a Consume miss
 // after a schema change is otherwise silent. Nil-receiver-safe; guarded by a.mu.
 func (a *GatewayApprovals) PendingCountForTool(convID, toolName string) int {

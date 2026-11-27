@@ -52,10 +52,11 @@ const (
 	Approve Decision = "approve"
 )
 
-// Verdict carries the Decide outcome. OperatorID is set ONLY on the post-resume
-// approved Allow (routeApprove's resolved branch): plan 35-04 folds it into the
-// SINGLE reservation start Meta, so an operator-approved call is recorded exactly
-// once by its reservation — never by a second competing ledger write (D-03 point 2).
+// Verdict carries the Decide outcome. OperatorID names who answered for the call: the
+// operator of an accept, of a standing grant, or of routeApprove's resolved re-drive. Plan
+// 35-04 folds it into the SINGLE reservation start Meta, so an operator-approved call is
+// recorded exactly once by its reservation — never by a second competing ledger write
+// (D-03 point 2).
 type Verdict struct {
 	Decision   Decision
 	Tier       scoring.RiskTier
@@ -67,10 +68,11 @@ type Verdict struct {
 	// apart.
 	Refusal bool
 	// Scope is set on an Allow that a STANDING grant produced (amendment #127) — a
-	// ScopeSession or ScopeAlways the operator granted on an earlier accept. It is empty on
-	// every other Allow, including the one-shot approved re-drive, whose authorization was
-	// spent on this call and left nothing standing. It rides the reservation start's Meta so
-	// the audit trail says which grant let a destructive call through without asking.
+	// ScopeSession or ScopeAlways the operator granted on an earlier accept — and on one an
+	// operator's accept of the parked call authorized (tools.ApprovedCall), with the scope that
+	// accept chose. It is empty on the challenge route's one-shot re-drive, whose authorization
+	// was spent on this call and left nothing standing. It rides the reservation start's Meta
+	// so the audit trail says which answer let the call through.
 	Scope ApprovalScope
 	// Replay is non-nil ONLY when Reserve found the (conv,req,toolCall) slot already
 	// held (rows==0): it carries the recorded outcome so execTool returns it WITHOUT
@@ -218,13 +220,10 @@ func (g *Gateway) ApproveChallenge(ctx context.Context, a ApprovalAccept) (Appro
 	if err != nil {
 		return ScopeOnce, err
 	}
-	switch scope {
-	case ScopeSession:
-		g.approvals.GrantSession(a.ConversationID, subject, resolved)
-	case ScopeAlways:
-		return g.recordAlwaysGrant(ctx, a, subject), nil
-	}
-	return scope, nil
+	return g.RecordGrant(ctx, GrantRequest{
+		ConversationID: a.ConversationID, IdentityID: a.IdentityID, OperatorID: a.OperatorID,
+		Tool: subject.Tool, Action: subject.Action, Scope: scope,
+	}), nil
 }
 
 // DiscardApprovalChallenge removes one unresolved challenge after its durable pause

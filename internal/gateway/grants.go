@@ -12,6 +12,8 @@ package gateway
 import (
 	"context"
 	"log/slog"
+
+	"github.com/chetto1983/aura/internal/config"
 )
 
 // grantStore is the durable ScopeAlways seam. *approvalgrants.Store satisfies it. It is
@@ -74,30 +76,56 @@ func (g *Gateway) alwaysGranted(ctx context.Context, identityID string, subject 
 	return ok
 }
 
+// GrantRequest is the standing part of one operator accept: the scope they chose for the
+// subject, in the conversation it was given, by whom, for which identity.
+type GrantRequest struct {
+	ConversationID, IdentityID, OperatorID, Tool, Action string
+	Scope                                                ApprovalScope
+}
+
+// RecordGrant records the session or always grant an accept carries and returns the scope
+// that took effect. ScopeOnce, or any other value, records nothing: the accept itself covers
+// the one call. Like every approval path it records nothing under server_production (WR-01).
+func (g *Gateway) RecordGrant(ctx context.Context, r GrantRequest) ApprovalScope {
+	if g == nil || g.profile == config.ProfileServerProduction {
+		return ScopeOnce
+	}
+	subject := grantSubject{Tool: r.Tool, Action: r.Action}
+	switch r.Scope {
+	case ScopeSession:
+		g.approvals.GrantSession(r.ConversationID, subject, ResolvedApproval{Approved: true, OperatorID: r.OperatorID})
+		return ScopeSession
+	case ScopeAlways:
+		return g.recordAlwaysGrant(ctx, r, subject)
+	default:
+		return ScopeOnce
+	}
+}
+
 // recordAlwaysGrant persists the operator's ScopeAlways choice and reports the scope that
 // actually took effect. It degrades to ScopeSession — never silently to nothing — when there
 // is no store, no identity, or the write fails: the operator asked for the widest scope, and
 // answering that with the next-widest one they can actually be given is honest, where
 // reporting "always" over a failed INSERT is not.
-func (g *Gateway) recordAlwaysGrant(ctx context.Context, a ApprovalAccept, subject grantSubject) ApprovalScope {
+func (g *Gateway) recordAlwaysGrant(ctx context.Context, r GrantRequest, subject grantSubject) ApprovalScope {
 	switch {
-	case g == nil || g.grants == nil:
+	case g.grants == nil:
 		slog.Warn("gateway: no durable grant store; 'always' recorded for this conversation only",
 			"tool", subject.Tool, "action", subject.Action)
-	case a.IdentityID == "":
+	case r.IdentityID == "":
 		slog.Warn("gateway: accept carries no identity; 'always' recorded for this conversation only",
 			"tool", subject.Tool, "action", subject.Action)
 	default:
-		if err := g.grants.Grant(ctx, a.IdentityID, subject.Tool, subject.Action, a.OperatorID); err != nil {
+		if err := g.grants.Grant(ctx, r.IdentityID, subject.Tool, subject.Action, r.OperatorID); err != nil {
 			slog.Warn("gateway: durable grant write failed; 'always' recorded for this conversation only",
-				"identity_id", a.IdentityID, "tool", subject.Tool, "action", subject.Action, "err", err)
+				"identity_id", r.IdentityID, "tool", subject.Tool, "action", subject.Action, "err", err)
 			break
 		}
 		slog.Info("gateway: durable approval grant recorded",
-			"identity_id", a.IdentityID, "tool", subject.Tool, "action", subject.Action,
-			"granted_by", a.OperatorID)
+			"identity_id", r.IdentityID, "tool", subject.Tool, "action", subject.Action,
+			"granted_by", r.OperatorID)
 		return ScopeAlways
 	}
-	g.approvals.GrantSession(a.ConversationID, subject, ResolvedApproval{Approved: true, OperatorID: a.OperatorID})
+	g.approvals.GrantSession(r.ConversationID, subject, ResolvedApproval{Approved: true, OperatorID: r.OperatorID})
 	return ScopeSession
 }

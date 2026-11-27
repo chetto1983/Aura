@@ -234,8 +234,9 @@ func boundedString(value string, limit int) string {
 //   - INSERT error → Verdict{Deny, "reservation failed"}: Execute is NOT called (GATE-03
 //     fail-closed — even post-approval; a reservation that cannot be durably taken blocks).
 //
-// operatorID is "" for the auto-allow origin and set for the approved-resume origin; it is
-// folded into the single start Meta so both origins produce the SAME single start∧¬end shape.
+// operatorID is "" for an unanswered auto-allow and set whenever an operator answered for the
+// call; it is folded into the single start Meta so every origin produces the SAME single
+// start∧¬end shape.
 func (g *Gateway) reserve(
 	ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
 	tier scoring.RiskTier, operatorID string, scope ApprovalScope, policy Policy,

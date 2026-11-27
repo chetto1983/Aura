@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 // TestGatewayApprovalsLedgerOneShot proves Approve→Consume is one-shot: the first
@@ -196,17 +198,17 @@ func TestGatewayArgsFingerprintCanonicalEquality(t *testing.T) {
 	a := json.RawMessage(`{"goals":["build x","test y"],"depth":2}`)
 	// Same semantics, different key order + whitespace.
 	b := json.RawMessage(`{ "depth": 2, "goals": ["build x", "test y"] }`)
-	if gatewayArgsFingerprint(a) != gatewayArgsFingerprint(b) {
+	if tools.CallFingerprint(a) != tools.CallFingerprint(b) {
 		t.Fatal("cosmetically-different but canonical-equal args must share a fingerprint")
 	}
 	// Semantic difference (a different goal) must NOT reuse the approval.
 	c := json.RawMessage(`{"goals":["build x","DROP TABLE"],"depth":2}`)
-	if gatewayArgsFingerprint(a) == gatewayArgsFingerprint(c) {
+	if tools.CallFingerprint(a) == tools.CallFingerprint(c) {
 		t.Fatal("semantically-different args must yield a different fingerprint (no approval reuse)")
 	}
 	// A changed VALUE (not just formatting) also yields a distinct fingerprint.
 	e := json.RawMessage(`{"goals":["build x","test y"],"depth":3}`)
-	if gatewayArgsFingerprint(a) == gatewayArgsFingerprint(e) {
+	if tools.CallFingerprint(a) == tools.CallFingerprint(e) {
 		t.Fatal("a changed scalar value must yield a different fingerprint")
 	}
 }

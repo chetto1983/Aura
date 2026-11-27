@@ -215,7 +215,7 @@ func TestScopeLabelsAreOneLineButGrantsKeepTheRawAction(t *testing.T) {
 		t.Fatalf("options = %+v, want one-line labels %+v", payload.Options, want)
 	}
 	scope, err := g.ApproveChallenge(ctx, ApprovalAccept{
-		ConversationID: testKey().ConversationID, Tool: "board", ArgsFingerprint: gatewayArgsFingerprint(args),
+		ConversationID: testKey().ConversationID, Tool: "board", ArgsFingerprint: tools.CallFingerprint(args),
 		Question: payload.Question, Answer: want[1].Value, IdentityID: testIdentity, OperatorID: "local",
 	})
 	if err != nil || scope != ScopeSession {

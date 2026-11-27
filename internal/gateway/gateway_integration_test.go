@@ -369,7 +369,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	convID := seedConversation(t, pool)
 
 	mutatingSpec := tools.Spec{Name: "skill_manage", Mutating: true}
-	fp := gatewayArgsFingerprint(skillDeleteArgs)
+	fp := tools.CallFingerprint(skillDeleteArgs)
 	key := newKey(convID, "call-resume-1")
 
 	// The host-side resume hook recorded the operator's accept (the production carrier).
