@@ -64,8 +64,11 @@ default limit is 30 minutes: it killed the daemon, the memory sidecar and `docke
 8. **The PIM**, if the run reads mail or calendar:
    `bash .claude/skills/aura-model-in-the-loop/pim_up.sh <operator-id> [subject-injection]`.
    It starts GreenMail and the published PIM on the host network and seeds three unread mails,
-   one of them mallory's injection. Then **restart the daemon** (SIGTERM its PID, start it
-   again): `aura mcp enable` does not remount a live daemon.
+   one of them mallory's injection. On a fresh database the PIM is not installed yet: run
+   `$HAND/aura mcp install calendar` once, with env.e2e.sh sourced (on 2026-11-27 a restart
+   without it mounted no `calendar`, and `aura mcp list` said "No MCP servers configured").
+   Then **restart the daemon** (SIGTERM its PID, start it again): neither `install` nor
+   `aura mcp enable` remounts a live daemon.
 9. **Check the mounts:** `grep '"mcp live mounted"' $HAND/serve.log` should show `calendar` and
    `memory`.
 
@@ -117,6 +120,9 @@ log in as `operator@aura.test` / `fake-pass`, then `select("INBOX", readonly=Tru
 
 ## 4. Traps, each measured
 
+- **Two hours is the most a background command lives.** `dockerd` started that way was stopped at
+  the limit on 2026-11-27, and every container with it. Start `dockerd` again, `docker start`
+  the core containers, rerun `pim_up.sh`, and restart the daemon.
 - **A parked request is not a hang.** Use `pending.sh`, never `ls | tail`: on 2026-10-31,
   `req-4` hid behind newer files.
 - **A daemon stopped mid-turn leaves its request parked.** Answer it with any `resp-N.json` to
