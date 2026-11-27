@@ -381,16 +381,17 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
-			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, requestID, yield)
+			out := a.consume(ch, ic, spanID, requestID, yield)
+			text, finish, streamErr := out.text, out.finish, out.streamErr
 			// Repair provider-supplied ids the moment they arrive (D-13): every
 			// downstream consumer -- the terminal/runnable partition, argument
 			// validation, the reservation key, dispatch, history -- must see the
 			// repaired batch, never the raw one.
-			calls = uniquifyToolCallIDs(calls)
+			calls := uniquifyToolCallIDs(out.calls)
 			// Fold THIS call in before any exit path below reads the total. The span keeps
 			// reporting the single call, which is what a span is: one request.
-			turnU.add(usage)
-			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
+			turnU.add(out.usage)
+			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, out.usage)
 			span.End()
 			cancel()
 
@@ -398,7 +399,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// yield, so the iter.Seq2 contract forbids any further yield — re-yielding
 			// the final/tool Event below would panic ("range function continued
 			// iteration after... returned false"). Return now.
-			if stopped {
+			if out.stopped {
 				endLLM(context.Canceled)
 				turnReason = "consumer_stopped"
 				return
@@ -435,6 +436,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 			endLLM(nil)
 			slog.Info("agent llm call end", "request_id", requestID, "thread_id", a.sessionID, "finish_reason", finish, "tool_calls", len(calls))
+			if finish == llm.FinishContentFilter {
+				turnReason = a.endOnRefusal(ic, spanID, requestID, text, &turnU, yield)
+				return
+			}
 
 			// 3. No tool calls → terminal (content-stop fallback, D-13/D-16).
 			if len(calls) == 0 {
@@ -516,7 +521,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// the dispatch batch, so no dropped duplicate is ever answered with a
 			// synthesized result.
 			calls = dedupeSameMessageCalls(calls)
-			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
+			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls, ProviderState: out.providerState})
 			// executeBatch dispatches on ic.Ctx, not spanCtx (llm_agent_dispatch.go), so the
 			// tool path never sees the round unless it is re-pointed here — mirrors the
 			// turnCtx/ic.WithContext precedent above for RequestID (D-03).

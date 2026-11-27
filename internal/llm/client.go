@@ -21,12 +21,18 @@ const (
 // Message is one entry in the conversation. ToolCalls populates only for
 // assistant messages that invoke tools; ToolCallID populates only for `tool`
 // role messages that report a result.
+//
+// ProviderState is the opaque record a provider client asked to get back on its
+// own assistant message (the Chunk of the same name). Only that client reads it.
+// It is `json:"-"` so it never reaches another route's wire, a command hook, or a
+// persisted turn: it lives only in the run's memory.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	Name       string     `json:"name,omitempty"`
+	Role          string          `json:"role"`
+	Content       string          `json:"content,omitempty"`
+	ToolCalls     []ToolCall      `json:"tool_calls,omitempty"`
+	ToolCallID    string          `json:"tool_call_id,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	ProviderState json.RawMessage `json:"-"`
 }
 
 // ToolCall is one assistant-emitted call. Arguments stays a JSON string so the
@@ -79,22 +85,30 @@ type Usage struct {
 }
 
 // Chunk is one streamed delta from the LLM. Exactly one of Text, Reasoning,
-// ToolCall, Usage, or Err is populated; FinishReason is set on the final content/tool
-// chunk of the stream. Reasoning carries a chain-of-thought delta (provider
-// `reasoning`/`reasoning_content` field) emitted token-per-token with the same
-// immediacy as Text; it is STREAM-ONLY and never folded into accumulated content
-// (amendment #57). The trailing Usage chunk (when present) carries the final
+// ToolCall, ProviderState, Usage, or Err is populated; FinishReason is set on the
+// final content/tool chunk of the stream. Reasoning carries a chain-of-thought
+// delta (provider `reasoning`/`reasoning_content` field) emitted token-per-token
+// with the same immediacy as Text; it is STREAM-ONLY and never folded into
+// accumulated content (amendment #57). ProviderState arrives at most once per
+// stream, alone in its chunk, before the FinishReason chunk; the agent hands it
+// back on the round's assistant tool-call message (Message.ProviderState). The
+// trailing Usage chunk (when present) carries the final
 // token+cost summary so the agent can read it through the provider-neutral channel.
 // Err carries a terminal streaming error; when non-nil, accumulated text MUST NOT
 // be treated as a complete answer.
 type Chunk struct {
-	Text         string
-	Reasoning    string
-	ToolCall     *ToolCall
-	FinishReason string
-	Usage        *Usage
-	Err          error
+	Text          string
+	Reasoning     string
+	ToolCall      *ToolCall
+	ProviderState json.RawMessage
+	FinishReason  string
+	Usage         *Usage
+	Err           error
 }
+
+// FinishContentFilter is the finish reason of a response the model or the provider
+// refused. The agent ends the turn on it: there is no answer to recover.
+const FinishContentFilter = "content_filter"
 
 // Client is the interface the agent loop targets. Stream returns a channel of
 // Chunks; consumers MUST drain it (or the implementation will leak goroutines

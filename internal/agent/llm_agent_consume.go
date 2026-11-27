@@ -1,27 +1,52 @@
 // consume is the stream-drain half of the run loop, split out of llm_agent.go to
 // keep that file under the no-god-class cap (D-07). It turns one provider stream
-// into the (text, calls, finish, usage) the loop acts on, re-emitting chunk/
-// tool-call/reasoning Events as they arrive and honoring the iter.Seq2
-// yield-after-false contract (a consumer break drains-to-close, then reports
-// stopped so Run never yields again).
+// into the roundOutput the loop acts on, re-emitting chunk/tool-call/reasoning
+// Events as they arrive and honoring the iter.Seq2 yield-after-false contract (a
+// consumer break drains-to-close, then reports stopped so Run never yields again).
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
+// roundOutput is everything one drained stream produced. providerState is the
+// opaque record the provider client asked to get back on this round's assistant
+// message; nil on every route that sends none.
+type roundOutput struct {
+	text          string
+	calls         []llm.ToolCall
+	finish        string
+	usage         llm.Usage
+	providerState json.RawMessage
+	stopped       bool
+	streamErr     error
+}
+
 // consume drains one stream: it re-emits each text delta as a chunk Event and each
 // reasoning delta as a reasoning chunk Event (stream-only — never added to the
 // accumulated text the caller persists, amendment #57), gathers finalized tool
-// calls, the finish_reason, and the trailing usage. Tool-call Events are emitted as
-// they finalize so the Event order is chunk -> tool_call (Req#9).
+// calls, the finish_reason, the provider state, and the trailing usage. Tool-call
+// Events are emitted as they finalize so the Event order is chunk -> tool_call (Req#9).
 func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte,
 	requestID string, yield func(*Event, error) bool,
-) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool, streamErr error) {
+) roundOutput {
+	var out roundOutput
 	var b strings.Builder
+	end := func(stopped bool, streamErr error) roundOutput {
+		out.text, out.stopped, out.streamErr = b.String(), stopped, streamErr
+		return out
+	}
+	// stop drains the rest so the client can close cleanly, then reports stopped so
+	// Run never yields again (iter.Seq2 contract).
+	stop := func() roundOutput {
+		for range ch { //nolint:revive // drain-to-close keeps the stream goroutine from leaking
+		}
+		return end(true, nil)
+	}
 	for c := range ch {
 		switch {
 		case c.Err != nil:
@@ -32,10 +57,10 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"thread_id":  a.sessionID,
 				"error":      c.Err.Error(),
 			})
-			return b.String(), calls, finish, usage, false, c.Err
+			return end(false, c.Err)
 		case c.Usage != nil:
-			usage = *c.Usage
-			recordUsage(usage)
+			out.usage = *c.Usage
+			recordUsage(out.usage)
 			reasoningtrace.Record("agent_consume_usage_chunk", map[string]any{
 				"request_id":        requestID,
 				"thread_id":         a.sessionID,
@@ -44,19 +69,23 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"cached_tokens":     c.Usage.CachedTokens,
 			})
 		case c.ToolCall != nil:
-			calls = append(calls, *c.ToolCall)
+			out.calls = append(out.calls, *c.ToolCall)
 			reasoningtrace.Record("agent_consume_tool_call_chunk", map[string]any{
 				"request_id": requestID,
 				"thread_id":  a.sessionID,
 				"tool_call":  *c.ToolCall,
 			})
 			if !yield(a.toolCallEvent(ic, spanID, *c.ToolCall), nil) {
-				// Consumer stopped: drain the rest to let the client close cleanly,
-				// then report stopped so Run never yields again (iter.Seq2 contract).
-				for range ch { //nolint:revive // drain-to-close keeps the stream goroutine from leaking
-				}
-				return b.String(), calls, finish, usage, true, nil
+				return stop()
 			}
+		case c.ProviderState != nil:
+			out.providerState = c.ProviderState
+			// The state can carry thinking blocks: the trace gets its size, never its bytes.
+			reasoningtrace.Record("agent_consume_provider_state_chunk", map[string]any{
+				"request_id": requestID,
+				"thread_id":  a.sessionID,
+				"bytes":      len(c.ProviderState),
+			})
 		case c.Text != "":
 			b.WriteString(c.Text)
 			reasoningtrace.Record("agent_consume_text_chunk", map[string]any{
@@ -66,9 +95,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"delta":      c.Text,
 			})
 			if !yield(a.chunkEvent(ic, spanID, c.Text), nil) {
-				for range ch { //nolint:revive // drain-to-close
-				}
-				return b.String(), calls, finish, usage, true, nil
+				return stop()
 			}
 		case c.Reasoning != "":
 			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
@@ -80,12 +107,10 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				"redacted":   true,
 			})
 			if !yield(a.reasoningChunkEvent(ic, spanID, c.Reasoning), nil) {
-				for range ch { //nolint:revive // drain-to-close
-				}
-				return b.String(), calls, finish, usage, true, nil
+				return stop()
 			}
 		case c.FinishReason != "":
-			finish = c.FinishReason
+			out.finish = c.FinishReason
 			reasoningtrace.Record("agent_consume_finish_reason", map[string]any{
 				"request_id":    requestID,
 				"thread_id":     a.sessionID,
@@ -93,5 +118,5 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			})
 		}
 	}
-	return b.String(), calls, finish, usage, false, nil
+	return end(false, nil)
 }

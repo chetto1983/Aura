@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -21,6 +22,9 @@ func cloneModelRequest(req *llm.Request) llm.Request {
 			cloned.Messages[i] = req.Messages[i]
 			if req.Messages[i].ToolCalls != nil {
 				cloned.Messages[i].ToolCalls = append([]llm.ToolCall{}, req.Messages[i].ToolCalls...)
+			}
+			if req.Messages[i].ProviderState != nil {
+				cloned.Messages[i].ProviderState = append(json.RawMessage{}, req.Messages[i].ProviderState...)
 			}
 		}
 	}
@@ -71,10 +75,18 @@ func validateModelHookMutation(before, after *llm.Request) error {
 	}
 }
 
-// validateCommandModelHookMutation compares the command-visible request shape.
+// validateCommandModelHookMutation compares the command-visible request shape. A
+// command hook sees the request through JSON, where ProviderState is `json:"-"`, so
+// its rewrite never carries the state: the comparison ignores it, and BeforeModel
+// copies back only sampling fields, leaving the live request's state in place.
 func validateCommandModelHookMutation(before, after *llm.Request) error {
 	expected := cloneModelRequest(before)
 	proposed := cloneModelRequest(after)
+	for _, msgs := range [][]llm.Message{expected.Messages, proposed.Messages} {
+		for i := range msgs {
+			msgs[i].ProviderState = nil
+		}
+	}
 	return validateModelHookMutation(&expected, &proposed)
 }
 
