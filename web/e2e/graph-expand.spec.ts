@@ -147,7 +147,12 @@ test.describe('Graph expansion grows the graph in place', () => {
     });
     if (point === null) throw new Error('the canvas has no Alpha node');
 
-    await page.mouse.dblclick(point.x, point.y);
+    // A person's double click, not Playwright's back-to-back one: 150 ms between the clicks gives
+    // the first one's selection time to render. When selecting opened the inspector's column, the
+    // canvas refitted in that gap and the second click missed the node (2026-11-27: 0 of 8).
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(150);
+    await page.mouse.click(point.x, point.y, { clickCount: 2 });
     await expectGrownAround(page, before);
   });
 });

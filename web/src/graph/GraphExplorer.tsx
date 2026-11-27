@@ -237,7 +237,10 @@ export default function GraphExplorer() {
   );
 
   // Selecting a node (canvas click OR node-list Enter/tap — the non-hover access path, D-03)
-  // opens the inspector; the canvas observes and refits the resized workspace.
+  // fills the inspector. On desktop its column is always there, so a selection never resizes
+  // the canvas: a resize refits the view, which moved the node between the two clicks of a
+  // double click, and the second click missed it (measured 2026-11-27: 0 of 8 expansions with
+  // 150 ms between the clicks).
   const selectNode = useCallback((node: GraphNode) => {
     setSelected(node);
   }, []);
@@ -355,18 +358,14 @@ export default function GraphExplorer() {
   // DOMINANT element (flex-1, real min-height — never the old crushed sliver); controls are a
   // bottom sheet behind the toolbar, the evidence list is a capped scroll region below, and the
   // inspector is a sheet that appears on selection. On lg it flips to controls | canvas | inspector
-  // with the evidence strip under the canvas.
+  // with the evidence strip under the canvas; the inspector column stays, empty until a selection.
   return (
     <div className="graph-workspace-container h-full min-h-0">
       <div
         ref={workspaceRef}
         data-testid="graph-workspace"
         style={{ '--graph-filters-w': `${String(filtersWidth.width)}px` } as React.CSSProperties}
-        className={`graph-workspace relative flex h-full min-h-0 flex-col overflow-hidden lg:grid lg:grid-rows-[minmax(0,1fr)_auto] ${
-          inspectorOpen
-            ? 'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem]'
-            : 'lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)]'
-        }`}
+        className="graph-workspace relative flex h-full min-h-0 flex-col overflow-hidden lg:grid lg:grid-cols-[var(--graph-filters-w)_auto_minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)_auto]"
       >
         {/* MOBILE control bar — keeps the canvas dominant; refresh + filters live here, not in an
           always-on top strip. */}
@@ -442,15 +441,15 @@ export default function GraphExplorer() {
           {canvasPane}
         </section>
 
-        {/* INSPECTOR — desktop right column only when selected; mobile bottom sheet on selection.
-          ONE instance (no duplicate DOM / strict-mode collision). */}
+        {/* INSPECTOR — desktop right column, always (empty until a selection); mobile bottom sheet
+          on selection. ONE instance (no duplicate DOM / strict-mode collision). */}
         <aside
           aria-label={t('graph.inspector.emptyHeading')}
           data-open={inspectorOpen ? 'true' : 'false'}
           className={`graph-workspace__inspector min-h-0 lg:col-start-4 lg:row-start-1 lg:row-span-2 lg:static lg:overflow-y-auto lg:border-l lg:border-border lg:bg-surface ${
             inspectorOpen
               ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:border-t-0 lg:shadow-none'
-              : 'hidden'
+              : 'hidden lg:block'
           }`}
         >
           <NodeInspector
