@@ -518,7 +518,11 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
 
   // Measured 2026-11-27: a Yes/No approval from the model asked to review a scope it has not got.
   it.each([
-    ['the gateway offers scopes', [{ label: 'Approve once', value: 'gateway_scope:once:board' }], true],
+    [
+      'the gateway offers scopes',
+      [{ label: 'Approve once', value: 'gateway_scope:once:board' }],
+      true,
+    ],
     ['the reply is free text', undefined, true],
     ['the model offers its own options', ['Yes', 'No'], false],
   ] as const)('warns about scope and consequence only when %s', (_case, options, warns) => {

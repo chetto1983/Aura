@@ -61,6 +61,8 @@ describe('readDraft', () => {
     store({ step: 1.5, values: {} });
     expect(readDraft(QUESTION)?.step).toBe(0);
     store({ step: 1, values: {} });
-    expect(readDraft({ ...QUESTION, fields: [{ name: 'name', kind: 'string', required: true }] })?.step).toBe(0);
+    expect(
+      readDraft({ ...QUESTION, fields: [{ name: 'name', kind: 'string', required: true }] })?.step,
+    ).toBe(0);
   });
 });
