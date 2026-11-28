@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -243,4 +244,70 @@ func seededSidecarStore(t *testing.T, conversationID string, seq int, body strin
 		t.Fatalf("seed sidecar: %v", err)
 	}
 	return newFakeStore(&Store{runDir: runDir, turnCapBytes: 8})
+}
+
+// recordBetweenCallAndResult is the shape the lab VM stored on 2026-11-28 (conversation
+// 01a221cc…, turns #129–#131): a scheduled run's record appended out of band while the turn
+// was waiting for its own shell_exec result.
+func recordBetweenCallAndResult() []llm.Message {
+	call := llm.ToolCall{ID: "call-1", Type: "function"}
+	call.Function.Name = "shell_exec"
+	return []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+		{Role: llm.RoleAssistant, Content: "[Scheduled task report — agent_job 01a221d9]\nNessuna anomalia"},
+		{Role: llm.RoleTool, ToolCallID: "call-1", Content: "waited"},
+	}
+}
+
+func TestRepairMovesRecordAfterItsToolResult(t *testing.T) {
+	t.Parallel()
+	in := recordBetweenCallAndResult()
+	got := repairManagedToolMessagePairs(in)
+	want := []llm.Message{in[0], in[2], in[1]}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("repair = %+v\nwant the call, its real result, then the record: %+v", got, want)
+	}
+}
+
+func TestRepairMovesTwoRecordsAndKeepsTheirOrder(t *testing.T) {
+	t.Parallel()
+	in := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "a"}, {ID: "b"}}},
+		{Role: llm.RoleAssistant, Content: "record A"},
+		{Role: llm.RoleAssistant, Content: "record B"},
+		{Role: llm.RoleTool, ToolCallID: "a", Content: "result a"},
+		{Role: llm.RoleTool, ToolCallID: "b", Content: "result b"},
+	}
+	got := repairManagedToolMessagePairs(in)
+	want := []llm.Message{in[0], in[3], in[4], in[1], in[2]}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("repair = %+v\nwant %+v", got, want)
+	}
+}
+
+func TestRepairWithMissingResultKeepsRecovery(t *testing.T) {
+	t.Parallel()
+	in := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "a"}, {ID: "b"}}},
+		{Role: llm.RoleAssistant, Content: "record A"},
+		{Role: llm.RoleTool, ToolCallID: "a", Content: "result a"},
+	}
+	got := repairManagedToolMessagePairs(in)
+	if len(got) != 4 || got[1].ToolCallID != "a" || !strings.Contains(got[1].Content, "crash recovery") ||
+		got[2].ToolCallID != "b" || got[3].Content != "record A" {
+		t.Fatalf("a partial result set must keep today's recovery, got %+v", got)
+	}
+}
+
+func TestRepairDisplayShowsTheRealResultBehindARecord(t *testing.T) {
+	t.Parallel()
+	msgs := recordBetweenCallAndResult()
+	in := make([]DisplayTurn, len(msgs))
+	for i, m := range msgs {
+		in[i] = DisplayTurn{Seq: 129 + i, ParentSeq: 128 + i, Message: m}
+	}
+	shown := DisplayMessages(repairDisplayTurns(in))
+	if len(shown) != 3 || shown[1].Content != "waited" {
+		t.Fatalf("display = %+v, want the real result second", shown)
+	}
 }

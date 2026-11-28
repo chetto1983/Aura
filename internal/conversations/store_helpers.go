@@ -250,6 +250,15 @@ func repairToolPairs[T any](in []T, p toolPairs[T]) []T {
 			continue
 		}
 
+		if start := resultsBehindOutOfBandTurns(msgs, i); start > 0 {
+			end := start + len(m.ToolCalls)
+			out = append(out, in[i])
+			out = append(out, in[start:end]...)
+			out = append(out, in[i+1:start]...)
+			i = end
+			continue
+		}
+
 		if !validToolCallIDs(m.ToolCalls) {
 			for i++; i < len(in) && msgs[i].Role == llm.RoleTool; i++ {
 				out = p.keepPointer(out, in[i], msgs[i])
@@ -340,8 +349,34 @@ func managedToolPointerMessage(m llm.Message) llm.Message {
 }
 
 func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
+	return toolResultGroupAt(in, assistantIdx, assistantIdx+1)
+}
+
+// resultsBehindOutOfBandTurns returns where an assistant's complete result group starts when
+// turns written outside the turn loop landed between the call and its results, or -1. A
+// scheduled run's or a delegated worker's record is appended under the conversation's row lock
+// with the next seq, so it can land while the turn still waits on a tool: measured on the lab
+// VM on 2026-11-28 (turns #129–#131), where reload then dropped the real result as an orphan.
+func resultsBehindOutOfBandTurns(in []llm.Message, assistantIdx int) int {
+	start := assistantIdx + 1
+	for start < len(in) && outOfBandTurn(in[start]) {
+		start++
+	}
+	if start == assistantIdx+1 || !toolResultGroupAt(in, assistantIdx, start) {
+		return -1
+	}
+	return start
+}
+
+func outOfBandTurn(m llm.Message) bool {
+	return m.Role == llm.RoleUser || (m.Role == llm.RoleAssistant && len(m.ToolCalls) == 0)
+}
+
+// toolResultGroupAt reports whether the messages from start answer every call of the assistant
+// at assistantIdx exactly once, and nothing else.
+func toolResultGroupAt(in []llm.Message, assistantIdx, start int) bool {
 	calls := in[assistantIdx].ToolCalls
-	if assistantIdx+len(calls) >= len(in) {
+	if start+len(calls) > len(in) {
 		return false
 	}
 	want := make(map[string]bool, len(calls))
@@ -352,7 +387,7 @@ func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
 		want[call.ID] = false
 	}
 	for j := range calls {
-		msg := in[assistantIdx+1+j]
+		msg := in[start+j]
 		if msg.Role != llm.RoleTool {
 			return false
 		}
