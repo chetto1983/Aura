@@ -26,30 +26,34 @@ import (
 // with >=2 ask_user calls collapses to ONE assistant message, so a per-Event assistant
 // turn would be wire-invalid.
 func (r *Runner) persistPause(tr *turnTracker, ai *agent.AwaitingInput) error {
+	if tr.parked {
+		// The round's ParkedTurn committed this pause before its siblings ran.
+		return nil
+	}
 	tr.paused = true
 	tr.pauses = append(tr.pauses, ai)
-
-	// A fresh token keys the pending. Minted here so persistPause stays the token source
-	// (RESEARCH gotcha #7); the row itself is written by flushPause's CommitPause.
-	token, err := uuid.NewV7()
-	if err != nil {
-		return fmt.Errorf("mint pause token: %w", err)
-	}
-	options, err := pauseOptionsJSON(ai.Options)
+	ins, err := r.pauseInsert(tr.convID, ai)
 	if err != nil {
 		return err
 	}
-	resumeContext, err := ResumeContextWithDecisionPolicy(ai.ResumeContext, allResumeDecisions())
+	tr.pauseInserts = append(tr.pauseInserts, ins)
+	return nil
+}
+
+// pauseInsert is the paused_states row of one pause, with a freshly minted token. Minted here
+// so the runner stays the token source (RESEARCH gotcha #7); CommitPause writes the row.
+func (r *Runner) pauseInsert(convID string, ai *agent.AwaitingInput) (askuser.InsertParams, error) {
+	token, err := uuid.NewV7()
 	if err != nil {
-		return fmt.Errorf("persist pause decision policy: %w", err)
+		return askuser.InsertParams{}, fmt.Errorf("mint pause token: %w", err)
 	}
-	resumeContext, err = stampGatewayChallenge(resumeContext, tr.convID, r.approvalChallenges)
+	options, err := pauseOptionsJSON(ai.Options)
 	if err != nil {
-		return fmt.Errorf("persist pause challenge: %w", err)
+		return askuser.InsertParams{}, err
 	}
-	resumeContext, err = approvaltext.Enrich(ai.Question, resumeContext)
+	resumeContext, err := r.pauseResumeContext(convID, ai)
 	if err != nil {
-		return fmt.Errorf("persist pause presentation: %w", err)
+		return askuser.InsertParams{}, err
 	}
 	// D-05 relay ids: a non-empty child id is forwarded as a non-nil *string (→
 	// proxied_from_child_id); an empty one stays nil (→ SQL NULL for direct calls).
@@ -57,9 +61,9 @@ func (r *Runner) persistPause(tr *turnTracker, ai *agent.AwaitingInput) error {
 	if ai.ProxiedFromChildID != "" {
 		proxiedChild = &ai.ProxiedFromChildID
 	}
-	tr.pauseInserts = append(tr.pauseInserts, askuser.InsertParams{
+	return askuser.InsertParams{
 		Token:              token.String(),
-		ConversationID:     tr.convID,
+		ConversationID:     convID,
 		Kind:               ai.Kind,
 		Question:           ai.Question,
 		Options:            options,
@@ -68,8 +72,38 @@ func (r *Runner) persistPause(tr *turnTracker, ai *agent.AwaitingInput) error {
 		ResumeContext:      resumeContext,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  ai.ProxiedToolCallID,
-	})
-	return nil
+	}, nil
+}
+
+// pauseResumeContext is the context a pause row stores. A call the host parked gets the
+// tool_approval context, written from its Approval and never from anything streamed (D10). Any
+// other context came from the model or a tool: it loses that reserved type, then gets the
+// server's decision policy, challenge stamp and derived card.
+func (r *Runner) pauseResumeContext(convID string, ai *agent.AwaitingInput) (json.RawMessage, error) {
+	if ai.Approval != nil {
+		parked, err := approvaltext.ToolApprovalContext(ai.Approval.ToolName, ai.Approval.Presentation)
+		if err != nil {
+			return nil, fmt.Errorf("persist pause approval: %w", err)
+		}
+		return ResumeContextWithDecisionPolicy(parked, allResumeDecisions())
+	}
+	resumeContext, err := withoutToolApprovalType(ai.ResumeContext)
+	if err != nil {
+		return nil, err
+	}
+	resumeContext, err = ResumeContextWithDecisionPolicy(resumeContext, allResumeDecisions())
+	if err != nil {
+		return nil, fmt.Errorf("persist pause decision policy: %w", err)
+	}
+	resumeContext, err = stampGatewayChallenge(resumeContext, convID, r.approvalChallenges)
+	if err != nil {
+		return nil, fmt.Errorf("persist pause challenge: %w", err)
+	}
+	resumeContext, err = approvaltext.Enrich(ai.Question, resumeContext)
+	if err != nil {
+		return nil, fmt.Errorf("persist pause presentation: %w", err)
+	}
+	return resumeContext, nil
 }
 
 // stampGatewayChallenge writes the gateway challenge's target and withheld tool_call_id into
@@ -122,9 +156,10 @@ func stampGatewayChallenge(raw json.RawMessage, conversationID string, lookup Ap
 // consumable (ListPendingAll/PendingFor) only AFTER its wire-valid history is durable; a
 // tx failure leaves NEITHER, never an orphan tool answer on resume (the infinite-pause
 // loop this closes). It runs once at round end, after la.Run drains, so the combined turn
-// mirrors the agent's single-message rewrite.
+// mirrors the agent's single-message rewrite. A park round committed its turn and pauses
+// with its ParkedTurn, so a parked tracker has nothing left to flush.
 func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
-	if len(tr.pauses) == 0 {
+	if tr.parked || len(tr.pauses) == 0 {
 		return nil
 	}
 	toolCalls, err := assistantAskUserToolCalls(tr.pauses)
@@ -136,7 +171,7 @@ func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
 		Role:           llm.RoleAssistant,
 		ToolCalls:      toolCalls,
 	}
-	if err := r.resumeCommitter.CommitPause(ctx, assistantTurn, tr.pauseInserts); err != nil {
+	if err := r.resumeCommitter.CommitPause(ctx, assistantTurn, tr.pauseInserts, nil); err != nil {
 		return fmt.Errorf("persist pause assistant turn: %w", err)
 	}
 	r.recordTurnDecision(ctx, tr)

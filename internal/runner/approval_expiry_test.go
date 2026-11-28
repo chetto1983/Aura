@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolapprovals"
 )
 
 type scriptedApprovalExpiryStore struct {
@@ -35,9 +36,11 @@ func (*scriptedExpiryCommitter) CommitResumeBatch(context.Context, []ResumeClaim
 	return nil
 }
 
-func (*scriptedExpiryCommitter) CommitPause(context.Context, conversations.AppendTurnParams, []askuser.InsertParams) error {
+func (*scriptedExpiryCommitter) CommitPause(context.Context, conversations.AppendTurnParams, []askuser.InsertParams, []toolapprovals.Input) error {
 	return nil
 }
+
+func (*scriptedExpiryCommitter) HasToolApprovals() bool { return false }
 
 func TestExpirePendingApprovalsPersistsDistinctRefusalAndToolAnswer(t *testing.T) {
 	r, conv, pause := newTestRunner(t, agenttest.NewFakeClient())

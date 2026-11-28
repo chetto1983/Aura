@@ -137,6 +137,10 @@ type Runner struct {
 	// backgroundCalls receives the tool calls that outlive their window in this runner's
 	// turns (Deps.BackgroundCalls); nil keeps every call in its turn.
 	backgroundCalls *tools.BackgroundCalls
+	// parkApprovals lets the turn's agent park a call the gateway would ask the operator
+	// about (LlmAgentConfig.ParkApprovals). Only in-package tests set it so far; no option or
+	// environment variable reaches it.
+	parkApprovals bool
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -462,6 +466,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		Steer:             r.steer,
 		BackgroundCalls:   r.backgroundCalls,
 		TurnReading:       reading,
+		ParkApprovals:     r.parkApprovals,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

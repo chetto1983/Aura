@@ -71,7 +71,9 @@ func Enrich(question string, raw json.RawMessage) (json.RawMessage, error) {
 
 // FromContext returns metadata only when the persisted view still exactly matches a fresh
 // derivation from the canonical question and root resume coordinates. Malformed, forged and
-// future keys fail closed to the canonical question.
+// future keys fail closed to the canonical question. A tool_approval card has no question to
+// derive from: the runner writes it from the parked call and strips that type from every model
+// context, so the stored card is trusted when it is valid.
 func FromContext(question string, raw json.RawMessage) (Presentation, bool) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
@@ -82,8 +84,11 @@ func FromContext(question string, raw json.RawMessage) (Presentation, bool) {
 		return Presentation{}, false
 	}
 	var p Presentation
-	if json.Unmarshal(encoded, &p) != nil || !valid(p) {
+	if json.Unmarshal(encoded, &p) != nil || !Valid(p) {
 		return Presentation{}, false
+	}
+	if RootString(fields, "type") == ToolApprovalType {
+		return p, true
 	}
 	expected, ok := derive(question, fields)
 	if !ok || p.Key != expected.Key || !maps.Equal(p.Params, expected.Params) {
@@ -125,7 +130,7 @@ func deriveGateway(question string, fields map[string]json.RawMessage) (Presenta
 	if target := RootString(fields, "target"); target != "" {
 		p.Params["target"] = target
 	}
-	return p, valid(p)
+	return p, Valid(p)
 }
 
 func deriveShell(question string, fields map[string]json.RawMessage) (Presentation, bool) {
@@ -149,7 +154,7 @@ func deriveShell(question string, fields map[string]json.RawMessage) (Presentati
 	p := Presentation{Key: ShellKey, Params: map[string]string{
 		"cwd": cwd, "command": commandAndDigest[:idx], "digest": digest,
 	}}
-	return p, valid(p)
+	return p, Valid(p)
 }
 
 func deriveScheduled(question string, fields map[string]json.RawMessage) (Presentation, bool) {
@@ -177,7 +182,7 @@ func deriveScheduled(question string, fields map[string]json.RawMessage) (Presen
 		return Presentation{}, false
 	}
 	p := Presentation{Key: ScheduledKey, Params: map[string]string{"task": task, "kind": kind}}
-	return p, valid(p)
+	return p, Valid(p)
 }
 
 // deriveScheduledNamed reads the in-turn approval question that names the cadence, the first run
@@ -204,7 +209,7 @@ func deriveScheduledNamed(question, task string) (Presentation, bool) {
 	p := Presentation{Key: ScheduledKey, Params: map[string]string{
 		"task": task, "kind": kind, "schedule": schedule, "when": when, "summary": summary,
 	}}
-	return p, valid(p)
+	return p, Valid(p)
 }
 
 func deriveScheduledCreated(question, task string) (Presentation, bool) {
@@ -225,7 +230,7 @@ func deriveScheduledCreated(question, task string) (Presentation, bool) {
 	p := Presentation{Key: ScheduledKey, Params: map[string]string{
 		"task": task, "kind": kind, "schedule": schedule, "risk": risk,
 	}}
-	return p, valid(p)
+	return p, Valid(p)
 }
 
 // RootString reads a root string field of a resume context by its exact key, as Postgres's ->>
@@ -238,7 +243,9 @@ func RootString(fields map[string]json.RawMessage, name string) string {
 	return value
 }
 
-func valid(p Presentation) bool {
+// Valid reports whether every surface would render the card: a known key, its required params,
+// no unknown param, and each value bounded, valid UTF-8 and free of NUL.
+func Valid(p Presentation) bool {
 	if p.Params == nil {
 		return false
 	}
@@ -290,7 +297,7 @@ func requiredParams(key string) []string {
 // RenderItalian is the Telegram channel's fixed-Italian renderer. Browser surfaces use the same
 // key/params through i18next. Fallback is the canonical consent question for legacy/unknown data.
 func RenderItalian(p Presentation, fallback string) string {
-	if !valid(p) {
+	if !Valid(p) {
 		return fallback
 	}
 	switch p.Key {

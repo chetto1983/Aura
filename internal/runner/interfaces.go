@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolapprovals"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
@@ -143,10 +144,24 @@ type ResumeCommitter interface {
 	// answer turn, in one tx. Any rows==0 claim rolls the whole tx back → exactly one
 	// answer per pause, no orphan RoleTool turns (LOOP-02/F-004).
 	CommitResumeBatch(ctx context.Context, claims []ResumeClaim) error
-	// CommitPause writes the assistant ask_user tool_call turn + all N paused_states rows
-	// in one tx, so a pause becomes consumable only AFTER its wire-valid assistant history
-	// is durable (LOOP-04/F-030).
-	CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams) error
+	// CommitPause writes the assistant tool_call turn + all N paused_states rows in one tx,
+	// so a pause becomes consumable only AFTER its wire-valid assistant history is durable
+	// (LOOP-04/F-030). A park round's approvals are its records, written after the pauses
+	// with the assistant turn's seq; a committer without the record store refuses them
+	// before it writes anything.
+	CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams, approvals []toolapprovals.Input) error
+	// HasToolApprovals reports whether the committer holds the record store.
+	HasToolApprovals() bool
+}
+
+// ToolApprovalStore is the record surface the Runner reads and moves outside a pause or
+// resume transaction. *toolapprovals.Store satisfies it.
+type ToolApprovalStore interface {
+	Open(ctx context.Context, ownerID, conversationID string) ([]toolapprovals.Record, error)
+	Decided(ctx context.Context, ownerID, conversationID string, assistantSeq int) ([]toolapprovals.Record, error)
+	Transition(ctx context.Context, ownerID, id string, from, to toolapprovals.Status) error
+	ResultCommitted(ctx context.Context, ownerID string, r toolapprovals.Record) (bool, error)
+	StaleAccepted(ctx context.Context, ownerID string, decidedBefore time.Time) ([]toolapprovals.Record, error)
 }
 
 // CacheMetricStore is the narrow aura.cache_metrics surface the Runner consumes

@@ -77,7 +77,7 @@ func (r *Runner) MintApprovalPause(ctx context.Context, convID, question string,
 		ToolCallID:     ai.ToolCallID,
 		ResumeContext:  resumeContext,
 	}
-	if err := r.resumeCommitter.CommitPause(ctx, assistantTurn, []askuser.InsertParams{pause}); err != nil {
+	if err := r.resumeCommitter.CommitPause(ctx, assistantTurn, []askuser.InsertParams{pause}, nil); err != nil {
 		return "", fmt.Errorf("mint approval pause: %w", err)
 	}
 	return token.String(), nil

@@ -76,7 +76,11 @@ type Deps struct {
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
 	// pool-less splitResumeCommitter (unit tests, cache_audit) with no code change.
 	ResumeCommitter ResumeCommitter
-	MessageDrafts   *messagedrafts.Store
+	// ToolApprovals is the record store of the calls a park round parked. A Runner given it
+	// needs a ResumeCommitter that holds the same store (HasToolApprovals): New refuses the
+	// pair otherwise, since such a committer refuses every record.
+	ToolApprovals ToolApprovalStore
+	MessageDrafts *messagedrafts.Store
 	// MessageTasks settles the message task a scheduled draft's review answers. Nil leaves
 	// a scheduled review unavailable.
 	MessageTasks ScheduledMessageTasks
@@ -299,6 +303,9 @@ func New(d Deps) *Runner {
 	// resume/pause; unit tests + cache_audit get the non-atomic fallback for free.
 	if r.resumeCommitter == nil {
 		r.resumeCommitter = newSplitResumeCommitter(d.Conv, d.Pause)
+	}
+	if d.ToolApprovals != nil && !r.resumeCommitter.HasToolApprovals() {
+		panic("runner: Deps.ToolApprovals needs a ResumeCommitter wired with SetToolApprovals")
 	}
 	// One process-lifetime breaker shared by every per-turn agent (B-05). A provider
 	// outage trips it once and short-circuits subsequent turns until cooldown — the

@@ -82,6 +82,14 @@ type turnTracker struct {
 	pendingToolCalls []llm.ToolCall
 	openToolCalls    map[string]struct{}
 	toolSeq          int
+	// parked records that a ParkedTurn committed the round's assistant turn and its pauses
+	// (D19): the round's pause events are then no-ops and flushPause writes nothing.
+	parked bool
+	// persistedCalls holds the park round's unparked calls, which that assistant turn already
+	// carries (D5): their Start adds no assistant turn and their End appends only the tool
+	// turn. The value is whether the call's Start was seen; an End without one is a synthetic
+	// result whose ledger end would close no start.
+	persistedCalls map[string]bool
 
 	// Display-only CoT accumulation (amendment #91 / fix-plan 1.12): the turn's
 	// reasoning deltas joined in arrival order (interleaved spans across rounds),
@@ -107,6 +115,8 @@ func (t *turnTracker) nextToolInvocationSeq() int {
 // writes the paused_states row as the SOLE writer (T-04-19):
 //
 //   - a final Event (FinishReason set) → the assistant answer turn + its usage;
+//   - a ParkedTurn Event → the park round's assistant turn, all its pause rows and its
+//     records in one transaction, before any sibling runs (commitParkedTurn);
 //   - a pause Event (Actions.AwaitingInput) → the paused_states row (SOLE writer) +
 //     an accumulated pause payload; the SINGLE assistant ask_user tool_call turn
 //     carrying ALL the round's calls is flushed once at round end (flushPause, CR-02),
@@ -129,6 +139,11 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		tr.resetReasoning()
 		tr.reasoningGraph.DiscardReasoning()
 	}
+	if ev.Actions.ParkedTurn != nil {
+		// Durable as flushPause is: a draft's row already exists by now, and a cancelled turn
+		// must not leave it without its pause.
+		return r.commitParkedTurn(context.WithoutCancel(ctx), tr, ev.Actions.ParkedTurn)
+	}
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(tr, ev.Actions.AwaitingInput)
 	}
@@ -143,16 +158,22 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		// tool_call without its answer (measured on the lab VM, 2026-10-13). The same reason
 		// flushPause and recordInterruptedRound write with WithoutCancel.
 		durable := context.WithoutCancel(ctx)
+		// Read before the turn event consumes the park round's entry for the call.
+		ledger := tr.recordsLedger(ev.Actions.ToolInvocation)
 		if err := r.persistToolTurnEvent(durable, tr, ev.Actions.ToolInvocation); err != nil {
 			// The call ran even when its turn cannot be stored (a refused end event, a
 			// failed append), so the ledger still gets the row that closes its start.
-			r.recordToolLedger(durable, tr, ev)
+			if ledger {
+				r.recordToolLedger(durable, tr, ev)
+			}
 			return err
 		}
 		if err := r.acceptMemoryCapture(durable, tr, ev); err != nil {
 			return err
 		}
-		r.recordToolLedger(durable, tr, ev)
+		if ledger {
+			r.recordToolLedger(durable, tr, ev)
+		}
 		return nil
 	}
 	if ev.LLMResponse != nil && ev.LLMResponse.Reasoning != "" {
@@ -177,6 +198,10 @@ func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *
 	}
 	switch ti.Event {
 	case agent.ToolInvocationStart:
+		if _, persisted := tr.persistedCalls[ti.ToolCallID]; persisted {
+			tr.persistedCalls[ti.ToolCallID] = true
+			return nil
+		}
 		tr.addPendingToolCall(ti)
 		if ti.BatchSize > 0 && ti.BatchIndex == ti.BatchSize-1 {
 			if err := r.flushToolCalls(ctx, tr); err != nil {
@@ -193,14 +218,18 @@ func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *
 		if ti.HistoryContent == "" && ti.ResultPreview != "" {
 			return fmt.Errorf("persist tool result turn %s/%s: the event carries no model-facing content", ti.ToolName, ti.ToolCallID)
 		}
-		if _, ok := tr.openToolCalls[ti.ToolCallID]; !ok {
-			// Defensive repair for an end event observed without its start: synthesize
-			// the assistant call from the end payload so we never persist an orphan
-			// RoleTool turn.
-			tr.addPendingToolCall(ti)
-		}
-		if err := r.flushToolCalls(ctx, tr); err != nil {
-			return err
+		// A park round's call is already in its assistant turn (D5): neither the repair nor a
+		// flush may write a second one.
+		if _, persisted := tr.persistedCalls[ti.ToolCallID]; !persisted {
+			if _, ok := tr.openToolCalls[ti.ToolCallID]; !ok {
+				// Defensive repair for an end event observed without its start: synthesize
+				// the assistant call from the end payload so we never persist an orphan
+				// RoleTool turn.
+				tr.addPendingToolCall(ti)
+			}
+			if err := r.flushToolCalls(ctx, tr); err != nil {
+				return err
+			}
 		}
 		turn := conversations.AppendTurnParams{
 			ConversationID: tr.convID,
@@ -211,6 +240,7 @@ func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *
 		if err := r.Conv.AppendTurn(ctx, turn); err != nil {
 			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
 		}
+		delete(tr.persistedCalls, ti.ToolCallID)
 		delete(tr.openToolCalls, ti.ToolCallID)
 		if len(tr.openToolCalls) == 0 {
 			tr.openToolCalls = nil

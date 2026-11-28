@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/toolapprovals"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,16 +36,28 @@ var resumeCommitBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/int
 // conversations.ErrContentSpillUnsupported before any sidecar is written, so an over-cap
 // answer rolls the whole tx back cleanly instead of orphaning a file (WR-01).
 type PoolResumeCommitter struct {
-	pool  *pgxpool.Pool
-	conv  *conversations.Store
-	pause *askuser.Store
+	pool      *pgxpool.Pool
+	conv      *conversations.Store
+	pause     *askuser.Store
+	approvals *toolapprovals.Store
 }
 
+// errToolApprovalsNotWired refuses a park round's records on a committer without the record
+// store, before anything is written: a parked call without its record could never run.
+var errToolApprovalsNotWired = errors.New("tool approval records need the committer's tool approval store")
+
 // NewPoolResumeCommitter builds the atomic committer over the shared pool + concrete
-// stores. The composition root (cmd/aura/chat.go) injects it into runner.Deps.
+// stores. The composition root (cmd/aura/chat_boot.go) injects it into runner.Deps.
 func NewPoolResumeCommitter(pool *pgxpool.Pool, conv *conversations.Store, pause *askuser.Store) *PoolResumeCommitter {
 	return &PoolResumeCommitter{pool: pool, conv: conv, pause: pause}
 }
+
+// SetToolApprovals gives the committer the record store a park round writes into. Callers
+// that never park leave it unset, and their committer refuses records.
+func (p *PoolResumeCommitter) SetToolApprovals(s *toolapprovals.Store) { p.approvals = s }
+
+// HasToolApprovals reports whether SetToolApprovals wired the record store.
+func (p *PoolResumeCommitter) HasToolApprovals() bool { return p.approvals != nil }
 
 // CommitResume claims the pause then appends its answer turn in one tx. A failed claim
 // (rows==0 → ErrPauseNotFound) returns before any append; a failed append rolls the
@@ -108,23 +121,34 @@ func (p *PoolResumeCommitter) finishResumeTx(ctx context.Context, q *sqlc.Querie
 	if claim.OwningWorkerID != "" {
 		return nil
 	}
-	return p.appendAnswerTx(ctx, q, claim.Turn)
+	_, err := p.appendAnswerTx(ctx, q, claim.Turn)
+	return err
 }
 
-// CommitPause writes the assistant ask_user tool_call turn + all N paused_states rows in
-// one tx (D-05/LOOP-04): the assistant turn goes in FIRST so a pause is never visible
-// without its wire-valid preceding history. A tx failure leaves NEITHER the turn nor the
-// pauses.
-func (p *PoolResumeCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams) error {
+// CommitPause writes the assistant tool_call turn + all N paused_states rows + the park
+// round's records in one tx (D-05/LOOP-04): the assistant turn goes in FIRST so a pause is
+// never visible without its wire-valid preceding history, and each record carries that
+// turn's seq. A tx failure leaves none of them.
+func (p *PoolResumeCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams, approvals []toolapprovals.Input) error {
+	if len(approvals) > 0 && p.approvals == nil {
+		return errToolApprovalsNotWired
+	}
 	if len(pauses) == 0 {
 		return nil
 	}
 	return db.WithCallerIdentityTx(ctx, p.pool, func(q *sqlc.Queries) error {
-		if err := p.appendAnswerTx(ctx, q, assistantTurn); err != nil {
+		seq, err := p.appendAnswerTx(ctx, q, assistantTurn)
+		if err != nil {
 			return err
 		}
 		for _, ins := range pauses {
 			if err := p.pause.InsertTx(ctx, q, ins); err != nil {
+				return err
+			}
+		}
+		for _, in := range approvals {
+			in.AssistantSeq = seq
+			if err := p.approvals.InsertTx(ctx, q, in); err != nil {
 				return err
 			}
 		}
@@ -133,15 +157,15 @@ func (p *PoolResumeCommitter) CommitPause(ctx context.Context, assistantTurn con
 }
 
 // appendAnswerTx reserves the next turn seq under the conversation row-lock and appends
-// the turn via the 34-05 AppendTurnTx, all on the caller's tx. AppendTurnTx requires
-// Seq>0 and never allocates one, so the seq must be reserved here.
-func (p *PoolResumeCommitter) appendAnswerTx(ctx context.Context, q *sqlc.Queries, turn conversations.AppendTurnParams) error {
+// the turn via the 34-05 AppendTurnTx, all on the caller's tx, and returns that seq.
+// AppendTurnTx requires Seq>0 and never allocates one, so the seq must be reserved here.
+func (p *PoolResumeCommitter) appendAnswerTx(ctx context.Context, q *sqlc.Queries, turn conversations.AppendTurnParams) (int, error) {
 	seq, err := allocateResumeTurnSeq(ctx, q, turn.ConversationID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	turn.Seq = seq
-	return p.conv.AppendTurnTx(ctx, q, turn)
+	return seq, p.conv.AppendTurnTx(ctx, q, turn)
 }
 
 // allocateResumeTurnSeq reserves the next per-conversation turn seq INSIDE the caller's
@@ -230,7 +254,13 @@ func (s *splitResumeCommitter) CommitResumeBatch(ctx context.Context, claims []R
 	return nil
 }
 
-func (s *splitResumeCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams) error {
+// HasToolApprovals is false: the split committer never holds the record store.
+func (*splitResumeCommitter) HasToolApprovals() bool { return false }
+
+func (s *splitResumeCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, pauses []askuser.InsertParams, approvals []toolapprovals.Input) error {
+	if len(approvals) > 0 {
+		return errToolApprovalsNotWired
+	}
 	if len(pauses) == 0 {
 		return nil
 	}

@@ -43,6 +43,7 @@ import (
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/chetto1983/aura/internal/steer"
+	"github.com/chetto1983/aura/internal/toolapprovals"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -477,6 +478,9 @@ func assembleChatEnv(
 	conversationProjector := newChatConversationProjector(memoryClients, convStore)
 	reasoningMemory := newChatReasoningMemory(cfg, memoryClients)
 	memoryCaptureQueue := buildMemoryCaptureQueue(memoryClients)
+	toolApprovals := toolapprovals.NewStore(pool)
+	resumeCommitter := runner.NewPoolResumeCommitter(pool, convStore, pauseStore)
+	resumeCommitter.SetToolApprovals(toolApprovals)
 	deps := runner.Deps{
 		Conv:                  convStore,
 		Pause:                 pauseStore,
@@ -489,7 +493,8 @@ func assembleChatEnv(
 		ConversationProjector: conversationProjector,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
-		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
+		ResumeCommitter: resumeCommitter,
+		ToolApprovals:   toolApprovals,
 		MessageDrafts:   messagedrafts.NewStore(pool).WithSenders(newPIMSenders(cfg, reg)),
 		MessageTasks:    cron.New(pool),
 		Client:          client,

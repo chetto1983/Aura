@@ -131,7 +131,7 @@ func TestSplitResumeCommitter_CommitPause_InsertsPausesAndAppendsAssistant(t *te
 		{Token: newConvID(t), ConversationID: convID, Kind: "clarification", Question: "A?", ToolCallID: "call-1"},
 		{Token: newConvID(t), ConversationID: convID, Kind: "clarification", Question: "B?", ToolCallID: "call-2"},
 	}
-	if err := c.CommitPause(context.Background(), assistantTurn, pauses); err != nil {
+	if err := c.CommitPause(context.Background(), assistantTurn, pauses, nil); err != nil {
 		t.Fatalf("CommitPause: %v", err)
 	}
 	if pause.inserts != 2 {

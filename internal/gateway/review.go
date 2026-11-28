@@ -129,9 +129,6 @@ func approvedCall(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage,
 	return call, true
 }
 
-// invalidCard is what RenderItalian returns for a card the surfaces would refuse to render.
-const invalidCard = "invalid approval card"
-
 var errInvalidCard = errors.New("gateway: the approval card for this call is not valid")
 
 // Review reports whether the call needs the operator and, if so, the card to park it with.
@@ -162,7 +159,7 @@ func (g *Gateway) Review(ctx context.Context, spec tools.Spec, raw json.RawMessa
 	if target != "" {
 		card.Params["target"] = target
 	}
-	if approvaltext.RenderItalian(card, invalidCard) == invalidCard {
+	if !approvaltext.Valid(card) {
 		return Review{Tier: n.tier}, errInvalidCard
 	}
 	return Review{

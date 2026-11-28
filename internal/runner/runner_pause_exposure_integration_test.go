@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolapprovals"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -68,7 +69,7 @@ type faultyPauseCommitter struct {
 	conv *conversations.Store
 }
 
-func (f *faultyPauseCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, _ []askuser.InsertParams) error {
+func (f *faultyPauseCommitter) CommitPause(ctx context.Context, assistantTurn conversations.AppendTurnParams, _ []askuser.InsertParams, _ []toolapprovals.Input) error {
 	return db.WithTx(ctx, f.pool, func(q *sqlc.Queries) error {
 		seq, err := allocateResumeTurnSeq(ctx, q, assistantTurn.ConversationID)
 		if err != nil {

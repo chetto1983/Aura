@@ -149,6 +149,17 @@ Deny policies are checked before any review, so a denied call is refused, never 
       and the accept would then delete the new X.
     - **Cost.** In a write batch with a park, one extra model round to emit the held calls again.
     - **Replaces.** The 2026-11-27 text said that a call after a parked call in a sequential batch still runs.
+  - **When a sibling's result is committed (amended 2026-11-28, controller's ruling P10).** Before any sibling
+    runs, one transaction commits the parked assistant turn, which lists every call of the turn, every pause row
+    of the turn and the record of each parked call. A sibling's result is committed **after** that transaction,
+    as its own tool turn through the normal tool-result path. It cannot be inside it: the transaction's append
+    (`AppendTurnTx`) cannot spill an over-cap result to the sidecar.
+    - **A crash between the two** leaves the parked turn, its pauses and its records, and no tool turn for the
+      sibling, whether or not the sibling ran.
+    - **What the resume does with that.** The pauses stay answerable. Every load of the history, the
+      continuation's included, answers the sibling's call with the loader's crash stand-in ("previous result
+      unknown after crash recovery … verify before re-running this tool call"). Nothing runs the sibling again,
+      and the model reads its outcome as unknown, which is true.
   - **Several parked calls** in one turn give one card each.
   - **`ask_user`.** A turn that also calls `ask_user` keeps today's precedence (map R4).
 - **Who never parks.** Headless and delegated runs: no person (`personPresent` false), swarm workers, agent_job and

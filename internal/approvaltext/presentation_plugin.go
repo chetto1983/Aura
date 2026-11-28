@@ -93,7 +93,7 @@ func deriveCard(question string, fields map[string]json.RawMessage, cards []line
 			params[line.param] = value
 		}
 		p := Presentation{Key: card.key, Params: params}
-		return p, valid(p)
+		return p, Valid(p)
 	}
 	return Presentation{}, false
 }
