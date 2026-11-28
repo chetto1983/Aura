@@ -28,10 +28,14 @@ func (c *Client) consume(ctx context.Context, stream *messageStream, firedIdle f
 		}
 	}
 	var message anthropic.BetaMessage
+	fail := func(err error) {
+		c.logFailure(built, &message, err)
+		emit(llm.Chunk{Err: err})
+	}
 	for stream.Next() {
 		event := stream.Current()
 		if err := message.Accumulate(event); err != nil {
-			emit(llm.Chunk{Err: fmt.Errorf("anthropic: %w", err)})
+			fail(fmt.Errorf("anthropic: %w", err))
 			return
 		}
 		switch {
@@ -44,18 +48,21 @@ func (c *Client) consume(ctx context.Context, stream *messageStream, firedIdle f
 				return
 			}
 		case event.Type == "message_stop":
-			c.finish(&message, emit, built)
+			if err := c.finish(&message, emit, built); err != nil {
+				fail(err)
+			}
 			return
 		}
 	}
-	emit(llm.Chunk{Err: streamEndError(stream, firedIdle, key)})
+	fail(streamEndError(stream, firedIdle, key))
 }
 
-func (c *Client) finish(message *anthropic.BetaMessage, emit func(llm.Chunk) bool, built builtRequest) {
+// finish emits a complete response. It returns the error that refuses one, and nil when the
+// response went out or the caller stopped reading.
+func (c *Client) finish(message *anthropic.BetaMessage, emit func(llm.Chunk) bool, built builtRequest) error {
 	finish, err := finishReason(message.StopReason)
 	if err != nil {
-		emit(llm.Chunk{Err: err})
-		return
+		return err
 	}
 	var calls []llm.ToolCall
 	state := make([]anthropic.BetaContentBlockParamUnion, 0, len(message.Content))
@@ -71,26 +78,26 @@ func (c *Client) finish(message *anthropic.BetaMessage, emit func(llm.Chunk) boo
 	var encoded json.RawMessage
 	if len(calls) > 0 {
 		if encoded, err = json.Marshal(state); err != nil {
-			emit(llm.Chunk{Err: fmt.Errorf("anthropic: encode provider state: %w", err)})
-			return
+			return fmt.Errorf("anthropic: encode provider state: %w", err)
 		}
 	}
 	for i := range calls {
 		if !emit(llm.Chunk{ToolCall: &calls[i]}) {
-			return
+			return nil
 		}
 	}
 	if encoded != nil && !emit(llm.Chunk{ProviderState: encoded}) {
-		return
+		return nil
 	}
 	if !emit(llm.Chunk{FinishReason: finish}) {
-		return
+		return nil
 	}
 	usage := message.Usage
 	used := tokens{input: int(usage.InputTokens), read: int(usage.CacheReadInputTokens), write: int(usage.CacheCreationInputTokens), output: int(usage.OutputTokens)}
 	cost := callCost(c.cfg.Prices, built.params.Model, used)
 	c.logRequest(built, message, used, cost)
 	emit(llm.Chunk{Usage: &llm.Usage{PromptTokens: used.prompt(), CompletionTokens: used.output, CachedTokens: used.read, Cost: cost}})
+	return nil
 }
 
 // finishReason maps stop_reason onto Aura's finish reasons. pause_turn belongs to server
