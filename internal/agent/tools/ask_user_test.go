@@ -234,3 +234,33 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// Measured on the lab VM on 2026-11-28: Sonnet relayed a gateway approval as kind=choice,
+// with the question, options and resume_context copied exactly. The operator accepted for
+// the whole conversation, and every resume hook, which acts on kind=approval alone, dropped
+// the grant without a word. A resume_context the host minted names an approval whatever
+// kind the model wrote; a plain choice without one stays a choice.
+func TestAskUser_Execute_HostApprovalContextIsAnApproval(t *testing.T) {
+	for _, raw := range []string{
+		`{"question":"Approve memory__memory_forget (risk=destructive)?","kind":"choice",` +
+			`"options":[{"label":"Approve once","value":"gateway_scope:once:memory__memory_forget"},` +
+			`{"label":"Approve for this conversation","value":"gateway_scope:session:memory__memory_forget"}],` +
+			`"resume_context":{"type":"gateway_approval","tool":"memory__memory_forget","args_sha256":"f4"}}`,
+		`{"question":"Run it?","kind":"clarification","resume_context":{"type":"shell_exec_approval","command_sha256":"c1"}}`,
+	} {
+		_, err := AskUser{}.Execute(context.Background(), json.RawMessage(raw))
+		var pause *ErrAwaitingUserInput
+		if !errors.As(err, &pause) {
+			t.Fatalf("want sentinel, got %v", err)
+		}
+		if pause.Kind != KindApproval {
+			t.Errorf("kind = %q for a host approval context, want %q: %s", pause.Kind, KindApproval, raw)
+		}
+	}
+	_, err := AskUser{}.Execute(context.Background(),
+		json.RawMessage(`{"question":"pick","kind":"choice","options":["red","green"]}`))
+	var pause *ErrAwaitingUserInput
+	if !errors.As(err, &pause) || pause.Kind != KindChoice {
+		t.Fatalf("a plain choice became %+v, %v", pause, err)
+	}
+}

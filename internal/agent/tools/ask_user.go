@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/chetto1983/aura/internal/approvaltext"
 )
 
 // AskUser is the non-deferred HITL pause primitive (PRD 1.5, SPEC Req#1). The
@@ -156,15 +158,32 @@ func (AskUser) Execute(_ context.Context, raw json.RawMessage) (ToolResult, erro
 	if len(a.ResumeContext) > 0 && string(a.ResumeContext) != "null" {
 		resumeContext = append(resumeContext, a.ResumeContext...)
 	}
+	kind := a.Kind
+	if relaysHostApproval(resumeContext) {
+		kind = KindApproval
+	}
 	return ToolResult{}, &ErrAwaitingUserInput{
 		Question:           a.Question,
 		Options:            a.Options,
-		Kind:               a.Kind,
+		Kind:               kind,
 		Priority:           priority,
 		ResumeContext:      resumeContext,
 		ProxiedFromChildID: a.ProxiedFromChildID,
 		ProxiedToolCallID:  a.ProxiedToolCallID,
 	}
+}
+
+// relaysHostApproval reports whether the model is relaying a resume_context a tool or the
+// gateway minted: each carries a root "type", and every one of them is an approval that only
+// a kind=approval pause resumes. The kind is the model's own word and the context is not, so
+// the context decides. Measured on the lab VM on 2026-11-28: Sonnet relayed a gateway
+// approval as kind=choice, the operator accepted, and the resume hooks dropped the grant.
+func relaysHostApproval(resumeContext json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(resumeContext, &fields) != nil {
+		return false
+	}
+	return approvaltext.RootString(fields, "type") != ""
 }
 
 // validateOptions enforces the options invariants: zero options is allowed (e.g.
