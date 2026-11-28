@@ -14,6 +14,16 @@ import (
 func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, requestID string,
 	calls []llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool, infraErr error) {
+	return a.dispatchCalls(ic, spanID, requestID, calls, acc, yield, false)
+}
+
+// dispatchCalls is dispatch. In a park round (llm_agent_park.go) nothing may answer ahead of
+// the round's pauses: a dedup trip answers its calls through the stream and ends the batch
+// without recovery or finalize, and done means only that the consumer stopped. The park
+// round never hands it the terminal, so the terminal exits cannot fire there.
+func (a *LlmAgent) dispatchCalls(ic InvocationContext, spanID [8]byte, requestID string,
+	calls []llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool, parkRound bool,
+) (done bool, infraErr error) {
 	// Partition: the FIRST text_response is the terminal; the rest are runnable.
 	// terminalCount also tallies any EXTRA text_response calls so a double-terminal
 	// step can be rejected below (a 2nd text_response was silently dropped before).
@@ -76,7 +86,10 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, requestID stri
 		c := canonicaljson.CanonicalArgs(call.Function.Arguments)
 		canon[i] = c
 		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, c); dedup {
-			a.appendSyntheticToolResults(calls, "skipped: duplicate call suppressed by the dedup guard")
+			a.appendSyntheticToolResults(calls, dedupSuppressed)
+			if parkRound {
+				return !a.yieldSyntheticResults(ic, spanID, calls, dedupSuppressed, yield), nil
+			}
 			if a.maybeRecover(call.Function.Name) {
 				return false, nil
 			}

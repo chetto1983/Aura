@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -98,54 +99,50 @@ func TestReviewIsNotNeededWhen(t *testing.T) {
 	approved := ResolvedApproval{Approved: true, OperatorID: "op-session"}
 	cases := []struct {
 		name  string
-		build func() (*Gateway, context.Context)
+		build func() (*Gateway, *fakeStore, context.Context)
 		spec  tools.Spec
 		args  json.RawMessage
 	}{
-		{"dev", func() (*Gateway, context.Context) {
-			return New(config.ProfileDev, &fakeStore{}), WithResponder(context.Background())
+		{"dev", func() (*Gateway, *fakeStore, context.Context) {
+			store := &fakeStore{}
+			return New(config.ProfileDev, store), store, WithResponder(context.Background())
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"server_production", func() (*Gateway, context.Context) {
-			g := New(config.ProfileServerProduction, &fakeStore{})
-			return g, identityctx.WithIdentityID(WithResponder(context.Background()), testIdentity)
+		{"server_production", func() (*Gateway, *fakeStore, context.Context) {
+			store := &fakeStore{}
+			return New(config.ProfileServerProduction, store), store, identityctx.WithIdentityID(WithResponder(context.Background()), testIdentity)
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"deny policy", func() (*Gateway, context.Context) {
-			g, _, ctx := policyGateway(map[string]Policy{policyKey("skill_manage", "delete"): PolicyDeny})
-			return g, ctx
+		{"deny policy", func() (*Gateway, *fakeStore, context.Context) {
+			return policyGateway(map[string]Policy{policyKey("skill_manage", "delete"): PolicyDeny})
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"session grant", func() (*Gateway, context.Context) {
-			g, _, ctx := approvedGateway()
+		{"session grant", func() (*Gateway, *fakeStore, context.Context) {
+			g, store, ctx := approvedGateway()
 			g.approvals.GrantSession(key.ConversationID, subjectFor(gatedSpec(), obsoleteSkillArgs), approved)
-			return g, ctx
+			return g, store, ctx
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"always grant", func() (*Gateway, context.Context) {
-			g, _, ctx := approvedGateway()
+		{"always grant", func() (*Gateway, *fakeStore, context.Context) {
+			g, store, ctx := approvedGateway()
 			grants := newFakeGrants()
 			grants.rows[policyKey("skill_manage", "delete")] = testIdentity
 			g.SetGrantStore(grants)
-			return g, ctx
+			return g, store, ctx
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"no responder", func() (*Gateway, context.Context) {
-			g := New(config.ProfileSingleUserHardened, &fakeStore{})
-			return g, identityctx.WithIdentityID(context.Background(), testIdentity)
+		{"no responder", func() (*Gateway, *fakeStore, context.Context) {
+			store := &fakeStore{}
+			return New(config.ProfileSingleUserHardened, store), store, identityctx.WithIdentityID(context.Background(), testIdentity)
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"delegated", func() (*Gateway, context.Context) {
-			g, _, ctx := approvedGateway()
-			return g, WithDelegatedDispatch(ctx)
+		{"delegated", func() (*Gateway, *fakeStore, context.Context) {
+			g, store, ctx := approvedGateway()
+			return g, store, WithDelegatedDispatch(ctx)
 		}, gatedSpec(), obsoleteSkillArgs},
-		{"Normal tier", func() (*Gateway, context.Context) {
-			g, _, ctx := approvedGateway()
-			return g, ctx
-		}, taskSpec(), json.RawMessage(`{"action":"cancel","task_id":"7"}`)},
-		{"outbound send under an ask policy", func() (*Gateway, context.Context) {
-			g, _, ctx := policyGateway(map[string]Policy{policyKey(reviewedEmailSpec().Name, ""): PolicyAsk})
-			return g, ctx
+		{"Normal tier", approvedGateway, taskSpec(), json.RawMessage(`{"action":"cancel","task_id":"7"}`)},
+		{"outbound send under an ask policy", func() (*Gateway, *fakeStore, context.Context) {
+			return policyGateway(map[string]Policy{policyKey(reviewedEmailSpec().Name, ""): PolicyAsk})
 		}, reviewedEmailSpec(), json.RawMessage(`{"to":"anna@example.com","subject":"Fattura","body":"In allegato."}`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			g, ctx := tc.build()
+			g, store, ctx := tc.build()
 			describer := &countingDescriber{target: "never asked"}
 			r, err := g.Review(ctx, tc.spec, tc.args, key, describer)
 			if err != nil || r.Needed {
@@ -154,8 +151,49 @@ func TestReviewIsNotNeededWhen(t *testing.T) {
 			if describer.calls != 0 {
 				t.Fatal("a call that needs no review was described")
 			}
+			// A strict gateway reports the tier of every call it reads, the ones it lets
+			// through included; a non-strict one reads nothing.
+			var want scoring.RiskTier
+			if g.profile.Strict() {
+				want = classify(tc.spec, tc.args)
+			}
+			if r.Tier != want {
+				t.Fatalf("tier = %q, want %q", r.Tier, want)
+			}
+			assertReviewWroteNothing(t, g, store)
 		})
 	}
+}
+
+// The card is the operator's only view of a parked call, so Review never hands back one the
+// surfaces would refuse to render: the argument keys are cut to the card's limit, and a call
+// whose card cannot be valid is an error, which sends it to its normal dispatch.
+func TestReviewReturnsOnlyAValidCard(t *testing.T) {
+	t.Parallel()
+	g, store, ctx := approvedGateway()
+	args := map[string]string{"action": "delete", "name": "obsolete-skill"}
+	for i := range 80 {
+		args[fmt.Sprintf("option_with_a_long_descriptive_name_%02d", i)] = "x"
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := g.Review(ctx, gatedSpec(), raw, testKey(), nil)
+	const fallback = "not rendered"
+	if err != nil || !r.Needed || approvaltext.RenderItalian(r.Presentation, fallback) == fallback {
+		t.Fatalf("Review of a call with many argument keys: needed %v, err %v, args %d bytes; want a valid card",
+			r.Needed, err, len(r.Presentation.Params["args"]))
+	}
+	if summary := r.Presentation.Params["args"]; len(summary) > 1024 || !strings.HasPrefix(summary, "action, name, option_") {
+		t.Fatalf("args summary is %d bytes: %q", len(summary), summary)
+	}
+
+	long := tools.Spec{Name: strings.Repeat("t", 300), Mutating: true, Destructive: true}
+	if r, err := g.Review(ctx, long, obsoleteSkillArgs, testKey(), nil); err == nil || r.Needed {
+		t.Fatalf("Review of a call whose card cannot be valid = %+v, %v; want an error and no card", r, err)
+	}
+	assertReviewWroteNothing(t, g, store)
 }
 
 func TestReviewWritesNothing(t *testing.T) {

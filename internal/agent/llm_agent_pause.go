@@ -38,19 +38,22 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 	Operation: "pause_create", State: "pending", Count: obs.AgentPauseTransitionsID,
 })
 
-// pauseCalls scans the assistant's batched tool calls and returns ask_user pauses
-// first, with each call's ToolCallID stamped onto the carried sentinel. Only
-// ask_user is pre-executed; trusted outbound messages are instead persisted as
-// drafts without running their tool. A malformed ask_user that fails
-// validation is NOT a pause — it returns no sentinel and falls through to normal
-// dispatch as a RoleTool error. The returned []llm.ToolCall is the ask_user-only
-// rewrite of the assistant message (D-A1-07 OpenAI wire-correctness): siblings are
-// dropped and re-emitted by the model on the next round.
+// pauseCalls scans the assistant's batched tool calls and returns their pauses in
+// the model's order, with each call's ToolCallID stamped onto the carried sentinel.
+//
+// Pass 1 is ask_user, the only tool pre-executed: when it pauses, its calls rewrite the
+// assistant message (D-A1-07 OpenAI wire-correctness), and the siblings are dropped and
+// re-emitted by the model on the next round. A malformed ask_user that fails validation
+// is NOT a pause — it returns no sentinel and falls through to normal dispatch as a
+// RoleTool error. Pass 2 (withheldCalls) runs only when pass 1 found nothing: it parks the
+// calls the host withholds without running them, and its siblings run in a park round
+// (llm_agent_park.go).
 //
 // ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ask_user alone can pause by
 // returning its sentinel. A host-owned trusted outbound message may also pause
-// through withholdOutboundMessage, and a tools.HostReviewer call (a scheduled message) through
-// withholdHostReviewedCall; neither calls Execute. A non-ask_user tool whose Execute returns
+// through withholdOutboundMessage, a tools.HostReviewer call (a scheduled message) through
+// withholdHostReviewedCall, and a call the gateway would ask about through
+// withholdForApproval; none calls Execute. A non-ask_user tool whose Execute returns
 // tools.ErrAwaitingUserInput does NOT pause; runTool renders it as a RoleTool error
 // (`error: awaiting user input`, the sentinel's Error() string) and the loop
 // continues. Spike 012b proved this: the old skill install-gate returned the
@@ -76,26 +79,22 @@ func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pause
 	if len(out) > 0 {
 		return out
 	}
-	for _, call := range calls {
-		if pending, ok := a.withholdOutboundMessage(ctx, call); ok {
-			out = append(out, pending)
-		} else if pending, ok := a.withholdHostReviewedCall(ctx, call); ok {
-			out = append(out, pending)
-		}
-	}
-	return out
+	return a.withheldCalls(ctx, calls)
 }
 
-// pauseCall pairs a finalized ask_user tool call with its decoded pause sentinel.
+// pauseCall pairs a finalized tool call with its decoded pause sentinel. A withheld call
+// also carries its original name and arguments, and a gated one what it may run on accept.
 type pauseCall struct {
 	call              llm.ToolCall
 	pause             *tools.ErrAwaitingUserInput
 	originalToolName  string
 	originalArguments string
+	approval          *ParkedApproval
 }
 
-// pauseToolCalls projects the detected pauses back to the ask_user-only
-// []llm.ToolCall that rewrites the assistant message (D-A1-07 wire-correctness).
+// pauseToolCalls projects pass 1's ask_user pauses back to the ask_user-only
+// []llm.ToolCall that rewrites the assistant message (D-A1-07 wire-correctness). A park
+// round keeps every call instead.
 func pauseToolCalls(pauses []pauseCall) []llm.ToolCall {
 	out := make([]llm.ToolCall, len(pauses))
 	for i, p := range pauses {
@@ -125,23 +124,28 @@ func (a *LlmAgent) detectPause(ctx context.Context, call llm.ToolCall) (*tools.E
 	return nil, false
 }
 
-// emitPauses yields one pause Event per detected ask_user call, in the order the
-// model emitted them. The assistant message has already been rewritten to the
-// ask_user-only tool_calls by the caller; NO RoleTool result is appended for a
-// pause (the loop is suspended, the Runner injects the answer on resume). The
-// yield-after-false guard is honored: once the consumer returns false the loop
+// emitPauses yields one pause Event per detected call, in the order the model emitted
+// them. The caller has already written the assistant message; NO RoleTool result is
+// appended for a pause (the loop is suspended, the Runner injects the answer on resume).
+// The yield-after-false guard is honored: once the consumer returns false the loop
 // stops yielding (iter.Seq2 contract).
 func (a *LlmAgent) emitPauses(ic InvocationContext, spanID [8]byte,
 	pauses []pauseCall, yield func(*Event, error) bool,
 ) {
 	for _, p := range pauses {
-		event := a.pauseEvent(ic, spanID, p.pause)
-		event.Actions.AwaitingInput.OriginalToolName = p.originalToolName
-		event.Actions.AwaitingInput.OriginalArguments = p.originalArguments
-		if !yield(event, nil) {
+		if !yield(a.pauseCallEvent(ic, spanID, p), nil) {
 			return
 		}
 	}
+}
+
+// pauseCallEvent is a detected call's pause Event, with what only the Runner reads.
+func (a *LlmAgent) pauseCallEvent(ic InvocationContext, spanID [8]byte, p pauseCall) *Event {
+	event := a.pauseEvent(ic, spanID, p.pause)
+	event.Actions.AwaitingInput.OriginalToolName = p.originalToolName
+	event.Actions.AwaitingInput.OriginalArguments = p.originalArguments
+	event.Actions.AwaitingInput.Approval = p.approval
+	return event
 }
 
 // pauseEvent builds the HITL pause Event carrying Actions.AwaitingInput (D-A1-03).

@@ -76,13 +76,21 @@ func (g *Gateway) policyFor(ctx context.Context, identityID string, subject gran
 	if !ok {
 		return ""
 	}
+	return policy
+}
+
+// countPolicyDecision counts a call a policy routed. Only Decide calls it: Review and
+// PolicyDenies read the same policy for the same call first, and one call is one decision.
+func countPolicyDecision(ctx context.Context, policy Policy) {
+	if policy == "" {
+		return
+	}
 	outcome := "ask"
 	if policy == PolicyDeny {
 		outcome = "denied"
 	}
 	policyDecisions.Add(ctx, 1, metric.WithAttributes(attribute.String(
 		string(obs.AttributeOutcome), obs.NormalizeAttribute(obs.AttributeOutcome, outcome))))
-	return policy
 }
 
 // policyDenyReason is what the model reads when a policy refused its call: the subject, and

@@ -77,6 +77,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
 	}
 	n := g.needFor(ctx, spec, rawArgs, key)
+	countPolicyDecision(ctx, n.policy)
 	spec, tier := n.spec, n.tier
 	switch n.kind {
 	case needDeniedByPolicy:

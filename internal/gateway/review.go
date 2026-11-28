@@ -6,6 +6,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/approvaltext"
@@ -128,17 +129,22 @@ func approvedCall(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage,
 	return call, true
 }
 
+// invalidCard is what RenderItalian returns for a card the surfaces would refuse to render.
+const invalidCard = "invalid approval card"
+
+var errInvalidCard = errors.New("gateway: the approval card for this call is not valid")
+
 // Review reports whether the call needs the operator and, if so, the card to park it with.
 // It reserves nothing and records nothing; the call's dispatch decides again after the
 // accept. A send the message review owns is never the gateway's card. The describer is asked
 // only for a call that needs the operator; its error is not an approval, and the call goes to
-// its normal dispatch.
+// its normal dispatch, and so is a call whose card would not be valid.
 func (g *Gateway) Review(ctx context.Context, spec tools.Spec, raw json.RawMessage, key ReservationKey, describer tools.ApprovalDescriber) (Review, error) {
 	if g == nil || !g.profile.Strict() {
 		return Review{}, nil
 	}
 	if _, outbound := messagedrafts.TrustedOutboundTarget(spec); outbound {
-		return Review{}, nil
+		return Review{Tier: classify(spec, raw)}, nil
 	}
 	n := g.needFor(ctx, spec, raw, key)
 	if n.kind != needApproval {
@@ -155,6 +161,9 @@ func (g *Gateway) Review(ctx context.Context, spec tools.Spec, raw json.RawMessa
 	}}
 	if target != "" {
 		card.Params["target"] = target
+	}
+	if approvaltext.RenderItalian(card, invalidCard) == invalidCard {
+		return Review{Tier: n.tier}, errInvalidCard
 	}
 	return Review{
 		Needed:        true,

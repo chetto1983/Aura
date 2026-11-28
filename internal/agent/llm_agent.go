@@ -80,6 +80,7 @@ type LlmAgent struct {
 	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
 	gateway       *gateway.Gateway
 	messageDrafts MessageDraftCreator
+	parkApprovals bool       // LlmAgentConfig.ParkApprovals
 	steer         SteerInbox // nil means drainSteer is a no-op, like a nil gateway means Allow (D-12)
 	// ledgerConvID is the ORIGINATING conversation UUID the gateway ReservationKey is
 	// keyed on. It defaults to sessionID (the main runner path, where session_id ==
@@ -511,25 +512,25 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				continue
 			}
 
-			// 4. Intra-turn exclusivity (D-A1-07): if any call is an ask_user pause,
-			// the assistant message is rewritten to ask_user-only tool_calls and the
-			// siblings are dropped (re-emitted next round). Otherwise record the full
-			// assistant tool-call message and dispatch sequentially (D-14).
-			if pauses := a.pauseCalls(ic.Ctx, calls); len(pauses) > 0 {
-				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: pauseToolCalls(pauses)})
-				turnReason = outcomeAskUserPause
-				a.emitPauses(ic, spanID, pauses, yield)
-				return
-			}
-			// Drop an exact same-message repeat (D-12) before it enters history or
-			// the dispatch batch, so no dropped duplicate is ever answered with a
-			// synthesized result.
+			// Drop an exact same-message repeat (D-12) before pause detection, history or
+			// the dispatch batch see it (D18), so a call written twice is one card and no
+			// dropped duplicate is ever answered with a synthesized result.
 			calls = dedupeSameMessageCalls(calls)
-			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls, ProviderState: out.providerState})
 			// executeBatch dispatches on ic.Ctx, not spanCtx (llm_agent_dispatch.go), so the
 			// tool path never sees the round unless it is re-pointed here — mirrors the
 			// turnCtx/ic.WithContext precedent above for RequestID (D-03).
 			ic = ic.WithContext(withModelRound(ic.Ctx, modelRound))
+			// 4. A round with a pause ends on it (llm_agent_park.go). Otherwise record the
+			// full assistant tool-call message and dispatch (D-14).
+			if paused, infraErr := a.endOnPause(ic, spanID, requestID, calls, &turnU, yield); paused {
+				turnReason = outcomeAskUserPause
+				if infraErr != nil {
+					turnReason = "dispatch_infra_error"
+					yield(nil, infraErr)
+				}
+				return
+			}
+			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls, ProviderState: out.providerState})
 			done, infraErr := a.dispatch(ic, spanID, requestID, calls, &turnU, yield)
 			if infraErr != nil {
 				turnReason = "dispatch_infra_error"

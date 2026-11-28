@@ -31,6 +31,5 @@ github.com/chetto1983/aura/internal/utf8cut.Ellipsize                           
 
 # Built ahead of its caller by a plan in progress; the task that wires it removes the entry.
 github.com/chetto1983/aura/internal/toolapprovals                                      wired in Task 4 (unified approval)
-github.com/chetto1983/aura/internal/gateway.Gateway.Review                             wired in Task 3 (unified approval)
 github.com/chetto1983/aura/internal/gateway.ScopeForAnswer                             wired in Task 5 (unified approval)
 github.com/chetto1983/aura/internal/agent/tools.WithApprovedCalls                      wired in Task 6 (unified approval)

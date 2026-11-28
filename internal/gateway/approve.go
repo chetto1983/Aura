@@ -219,9 +219,14 @@ func gatewayApprovalQuestion(spec tools.Spec, tier scoring.RiskTier, rawArgs jso
 		spec.Name, tier, argKeySummary(rawArgs))
 }
 
+// maxArgKeySummaryBytes is the approval card's limit on its args parameter
+// (approvaltext's maxArgsBytes): a longer summary makes the whole card invalid.
+const maxArgKeySummaryBytes = 1024
+
 // argKeySummary renders the sorted top-level argument keys (NOT values — secret-safe) so
 // the operator sees the shape of the withheld action without any secret value surfacing.
-// A key is the model's own text, so each one is cut to one line by approvalLine.
+// A key is the model's own text, so each one is cut to one line by approvalLine. The list is
+// cut at a key boundary to fit the card, so a cut never splits a rune.
 func argKeySummary(rawArgs json.RawMessage) string {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(rawArgs, &obj); err != nil || len(obj) == 0 {
@@ -232,7 +237,23 @@ func argKeySummary(rawArgs json.RawMessage) string {
 		keys = append(keys, approvalLine(k))
 	}
 	sort.Strings(keys)
-	return strings.Join(keys, ", ")
+	if summary := strings.Join(keys, ", "); len(summary) <= maxArgKeySummaryBytes {
+		return summary
+	}
+	const elided = ", …"
+	var b strings.Builder
+	for _, k := range keys {
+		next := k
+		if b.Len() > 0 {
+			next = ", " + k
+		}
+		if b.Len()+len(next)+len(elided) > maxArgKeySummaryBytes {
+			break
+		}
+		b.WriteString(next)
+	}
+	b.WriteString(elided)
+	return b.String()
 }
 
 // gatewayApprovalContext builds the {"type":"gateway_approval",...} ResumeContext the

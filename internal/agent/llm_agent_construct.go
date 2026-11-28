@@ -55,6 +55,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		hooks:                cfg.HookManager,
 		gateway:              cfg.Gateway,
 		messageDrafts:        cfg.MessageDrafts,
+		parkApprovals:        cfg.ParkApprovals,
 		steer:                cfg.Steer,
 		ledger:               cfg.Ledger,
 		ledgerConvID:         ledgerConvID,
@@ -137,6 +138,10 @@ type LlmAgentConfig struct {
 	// (dev-parity). The composition roots inject the one process-wide *gateway.Gateway.
 	Gateway       *gateway.Gateway
 	MessageDrafts MessageDraftCreator
+	// ParkApprovals lets the agent park a call the gateway would ask the operator about,
+	// instead of dispatching it into the gateway's challenge (llm_agent_approval.go). Only
+	// the runner of an interactive conversation sets it; drafts and host review park without it.
+	ParkApprovals bool
 	Steer         SteerInbox // optional mid-turn redirect inbox; nil means drain is a no-op
 	// Ledger is the optional verification evidence ledger the verify-on-stop gate
 	// reads. nil disables that gate (tests/standalone, and any deployment with no

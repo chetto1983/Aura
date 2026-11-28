@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/display"
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
@@ -99,6 +100,30 @@ type Actions struct {
 	// the shape is a channel-agnostic wire payload for the aura.steer CUSTOM
 	// frame, not a persisted DB type. Omitted on the wire unless a steer fired.
 	SteerDelta map[string]any `json:"steer_delta,omitempty"`
+	// ParkedTurn opens a park round (llm_agent_park.go): the round's assistant calls and every
+	// pause it makes, yielded before any sibling runs so the Runner can commit them together.
+	// It carries the parked calls' arguments, so it never reaches the wire.
+	ParkedTurn *ParkedTurn `json:"-"`
+}
+
+// ParkedTurn is a park round's assistant message, the terminal dropped, and its pauses in
+// the model's order. The pauses are the same values the round's pause events carry.
+type ParkedTurn struct {
+	Calls  []llm.ToolCall
+	Pauses []*AwaitingInput
+}
+
+// ParkedApproval is what a parked call may run on accept: the call, the arguments that will
+// execute and their fingerprint, the card the operator reads, and the grant subject a session
+// or always answer is keyed on. CallIndex is the call's position in ParkedTurn.Calls.
+type ParkedApproval struct {
+	Source                     string // "gateway" (Phase 1), "tool" (Phase 2)
+	ToolName                   string
+	ExecuteArgs                json.RawMessage
+	Fingerprint                string
+	Presentation               approvaltext.Presentation
+	SubjectTool, SubjectAction string
+	CallIndex                  int
 }
 
 // ToolInvocationStart and ToolInvocationEnd label tool invocation lifecycle events.
@@ -152,6 +177,7 @@ type AwaitingInput struct {
 	ProxiedToolCallID  string          `json:"proxied_tool_call_id,omitempty"`  // child's originating tool_call id for the relay (D-05); empty on a direct call
 	OriginalToolName   string          `json:"-"`                               // only the Runner needs the parked tool call; never stream its arguments
 	OriginalArguments  string          `json:"-"`
+	Approval           *ParkedApproval `json:"-"` // a gated call the host parked; the Runner writes its record and context from it
 }
 
 // PauseOption mirrors a tools.Option on the wire. It is redeclared here (rather

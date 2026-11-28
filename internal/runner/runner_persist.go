@@ -41,12 +41,14 @@ func (r *Runner) offerConversationProjection(ctx context.Context) {
 
 // turnTracker accumulates per-round persistence state: whether the round paused (so
 // the auto-title worker is skipped), the running conversation id, and the round's
-// ask_user pauses. When a round pauses on >=2 ask_user calls the agent rewrites its
-// in-memory history to ONE assistant message carrying ALL the ask_user tool_calls
-// (llm_agent.go pauseToolCalls), but the Runner observes one pause Event per call
+// pauses. When a round pauses on >=2 ask_user calls the agent rewrites its in-memory
+// history to ONE assistant message carrying ALL the ask_user tool_calls (pass 1,
+// llm_agent_pause.go pauseToolCalls), but the Runner observes one pause Event per call
 // (emitPauses). To keep the persisted history wire-valid (CR-02), the pauses are
 // accumulated here and the SINGLE combined assistant tool_call turn is written once
-// at round end (flushPause), not one assistant turn per Event.
+// at round end (flushPause), not one assistant turn per Event. A park round (pass 2,
+// llm_agent_park.go) keeps every call in its assistant message instead, and announces
+// them with its pauses in one ParkedTurn event before its siblings run.
 type turnTracker struct {
 	convID string
 	paused bool
