@@ -140,28 +140,24 @@ func safeResponseError(code, message, token string) *ResponseError {
 	if code == "" {
 		code = "response.failed"
 	}
-	message = strings.Join(strings.Fields(strings.ReplaceAll(message, token, "[redacted]")), " ")
+	message = strings.Join(strings.Fields(openai_compat.Scrub(message, token)), " ")
 	if len(message) > 512 {
 		message = message[:512]
 	}
-	return &ResponseError{Code: strings.ReplaceAll(code, token, "[redacted]"), Message: message}
+	return &ResponseError{Code: openai_compat.Scrub(code, token), Message: message}
 }
 
 func sanitizeError(err error, token string) error {
 	if httpErr, ok := errors.AsType[*openai_compat.HTTPError](err); ok {
 		copy := *httpErr
-		copy.Body = strings.ReplaceAll(copy.Body, token, "[redacted]")
-		copy.RequestID = strings.ReplaceAll(copy.RequestID, token, "[redacted]")
+		copy.Body = openai_compat.ScrubBody(copy.Body, token)
+		copy.RequestID = openai_compat.Scrub(copy.RequestID, token)
 		return &copy
 	}
 	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
-		body := strings.ReplaceAll(apiErr.RawJSON(), token, "[redacted]")
-		if len(body) > 64<<10 {
-			body = body[:64<<10]
-		}
-		result := &openai_compat.HTTPError{StatusCode: apiErr.StatusCode, Body: body}
+		result := &openai_compat.HTTPError{StatusCode: apiErr.StatusCode, Body: openai_compat.ScrubBody(apiErr.RawJSON(), token)}
 		if apiErr.Response != nil {
-			id := strings.ReplaceAll(apiErr.Response.Header.Get("x-request-id"), token, "[redacted]")
+			id := openai_compat.Scrub(apiErr.Response.Header.Get("x-request-id"), token)
 			id = strings.Join(strings.Fields(id), " ")
 			if len(id) > 128 {
 				id = id[:128]
@@ -175,8 +171,5 @@ func sanitizeError(err error, token string) error {
 		}
 		return result
 	}
-	if token != "" && strings.Contains(err.Error(), token) {
-		return errors.New(strings.ReplaceAll(err.Error(), token, "[redacted]"))
-	}
-	return err
+	return openai_compat.ScrubError(err, token)
 }

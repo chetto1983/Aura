@@ -1,9 +1,7 @@
 package anthropic
 
 import (
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
@@ -30,16 +28,4 @@ func newSDK(key string, hc *http.Client, baseURL string) anthropic.Client {
 		option.WithoutOpenTelemetry(),
 		option.WithOpenTelemetryPropagation(false),
 	)
-}
-
-// newHTTPClient bounds the connect and refuses redirects, so the house key is only ever
-// sent to the endpoint it was meant for.
-func newHTTPClient(connectTimeoutSec int) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext:       (&net.Dialer{Timeout: time.Duration(connectTimeoutSec) * time.Second}).DialContext,
-			DisableKeepAlives: true,
-		},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
 }

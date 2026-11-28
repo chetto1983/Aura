@@ -13,10 +13,10 @@ import (
 	openai "github.com/openai/openai-go/v3"
 )
 
-// maxErrorBodyBytes caps how much of a non-2xx provider response body we read
+// MaxErrorBodyBytes caps how much of a non-2xx provider response body we read
 // into HTTPError.Body. The provider's error body is bounded in practice; the cap
 // is defence against a pathological large body (T-03-04).
-const maxErrorBodyBytes = 64 << 10
+const MaxErrorBodyBytes = 64 << 10
 
 // HTTPError is a non-2xx response from the provider. The wire layer does ZERO
 // retries (Req#4) — it surfaces this signal and lets the caller (Plan 04) decide.
@@ -35,8 +35,8 @@ func adaptSDKError(err error) error {
 		return err
 	}
 	body := apiErr.RawJSON()
-	if len(body) > maxErrorBodyBytes {
-		body = body[:maxErrorBodyBytes]
+	if len(body) > MaxErrorBodyBytes {
+		body = body[:MaxErrorBodyBytes]
 	}
 	result := &HTTPError{StatusCode: apiErr.StatusCode, Body: body}
 	if apiErr.Response != nil {
@@ -149,7 +149,7 @@ func (e *HTTPError) providerMessage() string {
 // slice of) the body and parses Retry-After on 429. The caller has already
 // confirmed StatusCode/100 != 2.
 func newHTTPError(resp *http.Response) *HTTPError {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, MaxErrorBodyBytes))
 	e := &HTTPError{StatusCode: resp.StatusCode, Body: string(body), RequestID: responseRequestID(resp)}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		if ra := resp.Header.Get("Retry-After"); ra != "" {

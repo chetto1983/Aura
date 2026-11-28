@@ -10,11 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
-const (
-	maxErrorBodyBytes = 64 << 10
-	maxRequestIDBytes = 128
-	redacted          = "[redacted]"
-)
+const maxRequestIDBytes = 128
 
 // errorStatus classifies an API error by its type rather than its status: an `error`
 // event inside a stream arrives with the stream's own 200.
@@ -37,13 +33,13 @@ func providerError(err error, key string) error {
 	if !ok {
 		apiErr, isAPI := errors.AsType[*anthropic.Error](err)
 		if !isAPI {
-			return scrubbed(err, key)
+			return openai_compat.ScrubError(err, key)
 		}
 		httpErr = fromAPIError(apiErr)
 	}
 	result := *httpErr
-	result.Body = boundedBody(result.Body, key)
-	result.RequestID = scrub(result.RequestID, key)
+	result.Body = openai_compat.ScrubBody(result.Body, key)
+	result.RequestID = openai_compat.Scrub(result.RequestID, key)
 	switch result.StatusCode {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("anthropic: Claude refused the API key; check ANTHROPIC_API_KEY in Settings: %w", &result)
@@ -70,39 +66,4 @@ func fromAPIError(apiErr *anthropic.Error) *openai_compat.HTTPError {
 		id = id[:maxRequestIDBytes]
 	}
 	return &openai_compat.HTTPError{StatusCode: status, Body: apiErr.RawJSON(), RequestID: id}
-}
-
-// boundedBody scrubs the key first and bounds the body after, so a cut never splits a
-// key out of reach of the match. A body the middleware already cut at the cap
-// (openai_compat reads at most the same 64 KiB) can still end in the first bytes of the
-// key; that tail is redacted too.
-func boundedBody(body, key string) string {
-	cutUpstream := len(body) == maxErrorBodyBytes
-	body = scrub(body, key)
-	if cutUpstream && key != "" {
-		for n := min(len(key)-1, len(body)); n > 0; n-- {
-			if strings.HasSuffix(body, key[:n]) {
-				body = body[:len(body)-n] + redacted
-				break
-			}
-		}
-	}
-	if len(body) > maxErrorBodyBytes {
-		body = body[:maxErrorBodyBytes]
-	}
-	return body
-}
-
-func scrub(s, key string) string {
-	if key == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, key, redacted)
-}
-
-func scrubbed(err error, key string) error {
-	if message := scrub(err.Error(), key); message != err.Error() {
-		return errors.New(message)
-	}
-	return err
 }

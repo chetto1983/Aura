@@ -399,7 +399,7 @@ func TestErrorsAreScrubbedAndBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, ok := errors.AsType[*openai_compat.HTTPError](providerError(apiErr, houseKey))
-	if !ok || result.StatusCode != 500 || len(result.Body) != maxErrorBodyBytes || len(result.RequestID) != maxRequestIDBytes {
+	if !ok || result.StatusCode != 500 || len(result.Body) != openai_compat.MaxErrorBodyBytes || len(result.RequestID) != maxRequestIDBytes {
 		t.Fatalf("unbounded error: %#v", result)
 	}
 }
@@ -407,7 +407,7 @@ func TestErrorsAreScrubbedAndBounded(t *testing.T) {
 // keyAcrossTheCap is an error body whose house key starts 10 bytes before the 64 KiB cap.
 func keyAcrossTheCap(errorType string) string {
 	head := `{"type":"error","error":{"type":"` + errorType + `","message":"`
-	return head + strings.Repeat("y", maxErrorBodyBytes-len(head)-10) + houseKey + `"}}`
+	return head + strings.Repeat("y", openai_compat.MaxErrorBodyBytes-len(head)-10) + houseKey + `"}}`
 }
 
 func TestKeyAcrossTheBodyCapIsScrubbed(t *testing.T) {
@@ -425,7 +425,7 @@ func TestKeyAcrossTheBodyCapIsScrubbed(t *testing.T) {
 	_, err := client.Stream(context.Background(), userRequest("hi"))
 	opened, _ := errors.AsType[*openai_compat.HTTPError](err)
 	for name, result := range map[string]*openai_compat.HTTPError{"mid-stream": streamed, "non-2xx": opened} {
-		if result == nil || len(result.Body) > maxErrorBodyBytes || strings.Contains(result.Body, houseKey[:6]) || !strings.Contains(result.Body, redacted) {
+		if result == nil || len(result.Body) > openai_compat.MaxErrorBodyBytes || strings.Contains(result.Body, houseKey[:6]) || !strings.Contains(result.Body, openai_compat.Redacted) {
 			t.Fatalf("%s: key prefix left in a bounded body: %v", name, result)
 		}
 	}

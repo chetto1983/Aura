@@ -4,10 +4,8 @@ package chatgpt
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
@@ -37,14 +35,7 @@ var _ llm.Client = (*Client)(nil)
 
 // New uses the fixed public endpoint and leaves retries to Aura's agent loop.
 func New(cfg llm.Config, tokens TokenSource) *Client {
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext:       (&net.Dialer{Timeout: time.Duration(cfg.ConnectTimeoutSec) * time.Second}).DialContext,
-			DisableKeepAlives: true,
-		},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	return newClient(cfg, tokens, client, BaseURL)
+	return newClient(cfg, tokens, openai_compat.NewCredentialHTTPClient(cfg.ConnectTimeoutSec), BaseURL)
 }
 
 func newClient(cfg llm.Config, tokens TokenSource, client *http.Client, baseURL string) *Client {

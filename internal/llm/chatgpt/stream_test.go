@@ -91,3 +91,19 @@ func TestStreamErrorsRedactCredentials(t *testing.T) {
 		t.Fatal("cancellation identity lost")
 	}
 }
+
+// A non-2xx body is read at most 64 KiB. When the cut lands inside the access token, the
+// whole-token scrub cannot see it, and the body would end in the token's first bytes.
+func TestTokenAcrossTheBodyCapIsScrubbed(t *testing.T) {
+	const token = "oauth-test-token"
+	head := `{"error":{"message":"`
+	client := fixtureClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, head+strings.Repeat("y", openai_compat.MaxErrorBodyBytes-len(head)-10)+token+`"}}`)
+	})
+	_, err := client.Stream(context.Background(), basicRequest())
+	httpErr, ok := errors.AsType[*openai_compat.HTTPError](err)
+	if !ok || len(httpErr.Body) > openai_compat.MaxErrorBodyBytes || strings.Contains(httpErr.Body, token[:6]) || !strings.HasSuffix(httpErr.Body, openai_compat.Redacted) {
+		t.Fatalf("token prefix left in a bounded body: %v", err)
+	}
+}

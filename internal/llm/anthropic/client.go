@@ -39,7 +39,7 @@ var _ llm.Client = (*Client)(nil)
 
 // New uses the one permitted endpoint and leaves retries to Aura's agent loop.
 func New(cfg llm.Config, key KeySource) *Client {
-	return newClient(cfg, key, newHTTPClient(cfg.ConnectTimeoutSec), llm.AnthropicBaseURL)
+	return newClient(cfg, key, openai_compat.NewCredentialHTTPClient(cfg.ConnectTimeoutSec), llm.AnthropicBaseURL)
 }
 
 func newClient(cfg llm.Config, key KeySource, hc *http.Client, baseURL string) *Client {

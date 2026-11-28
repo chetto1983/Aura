@@ -17,6 +17,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
 // The TLS failures here are the ones crypto/tls itself builds, over real connections: the
@@ -69,7 +70,7 @@ func TestTLSRecordCorruptionIsRetryable(t *testing.T) {
 		{"handshake failure", 40, "remote error: tls: handshake failure", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			client := quietClient(newHTTPClient(5), "https://"+alertingServer(t, tc.alert))
+			client := quietClient(openai_compat.NewCredentialHTTPClient(5), "https://"+alertingServer(t, tc.alert))
 			_, err := client.Stream(context.Background(), userRequest("hi"))
 			if err == nil || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("stream open error = %v, want %q", err, tc.message)

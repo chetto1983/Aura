@@ -11,6 +11,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
 const (
@@ -33,7 +34,7 @@ func OpenRouterID(model string) string {
 // FetchModels lists the account's active models in the API's order (newest first), with
 // the window, output cap and reasoning levels each declares, reading every page.
 func FetchModels(ctx context.Context, key KeySource) ([]llm.ModelCatalogEntry, error) {
-	return fetchModels(ctx, key, newHTTPClient(catalogConnectTimeoutSec), llm.AnthropicBaseURL)
+	return fetchModels(ctx, key, openai_compat.NewCredentialHTTPClient(catalogConnectTimeoutSec), llm.AnthropicBaseURL)
 }
 
 func fetchModels(ctx context.Context, source KeySource, hc *http.Client, baseURL string) ([]llm.ModelCatalogEntry, error) {
