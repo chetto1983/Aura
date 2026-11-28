@@ -7,7 +7,7 @@ require (
 	github.com/Authula/authula v1.51.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/PaulSonOfLars/gotg_md2html v0.0.0-20260314092343-61634cbfb443
-	github.com/adhocore/gronx v1.20.8
+	github.com/adhocore/gronx v1.20.10
 	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9
 	github.com/agnivade/levenshtein v1.2.2
 	github.com/anthropics/anthropic-sdk-go/v2 v2.15.0
@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.21
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0
-	github.com/aws/smithy-go v1.28.9
+	github.com/aws/smithy-go v1.28.10
 	github.com/coder/websocket v1.8.15
 	github.com/containerd/errdefs v1.0.0
 	github.com/go-chi/chi/v5 v5.5.0
@@ -32,7 +32,7 @@ require (
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/openai/openai-go/v3 v3.105.0
+	github.com/openai/openai-go/v3 v3.106.0
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/prometheus/client_golang v1.25.0
 	github.com/sergi/go-diff v1.4.5
