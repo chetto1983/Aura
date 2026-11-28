@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"syscall"
@@ -311,6 +314,27 @@ func TestRetryableStreamOpenError_IdleTimeout(t *testing.T) {
 	wrapped := opaqueWrapErr{msg: "upstream stream stalled", inner: openai_compat.ErrStreamIdleTimeout}
 	if !retryableStreamOpenError(wrapped) {
 		t.Fatal("a wrapped ErrStreamIdleTimeout must be retryable via errors.Is")
+	}
+}
+
+// The peer's alert is exercised over a real TLS pair in internal/llm/anthropic; the local
+// side (this client failing to authenticate a server record) is the same alert under the
+// op crypto/tls names "local error".
+func TestRetryableStreamOpenError_TLSRecordCorruption(t *testing.T) {
+	for _, tc := range []struct {
+		op        string
+		alert     tls.AlertError
+		retryable bool
+	}{
+		{"remote error", 20, true},
+		{"local error", 20, true},
+		{"remote error", 40, false},
+		{"read", 20, false},
+	} {
+		err := &url.Error{Op: "Post", URL: "https://api.anthropic.com/v1/messages", Err: &net.OpError{Op: tc.op, Err: tc.alert}}
+		if got := retryableStreamOpenError(err); got != tc.retryable {
+			t.Errorf("%s alert %d: retryable = %v, want %v", tc.op, tc.alert, got, tc.retryable)
+		}
 	}
 }
 

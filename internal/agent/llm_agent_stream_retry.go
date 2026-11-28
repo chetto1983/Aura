@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -106,6 +108,9 @@ func retryableStreamOpenError(err error) bool {
 			return true
 		}
 	}
+	if isTLSRecordCorruption(err) {
+		return true
+	}
 	// A stream idle-timeout stall (B-08) is a retryable transport error: the stream
 	// opened cleanly then went silent, so a fresh attempt may succeed.
 	if errors.Is(err, openai_compat.ErrStreamIdleTimeout) {
@@ -120,6 +125,24 @@ func retryableStreamOpenError(err error) bool {
 		return true
 	}
 	return retryableNetworkText(err.Error())
+}
+
+// badRecordMAC is TLS alert 20 (RFC 8446 §6.2): a record failed its integrity check, which a
+// connection corrupted in transit produces, and a new connection is the remedy. Measured on
+// the lab VM 2026-11-28: `remote error: tls: bad record MAC` on a Claude stream open ended
+// the turn with no answer.
+const badRecordMAC tls.AlertError = 20
+
+// isTLSRecordCorruption matches that alert whichever side raised it. Over TCP crypto/tls
+// reports an alert as a *net.OpError ("remote error" or "local error") around its
+// unexported alert type (crypto/tls/conn.go); the exported tls.AlertError is what QUIC
+// returns, so errors.As cannot reach it here and the alert is compared by its text.
+func isTLSRecordCorruption(err error) bool {
+	opErr, ok := errors.AsType[*net.OpError](err)
+	if !ok || opErr.Err == nil || (opErr.Op != "remote error" && opErr.Op != "local error") {
+		return false
+	}
+	return opErr.Err.Error() == badRecordMAC.Error()
 }
 
 func llmErrorKind(prefix string, err error) string {
