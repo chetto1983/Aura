@@ -11,7 +11,8 @@ import (
 // it under NFKC (a fullwidth letter, a ligature); the ledger's end row keeps the raw preview.
 // The row counts only when it is the one end row of an id carried by one tool turn, in this
 // conversation, from the called tool, and is the stored result before folding. A preview
-// the ledger capped at 2 KiB or redacted is not, so that turn keeps its unframed, folded text.
+// the ledger capped at 2 KiB (PreviewBytes over the cap, so no compare is spent on it) or
+// redacted is not, so that turn keeps its unframed, folded text.
 func rawToolResults(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]string {
 	called := make(map[string]string)
 	results := make(map[string]int)
@@ -30,7 +31,9 @@ func rawToolResults(hist []llm.Message, conversationID string, facts []toolinvoc
 			continue
 		}
 		ends[fact.ToolCallID]++
-		previews[fact.ToolCallID] = fact.ResultPreview
+		if fact.PreviewBytes <= toolinvocations.ResultPreviewCapBytes {
+			previews[fact.ToolCallID] = fact.ResultPreview
+		}
 	}
 	out := make(map[string]string)
 	for _, m := range hist {

@@ -80,7 +80,7 @@ func TestPreviewInputsByCallIDPreservesArgumentsAndResult(t *testing.T) {
 		t.Fatalf("tool result preview lost: %+v", in)
 	}
 	live, liveOK := display.NormalizeToolPreview(in, display.NewRegistry())
-	replay := rederiveDisplaysWithFacts(hist, "", nil)["with-args"]
+	replay := rederiveDisplaysWithFacts(hist, "", nil, nil)["with-args"]
 	if !liveOK || replay == nil {
 		t.Fatalf("display missing: live=%v replay=%+v", liveOK, replay)
 	}
@@ -179,7 +179,7 @@ func TestRederiveDisplaysSharedRegistryStableRefIDs(t *testing.T) {
 		{Title: "B", URL: "https://b.test/y"},
 	})...)
 
-	displays := rederiveDisplaysWithFacts(hist, "", nil)
+	displays := rederiveDisplaysWithFacts(hist, "", nil, nil)
 	d1, d2 := displays["c1"], displays["c2"]
 	if d1 == nil || d2 == nil {
 		t.Fatalf("missing re-derived displays: c1=%v c2=%v", d1, d2)

@@ -52,15 +52,26 @@ func cardOf(t *testing.T, result string) string {
 	return string(b)
 }
 
+// A row written before the ledger counted preview bytes (PreviewBytes 0) is still compared.
 func TestAReloadedToolTurnShowsTheLedgersRawResult(t *testing.T) {
 	t.Parallel()
-	shown, card := shownResult(t, []toolinvocations.Event{rawResultEnd("conv-1", "c1", foldedResult)})
-	if shown != foldedResult {
-		t.Fatalf("the tool turn shows %q, want the raw result %q", shown, foldedResult)
-	}
-	got, _ := json.Marshal(card)
-	if string(got) != cardOf(t, foldedResult) {
-		t.Fatalf("the card was not derived from the raw result: %s", got)
+	legacy := rawResultEnd("conv-1", "c1", foldedResult)
+	legacy.PreviewBytes = 0
+	for name, row := range map[string]toolinvocations.Event{
+		"a counted row": rawResultEnd("conv-1", "c1", foldedResult),
+		"a legacy row":  legacy,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			shown, card := shownResult(t, []toolinvocations.Event{row})
+			if shown != foldedResult {
+				t.Fatalf("the tool turn shows %q, want the raw result %q", shown, foldedResult)
+			}
+			got, _ := json.Marshal(card)
+			if string(got) != cardOf(t, foldedResult) {
+				t.Fatalf("the card was not derived from the raw result: %s", got)
+			}
+		})
 	}
 }
 
@@ -72,13 +83,19 @@ func TestAReloadedToolTurnKeepsTheFoldedTextWithoutItsRawResult(t *testing.T) {
 	if folded == foldedResult {
 		t.Fatal("the fixture does not fold")
 	}
-	capped := foldedResult[:40] + "…[capped]"
+	// The ledger caps a preview over ResultPreviewCapBytes and keeps the original's length in
+	// PreviewBytes. Such a row is skipped before any compare, even if its text matched.
+	capped := rawResultEnd("conv-1", "c1", foldedResult[:40]+"…[capped]")
+	capped.PreviewBytes = toolinvocations.ResultPreviewCapBytes + 1
+	overCap := rawResultEnd("conv-1", "c1", foldedResult)
+	overCap.PreviewBytes = toolinvocations.ResultPreviewCapBytes + 1
 	foreign := rawResultEnd("conv-2", "c1", foldedResult)
 	otherTool := rawResultEnd("conv-1", "c1", foldedResult)
 	otherTool.ToolName = "web_fetch"
 	for name, facts := range map[string][]toolinvocations.Event{
 		"no row":                  nil,
-		"a capped preview":        {rawResultEnd("conv-1", "c1", capped)},
+		"a capped preview":        {capped},
+		"a row over the cap":      {overCap},
 		"two end rows for the id": {rawResultEnd("conv-1", "c1", foldedResult), rawResultEnd("conv-1", "c1", foldedResult)},
 		"another conversation":    {foreign},
 		"another tool":            {otherTool},

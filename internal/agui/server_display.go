@@ -86,10 +86,10 @@ type displaySnapshotToolCall struct {
 // message's id and parentId.
 func projectDisplaySnapshotWithFacts(turns []conversations.DisplayTurn, conversationID string, facts []toolinvocations.Event, declined []string) displaySnapshotEvent {
 	hist := conversations.DisplayMessages(turns)
-	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
+	raw := rawToolResults(hist, conversationID, facts)
+	displays := rederiveDisplaysWithFacts(hist, conversationID, facts, raw)
 	views := replayMCPViews(hist, conversationID, facts)
 	outcomes := callOutcomes(hist, conversationID, facts, declined)
-	raw := rawToolResults(hist, conversationID, facts)
 	recoveryResults := make(map[string]string)
 	for _, m := range hist {
 		for _, call := range m.ToolCalls {
@@ -236,11 +236,10 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 // returns the map keyed by tool_call_id. A single shared registry accumulates across all web
 // turns so cross-turn source RefIDs are stable — identical to the live per-run registry
 // (Pitfall 4 parity). facts are the thread's ledger rows, which supply the inputs a preview
-// alone does not carry.
-func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]*display.Payload {
+// alone does not carry; raw is rawToolResults over the same rows, built once per snapshot.
+func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event, raw map[string]string) map[string]*display.Payload {
 	reg := display.NewRegistry()
 	inputs := previewInputsByCallIDWithFacts(hist, conversationID, facts)
-	raw := rawToolResults(hist, conversationID, facts)
 	out := make(map[string]*display.Payload)
 	for i := range hist {
 		m := &hist[i]
