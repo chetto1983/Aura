@@ -247,22 +247,19 @@ func (r *Runner) answerTurn(pending askuser.Pending, resp ResponseInput) convers
 // SILENT side-effect, so the resumed model — never told the task is now active — re-runs
 // task schedule and relays a fresh approval, looping on every accept (fix-plan 1.7 E2E
 // BUG-1B). The explicit answer gives the model closure: accept → active + do-not-reschedule;
-// decline → cancelled + do-not-reschedule. The short id (first 8) keeps it bounded and
-// leaks no payload.
+// decline → cancelled + do-not-reschedule. The id is whole and the answer carries no payload:
+// measured twice on 2026-11-28, the model copied the eight-character id it used to carry into
+// task run_now, which refused it as an invalid UUID.
 func scheduledApprovalAnswer(pending askuser.Pending, resp ResponseInput) string {
 	rc := scheduledApprovalContext(pending)
 	if rc == nil || rc.TaskID == "" {
 		return ""
 	}
-	short := rc.TaskID
-	if len(short) > 8 {
-		short = short[:8]
-	}
 	switch resp.Action {
 	case askuser.ActionAccept:
 		answer := fmt.Sprintf("Operator APPROVED scheduled task %s. It is now ACTIVE. "+
 			"Scheduling is already complete. Confirm the approval to the operator and do "+
-			"NOT call task schedule again for it.", short)
+			"NOT call task schedule again for it.", rc.TaskID)
 		if rc.Delivers != "" {
 			// Measured 2026-11-12: without it the model confirmed a third party's address that
 			// the operator's own route never reaches.
@@ -271,7 +268,7 @@ func scheduledApprovalAnswer(pending askuser.Pending, resp ResponseInput) string
 		return answer
 	case askuser.ActionDecline:
 		return fmt.Sprintf("Operator REJECTED scheduled task %s. It has been cancelled and will not fire. "+
-			"Acknowledge the rejection to the operator and do NOT re-schedule it.", short)
+			"Acknowledge the rejection to the operator and do NOT re-schedule it.", rc.TaskID)
 	default:
 		return ""
 	}
