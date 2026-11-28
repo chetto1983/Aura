@@ -84,14 +84,21 @@ func writeCacheStats(out io.Writer, since time.Time, rows []cachemetrics.Metric,
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "CONVERSATION\tSEQ\tTS\tPROMPT\tCACHED\tHIT-RATE\tCOST_USD")
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%d\t%d\t%s\t%.4f\n",
+		cost := "n/a"
+		if r.CostUSD != nil {
+			cost = fmt.Sprintf("%.4f", *r.CostUSD)
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%d\t%d\t%s\t%s\n",
 			r.ConversationID, r.Seq, r.TS.UTC().Format(time.RFC3339),
-			r.PromptTokens, r.CachedTokens, hitRate(int64(r.CachedTokens), int64(r.PromptTokens)), r.CostUSD)
+			r.PromptTokens, r.CachedTokens, hitRate(int64(r.CachedTokens), int64(r.PromptTokens)), cost)
 	}
 	_, _ = fmt.Fprintf(w, "TOTAL\t\t\t%d\t%d\t%s\t%.4f\n",
 		agg.TotalPromptTokens, agg.TotalCachedTokens,
 		hitRate(agg.TotalCachedTokens, agg.TotalPromptTokens), agg.TotalCostUSD)
 	_ = w.Flush()
+	if agg.UnpricedTurns > 0 {
+		_, _ = fmt.Fprintf(out, "%d turn(s) have no known cost: TOTAL COST_USD sums the priced ones only\n", agg.UnpricedTurns)
+	}
 }
 
 // sinceValue extracts the --since flag value, accepting both the `--since=<dur>`

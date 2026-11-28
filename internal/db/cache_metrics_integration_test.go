@@ -144,7 +144,7 @@ func TestCacheMetrics_WindowAndAggregate(t *testing.T) {
 	if window[0].PromptTokens != 3000 || window[0].CachedTokens != 1500 {
 		t.Errorf("ListSince row 0 tokens: want 3000/1500, got %d/%d", window[0].PromptTokens, window[0].CachedTokens)
 	}
-	if window[0].CostUSD != 0.0300 {
+	if window[0].CostUSD == nil || *window[0].CostUSD != 0.0300 {
 		t.Errorf("ListSince row 0 cost: want 0.0300, got %v", window[0].CostUSD)
 	}
 
@@ -185,7 +185,7 @@ func TestCacheMetrics_StoreInsert(t *testing.T) {
 		Seq:            1,
 		PromptTokens:   7777,
 		CachedTokens:   6543,
-		CostUSD:        0.1234,
+		CostUSD:        new(0.1234),
 	})
 	if err != nil {
 		t.Fatalf("NewInsertParams: %v", err)

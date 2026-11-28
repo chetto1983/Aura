@@ -30,6 +30,9 @@ type Querier interface {
 	AdvanceCloudflareRemoteAccess(ctx context.Context, arg AdvanceCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
 	// A success ends a failing episode and its alarm. A gap's alarm stays until it is confirmed told.
 	AdvancePIMWatchCursor(ctx context.Context, arg AdvancePIMWatchCursorParams) error
+	// total_cost_usd is the sum of the priced turns: sum() skips a NULL cost, the unknown one
+	// (migration 0161), and unpriced_turns counts those rows so a reader never shows the
+	// priced sum as the whole day's.
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	// What the host updater waits on before it restarts Aura on its own, system-wide half: the
 	// newest tool event and job heartbeat, and the work in flight right now. Neither table
@@ -909,7 +912,8 @@ type Querier interface {
 	// and an admin's OWN identity in that session var would silently lose every row
 	// belonging to the identity being inspected (mirrors internal/agui/audit_store.go's
 	// ListActivityForIdentity doc comment: "a read scoped to the caller while asking about
-	// the subject silently loses the joined rows"). Returns an exact decimal zero for an
+	// the subject silently loses the joined rows"). A turn with an unknown cost (NULL, migration
+	// 0161) adds nothing: the spend is what was priced. Returns an exact decimal zero for an
 	// identity with no rows (coalesce), matching AggregateCacheMetricsSince's own
 	// convention -- never a null read as an error, and never rounded here: the caller
 	// (internal/agui/credit_ledger.go) reads this at full stored scale and rounds only at

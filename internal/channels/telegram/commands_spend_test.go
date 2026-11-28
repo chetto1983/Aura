@@ -29,7 +29,7 @@ type countingCost struct {
 	calls int
 }
 
-func (c *countingCost) TodayUsage(ctx context.Context) (int, int, *float64, error) {
+func (c *countingCost) TodayUsage(ctx context.Context) (DayUsage, error) {
 	c.calls++
 	return c.fakeCost.TodayUsage(ctx)
 }
@@ -168,18 +168,32 @@ func TestCostLabelsOllamaCloudAsSubscriptionIncluded(t *testing.T) {
 	}
 }
 
-// On the Claude route a day whose turns carry no provider cost has no honest figure: the
-// client priced every call it could, so /cost says n/a rather than a rate-table estimate.
-func TestCostLeavesAnUnpricedClaudeDayUnknown(t *testing.T) {
-	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
+// The day's ledger always carries a cost sum, priced turns only, beside the count of turns
+// with no honest price (todayCost, migration 0161). A day whose turns were all unpriced is
+// n/a, never the empty sum's $0; a mixed day is at least its priced sum; a priced day reads
+// as before.
+func TestCostSaysWhatTheLedgerCouldNotPrice(t *testing.T) {
 	runtime := llm.NewRuntime(nil, llm.Config{
 		Provider: llm.AnthropicProvider, BaseURL: llm.AnthropicBaseURL, Model: "claude-sonnet-5-5",
 		Prices: map[string]llm.Price{"claude-sonnet-5-5": {InputPer1M: 2, OutputPer1M: 10}},
 	})
-	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: est, Runtime: runtime})
-
-	_, reply := cmds.dispatch(context.Background(), 42, "/cost")
-	if !strings.Contains(reply, "n/a") || strings.Contains(reply, "$") {
-		t.Fatalf("unpriced Claude /cost = %q, want n/a", reply)
+	for name, tc := range map[string]struct {
+		day        fakeCost
+		want, deny string
+	}{
+		"all unpriced": {fakeCost{prompt: 900, provider: new(0.0), turns: 3, unpriced: 3},
+			"Spesa di oggi (stimata): n/a, nessuno dei 3 turni ha un prezzo noto (900 token in, 0 token out)", "$"},
+		"mixed": {fakeCost{prompt: 900, provider: new(0.25), turns: 3, unpriced: 2},
+			"Spesa di oggi (stimata): almeno $0.250000, 2 turni senza prezzo (900 token in, 0 token out)", "n/a"},
+		"all priced": {fakeCost{prompt: 900, provider: new(0.5), turns: 3},
+			"Spesa di oggi (stimata): $0.500000 (900 token in, 0 token out)", "almeno"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &countingCost{fakeCost: tc.day}, Runtime: runtime})
+			_, reply := cmds.dispatch(context.Background(), 42, "/cost")
+			if reply != tc.want || strings.Contains(reply, tc.deny) {
+				t.Fatalf("/cost = %q, want %q", reply, tc.want)
+			}
+		})
 	}
 }

@@ -19,7 +19,8 @@ type MetricParams struct {
 	Seq            int
 	PromptTokens   int
 	CachedTokens   int
-	CostUSD        float64
+	// CostUSD is nil when the turn has no honest price; the row then stores NULL.
+	CostUSD *float64
 }
 
 // NewInsertParams converts plain-Go MetricParams into the generated sqlc params the
@@ -30,7 +31,7 @@ func NewInsertParams(p MetricParams) (sqlc.InsertCacheMetricParams, error) {
 	if err != nil {
 		return sqlc.InsertCacheMetricParams{}, err
 	}
-	cost, err := pgnumeric.NumericFromFloat(p.CostUSD)
+	cost, err := pgnumeric.NullableFromFloat(p.CostUSD)
 	if err != nil {
 		return sqlc.InsertCacheMetricParams{}, fmt.Errorf("conversation_id %q seq %d: %w", p.ConversationID, p.Seq, err)
 	}

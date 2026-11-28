@@ -102,8 +102,37 @@ func TestPersistAssistantAnswer_CacheMetricErrorSurfaces(t *testing.T) {
 // surfaced loudly (the prod composition root MUST inject a Store).
 func TestPersistCacheMetric_NilStoreFailsLoud(t *testing.T) {
 	r := &Runner{}
-	_, err := r.cacheMetricParams(newConvID(t), 3, llm.Usage{PromptTokens: 10, CachedTokens: 5}, 0.01)
+	_, err := r.cacheMetricParams(newConvID(t), 3, llm.Usage{PromptTokens: 10, CachedTokens: 5}, new(0.01))
 	if err == nil {
 		t.Fatal("want a loud error when cacheMetrics store is nil, got nil")
+	}
+}
+
+// A turn with no honest price leaves a NULL cost in cache_metrics, the unknown the spend
+// reads count (migration 0161), while a priced turn keeps its figure.
+func TestPersistCacheMetricLeavesAnUnpricedTurnsCostNull(t *testing.T) {
+	cost := 0.0042
+	for name, usage := range map[string]llm.Usage{
+		"unpriced": {PromptTokens: 8, CompletionTokens: 3},
+		"priced":   {PromptTokens: 8, CompletionTokens: 3, Cost: &cost},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := agenttest.NewFakeClient(agenttest.WithUsage(agenttest.ToolCallTurn(textResponseCall("call-1", "Done.")), usage))
+			r, conv, _ := newTestRunner(t, client)
+			cache := newFakeCacheMetricStore()
+			conv.cache = cache
+			convID := newConvID(t)
+			mustCreate(t, r, convID)
+			if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err != nil {
+				t.Fatalf("turn: %v", err)
+			}
+			if cache.count() != 1 {
+				t.Fatalf("want one cache_metrics row, got %d", cache.count())
+			}
+			stored := cache.inserts[0].CostUsd
+			if stored.Valid != (usage.Cost != nil) {
+				t.Fatalf("stored cost valid = %v, want %v (NULL only for the unpriced turn)", stored.Valid, usage.Cost != nil)
+			}
+		})
 	}
 }

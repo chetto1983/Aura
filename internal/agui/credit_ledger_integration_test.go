@@ -50,6 +50,11 @@ func TestSumIdentitySpendSince(t *testing.T) {
 	for i := 1; i <= 4; i++ {
 		seedCacheMetric(t, pool, conv, i, 0.000004158, now)
 	}
+	// A turn with an unknown cost (NULL, migration 0161) adds nothing to the spend.
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO aura.cache_metrics (conversation_id, seq, cost_usd, ts) VALUES ($1, 5, NULL, $2)", conv, now); err != nil {
+		t.Fatalf("seed an unpriced cache_metrics row: %v", err)
+	}
 
 	reader := NewPgSpendReader(pool)
 	got, err := reader.PeriodSpend(ctx, idA, "monthly")

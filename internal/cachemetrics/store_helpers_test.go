@@ -73,7 +73,7 @@ func TestNewInsertParams(t *testing.T) {
 		Seq:            3,
 		PromptTokens:   1000,
 		CachedTokens:   800,
-		CostUSD:        0.0123,
+		CostUSD:        new(0.0123),
 	})
 	if err != nil {
 		t.Fatalf("NewInsertParams: %v", err)
@@ -97,7 +97,7 @@ func TestNewInsertParams(t *testing.T) {
 	_, err = NewInsertParams(MetricParams{
 		ConversationID: convID,
 		Seq:            9,
-		CostUSD:        pgnumeric.DefaultNumericMaxCost + 1,
+		CostUSD:        new(pgnumeric.DefaultNumericMaxCost + 1),
 	})
 	if err == nil {
 		t.Fatal("NewInsertParams with an out-of-range cost: want error, got nil")

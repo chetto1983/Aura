@@ -271,10 +271,12 @@ type fakeCost struct {
 	prompt     int
 	completion int
 	provider   *float64
+	turns      int
+	unpriced   int
 }
 
-func (f *fakeCost) TodayUsage(_ context.Context) (promptTokens, completionTokens int, providerCost *float64, err error) {
-	return f.prompt, f.completion, f.provider, nil
+func (f *fakeCost) TodayUsage(_ context.Context) (DayUsage, error) {
+	return DayUsage{PromptTokens: f.prompt, CompletionTokens: f.completion, CostUSD: f.provider, Turns: f.turns, UnpricedTurns: f.unpriced}, nil
 }
 
 // TestCostEqualsCLI proves /cost renders the SAME USD string llm.CostUSD yields

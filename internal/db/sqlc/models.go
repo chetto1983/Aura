@@ -101,7 +101,7 @@ type AuraCacheMetrics struct {
 	Ts             pgtype.Timestamptz `json:"ts"`
 	PromptTokens   int32              `json:"prompt_tokens"`
 	CachedTokens   int32              `json:"cached_tokens"`
-	// Per-turn cost at full provider precision (migration 0124, numeric(24,12), T-02-36). Widened from numeric(10,4): the pre-widening scale rounded any per-call cost under $0.0001 to zero, including the measured 0.000004158 (02-CONTEXT.md M-09).
+	// Per-turn cost at full provider precision (migration 0124, numeric(24,12), T-02-36); NULL when the turn has no honest price (migration 0161).
 	CostUsd pgtype.Numeric `json:"cost_usd"`
 }
 

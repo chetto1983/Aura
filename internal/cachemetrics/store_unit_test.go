@@ -32,7 +32,7 @@ func sampleInsertParams(t *testing.T) sqlc.InsertCacheMetricParams {
 		Seq:            1,
 		PromptTokens:   1200,
 		CachedTokens:   1000,
-		CostUSD:        0.0042,
+		CostUSD:        new(0.0042),
 	})
 	if err != nil {
 		t.Fatalf("NewInsertParams: %v", err)
@@ -111,6 +111,18 @@ func newMetricRow(t *testing.T, id string, seq int32, ts time.Time, prompt, cach
 	}
 }
 
+// A NULL cost is an unknown one (migration 0161): it reads as nil, never as a free $0.
+func TestListSinceKeepsAnUnknownCostNil(t *testing.T) {
+	t.Parallel()
+	row := newMetricRow(t, "11111111-1111-1111-1111-111111111111", 1, time.Now(), 10, 5, 0)
+	row[5] = pgtype.Numeric{}
+	s := newTestStore(&fakeDBTX{queryRows: &fakeRows{rows: [][]any{row}}})
+	got, err := s.ListSince(context.Background(), time.Now())
+	if err != nil || len(got) != 1 || got[0].CostUSD != nil {
+		t.Fatalf("ListSince = %+v, %v; want one row with a nil cost", got, err)
+	}
+}
+
 func TestListSince_ProjectsRows(t *testing.T) {
 	t.Parallel()
 	id1 := uuid.Must(uuid.NewV7()).String()
@@ -139,13 +151,16 @@ func TestListSince_ProjectsRows(t *testing.T) {
 	if !got[0].TS.Equal(t0) {
 		t.Errorf("row 0 ts = %v, want %v", got[0].TS, t0)
 	}
-	if diff := got[0].CostUSD - 0.0125; diff > 1e-9 || diff < -1e-9 {
-		t.Errorf("row 0 cost = %v, want 0.0125", got[0].CostUSD)
+	if got[0].CostUSD == nil {
+		t.Fatal("row 0 cost = nil, want 0.0125")
+	}
+	if diff := *got[0].CostUSD - 0.0125; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("row 0 cost = %v, want 0.0125", *got[0].CostUSD)
 	}
 	if got[1].ConversationID != id2 || got[1].Seq != 2 {
 		t.Errorf("row 1 projection wrong: %+v", got[1])
 	}
-	if diff := got[1].CostUSD - 0.25; diff > 1e-9 || diff < -1e-9 {
+	if got[1].CostUSD == nil || *got[1].CostUSD != 0.25 {
 		t.Errorf("row 1 cost = %v, want 0.25", got[1].CostUSD)
 	}
 	// The window is bound, never interpolated (T-06-02): the since arg reaches the driver.
@@ -224,7 +239,11 @@ func TestListSince_RowsErr(t *testing.T) {
 }
 
 func aggRow(turns int64, prompt, cached, cost any) *fakeRow {
-	return &fakeRow{values: []any{turns, prompt, cached, cost}}
+	return aggRowUnpriced(turns, prompt, cached, cost, 0)
+}
+
+func aggRowUnpriced(turns int64, prompt, cached, cost any, unpriced int64) *fakeRow {
+	return &fakeRow{values: []any{turns, prompt, cached, cost, unpriced}}
 }
 
 func TestAggregateSince_Success(t *testing.T) {
@@ -233,7 +252,7 @@ func TestAggregateSince_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NumericFromFloat: %v", err)
 	}
-	fake := &fakeDBTX{queryRowVal: aggRow(3, int64(6000), int64(5400), cost)}
+	fake := &fakeDBTX{queryRowVal: aggRowUnpriced(3, int64(6000), int64(5400), cost, 1)}
 	s := newTestStore(fake)
 
 	since := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -241,7 +260,7 @@ func TestAggregateSince_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AggregateSince: %v", err)
 	}
-	if agg.Turns != 3 || agg.TotalPromptTokens != 6000 || agg.TotalCachedTokens != 5400 {
+	if agg.Turns != 3 || agg.TotalPromptTokens != 6000 || agg.TotalCachedTokens != 5400 || agg.UnpricedTurns != 1 {
 		t.Errorf("aggregate counts wrong: %+v", agg)
 	}
 	if diff := agg.TotalCostUSD - 1.2345; diff > 1e-9 || diff < -1e-9 {

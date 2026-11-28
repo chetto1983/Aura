@@ -163,21 +163,30 @@ func multimodalConfig(cfg *config.Config, servicesKey multimodal.KeyFunc) telegr
 // truth, so it is returned non-nil and llm.CostUSD uses the provider-first path.
 type todayCost struct {
 	metrics *cachemetrics.Store
+	now     func() time.Time
 }
 
 func newTodayCost(pool *pgxpool.Pool) *todayCost {
-	return &todayCost{metrics: cachemetrics.New(pool)}
+	return &todayCost{metrics: cachemetrics.New(pool), now: time.Now}
 }
 
-func (c *todayCost) TodayUsage(ctx context.Context) (promptTokens, completionTokens int, providerCost *float64, err error) {
-	now := time.Now()
+// TodayUsage also reports how many of the day's turns have no honest price (a NULL cost,
+// migration 0161): their cost is in no sum, and /cost says so rather than show the priced
+// sum as the day's.
+func (c *todayCost) TodayUsage(ctx context.Context) (telegram.DayUsage, error) {
+	now := c.now()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	agg, err := c.metrics.AggregateSince(ctx, midnight)
 	if err != nil {
-		return 0, 0, nil, err
+		return telegram.DayUsage{}, err
 	}
 	cost := agg.TotalCostUSD
-	return clampInt64ToInt(agg.TotalPromptTokens), 0, &cost, nil
+	return telegram.DayUsage{
+		PromptTokens:  clampInt64ToInt(agg.TotalPromptTokens),
+		CostUSD:       &cost,
+		Turns:         clampInt64ToInt(agg.Turns),
+		UnpricedTurns: clampInt64ToInt(agg.UnpricedTurns),
+	}, nil
 }
 
 // clampInt64ToInt narrows an int64 token count to int, saturating into the int

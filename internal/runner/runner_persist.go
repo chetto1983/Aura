@@ -417,11 +417,13 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	// Prefer the provider's wire-reported cost (D-18); fall back to the rate resolved
 	// at boot from /models (D-23, amendment #93) when the provider omits it, so a priced
 	// turn never persists $0 while the displayed footer (same llm.CostUSD precedence)
-	// shows the computed price. An unresolved model stays 0.0 — the honest numeric "n/a".
-	// On the anthropic route an unpriced turn stays the unknown 0 (llm.TurnCostUSD).
-	cost := 0.0
-	if v, ok := llm.TurnCostUSD(runtime.Config.Provider, runtime.Config.Prices, runtime.Config.Model, u); ok {
-		cost = v
+	// shows the computed price. A turn with no honest price (an unresolved model, an
+	// unpriced Claude turn: llm.TurnCostUSD) stays 0.0 on the turn row and the conversation
+	// aggregate, and is NULL in cache_metrics, which the spend reads count as unpriced.
+	cost, priced := llm.TurnCostUSD(runtime.Config.Provider, runtime.Config.Prices, runtime.Config.Model, u)
+	var metricCost *float64
+	if priced {
+		metricCost = &cost
 	}
 	reasoning, reasoningDurationMS := tr.persistedReasoning()
 	turn := conversations.AppendTurnParams{
@@ -439,7 +441,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 		Reasoning:           reasoning,
 		ReasoningDurationMS: reasoningDurationMS,
 	}
-	metric, err := r.cacheMetricParams(tr.convID, 0, u, cost)
+	metric, err := r.cacheMetricParams(tr.convID, 0, u, metricCost)
 	if err != nil {
 		return err
 	}
@@ -454,10 +456,10 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 }
 
 // cacheMetricParams builds the per-turn cache_metrics row from the already-computed
-// llm.Usage + cost. A nil cacheMetrics is a wiring bug, not a silent skip: the prod
+// llm.Usage + cost, nil when the turn has no honest price. A nil cacheMetrics is a wiring bug, not a silent skip: the prod
 // composition root MUST inject a Store, so the metric path is never unwired without
 // notice.
-func (r *Runner) cacheMetricParams(convID string, seq int, u llm.Usage, cost float64) (sqlc.InsertCacheMetricParams, error) {
+func (r *Runner) cacheMetricParams(convID string, seq int, u llm.Usage, cost *float64) (sqlc.InsertCacheMetricParams, error) {
 	if r.cacheMetrics == nil {
 		return sqlc.InsertCacheMetricParams{}, fmt.Errorf("persist cache metric: cacheMetrics store is nil (composition root must inject one)")
 	}

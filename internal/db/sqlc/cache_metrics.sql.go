@@ -12,10 +12,11 @@ import (
 )
 
 const aggregateCacheMetricsSince = `-- name: AggregateCacheMetricsSince :one
-SELECT count(*)                          AS turns,
-       coalesce(sum(prompt_tokens), 0)   AS total_prompt_tokens,
-       coalesce(sum(cached_tokens), 0)   AS total_cached_tokens,
-       coalesce(sum(cost_usd), 0)        AS total_cost_usd
+SELECT count(*)                                    AS turns,
+       coalesce(sum(prompt_tokens), 0)             AS total_prompt_tokens,
+       coalesce(sum(cached_tokens), 0)             AS total_cached_tokens,
+       coalesce(sum(cost_usd), 0)                  AS total_cost_usd,
+       count(*) FILTER (WHERE cost_usd IS NULL)    AS unpriced_turns
 FROM aura.cache_metrics
 WHERE ts >= $1::timestamptz
 `
@@ -25,8 +26,12 @@ type AggregateCacheMetricsSinceRow struct {
 	TotalPromptTokens interface{} `json:"total_prompt_tokens"`
 	TotalCachedTokens interface{} `json:"total_cached_tokens"`
 	TotalCostUsd      interface{} `json:"total_cost_usd"`
+	UnpricedTurns     int64       `json:"unpriced_turns"`
 }
 
+// total_cost_usd is the sum of the priced turns: sum() skips a NULL cost, the unknown one
+// (migration 0161), and unpriced_turns counts those rows so a reader never shows the
+// priced sum as the whole day's.
 func (q *Queries) AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error) {
 	row := q.db.QueryRow(ctx, aggregateCacheMetricsSince, since)
 	var i AggregateCacheMetricsSinceRow
@@ -35,6 +40,7 @@ func (q *Queries) AggregateCacheMetricsSince(ctx context.Context, since pgtype.T
 		&i.TotalPromptTokens,
 		&i.TotalCachedTokens,
 		&i.TotalCostUsd,
+		&i.UnpricedTurns,
 	)
 	return i, err
 }
@@ -123,7 +129,8 @@ type SumIdentitySpendSinceParams struct {
 // and an admin's OWN identity in that session var would silently lose every row
 // belonging to the identity being inspected (mirrors internal/agui/audit_store.go's
 // ListActivityForIdentity doc comment: "a read scoped to the caller while asking about
-// the subject silently loses the joined rows"). Returns an exact decimal zero for an
+// the subject silently loses the joined rows"). A turn with an unknown cost (NULL, migration
+// 0161) adds nothing: the spend is what was priced. Returns an exact decimal zero for an
 // identity with no rows (coalesce), matching AggregateCacheMetricsSince's own
 // convention -- never a null read as an error, and never rounded here: the caller
 // (internal/agui/credit_ledger.go) reads this at full stored scale and rounds only at

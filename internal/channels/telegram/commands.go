@@ -32,13 +32,22 @@ type searchBackend interface {
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 }
 
-// costBackend reports today's cumulative token usage so /cost can render the USD
-// via the SAME llm.CostUSD the CLI footer uses (cross-slice invariant). The
-// aggregation (which rows, which day) lives behind the seam; the dispatcher only
-// formats. A nil providerCost defers to the price table (the unknown-model honest
-// "n/a", never a fabricated $0).
+// costBackend reports today's cumulative usage so /cost can render the USD via the SAME
+// llm.CostUSD the CLI footer uses (cross-slice invariant). The aggregation (which rows,
+// which day) lives behind the seam; the dispatcher only formats.
 type costBackend interface {
-	TodayUsage(ctx context.Context) (promptTokens, completionTokens int, providerCost *float64, err error)
+	TodayUsage(ctx context.Context) (DayUsage, error)
+}
+
+// DayUsage is a day's usage as the turn ledger recorded it.
+type DayUsage struct {
+	PromptTokens, CompletionTokens int
+	// CostUSD is the sum of the priced turns. Nil defers to the price table (the
+	// unknown-model honest "n/a", never a fabricated $0).
+	CostUSD *float64
+	// Turns counts the day's turns, UnpricedTurns those with no honest price: their cost
+	// is in no sum, so a day with any is never shown as its priced sum alone.
+	Turns, UnpricedTurns int
 }
 
 // spendBackend reports what the PROVIDER says this API key has cost. *llm.Config
@@ -289,16 +298,23 @@ func (c *commands) cost(ctx context.Context) string {
 	if c.deps.Cost == nil {
 		return "Costo non disponibile."
 	}
-	prompt, completion, provider, err := c.deps.Cost.TodayUsage(ctx)
+	day, err := c.deps.Cost.TodayUsage(ctx)
 	if err != nil {
 		return "Costo non disponibile per ora."
 	}
+	tokens := fmt.Sprintf("(%d token in, %d token out)", day.PromptTokens, day.CompletionTokens)
+	switch {
+	case day.UnpricedTurns > 0 && day.UnpricedTurns >= day.Turns:
+		return fmt.Sprintf("Spesa di oggi (stimata): n/a, nessuno dei %d turni ha un prezzo noto %s", day.UnpricedTurns, tokens)
+	case day.UnpricedTurns > 0 && day.CostUSD != nil:
+		return fmt.Sprintf("Spesa di oggi (stimata): almeno $%.6f, %d turni senza prezzo %s", *day.CostUSD, day.UnpricedTurns, tokens)
+	}
 	display, _ := llm.CostUSD(route.Provider, route.Prices, route.Model, llm.Usage{
-		PromptTokens:     prompt,
-		CompletionTokens: completion,
-		Cost:             provider,
+		PromptTokens:     day.PromptTokens,
+		CompletionTokens: day.CompletionTokens,
+		Cost:             day.CostUSD,
 	})
-	return fmt.Sprintf("Spesa di oggi (stimata): %s (%d token in, %d token out)", display, prompt, completion)
+	return fmt.Sprintf("Spesa di oggi (stimata): %s %s", display, tokens)
 }
 
 // spendFromProvider renders the billed figure, or an error the caller degrades from.

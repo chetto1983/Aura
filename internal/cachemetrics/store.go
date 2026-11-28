@@ -50,7 +50,8 @@ type Metric struct {
 	TS             time.Time
 	PromptTokens   int
 	CachedTokens   int
-	CostUSD        float64
+	// CostUSD is nil when the turn has no honest price (migration 0161).
+	CostUSD *float64
 }
 
 // ListSince returns the metric rows with ts >= since, in ts ASC order (the query window
@@ -68,7 +69,7 @@ func (s *Store) ListSince(ctx context.Context, since time.Time) ([]Metric, error
 			TS:             r.Ts.Time,
 			PromptTokens:   int(r.PromptTokens),
 			CachedTokens:   int(r.CachedTokens),
-			CostUSD:        pgnumeric.FloatFromNumeric(r.CostUsd),
+			CostUSD:        pgnumeric.NullableFloat(r.CostUsd),
 		})
 	}
 	return out, nil
@@ -76,12 +77,15 @@ func (s *Store) ListSince(ctx context.Context, since time.Time) ([]Metric, error
 
 // Aggregate is the windowed roll-up of cache_metrics. The hit-rate ratio is left to the
 // caller (06-04) so the divide-by-zero guard (TotalPromptTokens==0 → ratio 0) lives at
-// the presentation boundary, not in SQL.
+// the presentation boundary, not in SQL. TotalCostUSD sums the priced turns only;
+// UnpricedTurns counts the turns whose cost is unknown, so a reader can tell a free day
+// from an unpriced one.
 type Aggregate struct {
 	Turns             int64
 	TotalPromptTokens int64
 	TotalCachedTokens int64
 	TotalCostUSD      float64
+	UnpricedTurns     int64
 }
 
 // AggregateSince sums prompt/cached tokens + cost over the ts >= since window (SQL-side
@@ -108,5 +112,6 @@ func (s *Store) AggregateSince(ctx context.Context, since time.Time) (Aggregate,
 		TotalPromptTokens: prompt,
 		TotalCachedTokens: cached,
 		TotalCostUSD:      cost,
+		UnpricedTurns:     row.UnpricedTurns,
 	}, nil
 }
