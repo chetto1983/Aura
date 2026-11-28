@@ -688,7 +688,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid operation leaves live memory unchanged.",
+    "description": "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid operation leaves live memory unchanged. For upsert_fact operations: Before the first write, call memory_entities once and take subject and object from it when one fits; a new name is a noun someone would ask about again, never a description. The predicate is English snake_case, one verb phrase per relation, reused from the listed predicates when one already says it. The statement is one or two sentences. Pass source: {} when there are no message ids; never invent one. Write nothing that will not matter in a month: no record of what this conversation just did.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -708,7 +708,7 @@
                 "description": "payload for upsert_fact or supersede_fact",
                 "properties": {
                   "object": {
-                    "description": "the related entity or scalar value",
+                    "description": "the related entity or scalar value: a name from memory_entities when one fits; a new one is a noun, never a description",
                     "maxLength": 512,
                     "type": "string"
                   },
@@ -723,7 +723,7 @@
                     "type": "string"
                   },
                   "predicate": {
-                    "description": "the relation between subject and object",
+                    "description": "the relation between subject and object: English snake_case verb phrase, one per relation; reuse one listed by memory_entities",
                     "maxLength": 100,
                     "type": "string"
                   },
@@ -747,12 +747,12 @@
                     "type": "object"
                   },
                   "statement": {
-                    "description": "the fact in natural language",
+                    "description": "the fact in natural language, one or two sentences; this is what gets embedded and searched",
                     "maxLength": 4096,
                     "type": "string"
                   },
                   "subject": {
-                    "description": "the entity the fact is about",
+                    "description": "the entity the fact is about: a name from memory_entities when one fits; a new one is a noun, never a description",
                     "maxLength": 512,
                     "type": "string"
                   },
@@ -2186,12 +2186,12 @@
       "idempotentHint": false,
       "readOnlyHint": false
     },
-    "description": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable. To correct a fact precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it, supersedes:true resolves the subject+predicate match itself: exactly one candidate closes; zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and candidates carries the previews (each with its own fact_key) to retry with supersedes_fact_key.",
+    "description": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable. To correct a fact precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it, supersedes:true resolves the subject+predicate match itself: exactly one candidate closes; zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and candidates carries the previews (each with its own fact_key) to retry with supersedes_fact_key. Before the first write, call memory_entities once and take subject and object from it when one fits; a new name is a noun someone would ask about again, never a description. The predicate is English snake_case, one verb phrase per relation, reused from the listed predicates when one already says it. The statement is one or two sentences. Pass source: {} when there are no message ids; never invent one. Write nothing that will not matter in a month: no record of what this conversation just did.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "object": {
-          "description": "the entity or value the subject relates to",
+          "description": "the entity or value the subject relates to: a name from memory_entities when one fits; a new one is a noun, never a description",
           "type": "string"
         },
         "object_kind": {
@@ -2203,7 +2203,7 @@
           "type": "string"
         },
         "predicate": {
-          "description": "the relation, e.g. lives_in",
+          "description": "the relation, e.g. lives_in: English snake_case verb phrase, one per relation; reuse one listed by memory_entities",
           "type": "string"
         },
         "source": {
@@ -2224,11 +2224,11 @@
           "type": "object"
         },
         "statement": {
-          "description": "the fact in natural language; this is what gets embedded and searched",
+          "description": "the fact in natural language, one or two sentences; this is what gets embedded and searched",
           "type": "string"
         },
         "subject": {
-          "description": "the entity the fact is about",
+          "description": "the entity the fact is about: a name from memory_entities when one fits; a new one is a noun, never a description",
           "type": "string"
         },
         "subject_kind": {

@@ -123,14 +123,14 @@ func oauthClientRunID(req *mcp.CallToolRequest) string {
 // identity is not a tool field: it comes from the authenticated OAuth subject,
 // so the model never emits or sees it.
 type MemoryUpsertFactInput struct {
-	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
+	Subject     string `json:"subject" jsonschema:"the entity the fact is about: a name from memory_entities when one fits; a new one is a noun, never a description"`
 	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional concrete type refining the class, e.g. Officer or Vehicle"`
 	SubjectPole string `json:"subject_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back"`
-	Predicate   string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
-	Object      string `json:"object" jsonschema:"the entity or value the subject relates to"`
+	Predicate   string `json:"predicate" jsonschema:"the relation, e.g. lives_in: English snake_case verb phrase, one per relation; reuse one listed by memory_entities"`
+	Object      string `json:"object" jsonschema:"the entity or value the subject relates to: a name from memory_entities when one fits; a new one is a noun, never a description"`
 	ObjectKind  string `json:"object_kind,omitempty" jsonschema:"optional concrete type refining the class, e.g. PostCode or Phone"`
 	ObjectPole  string `json:"object_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind"`
-	Statement   string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
+	Statement   string `json:"statement" jsonschema:"the fact in natural language, one or two sentences; this is what gets embedded and searched"`
 	ValidFrom   string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
 	ValidTo     string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
@@ -201,7 +201,8 @@ func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock, op
 			"returned. Without it, supersedes:true resolves the subject+predicate match " +
 			"itself: exactly one candidate closes; zero or more than one candidate " +
 			"REFUSES -- the call still succeeds, refused is true, and candidates carries " +
-			"the previews (each with its own fact_key) to retry with supersedes_fact_key.",
+			"the previews (each with its own fact_key) to retry with supersedes_fact_key. " +
+			memoryWriteRules,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
 	}, memoryUpsertFactHandler(tenants, now, operatorDisplayName))
 }

@@ -25,7 +25,7 @@ const (
 
 // MemoryBatchFactInput carries one bounded fact mutation without host authority fields.
 type MemoryBatchFactInput struct {
-	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
+	Subject     string `json:"subject" jsonschema:"the entity the fact is about: a name from memory_entities when one fits; a new one is a noun, never a description"`
 	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional entity kind"`
 	// SubjectPole and ObjectPole are here because memory_upsert_fact has them and
 	// this is the same write. Their absence was not a smaller surface, it was a
@@ -34,11 +34,11 @@ type MemoryBatchFactInput struct {
 	// unable to state it. Every entity it wrote fell to whatever poleByKind could
 	// derive, and to Other when it could derive nothing.
 	SubjectPole       string                      `json:"subject_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from subject_kind; anything outside the set lands in Other and is reported back"`
-	Predicate         string                      `json:"predicate" jsonschema:"the relation between subject and object"`
-	Object            string                      `json:"object" jsonschema:"the related entity or scalar value"`
+	Predicate         string                      `json:"predicate" jsonschema:"the relation between subject and object: English snake_case verb phrase, one per relation; reuse one listed by memory_entities"`
+	Object            string                      `json:"object" jsonschema:"the related entity or scalar value: a name from memory_entities when one fits; a new one is a noun, never a description"`
 	ObjectKind        string                      `json:"object_kind,omitempty" jsonschema:"optional object entity kind"`
 	ObjectPole        string                      `json:"object_pole,omitempty" jsonschema:"POLE class: Person, Object, Location, Event, Organisation or Other. Omit to derive it from object_kind"`
-	Statement         string                      `json:"statement" jsonschema:"the fact in natural language"`
+	Statement         string                      `json:"statement" jsonschema:"the fact in natural language, one or two sentences; this is what gets embedded and searched"`
 	ValidFrom         string                      `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true"`
 	ValidTo           string                      `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true"`
 	SupersedesFactKey string                      `json:"supersedes_fact_key,omitempty" jsonschema:"exact fact key to close for supersede_fact"`
@@ -102,7 +102,7 @@ func addMemoryBatchTool(server *mcp.Server, tenants *tenants, now clock, operato
 		Title: "Apply atomic memory changes",
 		Description: "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting " +
 			"as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid " +
-			"operation leaves live memory unchanged.",
+			"operation leaves live memory unchanged. For upsert_fact operations: " + memoryWriteRules,
 		InputSchema: inputSchema,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: false, DestructiveHint: &destructive,

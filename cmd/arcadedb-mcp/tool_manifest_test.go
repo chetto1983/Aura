@@ -7,35 +7,16 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestToolManifestMatchesServer(t *testing.T) {
-	ctx := t.Context()
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := newServer(nil, time.Now, "").Connect(ctx, serverTransport, nil)
-	if err != nil {
-		t.Fatalf("connect server: %v", err)
-	}
-	t.Cleanup(func() { _ = serverSession.Close() })
-
-	client := mcp.NewClient(&mcp.Implementation{Name: "tool-manifest-test", Version: "1"}, nil)
-	clientSession, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
-		t.Fatalf("connect client: %v", err)
-	}
-	t.Cleanup(func() { _ = clientSession.Close() })
-
-	listed, err := clientSession.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("list tools: %v", err)
-	}
-	sort.Slice(listed.Tools, func(i, j int) bool {
-		return listed.Tools[i].Name < listed.Tools[j].Name
+	tools := listServerTools(t)
+	sort.Slice(tools, func(i, j int) bool {
+		return tools[i].Name < tools[j].Name
 	})
-	got, err := json.MarshalIndent(listed.Tools, "", "  ")
+	got, err := json.MarshalIndent(tools, "", "  ")
 	if err != nil {
 		t.Fatalf("encode tools: %v", err)
 	}
@@ -55,8 +36,8 @@ func TestToolManifestMatchesServer(t *testing.T) {
 		t.Fatalf("%s does not match the live MCP surface; run UPDATE_GOLDEN=1 go test ./cmd/arcadedb-mcp", path)
 	}
 
-	assertNoUserIdentifierProperty(t, listed.Tools)
-	assertErasingToolsAreDestructive(t, listed.Tools)
+	assertNoUserIdentifierProperty(t, tools)
+	assertErasingToolsAreDestructive(t, tools)
 }
 
 // assertErasingToolsAreDestructive pins the hint a client other than Aura reads: both tools
