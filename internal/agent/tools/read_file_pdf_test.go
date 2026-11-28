@@ -45,8 +45,12 @@ func TestReadFileAttachesAPDFForTheModel(t *testing.T) {
 }
 
 func TestPDFPageBoundFollowsTheDocumentedWorstCase(t *testing.T) {
-	if maxPDFAttachPages != 10 || maxPDFAttachPages*pdfWorstPageTokens > pdfWindowTokens/pdfWindowShare {
-		t.Fatalf("%d pages of %d tokens against a %d-token share", maxPDFAttachPages, pdfWorstPageTokens, pdfWindowTokens/pdfWindowShare)
+	// 100,000 / 4 = 25,000 tokens, and 5 pages of 4,568 is 22,840 while 6 would be 27,408.
+	share := pdfWindowTokens / pdfWindowShare
+	if pdfWorstPageTokens != 4_568 || pdfWindowTokens != 100_000 || share != 25_000 || maxPDFAttachPages != 5 ||
+		maxPDFAttachPages*pdfWorstPageTokens > share || (maxPDFAttachPages+1)*pdfWorstPageTokens <= share {
+		t.Fatalf("%d pages of %d tokens against a %d-token share of a %d-token window",
+			maxPDFAttachPages, pdfWorstPageTokens, share, pdfWindowTokens)
 	}
 }
 

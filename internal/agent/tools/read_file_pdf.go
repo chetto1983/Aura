@@ -23,12 +23,14 @@ const (
 	// pdfWorstPageTokens is the page's worst case: text that "typically uses 1,500–3,000
 	// tokens" plus an image of "at most 1,568 visual tokens".
 	pdfWorstPageTokens = 3_000 + 1_568
-	// pdfWindowTokens is the Claude route's default working window (plan decision 5).
-	pdfWindowTokens = 200_000
+	// pdfWindowTokens is the smallest working window the Claude route defaults to: plan
+	// decision 5 takes a model's long-prompt threshold when its price has one (Haiku 5.5:
+	// 100,000), else 200,000. read_file has no route config to read the live one from.
+	pdfWindowTokens = 100_000
 	// pdfWindowShare: one PDF takes at most a quarter of the window, so the system prompt, the
 	// tools, the loaded history and the turn's own tool loop keep the other three quarters.
 	pdfWindowShare = 4
-	// maxPDFAttachPages is 50,000 / 4,568 = 10 pages.
+	// maxPDFAttachPages is 25,000 / 4,568 = 5 pages.
 	maxPDFAttachPages = pdfWindowTokens / pdfWindowShare / pdfWorstPageTokens
 	// pdfInspectTimeout bounds pdfinfo on a pathological or hostile file.
 	pdfInspectTimeout = 10 * time.Second
