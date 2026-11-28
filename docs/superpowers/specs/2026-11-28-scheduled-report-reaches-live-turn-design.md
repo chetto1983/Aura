@@ -89,7 +89,8 @@ the background-completion wake (see Non-goals). Steer rows expire after
    envelope. The notification text is unchanged. Amended 2026-11-28 after the
    untrusted-reload review: an `agent_job`'s record keeps the author line outside and stores the
    report itself in the same `scheduler` untrusted envelope the steer copy is read in, so a later
-   turn reloading it meets the escaping too (the report can relay a page its run read). The
+   turn reloading it meets the escaping too (the report can relay a page its run read). Aura's
+   own "Not delivered via …" note follows the envelope, outside it. The
    cockpit, search and share unframe it (`agent.ShowRecord`/`PlainRecord`). Reminders and watches
    are recorded as before.
 4. `repairToolPairs`: when an assistant message with tool calls has turns written out of band

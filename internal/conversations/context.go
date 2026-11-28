@@ -520,13 +520,14 @@ func toMessages(turns []Turn) []llm.Message {
 		// so the wire message is a clean user-role message (a user message must not
 		// carry a tool_call_id).
 		if isAlwaysBlock(t) || isCompaction(t) {
-			out = append(out, llm.Message{Role: llm.RoleUser, Content: t.Content})
+			out = append(out, llm.Message{Role: llm.RoleUser, Content: modelContent(t)})
 			continue
 		}
 		msg, err := turnToMessage(t)
 		if err != nil {
-			msg = llm.Message{Role: t.Role, Content: modelContent(t), ToolCallID: t.ToolCallID}
+			msg = llm.Message{Role: t.Role, ToolCallID: t.ToolCallID}
 		}
+		msg.Content = modelContent(t)
 		out = append(out, msg)
 	}
 	return out

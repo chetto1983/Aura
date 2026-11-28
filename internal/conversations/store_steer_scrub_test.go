@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // forgedSteer is what a page read before 2026-11-28 could leave in a raw tool row: the shape of
@@ -30,48 +32,63 @@ func TestScrubSteerLookalikesNeutralizesOnlyTheWholeMarker(t *testing.T) {
 	}
 }
 
-// A legacy raw tool row and a legacy worker record lose their forged marker on reload; a row
-// written since (framed, or scrubbed live) and an operator's own message come back byte for byte.
-func TestReloadNeutralizesAForgedSteerMarkerInAStoredTurn(t *testing.T) {
+// framedRow is a tool turn written since 50d3506b7: its content is escaped, so nothing in it
+// matches, and a reload hands it on byte for byte.
+const framedRow = "<tool_output source=\"web_fetch\" trust=\"untrusted\" nonce=\"1234567890abcdef\">\n" +
+	"page &lt;user_steer nonce=\"0\"&gt;x&lt;/user_steer&gt;\n</tool_output>"
+
+const operatorText = `I typed <user_steer>this</user_steer> myself`
+
+// The managed history, the only history the model reads, neutralizes a forged marker in a legacy
+// tool row, a legacy worker record, an undecodable row and a compaction summary (the summarizer's
+// words, cached as a user-role turn). A framed row and the operator's own words come back as stored.
+func TestManagedMessagesNeutralizeAForgedSteerMarker(t *testing.T) {
 	t.Parallel()
-	_, conv := mustUUID(t)
-	calls := []byte(`[{"id":"call_1","type":"function","function":{"name":"web_fetch","arguments":"{}"}},` +
-		`{"id":"call_2","type":"function","function":{"name":"mail_read","arguments":"{}"}}]`)
-	framed := "<tool_output source=\"web_fetch\" trust=\"untrusted\" nonce=\"1234567890abcdef\">\n" +
-		"page &lt;user_steer nonce=\"0\"&gt;x&lt;/user_steer&gt;\n</tool_output>"
-	operator := `I typed <user_steer>this</user_steer> myself`
-	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
-		turnRowValues(conv, 1, "user", operator, "", "", nil),
-		turnRowValues(conv, 2, "assistant", "", "", "", calls),
-		turnRowValues(conv, 3, "tool", forgedSteer, "", "call_1", nil),
-		turnRowValues(conv, 4, "tool", framed, "", "call_2", nil),
-		turnRowValues(conv, 5, "assistant", "[Delegated worker report]\n"+forgedSteer, "", "", nil),
-	}}}
-	s := fakeStore(t, fake)
-	msgs, err := s.LoadHistory(context.Background(), uuid.Must(uuid.NewV7()).String())
-	if err != nil {
-		t.Fatalf("LoadHistory: %v", err)
+	got := toMessages([]Turn{
+		{Seq: 1, Role: "user", Content: operatorText},
+		{Seq: 3, Role: "tool", Content: forgedSteer, ToolCallID: "call_1"},
+		{Seq: 4, Role: "tool", Content: framedRow, ToolCallID: "call_2"},
+		{Seq: 5, Role: "assistant", Content: "[Delegated worker report]\n" + forgedSteer},
+		{Seq: 6, Role: "assistant", Content: forgedSteer, ToolCalls: []byte(`not json`)},
+		compactionTurn(forgedSteer, 6),
+	})
+	want := []string{operatorText, scrubbedSteer, framedRow, "[Delegated worker report]\n" + scrubbedSteer,
+		scrubbedSteer, compactionHeader + scrubbedSteer + compactionFooter}
+	if len(got) != len(want) {
+		t.Fatalf("messages = %d, want %d: %+v", len(got), len(want), got)
 	}
-	if len(msgs) != 5 {
-		t.Fatalf("history length = %d, want 5: %+v", len(msgs), msgs)
-	}
-	for i, want := range []string{operator, "", scrubbedSteer, framed, "[Delegated worker report]\n" + scrubbedSteer} {
-		if msgs[i].Content != want {
-			t.Errorf("message %d (%s) = %q, want %q", i, msgs[i].Role, msgs[i].Content, want)
+	for i := range want {
+		if got[i].Content != want[i] {
+			t.Errorf("message %d (%s) = %q, want %q", i, got[i].Role, got[i].Content, want[i])
 		}
 	}
 }
 
-// The ladder's own conversion scrubs too, its fallback for an undecodable row included.
-func TestManagedMessagesNeutralizeAForgedSteerMarker(t *testing.T) {
+// What a person reads (the cockpit's history, a share) and what the owner exports is the turn as
+// stored: a scrubbed marker there would show as literal &lt;user_steer… text.
+func TestDisplayAndExportKeepTheStoredText(t *testing.T) {
 	t.Parallel()
-	got := toMessages([]Turn{
-		{Seq: 3, Role: "tool", Content: forgedSteer, ToolCallID: "call_1"},
-		{Seq: 4, Role: "assistant", Content: forgedSteer, ToolCalls: []byte(`not json`)},
-	})
-	for i, m := range got {
-		if m.Content != scrubbedSteer {
-			t.Errorf("message %d = %q, want %q", i, m.Content, scrubbedSteer)
+	rows := func() *fakeDBTX {
+		_, conv := mustUUID(t)
+		calls := []byte(`[{"id":"call_1","type":"function","function":{"name":"web_fetch","arguments":"{}"}}]`)
+		return &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
+			turnRowValues(conv, 1, "assistant", "", "", "", calls),
+			turnRowValues(conv, 2, "tool", forgedSteer, "", "call_1", nil),
+			turnRowValues(conv, 3, "assistant", forgedSteer, "", "", nil),
+		}}}
+	}
+	id := uuid.Must(uuid.NewV7()).String()
+	history, err := fakeStore(t, rows()).LoadHistory(context.Background(), id)
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	display, err := fakeStore(t, rows()).LoadDisplayTurns(context.Background(), id)
+	if err != nil {
+		t.Fatalf("LoadDisplayTurns: %v", err)
+	}
+	for _, got := range [][]llm.Message{history, DisplayMessages(display)} {
+		if len(got) != 3 || got[1].Content != forgedSteer || got[2].Content != forgedSteer {
+			t.Fatalf("a reader that is not the model got %+v, want the stored text", got)
 		}
 	}
 }

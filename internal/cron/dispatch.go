@@ -102,7 +102,9 @@ type ConversationRecorder interface {
 	// AppendReportTurn records generated text, an agent_job's report, under its author line.
 	// The report reaches a live turn inside the untrusted envelope of its steer copy, so the
 	// recorder stores it in that envelope too; cron cannot mint it without importing the agent.
-	AppendReportTurn(ctx context.Context, conversationID, author, report string) error
+	// note is Aura's own text (a failed delivery), recorded after the envelope, outside it; ""
+	// for none.
+	AppendReportTurn(ctx context.Context, conversationID, author, report, note string) error
 }
 
 // Dispatch routes a claimed task to its handler and owns the run lifecycle. It

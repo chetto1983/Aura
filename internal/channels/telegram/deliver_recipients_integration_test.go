@@ -42,8 +42,8 @@ func (r *originRecord) AppendAssistantTurn(_ context.Context, _, text string) er
 	return nil
 }
 
-func (r *originRecord) AppendReportTurn(_ context.Context, _, author, report string) error {
-	r.texts = append(r.texts, author+"\n"+report)
+func (r *originRecord) AppendReportTurn(_ context.Context, _, author, report, note string) error {
+	r.texts = append(r.texts, author+"\n"+report+note)
 	return nil
 }
 

@@ -94,9 +94,9 @@ func turnFromRow(r sqlc.ListTurnsBySeqRow) Turn {
 // turnToMessage rehydrates one Turn into the llm.Message the loop consumes. The
 // projection is pure (deterministic) so LoadHistory is byte-identical across
 // calls (Req#8). tool_calls jsonb deserializes into []llm.ToolCall for assistant
-// turns; tool_call_id populates only tool-role turns. The content is modelContent's.
+// turns; tool_call_id populates only tool-role turns.
 func turnToMessage(t Turn) (llm.Message, error) {
-	msg := llm.Message{Role: t.Role, Content: modelContent(t), ToolCallID: t.ToolCallID}
+	msg := llm.Message{Role: t.Role, Content: t.Content, ToolCallID: t.ToolCallID}
 	if len(t.ToolCalls) > 0 {
 		calls, err := decodeToolCalls(t.ToolCalls)
 		if err != nil {

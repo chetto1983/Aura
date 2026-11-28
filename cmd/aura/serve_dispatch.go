@@ -247,15 +247,15 @@ func (r conversationRecorder) AppendAssistantTurn(ctx context.Context, conversat
 	})
 }
 
-func (r conversationRecorder) AppendReportTurn(ctx context.Context, conversationID, author, report string) error {
-	return r.AppendAssistantTurn(ctx, conversationID, scheduledReportRecord(author, report))
+func (r conversationRecorder) AppendReportTurn(ctx context.Context, conversationID, author, report, note string) error {
+	return r.AppendAssistantTurn(ctx, conversationID, scheduledReportRecord(author, report, note))
 }
 
 // scheduledReportRecord is an agent_job's record: its author line, then the report in the
-// envelope agent.MarkSteer gives its steer copy (steer.SourceScheduler). The nonce is minted
-// once and stored, so every reload replays the same bytes.
-func scheduledReportRecord(author, report string) string {
-	return author + "\n" + agent.FrameUntrustedPromptContent(steer.SourceScheduler, report)
+// envelope agent.MarkSteer gives its steer copy (steer.SourceScheduler), then Aura's own note
+// outside it. The nonce is minted once and stored, so every reload replays the same bytes.
+func scheduledReportRecord(author, report, note string) string {
+	return author + "\n" + agent.FrameUntrustedPromptContent(steer.SourceScheduler, report) + note
 }
 
 func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {

@@ -158,6 +158,8 @@ func TestAGenuineSteerIsNeverStoredInAToolTurn(t *testing.T) {
 // model-facing content is a broken producer: refused, never stored empty or raw.
 func TestAToolResultWithoutItsModelContentIsRefused(t *testing.T) {
 	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
+	ledger := newFakeToolInvocationStore()
+	r.toolInvocations = ledger
 	convID := newConvID(t)
 	tr := &turnTracker{convID: convID}
 	end := &agent.Event{Actions: agent.Actions{ToolInvocation: &agent.ToolInvocation{
@@ -165,6 +167,10 @@ func TestAToolResultWithoutItsModelContentIsRefused(t *testing.T) {
 	}}}
 	if err := r.persistEvent(context.Background(), tr, end); err == nil {
 		t.Fatal("persistEvent stored a tool result with no model-facing content")
+	}
+	// The call ran, so its start must not be left without the end that closes it.
+	if len(ledger.events) != 1 || ledger.events[0].Event != agent.ToolInvocationEnd || ledger.events[0].ToolCallID != "call-1" {
+		t.Fatalf("ledger = %+v, want the refused call's end row", ledger.events)
 	}
 	stored, _ := conv.LoadHistory(context.Background(), convID)
 	for _, m := range stored {

@@ -144,21 +144,15 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		// flushPause and recordInterruptedRound write with WithoutCancel.
 		durable := context.WithoutCancel(ctx)
 		if err := r.persistToolTurnEvent(durable, tr, ev.Actions.ToolInvocation); err != nil {
+			// The call ran even when its turn cannot be stored (a refused end event, a
+			// failed append), so the ledger still gets the row that closes its start.
+			r.recordToolLedger(durable, tr, ev)
 			return err
 		}
 		if err := r.acceptMemoryCapture(durable, tr, ev); err != nil {
 			return err
 		}
-		// The ledger is operational observability (migration 0011 header), NOT a
-		// permission system: a transient insert failure (pg hiccup, pool exhaustion)
-		// must NOT abort the user-facing turn. Log and continue.
-		// Contrast persistPause/persistAssistantAnswer, which gate durable history and
-		// stay turn-fatal below.
-		if err := r.persistToolInvocationLedger(durable, tr, ev); err != nil {
-			ti := ev.Actions.ToolInvocation
-			slog.Warn("tool invocation ledger insert failed (continuing)",
-				"tool", ti.ToolName, "tool_call_id", ti.ToolCallID, "event", ti.Event, "err", err)
-		}
+		r.recordToolLedger(durable, tr, ev)
 		return nil
 	}
 	if ev.LLMResponse != nil && ev.LLMResponse.Reasoning != "" {
@@ -258,6 +252,19 @@ func (r *Runner) flushToolCalls(ctx context.Context, tr *turnTracker) error {
 	}
 	tr.pendingToolCalls = nil
 	return nil
+}
+
+// recordToolLedger writes the event's ledger row. The ledger is operational observability
+// (migration 0011 header), NOT a permission system: a transient insert failure (pg hiccup,
+// pool exhaustion) must NOT abort the user-facing turn, so it is logged and the turn goes
+// on. Contrast persistPause/persistAssistantAnswer, which gate durable history and stay
+// turn-fatal.
+func (r *Runner) recordToolLedger(ctx context.Context, tr *turnTracker, ev *agent.Event) {
+	if err := r.persistToolInvocationLedger(ctx, tr, ev); err != nil {
+		ti := ev.Actions.ToolInvocation
+		slog.Warn("tool invocation ledger insert failed (continuing)",
+			"tool", ti.ToolName, "tool_call_id", ti.ToolCallID, "event", ti.Event, "err", err)
+	}
 }
 
 func (r *Runner) persistToolInvocationLedger(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
