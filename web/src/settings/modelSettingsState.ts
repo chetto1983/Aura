@@ -53,6 +53,18 @@ const CALL_TIME_SETTING_KEYS = new Set<SettingsKey>([
   'ANTHROPIC_API_KEY',
 ]);
 
+// Mirrors the daemon's modelRouteKeys (internal/agui/settings_api.go): the route itself, which
+// a held save keeps on the form. The rest of the profile batch is merged over the stored route.
+const MODEL_ROUTE_KEYS = new Set<SettingsKey>([
+  'AURA_LLM_PROVIDER',
+  'AURA_LLM_BASE_URL',
+  'AURA_LLM_MODEL',
+]);
+
+export function isModelRouteKey(key: SettingsKey): boolean {
+  return MODEL_ROUTE_KEYS.has(key);
+}
+
 // Rows the route profile needs already stored: the daemon checks a Claude route against the
 // account's models, which it can only list with the house key, so the key is written first.
 const PRE_PROFILE_KEYS = new Set<SettingsKey>(['ANTHROPIC_API_KEY']);
@@ -138,11 +150,12 @@ export interface ModelSettingsState {
   readonly dirtyKeys: readonly SettingsKey[];
   readonly reload: () => Promise<void>;
   readonly setValue: (key: SettingsKey, value: string) => void;
-  /** `holdProfile` saves every row but the route profile, and keeps the profile's edits on the
-   *  form: the route cannot be saved yet, so the save is not complete and `onComplete` waits. */
+  /** `holdRoute` saves every row but the route (provider, base URL, model), and keeps the route's
+   *  edits on the form: the route cannot be saved yet, so the save is not complete and
+   *  `onComplete` waits. */
   readonly save: (
     onComplete?: (outcome: SaveOutcome) => void | Promise<void>,
-    holdProfile?: boolean,
+    holdRoute?: boolean,
   ) => Promise<void>;
   readonly resetSetting: (key: SettingsKey) => Promise<void>;
 }
@@ -247,7 +260,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   }, []);
 
   const save = useCallback(
-    async (onComplete?: (outcome: SaveOutcome) => void | Promise<void>, holdProfile = false) => {
+    async (onComplete?: (outcome: SaveOutcome) => void | Promise<void>, holdRoute = false) => {
       if (loaded === undefined || saving) return;
       if (dirtyKeys.length === 0) {
         await completeWith(onComplete, []);
@@ -261,11 +274,13 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         const written = await putSetting(key, loaded.values[key] ?? '');
         if (written.openrouter_keys !== undefined) openRouterKeys.push(written.openrouter_keys);
       };
-      const profileKeys = dirtyKeys.filter((key) => HOT_LLM_PROFILE_KEYS.has(key));
-      const held = holdProfile ? profileKeys : [];
+      const held = holdRoute ? dirtyKeys.filter(isModelRouteKey) : [];
+      const profileKeys = dirtyKeys.filter(
+        (key) => HOT_LLM_PROFILE_KEYS.has(key) && !held.includes(key),
+      );
       try {
         for (const key of dirtyKeys.filter((key) => PRE_PROFILE_KEYS.has(key))) await putRow(key);
-        if (profileKeys.length > 0 && held.length === 0) {
+        if (profileKeys.length > 0) {
           const written = await putLLMProfile(
             Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
           );

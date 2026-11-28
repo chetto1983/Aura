@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
+import { chooseOption } from '../../test/chooseOption';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 import {
   CHATGPT_BASE_URL,
@@ -197,6 +198,23 @@ describe('ChatGPT provider and account model selection', () => {
     expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('provider=chatgpt'))).toBe(
       false,
     );
+  });
+
+  // The route waits for a connected plan and a model it lists; the speed row beside it does not.
+  it('saves the speed row while the ChatGPT route waits for its account', async () => {
+    const { writes } = setup({ connected: false, savedProvider: 'openrouter', savedModel: '' });
+    fireEvent.click(await screen.findByRole('radio', { name: 'ChatGPT' }));
+    await screen.findByText('Connect ChatGPT to see the models available with your plan.');
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save runtime settings' });
+    expect(save.disabled).toBe(true);
+    await chooseOption('OpenRouter: sort providers by', 'Latency');
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(writes).toHaveLength(1);
+    });
+    expect(writes[0]).toEqual({ AURA_OPENROUTER_PROVIDER_SORT: 'latency' });
+    expect(screen.getByRole('radio', { name: 'ChatGPT' }).getAttribute('data-state')).toBe('on');
   });
 
   it('clears the account catalog after disconnect and refuses saving the stale model', async () => {

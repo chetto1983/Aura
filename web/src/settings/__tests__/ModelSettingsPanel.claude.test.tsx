@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18n from '../../i18n/i18n';
+import { chooseOption } from '../../test/chooseOption';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 import {
   CLAUDE_BASE_URL,
@@ -17,6 +18,7 @@ import {
 const FAKE_KEY = 'sk-ant-test-fake';
 const KEY_LABEL = 'Claude API key';
 const SAVE = 'Save runtime settings';
+const SORT_LABEL = 'OpenRouter: sort providers by';
 const CLOUD = {
   provider: 'openrouter',
   base_url: 'https://openrouter.ai/api/v1',
@@ -270,6 +272,38 @@ describe('Claude route on the routing pane', () => {
       expect(onComplete).toHaveBeenCalledTimes(1);
     });
     expect(onComplete).toHaveBeenCalledWith({ openRouterKeys: [MINTED] });
+  });
+
+  // Only the route waits for a model the account lists: the rows beside it, the speed row in the
+  // hot profile among them, save on their own.
+  it('saves the rows beside a route that waits for its model', async () => {
+    const { writes, onComplete } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: SAVE });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-test-fake' },
+    });
+    await chooseOption(SORT_LABEL, 'Throughput');
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(writes()).toHaveLength(2);
+    });
+    expect(writes()).toEqual([
+      {
+        method: 'PUT',
+        url: '/api/settings/llm-profile',
+        body: { settings: { AURA_OPENROUTER_PROVIDER_SORT: 'throughput' } },
+      },
+      {
+        method: 'PUT',
+        url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+        body: { value: 'sk-or-v1-test-fake' },
+      },
+    ]);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: 'Claude' }).getAttribute('data-state')).toBe('on');
   });
 
   it('lists the models again once a refused key is replaced', async () => {

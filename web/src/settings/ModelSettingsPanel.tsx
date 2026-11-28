@@ -10,7 +10,7 @@ import { EmbeddingSpacePanel } from './EmbeddingSpacePanel';
 import { RouteToggle } from './RouteToggle';
 import { RestartAuraControl } from './RestartAuraControl';
 import { ChatGPTPlanConnection } from './ChatGPTPlanConnection';
-import { useModelSettings, type SaveOutcome } from './modelSettingsState';
+import { isModelRouteKey, useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog, type ModelCatalogState } from './useModelCatalog';
 import { useMediaModelCatalog } from './useMediaModelCatalog';
 import type { MediaCatalogModel, ModelRow, VoiceCatalogModel } from './mediaModelCatalog';
@@ -238,14 +238,14 @@ export function ModelSettingsPanel({
     (def.key !== 'AURA_TTS_CLOUD_VOICE' || (loaded.values.AURA_TTS_MODEL ?? '').trim() !== '');
   const modelListed = catalog.models.some((model) => model.id === loaded.values.AURA_LLM_MODEL);
   const claudeKeyTyped = (loaded.values.ANTHROPIC_API_KEY ?? '').trim() !== '';
-  const routing = groups.includes('routing');
-  // A typed key is always savable, even over an account the stored key cannot list: replacing
-  // a refused key is how that is fixed. The route itself waits for a model the account lists.
-  const routeBlocked =
-    routing &&
-    ((provider === 'chatgpt' && (!chatGPTReady || !modelListed)) ||
-      (provider === 'claude' && !claudeKeyTyped && !modelListed));
-  const holdProfile = routing && provider === 'claude' && !modelListed;
+  // An account route waits for its account and a model it lists. Only the route waits: the rows
+  // beside it still save, a typed Claude key among them, since replacing a refused key is how an
+  // account the stored key cannot list is fixed.
+  const holdRoute =
+    groups.includes('routing') &&
+    accountModel !== undefined &&
+    (accountModel.disabled === true || !modelListed);
+  const routeBlocked = holdRoute && dirtyKeys.every(isModelRouteKey);
   const embeddingPicker = pickers.AURA_EMBED_MODEL;
   if (embeddingPicker === undefined) throw new Error('embedding picker must be configured');
   const decidePicker = pickers.AURA_DECIDE_MODEL;
@@ -386,7 +386,7 @@ export function ModelSettingsPanel({
             // leave the old key's refusal under the picker. A first key needs no call here, the
             // catalogue starts listing once the stored key enables it.
             const replacedKey = claudeKeyTyped && claudeKeyStored;
-            void save(onComplete, holdProfile).then(() => {
+            void save(onComplete, holdRoute).then(() => {
               if (replacedKey) catalog.reload();
             });
           }}
