@@ -100,16 +100,15 @@ func TestHandlePutLLMProfileAcceptsLoopBudgetAndTrigger(t *testing.T) {
 	reloader := &fakeLLMRouteReloader{}
 	s := &Server{settings: store, llmRouteReloader: reloader, idAdmin: adminCaps("op-1")}
 	body := strings.NewReader(`{"settings":{"AURA_LOOP_MAX_STEPS":"60","AURA_LOOP_MAX_WALLCLOCK_SEC":"1200",` +
-		`"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":"40","AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT":"20",` +
-		`"AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC":"10"}}`)
+		`"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":"40","AURA_OPENROUTER_PROVIDER_SORT":"throughput"}}`)
 	rr := httptest.NewRecorder()
 	s.handlePutLLMProfile(rr, withPrincipal(httptest.NewRequest(http.MethodPut, "/api/settings/llm-profile", body), "op-1"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
-	if len(reloader.applied) != 1 || reloader.applied[0]["AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT"] != "20" ||
-		store.upserted["AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC"] != "10" {
-		t.Fatalf("speed preferences applied %v upserted %v", reloader.applied, store.upserted)
+	if len(reloader.applied) != 1 || reloader.applied[0]["AURA_OPENROUTER_PROVIDER_SORT"] != "throughput" ||
+		store.upserted["AURA_OPENROUTER_PROVIDER_SORT"] != "throughput" {
+		t.Fatalf("provider sort applied %v upserted %v", reloader.applied, store.upserted)
 	}
 	if len(reloader.applied) != 1 || reloader.applied[0]["AURA_LOOP_MAX_STEPS"] != "60" || store.upserted["AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"] != "40" {
 		t.Fatalf("applied %v upserted %v", reloader.applied, store.upserted)

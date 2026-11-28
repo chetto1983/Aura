@@ -172,41 +172,34 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 	}
 }
 
-// The OpenRouter speed preferences are profile rows like the compaction trigger: a pinned row
-// publishes, an absent row reverts to the boot value, and a value OpenRouter cannot read is
-// refused before it is stored.
-func TestPrimaryLLMRouteReloaderResolvesOpenRouterSpeedPreferences(t *testing.T) {
+// The OpenRouter provider sort is a profile row like the compaction trigger: a pinned row
+// publishes, an absent row reverts to the boot value, and a value OpenRouter does not
+// document is refused before it is stored.
+func TestPrimaryLLMRouteReloaderResolvesOpenRouterProviderSort(t *testing.T) {
 	fallback := validFallbackLLMConfig()
-	fallback.OpenRouterPreferredMinThroughput = 5
+	fallback.OpenRouterProviderSort = "price"
 	r := &primaryLLMRouteReloader{fallback: fallback, runtime: llm.NewRuntime(nil, fallback)}
-	got, err := r.resolve(map[string]string{
-		llm.EnvOpenRouterPreferredMinThroughput: "20",
-		llm.EnvOpenRouterPreferredMaxLatencySec: " 10 ",
-	}, nil)
+	got, err := r.resolve(map[string]string{llm.EnvOpenRouterProviderSort: " Throughput "}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.OpenRouterPreferredMinThroughput != 20 || got.OpenRouterPreferredMaxLatencySec != 10 {
-		t.Fatalf("resolved = %d/%d, want 20/10", got.OpenRouterPreferredMinThroughput, got.OpenRouterPreferredMaxLatencySec)
+	if got.OpenRouterProviderSort != "throughput" {
+		t.Fatalf("resolved sort = %q, want throughput", got.OpenRouterProviderSort)
 	}
 	r.runtime.Replace(nil, got)
-	for key, want := range map[string]string{llm.EnvOpenRouterPreferredMinThroughput: "20", llm.EnvOpenRouterPreferredMaxLatencySec: "10"} {
-		if v, ok := r.EffectiveValue(key); !ok || v != want {
-			t.Fatalf("effective %s = (%q,%v), want %q", key, v, ok, want)
-		}
+	if v, ok := r.EffectiveValue(llm.EnvOpenRouterProviderSort); !ok || v != "throughput" {
+		t.Fatalf("effective sort = (%q,%v), want throughput", v, ok)
 	}
 	reverted, err := r.resolve(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reverted.OpenRouterPreferredMinThroughput != 5 || reverted.OpenRouterPreferredMaxLatencySec != 0 {
-		t.Fatalf("delete fallback = %d/%d, want the boot 5/0", reverted.OpenRouterPreferredMinThroughput, reverted.OpenRouterPreferredMaxLatencySec)
+	if reverted.OpenRouterProviderSort != "price" {
+		t.Fatalf("delete fallback = %q, want the boot price", reverted.OpenRouterProviderSort)
 	}
-	for _, bad := range []string{"abc", "-5"} {
-		_, err := r.resolve(map[string]string{llm.EnvOpenRouterPreferredMinThroughput: bad}, nil)
-		if err == nil || !strings.Contains(err.Error(), llm.EnvOpenRouterPreferredMinThroughput) {
-			t.Fatalf("%q: err = %v, want a refusal naming the key", bad, err)
-		}
+	_, err = r.resolve(map[string]string{llm.EnvOpenRouterProviderSort: "fastest"}, nil)
+	if err == nil || !strings.Contains(err.Error(), llm.EnvOpenRouterProviderSort) {
+		t.Fatalf("err = %v, want a refusal naming the key", err)
 	}
 }
 

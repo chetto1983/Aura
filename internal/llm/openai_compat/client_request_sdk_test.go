@@ -66,22 +66,20 @@ func TestSDKRequestCapabilityEnvelope(t *testing.T) {
 	}
 }
 
-// OpenRouter reads both as the p50 when sent as plain numbers inside `provider`
-// (docs/features/provider-routing). Measured on the lab VM 2026-11-27: the cheapest
-// endpoint took 45 s a call where a priority one took 4.5 s.
-func TestOpenRouterProviderCarriesSpeedPreferences(t *testing.T) {
+// With `sort` set OpenRouter tries its providers in that order instead of its price-weighted
+// default (guides/routing/provider-selection). Measured on the lab VM 2026-11-28: the default
+// put a 95k-token thread on an endpoint that answered 504 after 78 s.
+func TestOpenRouterProviderCarriesSort(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		cfg                llm.Config
 		want               map[string]any
 		wantNoProviderBody bool
 	}{
-		{"both", llm.Config{Provider: "openrouter", OpenRouterPreferredMinThroughput: 20, OpenRouterPreferredMaxLatencySec: 10},
-			map[string]any{"data_collection": "deny", "preferred_min_throughput": float64(20), "preferred_max_latency": float64(10)}, false},
-		{"neither", llm.Config{Provider: "openrouter"}, map[string]any{"data_collection": "deny"}, false},
-		{"throughput only", llm.Config{Provider: "openrouter", OpenRouterPreferredMinThroughput: 20},
-			map[string]any{"data_collection": "deny", "preferred_min_throughput": float64(20)}, false},
-		{"not openrouter", llm.Config{Provider: "llamacpp", OpenRouterPreferredMinThroughput: 20}, nil, true},
+		{"throughput", llm.Config{Provider: "openrouter", OpenRouterProviderSort: "throughput"},
+			map[string]any{"data_collection": "deny", "sort": "throughput"}, false},
+		{"default routing", llm.Config{Provider: "openrouter"}, map[string]any{"data_collection": "deny"}, false},
+		{"not openrouter", llm.Config{Provider: "llamacpp", OpenRouterProviderSort: "latency"}, nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := captureSDKBody(t, tc.cfg, llm.Request{Model: "m", Messages: []llm.Message{{Role: llm.RoleUser, Content: "ciao"}}})

@@ -98,11 +98,9 @@ const (
 	// envOpenRouterMiddleOut arms the fix-plan 1.11 overflow belt (see
 	// Config.OpenRouterMiddleOut). Default OFF.
 	envOpenRouterMiddleOut = "AURA_LLM_OPENROUTER_MIDDLE_OUT"
-	// EnvOpenRouterPreferredMinThroughput and EnvOpenRouterPreferredMaxLatencySec name the
-	// two provider speed preferences (Config.OpenRouterPreferred*); exported for the hot
+	// EnvOpenRouterProviderSort names Config.OpenRouterProviderSort; exported for the hot
 	// settings reloader.
-	EnvOpenRouterPreferredMinThroughput = "AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT"
-	EnvOpenRouterPreferredMaxLatencySec = "AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC"
+	EnvOpenRouterProviderSort = "AURA_OPENROUTER_PROVIDER_SORT"
 )
 
 // Config is the resolved LLM configuration (D-22). APIKey is a plain field set
@@ -187,13 +185,23 @@ type Config struct {
 	// AURA_LLM_OPENROUTER_MIDDLE_OUT.
 	OpenRouterMiddleOut bool
 
-	// OpenRouterPreferredMinThroughput (tokens/s) and OpenRouterPreferredMaxLatencySec ask
-	// OpenRouter to try last the providers below them over its rolling 5-minute p50, never to
-	// exclude one (docs/features/provider-routing). 0 sends nothing. Measured on the lab VM
-	// 2026-11-27: price-weighted routing put a 94k-token call on an endpoint that took 45 s,
-	// where a priority one took 4.5 s.
-	OpenRouterPreferredMinThroughput int
-	OpenRouterPreferredMaxLatencySec int
+	// OpenRouterProviderSort is OpenRouter's provider.sort: "price", "throughput" or "latency"
+	// make it try providers in that order instead of its price-weighted default
+	// (guides/routing/provider-selection); empty sends nothing. Measured on the lab VM
+	// 2026-11-28: the default put a 95k-token thread on an endpoint that took 23-46 s and
+	// answered 504 after 78 s on two of three first attempts.
+	OpenRouterProviderSort string
+}
+
+// ParseOpenRouterProviderSort accepts the provider.sort values OpenRouter documents, trimmed
+// and lower-cased; empty means its default routing.
+func ParseOpenRouterProviderSort(value string) (string, error) {
+	switch sort := strings.ToLower(strings.TrimSpace(value)); sort {
+	case "", "price", "throughput", "latency":
+		return sort, nil
+	default:
+		return "", fmt.Errorf("%s must be price, throughput, latency or empty, got %q", EnvOpenRouterProviderSort, value)
+	}
 }
 
 // Validate rejects timeout/token settings that would disable bounded calls or context
@@ -508,23 +516,11 @@ func applyEnvOverrides(cfg *Config) error {
 	} else if ok {
 		cfg.StreamIdleTimeoutSec = v
 	}
-	if err := nonNegativeEnvInt(EnvOpenRouterPreferredMinThroughput, &cfg.OpenRouterPreferredMinThroughput); err != nil {
+	sort, err := ParseOpenRouterProviderSort(os.Getenv(EnvOpenRouterProviderSort))
+	if err != nil {
 		return err
 	}
-	return nonNegativeEnvInt(EnvOpenRouterPreferredMaxLatencySec, &cfg.OpenRouterPreferredMaxLatencySec)
-}
-
-// nonNegativeEnvInt sets field from key when key is set; a negative or malformed value
-// is refused with the key named.
-func nonNegativeEnvInt(key string, field *int) error {
-	v, ok, err := envInt(key)
-	if err != nil || !ok {
-		return err
-	}
-	if v < 0 {
-		return fmt.Errorf("%s must not be negative, got %d", key, v)
-	}
-	*field = v
+	cfg.OpenRouterProviderSort = sort
 	return nil
 }
 

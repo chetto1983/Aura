@@ -128,10 +128,8 @@ func (r *primaryLLMRouteReloader) EffectiveValue(key string) (string, bool) {
 		return strconv.Itoa(cfg.MaxOutputTokens), true
 	case "AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":
 		return strconv.Itoa(cfg.CompactionTriggerPercent), true
-	case llm.EnvOpenRouterPreferredMinThroughput:
-		return strconv.Itoa(cfg.OpenRouterPreferredMinThroughput), true
-	case llm.EnvOpenRouterPreferredMaxLatencySec:
-		return strconv.Itoa(cfg.OpenRouterPreferredMaxLatencySec), true
+	case llm.EnvOpenRouterProviderSort:
+		return cfg.OpenRouterProviderSort, true
 	case "AURA_LOOP_MAX_STEPS":
 		return optionalLoopSetting(cfg.LoopMaxSteps)
 	case "AURA_LOOP_MAX_WALLCLOCK_SEC":
@@ -175,8 +173,7 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		// AURA_LOOP_MAX_STEPS write put /api/me back to 1,000,000 on a 262,144 model
 		// (amendment #196). resetKeys and explicit overrides below still clear or pin them.
 		cfg.CompactionTriggerPercent = r.fallback.CompactionTriggerPercent
-		cfg.OpenRouterPreferredMinThroughput = r.fallback.OpenRouterPreferredMinThroughput
-		cfg.OpenRouterPreferredMaxLatencySec = r.fallback.OpenRouterPreferredMaxLatencySec
+		cfg.OpenRouterProviderSort = r.fallback.OpenRouterProviderSort
 		cfg.APIKey = r.fallback.APIKey
 		cfg.LoopMaxSteps = r.fallback.LoopMaxSteps
 		cfg.LoopMaxWallclockSec = r.fallback.LoopMaxWallclockSec
@@ -203,20 +200,12 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		}
 		cfg.CompactionTriggerPercent = parsed
 	}
-	for _, knob := range []struct {
-		key   string
-		field *int
-	}{
-		{llm.EnvOpenRouterPreferredMinThroughput, &cfg.OpenRouterPreferredMinThroughput},
-		{llm.EnvOpenRouterPreferredMaxLatencySec, &cfg.OpenRouterPreferredMaxLatencySec},
-	} {
-		if value, ok := overrides[knob.key]; ok {
-			parsed, err := nonNegativeLLMSetting(knob.key, value)
-			if err != nil {
-				return llm.Config{}, err
-			}
-			*knob.field = parsed
+	if value, ok := overrides[llm.EnvOpenRouterProviderSort]; ok {
+		sort, err := llm.ParseOpenRouterProviderSort(value)
+		if err != nil {
+			return llm.Config{}, err
 		}
+		cfg.OpenRouterProviderSort = sort
 	}
 	for _, knob := range []struct {
 		key   string
@@ -303,15 +292,6 @@ func positiveLLMSetting(key, value string) (int, error) {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || parsed <= 0 {
 		return 0, fmt.Errorf("%s must be a positive integer", key)
-	}
-	return parsed, nil
-}
-
-// nonNegativeLLMSetting accepts 0 and up: 0 switches an OpenRouter speed preference off.
-func nonNegativeLLMSetting(key, value string) (int, error) {
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || parsed < 0 {
-		return 0, fmt.Errorf("%s must be a whole number, 0 or more", key)
 	}
 	return parsed, nil
 }
