@@ -23,6 +23,7 @@ const KEY_SAVED =
   "Claude API key saved. Pick a model from the account's list, then save again to switch the chat to Claude.";
 const ROUTE_HELD =
   'Saved, except the model route: once the account lists the model you pick, save again.';
+const NO_KEY_REFUSAL = 'add the Claude Console API key in Settings before selecting a Claude model';
 const CLOUD = {
   provider: 'openrouter',
   base_url: 'https://openrouter.ai/api/v1',
@@ -103,11 +104,15 @@ function setup({ keyStored = false, onClaude = false, keyRefused = false } = {})
       }
       if (url === '/api/settings/llm-profile') {
         const { settings } = body as { settings: Record<string, string> };
-        route = {
+        const next = {
           provider: settings.AURA_LLM_PROVIDER ?? route.provider,
           base_url: settings.AURA_LLM_BASE_URL ?? route.base_url,
           model: settings.AURA_LLM_MODEL ?? route.model,
         };
+        // The daemon prepares the whole merged route, so any batch on a Claude route needs the key.
+        if (next.provider === 'anthropic' && !stored)
+          return Promise.resolve(json({ error: NO_KEY_REFUSAL }, 400));
+        route = next;
         return Promise.resolve(json({ updated: 3, restart_required: false }));
       }
       if (url === '/api/settings/llm-routes') return Promise.resolve(json({ routes: [CLOUD] }));
@@ -317,17 +322,33 @@ describe('Claude route on the routing pane', () => {
     expect(writes()).toEqual([
       {
         method: 'PUT',
-        url: '/api/settings/llm-profile',
-        body: { settings: { AURA_OPENROUTER_PROVIDER_SORT: 'throughput' } },
+        url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+        body: { value: 'sk-or-v1-test-fake' },
       },
       {
         method: 'PUT',
-        url: '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
-        body: { value: 'sk-or-v1-test-fake' },
+        url: '/api/settings/llm-profile',
+        body: { settings: { AURA_OPENROUTER_PROVIDER_SORT: 'throughput' } },
       },
     ]);
     expect(onComplete).not.toHaveBeenCalled();
     expect(screen.getByRole('radio', { name: 'Claude' }).getAttribute('data-state')).toBe('on');
+  });
+
+  // A stored Claude route with no key refuses any profile batch, the speed row's included: the
+  // rows beside it are written first, so the refusal costs only the speed row.
+  it('writes the rows beside a stored route that refuses the speed row', async () => {
+    const { writes } = setup({ onClaude: true });
+    fireEvent.change(await screen.findByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-test-fake' },
+    });
+    await chooseOption(SORT_LABEL, 'Throughput');
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    expect(await screen.findByText(new RegExp(NO_KEY_REFUSAL))).toBeTruthy();
+    expect(writes().map((call) => call.url)).toEqual([
+      '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+      '/api/settings/llm-profile',
+    ]);
   });
 
   it('lists the models again once a refused key is replaced', async () => {

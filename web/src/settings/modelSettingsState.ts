@@ -183,7 +183,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   // Separate from loadStatus on purpose — a save that fails is not a load that failed.
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   // A held save still runs the reconciler (the management key, the services cap): its runs are
-  // reported by the save that completes, so the first-run step sees the keys it minted.
+  // reported by the save that completes, or by Skip, so the first-run step sees the keys it minted.
   const heldRuns = useRef<OpenRouterKeysResult[]>([]);
   const completeWith = useCallback(
     async (
@@ -287,23 +287,28 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
       const profileKeys = dirtyKeys.filter(
         (key) => HOT_LLM_PROFILE_KEYS.has(key) && !held.includes(key),
       );
+      const putProfile = async () => {
+        if (profileKeys.length === 0) return;
+        const written = await putLLMProfile(
+          Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
+        );
+        if (written.openrouter_keys !== undefined) openRouterKeys.push(written.openrouter_keys);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['me'] }),
+          queryClient.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY }),
+        ]);
+      };
       try {
         for (const key of dirtyKeys.filter((key) => PRE_PROFILE_KEYS.has(key))) await putRow(key);
-        if (profileKeys.length > 0) {
-          const written = await putLLMProfile(
-            Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
-          );
-          if (written.openrouter_keys !== undefined) openRouterKeys.push(written.openrouter_keys);
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['me'] }),
-            queryClient.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY }),
-          ]);
-        }
+        if (!holdRoute) await putProfile();
         for (const key of dirtyKeys.filter(
           (key) => !HOT_LLM_PROFILE_KEYS.has(key) && !PRE_PROFILE_KEYS.has(key),
         )) {
           await putRow(key);
         }
+        // A held profile carries no route, but the daemon prepares the merged one: a stored route
+        // its account cannot serve yet refuses the batch, and that must not cost the rows beside it.
+        if (holdRoute) await putProfile();
         const settings = await fetchSettings();
         setLoaded(withEdits(buildState(settings), loaded.values, held));
         // The save just wrote this provider's route memory server-side; re-read it so a
