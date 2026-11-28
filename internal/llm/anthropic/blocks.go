@@ -115,7 +115,31 @@ func (c *conversation) mark(count int) {
 	if count < 1 || count > len(c.ends) {
 		return
 	}
+	c.markAt(c.ends[count-1])
+}
+
+// markHistory puts the loaded-history breakpoint on the wire message before the one that
+// opens the turn. The user-role messages right before the turn's question merge with it
+// into that opening message (the runner puts the turn's memory block there), and the next
+// turn replays the question without them: a breakpoint among them writes an entry no later
+// request reads. Measured on the lab VM, conversation 01a2223e, 2026-11-28: every new turn
+// read only tools + system and wrote its whole history again.
+func (c *conversation) markHistory(count int) {
+	if count < 1 || count > len(c.ends) {
+		return
+	}
 	ref := c.ends[count-1]
+	if count < len(c.ends) && ref.message >= 0 && c.messages[ref.message].user && c.ends[count].message == ref.message {
+		if ref.message == 0 {
+			return
+		}
+		previous := ref.message - 1
+		ref = blockRef{message: previous, block: len(c.messages[previous].blocks) - 1}
+	}
+	c.markAt(ref)
+}
+
+func (c *conversation) markAt(ref blockRef) {
 	if ref.message < 0 {
 		return
 	}

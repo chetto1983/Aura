@@ -48,7 +48,7 @@ func (c *Client) buildRequest(req llm.Request, media requestMedia) (builtRequest
 	if err != nil {
 		return builtRequest{}, err
 	}
-	conv.mark(req.LoadedHistoryMessages)
+	conv.markHistory(req.LoadedHistoryMessages)
 	conv.mark(req.StablePrefixMessages)
 	if req.ToolsCacheControl == "ephemeral" {
 		if len(tools) > 0 {

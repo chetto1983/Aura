@@ -359,6 +359,28 @@ func TestCacheBreakpointsLandOnToolsSystemLoadedHistoryAndTheStablePrefix(t *tes
 	}
 }
 
+// The memory block the runner puts right before the question merges with it into the turn's
+// opening wire message, which the next turn replays without it: the loaded-history marker
+// goes on the message before, the last one the next turn sends unchanged.
+func TestLoadedHistoryMarkerStaysOutOfTheTurnsOpeningMessage(t *testing.T) {
+	req := cachedRequest(5, 4)
+	req.Messages = []llm.Message{
+		{Role: llm.RoleSystem, Content: "S"},
+		{Role: llm.RoleUser, Content: "q1"},
+		{Role: llm.RoleAssistant, Content: "a1"},
+		{Role: llm.RoleUser, Content: "memory"},
+		{Role: llm.RoleUser, Content: "q2"},
+		{Role: llm.RoleUser, Content: "hint"},
+	}
+	if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, []string{"tool:other:1", "system:S", "text:a1", "text:q2"}) {
+		t.Fatalf("markers %v", got)
+	}
+	req.Messages[2].Role = llm.RoleUser
+	if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, []string{"tool:other:1", "system:S", "text:q2"}) {
+		t.Fatalf("with no message before the opening one: %v", got)
+	}
+}
+
 func TestCacheBreakpointSkipsThinking(t *testing.T) {
 	req := cachedRequest(0, 0)
 	req.Messages[4].ProviderState = json.RawMessage(`[{"type":"tool_use","id":"t1","name":"lookup","input":{}},{"type":"tool_use","id":"t2","name":"lookup","input":{}},{"type":"thinking","thinking":"late","signature":"s"}]`)

@@ -7,8 +7,9 @@ import (
 )
 
 // loadedHistoryCount is how many messages of the constructed history precede the
-// current user message: the system prompt plus what the conversation store loaded. It
-// is the position of the last user message, zero when there is none.
+// current user message: the system prompt, what the conversation store loaded and the
+// runner's memory block. It is the position of the last user message, zero when there is
+// none.
 func loadedHistoryCount(hist []llm.Message) int {
 	for i, msg := range slices.Backward(hist) {
 		if msg.Role == llm.RoleUser {
