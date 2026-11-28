@@ -1,0 +1,81 @@
+# Memory writes: the rules where the write happens
+
+## Why
+
+On the lab VM on 2026-11-28 (conversation `01a2223e`, Claude route), Aura wrote facts that broke
+its own memory skill: no `memory_entities` call before writing, a description coined as an entity
+(`debug di Aura dall'interno`), a fact about that day's test, hand-written `user_turn:current`
+source ids. The memory it was asked to tidy already held predicates in two languages
+(`has_wife`, `decisione_architettuale`, one with spaces) and paragraph-long statements.
+
+Measured, not assumed:
+
+- `internal/skills/embed/memory-aura/SKILL.md` is 30,939 bytes. The rules exist (line 55
+  `source: {}`, line 104 `memory_entities` first, line 165 no session debris), deep in the text.
+- By turn #227 the skill's tool result was out of the model's context: Aura had to call
+  `read_tool_output` to read it again. A 30 KB tool result is what compaction evicts first.
+- The skill has no rule on predicate naming and none on statement length.
+- The per-turn memory pointer (`cmd/aura/serve_memory_context.go`) deliberately carries only read
+  routing, so it is not the place for write rules.
+
+## Goals
+
+- The few write rules are in front of the model at the moment it writes, whatever compaction did:
+  in the descriptions of `memory_upsert_fact` and `memory_batch` and their fields, which ride in
+  every request.
+- The skill opens with the same rules as a short section, and gains the two missing ones:
+  predicate naming and statement length.
+- Measured before and after on the lab VM with the operator's Sonnet route.
+
+## Non-goals
+
+- No change to compaction, and no pinning of skill results.
+- No new tool to list predicates in use, and no server-side rejection of bad predicates. A
+  predicate rule the model cannot check against a list is weaker; that is noted, not built.
+- No cleanup of the existing memory: that is Aura's job in the cockpit, on the operator's word.
+
+## Approaches
+
+- A: the skill only. Cheap, but in a long conversation the skill leaves the context again.
+- **B (chosen by the operator): the tool descriptions and the skill.** The rules sit where the
+  write is made and cannot be compacted away; the skill keeps the full reasoning.
+- C: keep the skill in context. 30 KB every turn and a compaction change. Rejected.
+
+## Design
+
+1. The rules, one wording shared by both places:
+   - call `memory_entities` once before the first write, and take subject and object from it when
+     one fits;
+   - a new name is a noun someone would ask about again, never a description;
+   - the predicate is English snake_case, one verb phrase per concept, reused when an existing
+     fact already says the same relation;
+   - the statement is one or two sentences;
+   - `source: {}` when there are no message ids, never an invented one;
+   - nothing that will not matter in a month: no record of what this conversation just did.
+2. `memory_upsert_fact`: the tool description gains a short rules paragraph; the `subject`,
+   `predicate`, `object` and `statement` field descriptions carry their rule. `memory_batch`
+   names the same rules for its `upsert_fact` operations.
+3. `SKILL.md`: a "Before any write" section right after the opening, the same rules, plus a
+   predicate and a statement subsection under Writing. The rest unchanged.
+4. The wording lives once in Go (a constant the two tools share); the skill repeats it in prose,
+   and a test keeps the skill's section naming each rule.
+
+## Measurement
+
+The same scripted conversation before (current images) and after (new images), in a fresh
+cockpit conversation on Sonnet: the operator states four durable facts in Italian and one detail
+of the session. Counted from `aura.tool_invocations` and the memory:
+
+- `memory_entities` called before the first write;
+- predicates in English snake_case, and reused where one exists;
+- subjects and objects that are names, not descriptions;
+- statement length in characters;
+- whether the session detail was written.
+
+The test facts are removed afterwards with `memory_forget` by `run_id`, approved by the operator.
+
+## What this does not prove
+
+- One run per side, one model: a direction, not a rate.
+- Long conversations: the run is a few turns. Whether the tool-description rules hold after a
+  compaction is argued from where they live, not measured.
