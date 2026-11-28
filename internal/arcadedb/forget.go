@@ -85,8 +85,12 @@ func (c *Client) Forget(ctx context.Context, filter ForgetFilter) (ForgetResult,
 		deleteRIDs = append(deleteRIDs, fact.rid)
 	}
 	endpoints := endpointsOfDeletedFacts(facts, deleteRIDs)
-	if entity := strings.TrimSpace(filter.Entity); entity != "" {
-		endpoints = appendUnique(endpoints, entity)
+	mentioned, err := c.mentionEndpoints(ctx, deleteRIDs)
+	if err != nil {
+		return ForgetResult{}, err
+	}
+	for _, name := range append(mentioned, filter.Entity) {
+		endpoints = appendUnique(endpoints, name)
 	}
 	if filter.DryRun {
 		orphans := 0
@@ -111,6 +115,9 @@ func (c *Client) Forget(ctx context.Context, filter ForgetFilter) (ForgetResult,
 			map[string]any{"rids": deleteRIDs}); err != nil {
 			return ForgetResult{}, fmt.Errorf("arcadedb: forget facts: %w", err)
 		}
+	}
+	if err = c.deleteFactMentions(ctx, deleteRIDs); err != nil {
+		return ForgetResult{}, err
 	}
 	removed := 0
 	if !filter.KeepOrphans {
@@ -233,54 +240,4 @@ func appendUnique(names []string, name string) []string {
 		return names
 	}
 	return append(names, name)
-}
-
-// An entity is an orphan when no FACT edge holds it. A bare bothE() also counts the
-// TOUCHED edges the runner writes after every memory call that names the entity,
-// memory_forget included, so the entity was never an orphan to the database while
-// every listing showed it with no facts (lab VM, 2026-11-28). Deleting the vertex
-// takes those edges with it: "a vertex is deleted with its edges all the same"
-// (ArcadeDB docs, reference/sql/sql-delete.adoc).
-const factDegree = "bothE('" + factEdgeType + "').size()"
-
-const pruneOrphanEntityStatement = "DELETE FROM Entity WHERE name = :name AND " + factDegree + " = 0"
-
-func (c *Client) pruneOrphans(ctx context.Context, names []string) (int, error) {
-	removed := 0
-	for _, name := range names {
-		rows, err := c.Command(ctx, pruneOrphanEntityStatement, map[string]any{"name": name})
-		if err != nil {
-			return removed, fmt.Errorf("arcadedb: prune entity %q: %w", name, err)
-		}
-		removed += countUpdated(rows)
-	}
-	return removed, nil
-}
-
-func (c *Client) countStrandableByRIDs(
-	ctx context.Context,
-	names []string,
-	rids []string,
-) (int, error) {
-	stranded := 0
-	for _, name := range names {
-		total, err := c.Query(ctx,
-			"SELECT "+factDegree+" AS degree FROM Entity WHERE name = :name",
-			map[string]any{"name": name})
-		if err != nil {
-			return 0, fmt.Errorf("arcadedb: read degree of %q: %w", name, err)
-		}
-		going, err := c.Query(ctx,
-			"SELECT count(*) AS n FROM "+factEdgeType+
-				" WHERE @rid IN :rids AND (outV().name = :name OR inV().name = :name)",
-			map[string]any{"name": name, "rids": rids})
-		if err != nil {
-			return 0, fmt.Errorf("arcadedb: count edges leaving %q: %w", name, err)
-		}
-		if len(total) == 1 && len(going) == 1 &&
-			rowInt(total[0], "degree") == rowInt(going[0], "n") {
-			stranded++
-		}
-	}
-	return stranded, nil
 }

@@ -28,6 +28,8 @@ func TestForgetBySourceDetachesUntilLastSourceThenDeletes(t *testing.T) {
 				"rid": "#1:0", "subject": "A", "object": "B", "sources": sourcesParam(stored),
 			}}})
 			return testResponse{Body: string(body)}
+		case strings.Contains(statement, "FROM "+mentionsEdgeType):
+			return testResponse{Body: `{"result":[]}`}
 		case strings.HasPrefix(statement, "UPDATE FACT SET sources"):
 			stored = factSources(params["sources"])
 			return testResponse{Body: `{"result":[{"count":1}]}`}
@@ -90,12 +92,16 @@ func forgetResponder(request recordedRequest) testResponse {
 	statement, _ := request.Payload["command"].(string)
 	params, _ := request.Payload["params"].(map[string]any)
 	switch {
+	case strings.Contains(statement, "AS mentions"):
+		return testResponse{Body: `{"result":[{"mentions":0}]}`}
+	case strings.Contains(statement, "FROM "+mentionsEdgeType):
+		return testResponse{Body: `{"result":[]}`}
 	case strings.Contains(statement, "outV().name AS subject"):
 		return testResponse{Body: `{"result":[
 			{"rid":"#1:0","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m1"]}]},
 			{"rid":"#1:1","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m2"]}]}
 		]}`}
-	case strings.Contains(statement, factDegree+" AS degree"):
+	case strings.Contains(statement, anchorDegree+" AS degree"):
 		if params["name"] == "A" {
 			return testResponse{Body: `{"result":[{"degree":2}]}`}
 		}
@@ -140,8 +146,9 @@ func TestForgetDeletesFactsAndPrunesOnlyOrphans(t *testing.T) {
 	if got != (ForgetResult{Facts: 2, Entities: 1}) {
 		t.Fatalf("result = %+v", got)
 	}
-	if len(*requests) != 4 {
-		t.Fatalf("requests = %d, want endpoint read + fact delete + two prune attempts", len(*requests))
+	if len(*requests) != 6 {
+		t.Fatalf("requests = %d, want endpoint read + mention read + fact delete + mention delete + two prune attempts",
+			len(*requests))
 	}
 }
 
@@ -175,6 +182,9 @@ func TestForgetSurfacesEndpointAndPruneFailures(t *testing.T) {
 		if strings.HasPrefix(strings.TrimSpace(statement), "DELETE FROM FACT") {
 			return testResponse{Body: `{"result":[]}`}
 		}
+		if strings.Contains(statement, "FROM "+mentionsEdgeType) {
+			return testResponse{Body: `{"result":[]}`}
+		}
 		return testResponse{Status: http.StatusInternalServerError, Body: `{"detail":"prune failed"}`}
 	})
 	if _, err := client.Forget(context.Background(), ForgetFilter{Subject: "A"}); err == nil || !strings.Contains(err.Error(), "prune entity") {
@@ -182,10 +192,10 @@ func TestForgetSurfacesEndpointAndPruneFailures(t *testing.T) {
 	}
 }
 
-// TOUCHED edges from the reasoning graph must not keep an entity alive.
-func TestOrphanConditionCountsFactEdgesOnly(t *testing.T) {
+// FACT and MENTIONS edges hold a name; the TOUCHED edges of the reasoning graph must not.
+func TestOrphanConditionCountsOnlyFactsAndMentions(t *testing.T) {
 	if strings.Contains(pruneOrphanEntityStatement, "bothE()") ||
-		!strings.Contains(pruneOrphanEntityStatement, "bothE('"+factEdgeType+"')") {
-		t.Fatalf("prune counts edges other than FACT: %s", pruneOrphanEntityStatement)
+		!strings.Contains(pruneOrphanEntityStatement, "bothE('"+factEdgeType+"','"+mentionsEdgeType+"')") {
+		t.Fatalf("prune counts edges other than FACT and MENTIONS: %s", pruneOrphanEntityStatement)
 	}
 }

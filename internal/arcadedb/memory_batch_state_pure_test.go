@@ -1,6 +1,7 @@
 package arcadedb
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,5 +85,45 @@ func TestApplyMemoryBatchForgetRemovesAnEntityNoFactHolds(t *testing.T) {
 	}
 	if _, kept := state.Entities["Davide"]; !kept {
 		t.Fatal("an entity a fact still holds was removed")
+	}
+}
+
+// A narrower filter on a name that holds no facts still clears the name, as Forget does:
+// with no facts there is nothing narrower to keep.
+func TestApplyMemoryBatchForgetClearsAFactlessEntityWhateverTheNarrowing(t *testing.T) {
+	for _, filter := range []ForgetFilter{
+		{Entity: "Paolo", Predicate: "lives_in"},
+		{Entity: "Paolo", SourceRunID: "run-9"},
+	} {
+		state := memoryBatchState{Entities: map[string]memoryBatchEntity{"Paolo": {}}, Facts: map[string]memoryBatchFact{}}
+		got, err := applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
+		if err != nil || got.Entities != 1 {
+			t.Fatalf("forget %+v = %+v, %v; want the fact-less name removed", filter, got, err)
+		}
+	}
+}
+
+// A mention of a surviving fact holds the name; once that fact goes, so does the hold,
+// and the name it held is pruned with the fact's endpoints.
+func TestApplyMemoryBatchForgetKeepsANameAnotherFactStillMentions(t *testing.T) {
+	state := memoryBatchState{
+		Entities: map[string]memoryBatchEntity{"Acme": {}, "Monica": {}, "Davide": {}},
+		Facts: map[string]memoryBatchFact{"#1:0": {RID: "#1:0", Fact: Fact{
+			Subject: "Monica", Predicate: "met", Object: "Davide", Statement: "Monica met Davide at Acme.",
+		}}},
+		Mentions: []memoryBatchMention{{Source: "Monica", Target: "Acme", FactRID: "#1:0"}},
+	}
+	forget := func(filter ForgetFilter) (MemoryBatchOperationResult, error) {
+		return applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
+	}
+	if _, err := forget(ForgetFilter{Entity: "Acme"}); err == nil || !strings.Contains(err.Error(), "still name it") {
+		t.Fatalf("forget of a still-mentioned name = %v, want a refusal that says why", err)
+	}
+	got, err := forget(ForgetFilter{Subject: "Monica"})
+	if err != nil {
+		t.Fatalf("forget Monica's fact: %v", err)
+	}
+	if got.Entities != 3 {
+		t.Fatalf("result = %+v, want Monica, Davide and the no-longer-mentioned Acme removed", got)
 	}
 }

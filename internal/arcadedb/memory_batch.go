@@ -256,6 +256,15 @@ type memoryBatchEntity struct {
 type memoryBatchState struct {
 	Entities map[string]memoryBatchEntity
 	Facts    map[string]memoryBatchFact
+	// Mentions are read-only here: they decide which names still hold, and Persist
+	// removes the ones whose fact it deletes.
+	Mentions []memoryBatchMention
+}
+
+// memoryBatchMention is a MENTIONS edge: the statement of fact FactRID names Target.
+// FactRID is empty on edges written before the edge carried it.
+type memoryBatchMention struct {
+	Source, Target, FactRID string
 }
 
 type memoryBatchReceipt struct {

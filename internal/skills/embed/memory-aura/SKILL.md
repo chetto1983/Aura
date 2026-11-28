@@ -487,8 +487,12 @@ what it would remove.
 
 Forgetting is the one operation with no undo, so it is also the one where a filter that
 matches nothing is the likeliest outcome — and it reports that as a plain `0`, not as an
-error. **If a forget reports that it matched no facts, the filter is wrong; sending it
-again unchanged cannot make it right.** Go and look: `memory_entities` for the exact
+error. **If a forget reports that it matched no facts and removed no entity, the filter
+is wrong; sending it again unchanged cannot make it right.** (A forget by `entity` on a
+name that holds no facts removes the name itself: that reports `facts: 0, entities: 1`,
+and it is the right way to clear a name left behind. A name the statements of other
+facts still name stays, and reports `entities: 0`: it goes with the last of them.) Go
+and look: `memory_entities` for the exact
 spelling, or `memory_search` for the `fact_key` and the `run_id` a recall hit already
 carries. Provenance is usually the strongest handle there is; a whole import is one
 `run_id`, where the same removal by entity is dozens of calls.

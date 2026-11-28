@@ -54,7 +54,7 @@ type MemoryBatchMergeInput struct {
 // MemoryBatchForgetInput names destructive fact evidence to remove.
 type MemoryBatchForgetInput struct {
 	SourceRunID        string `json:"source_run_id,omitempty" jsonschema:"detach evidence written by this existing source run"`
-	Entity             string `json:"entity,omitempty" jsonschema:"remove facts touching this entity"`
+	Entity             string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, and the entity itself; an entity with no facts is removed outright unless the statements of other facts still name it"`
 	Subject            string `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
 	Predicate          string `json:"predicate,omitempty" jsonschema:"optional relation filter"`
 	Object             string `json:"object,omitempty" jsonschema:"optional object filter"`
@@ -102,7 +102,8 @@ func addMemoryBatchTool(server *mcp.Server, tenants *tenants, now clock, operato
 		Title: "Apply atomic memory changes",
 		Description: "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting " +
 			"as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid " +
-			"operation leaves live memory unchanged. For upsert_fact operations: " + memoryWriteRules,
+			"operation leaves live memory unchanged. For upsert_fact and supersede_fact operations: " +
+			memoryWriteRules,
 		InputSchema: inputSchema,
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: false, DestructiveHint: &destructive,

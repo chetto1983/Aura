@@ -688,7 +688,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid operation leaves live memory unchanged. For upsert_fact operations: Before the first write, call memory_entities once and take subject and object from it when one fits; a new name is a noun someone would ask about again, never a description. The predicate is English snake_case, one verb phrase per relation, reused from the listed predicates when one already says it. The statement is one or two sentences. Pass source: {} when there are no message ids; never invent one. Write nothing that will not matter in a month: no record of what this conversation just did.",
+    "description": "Apply ordered fact upserts, precise supersessions, entity merges, and forgetting as one identity-scoped final-state transaction. Supply a stable idempotency key; any invalid operation leaves live memory unchanged. For upsert_fact and supersede_fact operations: Before the first write, call memory_entities once and take subject and object from it when one fits; a new name is a noun someone would ask about again, never a description. The predicate is English snake_case, one verb phrase per relation, reused from the listed predicates when one already says it. The statement is one or two sentences. Pass source: {} when there are no message ids; never invent one. Write nothing that will not matter in a month: no record of what this conversation just did.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -797,7 +797,7 @@
                 "description": "payload for forget",
                 "properties": {
                   "entity": {
-                    "description": "remove facts touching this entity",
+                    "description": "remove every fact touching this entity, and the entity itself; an entity with no facts is removed outright unless the statements of other facts still name it",
                     "maxLength": 512,
                     "type": "string"
                   },

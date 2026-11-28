@@ -79,12 +79,19 @@ Measured, not assumed:
    adds another edge. `memory_entities` and `graph_diagnostics` count `FACT` alone and show it
    with no facts. `memory_batch` reported the entities as removed because it counts its own
    model, which also counts `FACT` alone.
-   - An entity is an orphan when it has no `FACT` edge: `bothE('FACT').size() = 0` in the
-     `memory_forget` prune, its `dry_run` count, and the `memory_batch` commit. ArcadeDB deletes
-     a vertex with its edges (`sql-delete.adoc`: "a vertex is deleted with its edges all the
-     same"), so its `TOUCHED` and `MENTIONS` edges go with it.
+   - An entity is an orphan when neither a `FACT` edge nor a `MENTIONS` edge holds it:
+     `bothE('FACT','MENTIONS').size() = 0` in the `memory_forget` prune, its `dry_run` count,
+     and the `memory_batch` commit. `TOUCHED` never holds it. ArcadeDB deletes a vertex with
+     its edges (`sql-delete.adoc`: "a vertex is deleted with its edges all the same").
+   - Amended on the final review, operator's ruling 2026-11-28: the first version counted
+     `FACT` alone, so an entity with no facts of its own but named in another fact's
+     statement was deleted with its `MENTIONS` links, which nothing re-creates. It stays.
+     A `MENTIONS` edge goes with the fact it was read from (`fact_rid`), in both forget
+     paths, so it never holds a name after its fact is gone, and the names it touched join
+     the prune candidates.
    - `memory_batch` `forget {entity}` on an entity with no facts removes the entity. A name
-     that does not exist is still `target_not_found`.
+     that does not exist is still `target_not_found`; a name other facts still mention is
+     refused with that reason.
    - The batch model and the delete then use the same condition, so the reported count is
      what was removed. A live test checks the entity no longer exists.
 

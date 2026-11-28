@@ -5,6 +5,7 @@ package arcadedb
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,5 +107,99 @@ func TestMemoryBatchLive_ForgetsAnEntityWithNoFacts(t *testing.T) {
 	var batchErr *MemoryBatchError
 	if !errors.As(err, &batchErr) || batchErr.Code != "target_not_found" {
 		t.Fatalf("forget of a name that does not exist = %v, want target_not_found", err)
+	}
+}
+
+// An entity no fact holds but another fact's statement names stays while that fact does:
+// its MENTIONS edge is the only link the graph has to it, and nothing re-creates the
+// entity. A MENTIONS edge goes with the fact it came from, so it never holds a name
+// after its fact is gone (operator's ruling on the final review, 2026-11-28).
+func mentionedEntity(t *testing.T) (*Client, func(predicate string) string) {
+	t.Helper()
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	for _, fact := range []Fact{
+		{Subject: "MenAcme", Predicate: "part_of", Object: "MenGroup", Source: FactSource{RunID: "men-r1", WriterRole: WriterParent}},
+		{Subject: "MenMonica", Predicate: "met", Object: "MenDavide", Source: FactSource{RunID: "men-r2", WriterRole: WriterParent}},
+	} {
+		fact.Statement = fact.Subject + " " + fact.Predicate + " " + fact.Object + " at MenAcme."
+		if _, err := client.UpsertFact(ctx, fact, time.Now().UTC()); err != nil {
+			t.Fatalf("seed fact: %v", err)
+		}
+	}
+	ridOf := func(predicate string) string {
+		rows, err := client.Query(ctx, "SELECT @rid AS rid FROM "+factEdgeType+" WHERE predicate = :p",
+			map[string]any{"p": predicate})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("rid of %s: %v %v", predicate, rows, err)
+		}
+		return rowString(rows[0], "rid")
+	}
+	if _, err := client.Command(ctx, mentionCreateStatement, map[string]any{
+		"source": "MenMonica", "target": "MenAcme", "fact_key": "men-met", "fact_rid": ridOf("met"),
+	}); err != nil {
+		t.Fatalf("seed MENTIONS: %v", err)
+	}
+	return client, ridOf
+}
+
+func entityExists(t *testing.T, client *Client, name string) bool {
+	t.Helper()
+	classes, err := client.entityClassScan(context.Background(), name)
+	if err != nil {
+		t.Fatalf("entityClassScan: %v", err)
+	}
+	_, exists := classes[name]
+	return exists
+}
+
+func TestForgetLive_KeepsAnEntityAnotherFactStillNames(t *testing.T) {
+	client, _ := mentionedEntity(t)
+	ctx := context.Background()
+
+	first, err := client.Forget(ctx, ForgetFilter{SourceRunID: "men-r1"})
+	if err != nil {
+		t.Fatalf("forget run 1: %v", err)
+	}
+	if first.Entities != 1 || !entityExists(t, client, "MenAcme") || entityExists(t, client, "MenGroup") {
+		t.Fatalf("forget run 1 = %+v: want MenGroup removed and MenAcme kept by its mention", first)
+	}
+	second, err := client.Forget(ctx, ForgetFilter{SourceRunID: "men-r2"})
+	if err != nil {
+		t.Fatalf("forget run 2: %v", err)
+	}
+	if second.Entities != 3 || entityExists(t, client, "MenAcme") || entityExists(t, client, "MenMonica") {
+		t.Fatalf("forget run 2 = %+v: want Monica, Davide and the no-longer-named MenAcme removed", second)
+	}
+}
+
+func TestMemoryBatchLive_KeepsAnEntityAnotherFactStillNames(t *testing.T) {
+	client, _ := mentionedEntity(t)
+	ctx := context.Background()
+	actor := MemoryBatchActor{IdentityID: "men", WriterRole: WriterParent}
+	forget := func(key string, filter ForgetFilter) (MemoryBatchResult, error) {
+		return client.ApplyMemoryBatch(ctx, actor, MemoryBatchRequest{IdempotencyKey: key,
+			Operations: []MemoryBatchOperation{{Type: MemoryBatchForget, Forget: &filter}}}, time.Now().UTC())
+	}
+
+	first, err := forget("men-1", ForgetFilter{SourceRunID: "men-r1"})
+	if err != nil {
+		t.Fatalf("forget run 1: %v", err)
+	}
+	if first.Operations[0].Entities != 1 || !entityExists(t, client, "MenAcme") {
+		t.Fatalf("forget run 1 = %+v: want only MenGroup counted and MenAcme kept", first.Operations)
+	}
+	var batchErr *MemoryBatchError
+	if _, err := forget("men-2", ForgetFilter{Entity: "MenAcme"}); !errors.As(err, &batchErr) ||
+		!strings.Contains(err.Error(), "still name it") {
+		t.Fatalf("forget of a still-named entity = %v, want a refusal that says why", err)
+	}
+	second, err := forget("men-3", ForgetFilter{SourceRunID: "men-r2"})
+	if err != nil {
+		t.Fatalf("forget run 2: %v", err)
+	}
+	if second.Operations[0].Entities != 3 || entityExists(t, client, "MenAcme") {
+		t.Fatalf("forget run 2 = %+v: want Monica, Davide and the no-longer-named MenAcme removed",
+			second.Operations)
 	}
 }

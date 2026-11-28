@@ -212,6 +212,16 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 			Embedding: row["embedding"], EmbedSpace: rowString(row, "embed_space"),
 		}
 	}
+	mentionRows, err := tx.client.queryInTx(ctx, tx.sessionID,
+		"SELECT outV().name AS source, inV().name AS target, fact_rid FROM "+mentionsEdgeType, nil)
+	if err != nil {
+		return memoryBatchState{}, fmt.Errorf("read mentions: %w", err)
+	}
+	for _, row := range mentionRows {
+		state.Mentions = append(state.Mentions, memoryBatchMention{
+			Source: rowString(row, "source"), Target: rowString(row, "target"), FactRID: rowString(row, "fact_rid"),
+		})
+	}
 	return state, nil
 }
 
@@ -233,6 +243,10 @@ func (tx *clientMemoryBatchTx) Persist(
 			"DELETE FROM "+factEdgeType+" WHERE @rid IN :rids",
 			map[string]any{"rids": deletedRIDs}); err != nil {
 			return fmt.Errorf("delete replaced facts: %w", err)
+		}
+		if _, err := tx.client.commandInTx(ctx, tx.sessionID,
+			deleteFactMentionsStatement, map[string]any{"rids": deletedRIDs}); err != nil {
+			return fmt.Errorf("delete mentions of replaced facts: %w", err)
 		}
 	}
 

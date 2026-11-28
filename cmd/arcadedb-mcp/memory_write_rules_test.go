@@ -12,7 +12,9 @@ import (
 )
 
 // The markers name the six write rules; spec 2026-11-28-memory-write-rules-design.md §Design 1.
-var memoryWriteRuleMarkers = []string{"memory_entities", "snake_case", "one or two sentences", "source: {}", "in a month"}
+var memoryWriteRuleMarkers = []string{
+	"memory_entities", "never a description", "snake_case", "one or two sentences", "source: {}", "in a month",
+}
 
 func listServerTools(t *testing.T) []*mcp.Tool {
 	t.Helper()
@@ -77,7 +79,7 @@ func TestWriteToolsCarryTheRules(t *testing.T) {
 		}
 		for field, marker := range map[string]string{
 			"predicate": "snake_case", "statement": "one or two sentences",
-			"subject": "memory_entities", "object": "memory_entities",
+			"subject": "never a description", "object": "never a description",
 		} {
 			if got := schemaDescription(t, tool.InputSchema, append(prefix, field)...); !strings.Contains(got, marker) {
 				t.Errorf("%s %s description %q lacks %q", tool.Name, field, got, marker)

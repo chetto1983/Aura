@@ -9,7 +9,9 @@ import (
 )
 
 func cloneMemoryBatchState(state memoryBatchState) memoryBatchState {
-	clone := memoryBatchState{Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}}
+	clone := memoryBatchState{
+		Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}, Mentions: state.Mentions,
+	}
 	maps.Copy(clone.Entities, state.Entities)
 	for key, fact := range state.Facts {
 		fact.Sources = cloneFactSources(fact.Sources)
@@ -262,7 +264,7 @@ func applyMemoryBatchForget(
 	}
 	if len(matches) == 0 && !forgetsAnOrphanEntity(state, filter) {
 		return MemoryBatchOperationResult{}, memoryBatchOperationError(
-			index, "target_not_found", fmt.Errorf("forget filter matched no facts"))
+			index, "target_not_found", forgetMatchedNothing(state, filter))
 	}
 	endpoints := []string{}
 	for _, key := range matches {
@@ -278,6 +280,12 @@ func applyMemoryBatchForget(
 			}
 		}
 		delete(state.Facts, key)
+		for _, mention := range state.Mentions {
+			if fact.RID != "" && mention.FactRID == fact.RID {
+				endpoints = appendUnique(endpoints, mention.Source)
+				endpoints = appendUnique(endpoints, mention.Target)
+			}
+		}
 	}
 	if filter.Entity != "" {
 		endpoints = appendUnique(endpoints, filter.Entity)
@@ -304,6 +312,15 @@ func forgetsAnOrphanEntity(state memoryBatchState, filter ForgetFilter) bool {
 	}
 	_, exists := state.Entities[filter.Entity]
 	return exists && !memoryBatchEntityReferenced(state, filter.Entity)
+}
+
+func forgetMatchedNothing(state memoryBatchState, filter ForgetFilter) error {
+	if _, exists := state.Entities[filter.Entity]; exists && !filter.KeepOrphans &&
+		memoryBatchEntityMentioned(state, filter.Entity) {
+		return fmt.Errorf("entity %q holds no facts, but the statements of other facts still name it; "+
+			"it stays while they do", filter.Entity)
+	}
+	return fmt.Errorf("forget filter matched no facts")
 }
 
 func validateMemoryBatchFinalState(state memoryBatchState, limits MemoryLimits, now time.Time) error {
@@ -359,7 +376,25 @@ func memoryBatchFactActive(fact memoryBatchFact, now time.Time) bool {
 	return fact.ExpiredAt.IsZero() && (fact.ValidTo.IsZero() || fact.ValidTo.After(now))
 }
 
+// memoryBatchEntityReferenced mirrors pruneOrphanEntityStatement: a FACT edge or a
+// MENTIONS edge of a fact that survives holds the name.
 func memoryBatchEntityReferenced(state memoryBatchState, entity string) bool {
+	return memoryBatchEntityHasFacts(state, entity) || memoryBatchEntityMentioned(state, entity)
+}
+
+func memoryBatchEntityMentioned(state memoryBatchState, entity string) bool {
+	for _, mention := range state.Mentions {
+		if mention.Source != entity && mention.Target != entity {
+			continue
+		}
+		if _, survives := state.Facts[mention.FactRID]; mention.FactRID == "" || survives {
+			return true
+		}
+	}
+	return false
+}
+
+func memoryBatchEntityHasFacts(state memoryBatchState, entity string) bool {
 	for _, fact := range state.Facts {
 		if fact.Fact.Subject == entity || fact.Fact.Object == entity {
 			return true

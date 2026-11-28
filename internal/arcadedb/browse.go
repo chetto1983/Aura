@@ -83,7 +83,7 @@ type PredicateSummary struct {
 func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, error) {
 	limit = boundedLimit(limit, defaultEntityLimit, c.memoryLimits().Results)
 	rows, err := c.Query(ctx,
-		"SELECT name, kind, @type AS pole, bothE('"+factEdgeType+"').size() AS facts"+
+		"SELECT name, kind, @type AS pole, "+factDegree+" AS facts"+
 			" FROM Entity ORDER BY facts DESC LIMIT "+strconv.Itoa(limit), nil)
 	if err != nil {
 		return EntityListing{}, fmt.Errorf("arcadedb: list entities: %w", err)
