@@ -401,38 +401,6 @@ func (d *Dispatch) deferred(task Task) bool {
 	return d.deps.QuietHours(task.TZ)
 }
 
-// recordToOrigin writes the run's outcome into the conversation it was scheduled
-// from. It is deliberately NOT part of notify: a push tells an operator who is
-// elsewhere, a record answers the operator who asked here. Both are wanted, and the
-// live measurement that prompted this had the push succeed while the asking
-// conversation learned nothing.
-//
-// A push that failed is said so beside the outcome. Measured 2026-10-05: a WhatsApp
-// reminder that reached nobody appeared here as plain text, which read as delivered.
-// A failure that asked for silence asked it of both, and leaves nothing here either.
-//
-// Best-effort. The work already happened and is already on the run ledger, so a
-// failed write is a WARN and never a run failure.
-func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr, undelivered error) {
-	if task.NotifyRoute == string(RouteNone) || d.deps.ConversationRecorder == nil || task.OriginConversationID == "" || suppressed(runErr) {
-		return
-	}
-	text := summary
-	if runErr != nil {
-		text = failureText(task, runErr)
-	}
-	if text == "" {
-		return
-	}
-	if undelivered != nil {
-		text += fmt.Sprintf("\n\nNot delivered via %s: %v", task.NotifyRoute, undelivered)
-	}
-	if err := d.deps.ConversationRecorder.AppendAssistantTurn(ctx, task.OriginConversationID, text); err != nil {
-		slog.Warn("cron: could not record the run outcome in its origin conversation",
-			"kind", task.Kind, "conversation", task.OriginConversationID, "err", err)
-	}
-}
-
 func (d *Dispatch) deferredUntil(task Task) (time.Time, bool) {
 	if d.deps.QuietHoursEnd == nil {
 		return time.Time{}, false

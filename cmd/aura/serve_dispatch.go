@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // nanoCPUsPerCPU converts a whole-CPU count (cfg.Sandbox.CPULimit) to moby's NanoCPUs cgroup
@@ -157,7 +158,19 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		// A task outlives the conversation it was scheduled from: when the operator deletes
 		// that one, the task opens its own and answers there (measured 2026-10-14).
 		TaskConversations: conversationRecorder{store: chat.conv, runner: chat.run},
+		// The record is read on the next turn; the steer copy reaches the turn already
+		// running there (measured 2026-11-28: a run_now job's turn polled and never saw it).
+		Steer: schedulerSteerOrNil(chat.steer),
 	})
+}
+
+// schedulerSteerOrNil keeps a nil store a nil interface: a nil *steer.PostgresStore boxed
+// into cron.SteerPublisher would read as configured and be dereferenced on the first push.
+func schedulerSteerOrNil(s *steer.PostgresStore) cron.SteerPublisher {
+	if s == nil {
+		return nil
+	}
+	return s
 }
 
 // conversationRecorder adapts the conversation store onto cron's two conversation seams,

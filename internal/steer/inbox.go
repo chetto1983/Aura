@@ -78,15 +78,22 @@ const SourceMedia = "media"
 // delivered in the untrusted tool-output envelope, stored as KindSteer.
 const SourceTool = "tool"
 
+// SourceScheduler is the reserved source for a finished scheduled agent_job's report, pushed
+// by cron's recordToOrigin to the conversation the task was scheduled from. Measured on the lab
+// VM on 2026-11-28: without it, a run_now job's report was recorded while the turn that fired
+// it slept and polled, and that turn never saw it. Stored as KindSteer.
+const SourceScheduler = "scheduler"
+
 // IsRuntimeSource reports whether source is one Aura generates itself rather than a channel an
 // operator types in. A runtime fact reaches the model in the untrusted envelope and is never
 // written into the transcript as the operator's words: a worker report is persisted by
-// DelegationDelivery as its own assistant turn, and a shell or media fact is a nudge whose
-// visible record is the turn it starts. Measured live on 2026-09-16, when a finished video
-// job's notification showed up in the chat as a message the operator never sent.
+// DelegationDelivery and a scheduled report by cron, each as its own attributed assistant
+// turn, and a shell or media fact is a nudge whose visible record is the turn it starts.
+// Measured live on 2026-09-16, when a finished video job's notification showed up in the chat
+// as a message the operator never sent.
 func IsRuntimeSource(source string) bool {
 	switch source {
-	case SourceWorker, SourceShell, SourceMedia, SourceTool:
+	case SourceWorker, SourceShell, SourceMedia, SourceTool, SourceScheduler:
 		return true
 	}
 	return false

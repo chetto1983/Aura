@@ -4,7 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/steer"
 )
+
+// reminderPrefix is the author line every record of task "task-1", a reminder, starts with.
+const reminderPrefix = "[Scheduled task report — reminder task-1]\n"
 
 // fakeConversationRecorder captures what a finished run wrote back to the
 // conversation it was scheduled from.
@@ -59,9 +64,84 @@ func TestCompletedRunLandsInItsOriginConversation(t *testing.T) {
 	if recorder.appended[0].conversationID != "conv-1" {
 		t.Errorf("appended to %q, want the task's origin conversation conv-1", recorder.appended[0].conversationID)
 	}
-	if recorder.appended[0].text != "SPIKE101-DELIVERED" {
-		t.Errorf("appended %q, want the run's summary", recorder.appended[0].text)
+	if got, want := recorder.appended[0].text, reminderPrefix+"SPIKE101-DELIVERED"; got != want {
+		t.Errorf("appended %q, want the run's summary under its author %q", got, want)
 	}
+}
+
+// fakeSteerPublisher captures what a finished run pushed onto the steer queue.
+type fakeSteerPublisher struct {
+	pushed []pushedSteer
+	err    error
+}
+
+type pushedSteer struct{ conv, source, text string }
+
+func (f *fakeSteerPublisher) Push(conv, source, text string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.pushed = append(f.pushed, pushedSteer{conv: conv, source: source, text: text})
+	return nil
+}
+
+func dispatchRecorded(t *testing.T, kind TaskKind, pub SteerPublisher) *fakeConversationRecorder {
+	t.Helper()
+	recorder := &fakeConversationRecorder{}
+	d := NewDispatch(map[TaskKind]Handler{kind: &fakeHandler{summary: "Nessuna anomalia rilevata"}}, DispatchDeps{
+		Store:                &fakeCompleter{},
+		ConversationRecorder: recorder,
+		Steer:                pub,
+	})
+	task := Task{ID: "01a221d9-2502-7170-afd4-b4ae70dbd81c", Kind: kind, NotifyRoute: "stdout", OriginConversationID: "conv-1"}
+	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(recorder.appended) != 1 {
+		t.Fatalf("appended %d turn(s), want 1: the record is the durable copy whatever the push does", len(recorder.appended))
+	}
+	return recorder
+}
+
+// TestAgentJobRecordIsSteeredToItsConversation pins the run measured on the lab VM on
+// 2026-11-28: a run_now agent_job recorded its report while the turn that fired it slept
+// and polled, and that turn never saw it. The steer copy reaches it after its next tool call.
+func TestAgentJobRecordIsSteeredToItsConversation(t *testing.T) {
+	t.Parallel()
+	pub := &fakeSteerPublisher{}
+	recorder := dispatchRecorded(t, KindAgentJob, pub)
+
+	want := "[Scheduled task report — agent_job 01a221d9]\nNessuna anomalia rilevata"
+	if recorder.appended[0].text != want {
+		t.Fatalf("record = %q, want %q", recorder.appended[0].text, want)
+	}
+	if len(pub.pushed) != 1 {
+		t.Fatalf("pushed %d steer row(s), want 1", len(pub.pushed))
+	}
+	if got := pub.pushed[0]; got != (pushedSteer{conv: "conv-1", source: steer.SourceScheduler, text: want}) {
+		t.Fatalf("pushed %+v, want the record text on conv-1 under source %q", got, steer.SourceScheduler)
+	}
+}
+
+// TestWatchRecordIsNotSteered: a steer row left at a turn's end starts a follow-on turn
+// (Runner.deliverLeftoverSteer), so a watch that runs every few minutes must not push.
+func TestWatchRecordIsNotSteered(t *testing.T) {
+	t.Parallel()
+	pub := &fakeSteerPublisher{}
+	dispatchRecorded(t, KindPIMWatch, pub)
+	if len(pub.pushed) != 0 {
+		t.Fatalf("a pim_watch pushed %d steer row(s), want 0", len(pub.pushed))
+	}
+}
+
+func TestSteerRefusalKeepsTheRecord(t *testing.T) {
+	t.Parallel()
+	dispatchRecorded(t, KindAgentJob, &fakeSteerPublisher{err: steer.ErrTooLarge})
+}
+
+func TestNilSteerPublisherRecordsOnly(t *testing.T) {
+	t.Parallel()
+	dispatchRecorded(t, KindAgentJob, nil)
 }
 
 // TestFailedRunAlsoLandsInItsOriginConversation mirrors the notify path's D-21 rule:
@@ -127,7 +207,7 @@ func TestUndeliveredPushIsSaidInTheOriginConversation(t *testing.T) {
 			name:    "notifier refuses",
 			route:   "whatsapp",
 			deps:    DispatchDeps{Notifier: &captureNotifier{err: errors.New("Recipient must be provided")}},
-			wantTxt: "drink water\n\nNot delivered via whatsapp: Recipient must be provided",
+			wantTxt: reminderPrefix + "drink water\n\nNot delivered via whatsapp: Recipient must be provided",
 		},
 		{
 			name:  "origin channel fails",
@@ -136,13 +216,13 @@ func TestUndeliveredPushIsSaidInTheOriginConversation(t *testing.T) {
 				delivered bool
 				err       error
 			}{"id-1": {err: errors.New("telegram down")}}}},
-			wantTxt: "drink water\n\nNot delivered via stdout: telegram down",
+			wantTxt: reminderPrefix + "drink water\n\nNot delivered via stdout: telegram down",
 		},
 		{
 			name:    "delivered",
 			route:   "whatsapp",
 			deps:    DispatchDeps{Notifier: &captureNotifier{}},
-			wantTxt: "drink water",
+			wantTxt: reminderPrefix + "drink water",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

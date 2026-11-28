@@ -41,7 +41,7 @@ func TestToldTextGoesToItsOwnPlace(t *testing.T) {
 	if len(notif.texts) != 1 || notif.texts[0] != h.notice {
 		t.Fatalf("notification = %q, want the notice", notif.texts)
 	}
-	if len(recorder.appended) != 1 || recorder.appended[0].text != h.record {
+	if len(recorder.appended) != 1 || recorder.appended[0].text != scheduledRecordText(task, h.record) {
 		t.Fatalf("record = %+v, want the record", recorder.appended)
 	}
 	if len(comp.calls) != 1 || comp.calls[0].Summary != "1 mail, 1 alert" {
@@ -60,7 +60,7 @@ func TestAHandlerThatNeverTellsBehavesAsBefore(t *testing.T) {
 	if err := d.Dispatch(context.Background(), task, c); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
-	if len(notif.texts) != 1 || notif.texts[0] != "buy milk" || recorder.appended[0].text != "buy milk" {
+	if len(notif.texts) != 1 || notif.texts[0] != "buy milk" || recorder.appended[0].text != scheduledRecordText(task, "buy milk") {
 		t.Fatalf("notification %q, record %+v, want the summary in both", notif.texts, recorder.appended)
 	}
 }
@@ -81,7 +81,7 @@ func TestAToldNoticeStaysOutOfTheStdoutJournal(t *testing.T) {
 	if len(notif.texts) != 0 {
 		t.Fatalf("stdout notifier got %q", notif.texts)
 	}
-	if len(recorder.appended) != 1 || recorder.appended[0].text != "framed" {
+	if len(recorder.appended) != 1 || recorder.appended[0].text != scheduledRecordText(task, "framed") {
 		t.Fatalf("record = %+v", recorder.appended)
 	}
 }
@@ -149,7 +149,7 @@ func TestAPausingFailureReadsInItsHandlersWords(t *testing.T) {
 	if len(notif.texts) != 1 || notif.texts[0] != want {
 		t.Fatalf("notifications = %q", notif.texts)
 	}
-	if len(recorder.appended) != 1 || recorder.appended[0].text != want {
+	if len(recorder.appended) != 1 || recorder.appended[0].text != scheduledRecordText(task, want) {
 		t.Fatalf("records = %+v", recorder.appended)
 	}
 }

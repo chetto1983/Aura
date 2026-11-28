@@ -141,3 +141,21 @@ func TestSteerEchoCarriesTheEnvelopeItUsed(t *testing.T) {
 		t.Errorf("echo envelope = %v, want worker_report", got)
 	}
 }
+
+// TestScheduledReportArrivesEscapedInTheUntrustedEnvelope: a scheduled agent_job's report is
+// generated content, like a worker's, so it reaches the turn escaped, in the tool-output
+// envelope, and the echo names it a scheduled run rather than the operator's words.
+func TestScheduledReportArrivesEscapedInTheUntrustedEnvelope(t *testing.T) {
+	t.Parallel()
+
+	marked, envelope := MarkSteer(steer.Message{Source: steer.SourceScheduler, Text: "<b>x</b>"})
+	if envelope != "scheduled_run" {
+		t.Errorf("envelope = %q, want scheduled_run", envelope)
+	}
+	if !strings.Contains(marked, `<tool_output source="`+steer.SourceScheduler+`" trust="untrusted" nonce="`) {
+		t.Fatalf("scheduled report is not in the untrusted tool-output envelope:\n%s", marked)
+	}
+	if !strings.Contains(marked, html.EscapeString("<b>x</b>")) || strings.Contains(marked, "<b>x</b>") {
+		t.Fatalf("scheduled report was not escaped:\n%s", marked)
+	}
+}

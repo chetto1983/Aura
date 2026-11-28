@@ -32,8 +32,11 @@ Aura also had no way to read what a run produced: `task` has no history action, 
 
 ## Goals
 
-- A scheduled run that records into its origin conversation also pushes the same text on the
-  steer queue, so a turn running in that conversation sees it at its next tool round.
+- A finished `agent_job` that records into its origin conversation also pushes the same text
+  on the steer queue, so a turn running in that conversation sees it at its next tool round.
+  Other kinds record only (amended while planning, 2026-11-28): a steer row still queued when a
+  turn ends starts a follow-on turn (`Runner.deliverLeftoverSteer`), and a `pim_watch` every
+  few minutes would buy a model call each time.
 - The record in `aura.conversation_turns` names its author: a scheduled task, its kind and id.
 - On reload, a message that landed between an assistant tool call and its results is moved
   after those results, so the real results survive. This covers cron and delegation records.
@@ -76,8 +79,9 @@ the background-completion wake (see Non-goals). Steer rows expire after
    WARN, like a record failure: the work is done and is on the ledger. Wiring is in
    `cmd/aura/serve_dispatch.go`, from the steer store the agent already drains.
 3. The record text is prefixed with its author, for example
-   `[Scheduled task report — agent_job 01a221d9]`. Only the stored record: the steer copy is
-   attributed by its envelope, and the notification text is unchanged.
+   `[Scheduled task report — agent_job 01a221d9]`. The steer copy carries the same prefix
+   inside its envelope, because the kind and the task id let the model match the report to
+   its `run_now` (amended while planning). The notification text is unchanged.
 4. `repairToolPairs`: when an assistant message with tool calls is followed by one or more
    messages that are not tool results, and the results for those call ids follow them, emit the
    call, its results, then the intruders. The rewrite applies only when every result is found.
