@@ -91,8 +91,18 @@ func TestHistoryNoRuns(t *testing.T) {
 func TestRunNowSaysWhereTheReportGoes(t *testing.T) {
 	t.Parallel()
 	got, err := runHistory(t, &fakeTaskStore{}, `{"action":"run_now","task_id":"r1"}`)
-	want := "running task r1 now. Its outcome is recorded in this conversation, and an agent_job's report also reaches this turn after your next tool call; task action=history reads it. Do not sleep or poll to wait for it."
+	want := "running task r1 now. When it finishes, its outcome is recorded in the conversation it was scheduled from, unless it notifies none; an agent_job's report also reaches this turn after a tool call if this turn is still running then. task action=history task_id=r1 reads it at any time. Do not sleep or poll to wait for it."
 	if err != nil || got != want {
 		t.Fatalf("run_now = %q, %v\nwant %q", got, err, want)
+	}
+}
+
+// TestTaskSpecNamesHistory: task is deferred, so a turn that has not loaded it knows the action
+// only from the summary.
+func TestTaskSpecNamesHistory(t *testing.T) {
+	t.Parallel()
+	spec := (&TaskTool{}).Spec()
+	if !strings.Contains(spec.Summary, "past runs") || !strings.Contains(spec.Description, "action=history") {
+		t.Fatalf("task spec does not name the history action:\nsummary %q", spec.Summary)
 	}
 }
