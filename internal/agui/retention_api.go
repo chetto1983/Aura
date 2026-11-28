@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
@@ -77,7 +79,7 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 			return ExportSnapshot{}, ErrOwnerExportConflict
 		}
 	}
-	data, err := json.Marshal(ownerConversationData{SchemaVersion: 1, Conversation: conversation, Turns: history})
+	data, err := json.Marshal(ownerConversationData{SchemaVersion: 1, Conversation: conversation, Turns: plainTurns(history)})
 	if err != nil {
 		releaseOnError()
 		return ExportSnapshot{}, fmt.Errorf("marshal owner export snapshot: %w", err)
@@ -96,6 +98,23 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 		ConversationJSON: data, Artifacts: artifacts, Omissions: []string{},
 		ConversationVersion: conversationVersion, Release: release,
 	}, nil
+}
+
+// plainTurns is the history as its owner reads it: an untrusted tool result and a recorded
+// mail, worker or scheduled report lose the frame the model read them in, as on the cockpit
+// and on a share. The export is a file for a person, never fed back to a model, and the
+// stored history keeps its frames.
+func plainTurns(history []llm.Message) []llm.Message {
+	turns := slices.Clone(history)
+	for i := range turns {
+		switch turns[i].Role {
+		case llm.RoleTool:
+			turns[i].Content = agent.PlainToolOutput(turns[i].Content)
+		case llm.RoleAssistant:
+			turns[i].Content = agent.PlainRecord(turns[i].Content)
+		}
+	}
+	return turns
 }
 
 func (s serverOwnerExportSource) OpenArtifact(ctx context.Context, ownerID, assetID string) (io.ReadCloser, error) {
