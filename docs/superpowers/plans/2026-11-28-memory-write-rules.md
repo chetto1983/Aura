@@ -40,12 +40,12 @@
 
 ### Task 0: Baseline on the lab VM
 
-- [ ] **Step 1:** In a new cockpit conversation on the Sonnet route, send these four messages one turn at a time. Do not mention memory:
+- [x] **Step 1:** In a new cockpit conversation on the Sonnet route, send these four messages one turn at a time. Do not mention memory:
   1. «Mio fratello si chiama Paolo e vive a Torino.»
   2. «Per lavoro uso soprattutto Go e TypeScript, il Python solo per gli script.»
   3. «Da gennaio voglio che i promemoria di lavoro arrivino via email, non su Telegram.»
   4. «Oggi ho passato la mattina a provare il browser della sandbox.»
-- [ ] **Step 2:** Read back from the VM (`aura.tool_invocations` for the conversation and the memory's new facts by `run_id`):
+- [x] **Step 2:** Read back from the VM (`aura.tool_invocations` for the conversation and the memory's new facts by `run_id`):
   - `memory_entities` before the first write (y/n);
   - each predicate, and whether it is English snake_case and an existing one;
   - each new entity, and whether it is a name or a description;
@@ -53,7 +53,7 @@
   - whether message 4 was written.
 
   Record the results in the ledger.
-- [ ] **Step 3:** Ask Aura in that conversation to forget the facts written by these runs (`memory_forget` by `run_id`). The operator clicks the approval.
+- [x] **Step 3:** Ask Aura in that conversation to forget the facts written by these runs (`memory_forget` by `run_id`). The operator clicks the approval.
 
 ### Task 1: `memory_entities` lists the predicates in use
 
@@ -67,18 +67,18 @@
   - `EntityListing.Predicates []PredicateSummary` and `EntityListing.PredicatesTotal int`;
   - `MemoryEntitiesOutput.Predicates`, `MemoryEntitiesOutput.PredicatesTotal`, with json `predicates`, `predicates_total`.
 
-- [ ] **Step 1: Failing unit tests** in `browse_test.go` (fake server rows):
+- [x] **Step 1: Failing unit tests** in `browse_test.go` (fake server rows):
   - the predicate query runs with the current-validity condition (`asOfCondition`), groups by `predicate`, orders by count descending and carries the same LIMIT as the entities;
   - rows map to `PredicateSummary`;
   - an empty result gives `Predicates == []` (non-nil) and total 0;
   - a missing count column falls back to the page length.
 
   The existing tests that index `rec.statements` by position step by the new count of statements per call. That is an intended change; say so in the commit.
-- [ ] **Step 2:** Run `go test ./internal/arcadedb/ -run ListEntities`. Expected: FAIL.
-- [ ] **Step 3: Implement** after reading the ArcadeDB `GROUP BY` page: one grouped listing statement and one distinct-count statement. Update the tool description: "`predicates` lists the relations in use: reuse one before coining a new predicate."
-- [ ] **Step 4: Live test** (`arcadedb_integration` tag): two facts with `works_on`, one with `lives_in`, and a third predicate whose only fact is superseded. Expected: `works_on:2`, then `lives_in:1`; the superseded-only predicate is absent.
-- [ ] **Step 5: Verify.** Run `go vet`, `go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/`, and `UPDATE_GOLDEN=1 go test ./cmd/arcadedb-mcp -run Manifest`. Then run the live test against the disposable ArcadeDB, using the same provisioning the `arcadedb_integration` profile uses.
-- [ ] **Step 6: Commit** by pathspec: `feat(memory): list the predicates in use beside the entities`.
+- [x] **Step 2:** Run `go test ./internal/arcadedb/ -run ListEntities`. Expected: FAIL.
+- [x] **Step 3: Implement** after reading the ArcadeDB `GROUP BY` page: one grouped listing statement and one distinct-count statement. Update the tool description: "`predicates` lists the relations in use: reuse one before coining a new predicate."
+- [x] **Step 4: Live test** (`arcadedb_integration` tag): two facts with `works_on`, one with `lives_in`, and a third predicate whose only fact is superseded. Expected: `works_on:2`, then `lives_in:1`; the superseded-only predicate is absent.
+- [x] **Step 5: Verify.** Run `go vet`, `go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/`, and `UPDATE_GOLDEN=1 go test ./cmd/arcadedb-mcp -run Manifest`. Then run the live test against the disposable ArcadeDB, using the same provisioning the `arcadedb_integration` profile uses.
+- [x] **Step 6: Commit** by pathspec: `feat(memory): list the predicates in use beside the entities`.
 
 ### Task 2: The write rules in the write tools
 
@@ -90,16 +90,16 @@
 **Interfaces:**
 - Produces: `const memoryWriteRules string` (unexported). Task 3's test reads it.
 
-- [ ] **Step 1: Failing test.**
+- [x] **Step 1: Failing test.**
   - `TestWriteToolsCarryTheRules`: lists the tools through an in-process server, the way `tool_manifest_test.go` does. Both descriptions contain every marker from Global Constraints. `predicate`'s schema description contains `snake_case`, and `statement`'s contains `one or two sentences`.
   - `TestWriteRulesStayShort`: `len(memoryWriteRules) <= 700`.
-- [ ] **Step 2:** Run the tests. Expected: FAIL.
-- [ ] **Step 3: Implement.** The constant states the six rules of spec §Design 1 in at most 700 bytes, and both descriptions append it. Field tags:
+- [x] **Step 2:** Run the tests. Expected: FAIL.
+- [x] **Step 3: Implement.** The constant states the six rules of spec §Design 1 in at most 700 bytes, and both descriptions append it. Field tags:
   - `subject`/`object`: "a name from memory_entities when one fits; a new one is a noun, never a description";
   - `predicate`: "English snake_case verb phrase, one per relation; reuse one listed by memory_entities";
   - `statement`: "one or two sentences; what gets embedded and searched".
-- [ ] **Step 4: Verify.** Run the tests, `UPDATE_GOLDEN=1` for the manifest, then `go test -race ./cmd/arcadedb-mcp/`.
-- [ ] **Step 5: Commit:** `feat(memory): put the write rules in the write tools`.
+- [x] **Step 4: Verify.** Run the tests, `UPDATE_GOLDEN=1` for the manifest, then `go test -race ./cmd/arcadedb-mcp/`.
+- [x] **Step 5: Commit:** `feat(memory): put the write rules in the write tools`.
 
 ### Task 3: The skill opens with the rules
 
@@ -107,11 +107,11 @@
 - Modify: `internal/skills/embed/memory-aura/SKILL.md`
 - Test: `cmd/arcadedb-mcp/memory_write_rules_test.go` (adds `TestSkillOpensWithTheWriteRules`)
 
-- [ ] **Step 1: Failing test.** Read the skill file and take the text between `## Before any write` and the next `## `. It must contain every marker. It must sit before `## Memory tools`.
-- [ ] **Step 2:** Run the test. Expected: FAIL (no such heading).
-- [ ] **Step 3: Write the section.** About 15 lines, the six rules in prose. Under `## Writing`, add a `### Predicates` subsection (snake_case, reuse from the listing, one per relation) and a `### Statements` subsection (one or two sentences, why: correction is per fact).
-- [ ] **Step 4: Verify.** Run `go test ./cmd/arcadedb-mcp/ ./internal/skills/...`. The embed size checks must stay green.
-- [ ] **Step 5: Commit:** `docs(skill): open the memory skill with the write rules`.
+- [x] **Step 1: Failing test.** Read the skill file and take the text between `## Before any write` and the next `## `. It must contain every marker. It must sit before `## Memory tools`.
+- [x] **Step 2:** Run the test. Expected: FAIL (no such heading).
+- [x] **Step 3: Write the section.** About 15 lines, the six rules in prose. Under `## Writing`, add a `### Predicates` subsection (snake_case, reuse from the listing, one per relation) and a `### Statements` subsection (one or two sentences, why: correction is per fact).
+- [x] **Step 4: Verify.** Run `go test ./cmd/arcadedb-mcp/ ./internal/skills/...`. The embed size checks must stay green.
+- [x] **Step 5: Commit:** `docs(skill): open the memory skill with the write rules`.
 
 ### Task 4: An entity with no facts can be forgotten
 
@@ -119,18 +119,18 @@
 - Modify: `internal/arcadedb/forget.go` (`pruneOrphans`, `countStrandableByRIDs`), `internal/arcadedb/memory_batch_store.go` (`Persist` prune), `internal/arcadedb/memory_batch_state.go` (`applyMemoryBatchForget`)
 - Test: `internal/arcadedb/forget_orphan_live_test.go` (new, `arcadedb_integration`), `internal/arcadedb/memory_batch_state_pure_test.go`, `internal/arcadedb/forget_test.go`
 
-- [ ] **Step 1: Failing live tests** on a disposable ArcadeDB. Seed: one fact `A rel B`, forgotten with `KeepOrphans`, then a `TOUCHED` edge from a `ReasoningStep` to each, written with `createReasoningTouchedStatement`, the statement the runner uses.
+- [x] **Step 1: Failing live tests** on a disposable ArcadeDB. Seed: one fact `A rel B`, forgotten with `KeepOrphans`, then a `TOUCHED` edge from a `ReasoningStep` to each, written with `createReasoningTouchedStatement`, the statement the runner uses.
   - `memory_forget` dry run on `A` counts 1 entity; the real call removes it, and `entityClassScan` no longer finds `A`.
   - `memory_batch` `forget {entity: B}` returns `entities: 1`, and `B` no longer exists.
   - `memory_batch` `forget {entity: "Nobody"}` is still `target_not_found`.
-- [ ] **Step 2:** Run them against the disposable server. Expected: FAIL (entity still present; batch `target_not_found`).
-- [ ] **Step 3: Implement.** The three statements use `bothE('` + factEdgeType + `').size() = 0` (cite `sql-delete.adoc`). `applyMemoryBatchForget`: with no matching fact, an `Entity` filter naming an unreferenced entity in the state removes it; anything else stays `target_not_found`. Unit tests pin the statement shape and the pure-state rule.
-- [ ] **Step 4: Verify.** `go vet`, `go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/`, and the live tests.
-- [ ] **Step 5: Commit:** `fix(memory): forget an entity whose only edges are reasoning traces`.
+- [x] **Step 2:** Run them against the disposable server. Expected: FAIL (entity still present; batch `target_not_found`).
+- [x] **Step 3: Implement.** The three statements use `bothE('` + factEdgeType + `').size() = 0` (cite `sql-delete.adoc`). `applyMemoryBatchForget`: with no matching fact, an `Entity` filter naming an unreferenced entity in the state removes it; anything else stays `target_not_found`. Unit tests pin the statement shape and the pure-state rule.
+- [x] **Step 4: Verify.** `go vet`, `go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/`, and the live tests.
+- [x] **Step 5: Commit:** `fix(memory): forget an entity whose only edges are reasoning traces`.
 
 ### Task 5: After, on the lab VM
 
-- [ ] **Step 1: Ship.** Push (the WSL recipe, once the peer session's tree allows it) and wait for CI green on every job of that SHA, plus the Aura and ArcadeDB MCP images. Then wait until the VM runs it: check the container labels of `aura` and the memory MCP.
-- [ ] **Step 2:** In the cockpit, ask Aura to remove the six entities the baseline left (Paolo, Torino, Go, TypeScript, Python, Email). Read back with a read-only query that they no longer exist.
-- [ ] **Step 3:** Repeat Task 0 Steps 1–3 with the same four messages in a new conversation.
-- [ ] **Step 4: Write** `docs/superpowers/verification/2026-11-28-memory-write-rules.md`: the before/after table, the orphan removal, and what one run per side does not prove. Commit by pathspec.
+- [x] **Step 1: Ship.** Push (the WSL recipe, once the peer session's tree allows it) and wait for CI green on every job of that SHA, plus the Aura and ArcadeDB MCP images. Then wait until the VM runs it: check the container labels of `aura` and the memory MCP.
+- [x] **Step 2:** In the cockpit, ask Aura to remove the six entities the baseline left (Paolo, Torino, Go, TypeScript, Python, Email). Read back with a read-only query that they no longer exist.
+- [x] **Step 3:** Repeat Task 0 Steps 1–3 with the same four messages in a new conversation.
+- [x] **Step 4: Write** `docs/superpowers/verification/2026-11-28-memory-write-rules.md`: the before/after table, the orphan removal, and what one run per side does not prove. Commit by pathspec.
