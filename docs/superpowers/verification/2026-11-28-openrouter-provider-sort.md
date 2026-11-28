@@ -58,6 +58,12 @@ The sort row was reset from the cockpit (`Ripristina`), so `aura.settings` holds
   and the compose lines were left empty in the next commit. No call stalled in this run either way. The
   bounds are pinned by `TestRouteTimeoutsFollowTheRoute` and
   `TestPrimaryLLMRouteReloaderSwitchesRouteTimeouts`.
+
+  After the VM updated to `015c660ed`:
+  - the container carried `AURA_LLM_TOTAL_TIMEOUT_SEC=` and `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=` (empty);
+  - `aura config get llm.total_timeout_sec` inside it printed `180`.
+
+  A real fallback through the 90 s window is still not measured.
 - **The morning's slowness on this model.** The slow provider and the 95k-token prompt belonged to
   `inkling-2-mini`. On `tencent/hy4-flash` the thread's prompt was 17-29k tokens and no call took more
   than 7 s.
