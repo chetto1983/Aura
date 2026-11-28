@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
@@ -241,7 +240,7 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	// request-scoped values) so this call gets its own FRESH TotalTimeoutSec window.
 	// The derived ctx is cancelled only after the channel is fully drained below, so
 	// partial chunks are never dropped.
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ic.Ctx), time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ic.Ctx), a.cfg.CallTimeout())
 	defer cancel()
 	callCtx, llmEnd := llmCallBoundary.Start(callCtx)
 	defer llmEnd.PanicSafe(&err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -62,7 +61,7 @@ func (r *Runner) compactionSummarizer(runtime llm.RuntimeSnapshot) conversations
 		runtime.Client,
 		model,
 		runtime.Config.ContextWindow,
-		time.Duration(runtime.Config.TotalTimeoutSec)*time.Second,
+		runtime.Config.CallTimeout(),
 	)
 }
 

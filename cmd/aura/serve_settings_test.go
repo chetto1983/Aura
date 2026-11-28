@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -169,6 +170,31 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 	r.runtime.Replace(nil, reverted)
 	if _, ok := r.EffectiveValue("AURA_LOOP_MAX_STEPS"); ok {
 		t.Fatal("an unpinned loop budget must fall through to the process env, not report 0")
+	}
+}
+
+// The timeouts resolve by route at use time, so a hot switch to a local server takes the shorter
+// bounds the OpenRouter route does not need there (verification 2026-11-28).
+func TestPrimaryLLMRouteReloaderSwitchesRouteTimeouts(t *testing.T) {
+	fallback := validFallbackLLMConfig()
+	fallback.TotalTimeoutSec = 0
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: llm.NewRuntime(nil, fallback)}
+	local, err := r.resolve(map[string]string{
+		"AURA_LLM_PROVIDER": "llamacpp",
+		"AURA_LLM_BASE_URL": "http://127.0.0.1:8080/v1",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if local.CallTimeout() != 120*time.Second || local.StreamIdleTimeout() != 60*time.Second {
+		t.Fatalf("local timeouts = %s/%s, want 120s/60s", local.CallTimeout(), local.StreamIdleTimeout())
+	}
+	cloud, err := r.resolve(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cloud.CallTimeout() != 180*time.Second || cloud.StreamIdleTimeout() != 90*time.Second {
+		t.Fatalf("OpenRouter timeouts = %s/%s, want 180s/90s", cloud.CallTimeout(), cloud.StreamIdleTimeout())
 	}
 }
 

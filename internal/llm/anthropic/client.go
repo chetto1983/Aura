@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/packages/ssestream"
@@ -71,7 +70,7 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 	if err != nil {
 		return nil, err
 	}
-	streamCtx, firedIdle, cleanup := openai_compat.StreamIdleContext(ctx, time.Duration(c.cfg.StreamIdleTimeoutSec)*time.Second)
+	streamCtx, firedIdle, cleanup := openai_compat.StreamIdleContext(ctx, c.cfg.StreamIdleTimeout())
 	sdk := newSDK(key, c.httpClient, c.baseURL)
 	stream := sdk.Beta.Messages.NewStreaming(streamCtx, built.params)
 	if err := stream.Err(); err != nil {

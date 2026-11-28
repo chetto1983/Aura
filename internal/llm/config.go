@@ -30,17 +30,9 @@ const (
 	DefaultBaseURL           = "https://openrouter.ai/api/v1"
 	defaultTemperature       = 0.7
 	defaultMaxTokens         = 4096
-	defaultTotalTimeoutSec   = 120
 	defaultConnectTimeoutSec = 10
-	// defaultStreamIdleTimeoutSec bounds a stream stall (B-08): no bytes at all —
-	// not even an SSE keep-alive comment — within this window aborts the read as a
-	// retryable transport stall. The watchdog resets on ANY bytes (keep-alives
-	// included), so a long reasoning phase that streams `: OPENROUTER PROCESSING`
-	// pings does NOT trip it; only a dead connection does. It fires before the 120s
-	// total-call timeout so a hung upstream is caught early. 0 disables it.
-	defaultStreamIdleTimeoutSec = 60
-	defaultAdaptiveReasoning    = true
-	defaultShowReasoning        = true
+	defaultAdaptiveReasoning = true
+	defaultShowReasoning     = true
 
 	// L2 budget inputs (Phase 4 AM, resolves OPEN QUESTION 2). ContextWindow is
 	// the ~1M DeepSeek-V4 window; MaxOutputTokens is a sane reservation cap. The
@@ -108,18 +100,23 @@ const (
 // or custom log representation, so a %+v dump exposes it — callers MUST NOT log
 // the struct (D-28 structural redaction; the Plan-04 anti-leak test enforces it).
 type Config struct {
-	Provider          string
-	Model             string
-	BaseURL           string
-	APIKey            string
-	TotalTimeoutSec   int
-	ConnectTimeoutSec int
-	// StreamIdleTimeoutSec bounds the gap with NO bytes on an open stream (B-08).
-	// >0 arms a per-read idle watchdog in the openai_compat client that aborts a
-	// stalled stream with a retryable ErrStreamIdleTimeout; 0 disables it.
-	StreamIdleTimeoutSec int
-	Temperature          float64
-	MaxTokens            int
+	Provider string
+	Model    string
+	BaseURL  string
+	APIKey   string
+	// TotalTimeoutSec bounds one call. Read it through CallTimeout: unset follows the route,
+	// and a configured value must be positive.
+	TotalTimeoutSec        int
+	TotalTimeoutConfigured bool
+	ConnectTimeoutSec      int
+	// StreamIdleTimeoutSec bounds the gap with NO bytes on an open stream (B-08). The
+	// watchdog resets on any byte, keep-alive comments included, but OpenRouter can send
+	// none while it waits on a provider (lab VM 2026-11-28). Read it through
+	// StreamIdleTimeout: unset follows the route, and a configured 0 disables the watchdog.
+	StreamIdleTimeoutSec        int
+	StreamIdleTimeoutConfigured bool
+	Temperature                 float64
+	MaxTokens                   int
 	// Sampling is the rest of the serving model's card: top_p / top_k / min_p /
 	// presence and repetition penalties. Unset fields never reach the wire.
 	Sampling          Sampling
@@ -210,7 +207,7 @@ func (c Config) Validate() error {
 	switch {
 	case c.ContextWindow <= 0:
 		return fmt.Errorf("llm: invalid context_window %d: must be positive", c.ContextWindow)
-	case c.TotalTimeoutSec <= 0:
+	case c.TotalTimeoutSec < 0, c.TotalTimeoutConfigured && c.TotalTimeoutSec == 0:
 		return fmt.Errorf("llm: invalid total_timeout_sec %d: must be positive", c.TotalTimeoutSec)
 	case c.MaxTokens <= 0:
 		return fmt.Errorf("llm: invalid max_tokens %d: must be positive", c.MaxTokens)
@@ -298,9 +295,7 @@ func load(allowEmptyKey bool) (*Config, error) {
 		ContextWindow:            defaultContextWindow,
 		MaxOutputTokens:          defaultMaxOutputTokens,
 		CompactionTriggerPercent: defaultCompactionTriggerPercent,
-		TotalTimeoutSec:          defaultTotalTimeoutSec,
 		ConnectTimeoutSec:        defaultConnectTimeoutSec,
-		StreamIdleTimeoutSec:     defaultStreamIdleTimeoutSec,
 		Headers: map[string]string{
 			"HTTP-Referer": headerReferer,
 			"X-Title":      headerTitle,
@@ -401,12 +396,14 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	}
 	if fc.TotalTimeoutSec != nil {
 		cfg.TotalTimeoutSec = *fc.TotalTimeoutSec
+		cfg.TotalTimeoutConfigured = true
 	}
 	if fc.ConnectTimeoutSec != nil {
 		cfg.ConnectTimeoutSec = *fc.ConnectTimeoutSec
 	}
 	if fc.StreamIdleTimeoutSec != nil {
 		cfg.StreamIdleTimeoutSec = *fc.StreamIdleTimeoutSec
+		cfg.StreamIdleTimeoutConfigured = true
 	}
 	if fc.Temperature != nil {
 		cfg.Temperature = *fc.Temperature
@@ -505,6 +502,7 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.TotalTimeoutSec = v
+		cfg.TotalTimeoutConfigured = true
 	}
 	if v, ok, err := envInt(envConnectTimeoutSec); err != nil {
 		return err
@@ -515,6 +513,7 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.StreamIdleTimeoutSec = v
+		cfg.StreamIdleTimeoutConfigured = true
 	}
 	sort, err := ParseOpenRouterProviderSort(os.Getenv(EnvOpenRouterProviderSort))
 	if err != nil {

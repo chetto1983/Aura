@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -85,11 +86,11 @@ func TestConfigLoadOrder(t *testing.T) {
 		if !cfg.ShowReasoning {
 			t.Error("ShowReasoning = false, want true default (live CoT on by default)")
 		}
-		if cfg.TotalTimeoutSec != 120 || cfg.ConnectTimeoutSec != 10 {
-			t.Errorf("timeouts = %d/%d, want 120/10", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
+		if cfg.CallTimeout() != 180*time.Second || cfg.ConnectTimeoutSec != 10 {
+			t.Errorf("timeouts = %s/%d, want the OpenRouter route's 180s/10", cfg.CallTimeout(), cfg.ConnectTimeoutSec)
 		}
-		if cfg.StreamIdleTimeoutSec != 60 {
-			t.Errorf("StreamIdleTimeoutSec = %d, want 60 default (B-08)", cfg.StreamIdleTimeoutSec)
+		if cfg.StreamIdleTimeout() != 90*time.Second {
+			t.Errorf("StreamIdleTimeout() = %s, want the OpenRouter route's 90s (B-08)", cfg.StreamIdleTimeout())
 		}
 		if cfg.Headers["HTTP-Referer"] == "" || cfg.Headers["X-Title"] != "Aura" {
 			t.Errorf("attribution headers missing: %#v", cfg.Headers)

@@ -23,7 +23,7 @@ func TestConfigValidateTokenBudget(t *testing.T) {
 	}{
 		{"zero context window", func(cfg *llm.Config) { cfg.ContextWindow = 0 }, "context_window"},
 		{"negative context window", func(cfg *llm.Config) { cfg.ContextWindow = -1 }, "context_window"},
-		{"zero total timeout", func(cfg *llm.Config) { cfg.TotalTimeoutSec = 0 }, "total_timeout_sec"},
+		{"configured zero total timeout", func(cfg *llm.Config) { cfg.TotalTimeoutSec, cfg.TotalTimeoutConfigured = 0, true }, "total_timeout_sec"},
 		{"negative total timeout", func(cfg *llm.Config) { cfg.TotalTimeoutSec = -1 }, "total_timeout_sec"},
 		{"zero max tokens", func(cfg *llm.Config) { cfg.MaxTokens = 0 }, "max_tokens"},
 		{"negative max tokens", func(cfg *llm.Config) { cfg.MaxTokens = -1 }, "max_tokens"},

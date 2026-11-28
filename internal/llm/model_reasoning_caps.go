@@ -176,10 +176,7 @@ func NewModelCapabilityClient(cfg Config, ttl time.Duration) *ModelCapabilityCli
 	if connect <= 0 {
 		connect = 10 * time.Second
 	}
-	total := time.Duration(cfg.TotalTimeoutSec) * time.Second
-	if total <= 0 {
-		total = 30 * time.Second
-	}
+	total := cfg.CallTimeout()
 	return &ModelCapabilityClient{
 		cfg: cfg,
 		ttl: ttl,

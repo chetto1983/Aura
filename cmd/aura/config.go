@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
@@ -79,7 +80,7 @@ func configShow() {
 	fmt.Printf("temperature:         %g\n", cfg.Temperature)
 	fmt.Printf("max_tokens:          %d\n", cfg.MaxTokens)
 	fmt.Printf("adaptive_reasoning:  %t\n", cfg.AdaptiveReasoning)
-	fmt.Printf("total_timeout_sec:   %d\n", cfg.TotalTimeoutSec)
+	fmt.Printf("total_timeout_sec:   %d\n", int(cfg.CallTimeout()/time.Second))
 	fmt.Printf("connect_timeout_sec: %d\n", cfg.ConnectTimeoutSec)
 }
 
@@ -298,7 +299,7 @@ func getConfigKey(cfg *llm.Config, key string) (string, bool) {
 	case "llm.adaptive_reasoning":
 		return strconv.FormatBool(cfg.AdaptiveReasoning), true
 	case "llm.total_timeout_sec":
-		return strconv.Itoa(cfg.TotalTimeoutSec), true
+		return strconv.Itoa(int(cfg.CallTimeout() / time.Second)), true
 	case "llm.connect_timeout_sec":
 		return strconv.Itoa(cfg.ConnectTimeoutSec), true
 	default:

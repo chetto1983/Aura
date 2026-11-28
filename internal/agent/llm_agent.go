@@ -293,7 +293,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				callParent = context.WithoutCancel(ic.Ctx)
 			}
 			callCtx, cancel := context.WithTimeout(callParent,
-				time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
+				a.cfg.CallTimeout())
 			spanCtx, span := startLLMSpan(callCtx)
 
 			// roundBudget assembles the per-round prompt.Budget (llm_agent_round.go);

@@ -61,7 +61,7 @@ func New(cfg llm.Config) *Client {
 		httpClient:        httpClient,
 		chat:              openai.NewChatCompletionService(opts...),
 		contentCaps:       llm.NewContentCapabilitySource(cfg, 15*time.Minute),
-		streamIdleTimeout: time.Duration(cfg.StreamIdleTimeoutSec) * time.Second,
+		streamIdleTimeout: cfg.StreamIdleTimeout(),
 	}
 }
 
