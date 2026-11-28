@@ -44,28 +44,35 @@ func LoadedSchemas(content string) []string {
 	return out
 }
 
-// SearchCallIDs returns the ids of every tool_search call in history.
-func SearchCallIDs(history []llm.Message) map[string]struct{} {
-	ids := make(map[string]struct{})
-	for id, name := range callNames(history) {
-		if name == toolSearchName {
-			ids[id] = struct{}{}
+// ResultCalls maps the index of each tool result in history to the name of the call it
+// answers: the most recent call with its id BEFORE it. A call id is not unique across a
+// conversation on every route, so one map over the whole history would let a later call
+// that reuses an id re-label an earlier result, both un-granting a real tool_search result
+// and granting an echo.
+func ResultCalls(history []llm.Message) map[int]string {
+	names := make(map[string]string)
+	calls := make(map[int]string)
+	for i, m := range history {
+		for _, tc := range m.ToolCalls {
+			names[tc.ID] = tc.Function.Name
+		}
+		if m.Role != llm.RoleTool {
+			continue
+		}
+		if name, ok := names[m.ToolCallID]; ok {
+			calls[i] = name
 		}
 	}
-	return ids
+	return calls
 }
 
 // References maps the index of each tool result in history that loaded deferred tools to
 // their names, deduplicated in order. It is a pure function of history and registry, so a
 // reloaded conversation derives exactly what the live one did.
 func (r *Registry) References(history []llm.Message) map[int][]string {
-	names := callNames(history)
 	refs := make(map[int][]string)
-	for i, m := range history {
-		if m.Role != llm.RoleTool {
-			continue
-		}
-		if loaded := r.LoadedBy(names[m.ToolCallID], m.Content); len(loaded) > 0 {
+	for i, called := range ResultCalls(history) {
+		if loaded := r.LoadedBy(called, history[i].Content); len(loaded) > 0 {
 			refs[i] = loaded
 		}
 	}
@@ -99,15 +106,4 @@ func (r *Registry) LoadedBy(calledTool, content string) []string {
 func (r *Registry) isDeferred(name string) bool {
 	tool, ok := r.Get(name)
 	return ok && tool.Spec().Deferred
-}
-
-// callNames maps each tool_call id in history to the called tool's name.
-func callNames(history []llm.Message) map[string]string {
-	names := make(map[string]string)
-	for _, m := range history {
-		for _, tc := range m.ToolCalls {
-			names[tc.ID] = tc.Function.Name
-		}
-	}
-	return names
 }

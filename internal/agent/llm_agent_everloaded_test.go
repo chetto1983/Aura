@@ -83,6 +83,24 @@ func TestPromoteFromMetaSeedsTheGateWithinTheTurn(t *testing.T) {
 	}
 }
 
+// A call id can come back in a later turn (a route numbering calls per response). Both
+// derivations pair each result with the most recent call before it, so the reuse neither
+// un-grants the earlier tool_search result nor grants the later echo.
+func TestDerivationsSurviveAReusedCallID(t *testing.T) {
+	t.Parallel()
+	reg := decayRegistry()
+	hist := append(searchTurn("call_0", "alpha"),
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("call_0", "plain", "{}")}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "call_0", Content: searchResult("beta")},
+	)
+	if got := activatedNames(t, hist, reg); len(got) != 1 || got[0] != "alpha" {
+		t.Errorf("activated = %v, want [alpha], the last real lookup", got)
+	}
+	if got := everLoadedNames(t, hist, reg); len(got) != 1 || got[0] != "alpha" {
+		t.Errorf("everLoaded = %v, want [alpha]", got)
+	}
+}
+
 // A tool cannot mint its own grant by printing a spec block: everLoaded anchors on the
 // tool_call that produced the result, exactly as deriveActivated does. Without this a bare
 // `echo "## gamma"` from any tool would hand the model permission to call gamma with

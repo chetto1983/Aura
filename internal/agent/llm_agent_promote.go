@@ -53,12 +53,12 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 	if reg == nil {
 		return activated
 	}
-	searchCalls := tools.SearchCallIDs(hist)
+	resultCalls := tools.ResultCalls(hist)
 	// calledOrder is least-recently-used first, so the tail is what the cap keeps. A
 	// re-call moves the name to the end rather than duplicating it.
 	var calledOrder []string
 	var lastLoaded []string
-	for _, m := range hist {
+	for i, m := range hist {
 		for _, tc := range m.ToolCalls {
 			if tc.Function.Name == searchTool {
 				continue
@@ -67,13 +67,9 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 				return n == tc.Function.Name
 			}), tc.Function.Name)
 		}
-		if m.Role != llm.RoleTool {
-			continue
+		if resultCalls[i] == searchTool {
+			lastLoaded = reg.LoadedBy(searchTool, m.Content)
 		}
-		if _, ok := searchCalls[m.ToolCallID]; !ok {
-			continue
-		}
-		lastLoaded = reg.LoadedBy(searchTool, m.Content)
 	}
 	// USE promotes, a lookup alone does not. Rebuilding the grant from every
 	// tool_search result ever seen made the promoted set grow monotonically: a tool

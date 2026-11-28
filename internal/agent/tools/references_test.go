@@ -81,8 +81,26 @@ func TestReferencesIndexesEveryLoadingResult(t *testing.T) {
 	if got := reg.References(history); !reflect.DeepEqual(got, want) {
 		t.Fatalf("References = %v, want %v", got, want)
 	}
-	if got := SearchCallIDs(history); !reflect.DeepEqual(got, map[string]struct{}{"s1": {}}) {
-		t.Fatalf("SearchCallIDs = %v, want only s1", got)
+	if got := ResultCalls(history); !reflect.DeepEqual(got, map[int]string{2: toolSearchName, 3: "beta", 5: "plain"}) {
+		t.Fatalf("ResultCalls = %v", got)
+	}
+}
+
+// Some routes number calls per response (call_0, call_1, ...), so an id comes back in a
+// later turn. Each result pairs with the most recent call before it: the early search still
+// loads, and the later echo under the same id does not.
+func TestReferencesPairEachResultWithItsOwnCallWhenIdsRepeat(t *testing.T) {
+	t.Parallel()
+	reg := referencesRegistry()
+	history := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{referencesCall("call_0", toolSearchName)}},
+		{Role: llm.RoleTool, ToolCallID: "call_0", Content: specOf(t, reg, "alpha")},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{referencesCall("call_0", "plain")}},
+		{Role: llm.RoleTool, ToolCallID: "call_0", Content: specOf(t, reg, "beta")},
+		{Role: llm.RoleTool, ToolCallID: "never_called", Content: specOf(t, reg, "beta")},
+	}
+	if got, want := reg.References(history), map[int][]string{1: {"alpha"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("References = %v, want %v", got, want)
 	}
 }
 
