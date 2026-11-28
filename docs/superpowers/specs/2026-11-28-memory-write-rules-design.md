@@ -29,13 +29,16 @@ Measured, not assumed:
   before writing shows both the names and the relations to reuse (added on the operator's word,
   2026-11-28: no memory tool listed predicates, so "reuse the predicate" could not be followed).
 - Measured before and after on the lab VM with the operator's Sonnet route.
+- Aura can remove an entity left with no facts, with her own tools (added on the operator's
+  word, 2026-11-28, after the baseline cleanup left six such entities she could not remove).
 
 ## Non-goals
 
 - No change to compaction, and no pinning of skill results.
 - No server-side rejection of a bad predicate: the rule and the listing come first, and a
   rejection is decided only if the measurement shows they are not enough.
-- No cleanup of the existing memory: that is Aura's job in the cockpit, on the operator's word.
+- No cleanup of the existing memory by hand: that is Aura's job in the cockpit, on the
+  operator's word. Where her tools cannot do it, the tool is fixed.
 
 ## Approaches
 
@@ -67,6 +70,23 @@ Measured, not assumed:
    truncated list is not read as complete. `arcadedb.Client.ListEntities` runs one more
    grouped query over the FACT edges (the ArcadeDB SQL `GROUP BY` page is read before writing
    it). The tool description says the list is there to reuse a predicate before coining one.
+
+6. Orphan entities. Measured on the VM on 2026-11-28 (read-only query): the six entities the
+   baseline left have 0 `FACT`, 0 `MENTIONS` and 3 or 4 `TOUCHED` edges each. `TOUCHED` is the
+   reasoning-trace edge the runner writes after every memory tool call that names an entity,
+   `memory_forget` included. Both prune statements delete only where `bothE().size() = 0`, so an
+   entity Aura ever wrote or tried to forget is never an orphan to the database. Each attempt
+   adds another edge. `memory_entities` and `graph_diagnostics` count `FACT` alone and show it
+   with no facts. `memory_batch` reported the entities as removed because it counts its own
+   model, which also counts `FACT` alone.
+   - An entity is an orphan when it has no `FACT` edge: `bothE('FACT').size() = 0` in the
+     `memory_forget` prune, its `dry_run` count, and the `memory_batch` commit. ArcadeDB deletes
+     a vertex with its edges (`sql-delete.adoc`: "a vertex is deleted with its edges all the
+     same"), so its `TOUCHED` and `MENTIONS` edges go with it.
+   - `memory_batch` `forget {entity}` on an entity with no facts removes the entity. A name
+     that does not exist is still `target_not_found`.
+   - The batch model and the delete then use the same condition, so the reported count is
+     what was removed. A live test checks the entity no longer exists.
 
 ## Measurement
 

@@ -113,8 +113,24 @@
 - [ ] **Step 4: Verify.** Run `go test ./cmd/arcadedb-mcp/ ./internal/skills/...`. The embed size checks must stay green.
 - [ ] **Step 5: Commit:** `docs(skill): open the memory skill with the write rules`.
 
-### Task 4: After, on the lab VM
+### Task 4: An entity with no facts can be forgotten
+
+**Files:**
+- Modify: `internal/arcadedb/forget.go` (`pruneOrphans`, `countStrandableByRIDs`), `internal/arcadedb/memory_batch_store.go` (`Persist` prune), `internal/arcadedb/memory_batch_state.go` (`applyMemoryBatchForget`)
+- Test: `internal/arcadedb/forget_orphan_live_test.go` (new, `arcadedb_integration`), `internal/arcadedb/memory_batch_state_pure_test.go`, `internal/arcadedb/forget_test.go`
+
+- [ ] **Step 1: Failing live tests** on a disposable ArcadeDB. Seed: one fact `A rel B`, forgotten with `KeepOrphans`, then a `TOUCHED` edge from a `ReasoningStep` to each, written with `createReasoningTouchedStatement`, the statement the runner uses.
+  - `memory_forget` dry run on `A` counts 1 entity; the real call removes it, and `entityClassScan` no longer finds `A`.
+  - `memory_batch` `forget {entity: B}` returns `entities: 1`, and `B` no longer exists.
+  - `memory_batch` `forget {entity: "Nobody"}` is still `target_not_found`.
+- [ ] **Step 2:** Run them against the disposable server. Expected: FAIL (entity still present; batch `target_not_found`).
+- [ ] **Step 3: Implement.** The three statements use `bothE('` + factEdgeType + `').size() = 0` (cite `sql-delete.adoc`). `applyMemoryBatchForget`: with no matching fact, an `Entity` filter naming an unreferenced entity in the state removes it; anything else stays `target_not_found`. Unit tests pin the statement shape and the pure-state rule.
+- [ ] **Step 4: Verify.** `go vet`, `go test -race ./internal/arcadedb/ ./cmd/arcadedb-mcp/`, and the live tests.
+- [ ] **Step 5: Commit:** `fix(memory): forget an entity whose only edges are reasoning traces`.
+
+### Task 5: After, on the lab VM
 
 - [ ] **Step 1: Ship.** Push (the WSL recipe, once the peer session's tree allows it) and wait for CI green on every job of that SHA, plus the Aura and ArcadeDB MCP images. Then wait until the VM runs it: check the container labels of `aura` and the memory MCP.
-- [ ] **Step 2:** Repeat Task 0 Steps 1–3 with the same four messages in a new conversation.
-- [ ] **Step 3: Write** `docs/superpowers/verification/2026-11-28-memory-write-rules.md`: the before/after table, and what one run per side does not prove. Commit by pathspec.
+- [ ] **Step 2:** In the cockpit, ask Aura to remove the six entities the baseline left (Paolo, Torino, Go, TypeScript, Python, Email). Read back with a read-only query that they no longer exist.
+- [ ] **Step 3:** Repeat Task 0 Steps 1–3 with the same four messages in a new conversation.
+- [ ] **Step 4: Write** `docs/superpowers/verification/2026-11-28-memory-write-rules.md`: the before/after table, the orphan removal, and what one run per side does not prove. Commit by pathspec.
