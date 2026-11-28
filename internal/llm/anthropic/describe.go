@@ -15,12 +15,17 @@ import (
 // request and stream a chat turn takes.
 //
 // llm.ErrMandatoryModalityUnavailable, wrapped with the reason, means asking again would
-// get the same answer: no house key is set, the model reads no image of this type, or it
-// refused. Every other error, a key the store could not read included, is worth retrying.
+// get the same answer: no house key is set, the model reads no image of this type, the
+// image is over Claude's size limits, or the model refused. Every other error, a key the
+// store could not read included, is worth retrying.
 func (c *Client) Describe(ctx context.Context, image []byte, mimeType, prompt string) (string, error) {
 	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(mimeType))
 	if err != nil || !strings.HasPrefix(mediaType, "image/") {
 		return "", fmt.Errorf("%w: anthropic: %q is not an image", llm.ErrMandatoryModalityUnavailable, mimeType)
+	}
+	// The asset pipeline sends the original bytes of an image it could not downscale.
+	if reason := tooLarge(mediaType, image); reason != "" {
+		return "", fmt.Errorf("%w: anthropic: the image is not sent: %s", llm.ErrMandatoryModalityUnavailable, reason)
 	}
 	key, err := readHouseKey(ctx, c.key)
 	if errors.Is(err, ErrNoKey) {

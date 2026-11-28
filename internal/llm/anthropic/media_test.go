@@ -1,15 +1,19 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -224,13 +228,132 @@ func TestCapabilitiesAreFetchedOnlyWithMedia(t *testing.T) {
 	if got := server.auth.Load(); got != "Bearer "+houseKey {
 		t.Fatalf("catalogue read with %q", got)
 	}
-	// A model the account does not list reads text only.
+	// A model the account does not list reads text only, and is asked about again on its
+	// next request with media: it may be listed by then.
 	withMedia.Model = "claude-unlisted-9-9"
-	if result := toolResultContent(t, messagesOf(t, server.send(t, withMedia))[4]); len(result) != 2 || result[1]["type"] != "text" {
-		t.Fatalf("an unlisted model got %#v", result)
+	for range 2 {
+		if result := toolResultContent(t, messagesOf(t, server.send(t, withMedia))[4]); len(result) != 2 || result[1]["type"] != "text" {
+			t.Fatalf("an unlisted model got %#v", result)
+		}
 	}
-	if got := server.catalogs.Load(); got != 2 {
-		t.Fatalf("a second model read the catalogue %d times in all, want 2", got)
+	if got := server.catalogs.Load(); got != 3 {
+		t.Fatalf("two requests for an unlisted model read the catalogue %d times in all, want 3", got)
+	}
+}
+
+func TestConcurrentFirstRequestsShareTheCache(t *testing.T) {
+	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
+	const readers = 8
+	results := make(chan llm.ProviderContentCapabilities, readers)
+	var wg sync.WaitGroup
+	for range readers {
+		wg.Go(func() {
+			caps, err := server.client.capabilities(t.Context(), houseKey, "claude-sonnet-5-5")
+			if err != nil {
+				t.Error(err)
+			}
+			results <- caps
+		})
+	}
+	wg.Wait()
+	close(results)
+	for caps := range results {
+		if !caps.SupportsMIME("image/png") || !caps.SupportsMIME("application/pdf") || caps.SupportsMIME("image/svg+xml") {
+			t.Fatalf("concurrent read got %#v", caps)
+		}
+	}
+	reads := server.catalogs.Load()
+	if reads < 1 || reads > readers {
+		t.Fatalf("%d concurrent first requests read the catalogue %d times", readers, reads)
+	}
+	if _, err := server.client.capabilities(t.Context(), houseKey, "claude-sonnet-5-5"); err != nil || server.catalogs.Load() != reads {
+		t.Fatalf("a later request read the catalogue again (err %v)", err)
+	}
+}
+
+func TestReferenceToolPartKeepsItsText(t *testing.T) {
+	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
+	req := turnRequest(nil, map[string][]llm.ProjectedRequestPart{"t1": {
+		{Type: "reference", MIMEType: "image/png", Text: "Chart: sales rose 12% in Q3", ReferenceOnly: true},
+		{Type: "reference", MIMEType: "image/png", Text: " ", ReferenceOnly: true},
+	}})
+	result := toolResultContent(t, messagesOf(t, server.send(t, req))[4])
+	if len(result) != 2 || result[1]["text"] != "Chart: sales rose 12% in Q3" {
+		t.Fatalf("tool_result content %#v", result)
+	}
+}
+
+// wideImage is a PNG over Claude's 8000 px edge; it is a few hundred bytes.
+func wideImage(t *testing.T) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	if err := png.Encode(&out, image.NewGray(image.Rect(0, 0, maxImageEdge+1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+func TestOversizeMediaStayText(t *testing.T) {
+	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
+	heavy := make([]byte, maxImageBase64Bytes/4*3+1)
+	copy(heavy, pngBytes)
+	loader := fakeLoader{"photo": {ID: "photo", MIMEType: "image/jpeg", FallbackText: "A 48 MP photo of the plant", Bytes: heavy}}
+	req := turnRequest(&llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"photo"}},
+		map[string][]llm.ProjectedRequestPart{"t1": {
+			{Type: "media", MIMEType: "image/png", Text: "/box/heavy.png", Bytes: heavy},
+			{Type: "media", MIMEType: "image/png", Text: "/box/wide.png", Bytes: wideImage(t)},
+		}})
+	for round := range 2 {
+		messages := messagesOf(t, server.send(t, req))
+		if current := blocksOf(t, messages[2]); !reflect.DeepEqual(typesOf(current), []string{"text", "text"}) || current[1]["text"] != "A 48 MP photo of the plant" {
+			t.Fatalf("round %d: current user message %#v", round, current)
+		}
+		result := toolResultContent(t, messages[4])
+		want := []string{"attached below",
+			`Not shown: it is over Claude's 10 MB image limit: "/box/heavy.png"`,
+			`Not shown: its 8001x1 pixels are over Claude's 8000x8000 limit: "/box/wide.png"`}
+		if len(result) != len(want) {
+			t.Fatalf("round %d: tool_result content %#v", round, result)
+		}
+		for i, text := range want {
+			if result[i]["text"] != text {
+				t.Fatalf("round %d: tool_result part %d = %v, want %q", round, i, result[i]["text"], text)
+			}
+		}
+	}
+}
+
+func TestTooLargeFollowsTheDocumentedLimits(t *testing.T) {
+	atLimit := make([]byte, maxImageBase64Bytes/4*3)
+	if reason := tooLarge("image/png", atLimit); reason != "" {
+		t.Fatalf("an image at the limit is refused: %s", reason)
+	}
+	if reason := tooLarge("image/png", append(atLimit, 0)); reason == "" {
+		t.Fatal("an image over the limit is accepted")
+	}
+	if reason := tooLarge(pdfMIMEType, append(atLimit, 0)); reason != "" {
+		t.Fatalf("a 7.5 MB PDF is refused: %s", reason)
+	}
+	if reason := tooLarge(pdfMIMEType, make([]byte, maxRequestBase64Bytes/4*3+1)); reason == "" {
+		t.Fatal("a PDF over the request limit is accepted")
+	}
+}
+
+// Without the loaded-history position the uploads still go to the current user message,
+// never to the per-round hint after it, so they stay put from one round to the next.
+func TestUploadsStayOnTheCurrentUserMessage(t *testing.T) {
+	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
+	loader := fakeLoader{"ref1": {ID: "ref1", MIMEType: "image/png", Bytes: pngBytes}}
+	req := turnRequest(&llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"ref1"}}, nil)
+	req.LoadedHistoryMessages = 0
+	req.StablePrefixMessages = len(req.Messages) - 1
+	current := blocksOf(t, messagesOf(t, server.send(t, req))[2])
+	if !reflect.DeepEqual(typesOf(current), []string{"text", "image"}) || current[0]["text"] != "look at this" {
+		t.Fatalf("current user message %#v", current)
+	}
+	req.StablePrefixMessages = 0
+	if last := blocksOf(t, messagesOf(t, server.send(t, req))[4]); last[len(last)-1]["type"] != "image" {
+		t.Fatalf("without either position the last user message carries it: %#v", last)
 	}
 }
 

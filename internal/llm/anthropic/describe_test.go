@@ -3,10 +3,14 @@ package anthropic
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 func TestDescribeReadsWithTheHouseKey(t *testing.T) {
@@ -69,6 +73,31 @@ func TestDescribeFallsBackWhenTheModelReadsNoImages(t *testing.T) {
 			t.Fatalf("Describe = %v, want the refusal as a mandatory modality failure", err)
 		}
 	})
+}
+
+// The asset pipeline sends the original bytes of a photo it could not downscale; Claude
+// would answer it with a 400 on every retry, so the vision client must hand it to the
+// sidecar instead, without dialing Claude.
+func TestOversizeImageFallsBackToTheSidecar(t *testing.T) {
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"read by the sidecar"}}]}`)
+	}))
+	defer sidecar.Close()
+	server := newMediaServer(t, catalogJSON(true, true), textReply("never"))
+	vision := multimodal.NewVisionClient(multimodal.VisionConfig{
+		PrimaryReader: server.client, Model: "claude-sonnet-5-5",
+		LocalBaseURL: sidecar.URL + "/v1", LocalModel: "glm-ocr", TimeoutSec: 5,
+	})
+	for name, image := range map[string][]byte{"over 10 MB": make([]byte, maxImageBase64Bytes/4*3+1), "over 8000 px": wideImage(t)} {
+		text, model, err := vision.Describe(t.Context(), image, "image/png", "describe")
+		if err != nil || text != "read by the sidecar" || model != "glm-ocr" {
+			t.Fatalf("%s: Describe = %q, %q, %v; want the sidecar", name, text, model, err)
+		}
+	}
+	if server.catalogs.Load() != 0 || len(server.sent) != 0 {
+		t.Fatal("an image over Claude's limits dialed Claude")
+	}
 }
 
 func TestDescribeFailuresAreRetryable(t *testing.T) {

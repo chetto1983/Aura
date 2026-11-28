@@ -79,13 +79,15 @@ func listModels(ctx context.Context, key string, hc *http.Client, baseURL string
 // contentCapabilities is what the catalogue lets model read natively. Only exact MIME
 // types are declared, never the image modality: SupportsMIME would admit every image/*
 // type through it, and an image block's source takes only these four, so SVG, BMP and
-// TIFF stay reference text. A model the account does not list reads text only.
-func contentCapabilities(models []anthropic.ModelInfo, model string) llm.ProviderContentCapabilities {
-	caps := llm.ProviderContentCapabilities{Modalities: map[string]bool{"text": true}, MIMETypes: map[string]bool{}}
+// TIFF stay reference text. A model the account does not list reads text only, and listed
+// reports whether it was found.
+func contentCapabilities(models []anthropic.ModelInfo, model string) (caps llm.ProviderContentCapabilities, listed bool) {
+	caps = llm.ProviderContentCapabilities{Modalities: map[string]bool{"text": true}, MIMETypes: map[string]bool{}}
 	for _, info := range models {
 		if info.ID != model {
 			continue
 		}
+		listed = true
 		if info.Capabilities.ImageInput.Supported {
 			for _, mediaType := range imageMIMETypes {
 				caps.MIMETypes[string(mediaType)] = true
@@ -95,7 +97,7 @@ func contentCapabilities(models []anthropic.ModelInfo, model string) llm.Provide
 			caps.MIMETypes[pdfMIMEType] = true
 		}
 	}
-	return caps
+	return caps, listed
 }
 
 func catalogEntry(model anthropic.ModelInfo) llm.ModelCatalogEntry {
