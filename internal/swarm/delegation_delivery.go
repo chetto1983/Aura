@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/steer"
 )
 
@@ -169,15 +170,11 @@ func NewDelegationDelivery(
 // recordToOrigin ("a failed write is a WARN and never a run failure").
 //
 // The RECORDED copy is attributed (T-51-38, threat model "mitigate"): it is
-// wrapped naming the worker and the goal, never written as Aura's own
-// unqualified words, so a LATER turn re-reading aura.conversation_turns
-// cannot mistake a worker's output for the assistant's own conclusion. The
-// PUSHED copy (text, unwrapped) is unchanged from 51-01 -- it gets its own
-// attribution downstream, at drain time, from markSteer/
-// wrapUntrustedToolOutput (internal/agent/llm_agent_steer.go), which already
-// treats steer.SourceWorker as untrusted content. These are two separate
-// envelopes for two separate readers (durable history vs. a live turn), not
-// one shared wrapping.
+// labelled with the goal, never written as Aura's own unqualified words, and the
+// worker's text sits in the same untrusted envelope its PUSHED copy is read in
+// live (agent.MarkSteer frames steer.SourceWorker at drain time), so a LATER turn
+// re-reading aura.conversation_turns meets the escaping and the envelope too. The
+// pushed copy stays the bare text: it is framed when it is drained.
 func (d *DelegationDelivery) Deliver(ctx context.Context, payload DelegationPayload, text string) (recorded bool, err error) {
 	if d == nil || d.Recorder == nil {
 		return false, fmt.Errorf("swarm: delegation delivery has no conversation recorder configured")
@@ -200,15 +197,13 @@ func (d *DelegationDelivery) Deliver(ctx context.Context, payload DelegationPayl
 	return recorded, nil
 }
 
-// attributedWorkerReport is the SC#1 conversation record's own attribution
-// (T-51-38): names the delegated worker's goal so a later turn re-reading
-// history reads this as reported-by-a-worker content, never as Aura's own
-// unqualified words. Distinct from the untrusted-tool-output envelope the
-// steer rail applies at drain time (internal/agent/llm_agent_steer.go) --
-// that envelope is minted per-drain for a live model turn; this one is
-// written once, durably, into aura.conversation_turns itself.
+// attributedWorkerReport is the SC#1 conversation record (T-51-38): a label naming the
+// delegated worker's goal, then the worker's text in the untrusted envelope. Until
+// 2026-11-28 the text followed the label raw, so a page the worker relayed reached every
+// later turn unescaped, a forged <user_steer> marker included. The nonce is minted once
+// and stored, so every reload replays the same bytes.
 func attributedWorkerReport(goal, text string) string {
-	return fmt.Sprintf("[Delegated worker report -- goal: %q]\n%s", goal, text)
+	return fmt.Sprintf("[Delegated worker report -- goal: %q]\n%s", goal, agent.FrameUntrustedPromptContent(steer.SourceWorker, text))
 }
 
 // DeliverPreparedReport is Deliver's counterpart for a TERMINAL worker outcome

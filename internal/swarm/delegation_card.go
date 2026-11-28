@@ -21,6 +21,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // maxCardGoalRunes and maxCardSummaryRunes are the two rune caps UI-SPEC §4
@@ -61,6 +64,7 @@ func capRunes(s string, n int) string {
 // artifactName is non-empty -- a final line naming the full report artifact.
 // With an empty artifactName the artifact line is simply absent; nothing
 // else about the card changes (a nil/failed archive degrade, delegation_artifact.go).
+// The summary/error slot is the worker's text, so it sits in workerText's envelope.
 func DelegationRecordCard(report ChildReport, elapsed time.Duration, artifactName string) string {
 	var b strings.Builder
 	b.WriteString(cardGlyph(report.Status))
@@ -72,16 +76,26 @@ func DelegationRecordCard(report ChildReport, elapsed time.Duration, artifactNam
 	case StatusDeadLetter:
 		fmt.Fprintf(&b, "Non consegnato dopo %d tentativi.\n", report.Attempts)
 	case StatusFailed, StatusStalled:
-		b.WriteString(capRunes(report.Error, maxCardSummaryRunes))
+		b.WriteString(workerText(capRunes(report.Error, maxCardSummaryRunes)))
 		b.WriteString("\n")
 	default: // StatusOK and any forward-compat status render the summary slot
-		b.WriteString(capRunes(report.Summary, maxCardSummaryRunes))
+		b.WriteString(workerText(capRunes(report.Summary, maxCardSummaryRunes)))
 		b.WriteString("\n")
 	}
 	if artifactName != "" {
 		fmt.Fprintf(&b, "Report completo: %s\n", artifactName)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// workerText frames a worker's own words for the record: the same untrusted envelope its
+// steer copy is read in live, so a page the worker relayed reaches no later turn unescaped
+// (until 2026-11-28 the card carried it raw). Nothing is framed when the worker said nothing.
+func workerText(text string) string {
+	if text == "" {
+		return ""
+	}
+	return agent.FrameUntrustedPromptContent(steer.SourceWorker, text)
 }
 
 // cardGlyph maps a ChildReport status to the SAME glyph vocabulary the

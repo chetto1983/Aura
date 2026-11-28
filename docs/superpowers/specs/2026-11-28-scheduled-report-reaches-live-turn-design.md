@@ -86,7 +86,12 @@ the background-completion wake (see Non-goals). Steer rows expire after
    `[Scheduled task agent_job 01a221d9-2502-7170-afd4-b4ae70dbd81c]`: the id is what
    `task action=history` takes, and a UUIDv7's first characters are only its timestamp
    (amended after the final review). The steer copy carries the same prefix inside its
-   envelope. The notification text is unchanged.
+   envelope. The notification text is unchanged. Amended 2026-11-28 after the
+   untrusted-reload review: an `agent_job`'s record keeps the author line outside and stores the
+   report itself in the same `scheduler` untrusted envelope the steer copy is read in, so a later
+   turn reloading it meets the escaping too (the report can relay a page its run read). The
+   cockpit, search and share unframe it (`agent.ShowRecord`/`PlainRecord`). Reminders and watches
+   are recorded as before.
 4. `repairToolPairs`: when an assistant message with tool calls has turns written out of band
    among its results, even between two results of one parallel batch, emit the call, its
    results, then those turns. The rewrite applies only when every result is found; otherwise

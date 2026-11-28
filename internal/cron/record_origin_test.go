@@ -16,9 +16,12 @@ type fakeConversationRecorder struct {
 	err      error
 }
 
+// recordedTurn is one append. A report keeps its author line and its body apart, as the
+// recorder receives them; text joins them the way a reader sees them.
 type recordedTurn struct {
 	conversationID string
 	text           string
+	report         string
 }
 
 func (f *fakeConversationRecorder) AppendAssistantTurn(_ context.Context, conversationID, text string) error {
@@ -26,6 +29,14 @@ func (f *fakeConversationRecorder) AppendAssistantTurn(_ context.Context, conver
 		return f.err
 	}
 	f.appended = append(f.appended, recordedTurn{conversationID: conversationID, text: text})
+	return nil
+}
+
+func (f *fakeConversationRecorder) AppendReportTurn(_ context.Context, conversationID, author, report string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.appended = append(f.appended, recordedTurn{conversationID: conversationID, text: author + "\n" + report, report: report})
 	return nil
 }
 

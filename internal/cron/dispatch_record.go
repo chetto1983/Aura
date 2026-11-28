@@ -44,12 +44,22 @@ func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string
 	if undelivered != nil {
 		text += fmt.Sprintf("\n\nNot delivered via %s: %v", task.NotifyRoute, undelivered)
 	}
-	text = scheduledRecordText(task, text)
-	if err := d.deps.ConversationRecorder.AppendAssistantTurn(ctx, task.OriginConversationID, text); err != nil {
+	if err := d.record(ctx, task, text); err != nil {
 		slog.Warn("cron: could not record the run outcome in its origin conversation",
 			"kind", task.Kind, "conversation", task.OriginConversationID, "err", err)
 	}
-	d.steerToOrigin(task, text)
+	d.steerToOrigin(task, scheduledRecordText(task, text))
+}
+
+// record writes the outcome under its author. An agent_job's outcome is generated text that may
+// relay what its run read, and it goes through the report seam, which frames it as its steer copy
+// is framed live; until 2026-11-28 it was stored raw and reached every later turn unescaped. A
+// reminder is the operator's own words, and a watch's record frames the mail already.
+func (d *Dispatch) record(ctx context.Context, task Task, text string) error {
+	if task.Kind == KindAgentJob {
+		return d.deps.ConversationRecorder.AppendReportTurn(ctx, task.OriginConversationID, scheduledAuthor(task), text)
+	}
+	return d.deps.ConversationRecorder.AppendAssistantTurn(ctx, task.OriginConversationID, scheduledRecordText(task, text))
 }
 
 // steerToOrigin is limited to agent_job: a steer row still queued when a turn ends starts a
@@ -70,5 +80,9 @@ func (d *Dispatch) steerToOrigin(task Task, text string) {
 // takes, and a UUIDv7's first characters are only its timestamp, shared by a task and the one
 // that replaced it a minute later.
 func scheduledRecordText(task Task, text string) string {
-	return fmt.Sprintf("[Scheduled task %s %s]\n%s", task.Kind, task.ID, text)
+	return scheduledAuthor(task) + "\n" + text
+}
+
+func scheduledAuthor(task Task) string {
+	return fmt.Sprintf("[Scheduled task %s %s]", task.Kind, task.ID)
 }

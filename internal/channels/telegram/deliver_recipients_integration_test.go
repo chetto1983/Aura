@@ -42,6 +42,11 @@ func (r *originRecord) AppendAssistantTurn(_ context.Context, _, text string) er
 	return nil
 }
 
+func (r *originRecord) AppendReportTurn(_ context.Context, _, author, report string) error {
+	r.texts = append(r.texts, author+"\n"+report)
+	return nil
+}
+
 // A task that names both linked accounts reaches both chats through the real wiring: the links
 // in Postgres, the channel, the registry and the cron dispatcher; after one account is unlinked
 // the push reaches the other and the origin conversation names the one it skipped (spec

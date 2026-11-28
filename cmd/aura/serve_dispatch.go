@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/moby/moby/client"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/config"
@@ -244,6 +245,17 @@ func (r conversationRecorder) AppendAssistantTurn(ctx context.Context, conversat
 		Role:           "assistant",
 		Content:        text,
 	})
+}
+
+func (r conversationRecorder) AppendReportTurn(ctx context.Context, conversationID, author, report string) error {
+	return r.AppendAssistantTurn(ctx, conversationID, scheduledReportRecord(author, report))
+}
+
+// scheduledReportRecord is an agent_job's record: its author line, then the report in the
+// envelope agent.MarkSteer gives its steer copy (steer.SourceScheduler). The nonce is minted
+// once and stored, so every reload replays the same bytes.
+func scheduledReportRecord(author, report string) string {
+	return author + "\n" + agent.FrameUntrustedPromptContent(steer.SourceScheduler, report)
 }
 
 func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
