@@ -66,7 +66,7 @@ func TestPauseCalls_GatesOnAskUserName(t *testing.T) {
 	a := newBareAgent(t, r)
 
 	calls := []llm.ToolCall{toolCall("x1", "not_ask_user", `{}`)}
-	pauses := a.pauseCalls(context.Background(), calls)
+	pauses, _ := a.pauseCalls(context.Background(), calls)
 	if len(pauses) != 0 {
 		t.Fatalf("a non-ask_user tool returning the pause sentinel must NOT be a pause; got %d pauses", len(pauses))
 	}
@@ -76,7 +76,7 @@ func TestPauseCalls_GatesOnAskUserName(t *testing.T) {
 	r2 := tools.NewRegistry()
 	r2.Register(fakePauseTool{name: askUserToolName})
 	a2 := newBareAgent(t, r2)
-	ok := a2.pauseCalls(context.Background(), []llm.ToolCall{toolCall("x2", askUserToolName, `{}`)})
+	ok, _ := a2.pauseCalls(context.Background(), []llm.ToolCall{toolCall("x2", askUserToolName, `{}`)})
 	if len(ok) != 1 || ok[0].pause.ToolCallID != "x2" {
 		t.Fatalf("ask_user-named sentinel tool must be detected as a pause carrying its call id; got %+v", ok)
 	}

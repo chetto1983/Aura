@@ -49,15 +49,19 @@ func (g *Gateway) SetPolicyStore(s policyStore) {
 	}
 }
 
-var policyDecisions = func() metric.Int64Counter {
+// policyDecisions is the process-wide counter every New gateway counts on.
+var policyDecisions = newPolicyDecisions(otel.Meter("github.com/chetto1983/aura/internal/gateway"))
+
+// newPolicyDecisions builds the policy-decision counter on meter; a test hands its own.
+func newPolicyDecisions(meter metric.Meter) metric.Int64Counter {
 	descriptor := obs.MustDescriptor(obs.GatewayPolicyDecisionsID)
-	counter, err := otel.Meter("github.com/chetto1983/aura/internal/gateway").Int64Counter(
+	counter, err := meter.Int64Counter(
 		descriptor.Name, metric.WithDescription(descriptor.Description), metric.WithUnit(descriptor.Unit))
 	if err != nil {
 		panic(err)
 	}
 	return counter
-}()
+}
 
 // policyFor reads the identity's policy for subject. A missing store or an empty identity
 // is no policy. A store error is PolicyAsk with one warning: a database blip then costs the
@@ -81,7 +85,7 @@ func (g *Gateway) policyFor(ctx context.Context, identityID string, subject gran
 
 // countPolicyDecision counts a call a policy routed. Only Decide calls it: Review and
 // PolicyDenies read the same policy for the same call first, and one call is one decision.
-func countPolicyDecision(ctx context.Context, policy Policy) {
+func (g *Gateway) countPolicyDecision(ctx context.Context, policy Policy) {
 	if policy == "" {
 		return
 	}
@@ -89,7 +93,7 @@ func countPolicyDecision(ctx context.Context, policy Policy) {
 	if policy == PolicyDeny {
 		outcome = "denied"
 	}
-	policyDecisions.Add(ctx, 1, metric.WithAttributes(attribute.String(
+	g.policyDecisions.Add(ctx, 1, metric.WithAttributes(attribute.String(
 		string(obs.AttributeOutcome), obs.NormalizeAttribute(obs.AttributeOutcome, outcome))))
 }
 

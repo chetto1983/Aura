@@ -66,7 +66,7 @@ func TestMessageDraftTrustedCallsParkBeforeExecute(t *testing.T) {
 			agent.messageDrafts = creator
 			owner := "11111111-1111-4111-8111-111111111111"
 			ctx := gateway.WithResponder(identityctx.WithIdentityID(context.Background(), owner))
-			pauses := agent.pauseCalls(ctx, []llm.ToolCall{toolCall("call-one", tc.name, tc.args)})
+			pauses, _ := agent.pauseCalls(ctx, []llm.ToolCall{toolCall("call-one", tc.name, tc.args)})
 			if len(pauses) != 1 || len(creator.inputs) != 1 || tool.calls != 0 {
 				t.Fatal("trusted outbound call did not park before execution")
 			}

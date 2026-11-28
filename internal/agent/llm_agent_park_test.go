@@ -84,9 +84,33 @@ func TestSiblingsRunInTheParkRound(t *testing.T) {
 	}
 }
 
-// A batch that writes runs one call after another in the model's order (spec "Siblings"): a
-// call that comes after the parked one still runs, and its result follows the parked turn.
-func TestSequentialBatchAfterAParkStillRuns(t *testing.T) {
+// heldAnswer is the tool message of call id in history.
+func heldAnswer(t *testing.T, history []llm.Message, id string) string {
+	t.Helper()
+	for _, m := range history {
+		if m.Role == llm.RoleTool && m.ToolCallID == id {
+			return m.Content
+		}
+	}
+	t.Fatalf("no tool message answers %s", id)
+	return ""
+}
+
+// endOf returns the result event of call id.
+func endOf(t *testing.T, evs []*Event, id string) *ToolInvocation {
+	t.Helper()
+	i := slices.IndexFunc(evs, func(ev *Event) bool { return eventKind(ev) == "end:"+id })
+	if i < 0 {
+		t.Fatalf("no result event for %s", id)
+	}
+	return evs[i].Actions.ToolInvocation
+}
+
+// A batch that writes runs in the model's order (2026-10-19), so a call after the parked one
+// must not run first: the accept would then act on what it changed. It is answered as not
+// run, through the stream like any result, and the model emits it again once the card is
+// decided (spec "Siblings", amended 2026-11-28).
+func TestOrderedBatchHoldsTheCallsAfterAPark(t *testing.T) {
 	f := newParkFixture(t, true, callsRound(
 		toolCall("A", "read_notes", readA),
 		toolCall("G", "skill_manage", gatedDeleteArgs),
@@ -94,11 +118,61 @@ func TestSequentialBatchAfterAParkStillRuns(t *testing.T) {
 	))
 	evs := f.run(t, personCtx())
 
-	assertKinds(t, evs, "parked", "start:A", "start:W", "end:A", "end:W", "pause:G")
-	if ran := f.log.entries(); !slices.Equal(ran, []string{"read_notes " + readA, `notes_write {"text":"archived"}`}) {
-		t.Fatalf("ran = %v, want A then W", ran)
+	assertKinds(t, evs, "parked", "start:A", "end:A", "end:W", "pause:G")
+	if ran := f.log.entries(); !slices.Equal(ran, []string{"read_notes " + readA}) {
+		t.Fatalf("ran = %v, want A alone", ran)
 	}
-	assertHistoryTail(t, f.agent.HistoryForTest(), []string{"A", "G", "W"}, []string{"A", "W"})
+	want := heldBehindAParkedCall("skill_manage")
+	if got := endOf(t, evs, "W").ResultPreview; got != want {
+		t.Fatalf("W's result = %q, want %q", got, want)
+	}
+	history := f.agent.HistoryForTest()
+	assertHistoryTail(t, history, []string{"A", "G", "W"}, []string{"A", "W"})
+	if got := heldAnswer(t, history, "W"); got != want {
+		t.Fatalf("W's tool message = %q, want %q", got, want)
+	}
+	if ids := callIDs(parkedTurnIn(t, evs).Calls); !slices.Equal(ids, []string{"A", "G", "W"}) {
+		t.Fatalf("parked calls = %v, want every call, held W included", ids)
+	}
+	if pauses := pausesIn(evs); len(pauses) != 1 || pauses[0].Approval.CallIndex != 1 {
+		t.Fatalf("pauses = %+v, want G alone at index 1: a held call is not parked", pauses)
+	}
+}
+
+// Reads keep no order, so they still all run, the ones after the parked call included.
+func TestReadOnlySiblingsAfterAParkRun(t *testing.T) {
+	f := newParkFixture(t, true, callsRound(
+		toolCall("G", "skill_manage", gatedDeleteArgs),
+		toolCall("A", "read_notes", readA),
+		toolCall("B", "read_notes", readB),
+	))
+	evs := f.run(t, personCtx())
+
+	assertKinds(t, evs, "parked", "start:A", "start:B", "end:A", "end:B", "pause:G")
+	assertHistoryTail(t, f.agent.HistoryForTest(), []string{"G", "A", "B"}, []string{"A", "B"})
+}
+
+// The rule is every pass-2 source's: in a batch that writes, a write before the draft runs,
+// and a call after it, even a read, waits.
+func TestDraftInAWriteBatchHoldsTheCallsAfterIt(t *testing.T) {
+	f := newParkFixture(t, false, callsRound(
+		toolCall("W", "notes_write", `{"text":"invoice ready"}`),
+		toolCall("S", "calendar__send_email", `{"to":["anna@example.com"],"subject":"Fattura","body":"In allegato."}`),
+		toolCall("A", "read_notes", readA),
+	))
+	evs := f.run(t, personCtx())
+
+	assertKinds(t, evs, "parked", "start:W", "end:W", "end:A", "pause:S")
+	if ran := f.log.entries(); !slices.Equal(ran, []string{`notes_write {"text":"invoice ready"}`}) {
+		t.Fatalf("ran = %v, want W alone", ran)
+	}
+	if got := endOf(t, evs, "A").ResultPreview; got != heldBehindAParkedCall("calendar__send_email") {
+		t.Fatalf("A's result = %q, want the held text naming the send", got)
+	}
+	if f.send.calls != 0 || len(f.drafts.inputs) != 1 {
+		t.Fatalf("sends %d, drafts %d; want the draft and no send", f.send.calls, len(f.drafts.inputs))
+	}
+	assertHistoryTail(t, f.agent.HistoryForTest(), []string{"W", "S", "A"}, []string{"W", "A"})
 }
 
 // The sibling rule covers every pass-2 source: a draft's siblings run, with the switch off.

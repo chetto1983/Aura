@@ -39,7 +39,8 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 })
 
 // pauseCalls scans the assistant's batched tool calls and returns their pauses in
-// the model's order, with each call's ToolCallID stamped onto the carried sentinel.
+// the model's order, with each call's ToolCallID stamped onto the carried sentinel, and
+// whether pass 1 (ask_user) produced them.
 //
 // Pass 1 is ask_user, the only tool pre-executed: when it pauses, its calls rewrite the
 // assistant message (D-A1-07 OpenAI wire-correctness), and the siblings are dropped and
@@ -47,7 +48,7 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 // is NOT a pause — it returns no sentinel and falls through to normal dispatch as a
 // RoleTool error. Pass 2 (withheldCalls) runs only when pass 1 found nothing: it parks the
 // calls the host withholds without running them, and its siblings run in a park round
-// (llm_agent_park.go).
+// (llm_agent_park.go), as far as the batch's order allows.
 //
 // ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ask_user alone can pause by
 // returning its sentinel. A host-owned trusted outbound message may also pause
@@ -62,7 +63,7 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 // plan 11-09 Task 1. Any future tool needing to pause MUST route through ask_user
 // (or the dispatch must learn to surface tool sentinels) — never assume a tool
 // error pauses. Proven by TestAskUserOnlyPauseConstraint.
-func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pauseCall {
+func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) (pauses []pauseCall, askUser bool) {
 	var out []pauseCall
 	for i := range calls {
 		call := calls[i]
@@ -77,9 +78,9 @@ func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pause
 		out = append(out, pauseCall{call: call, pause: pause})
 	}
 	if len(out) > 0 {
-		return out
+		return out, true
 	}
-	return a.withheldCalls(ctx, calls)
+	return a.withheldCalls(ctx, calls), false
 }
 
 // pauseCall pairs a finalized tool call with its decoded pause sentinel. A withheld call

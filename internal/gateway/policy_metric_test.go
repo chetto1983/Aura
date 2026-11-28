@@ -5,16 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/chetto1983/aura/internal/obs"
 )
 
-// policyDecisionCount sums the policy-decision counter. The counter binds to the global meter
-// provider the first time one is set, so this test is not parallel: the parallel tests read
-// policies too, and they run only after every serial test of the package has finished.
+// policyDecisionCount sums the policy-decision counter the reader collects.
 func policyDecisionCount(t *testing.T, reader *sdkmetric.ManualReader) int64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -41,27 +38,27 @@ func policyDecisionCount(t *testing.T, reader *sdkmetric.ManualReader) int64 {
 // A policy routes one call once. Review and the host review's PolicyDenies read the same
 // policy before Decide does; counting each read would report one call as two or three.
 func TestPolicyDecisionCountsOncePerCall(t *testing.T) {
+	t.Parallel()
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	otel.SetMeterProvider(provider)
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 
 	g, _, ctx := policyGateway(map[string]Policy{policyKey("read_file", ""): PolicyAsk})
+	g.policyDecisions = newPolicyDecisions(provider.Meter("gateway-policy-metric-test"))
 	raw := json.RawMessage(`{"path":"notes.md"}`)
-	before := policyDecisionCount(t, reader)
 	if r, err := g.Review(ctx, readOnlySpec(), raw, testKey(), nil); err != nil || !r.Needed {
 		t.Fatalf("Review = %+v, %v; want the ask policy to need the operator", r, err)
 	}
 	if g.PolicyDenies(ctx, readOnlySpec(), raw) {
 		t.Fatal("an ask policy denied the call")
 	}
-	if got := policyDecisionCount(t, reader) - before; got != 0 {
+	if got := policyDecisionCount(t, reader); got != 0 {
 		t.Fatalf("Review and PolicyDenies counted %d policy decisions, want none", got)
 	}
 	if _, err := g.Decide(ctx, readOnlySpec(), raw, testKey()); err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
-	if got := policyDecisionCount(t, reader) - before; got != 1 {
+	if got := policyDecisionCount(t, reader); got != 1 {
 		t.Fatalf("Decide counted %d policy decisions, want 1", got)
 	}
 }

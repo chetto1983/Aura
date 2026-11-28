@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/idempotency"
@@ -148,6 +150,8 @@ type Gateway struct {
 	approvals  *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
 	grants     grantStore        // durable ScopeAlways grants (amendment #127); nil = the two in-memory scopes only
 	policies   policyStore       // durable ask/deny narrowing (prd.md §5, 2026-10-09); nil = no policy
+
+	policyDecisions metric.Int64Counter
 }
 
 // New builds a Gateway over the resolved runtime profile and the append-only tool
@@ -155,7 +159,7 @@ type Gateway struct {
 // the three NewLlmAgent roots (runner, swarm, cron). It always owns a fresh
 // GatewayApprovals so the resume hook has a session ledger to write through.
 func New(profile config.RuntimeProfile, store reservationStore) *Gateway {
-	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals()}
+	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals(), policyDecisions: policyDecisions}
 }
 
 // OwnsToolStartRows reports whether this gateway writes the ledger's `start` row for a tool

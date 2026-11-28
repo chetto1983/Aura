@@ -137,8 +137,18 @@ Deny policies are checked before any review, so a denied call is refused, never 
   - **Why.** Dropping the siblings cost at least one extra model round, with no guarantee the model would emit them
     again.
   - **Scope.** The rule applies to every park source in this project's mechanism.
-  - **Ordering.** A sequential batch keeps its order: a call that comes after a parked call in that batch still
-    runs. Its result is committed with the pause.
+  - **Ordering (amended 2026-11-28, controller's ruling after the Task 3 review).** When the unparked calls form a
+    batch the agent runs in order (any of them writes, or calls an MCP server), only the calls **before** the first
+    parked call run. Each call after it does not run. It gets a tool result instead: `Not run: this call comes after
+    <tool> in a batch that runs in order, and that call is waiting for the operator's decision. Call it again once
+    the decision is known.` It is not parked and gets no card, and the parked assistant turn still lists it. When
+    the unparked calls are all reads that run at once, every one of them runs, as before.
+    - **Why.** Since 2026-10-19 a batch that writes is a sequence: concurrently, a PDF was saved before its redaction
+      applied and was delivered as redacted. If a later call ran in the park round, it would run before the parked
+      call that precedes it. In `[skill_manage delete X (parked), skill_manage create X]` the create would run first,
+      and the accept would then delete the new X.
+    - **Cost.** In a write batch with a park, one extra model round to emit the held calls again.
+    - **Replaces.** The 2026-11-27 text said that a call after a parked call in a sequential batch still runs.
   - **Several parked calls** in one turn give one card each.
   - **`ask_user`.** A turn that also calls `ask_user` keeps today's precedence (map R4).
 - **Who never parks.** Headless and delegated runs: no person (`personPresent` false), swarm workers, agent_job and

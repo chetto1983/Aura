@@ -57,7 +57,7 @@ func ownerCtx() context.Context {
 func TestAHostReviewedCallParksWithoutExecuting(t *testing.T) {
 	agent, reviewer := hostReviewAgent(t)
 	call := toolCall("call-1", "task", reviewedArgs)
-	pauses := agent.pauseCalls(gateway.WithResponder(ownerCtx()), []llm.ToolCall{call})
+	pauses, _ := agent.pauseCalls(gateway.WithResponder(ownerCtx()), []llm.ToolCall{call})
 	if len(pauses) != 1 || pauses[0].pause.ToolCallID != call.ID || pauses[0].originalToolName != "task" {
 		t.Fatalf("pauses = %+v", pauses)
 	}
@@ -76,7 +76,7 @@ func TestAHostReviewedCallWithoutAResponderRunsNormally(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			agent, reviewer := hostReviewAgent(t)
 			call := toolCall("call-1", "task", reviewedArgs)
-			if pauses := agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
+			if pauses, _ := agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
 				t.Fatalf("parked: %+v", pauses)
 			}
 			agent.runTool(ctx, testBudget(t), call, time.Now())
@@ -95,7 +95,7 @@ func TestAPolicyDeniedTaskIsNeverParked(t *testing.T) {
 	agent.gateway = gw
 	ctx := gateway.WithResponder(ownerCtx())
 	call := toolCall("call-1", "task", reviewedArgs)
-	if pauses := agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
+	if pauses, _ := agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
 		t.Fatalf("a denied call was parked: %+v", pauses)
 	}
 	run := agent.runTool(ctx, testBudget(t), call, time.Now())

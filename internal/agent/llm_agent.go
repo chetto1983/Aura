@@ -80,7 +80,7 @@ type LlmAgent struct {
 	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
 	gateway       *gateway.Gateway
 	messageDrafts MessageDraftCreator
-	parkApprovals bool       // LlmAgentConfig.ParkApprovals
+	parkApprovals bool
 	steer         SteerInbox // nil means drainSteer is a no-op, like a nil gateway means Allow (D-12)
 	// ledgerConvID is the ORIGINATING conversation UUID the gateway ReservationKey is
 	// keyed on. It defaults to sessionID (the main runner path, where session_id ==

@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
@@ -12,36 +11,13 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/toolinvocations"
 )
-
-// denyFactStore is the gateway's ledger seam: it keeps the facts the gateway writes and
-// acquires every reservation.
-type denyFactStore struct {
-	mu    sync.Mutex
-	facts []toolinvocations.Event
-}
-
-func (s *denyFactStore) Insert(_ context.Context, e toolinvocations.Event) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.facts = append(s.facts, e)
-	return nil
-}
-
-func (*denyFactStore) Reserve(context.Context, toolinvocations.Event) (bool, *toolinvocations.Event, error) {
-	return true, nil, nil
-}
-
-func (*denyFactStore) GetEnd(context.Context, string, string, string) (*toolinvocations.Event, error) {
-	return nil, nil
-}
 
 // AD-M8: a scheduled job has nobody to ask, so its gated call is refused with no_approver.
 // It never pauses, so the handler never auto-rejects a pause or rebuilds an ask_user turn.
 func TestAgentJobGatedCallIsRefusedNotParked(t *testing.T) {
 	t.Parallel()
-	store := &denyFactStore{}
+	store := &ledgerStore{}
 	skill := &scheduledMutationTool{}
 	registry := tools.NewRegistry()
 	registry.Register(skill)
@@ -79,7 +55,7 @@ func TestAgentJobGatedCallIsRefusedNotParked(t *testing.T) {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if len(store.facts) != 1 || store.facts[0].Meta["reason"] != "no_approver" {
-		t.Fatalf("deny facts = %+v, want one no_approver", store.facts)
+	if len(store.rows) != 1 || store.rows[0].Meta["reason"] != "no_approver" {
+		t.Fatalf("ledger rows = %+v, want one no_approver deny fact", store.rows)
 	}
 }

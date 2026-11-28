@@ -378,7 +378,7 @@ func TestReviewSeesTheCallContext(t *testing.T) {
 	f := newParkFixture(t, true)
 	call := toolCall("G", "skill_manage", gatedDeleteArgs)
 	ctx := personCtx()
-	if pauses := f.agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 1 {
+	if pauses, _ := f.agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 1 {
 		t.Fatalf("pauses = %+v, want the gated call parked", pauses)
 	}
 	if want := []string{f.agent.sessionID + "/G"}; !slices.Equal(f.gated.described, want) {
@@ -388,7 +388,7 @@ func TestReviewSeesTheCallContext(t *testing.T) {
 		ConversationID: f.agent.ledgerConvID, OperatorID: reviewOwner,
 		Tool: "skill_manage", Action: "delete", Scope: gateway.ScopeSession,
 	})
-	if pauses := f.agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
+	if pauses, _ := f.agent.pauseCalls(ctx, []llm.ToolCall{call}); len(pauses) != 0 {
 		t.Fatalf("a session grant for the conversation still parked: %+v", pauses)
 	}
 }
