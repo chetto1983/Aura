@@ -43,14 +43,16 @@ func fetchModels(ctx context.Context, source KeySource, hc *http.Client, baseURL
 	}
 	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 	defer cancel()
-	active := string(anthropic.ModelInfoLifecycleActive)
 	sdk := newSDK(key, hc, baseURL)
-	pager := sdk.Models.ListAutoPaging(ctx,
-		anthropic.ModelListParams{Lifecycle: []string{active}}, option.WithMiddleware(boundedCatalog))
+	// The wire probe (2026-11-27) measured only the bare list, with no lifecycle query and
+	// no lifecycle field recorded, so the list is asked for as measured and a row is
+	// dropped only when it names a lifecycle other than active.
+	pager := sdk.Models.ListAutoPaging(ctx, anthropic.ModelListParams{}, option.WithMiddleware(boundedCatalog))
 	var entries []llm.ModelCatalogEntry
 	for pager.Next() {
 		model := pager.Current()
-		if model.Lifecycle != anthropic.ModelInfoLifecycleActive || strings.TrimSpace(model.ID) == "" {
+		inactive := model.Lifecycle != "" && model.Lifecycle != anthropic.ModelInfoLifecycleActive
+		if inactive || strings.TrimSpace(model.ID) == "" {
 			continue
 		}
 		entries = append(entries, catalogEntry(model))

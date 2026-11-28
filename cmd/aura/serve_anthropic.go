@@ -106,14 +106,8 @@ func applyAnthropicCatalogModel(cfg *llm.Config, models []llm.ModelCatalogEntry,
 	if !candidate.ContextWindowConfigured {
 		candidate.ContextWindow = anthropicWindow(effective, model.ContextWindow)
 	}
-	if candidate.MaxTokens < anthropicMaxTokensFloor {
-		candidate.MaxTokens = anthropicDefaultMaxTokens
-	}
-	if !candidate.MaxOutputTokensConfigured {
-		candidate.MaxOutputTokens = candidate.MaxTokens
-		if model.MaxOutputTokens > 0 {
-			candidate.MaxOutputTokens = min(model.MaxOutputTokens, candidate.MaxTokens)
-		}
+	if err := applyAnthropicTokenLimits(&candidate, model.MaxOutputTokens); err != nil {
+		return err
 	}
 	candidate.SupportedReasoningEfforts = slices.Clone(model.SupportedReasoningEfforts)
 	candidate.ReasoningMandatory = model.ReasoningMandatory
@@ -121,6 +115,29 @@ func applyAnthropicCatalogModel(cfg *llm.Config, models []llm.ModelCatalogEntry,
 		return err
 	}
 	*cfg = candidate
+	return nil
+}
+
+// applyAnthropicTokenLimits sets MaxTokens and the output cap. A MaxTokens below the
+// floor is not the operator's, so it takes the default, held to a pinned cap; a pinned cap
+// below the floor cannot carry adaptive thinking and is refused by name.
+func applyAnthropicTokenLimits(cfg *llm.Config, modelMaxOutput int) error {
+	if cfg.MaxTokens < anthropicMaxTokensFloor {
+		cfg.MaxTokens = anthropicDefaultMaxTokens
+		if cfg.MaxOutputTokensConfigured {
+			if cfg.MaxOutputTokens < anthropicMaxTokensFloor {
+				return fmt.Errorf("max output tokens pinned at %d is below the Claude route's %d floor",
+					cfg.MaxOutputTokens, anthropicMaxTokensFloor)
+			}
+			cfg.MaxTokens = min(anthropicDefaultMaxTokens, cfg.MaxOutputTokens)
+		}
+	}
+	if !cfg.MaxOutputTokensConfigured {
+		cfg.MaxOutputTokens = cfg.MaxTokens
+		if modelMaxOutput > 0 {
+			cfg.MaxOutputTokens = min(modelMaxOutput, cfg.MaxTokens)
+		}
+	}
 	return nil
 }
 

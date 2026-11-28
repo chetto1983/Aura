@@ -14,14 +14,19 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// modelJSON is one /v1/models row in the shape spec §3 measured on 2026-11-27.
+// modelJSON is one /v1/models row in the shape spec §3 measured on 2026-11-27; an empty
+// lifecycle leaves the field out, as that probe recorded no such field.
 func modelJSON(id, lifecycle string, efforts map[string]bool, disabled bool) string {
 	effort := func(level string) string { return fmt.Sprintf(`"%s":{"supported":%t}`, level, efforts[level]) }
-	return fmt.Sprintf(`{"type":"model","id":%q,"display_name":%q,"lifecycle":%q,"max_input_tokens":1000000,"max_tokens":128000,`+
+	lifecycleField := ""
+	if lifecycle != "" {
+		lifecycleField = fmt.Sprintf(`"lifecycle":%q,`, lifecycle)
+	}
+	return fmt.Sprintf(`{"type":"model","id":%q,"display_name":%q,%s"max_input_tokens":1000000,"max_tokens":128000,`+
 		`"capabilities":{"effort":{"supported":%t,%s,%s,%s,%s,%s},`+
 		`"thinking":{"supported":true,"types":{"enabled":{"supported":false},"adaptive":{"supported":true},"disabled":{"supported":%t},"between_tools":{"supported":false}}},`+
 		`"image_input":{"supported":true},"pdf_input":{"supported":true},"structured_outputs":{"supported":true}}}`,
-		id, strings.ToUpper(id[:1])+id[1:], lifecycle, len(efforts) > 0,
+		id, strings.ToUpper(id[:1])+id[1:], lifecycleField, len(efforts) > 0,
 		effort("low"), effort("medium"), effort("high"), effort("xhigh"), effort("max"), disabled)
 }
 
@@ -43,8 +48,8 @@ func TestFetchModelsReadsCapabilities(t *testing.T) {
 		`{"data":[` + modelJSON("claude-opus-5-5", "active", all, false) + `,` +
 			modelJSON("claude-sonnet-5-5", "active", all, false) + `,` +
 			modelJSON("claude-old-4-1", "deprecated", all, true) + `],"has_more":true,"first_id":"claude-opus-5-5","last_id":"claude-old-4-1"}`,
-		`{"data":[` + modelJSON("claude-haiku-5-5", "active", map[string]bool{"low": true, "medium": true, "high": true}, true) + `,` +
-			modelJSON("claude-fable-5-2", "active", all, false) + `],"has_more":false,"first_id":"claude-haiku-5-5","last_id":"claude-fable-5-2"}`,
+		`{"data":[` + modelJSON("claude-haiku-5-5", "", map[string]bool{"low": true, "medium": true, "high": true}, true) + `,` +
+			modelJSON("claude-fable-5-2", "", all, false) + `],"has_more":false,"first_id":"claude-haiku-5-5","last_id":"claude-fable-5-2"}`,
 	}
 	var calls atomic.Int32
 	hc, url := catalogFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -52,8 +57,8 @@ func TestFetchModelsReadsCapabilities(t *testing.T) {
 		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer "+houseKey || r.Header.Get("X-Api-Key") != "" {
 			t.Errorf("catalog request %s with auth %q", r.URL.Path, r.Header.Get("Authorization"))
 		}
-		if got := r.URL.Query()["lifecycle[]"]; !slices.Equal(got, []string{"active"}) {
-			t.Errorf("lifecycle filter %v", r.URL.Query())
+		if strings.Contains(r.URL.RawQuery, "lifecycle") {
+			t.Errorf("lifecycle query %q: the measured list was the bare one", r.URL.RawQuery)
 		}
 		if call == 2 && r.URL.Query().Get("after_id") != "claude-old-4-1" {
 			t.Errorf("second page cursor %v", r.URL.Query())
@@ -73,7 +78,7 @@ func TestFetchModelsReadsCapabilities(t *testing.T) {
 		ids = append(ids, entry.ID)
 	}
 	if !slices.Equal(ids, []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"}) {
-		t.Fatalf("models %v: the deprecated one must be dropped, the order kept", ids)
+		t.Fatalf("models %v: the deprecated one must be dropped, rows without a lifecycle kept, the order kept", ids)
 	}
 	every := []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortMedium, llm.ReasoningEffortHigh, llm.ReasoningEffortXHigh, llm.ReasoningEffortMax}
 	for _, entry := range entries {

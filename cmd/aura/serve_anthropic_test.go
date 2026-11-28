@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -257,4 +260,57 @@ func TestBootResolvesTheClaudeProfileFailSoft(t *testing.T) {
 	if unlisted.ContextWindow != before {
 		t.Fatal("a failed boot validation changed the fallback")
 	}
+}
+
+// A pinned output cap holds the unpinned MaxTokens default down to it; one below the floor
+// cannot carry adaptive thinking and is refused by name, at save and in the boot log.
+func TestPinnedOutputCapBoundsTheClaudeDefault(t *testing.T) {
+	pinned := func(capTokens int) llm.Config {
+		cfg := claudeProfile(t, "claude-sonnet-5-5")
+		cfg.MaxOutputTokens, cfg.MaxOutputTokensConfigured = capTokens, true
+		return cfg
+	}
+	held := pinned(20_000)
+	if err := applyAnthropicCatalogModel(&held, claudeModels(), llm.Price{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if held.MaxTokens != 20_000 || held.MaxOutputTokens != 20_000 {
+		t.Fatalf("max %d cap %d, want both at the pinned 20000", held.MaxTokens, held.MaxOutputTokens)
+	}
+
+	low := pinned(8_000)
+	err := applyAnthropicCatalogModel(&low, claudeModels(), llm.Price{}, false)
+	const refusal = "max output tokens pinned at 8000 is below the Claude route's 16384 floor"
+	if err == nil || err.Error() != refusal {
+		t.Fatalf("error %v, want %q", err, refusal)
+	}
+
+	stubClaudeCatalog(t, claudeModels())
+	var logs safeBuffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	boot := pinned(8_000)
+	bootAnthropicProfile(context.Background(), &boot, houseKeySource)
+	if !strings.Contains(logs.String(), "pinned at 8000 is below the Claude route's 16384 floor") || boot.MaxTokens != low.MaxTokens {
+		t.Fatalf("boot log %q, max %d: the refusal must be logged and the fallback kept", logs.String(), boot.MaxTokens)
+	}
+}
+
+// safeBuffer is a log sink other tests' goroutines may write to while this one reads it.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
