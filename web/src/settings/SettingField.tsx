@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
+import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 /** How a field is framed. `card` tiles a pane of many settings; `inline` drops the chrome for
@@ -192,6 +193,14 @@ function SettingField({
           {...(picker.disabled === undefined ? {} : { disabled: picker.disabled })}
           {...(picker.noPriceLabel === undefined ? {} : { noPriceLabel: picker.noPriceLabel })}
           onChange={picker.onValueChange ?? onChange}
+        />
+      ) : def.options !== undefined ? (
+        <Select
+          id={inputId}
+          value={value}
+          onValueChange={onChange}
+          options={def.options.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
+          className="text-[13px]"
         />
       ) : def.secret ? (
         <SecretInput

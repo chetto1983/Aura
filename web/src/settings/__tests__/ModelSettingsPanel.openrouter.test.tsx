@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
+import { optionNames } from '../../test/chooseOption';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 
 // The routing pane's OpenRouter rows on the Cloud route: the management key an admin types, and
@@ -27,6 +28,7 @@ const ROUTING_LIST = {
 
 const MANAGEMENT_KEY_LABEL = 'OpenRouter management key';
 const SERVICES_CAP_LABEL = 'Services key monthly cap (USD)';
+const SORT_LABEL = 'OpenRouter: sort providers by';
 
 function requestURL(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -108,23 +110,20 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
     }
   });
 
-  // Measured on the lab VM 2026-11-27: the cheapest provider took 45 s a call. The two soft
-  // thresholds ride the hot profile, so a save reaches the next call without a restart.
-  it('saves the provider speed preferences through the hot-profile batch', async () => {
+  // Measured on the lab VM 2026-11-28: OpenRouter's price-weighted default kept a long thread on
+  // a provider that took 23-46 s. The sort rides the hot profile, so a save reaches the next call.
+  it('saves the provider sort through the hot-profile batch', async () => {
     const calls = stubSettingsAPI();
     await mount(<ModelSettingsPanel groups={['routing']} onComplete={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('OpenRouter: preferred min speed (tokens/s)'), {
-      target: { value: '20' },
-    });
-    fireEvent.change(screen.getByLabelText('OpenRouter: preferred max latency (s)'), {
-      target: { value: '10' },
-    });
-    expect(
-      screen.getAllByText(
-        'OpenRouter only. Providers below this are tried last, never excluded. 0 sends nothing.',
-      ),
-    ).toHaveLength(2);
+    expect(await optionNames(SORT_LABEL)).toEqual([
+      'OpenRouter default',
+      'Price',
+      'Throughput',
+      'Latency',
+    ]);
+    fireEvent.click(screen.getByRole('option', { name: 'Throughput' }));
+    expect(screen.getByText(/Throughput is not :nitro/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
@@ -132,12 +131,7 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
       {
         url: '/api/settings/llm-profile',
         method: 'PUT',
-        body: JSON.stringify({
-          settings: {
-            AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT: '20',
-            AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC: '10',
-          },
-        }),
+        body: JSON.stringify({ settings: { AURA_OPENROUTER_PROVIDER_SORT: 'throughput' } }),
       },
     ]);
   });

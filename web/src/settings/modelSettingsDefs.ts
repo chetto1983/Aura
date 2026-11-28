@@ -22,8 +22,7 @@ export type SettingsKey =
   | 'AURA_LLM_MODEL'
   | 'AURA_LLM_BASE_URL'
   | 'AURA_LLM_PROVIDER'
-  | 'AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT'
-  | 'AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC'
+  | 'AURA_OPENROUTER_PROVIDER_SORT'
   | 'AURA_OPENROUTER_SERVICES_CAP_USD'
   | 'AURA_OPENROUTER_MANAGEMENT_KEY'
   | 'ANTHROPIC_API_KEY'
@@ -55,6 +54,13 @@ export interface SettingDef {
   /** One line under the input saying what the number governs, for knobs whose label
    *  alone reads ambiguously (two output caps side by side, a step vs. a token). */
   readonly helpKey?: string;
+  /** A closed set of values, drawn as a select instead of a text box. */
+  readonly options?: readonly SettingOption[];
+}
+
+export interface SettingOption {
+  readonly value: string;
+  readonly labelKey: string;
 }
 
 export const PRIMARY_SETTINGS: readonly SettingDef[] = [
@@ -80,21 +86,19 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     labelKey: 'settings.fields.primaryBaseUrl',
     placeholder: OPENROUTER_BASE_URL,
   },
-  // OpenRouter's soft provider thresholds (provider.preferred_*). Hot: a save reaches the next
-  // call. Measured on the lab VM 2026-11-27: the cheapest provider took 45 s a call.
+  // OpenRouter's provider.sort. Hot: a save reaches the next call. Measured on the lab VM
+  // 2026-11-28: the price-weighted default kept a long thread on a provider that took 23-46 s.
   {
-    key: 'AURA_OPENROUTER_PREFERRED_MIN_THROUGHPUT',
-    kind: 'int',
-    labelKey: 'settings.fields.openRouterMinThroughput',
-    placeholder: '0',
-    helpKey: 'settings.help.openRouterProviderSpeed',
-  },
-  {
-    key: 'AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC',
-    kind: 'int',
-    labelKey: 'settings.fields.openRouterMaxLatency',
-    placeholder: '0',
-    helpKey: 'settings.help.openRouterProviderSpeed',
+    key: 'AURA_OPENROUTER_PROVIDER_SORT',
+    kind: 'string',
+    labelKey: 'settings.fields.openRouterProviderSort',
+    helpKey: 'settings.help.openRouterProviderSort',
+    options: [
+      { value: '', labelKey: 'settings.openRouterSort.default' },
+      { value: 'price', labelKey: 'settings.openRouterSort.price' },
+      { value: 'throughput', labelKey: 'settings.openRouterSort.throughput' },
+      { value: 'latency', labelKey: 'settings.openRouterSort.latency' },
+    ],
   },
   // The monthly cap of the key Aura mints for speech, embeddings and vision. It comes BEFORE the
   // management key on purpose: a save writes the rows outside the hot profile in this order, so

@@ -168,6 +168,12 @@ export const settingsEn = {
       heading: 'Token and turn budget',
       body: 'Tune the response cap, context window, compaction trigger, per-turn step limit and how long a tool call may hold the turn.',
     },
+    openRouterSort: {
+      default: 'OpenRouter default',
+      price: 'Price',
+      throughput: 'Throughput',
+      latency: 'Latency',
+    },
     help: {
       maxTokens: 'Per-request cap on the answer sent to the provider (max_tokens).',
       contextWindow:
@@ -178,8 +184,8 @@ export const settingsEn = {
         "Creates each person's own OpenRouter key and reads the account's spend. It can't run models.",
       openRouterServicesCap:
         'The monthly cap, in USD, of the key Aura mints for speech, embeddings and vision the first time OpenRouter is connected.',
-      openRouterProviderSpeed:
-        'OpenRouter only. Providers below this are tried last, never excluded. 0 sends nothing.',
+      openRouterProviderSort:
+        'OpenRouter only. Tries providers in this order instead of its price-weighted default. Throughput is not :nitro: it does not admit priority-tier endpoints.',
       mediaModel: "Runs on OpenRouter with each person's own key, whatever route the chat uses.",
       embedCloudApiKey:
         'Sent only to the endpoint above, never to OpenRouter. Leave it empty to keep the saved key.',
@@ -209,8 +215,7 @@ export const settingsEn = {
     fields: {
       primaryModel: 'Primary model',
       primaryBaseUrl: 'Primary base URL',
-      openRouterMinThroughput: 'OpenRouter: preferred min speed (tokens/s)',
-      openRouterMaxLatency: 'OpenRouter: preferred max latency (s)',
+      openRouterProviderSort: 'OpenRouter: sort providers by',
       primaryProvider: 'Primary provider',
       openRouterServicesCap: 'Services key monthly cap (USD)',
       openRouterManagementKey: 'OpenRouter management key',
@@ -418,6 +423,12 @@ export const settingsIt = {
       heading: 'Budget token e turni',
       body: 'Regola limite risposta, finestra contesto, soglia di compattazione, numero massimo di passi per turno e per quanto una chiamata a uno strumento può tenere il turno.',
     },
+    openRouterSort: {
+      default: 'Predefinito di OpenRouter',
+      price: 'Prezzo',
+      throughput: 'Velocità',
+      latency: 'Latenza',
+    },
     help: {
       maxTokens: 'Tetto per richiesta sulla risposta inviato al provider (max_tokens).',
       contextWindow:
@@ -428,8 +439,8 @@ export const settingsIt = {
         "Crea la chiave OpenRouter di ogni persona e legge la spesa dell'account. Non può usare i modelli.",
       openRouterServicesCap:
         'Il limite mensile, in USD, della chiave che Aura crea per voce, embedding e visione la prima volta che OpenRouter viene collegato.',
-      openRouterProviderSpeed:
-        'Solo OpenRouter. I provider sotto soglia vengono provati per ultimi, mai esclusi. 0 non invia niente.',
+      openRouterProviderSort:
+        "Solo OpenRouter. Prova i provider in quest'ordine invece del predefinito pesato sul prezzo. Velocità non è :nitro: non ammette gli endpoint priority.",
       mediaModel: 'Gira su OpenRouter con la chiave di ogni persona, qualunque rotta usi la chat.',
       embedCloudApiKey:
         "Inviata solo all'endpoint qui sopra, mai a OpenRouter. Lasciala vuota per tenere quella salvata.",
@@ -459,8 +470,7 @@ export const settingsIt = {
     fields: {
       primaryModel: 'Modello primario',
       primaryBaseUrl: 'URL base primario',
-      openRouterMinThroughput: 'OpenRouter: velocità minima preferita (token/s)',
-      openRouterMaxLatency: 'OpenRouter: latenza massima preferita (s)',
+      openRouterProviderSort: 'OpenRouter: ordina i provider per',
       primaryProvider: 'Provider primario',
       openRouterServicesCap: 'Limite mensile chiave dei servizi (USD)',
       openRouterManagementKey: 'Chiave di gestione OpenRouter',
