@@ -157,6 +157,8 @@ export interface ModelSettingsState {
     onComplete?: (outcome: SaveOutcome) => void | Promise<void>,
     holdRoute?: boolean,
   ) => Promise<void>;
+  /** Completes without saving, as Skip does, still reporting what earlier held saves ran. */
+  readonly finish: (onComplete: (outcome: SaveOutcome) => void | Promise<void>) => Promise<void>;
   readonly resetSetting: (key: SettingsKey) => Promise<void>;
 }
 
@@ -316,6 +318,11 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     [completeWith, dirtyKeys, loaded, queryClient, reloadRoutes, saving],
   );
 
+  const finish = useCallback(
+    (onComplete: (outcome: SaveOutcome) => void | Promise<void>) => completeWith(onComplete, []),
+    [completeWith],
+  );
+
   const resetSetting = useCallback(
     async (key: SettingsKey) => {
       if (resetting !== undefined) return;
@@ -353,6 +360,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     reload,
     setValue,
     save,
+    finish,
     resetSetting,
   };
 }

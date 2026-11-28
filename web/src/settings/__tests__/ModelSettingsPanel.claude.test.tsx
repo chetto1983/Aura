@@ -274,6 +274,23 @@ describe('Claude route on the routing pane', () => {
     expect(onComplete).toHaveBeenCalledWith({ openRouterKeys: [MINTED] });
   });
 
+  // A minted services key needs the restart the first-run step triggers, so Skip reports it too.
+  it('reports what a held save minted when the step is skipped', async () => {
+    const { onComplete } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-test-fake' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    expect(onComplete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip runtime setup' }));
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledWith({ openRouterKeys: [MINTED] });
+    });
+  });
+
   // Only the route waits for a model the account lists: the rows beside it, the speed row in the
   // hot profile among them, save on their own.
   it('saves the rows beside a route that waits for its model', async () => {

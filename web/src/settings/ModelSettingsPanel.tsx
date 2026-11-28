@@ -113,6 +113,7 @@ export function ModelSettingsPanel({
     reload,
     setValue,
     save,
+    finish,
     resetSetting,
   } = useModelSettings(scope);
   const formBaseURL = loaded?.values.AURA_LLM_BASE_URL ?? '';
@@ -399,7 +400,7 @@ export function ModelSettingsPanel({
             type="button"
             variant="outline"
             disabled={saving}
-            onClick={() => void onComplete()}
+            onClick={() => void finish(onComplete)}
           >
             {skipLabel ?? t('settings.actions.skip')}
           </Button>
