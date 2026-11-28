@@ -53,8 +53,8 @@ func TestHouseKeyIsSealedAndLive(t *testing.T) {
 	dr := withPrincipal(httptest.NewRequest(http.MethodDelete, "/api/settings/"+houseKey, nil), "admin-1")
 	dr.SetPathValue("key", houseKey)
 	s.handleDeleteSetting(del, dr)
-	if del.Code >= 300 || len(store.deleted) != 1 || store.deleted[0] != houseKey {
-		t.Fatalf("status = %d deleted = %v, want the row cleared", del.Code, store.deleted)
+	if del.Code != http.StatusOK || len(store.deleted) != 1 || store.deleted[0] != houseKey {
+		t.Fatalf("status = %d deleted = %v, want 200 and the row cleared", del.Code, store.deleted)
 	}
 }
 
