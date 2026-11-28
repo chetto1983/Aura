@@ -111,6 +111,13 @@ func TestCatalogPreservesBoundedIdempotencyConflictOutcome(t *testing.T) {
 	}
 }
 
+// The agent ends a turn the model refused (finish content_filter) with this outcome.
+func TestCatalogPreservesRefusedTurnOutcome(t *testing.T) {
+	if got := NormalizeAttribute(AttributeOutcome, "refused"); got != "refused" {
+		t.Fatalf("refused turn outcome normalized to %q, want refused", got)
+	}
+}
+
 func FuzzCatalogNormalizersRemainFinite(f *testing.F) {
 	for _, seed := range []string{"", "success", "../secret", strings.Repeat("x", 4096), "mcp.github.call"} {
 		f.Add(seed)
