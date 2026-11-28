@@ -125,6 +125,20 @@ type sandboxDenyError struct{ result ToolResult }
 
 func (e *sandboxDenyError) Error() string { return "sandbox unavailable" }
 
+// readPastTextCap returns head, the read bounded at the text cap readCap, or, when the file
+// ran past it, the file read again up to limit: a file shown to the model whole is judged
+// against its own cap, not the text one.
+func (t *ReadFile) readPastTextCap(ctx context.Context, h usersandbox.BoxHandle, boxPath string, head []byte, readCap, limit int64) ([]byte, error) {
+	if int64(len(head)) <= readCap {
+		return head, nil
+	}
+	data, deny, err := boxReadHead(ctx, t.Router, h, "read_file", boxPath, limit)
+	if deny != nil {
+		return nil, &sandboxDenyError{result: *deny}
+	}
+	return data, err
+}
+
 // fileContent is what readContent found: text to render with line numbers (extracted when it was
 // decoded from a document format), or a finished reply — an image attached for the model.
 type fileContent struct {

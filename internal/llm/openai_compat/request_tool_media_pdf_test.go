@@ -28,10 +28,37 @@ func TestToolPDFBecomesReferenceText(t *testing.T) {
 				t.Fatalf("messages = %s, want a user note after the tool block", raw)
 			}
 			var note string
-			if err := json.Unmarshal(messages[5].Content, &note); err != nil || !strings.Contains(note, "could not be shown") {
-				t.Fatalf("note = %s, want the not-shown note", messages[5].Content)
+			if err := json.Unmarshal(messages[5].Content, &note); err != nil {
+				t.Fatalf("note is not plain text: %s", messages[5].Content)
 			}
-			assertDisownedThenQuoted(t, note)
+			want := toolMediaDisclaimer + "\nThese files could not be shown because the current model does not read them: \"/workspace/photo.png\""
+			if note != want {
+				t.Fatalf("note = %q\nwant   %q", note, want)
+			}
 		})
+	}
+}
+
+// One image the model sees and one PDF it does not: the image keeps its line, the PDF gets
+// the files line, and nothing calls the PDF an image.
+func TestToolImageAndPDFGetTheirOwnLines(t *testing.T) {
+	pdf := []byte("%PDF-1.7 sheet bytes")
+	raw := captureMessages(t, visionCaps, llm.Request{Model: "vision", Messages: toolRound(), ToolMedia: map[string][]llm.ProjectedRequestPart{
+		"c1": {
+			{Type: "media", MIMEType: "image/png", Text: "/workspace/photo.png", Bytes: photoBytes},
+			{Type: "media", MIMEType: "application/pdf", Text: "/workspace/sheet.pdf", Bytes: pdf},
+		},
+	}})
+	if strings.Contains(string(raw), base64.StdEncoding.EncodeToString(pdf)) {
+		t.Fatalf("the PDF reached the wire: %s", raw)
+	}
+	parts := contentParts(t, decodeMessages(t, raw)[5])
+	if len(parts) != 2 || parts[1]["type"] != "image_url" {
+		t.Fatalf("tool media message parts = %#v, want the note then the image", parts)
+	}
+	want := toolMediaDisclaimer + "\nImages returned by the tool calls above: \"/workspace/photo.png\"" +
+		"\nThese files could not be shown because the current model does not read them: \"/workspace/sheet.pdf\""
+	if parts[0]["text"] != want {
+		t.Fatalf("note = %q\nwant   %q", parts[0]["text"], want)
 	}
 }

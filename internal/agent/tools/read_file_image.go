@@ -48,17 +48,9 @@ func (t *ReadFile) attachImage(
 	if media == nil {
 		return "", binaryFileRefusal(boxPath)
 	}
-	data := head
-	if int64(len(head)) > readCap {
-		var deny *ToolResult
-		var err error
-		data, deny, err = boxReadHead(ctx, t.Router, h, "read_file", boxPath, maxImageReadBytes)
-		if deny != nil {
-			return "", &sandboxDenyError{result: *deny}
-		}
-		if err != nil {
-			return "", err
-		}
+	data, err := t.readPastTextCap(ctx, h, boxPath, head, readCap, maxImageReadBytes)
+	if err != nil {
+		return "", err
 	}
 	if len(data) > maxImageReadBytes {
 		return "", fmt.Errorf("read_file: %s is over the %d-byte image cap; send_file can still hand it to the user",

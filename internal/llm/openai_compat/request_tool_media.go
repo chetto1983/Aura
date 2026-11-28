@@ -84,7 +84,7 @@ func toolMediaMessage(parts []llm.ProjectedRequestPart, target llm.ReasoningTarg
 	if len(parts) == 0 {
 		return openai.ChatCompletionMessageParamUnion{}, 0, false
 	}
-	var shown, hidden []string
+	var shown, hiddenImages, hiddenFiles []string
 	var images []openai.ChatCompletionContentPartUnionParam
 	for _, part := range parts {
 		if !part.ReferenceOnly {
@@ -94,14 +94,23 @@ func toolMediaMessage(parts []llm.ProjectedRequestPart, target llm.ReasoningTarg
 				continue
 			}
 		}
-		hidden = append(hidden, strconv.Quote(part.Text))
+		// A PDF is not an image, and a vision model told it "does not accept images" would
+		// be told something false.
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(part.MIMEType)), "image/") {
+			hiddenImages = append(hiddenImages, strconv.Quote(part.Text))
+		} else {
+			hiddenFiles = append(hiddenFiles, strconv.Quote(part.Text))
+		}
 	}
 	lines := []string{toolMediaDisclaimer}
 	if len(shown) > 0 {
 		lines = append(lines, "Images returned by the tool calls above: "+strings.Join(shown, ", "))
 	}
-	if len(hidden) > 0 {
-		lines = append(lines, "These images could not be shown because the current model does not accept images: "+strings.Join(hidden, ", "))
+	if len(hiddenImages) > 0 {
+		lines = append(lines, "These images could not be shown because the current model does not accept images: "+strings.Join(hiddenImages, ", "))
+	}
+	if len(hiddenFiles) > 0 {
+		lines = append(lines, "These files could not be shown because the current model does not read them: "+strings.Join(hiddenFiles, ", "))
 	}
 	text := strings.Join(lines, "\n")
 	if len(images) == 0 {

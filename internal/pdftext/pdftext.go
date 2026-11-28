@@ -1,10 +1,12 @@
-// Package pdftext reads a PDF's words with poppler's pdftotext.
+// Package pdftext reads a PDF's words with poppler's pdftotext, and its page count with
+// pdfinfo.
 //
 // Reading a PDF is a PDF engine's job, and the runtime image already carries one:
 // poppler-utils is installed in docker/aura/Dockerfile, so this is a subprocess and
 // not a service call. It resolves the ToUnicode CMaps that turn a Type0/CID font's
 // glyph indices back into characters, which no hand-written parser here could do.
-// Ingest's file card and web_fetch's PDF lane both read through it.
+// Ingest's file card and web_fetch's PDF lane both read through it; read_file counts
+// a PDF's pages through it before attaching one.
 package pdftext
 
 import (
