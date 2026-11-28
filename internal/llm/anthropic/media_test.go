@@ -150,6 +150,31 @@ func TestToolMediaPDFFollowsItsToolResult(t *testing.T) {
 	}
 }
 
+// The web UI and Telegram put the turn's uploads, and the agent its tool media, on the
+// context rather than on the request.
+func TestContextMediaBecomeBlocks(t *testing.T) {
+	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
+	loader := fakeLoader{"ref1": {ID: "ref1", MIMEType: "image/webp", Bytes: pngBytes}}
+	ctx := llm.WithContentProjection(context.Background(), llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"ref1"}})
+	ctx, tools := llm.WithToolMedia(ctx)
+	if err := tools.Add("t1", llm.ProjectedRequestPart{Type: "media", MIMEType: "application/pdf", Text: "/box/sheet.pdf", Bytes: pdfBytes}); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := server.client.Stream(ctx, turnRequest(nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range stream {
+	}
+	messages := messagesOf(t, (<-server.sent).body)
+	if current := blocksOf(t, messages[2]); !reflect.DeepEqual(typesOf(current), []string{"text", "image"}) {
+		t.Fatalf("current user message %#v", current)
+	}
+	if result := toolResultContent(t, messages[4]); len(result) != 2 || result[1]["type"] != "document" {
+		t.Fatalf("tool_result content %#v", result)
+	}
+}
+
 func TestSVGStaysReferenceOnly(t *testing.T) {
 	for name, catalog := range map[string]string{"reads images": catalogJSON(true, true), "reads no images": catalogJSON(false, false)} {
 		t.Run(name, func(t *testing.T) {
