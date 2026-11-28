@@ -8,9 +8,9 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// minMaxTokens is the floor of max_tokens on this route: adaptive thinking spends inside
+// MinMaxTokens is the floor of max_tokens on this route: adaptive thinking spends inside
 // it, so a helper's 32-token cap or a 0 would end in `length` or a 400 (plan decision 4).
-const minMaxTokens = 16_384
+const MinMaxTokens = 16_384
 
 // efforts is output_config.effort's vocabulary, lowest first.
 var efforts = []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortMedium, llm.ReasoningEffortHigh, llm.ReasoningEffortXHigh, llm.ReasoningEffortMax}
@@ -107,7 +107,7 @@ func (c *Client) effort(want llm.ReasoningEffort) (string, error) {
 }
 
 func (c *Client) maxTokens(requested int) int {
-	tokens := max(requested, c.cfg.MaxTokens, minMaxTokens)
+	tokens := max(requested, c.cfg.MaxTokens, MinMaxTokens)
 	if c.cfg.MaxOutputTokens > 0 {
 		tokens = min(tokens, c.cfg.MaxOutputTokens)
 	}

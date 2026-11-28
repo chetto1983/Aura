@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	// anthropicMaxTokensFloor is the client's own max_tokens floor (anthropic.minMaxTokens):
-	// adaptive thinking spends inside max_tokens, so a smaller budget ends in `length`.
-	anthropicMaxTokensFloor = 16_384
 	// anthropicDefaultMaxTokens replaces a MaxTokens below the floor (plan decision 4).
 	anthropicDefaultMaxTokens = 32_768
 	// anthropicWorkingWindow is the window used when the price has no long-prompt
@@ -123,16 +120,16 @@ func applyAnthropicCatalogModel(cfg *llm.Config, models []llm.ModelCatalogEntry,
 // pinned one, else the model's own max_tokens); a cap below the floor cannot carry
 // adaptive thinking and is refused by name.
 func applyAnthropicTokenLimits(cfg *llm.Config, modelMaxOutput int) error {
-	if cfg.MaxTokens < anthropicMaxTokensFloor {
+	if cfg.MaxTokens < anthropic.MinMaxTokens {
 		capTokens, capSource := modelMaxOutput, "from the model's catalogue"
 		if cfg.MaxOutputTokensConfigured {
 			capTokens, capSource = cfg.MaxOutputTokens, "pinned"
 		}
 		cfg.MaxTokens = anthropicDefaultMaxTokens
 		if capTokens > 0 {
-			if capTokens < anthropicMaxTokensFloor {
+			if capTokens < anthropic.MinMaxTokens {
 				return fmt.Errorf("max output tokens %s at %d is below the Claude route's %d floor",
-					capSource, capTokens, anthropicMaxTokensFloor)
+					capSource, capTokens, anthropic.MinMaxTokens)
 			}
 			cfg.MaxTokens = min(anthropicDefaultMaxTokens, capTokens)
 		}
