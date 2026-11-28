@@ -14,6 +14,21 @@ Every fact is **bitemporal**: it carries the window during which it was true. A 
 never overwritten. That single property is what makes the third case below — *it was
 true and no longer is* — the easy one rather than the impossible one.
 
+## Before any write
+
+Six rules, the same ones the write tools carry in their descriptions. The sections below
+give the reasons; these are what to do.
+
+1. Call `memory_entities` once, before the first write, and take subject and object from
+   its list whenever one of them is the thing you mean.
+2. A new name is a noun someone would ask about again, never a description.
+3. The predicate is English snake_case, one verb phrase per relation, and reused from the
+   listing's `predicates` when an existing one already says it.
+4. The statement is one or two sentences.
+5. Pass `source: {}` when there are no message ids to cite. Never invent one.
+6. Write nothing that will not matter in a month: no record of what this conversation
+   just did.
+
 ## Memory tools, and which question each answers
 
 | Tool | Reach for it when |
@@ -54,8 +69,9 @@ write it as a sentence someone would recognise, not as a triple restated.
 Every write also carries one `source` object, and it takes `memory_ids` and nothing
 else — the run is stamped by the host rather than asserted by you, so `source: {}` is a
 complete and correct value when there are no message ids to cite. (`memory_forget` DOES
-take a `run_id`, and requires one. The asymmetry is deliberate: you can revoke a whole
-run you never had to name, because the host named it for you.)
+take a `run_id`, in its `source`, when it removes what one run wrote. The asymmetry is
+deliberate: you can revoke a whole run you never had to name, because the host named it
+for you.)
 
 Replaying an exact fact is safe. The same subject, predicate, object and statement
 attaches your source to the existing fact instead of creating a second edge, and the
@@ -65,6 +81,26 @@ rather than multiplying rows.
 
 The subject and object entities are created for you. There is no separate "add entity"
 step, and looking for one is how the graph ends up with facts that connect to nothing.
+
+### Predicates
+
+A predicate is a relation, and relations are vocabulary exactly as names are: two facts
+that say the same thing with different predicates cannot be compared, superseded or
+counted together. Write it in English snake_case as a verb phrase — `lives_in`,
+`works_on`, `prefers_notification_channel` — whatever the language of the conversation.
+`memory_entities` returns `predicates`, the relations currently valid facts use, most
+used first: read it with the names, and reuse one when it already says what you mean.
+A new value of a relation already held is the old predicate again — with `supersedes`
+when it replaces the old value — not a new predicate beside it. Measured on 2026-11-28:
+with no listing to read, `prefers_work_reminders_via` was coined beside
+`prefers_notification_channel`, and nothing tied the two together.
+
+### Statements
+
+The statement is one or two sentences: the fact, said so someone would recognise it.
+A paragraph is several facts in one edge, and a correction is per fact — when one
+sentence of it stops being true, the whole edge has to be closed or kept wrong. Split
+it into the facts it holds.
 
 ### Classing an entity: one closed set, plus a free refinement
 
@@ -103,8 +139,9 @@ So the order is fixed, and it is one extra call for a whole session of writing:
 
 1. **`memory_entities` first**, once, before the first write. Read the list and keep it.
    Each entry carries its `pole` and its `kind`, so one read tells you which names exist
-   AND how they are classified. Check `total`: the listing is capped, and a total larger
-   than the list means you are seeing part of the memory.
+   AND how they are classified, and `predicates` lists the relations in use. Check
+   `total` and `predicates_total`: the listing is capped, and a total larger than the
+   list means you are seeing part of the memory.
 2. **Take every subject and object from that list** when anything on it is the thing you
    mean. Same spelling, same case.
 3. **Coin a new name only when nothing on the list fits** — and then coin a NAME, not a

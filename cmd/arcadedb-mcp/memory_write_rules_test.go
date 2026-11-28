@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -91,5 +93,27 @@ func TestWriteToolsCarryTheRules(t *testing.T) {
 func TestWriteRulesStayShort(t *testing.T) {
 	if len(memoryWriteRules) > 700 {
 		t.Fatalf("memoryWriteRules is %d bytes, cap 700", len(memoryWriteRules))
+	}
+}
+
+// The skill repeats the rules in prose at its top; this keeps it naming each one.
+func TestSkillOpensWithTheWriteRules(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "internal", "skills", "embed", "memory-aura", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read skill: %v", err)
+	}
+	skill := string(raw)
+	const heading = "\n## Before any write\n"
+	start := strings.Index(skill, heading)
+	tools := strings.Index(skill, "\n## Memory tools")
+	if start < 0 || tools < 0 || start > tools {
+		t.Fatalf("the skill must open with %q before its tool table", strings.TrimSpace(heading))
+	}
+	section := skill[start+len(heading):]
+	section = section[:strings.Index(section, "\n## ")]
+	for _, marker := range memoryWriteRuleMarkers {
+		if !strings.Contains(section, marker) {
+			t.Errorf("the skill's write rules lack %q", marker)
+		}
 	}
 }
