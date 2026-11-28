@@ -21,11 +21,13 @@ type MemoryEntitiesInput struct {
 	Limit int `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
 }
 
-// MemoryEntitiesOutput carries the names the memory knows, and how many exist,
+// MemoryEntitiesOutput carries the names and the predicates the memory knows, and how many exist,
 // so a truncated page cannot be read as the whole memory.
 type MemoryEntitiesOutput struct {
-	Entities []arcadedb.EntitySummary `json:"entities"`
-	Total    int                      `json:"total" jsonschema:"every entity in this memory; larger than the returned list means it was truncated"`
+	Entities        []arcadedb.EntitySummary    `json:"entities"`
+	Total           int                         `json:"total" jsonschema:"every entity in this memory; larger than the returned list means it was truncated"`
+	Predicates      []arcadedb.PredicateSummary `json:"predicates" jsonschema:"the relations currently valid facts use, most used first"`
+	PredicatesTotal int                         `json:"predicates_total" jsonschema:"every predicate in use; larger than the returned list means it was truncated"`
 }
 
 func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
@@ -38,7 +40,8 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 			arcadedb.PoleClassList() + ") and the concrete kind refining it, so one read " +
 			"tells you both which names exist and how they are classified. Check `total`: " +
 			"the listing is capped, so a total larger than the returned list means you are " +
-			"seeing only part of the memory.",
+			"seeing only part of the memory. `predicates` lists the relations in use: reuse one " +
+			"before coining a new predicate.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(
 		ctx context.Context,
@@ -53,7 +56,10 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 		if err != nil {
 			return nil, MemoryEntitiesOutput{}, fmt.Errorf("memory_entities: %w", err)
 		}
-		return nil, MemoryEntitiesOutput{Entities: listing.Entities, Total: listing.Total}, nil
+		return nil, MemoryEntitiesOutput{
+			Entities: listing.Entities, Total: listing.Total,
+			Predicates: listing.Predicates, PredicatesTotal: listing.PredicatesTotal,
+		}, nil
 	})
 }
 

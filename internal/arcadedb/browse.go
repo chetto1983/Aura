@@ -52,6 +52,18 @@ type EntityListing struct {
 	// Total is every entity in this identity's memory, not just the returned
 	// page. Total > len(Entities) means the listing was truncated.
 	Total int `json:"total"`
+	// Predicates are the relations currently valid facts use, most used first, so a
+	// writer reuses one before coining another. Measured on the lab VM on 2026-11-28:
+	// with no tool listing them, prefers_work_reminders_via was coined beside the
+	// existing prefers_notification_channel.
+	Predicates      []PredicateSummary `json:"predicates"`
+	PredicatesTotal int                `json:"predicates_total"`
+}
+
+// PredicateSummary is one relation in use, with how many currently valid facts use it.
+type PredicateSummary struct {
+	Name  string `json:"name"`
+	Facts int    `json:"facts"`
 }
 
 // ListEntities returns the entities holding the most facts first, because an
@@ -89,16 +101,47 @@ func (c *Client) ListEntities(ctx context.Context, limit int) (EntityListing, er
 	if err != nil {
 		return EntityListing{}, fmt.Errorf("arcadedb: count entities: %w", err)
 	}
-	// Fall back to what was actually returned rather than to zero: a count row
-	// without the column would otherwise report a memory of zero entities while
-	// handing back a non-empty list, which is a worse lie than no total at all.
-	listing := EntityListing{Entities: out, Total: len(out)}
-	if len(totals) > 0 {
-		if _, ok := totals[0]["total"]; ok {
-			listing.Total = int(rowInt(totals[0], "total"))
-		}
+	listing := EntityListing{Entities: out, Total: totalOrPage(totals, len(out))}
+	listing.Predicates, listing.PredicatesTotal, err = c.listPredicates(ctx, limit)
+	if err != nil {
+		return EntityListing{}, err
 	}
 	return listing, nil
+}
+
+// An alias in GROUP BY or ORDER BY evaluates to null, while an aggregate may order
+// grouped rows (ArcadeDB docs, reference/sql/sql-select.adoc), so the order names
+// count(*) and the group names the property.
+func (c *Client) listPredicates(ctx context.Context, limit int) ([]PredicateSummary, int, error) {
+	params := map[string]any{"as_of": time.Now().UTC().Format(time.RFC3339)}
+	rows, err := c.Query(ctx,
+		"SELECT predicate AS name, count(*) AS facts FROM "+factEdgeType+" WHERE "+asOfCondition+
+			" GROUP BY predicate ORDER BY count(*) DESC, predicate LIMIT "+strconv.Itoa(limit), params)
+	if err != nil {
+		return nil, 0, fmt.Errorf("arcadedb: list predicates: %w", err)
+	}
+	out := make([]PredicateSummary, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PredicateSummary{Name: rowString(row, "name"), Facts: int(rowInt(row, "facts"))})
+	}
+	totals, err := c.Query(ctx,
+		"SELECT count(DISTINCT predicate) AS total FROM "+factEdgeType+" WHERE "+asOfCondition, params)
+	if err != nil {
+		return nil, 0, fmt.Errorf("arcadedb: count predicates: %w", err)
+	}
+	return out, totalOrPage(totals, len(out)), nil
+}
+
+// Fall back to what was actually returned rather than to zero: a count row
+// without the column would otherwise report an empty memory while handing back
+// a non-empty list, which is a worse lie than no total at all.
+func totalOrPage(totals []map[string]any, page int) int {
+	if len(totals) > 0 {
+		if _, ok := totals[0]["total"]; ok {
+			return int(rowInt(totals[0], "total"))
+		}
+	}
+	return page
 }
 
 // DigestResult is the memory's index: a block of text meant to be held in

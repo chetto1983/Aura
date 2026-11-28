@@ -22,21 +22,22 @@ func TestListEntitiesMapsRowsAndBoundsTheQuery(t *testing.T) {
 	if !strings.Contains(rec.statements[0], "LIMIT 50") {
 		t.Fatalf("default bound missing: %s", rec.statements[0])
 	}
-	// Each call is listing + count, so the bound assertions step by two.
+	// Each call is entity listing + count, then predicate listing + count, so the
+	// bound assertions step by four.
 	if !strings.Contains(rec.statements[1], "count(*)") {
 		t.Fatalf("total is not counted: %s", rec.statements[1])
 	}
 	if _, err := client.ListEntities(context.Background(), 7); err != nil {
 		t.Fatalf("ListEntities custom limit: %v", err)
 	}
-	if !strings.Contains(rec.statements[2], "LIMIT 7") {
-		t.Fatalf("custom bound missing: %s", rec.statements[2])
+	if !strings.Contains(rec.statements[4], "LIMIT 7") {
+		t.Fatalf("custom bound missing: %s", rec.statements[4])
 	}
 	if _, err := client.ListEntities(context.Background(), 1000); err != nil {
 		t.Fatalf("ListEntities capped limit: %v", err)
 	}
-	if !strings.Contains(rec.statements[4], "LIMIT 100") {
-		t.Fatalf("hard bound missing: %s", rec.statements[4])
+	if !strings.Contains(rec.statements[8], "LIMIT 100") {
+		t.Fatalf("hard bound missing: %s", rec.statements[8])
 	}
 }
 

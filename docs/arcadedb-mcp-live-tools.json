@@ -999,7 +999,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs, and to read the vocabulary before coining a new name. Each entry carries its POLE class (Person, Object, Location, Event, Organisation, Other) and the concrete kind refining it, so one read tells you both which names exist and how they are classified. Check `total`: the listing is capped, so a total larger than the returned list means you are seeing only part of the memory.",
+    "description": "List the entities the memory knows, the ones holding the most facts first. Use it to find the exact name memory_facts_about needs, and to read the vocabulary before coining a new name. Each entry carries its POLE class (Person, Object, Location, Event, Organisation, Other) and the concrete kind refining it, so one read tells you both which names exist and how they are classified. Check `total`: the listing is capped, so a total larger than the returned list means you are seeing only part of the memory. `predicates` lists the relations in use: reuse one before coining a new predicate.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1042,6 +1042,33 @@
             "array"
           ]
         },
+        "predicates": {
+          "description": "the relations currently valid facts use, most used first",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "facts": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "facts"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "predicates_total": {
+          "description": "every predicate in use; larger than the returned list means it was truncated",
+          "type": "integer"
+        },
         "total": {
           "description": "every entity in this memory; larger than the returned list means it was truncated",
           "type": "integer"
@@ -1049,7 +1076,9 @@
       },
       "required": [
         "entities",
-        "total"
+        "total",
+        "predicates",
+        "predicates_total"
       ],
       "type": "object"
     },
