@@ -22,7 +22,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -153,7 +152,7 @@ func (s *Server) fetchModelCatalog(
 
 // catalogKeySetting names the stored credential each catalogue is read with.
 var catalogKeySetting = map[string]string{
-	"openrouter":          "OPENROUTER_API_KEY",
+	"openrouter":          settings.ServicesKeySetting,
 	llm.AnthropicProvider: settings.AnthropicKeySetting,
 }
 
@@ -169,13 +168,12 @@ func (s *Server) withClaudeListPrices(ctx context.Context, entries []llm.ModelCa
 	for _, entry := range listed {
 		byID[entry.ID] = entry
 	}
-	priced := slices.Clone(entries)
-	for i := range priced {
-		if match, ok := byID[anthropic.OpenRouterID(priced[i].ID)]; ok {
-			priced[i].Price, priced[i].HasPrice = match.Price, match.HasPrice
+	for i := range entries {
+		if match, ok := byID[anthropic.OpenRouterID(entries[i].ID)]; ok {
+			entries[i].Price, entries[i].HasPrice = match.Price, match.HasPrice
 		}
 	}
-	return priced
+	return entries
 }
 
 // validateCatalogBaseURL mirrors the primary-route check in cmd/aura/serve_settings.go: an

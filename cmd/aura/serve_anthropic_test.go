@@ -314,3 +314,78 @@ func (b *safeBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// With no pin, the model's own max_tokens bounds the 32,768 default; one below the floor is
+// refused by name, at save and in the boot log.
+func TestModelOutputCapBoundsTheClaudeDefault(t *testing.T) {
+	smallCap := func(capTokens int) []llm.ModelCatalogEntry {
+		models := claudeModels()
+		models[0].MaxOutputTokens = capTokens
+		return models
+	}
+	cfg := claudeProfile(t, "claude-sonnet-5-5")
+	if err := applyAnthropicCatalogModel(&cfg, smallCap(32_000), llm.Price{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTokens != 32_000 || cfg.MaxOutputTokens != 32_000 || cfg.Validate() != nil {
+		t.Fatalf("max %d cap %d: want both at the model's 32000", cfg.MaxTokens, cfg.MaxOutputTokens)
+	}
+
+	const refusal = "max output tokens from the model's catalogue at 8192 is below the Claude route's 16384 floor"
+	tiny := claudeProfile(t, "claude-sonnet-5-5")
+	if err := applyAnthropicCatalogModel(&tiny, smallCap(8_192), llm.Price{}, false); err == nil || err.Error() != refusal {
+		t.Fatalf("error %v, want %q", err, refusal)
+	}
+
+	stubClaudeCatalog(t, smallCap(8_192))
+	var logs safeBuffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	boot := claudeProfile(t, "claude-sonnet-5-5")
+	bootAnthropicProfile(context.Background(), &boot, houseKeySource)
+	if !strings.Contains(logs.String(), "catalogue at 8192 is below the Claude route's 16384 floor") {
+		t.Fatalf("boot log %q: the refusal must be logged", logs.String())
+	}
+}
+
+// Leaving Claude through Settings gives the OpenRouter route back its own window, cap,
+// efforts and services key: nothing the Claude profile set survives the switch.
+func TestLeavingClaudeRestoresTheFallbackRoute(t *testing.T) {
+	stubClaudeCatalog(t, claudeModels())
+	openRouter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"cloud-model","context_length":1000000,` +
+			`"pricing":{"prompt":"0.000001","completion":"0.000002"},"top_provider":{"max_completion_tokens":32768}}]}`))
+	}))
+	t.Cleanup(openRouter.Close)
+	fallback := validFallbackLLMConfig()
+	fallback.BaseURL = openRouter.URL
+	fallback.APIKey = "sk-or-v1-boot-services-key"
+	runtime := llm.NewRuntime(&settingsRuntimeClient{route: "old"}, fallback)
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: runtime, clients: llmClientDeps{anthropicKey: houseKeySource}}
+	prepareAndApply := func(overrides map[string]string) llm.Config {
+		t.Helper()
+		apply, err := r.Prepare(context.Background(), overrides, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		apply()
+		return runtime.Snapshot().Config
+	}
+	if claude := prepareAndApply(claudeOverrides("claude-sonnet-5-5")); claude.ContextWindow != 200_000 || len(claude.SupportedReasoningEfforts) == 0 {
+		t.Fatalf("Claude profile not applied: window %d efforts %v", claude.ContextWindow, claude.SupportedReasoningEfforts)
+	}
+	back := prepareAndApply(map[string]string{})
+	if back.Provider != "openrouter" || back.APIKey != fallback.APIKey || back.ContextWindow != 1_000_000 ||
+		back.MaxOutputTokens != 32_768 || back.MaxTokens != fallback.MaxTokens ||
+		back.SupportedReasoningEfforts != nil || back.ReasoningMandatory {
+		t.Fatalf("after leaving Claude: %+v", back)
+	}
+	if _, ok := runtime.Snapshot().Client.(anthropicRouteClient); ok {
+		t.Fatal("the Claude client survived the switch")
+	}
+}

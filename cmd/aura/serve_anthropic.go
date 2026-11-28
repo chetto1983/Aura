@@ -119,17 +119,22 @@ func applyAnthropicCatalogModel(cfg *llm.Config, models []llm.ModelCatalogEntry,
 }
 
 // applyAnthropicTokenLimits sets MaxTokens and the output cap. A MaxTokens below the
-// floor is not the operator's, so it takes the default, held to a pinned cap; a pinned cap
-// below the floor cannot carry adaptive thinking and is refused by name.
+// floor is not the operator's, so it takes the default, held to the effective cap (the
+// pinned one, else the model's own max_tokens); a cap below the floor cannot carry
+// adaptive thinking and is refused by name.
 func applyAnthropicTokenLimits(cfg *llm.Config, modelMaxOutput int) error {
 	if cfg.MaxTokens < anthropicMaxTokensFloor {
-		cfg.MaxTokens = anthropicDefaultMaxTokens
+		capTokens, capSource := modelMaxOutput, "from the model's catalogue"
 		if cfg.MaxOutputTokensConfigured {
-			if cfg.MaxOutputTokens < anthropicMaxTokensFloor {
-				return fmt.Errorf("max output tokens pinned at %d is below the Claude route's %d floor",
-					cfg.MaxOutputTokens, anthropicMaxTokensFloor)
+			capTokens, capSource = cfg.MaxOutputTokens, "pinned"
+		}
+		cfg.MaxTokens = anthropicDefaultMaxTokens
+		if capTokens > 0 {
+			if capTokens < anthropicMaxTokensFloor {
+				return fmt.Errorf("max output tokens %s at %d is below the Claude route's %d floor",
+					capSource, capTokens, anthropicMaxTokensFloor)
 			}
-			cfg.MaxTokens = min(anthropicDefaultMaxTokens, cfg.MaxOutputTokens)
+			cfg.MaxTokens = min(anthropicDefaultMaxTokens, capTokens)
 		}
 	}
 	if !cfg.MaxOutputTokensConfigured {
