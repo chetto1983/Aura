@@ -89,6 +89,7 @@ func projectDisplaySnapshotWithFacts(turns []conversations.DisplayTurn, conversa
 	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
 	views := replayMCPViews(hist, conversationID, facts)
 	outcomes := callOutcomes(hist, conversationID, facts, declined)
+	raw := rawToolResults(hist, conversationID, facts)
 	recoveryResults := make(map[string]string)
 	for _, m := range hist {
 		for _, call := range m.ToolCalls {
@@ -102,12 +103,16 @@ func projectDisplaySnapshotWithFacts(turns []conversations.DisplayTurn, conversa
 		isTool := m.Role == llm.RoleTool
 		placeholder := isTool && knownCall && m.Content == recovery
 		outcome := outcomes[m.ToolCallID]
+		content := snapshotContent(m)
+		if isTool {
+			content = shownToolResult(m, raw)
+		}
 		msgs = append(msgs, displaySnapshotMessage{
 			ID:                  snapshotID(turn),
 			ParentID:            snapshotParentID(turn),
 			seq:                 turn.Seq,
 			Role:                types.Role(m.Role),
-			Content:             snapshotContent(m),
+			Content:             content,
 			ToolCallID:          m.ToolCallID,
 			IsError:             placeholder || isTool && outcome.failed,
 			Refused:             isTool && outcome.refused,
@@ -226,7 +231,8 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 
 // rederiveDisplaysWithFacts walks the persisted history in order and re-derives a display.Payload
 // per recognized tool-result turn. A RoleTool turn carries ToolCallID and, as Content, the
-// result the model read, unframed here into the preview the live card was derived from. It
+// result the model read; the preview the live card was derived from is the ledger's raw
+// result when it holds this turn's, else that Content unframed (shownToolResult). It
 // returns the map keyed by tool_call_id. A single shared registry accumulates across all web
 // turns so cross-turn source RefIDs are stable — identical to the live per-run registry
 // (Pitfall 4 parity). facts are the thread's ledger rows, which supply the inputs a preview
@@ -234,6 +240,7 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]*display.Payload {
 	reg := display.NewRegistry()
 	inputs := previewInputsByCallIDWithFacts(hist, conversationID, facts)
+	raw := rawToolResults(hist, conversationID, facts)
 	out := make(map[string]*display.Payload)
 	for i := range hist {
 		m := &hist[i]
@@ -244,7 +251,7 @@ func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts 
 		if !found || in.ToolName == "" {
 			continue
 		}
-		in.ResultPreview = agent.PlainToolOutput(m.Content)
+		in.ResultPreview = shownToolResult(*m, raw)
 		if p, ok := display.NormalizeToolPreview(in, reg); ok {
 			payload := p
 			out[m.ToolCallID] = &payload
