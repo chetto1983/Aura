@@ -102,3 +102,40 @@ func TestEmbedCloudAPIKeyIsSealed(t *testing.T) {
 		t.Fatalf("%s must be stored sealed", EmbedEndpointKeySetting)
 	}
 }
+
+func TestHouseKeyIgnoresTheEnvironment(t *testing.T) {
+	env := func(string) (string, bool) { return "sk-ant-env", true }
+	if key, err := (Credentials{LookupEnv: env}).AnthropicKey(t.Context()); err != nil || key != "" {
+		t.Fatalf("no store: key = %q, %v, want empty", key, err)
+	}
+	empty := Credentials{Store: &secretRows{values: map[string]string{}}, LookupEnv: env}
+	if key, err := empty.AnthropicKey(t.Context()); err != nil || key != "" {
+		t.Fatalf("empty row: key = %q, %v, want empty: the environment is never read", key, err)
+	}
+}
+
+func TestHouseKeyReadsTheRowOnEveryCallAndReturnsTheStoreError(t *testing.T) {
+	rows := &secretRows{values: map[string]string{AnthropicKeySetting: " k1 "}}
+	creds := Credentials{Store: rows}
+	if key, _ := creds.AnthropicKey(t.Context()); key != "k1" {
+		t.Fatalf("key = %q, want k1", key)
+	}
+	rows.values[AnthropicKeySetting] = "k2"
+	if key, _ := creds.AnthropicKey(t.Context()); key != "k2" {
+		t.Fatalf("key = %q, want the replaced k2", key)
+	}
+	rows.err = errBoom
+	if _, err := creds.AnthropicKey(t.Context()); !errors.Is(err, errBoom) {
+		t.Fatalf("err = %v, want the store error", err)
+	}
+}
+
+func TestPrimaryRouteKeyStaysEmptyOnTheAnthropicRoute(t *testing.T) {
+	creds := Credentials{Store: &secretRows{values: map[string]string{
+		ServicesKeySetting: "services", AnthropicKeySetting: "house",
+	}}}
+	key, err := creds.PrimaryRouteKey(llm.AnthropicProvider, "https://api.anthropic.com")(t.Context())
+	if err != nil || key != "" {
+		t.Fatalf("key = %q, %v, want empty: vision's HTTP arm is OpenAI-shaped", key, err)
+	}
+}

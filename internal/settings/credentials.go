@@ -16,6 +16,9 @@ const (
 	// EmbedEndpointKeySetting is a manual embedding endpoint's own key. The services key never
 	// goes to a manual endpoint: it is another provider, at whatever URL the admin typed.
 	EmbedEndpointKeySetting = "AURA_EMBED_CLOUD_API_KEY"
+	// AnthropicKeySetting is the admin's Claude Console key for the anthropic route. It comes
+	// from the store alone: a key in the process environment is never the house key.
+	AnthropicKeySetting = "ANTHROPIC_API_KEY"
 )
 
 // SecretReader reads one sealed row, "" when it is absent.
@@ -36,6 +39,15 @@ type Credentials struct {
 // ServicesKey is the deployment's OpenRouter key.
 func (c Credentials) ServicesKey(ctx context.Context) (string, error) {
 	return c.read(ctx, ServicesKeySetting)
+}
+
+// AnthropicKey is the house key the anthropic route sends, "" without a store or a row.
+func (c Credentials) AnthropicKey(ctx context.Context) (string, error) {
+	if c.Store == nil {
+		return "", nil
+	}
+	value, err := c.Store.Secret(ctx, AnthropicKeySetting)
+	return strings.TrimSpace(value), err
 }
 
 // EmbedKeySetting names the setting embed's route takes its credential from: the services key

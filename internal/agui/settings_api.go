@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -213,7 +212,7 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 		if isCallTimeSetting(key) {
 			item.Applied = appliedLive
 		}
-		effective := os.Getenv(key)
+		effective := settingEnv(key)
 		if s.hotLLMRouteEnabled(key) {
 			item.Applied = appliedLive
 			if value, ok := s.llmRouteReloader.EffectiveValue(key); ok && !overridden {
@@ -231,7 +230,7 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case key == telegramTokenKey && s.telegramRuns(row.Value):
 				item.Applied = appliedLive
-			case row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key) && !isCallTimeSetting(key):
+			case row.Value != settingEnv(key) && !s.hotLLMRouteEnabled(key) && !isCallTimeSetting(key):
 				item.Applied = appliedRestart
 				out.RestartRequired = true
 				out.RestartKeys = append(out.RestartKeys, key)
@@ -527,7 +526,7 @@ func (s *Server) effectiveSettingValue(ctx context.Context, key string) (string,
 			}
 		}
 	}
-	return strings.TrimSpace(os.Getenv(key)), nil
+	return strings.TrimSpace(settingEnv(key)), nil
 }
 
 // settingItemFromRow projects a stored row to the redacted DTO returned by a write.

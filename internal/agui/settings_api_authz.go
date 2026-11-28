@@ -3,8 +3,10 @@ package agui
 import (
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // mintedSettingKeys are written only by the reconciler: nobody types the services key.
@@ -16,6 +18,8 @@ var callTimeSettingKeys = map[string]struct{}{
 	"CLOUDFLARE_TUNNEL_TOKEN":          {},
 	"AURA_OPENROUTER_MANAGEMENT_KEY":   {},
 	"AURA_OPENROUTER_SERVICES_CAP_USD": {},
+	// The Claude house key, read from the store by settings.Credentials.AnthropicKey on every call.
+	settings.AnthropicKeySetting: {},
 	// The two media models and the inline wait are read fresh on every generation
 	// call (cmd/aura's mediaSettings); the asset byte ceiling is boot-only, so it is
 	// deliberately absent here.
@@ -26,6 +30,18 @@ var callTimeSettingKeys = map[string]struct{}{
 	"AURA_EMBED_CLOUD_API_KEY": {},
 	// The decision model is read by the mail watch on every tick.
 	"AURA_DECIDE_MODEL": {},
+}
+
+// storeOnlySettingKeys never take the process environment as a value: a Claude key in the
+// container's environment is not the admin's, and must not look like one in the settings list.
+var storeOnlySettingKeys = map[string]struct{}{settings.AnthropicKeySetting: {}}
+
+// settingEnv is the process environment's value for key, "" for a store-only key.
+func settingEnv(key string) string {
+	if _, ok := storeOnlySettingKeys[key]; ok {
+		return ""
+	}
+	return os.Getenv(key)
 }
 
 func isCallTimeSetting(key string) bool {

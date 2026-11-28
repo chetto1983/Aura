@@ -57,7 +57,7 @@ type KeyMeta struct {
 var AllowedKeys = map[string]KeyMeta{
 	"CLOUDFLARE_API_TOKEN":         {Secret: true, Kind: KindString, Label: "Cloudflare API token"},
 	"CLOUDFLARE_TUNNEL_TOKEN":      {Secret: true, Kind: KindString, Label: "Cloudflare tunnel token"},
-	"AURA_LLM_PROVIDER":            {Kind: KindString, Label: "Primary LLM provider (openrouter|llamacpp|ollama|chatgpt)"},
+	"AURA_LLM_PROVIDER":            {Kind: KindString, Label: "Primary LLM provider (openrouter|llamacpp|ollama|chatgpt|anthropic)"},
 	"AURA_LLM_MODEL":               {Kind: KindString, Label: "Primary LLM model"},
 	"AURA_LLM_BASE_URL":            {Kind: KindString, Label: "Primary LLM base URL"},
 	"AURA_LLM_MAX_TOKENS":          {Kind: KindInt, Label: "Max response tokens"},
@@ -96,6 +96,9 @@ var AllowedKeys = map[string]KeyMeta{
 	// keys and reads analytics/credits, but cannot call completion endpoints (M-01) —
 	// a different credential from the inference key above, stored the same way.
 	"AURA_OPENROUTER_MANAGEMENT_KEY": {Secret: true, Kind: KindString, Label: "OpenRouter management key (mint/revoke, not inference)"},
+	// The Claude Console key of the anthropic route, typed by an admin like the management key
+	// above; read from the store on every call, never from the environment.
+	AnthropicKeySetting: {Secret: true, Kind: KindString, Label: "Claude Console API key (house)"},
 	// The monthly cap of the aura-services key the reconciler mints. It is read when the key is
 	// minted, never overlaid into a running config.
 	"AURA_OPENROUTER_SERVICES_CAP_USD":  {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},

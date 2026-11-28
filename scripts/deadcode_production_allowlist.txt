@@ -35,3 +35,4 @@ github.com/chetto1983/aura/internal/llm/anthropic                               
 github.com/chetto1983/aura/internal/gateway.Gateway.Review                             wired in Task 3 (unified approval)
 github.com/chetto1983/aura/internal/gateway.ScopeForAnswer                             wired in Task 5 (unified approval)
 github.com/chetto1983/aura/internal/agent/tools.WithApprovedCalls                      wired in Task 6 (unified approval)
+github.com/chetto1983/aura/internal/settings.Credentials.AnthropicKey                  wired by cmd/aura in Task 7
