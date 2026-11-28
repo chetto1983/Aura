@@ -15,13 +15,20 @@ thinking bound to the old prefix is dropped.
 
 The `tools` array then never changes.
 
-## Run it (paid, about 8 billed calls on Sonnet 5.5)
+## Run it (paid, about 13 billed calls on Sonnet 5.5)
 
 ```bash
 # WSL, from /mnt/d/Aura. The key lives in a file outside the repository; it is never printed.
 go run ./spikes/anthropic-provider/probe-defer -keyfile <file holding a Claude Console key> \
   -model claude-sonnet-5-5 -case all
+# Then the design's own shape (Aura's spec text kept, reference appended), about 5 more billed calls:
+go run ./spikes/anthropic-provider/probe-defer -keyfile <same file> -model claude-sonnet-5-5 \
+  -case defer -result spec
 ```
+
+`-case all` with the default `-result mixed` shows that the reference expands, because no schema text is
+in the result. Only `-result spec` checks the shape §4 proposes, with Aura's text kept beside the
+reference. Run both: about 13 billed calls in all.
 
 Flags:
 
@@ -91,7 +98,9 @@ round-1 thinking count is printed, because a drop needs a thinking block to drop
    arguments prove the API expanded the reference.
 3. The model gives its final answer.
 
-It also prints whether the tools digest was identical on every round. Expected: `read` covers the whole
+The `tools=` digest on each call line is the evidence that the array did not change. The summary line
+"identical on every round" compares the probe's own variable with itself, so it only shows the digest is
+stable for the same value. Expected: `read` covers the whole
 earlier prefix, `write` covers only the new tail, and `dropped` is 0.
 
 **Replay (inside `defer`).** A second user turn ("Now the same for GLOBEX, in pounds.") is sent twice:
@@ -277,7 +286,9 @@ The 400 for an unknown reference is typed as `shared.ToolReferenceUnresolvedErro
 
 ## 3. Aura inventory
 
-Paths are under `internal/`, read on 2026-11-28 at `015c660ed`.
+Paths are under `internal/`. They were read on 2026-11-28 in the shared working tree, while a peer
+session was committing. At this probe's first commit, HEAD was `458e00f64`, and none of the cited files
+differed from it.
 
 ### How `tool_search` works today
 
@@ -405,8 +416,10 @@ tools.
    then read back as cached?
 5. Does the reference load the tool across a turn boundary? Check both the verbatim history and Aura's
    reload shape with thinking stripped, and what the replay costs in each.
-6. Can the model call a deferred tool nothing referenced (`unreferenced`)? If the API rejects the call or
-   the model refuses, the dispatch gate becomes a backstop only.
+6. Can the model call a deferred tool nothing referenced (`unreferenced`)? A call to `warehouse_03`, or a
+   400, answers it. A refusal does not: the system prompt tells the model that such a call is refused, so
+   a refusal shows obedience, not inability. Only a call or a 400 settles whether the dispatch gate
+   becomes a backstop only.
 7. Are the three contract shapes really 400s, with nothing billed?
 
 ## 6. Not yet proven
