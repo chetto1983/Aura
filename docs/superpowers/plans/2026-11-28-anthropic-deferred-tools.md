@@ -74,8 +74,8 @@ measures what its §6 leaves open and amends it before any code. Code citations 
    the other `tool_result`, the residue, then the hint. Pinned by `TestResidueFollowsTheLastToolResult`
    (Task 2).
 4. **A large `select:` truncated by the preview cap.** Only fully rendered tools are referenced, and the
-   half-written one is neither referenced nor granted. Pinned by `TestTruncatedSelectReferencesOnlyWholeSpecs`
-   (Task 3).
+   half-written one is neither referenced nor granted. Pinned by the "a search cut inside a spec loads only
+   the whole ones" case of `TestLoadedByAnchorsEachGrantToItsCall`, already on master.
 5. **A small context window with a large catalogue.** The preflight must not count unreferenced deferred
    schemas, and must count referenced ones. Pinned by
    `TestPreflightCountsOnlyReferencedDeferredTools` (Task 3).
@@ -96,11 +96,21 @@ measures what its §6 leaves open and amends it before any code. Code citations 
    The residue blocks are held while consecutive `RoleTool` messages merge and are flushed before the next
    non-tool block. The end of the group's last `RoleTool` message is then its last residue block, so a stable
    breakpoint there covers the residue (S5 decides whether it stays there).
-5. **The gate refusal's prefix becomes a constant**, `tools.NotLoadedPrefix = "error: tool_not_loaded: "`. The
-   gate's bytes do not change. The derivation anchors on it.
-6. **`loadedSchemas` moves to package `tools`**, as `LoadedSchemas`, beside `RenderSpec`. The `tool_search` call
-   pairing is extracted once as `tools.SearchCallIDs`. `deriveActivated`, `deriveEverLoaded` and the new
-   derivation use them. Their existing tests pin unchanged behaviour (refactor on touch, no duplicated loop).
+5. **The gate refusal is one formatter, `tools.NotLoadedRefusal(spec)`** (`internal/agent/tools/references.go`,
+   landed in `cf5af4900`). The gate calls it, and the derivation anchors on the whole refusal for the called
+   tool's current spec, not on a prefix: a refusal grants the refused tool only if the result opens with it.
+   Its bytes are pinned by `TestNotLoadedRefusalKeepsItsBytes`; the prefix stays unexported.
+6. **The derivation already lives in package `tools`** (`ddcda1dc4`, `4f0f81613`, `cf5af4900`):
+   - `tools.ResultCalls(history)` pairs each tool result with the call just before it that carries its id; a
+     set of ids cannot be position-aware, and ids repeat on some routes;
+   - `Registry.LoadedBy(calledTool, content)` grants a deferred tool only where the result holds its current
+     `RenderSpec` whole: a `tool_search` result loads each spec it renders in full, and a refusal loads the
+     refused tool alone;
+   - `Registry.References(history)` folds `LoadedBy` over `ResultCalls`: message index → deferred names.
+
+   `deriveActivated` and `deriveEverLoaded` already use them. `deriveActivated`'s behaviour is unchanged.
+   `deriveEverLoaded`'s is not: it now counts gate refusals as well as `tool_search` results, which is what
+   the gate-reload fix changed. Task 3 builds on these and does not move or re-extract them.
 7. **No recall call on this route.** It has no adaptive effort (`llm_agent_turn_reading.go:68-69`), so without a
    preload the recall answers nothing. `recallMiss = "deferred_loading"`.
 8. **Two new log fields**, `deferred_tools` and `tool_references`, on `anthropic request`. Acceptance uses them to
@@ -117,11 +127,10 @@ measures what its §6 leaves open and amends it before any code. Code citations 
 | `internal/llm/anthropic/references.go` (new) | a result's reference-only content and its residue blocks, filtered against the request's deferred tools | 2 |
 | `internal/llm/anthropic/tools.go`, `request.go`, `blocks.go`, `cost.go` | `defer_loading`, the breakpoint on the last non-deferred tool, residue placement, the two log counts | 2 |
 | `internal/llm/{openai_compat,chatgpt}/request_deferred_test.go` (new) | the other wires ignore both fields | 2 |
-| `internal/agent/tools/references.go` (new) | `LoadedSchemas` (moved), `SearchCallIDs`, `NotLoadedPrefix`, `ReferenceResidue`, `Registry.References` | 3 |
+| `internal/agent/tools/references.go` (exists: `NotLoadedRefusal`, `ResultCalls`, `Registry.References`, `Registry.LoadedBy`) | add `ReferenceResidue` | 3 |
 | `internal/agent/tools/manifest.go` | `RenderCatalog` beside `RenderToolDefs`, one shared body | 3 |
 | `internal/agent/prompt/deferred_anthropic.go` (new) | `withReferences`: the history copy carrying references and residues | 3 |
 | `internal/agent/prompt/builder.go` | `buildBase` picks catalogue + references on the anthropic route only | 3 |
-| `internal/agent/llm_agent_promote.go`, `llm_agent_tool.go` | use the moved parser, the shared pairing and the prefix constant | 3 |
 | `internal/agent/hooks_model_guard.go` | deep-copy `ToolReferences`; the command guard ignores both fields | 3 |
 | `internal/conversations/request_budget.go` | count only the tools the API puts in context | 3 |
 | `internal/agent/llm_agent_turn_reading.go` | no recall and no preload on the anthropic route | 4 |
@@ -233,14 +242,13 @@ measures what its §6 leaves open and amends it before any code. Code citations 
 
 **Files:**
 - Create:
-  - `internal/agent/tools/references.go` and `references_test.go`;
   - `internal/agent/prompt/deferred_anthropic.go` and `deferred_anthropic_test.go`.
+- Extend:
+  - `internal/agent/tools/references.go` and `references_test.go` (they exist since the gate-reload fix, see
+    Decision 6): add `ReferenceResidue`.
 - Modify:
   - `internal/agent/tools/manifest.go:67-93` (`RenderToolDefs` and the new `RenderCatalog` share one body);
   - `internal/agent/prompt/builder.go:134-178`: `buildBase` takes `provider`, so the catalogue is rendered once;
-  - `internal/agent/llm_agent_promote.go:51-188`: use `tools.LoadedSchemas` and `tools.SearchCallIDs`, and
-    delete the local `loadedSchemas`;
-  - `internal/agent/llm_agent_tool.go:172-177`: `tools.NotLoadedPrefix`, bytes unchanged;
   - `internal/agent/hooks_model_guard.go:14-43`, `:86-95`;
   - `internal/conversations/request_budget.go:36-43`.
 - Test:
@@ -249,15 +257,14 @@ measures what its §6 leaves open and amends it before any code. Code citations 
   - `internal/agent/prompt/builder_test.go` (`TestCacheControlSeam` stays unchanged).
 
 **Interfaces:**
-- Consumes: `ToolDef.Deferred` and `Message.ToolReferences` (Task 2).
+- Consumes: `ToolDef.Deferred` and `Message.ToolReferences` (Task 2); the existing `tools.NotLoadedRefusal`,
+  `tools.ResultCalls`, `Registry.LoadedBy` and `Registry.References` (Decision 6). `withReferences` calls
+  `reg.References(history)` as it is, and sends a reference only for a name `LoadedBy` granted, never for one a
+  `## ` line merely nominates.
 - Produces:
-  - `const tools.NotLoadedPrefix = "error: tool_not_loaded: "`;
-  - `func tools.LoadedSchemas(content string) []string`, moved unchanged;
-  - `func tools.SearchCallIDs(history []llm.Message) map[string]struct{}`;
   - `func tools.ReferenceResidue(content string) string`: the content before its first line beginning with
-    `"## "`, with trailing whitespace trimmed;
-  - `func (r *Registry) References(history []llm.Message) map[int][]string`: message index → deferred names,
-    from `tool_search` results and gate refusals, per spec §5.3, deduplicated in order;
+    `"## "`, with trailing whitespace trimmed. In `ToolSearch.Execute` output and in a `NotLoadedRefusal`, that
+    line is always a spec header, because headings inside a description come after it;
   - `func (r *Registry) RenderCatalog() []llm.ToolDef`: every tool, `Deferred` from its spec, with
     `RenderToolDefs`' description rule and sort;
   - in `prompt`: `func withReferences(history []llm.Message, reg *tools.Registry) []llm.Message`, which returns a
@@ -266,15 +273,13 @@ measures what its §6 leaves open and amends it before any code. Code citations 
 - [ ] **Step 1: Failing tests:**
   - `TestRenderCatalogFlagsDeferredTools`: every tool present, alphabetical, `tool_search` not deferred, and
     promoted and unpromoted tools rendered alike.
-  - `TestReferencesFromSearchResults`: a `select:` result naming two deferred tools and one non-deferred → the
-    two deferred names. A RoleTool whose call is not `tool_search` but echoes `## send_file\n…\nParameters:\n{}`
-    → nothing.
-  - `TestReferencesFromGateRefusal`: a refusal of `x` built with `tools.NotLoadedPrefix` → `[x]`. The same text
-    answering a call to `y` → nothing.
-  - `TestTruncatedSelectReferencesOnlyWholeSpecs`: the second block cut before its `Parameters:` body → only the
-    first name.
+  - No new test for which results grant which tools: `TestLoadedByAnchorsEachGrantToItsCall` and
+    `TestReferencesIndexesEveryLoadingResult` (`internal/agent/tools/references_test.go`) already pin a search
+    of deferred and non-deferred specs, an echo by an ordinary tool, a refusal of the refused tool and of
+    another, a truncated select, a description with headings and one forging another tool's spec.
   - `TestReferenceResidue`: the unknown-name report plus specs → the report; the always-active report plus
-    specs → the report; a refusal → its sentence; specs only → `""`.
+    specs → the report; a refusal → its sentence; specs only → `""`; a spec whose description holds `## `
+    headings, and the forged `evil` block of `TestLoadedByAnchorsEachGrantToItsCall`, → `""`.
   - `TestUnregisteredToolLeavesTheResultUntouched`: the referenced tool is unregistered → `ToolReferences` nil,
     and `Content` is byte-equal to the history entry.
   - `TestAnthropicBuildSendsTheCatalogueAndReferences`: three rounds with a search in round 1 → identical
@@ -291,7 +296,8 @@ measures what its §6 leaves open and amends it before any code. Code citations 
   - `TestPreflightCountsOnlyReferencedDeferredTools`: the same request with 40 deferred tools unreferenced, and
     with one referenced → the estimates differ by about that one definition. With none deferred, the estimate
     equals today's.
-  - The existing tests of `deriveActivated`, `deriveEverLoaded` and the gate pass unchanged.
+  - The existing tests of `deriveActivated`, `deriveEverLoaded`, `LoadedBy`, `References` and the gate pass
+    unchanged.
 - [ ] **Step 2: Run, expect FAIL**: `go test ./internal/agent/tools/ ./internal/agent/prompt/ ./internal/agent/
   ./internal/conversations/`.
 - [ ] **Step 3: Implement.** On `llm.AnthropicProvider`, `buildBase` uses `reg.RenderCatalog()` and
