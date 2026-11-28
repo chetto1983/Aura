@@ -138,6 +138,13 @@ export interface SaveOutcome {
   readonly openRouterKeys: readonly OpenRouterKeysResult[];
 }
 
+/** What the last save wrote, until the next edit: the rows it sent, and whether it kept the route
+ * on the form for a later save. */
+export interface SaveReport {
+  readonly written: readonly SettingsKey[];
+  readonly routeHeld: boolean;
+}
+
 export interface ModelSettingsState {
   readonly loaded: LoadedState | undefined;
   readonly loadStatus: LoadStatus;
@@ -145,7 +152,7 @@ export interface ModelSettingsState {
   readonly routes: readonly LLMProviderRoute[];
   readonly saving: boolean;
   readonly resetting: string | undefined;
-  readonly saved: boolean;
+  readonly saved: SaveReport | undefined;
   readonly saveError: string | undefined;
   readonly dirtyKeys: readonly SettingsKey[];
   readonly reload: () => Promise<void>;
@@ -172,7 +179,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading');
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState<string | undefined>(undefined);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<SaveReport | undefined>(undefined);
   // Separate from loadStatus on purpose — a save that fails is not a load that failed.
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   // A held save still runs the reconciler (the management key, the services cap): its runs are
@@ -257,7 +264,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     setLoaded((prev) =>
       prev === undefined ? prev : { ...prev, values: { ...prev.values, [key]: value } },
     );
-    setSaved(false);
+    setSaved(undefined);
     setSaveError(undefined);
   }, []);
 
@@ -269,7 +276,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         return;
       }
       setSaving(true);
-      setSaved(false);
+      setSaved(undefined);
       setSaveError(undefined);
       const openRouterKeys: OpenRouterKeysResult[] = [];
       const putRow = async (key: SettingsKey) => {
@@ -302,7 +309,10 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         // The save just wrote this provider's route memory server-side; re-read it so a
         // switch away and back in the same session restores what was actually saved.
         await reloadRoutes();
-        setSaved(true);
+        setSaved({
+          written: dirtyKeys.filter((key) => !held.includes(key)),
+          routeHeld: held.length > 0,
+        });
         if (held.length === 0) await completeWith(onComplete, openRouterKeys);
         else heldRuns.current.push(...openRouterKeys);
       } catch (err) {

@@ -214,6 +214,12 @@ describe('ChatGPT provider and account model selection', () => {
       expect(writes).toHaveLength(1);
     });
     expect(writes[0]).toEqual({ AURA_OPENROUTER_PROVIDER_SORT: 'latency' });
+    expect(
+      await screen.findByText(
+        'Saved, except the model route: once the account lists the model you pick, save again.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Runtime settings saved.')).toBeNull();
     expect(screen.getByRole('radio', { name: 'ChatGPT' }).getAttribute('data-state')).toBe('on');
   });
 

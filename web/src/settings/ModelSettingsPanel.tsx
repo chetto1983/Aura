@@ -10,7 +10,12 @@ import { EmbeddingSpacePanel } from './EmbeddingSpacePanel';
 import { RouteToggle } from './RouteToggle';
 import { RestartAuraControl } from './RestartAuraControl';
 import { ChatGPTPlanConnection } from './ChatGPTPlanConnection';
-import { isModelRouteKey, useModelSettings, type SaveOutcome } from './modelSettingsState';
+import {
+  isModelRouteKey,
+  useModelSettings,
+  type SaveOutcome,
+  type SaveReport,
+} from './modelSettingsState';
 import { useModelCatalog, type ModelCatalogState } from './useModelCatalog';
 import { useMediaModelCatalog } from './useMediaModelCatalog';
 import type { MediaCatalogModel, ModelRow, VoiceCatalogModel } from './mediaModelCatalog';
@@ -42,6 +47,14 @@ const PROVIDER_ICONS: Record<ProviderChoice, typeof Cloud> = {
 // providerIDOf turns the active button back into the provider id the catalogue probe takes.
 function providerIDOf(choice: ProviderChoice): string {
   return PROVIDER_OPTIONS.find((option) => option.id === choice)?.provider ?? '';
+}
+
+// A held save left the route on the form, so "saved" alone would read as the route switched. A
+// first Claude setup saves the key alone, and picking a model is its next step.
+function savedMessage(t: TFunction, saved: SaveReport): string {
+  if (!saved.routeHeld) return t('settings.saved');
+  if (saved.written.includes('ANTHROPIC_API_KEY')) return t('settings.claude.keySaved');
+  return t('settings.provider.routeHeld');
 }
 
 function mediaLabels(t: TFunction): MediaLabels {
@@ -356,14 +369,14 @@ export function ModelSettingsPanel({
         </div>
       ) : null}
 
-      {saved ? (
+      {saved === undefined ? null : (
         <div
           role="status"
           className="rounded-md border border-success bg-success/10 px-4 py-3 text-[13px] text-success"
         >
-          {t('settings.saved')}
+          {savedMessage(t, saved)}
         </div>
-      ) : null}
+      )}
 
       {saveError === undefined ? null : (
         // role="alert" rather than "status": a save the operator believes succeeded but did

@@ -19,6 +19,10 @@ const FAKE_KEY = 'sk-ant-test-fake';
 const KEY_LABEL = 'Claude API key';
 const SAVE = 'Save runtime settings';
 const SORT_LABEL = 'OpenRouter: sort providers by';
+const KEY_SAVED =
+  "Claude API key saved. Pick a model from the account's list, then save again to switch the chat to Claude.";
+const ROUTE_HELD =
+  'Saved, except the model route: once the account lists the model you pick, save again.';
 const CLOUD = {
   provider: 'openrouter',
   base_url: 'https://openrouter.ai/api/v1',
@@ -197,6 +201,8 @@ describe('Claude route on the routing pane', () => {
       { method: 'PUT', url: '/api/settings/ANTHROPIC_API_KEY', body: { value: FAKE_KEY } },
     ]);
     expect(onComplete).not.toHaveBeenCalled();
+    expect(await screen.findByText(KEY_SAVED)).toBeTruthy();
+    expect(screen.queryByText('Runtime settings saved.')).toBeNull();
     expect(screen.getByLabelText<HTMLInputElement>(KEY_LABEL).value).toBe('');
     expect(document.body.innerHTML).not.toContain(FAKE_KEY);
     // The route switch survives the key-only save, so the pane is still on Claude.
@@ -282,7 +288,8 @@ describe('Claude route on the routing pane', () => {
       target: { value: 'sk-or-v1-test-fake' },
     });
     fireEvent.click(screen.getByRole('button', { name: SAVE }));
-    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    // No key went out with it, so the message names the route, not the key.
+    expect(await screen.findByText(ROUTE_HELD)).toBeTruthy();
     expect(onComplete).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip runtime setup' }));
@@ -377,9 +384,17 @@ describe('Claude route on the routing pane', () => {
   it('speaks Italian and English', async () => {
     await i18n.changeLanguage('it');
     try {
-      setup({ onClaude: true });
-      expect(await screen.findByLabelText('Chiave API di Claude')).toBeTruthy();
-      expect(screen.getByRole('radio', { name: 'Claude' })).toBeTruthy();
+      setup();
+      fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+      fireEvent.change(screen.getByLabelText('Chiave API di Claude'), {
+        target: { value: FAKE_KEY },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva impostazioni runtime' }));
+      expect(
+        await screen.findByText(
+          'Chiave API di Claude salvata. Scegli un modello dall’elenco dell’account, poi salva di nuovo per passare la chat a Claude.',
+        ),
+      ).toBeTruthy();
     } finally {
       await i18n.changeLanguage('en');
     }
