@@ -1,0 +1,16 @@
+ROW|photocraft-approve|p48_baseline|1|mem=768m ballast=0MiB|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=177840 WALL_MS=481 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=172867584 
+ROW|photocraft-nolimit|p48_baseline|1|mem=4g ballast=0MiB|{"command":"image.imageSize","result":{"height":768,"width":1024}} warning: lossy compression RSS_KIB=377476 WALL_MS=2532 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=377040896 
+ROW|photocraft-approve|p48_progressive|1|mem=768m ballast=0MiB|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=318800 WALL_MS=1215 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=317329408 
+ROW|photocraft-nolimit|p48_progressive|1|mem=4g ballast=0MiB|{"command":"image.imageSize","result":{"height":768,"width":1024}} warning: lossy compression RSS_KIB=375532 WALL_MS=2155 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=374005760 
+ROW|photocraft-approve|p48_444_progressive|1|mem=768m ballast=0MiB|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=478296 WALL_MS=1843 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=480899072 
+ROW|photocraft-nolimit|p48_444_progressive|1|mem=4g ballast=0MiB|{"command":"image.imageSize","result":{"height":768,"width":1024}} warning: lossy compression RSS_KIB=478112 WALL_MS=2887 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=480886784 
+ROW|ballast-only|none|1|mem=768m ballast=452MiB|RSS_KIB=2184 WALL_MS=1 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=478928896 RSS_KIB=2312 WALL_MS=3 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=478928896 
+ROW|djpeg-1/4|p48_baseline|1|mem=768m ballast=452MiB|RSS_KIB=11012 WALL_MS=229 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=496861184 
+ROW|jpegn|p48_baseline|1|mem=768m ballast=452MiB|in_bytes=19729093 in=8064x6048 denom=4 decoded=2016x1512 (*image.YCbCr) ms=480 out_bytes=33605 out=1024x768 RSS_KIB=90036 WALL_MS=494 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=569200640 
+ROW|djpeg-1/4|p48_progressive|1|mem=768m ballast=452MiB|RSS_KIB=154000 WALL_MS=754 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=643289088 
+ROW|jpegn|p48_progressive|1|mem=768m ballast=452MiB|RSS_KIB=322484 WALL_MS=143 EXIT=-1 SIGNAL=killed CGROUP_PEAK_BYTES=805306368 
+ROW|djpeg-1/4|p48_444_progressive|1|mem=768m ballast=452MiB|RSS_KIB=296732 WALL_MS=1327 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=789811200 
+ROW|jpegn|p48_444_progressive|1|mem=768m ballast=452MiB|RSS_KIB=322100 WALL_MS=246 EXIT=-1 SIGNAL=killed CGROUP_PEAK_BYTES=805310464 
+ROW|photocraft|p24_progressive|1|mem=768m ballast=452MiB|error: unsupported: not enough memory to open this 6000 × 4000 px image: it needs about 0.1 GB and 0.2 GB is free RSS_KIB=164604 WALL_MS=666 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=633606144 
+ROW|photocraft-approve|p24_progressive|1|mem=768m ballast=452MiB|error: unsupported: not enough memory to open this 6000 × 4000 px image: it needs about 0.1 GB and 0.2 GB is free RSS_KIB=164680 WALL_MS=710 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=634130432 
+ROW|photocraft|p12_control|1|mem=768m ballast=452MiB|error: unsupported: not enough memory to open this 4032 × 3024 px image: it needs about 0.1 GB and 0.3 GB is free RSS_KIB=56204 WALL_MS=109 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=522944512 

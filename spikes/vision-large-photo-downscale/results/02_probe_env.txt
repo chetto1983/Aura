@@ -1,0 +1,27 @@
+time:  ls: cannot access '/usr/bin/time': No such file or directory
+805306368
+6164480
+16
+List the engine command registry
+
+Usage: photocraft-cli commands [OPTIONS]
+
+Options:
+      --json           Print the entries as JSON
+      --filter <TEXT>  Only the commands matching this text
+  -h, --help           Print help
+image.imageSize                              Image Size…                      Image
+{"disabledReason": "no document open", "enabled": false, "id": "image.imageSize", "label": "Image Size\u2026", "menu": ["Image"], "needsDocument": true, "params": "{\"width\":number,\"height\":number,\"units\":\"px|pt\"=\"px\" (points use the document's current resolution),\"percent\":%? (both sides; an explicit side wins),\"resolution\":ppi,\"keepPrintSize\":bool=false (with only a resolution: resample the pixels to keep the print size),\"scaleStyles\":bool=true (scale layer effects with the pixels),\"resample\":\"automatic|preserveDetails|bicubicSmoother|bicubicSharper|bicubicAutomatic|bicubic|nearest|bilinear|lanczos|none\"=\"bicubic\"} \u2192 {width,height} (the document's size after the command; \"none\" changes the resolution only)", "shortcut": null}
+== WSL tools
+/usr/bin/python3
+/home/davide/.local/bin/uv
+/home/davide/.local/bin/go
+go version go1.27.4 linux/amd64
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import PIL
+ModuleNotFoundError: No module named 'PIL'
+16
+               total        used        free      shared  buff/cache   available
+Mem:           15845       13246         132          27        2737        2599
+Swap:           4096         112        3983

@@ -1,0 +1,17 @@
+Installed-Size: 358
+Version: 1:2.1.5-2
+Depends: libc6 (>= 2.34), libjpeg62-turbo (>= 1:2.0.2), libturbojpeg0 (>= 1:2.0.2)
+/usr/bin/cjpeg
+/usr/bin/djpeg
+/usr/bin/exifautotran
+/usr/bin/jpegexiforient
+/usr/bin/jpegtran
+/usr/bin/rdjpgcom
+/usr/bin/tjbench
+/usr/bin/wrjpgcom
+ii  libjpeg62-turbo:amd64 1:2.1.5-2    amd64        libjpeg-turbo JPEG runtime library
+libjpeg62-turbo
+Reverse Depends:
+  libpoppler126
+  libtiff6
+djpeg: not in aura:edge

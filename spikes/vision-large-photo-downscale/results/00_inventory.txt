@@ -1,0 +1,59 @@
+== docker images
+ghcr.io/chetto1983/aura:edge 1.6GB 3 days ago
+ghcr.io/chetto1983/aura-sandbox:edge 4.24GB 5 days ago
+== photocraft in ghcr.io/chetto1983/aura-sandbox:edge
+-rwxr-xr-x 1 root root 113220904 Nov 23 12:43 /usr/local/bin/photocraft-cli
+photocraft-cli 0.23.1 (45066c482, 2026-11-12)
+
+photocraft-cli: headless PhotoCraft
+
+Usage: photocraft-cli <COMMAND>
+
+Commands:
+  convert   Convert between formats (.pcraft, .psd, .png, .jpg, .tif, .webp, .exr, …)
+  info      Print the document as JSON (size, mode, depth, layer tree)
+  run       Open a file (or start a new document), run engine commands in order, save the result
+  batch     Apply an action list to every image in a directory
+  droplet   Run a droplet (File › Automate › Create Droplet) on images and folders
+  commands  List the engine command registry
+  mcp       Run the MCP server on stdio (headless engine, or bridge to a running `photocraft --control <port>`)
+  serve     Keep one headless session open and answer JSON lines on stdio, or on 127.0.0.1:<PORT>
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+ATTRIBUTION.md
+LICENSE-APACHE
+LICENSE-MIT
+NOTICE
+OFL-biz-ud-mincho.txt
+OFL-biz-ud-pgothic.txt
+OFL-lxgw-wenkai-lite.txt
+OFL-nanum-gothic.txt
+OFL-noto-sans-arabic.txt
+OFL-noto-sans-cjk-sc.txt
+OFL-noto-sans-devanagari.txt
+OFL-noto-sans-georgian.txt
+OFL-noto-sans-hebrew.txt
+OFL-noto-sans-symbols-2.txt
+OFL-noto-sans-symbols.txt
+OFL-noto-sans-thai.txt
+OFL-shippori-mincho.txt
+/usr/local/bin/photocraft-cli: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=50ef93076068f68b2635de92cd0f05a7751e7d43, stripped
+	linux-vdso.so.1 (0x000076c5079df000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000076c500db6000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000076c500cd6000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000076c500af4000)
+	/lib64/ld-linux-x86-64.so.2 (0x000076c5079e1000)
+== jpeg libs in ghcr.io/chetto1983/aura:edge
+libjpeg.so.62
+libjpeg.so.62.3.0
+libpng16.so.16
+libpng16.so.16.39.0
+ii  libjpeg62-turbo:amd64       1:2.1.5-2                      amd64        libjpeg-turbo JPEG runtime library
+ii  libopenjp2-7:amd64          2.5.0-2+deb12u3                amd64        JPEG 2000 image compression/decompression library
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'PIL'

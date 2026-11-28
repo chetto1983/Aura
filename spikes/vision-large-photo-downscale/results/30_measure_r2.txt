@@ -1,0 +1,32 @@
+ROW|go-empty|none|1|768m|read: open /nonexistent: no such file or directory RSS_KIB=17352 WALL_MS=43 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=8658944 
+ROW|go-today|p12_control|1|768m|in_bytes=4934508 in=4032x3024 ms=1586 out_mime="image/jpeg" out_bytes=55966 out=1024x768 RSS_KIB=140744 WALL_MS=1660 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=135741440 
+ROW|djpeg-1/2|p12_control|1|768m|RSS_KIB=10868 WALL_MS=175 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=23375872 
+ROW|go-after-djpeg-1/2|p12_control|1|768m|in_bytes=9144630 in=2016x1512 ms=447 out_mime="image/jpeg" out_bytes=56519 out=1024x768 RSS_KIB=90824 WALL_MS=478 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=83574784 
+ROW|jpegn|p12_control|1|768m|in_bytes=4934508 in=4032x3024 denom=2 decoded=2016x1512 (*image.YCbCr) ms=412 out_bytes=56284 out=1024x768 RSS_KIB=64564 WALL_MS=442 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=67305472 
+ROW|photocraft|p12_control|1|768m|{"command":"image.imageSize","result":{"height":768,"width":1024}} warning: lossy compression RSS_KIB=106276 WALL_MS=811 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=100548608 
+ROW|go-today|p24_progressive|1|768m|in_bytes=8633716 ms=0 ERROR="image is over the pixel cap: 6000x4000 is over 12355225 pixels" RSS_KIB=26056 WALL_MS=215 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=17227776 
+ROW|djpeg-1/4|p24_progressive|1|768m|RSS_KIB=76616 WALL_MS=533 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=84553728 
+ROW|go-after-djpeg-1/4|p24_progressive|1|768m|in_bytes=4500054 in=1500x1000 ms=121 out_mime="image/jpeg" out_bytes=37255 out=1024x682 RSS_KIB=63176 WALL_MS=147 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=55795712 
+ROW|jpegn|p24_progressive|1|768m|in_bytes=8633716 in=6000x4000 denom=4 decoded=1500x1000 (*image.YCbCr) ms=930 out_bytes=37081 out=1024x682 RSS_KIB=192692 WALL_MS=958 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=199151616 
+ROW|photocraft|p24_progressive|1|768m|{"command":"image.imageSize","result":{"height":683,"width":1024}} warning: lossy compression RSS_KIB=193764 WALL_MS=2392 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=190001152 
+ROW|go-today|p48_baseline|1|768m|in_bytes=19729093 ms=0 ERROR="image is over the pixel cap: 8064x6048 is over 12355225 pixels" RSS_KIB=36040 WALL_MS=65 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=27975680 
+ROW|djpeg-1/4|p48_baseline|1|768m|RSS_KIB=11024 WALL_MS=644 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=21409792 
+ROW|go-after-djpeg-1/4|p48_baseline|1|768m|in_bytes=9144630 in=2016x1512 ms=353 out_mime="image/jpeg" out_bytes=33588 out=1024x768 RSS_KIB=90440 WALL_MS=399 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=83542016 
+ROW|jpegn|p48_baseline|1|768m|in_bytes=19729093 in=8064x6048 denom=4 decoded=2016x1512 (*image.YCbCr) ms=1252 out_bytes=33605 out=1024x768 RSS_KIB=90036 WALL_MS=1302 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=94261248 
+ROW|photocraft|p48_baseline|1|768m|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=177752 WALL_MS=919 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=173719552 
+ROW|go-today|p48_progressive|1|768m|in_bytes=17539878 ms=0 ERROR="image is over the pixel cap: 8064x6048 is over 12355225 pixels" RSS_KIB=33736 WALL_MS=61 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=26374144 
+ROW|djpeg-1/4|p48_progressive|1|768m|RSS_KIB=153840 WALL_MS=1980 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=167968768 
+ROW|go-after-djpeg-1/4|p48_progressive|1|768m|in_bytes=9144630 in=2016x1512 ms=360 out_mime="image/jpeg" out_bytes=33588 out=1024x768 RSS_KIB=90312 WALL_MS=405 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=84099072 
+ROW|jpegn|p48_progressive|1|768m|in_bytes=17539878 in=8064x6048 denom=4 decoded=2016x1512 (*image.YCbCr) ms=2967 out_bytes=33605 out=1024x768 RSS_KIB=371124 WALL_MS=3052 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=383148032 
+ROW|photocraft|p48_progressive|1|768m|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=318580 WALL_MS=1430 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=317657088 
+ROW|go-today|p48_444_progressive|1|768m|in_bytes=35546002 ms=0 ERROR="image is over the pixel cap: 8064x6048 is over 12355225 pixels" RSS_KIB=52296 WALL_MS=487 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=44720128 
+ROW|djpeg-1/4|p48_444_progressive|1|768m|RSS_KIB=296544 WALL_MS=2191 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=315068416 
+ROW|go-after-djpeg-1/4|p48_444_progressive|1|768m|in_bytes=9144630 in=2016x1512 ms=229 out_mime="image/jpeg" out_bytes=33608 out=1024x768 RSS_KIB=90568 WALL_MS=256 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=84635648 
+ROW|jpegn|p48_444_progressive|1|768m|in_bytes=35546002 in=8064x6048 denom=4 decoded=2016x1512 (*image.YCbCr) ms=3360 out_bytes=33567 out=1024x768 RSS_KIB=693300 WALL_MS=3469 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=713232384 
+ROW|photocraft|p48_444_progressive|1|768m|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=478908 WALL_MS=2239 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=481103872 
+ROW|djpeg-1/1|p48_progressive|1|768m|RSS_KIB=287984 WALL_MS=2721 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=443760640 
+ROW|djpeg-1/8|p48_progressive|1|768m|RSS_KIB=147148 WALL_MS=1138 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=154349568 
+ROW|go-today|p48_png|1|768m|in_bytes=1168703 ms=0 ERROR="image is over the pixel cap: 8000x6000 is over 10112400 pixels" RSS_KIB=17992 WALL_MS=30 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=9932800 
+ROW|photocraft|p48_png|1|768m|{"command":"image.imageSize","result":{"height":768,"width":1024}} warning: lossy compression RSS_KIB=257448 WALL_MS=2123 EXIT=0 SIGNAL=none CGROUP_PEAK_BYTES=249679872 
+ROW|photocraft-info|p48_progressive|1|768m|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=318256 WALL_MS=1224 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=317693952 
+ROW|photocraft-in-sandbox-image|p48_progressive|1|768m|error: unsupported: not enough memory to open this 8064 × 6048 px image: it needs about 0.2 GB and 0.6 GB is free RSS_KIB=318992 WALL_MS=1297 EXIT=1 SIGNAL=none CGROUP_PEAK_BYTES=320815104 

@@ -1,0 +1,4 @@
+go_packages.sh lines naming the spike: 0
+gofmt -l (empty = clean):
+gofmt done
+vet ok

@@ -1,0 +1,9 @@
+Pillow 13.0.0 numpy 2.5.5
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:44.60
+	Maximum resident set size (kbytes): 532368
+p12_control.jpg            4934508 B  4032x3024  JPEG RGB  progressive=False
+p24_progressive.jpg        8633716 B  6000x4000  JPEG RGB  progressive=True
+p48.png                   52969834 B  8000x6000  PNG RGB  progressive=False
+p48_444_progressive.jpg    35546002 B  8064x6048  JPEG RGB  progressive=True
+p48_baseline.jpg          19729093 B  8064x6048  JPEG RGB  progressive=False
+p48_progressive.jpg       17539878 B  8064x6048  JPEG RGB  progressive=True

@@ -1,0 +1,9 @@
+total 85512
+drwxr-xr-x 2 davide davide      160 Nov 28 14:10 .
+drwxr-xr-x 5 davide davide      100 Nov 28 14:12 ..
+-rw-r--r-- 1 davide davide  4934508 Nov 28 14:11 p12_control.jpg
+-rw-r--r-- 1 davide davide  8633716 Nov 28 14:11 p24_progressive.jpg
+-rw-r--r-- 1 davide davide  1168703 Nov 28 14:13 p48.png
+-rw-r--r-- 1 davide davide 35546002 Nov 28 14:11 p48_444_progressive.jpg
+-rw-r--r-- 1 davide davide 19729093 Nov 28 14:09 p48_baseline.jpg
+-rw-r--r-- 1 davide davide 17539878 Nov 28 14:09 p48_progressive.jpg

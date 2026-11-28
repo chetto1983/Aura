@@ -1,0 +1,61 @@
+go: creating new go.mod: module vision-spike/jpegnprobe
+go: to add module requirements and sums:
+	go mod tidy
+go: added github.com/gen2brain/jpegn v0.7.1
+go: added golang.org/x/image v0.48.0
+module vision-spike/jpegnprobe
+	github.com/gen2brain/jpegn v0.7.1 // indirect
+	golang.org/x/image v0.48.0 // indirect
+total 139988
+drwxr-xr-x 2 davide davide       120 Nov 28 14:13 .
+drwxr-xr-x 6 davide davide       120 Nov 28 14:13 ..
+-rwxr-xr-x 1 davide davide  24110126 Nov 28 14:13 baseline
+-rwxr-xr-x 1 davide davide   3061761 Nov 28 14:13 jpegnprobe
+-rwxr-xr-x 1 davide davide 113220904 Nov 23 13:43 photocraft-cli
+-rwxr-xr-x 1 davide davide   2945696 Nov 28 14:13 rss
+def5bcece12d7d002f42892b221a97298b32856480cc1d757763151e1bbd875c  /tmp/vision-spike/bin/photocraft-cli
+glibc symbol versions photocraft-cli needs (highest 3):
+GLIBC_2.33
+GLIBC_2.34
+GLIBC_2.35
+sha256:0cde28ed63b680111c806894455ecf20ea252b56e10615c9f568fb4f59a07c14
+ii  libjpeg-turbo-progs   1:2.1.5-2    amd64        Programs for manipulating JPEG files
+ii  libjpeg62-turbo:amd64 1:2.1.5-2    amd64        libjpeg-turbo JPEG runtime library
+ldd (Debian GLIBC 2.36-9+deb12u14) 2.36
+-rwxr-xr-x 1 root root 43344 Feb  3  2023 /usr/bin/djpeg
+usage: djpeg [switches] [inputfile]
+Switches (names may be abbreviated):
+  -colors N      Reduce image to no more than N colors
+  -fast          Fast, low-quality processing
+  -grayscale     Force grayscale output
+  -rgb           Force RGB output
+  -rgb565        Force RGB565 output
+  -scale M/N     Scale output image by fraction M/N, eg, 1/8
+  -bmp           Select BMP output format (Windows style)
+  -gif           Select GIF output format (LZW-compressed)
+  -gif0          Select GIF output format (uncompressed)
+  -os2           Select BMP output format (OS/2 style)
+  -pnm           Select PBMPLUS (PPM/PGM) output format (default)
+  -targa         Select Targa output format
+Switches for advanced users:
+  -dct int       Use accurate integer DCT method (default)
+  -dct fast      Use less accurate integer DCT method [legacy feature]
+  -dct float     Use floating-point DCT method [legacy feature]
+  -dither fs     Use F-S dithering (default)
+  -dither none   Don't use dithering in quantization
+  -dither ordered  Use ordered dither (medium speed, quality)
+  -icc FILE      Extract ICC profile to FILE
+  -map FILE      Map to colors used in named image file
+  -nosmooth      Don't use high-quality upsampling
+  -onepass       Use 1-pass quantization (fast, low quality)
+  -maxmemory N   Maximum memory to use (in kbytes)
+  -maxscans N    Maximum number of scans to allow in input file
+  -outfile name  Specify name for output file
+  -memsrc        Load input file into memory before decompressing
+  -report        Report decompression progress
+  -skip Y0,Y1    Decompress all rows except those between Y0 and Y1 (inclusive)
+  -crop WxH+X+Y  Decompress only a rectangular subregion of the image
+                 [requires PBMPLUS (PPM/PGM), GIF, or Targa output format]
+  -strict        Treat all warnings as fatal
+  -verbose  or  -debug   Emit debug output
+  -version       Print version information and exit

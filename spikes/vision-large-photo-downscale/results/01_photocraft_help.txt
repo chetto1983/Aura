@@ -1,0 +1,525 @@
+===== convert
+Convert between formats (.pcraft, .psd, .png, .jpg, .tif, .webp, .exr, …)
+
+An <OUT> that is the <IN> file is refused, as the result would replace the original; --in-place allows it.
+
+Usage: photocraft-cli convert [OPTIONS] <IN> <OUT>
+
+Arguments:
+  <IN>
+          The file to read
+
+  <OUT>
+          The file to write; its extension picks the format unless --format is given
+
+Options:
+      --in-place
+          Allow an <OUT> that is the <IN> file, replacing the original
+
+      --approve-high-memory
+          Explicitly approve high-memory PSD/PSB imports within the hard memory budget
+
+      --pdf-dpi <DPI>
+          PDF import resolution in DPI (default 300)
+
+      --pdf-pages <PDF_PAGES>
+          PDF pages to import, 1-based: "3" or "2-7" (default all)
+
+      --pdf-editable
+          Import PDF paths and embedded-font text as editable layers (experimental; unsupported pages fall back to raster, and embedded fonts may change when edited or reopened)
+
+      --gpu
+          Prefer GPU rendering, falling back to CPU when unavailable or unsupported
+
+      --no-gpu
+          Use CPU rendering, overriding PHOTOCRAFT_GPU
+
+      --format <EXT>
+          Output format, overriding the output's extension (png, jpg, tif, webp, …)
+
+      --quality <1-100>
+          JPEG or WebP quality, 1-100. A WebP written with a quality is lossy, without one lossless
+
+      --tiff-layers
+          Keep the layers in TIFF output (Photoshop layer data); TIFF output is flat without it
+
+      --tiff-compression <none|lzw|zip>
+          Compress TIFF output: none (the default), lzw or zip
+
+      --tiff-transparency <on|off>
+          TIFF Save Transparency: on keeps the transparency (ahead of any alpha or spot channels), off composites the image over white. Without it: kept unless the document has alpha or spot channels
+
+      --tiff-pyramid
+          Also write a TIFF image pyramid: half-size copies after the full image
+
+      --tga-bits <24|32>
+          A TGA's bits per pixel: 32 writes the alpha channel (or else the transparency) as its alpha, 24 none. Without it: 32 with an alpha channel or transparency, else 24
+
+      --dpx-bits <8|10|12|16>
+          A DPX's bits per sample. Without it: 8 for an 8-bit document, else 16
+
+      --dds-compression <none|bc1|bc2|bc3>
+          A DDS texture's compression: none (uncompressed, the default), bc1 (DXT1: alpha on or off), bc2 (DXT3) or bc3 (DXT5)
+
+      --dds-mipmaps
+          Also write a DDS texture's full mip chain
+
+      --jpeg-format <baseline|optimized|progressive>
+          A JPEG's scans, as JPEG Options picks them: baseline (the default), optimized (Huffman tables fitted to the image; RGB is written 4:2:0 and keeps the standard tables, so only Gray and CMYK shrink) or progressive
+
+      --pcraft-full-composite
+          Request the flattened document at its canvas size in .pcraft output as composite/full.png; it may be omitted. Check the manifest's full_composite member
+
+      --no-maximize-compatibility
+          A layered PSD/PSB stores Photoshop's white placeholder instead of the merged image (Maximize Compatibility off): a smaller file and a faster save, but readers that show only the merged image see white. Bitmap, Indexed Color and Duotone documents still write the real image
+
+      --metadata <none|all>
+          The document metadata a flat export embeds: all (the default) keeps the document's XMP packet and free-form text where the format holds them, as Save As does; none leaves them out, as Export As's Metadata: None. Nothing else changes: the ICC profile, EXIF and resolution are written as they are without it. PSD, PSB and .pcraft always keep the XMP
+
+  -h, --help
+          Print help (see a summary with '-h')
+===== info
+Print the document as JSON (size, mode, depth, layer tree)
+
+Usage: photocraft-cli info [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  
+
+Options:
+      --compact              One line of JSON instead of pretty-printed
+      --approve-high-memory  Explicitly approve high-memory PSD/PSB imports within the hard memory budget
+      --detail               Also list every text run and paragraph run, anti-aliasing and full layer-effect settings
+  -h, --help                 Print help
+===== run
+Open a file (or start a new document), run engine commands in order, save the result
+
+Prints each command's JSON result. Give exactly one of <FILE> or --new, and at least one --cmd or --out. An --out that is the <FILE> is refused, as the result would replace the original; --in-place allows it.
+
+Usage: photocraft-cli run [OPTIONS] <FILE|--new <JSON>> <--cmd <ID>|--out <FILE>>
+
+Arguments:
+  [FILE]
+          The document to open
+
+Options:
+      --new <JSON>
+          Start from a new document with these JSON parameters instead of opening a file
+
+      --cmd <ID>
+          An engine command to run; repeat for several, run in order
+
+      --params <JSON>
+          JSON parameters for the --cmd before it (default {})
+
+      --out <FILE>
+          Save the result to this file
+
+      --in-place
+          Allow an --out that is the <FILE>, replacing the original
+
+      --approve-high-memory
+          Explicitly approve high-memory PSD/PSB imports within the hard memory budget
+
+      --gpu
+          Prefer GPU rendering, falling back to CPU when unavailable or unsupported
+
+      --no-gpu
+          Use CPU rendering, overriding PHOTOCRAFT_GPU
+
+      --format <EXT>
+          Output format, overriding the output's extension (png, jpg, tif, webp, …)
+
+      --quality <1-100>
+          JPEG or WebP quality, 1-100. A WebP written with a quality is lossy, without one lossless
+
+      --tiff-layers
+          Keep the layers in TIFF output (Photoshop layer data); TIFF output is flat without it
+
+      --tiff-compression <none|lzw|zip>
+          Compress TIFF output: none (the default), lzw or zip
+
+      --tiff-transparency <on|off>
+          TIFF Save Transparency: on keeps the transparency (ahead of any alpha or spot channels), off composites the image over white. Without it: kept unless the document has alpha or spot channels
+
+      --tiff-pyramid
+          Also write a TIFF image pyramid: half-size copies after the full image
+
+      --tga-bits <24|32>
+          A TGA's bits per pixel: 32 writes the alpha channel (or else the transparency) as its alpha, 24 none. Without it: 32 with an alpha channel or transparency, else 24
+
+      --dpx-bits <8|10|12|16>
+          A DPX's bits per sample. Without it: 8 for an 8-bit document, else 16
+
+      --dds-compression <none|bc1|bc2|bc3>
+          A DDS texture's compression: none (uncompressed, the default), bc1 (DXT1: alpha on or off), bc2 (DXT3) or bc3 (DXT5)
+
+      --dds-mipmaps
+          Also write a DDS texture's full mip chain
+
+      --jpeg-format <baseline|optimized|progressive>
+          A JPEG's scans, as JPEG Options picks them: baseline (the default), optimized (Huffman tables fitted to the image; RGB is written 4:2:0 and keeps the standard tables, so only Gray and CMYK shrink) or progressive
+
+      --pcraft-full-composite
+          Request the flattened document at its canvas size in .pcraft output as composite/full.png; it may be omitted. Check the manifest's full_composite member
+
+      --no-maximize-compatibility
+          A layered PSD/PSB stores Photoshop's white placeholder instead of the merged image (Maximize Compatibility off): a smaller file and a faster save, but readers that show only the merged image see white. Bitmap, Indexed Color and Duotone documents still write the real image
+
+      --metadata <none|all>
+          The document metadata a flat export embeds: all (the default) keeps the document's XMP packet and free-form text where the format holds them, as Save As does; none leaves them out, as Export As's Metadata: None. Nothing else changes: the ICC profile, EXIF and resolution are written as they are without it. PSD, PSB and .pcraft always keep the XMP
+
+  -h, --help
+          Print help (see a summary with '-h')
+===== batch
+Apply an action list to every image in a directory
+
+A Photoshop Actions file (.atn) is a set: its action --action names plays, as below. JSON steps are [id, params] pairs, {"command": id, "params": {…}} objects or bare ids, as a recorded action or droplet stores them (a list, or wrapped in {"actions": …}, {"steps": …} or a droplet). An Actions set (the Actions panel's actions.json, {"actions": [{"name", "steps"}…]}) plays the action --action names (needed when the set holds more than one) with the whole set loaded, so its steps can play other actions of the set.
+
+Usage: photocraft-cli batch [OPTIONS] --actions <FILE> --in <DIR> --out <DIR>
+
+Options:
+      --actions <FILE>
+          The action list: actions.json, a droplet, or a Photoshop Actions file (.atn)
+
+      --action <NAME>
+          Which action of an Actions set to play
+
+      --in <DIR>
+          The folder of images to process
+
+      --out <DIR>
+          The folder to write the results to, as <stem>.<ext>
+
+      --in-place
+          An --out folder that is the --in folder is refused, as the results would replace the originals; --in-place allows it
+
+      --recursive
+          Include images in subfolders; every result goes straight into --out, so a later file of the same name replaces an earlier one
+
+      --naming <TEMPLATE>
+          Name each result with Batch tokens such as {name}, {serial}, {date}, and {ext}
+
+      --start-serial <1-4294967295>
+          First serial number used by --naming
+
+      --stop-on-error
+          Stop after the first failed input
+
+      --error-log <FILE>
+          Write failed inputs and reasons to this text file
+
+      --approve-high-memory
+          Explicitly approve high-memory PSD/PSB imports within the hard memory budget
+
+      --gpu
+          Prefer GPU rendering, falling back to CPU when unavailable or unsupported
+
+      --no-gpu
+          Use CPU rendering, overriding PHOTOCRAFT_GPU
+
+      --format <EXT>
+          Output format, overriding the output's extension (png, jpg, tif, webp, …)
+
+      --quality <1-100>
+          JPEG or WebP quality, 1-100. A WebP written with a quality is lossy, without one lossless
+
+      --tiff-layers
+          Keep the layers in TIFF output (Photoshop layer data); TIFF output is flat without it
+
+      --tiff-compression <none|lzw|zip>
+          Compress TIFF output: none (the default), lzw or zip
+
+      --tiff-transparency <on|off>
+          TIFF Save Transparency: on keeps the transparency (ahead of any alpha or spot channels), off composites the image over white. Without it: kept unless the document has alpha or spot channels
+
+      --tiff-pyramid
+          Also write a TIFF image pyramid: half-size copies after the full image
+
+      --tga-bits <24|32>
+          A TGA's bits per pixel: 32 writes the alpha channel (or else the transparency) as its alpha, 24 none. Without it: 32 with an alpha channel or transparency, else 24
+
+      --dpx-bits <8|10|12|16>
+          A DPX's bits per sample. Without it: 8 for an 8-bit document, else 16
+
+      --dds-compression <none|bc1|bc2|bc3>
+          A DDS texture's compression: none (uncompressed, the default), bc1 (DXT1: alpha on or off), bc2 (DXT3) or bc3 (DXT5)
+
+      --dds-mipmaps
+          Also write a DDS texture's full mip chain
+
+      --jpeg-format <baseline|optimized|progressive>
+          A JPEG's scans, as JPEG Options picks them: baseline (the default), optimized (Huffman tables fitted to the image; RGB is written 4:2:0 and keeps the standard tables, so only Gray and CMYK shrink) or progressive
+
+      --pcraft-full-composite
+          Request the flattened document at its canvas size in .pcraft output as composite/full.png; it may be omitted. Check the manifest's full_composite member
+
+      --no-maximize-compatibility
+          A layered PSD/PSB stores Photoshop's white placeholder instead of the merged image (Maximize Compatibility off): a smaller file and a faster save, but readers that show only the merged image see white. Bitmap, Indexed Color and Duotone documents still write the real image
+
+      --metadata <none|all>
+          The document metadata a flat export embeds: all (the default) keeps the document's XMP packet and free-form text where the format holds them, as Save As does; none leaves them out, as Export As's Metadata: None. Nothing else changes: the ICC profile, EXIF and resolution are written as they are without it. PSD, PSB and .pcraft always keep the XMP
+
+  -h, --help
+          Print help (see a summary with '-h')
+===== serve
+Keep one headless session open and answer JSON lines on stdio, or on 127.0.0.1:<PORT>
+
+Each request is a JSON line {"id", "method", "params"}. Methods: engine.execute, jobs.list/cancel, engine.commands, doc.open/new/place/save/exportLayers/exportDataSets/importDataSets/inspect/render/select/close, session.list, batch, methods (docs/control-protocol.md#headless-server). The token flags require --port (or PHOTOCRAFT_CONTROL_PORT); stdio needs no control token.
+
+Usage: photocraft-cli serve [OPTIONS]
+
+Options:
+      --port <PORT>
+          Listen on 127.0.0.1:<PORT> instead of stdio
+          
+          [env: PHOTOCRAFT_CONTROL_PORT=]
+
+      --gpu
+          Prefer GPU rendering, falling back to CPU when unavailable or unsupported
+
+      --no-gpu
+          Use CPU rendering, overriding PHOTOCRAFT_GPU
+
+      --control-token <64-HEX>
+          The control token (64 hex digits)
+          
+          [env: PHOTOCRAFT_CONTROL_TOKEN]
+
+      --control-token-file <PATH>
+          A file holding the control token, used instead of --control-token (a server creates it when missing)
+          
+          [env: PHOTOCRAFT_CONTROL_TOKEN_FILE=]
+
+      --automation-read-root <DIR>
+          Ordered folders automation may read from; repeat for more roots (none without it)
+
+      --automation-write-root <DIR>
+          The folder automation may write to (none without it)
+
+  -h, --help
+          Print help (see a summary with '-h')
+===== commands (size/export/resize)
+layer.flattenImage                           Flatten Image                    Layer
+type.increaseSize                            Increase Type Size               
+type.decreaseSize                            Decrease Type Size               
+type.increaseSizeMore                        Increase Type Size by 10         
+type.decreaseSizeMore                        Decrease Type Size by 10         
+layer.smartObjects.exportSvg                 Export SVG Contents              
+brush.mixer.sample                           Sample Mixer Brush               
+brush.mixer.sampleAllLayers                  Mixer Brush Sample All Layers    
+style.presets.exportAsl                      Export Styles…                   
+swatches.export                              Export Swatches…                 
+image.imageSize                              Image Size…                      Image
+image.canvasSize                             Canvas Size…                     Image
+image.mode.grayscale                         Grayscale                        Image > Mode
+file.scripts.flattenAllLayerEffects          Flatten All Layer Effects        File > Scripts
+file.scripts.flattenAllMasks                 Flatten All Masks                File > Scripts
+file.export.layersToFiles                    Layers to Files…                 File > Export
+file.export.colorLookupTables                Color Lookup Tables…             File > Export
+layer.smartObjects.exportContents            Export Contents…                 Layer > Smart Objects
+edit.preferences.export                      Export…                          Edit > Preferences
+edit.contentAwareScale                       Content-Aware Scale              Edit
+edit.presets.exportImportPresets             Export/Import Presets…           Edit > Presets
+document.sampleColor                         Sample Color                     
+view.colorSamplers.add                       Add Color Sampler                
+view.colorSamplers.move                      Move Color Sampler               
+view.colorSamplers.delete                    Delete Color Sampler             
+view.colorSamplers.clear                     Clear Color Samplers             
+view.colorSamplers.list                      Color Samplers                   
+tools.decreaseBrushSize                      Decrease Brush Size              
+tools.increaseBrushSize                      Increase Brush Size              
+layer.layerStyle.scaleEffects                Scale Effects…                   Layer > Layer Style
+layer.quickExportAsPng                       Quick Export as PNG              Layer
+layer.exportAs                               Export As…                       Layer
+pattern.export                               Export Patterns…                 
+file.export.layerCompsToFiles                Layer Comps to Files…            File > Export
+file.export.artboardsToFiles                 Artboards to Files…              File > Export
+file.export.artboardsToPdf                   Artboards to PDF…                File > Export
+image.analysis.setMeasurementScale           Set Measurement Scale…           Image > Analysis
+image.analysis.placeScaleMarker              Place Scale Marker…              Image > Analysis
+measurementLog.export                        Export Measurements…             
+file.export.presets.list                     List Export Presets              
+===== NOTICE
+PhotoCraft
+Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ATTRIBUTION.md.
+
+Inter font (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+JetBrains Mono font (assets/fonts/JetBrainsMono-Regular.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+Lucide icons (assets/icons/*.svg, except slice-knife.svg) — ISC; icons derived from Feather also MIT. See assets/icons/LICENSE-lucide.txt.
+SCOWL English word list (assets/dict/en_US-scowl-50.txt.gz) — SCOWL license. See assets/dict/LICENSE-SCOWL.txt.
+libfacedetection face detection weights and network (crates/algo/data/libfacedetection.bin, crates/algo/src/faces/cnn.rs) — BSD-3-Clause, Copyright (c) 2015-2019, Shiqi Yu, all rights reserved. See crates/algo/data/LICENSE-libfacedetection.txt.
+Interface translations (embedded at build time from storytold/craft-i18n locales/<code>/common.tsv and photocraft.tsv, at the commit in craft-i18n.rev) — MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the craft-i18n contributors; the license texts are the same as LICENSE-MIT and LICENSE-APACHE. Per-language credits and provenance: https://github.com/storytold/craft-i18n/blob/main/ATTRIBUTION.md
+
+Builds made with craft-fonts (CRAFT_FONTS_DIR; all official releases) also embed the fonts listed in
+https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (today BIZ UDPGothic, Shippori Mincho and
+BIZ UDMincho; not the web build), under the SIL Open Font License 1.1. Their licence texts
+ship with the package as OFL-<family>.txt.
+
+Linux and FreeBSD Wayland window decorations
+-------------------------------------------
+sctk-adwaita 0.10.1 (https://github.com/PolyMeilex/sctk-adwaita,
+commit d5f343c45c04d4a026db57f76760819b7325db00) is used by winit on Linux
+and FreeBSD for vector window controls. Its title-font features are disabled: no Cantarell
+font is embedded by this dependency and no font file is added to this repo.
+
+sctk-adwaita's MIT licence:
+
+MIT License
+
+Copyright (c) 2022 Bartłomiej Maryńczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The egui-icons font subset is embedded from epaint_default_fonts by crates/ui-egui/build.rs
+and registered in the native and web fallback stacks by crates/ui-egui/src/egui_fonts.rs.
+It is a subset of emoji-icon-font by John Slegers; the same upstream MIT license applies.
+Source: https://github.com/storytold/egui/tree/6d518fc799681571963842f95b55a6b68431b15a/crates/epaint_default_fonts/fonts
+Original: https://github.com/jslegers/emoji-icon-font
+The following notice is reproduced verbatim from emoji-icon-font-mit-license.txt:
+
+MIT License
+
+Copyright (c) 2014 John Slegers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Optional PDF reader (craft-pdf)
+
+PhotoCraft imports PDF pages through craft-pdf (https://github.com/storytold/craft-libs,
+MIT OR Apache-2.0), pinned to revision c5a1cbfb5f9049f9270955caffb5bee5997aebf7. It vendors
+Hayro 0.7.1, hayro-interpret 0.7.0, hayro-syntax 0.7.2, hayro-jbig2 0.3.0 and
+hayro-cmap 0.1.0 (https://github.com/LaurenzV/hayro, MIT OR Apache-2.0). The reader bundles
+the standard-14 Foxit fonts (BSD-3-Clause), Adobe CMaps (BSD-3-Clause) and a Compact ICC
+profile by Clinton Ingram (CC0-1.0); per-file sources and hashes are in craft-libs
+ATTRIBUTION.md. No PDF assets are copied into this repository, and PDFium is no longer used or
+shipped.
+
+Licence texts for the optional PDF reader
+
+Hayro (MIT):
+Copyright (c) The Hayro Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Standard-14 Foxit fonts (BSD-3-Clause):
+Copyright 2014 PDFium Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+* Neither the name of Google Inc. nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Adobe CMaps (BSD-3-Clause):
+Copyright 1990-2023 Adobe. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+Neither the name of Adobe nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Compact ICC profile: CC0 1.0 Universal (public domain dedication), by Clinton Ingram (saucecontrol/Compact-ICC-Profiles).
+===== ATTRIBUTION head
+# Attribution
+
+Every non-code asset in this repository, with its author, source and license. PhotoCraft's own
+code and original assets are MIT OR Apache-2.0 (see [`LICENSE-MIT`](LICENSE-MIT),
+[`LICENSE-APACHE`](LICENSE-APACHE) and [`NOTICE`](NOTICE)). When you add an asset, add a row here
+in the same change; third-party assets must be permissively licensed and keep their license file
+next to them.
+
+## Bundled in the app
+
+| Path | Title | Author | Source | License |
+|---|---|---|---|---|
+| `crates/codecs/src/codecs/xpm/x11_colors.rs` | X11 `rgb.txt` color-name lookup table (normalized X.Org RGB values) | X.Org Foundation and X11 contributors | <https://cgit.freedesktop.org/xorg/app/rgb/tree/rgb.txt> | MIT (X.Org app/rgb) |
+| Embedded at build time from storytold/craft-i18n `locales/<code>/common.tsv` and `locales/<code>/photocraft.tsv` (revision in [`craft-i18n.rev`](craft-i18n.rev)) | UI translations (all languages) | craft-i18n and PhotoCraft contributors; per-language credits and provenance in [craft-i18n's ATTRIBUTION.md](https://github.com/storytold/craft-i18n/blob/main/ATTRIBUTION.md) | <https://github.com/storytold/craft-i18n> | MIT OR Apache-2.0; Copyright (c) 2026 ArtCraft Team and the craft-i18n contributors; notice in [NOTICE](NOTICE) |
+| `epaint_default_fonts::EGUI_ICONS` (build input; deflated into `OUT_DIR/egui_fonts/egui-icons.ttf.deflate`, registered by `crates/ui-egui/src/text/egui_fonts.rs`) | egui-icons, five-glyph subset of emoji-icon-font | John Slegers | [egui fork at 6d518fc](https://github.com/storytold/egui/tree/6d518fc799681571963842f95b55a6b68431b15a/crates/epaint_default_fonts/fonts), [original](https://github.com/jslegers/emoji-icon-font); egui subset, unmodified here | MIT; Copyright (c) 2014 John Slegers; full upstream notice in [NOTICE](NOTICE) |
+| `assets/fonts/Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf` | Inter 4.001 (UI font) | The Inter Project Authors (Rasmus Andersson) | <https://github.com/rsms/inter> | SIL OFL 1.1, [`assets/fonts/OFL-Inter.txt`](assets/fonts/OFL-Inter.txt) |
+| `assets/fonts/JetBrainsMono-Regular.ttf` | JetBrains Mono 2.305 (numeric font) | The JetBrains Mono Project Authors | <https://github.com/JetBrains/JetBrainsMono> | SIL OFL 1.1, [`assets/fonts/OFL-JetBrainsMono.txt`](assets/fonts/OFL-JetBrainsMono.txt) |
+| `assets/icons/*.svg` except `vector-shape.svg`, `slice-knife.svg`, `slice-select.svg`, `font-similar.svg`, `font-variable.svg`, `sampler.svg`, `artboard.svg`, `perspective-crop.svg`, `frame-placeholder.svg`, `ellipse-dashed.svg`, `gradient.svg`, `type-mask.svg`, `type-mask-vertical.svg`, `text-warp.svg`, `clip-below.svg`, `clip-release.svg`, `layer-mask.svg`, `adjustment-layer.svg`, `brush-replace.svg`, `history-brush.svg`, `quick-selection.svg`, `eraser-background.svg`, `eraser-magic.svg`, `lasso-magnetic.svg`, `direct-select.svg`, `convert-point.svg`, `pen-add-anchor.svg`, `pen-delete-anchor.svg`, `pen-freeform.svg`, `pen-curvature.svg`, `bandage-sparkle.svg`, `painting-symmetry.svg`, `symmetry-*.svg`, `path-op-*.svg` and `marquee-{row,column}.svg`, `align-edge-*.svg` and `distribute-*.svg`, `crop-overlay-*.svg`, `vertical-align-*.svg`, `spirit-level.svg` (117 files; `star-filled.svg` is `star.svg` with a solid fill) | Lucide icons | Lucide Icons and Contributors | <https://github.com/lucide-icons/lucide> (`icons/<name>.svg`; `align-*` are now named `text-align-*` upstream) | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/{check,chevron-down,chevron-left,chevron-right,chevron-up,chevrons-left,chevrons-right,circle,clock,compass,info,link,link-2,lock,minus,monitor,moon,move,navigation,plus,search,square,trash,triangle,type,x,zoom-in,zoom-out}.svg` | Lucide icons derived from Feather (subset of the row above) | Cole Bemis (Feather), Lucide Contributors | <https://github.com/feathericons/feather> via Lucide | MIT (Feather) and ISC (Lucide), [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/vector-shape.svg` | Vector path shape-layer glyph with four anchor points | @superplay2021 | Original work for PhotoCraft | MIT OR Apache-2.0 |
+| `assets/icons/slice-knife.svg` | Slice tool glyph | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/slice-select.svg` | Slice Select tool glyph | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/crop-overlay-*.svg` | Crop overlay glyphs: Rule of Thirds, Grid, Diagonal, Triangle, Golden Ratio and Golden Spiral inside the crop-mark frame | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/spirit-level.svg` | Straighten tool glyph: a spirit level with its vial and bubble under a dotted arc | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/sampler.svg` | Color Sampler tool glyph: a target reticle marking a sampled pixel | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/font-similar.svg`, `assets/icons/font-variable.svg` | Font menu filter glyphs: two waves (Show Similar Fonts) and a T over a slider (Show Variable Fonts), drawn on the 24 px icon grid | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/convert-point.svg` | Convert Point tool glyph: an angle with a square anchor on its apex, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/artboard.svg` | Artboard tool glyph: a board with a tick at each end of its edges | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/perspective-crop.svg` | Perspective Crop tool glyph: a crop frame in perspective with its grid and crop-mark ticks | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/type-mask.svg`, `assets/icons/type-mask-vertical.svg` | Horizontal and Vertical Type Mask tool glyphs: a T drawn as marching ants (the vertical one beside a downward arrow), on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/path-op-{new-layer,combine,subtract,intersect,exclude,merge}.svg` | Path Operations glyphs (Pen options bar): a single square for New Layer, and two overlapping squares showing the area each operation keeps (union, back minus front, overlap, everything but the overlap, the merged outline), drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/text-warp.svg` | Create Warped Text glyph (Type tool options bar): a T above a bowed arc, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/marquee-row.svg`, `assets/icons/marquee-column.svg` | Single Row and Single Column Marquee tool glyphs: a dashed row (column) between two edge bars, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/clip-below.svg`, `assets/icons/clip-release.svg` | Clipping-mask cursors (⌥ over the line between two layers): a hooked arrow onto the layer below; the same with a small "no" badge to release | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/layer-mask.svg`, `assets/icons/adjustment-layer.svg` | Layers panel footer glyphs: Add a mask (a frame around a solid disc) and New Fill or Adjustment Layer (a circle, one half solid), drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/vertical-align-{top,middle,bottom}.svg` | Type options-bar alignment glyphs for vertical text: three columns hanging from a top line, centred on a middle line, or standing on a bottom line, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/align-edge-*.svg`, `assets/icons/distribute-*.svg` | Move tool options-bar glyphs: Align (six edges/centres) and Distribute (edges, centres, spacing), a guide line or edge lines with bars, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/ellipse-dashed.svg` | Elliptical Marquee tool glyph: a dashed horizontal ellipse, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/frame-placeholder.svg` | Frame tool glyph: an empty placeholder frame, crossed corner to corner | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/gradient.svg` | Gradient tool glyph: a rounded rectangle filled with a left-to-right linear ramp, drawn on Lucide's 24 px grid and stroke | PhotoCraft contributors | Original work | MIT OR Apache-2.0 |
+| `assets/icons/eraser-background.svg`, `assets/icons/eraser-magic.svg` | Background Eraser and Magic Eraser tool glyphs: Lucide `eraser` plus added marks | Lucide Icons and Contributors; marks by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/eraser.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/brush-replace.svg` | Color Replacement tool glyph: Lucide `brush` plus two swap arrows | Lucide Icons and Contributors; arrows by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/brush.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/history-brush.svg` | History Brush tool glyph: Lucide `brush` plus counter-clockwise history rewind arrow | Lucide Icons and Contributors; arrow by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/brush.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/quick-selection.svg` | Quick Selection tool glyph: Lucide `brush`, scaled to 70%, inside a dashed upright rounded "C" selection | Lucide Icons and Contributors; selection by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/brush.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/bandage-sparkle.svg` | Remove tool glyph: Lucide `bandage` moved down, plus a sparkle mark | Lucide Icons and Contributors; mark by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/bandage.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/direct-select.svg` | Direct Selection tool glyph: Lucide `mouse-pointer-2` plus an anchor square | Lucide Icons and Contributors; square by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/mouse-pointer-2.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/pen-freeform.svg`, `assets/icons/pen-curvature.svg` | Freeform Pen and Curvature Pen tool glyphs: Lucide `pen-tool` scaled down, plus a freehand squiggle or a curve through two points | Lucide Icons and Contributors; marks by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/pen-tool.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/pen-add-anchor.svg`, `assets/icons/pen-delete-anchor.svg` | Add Anchor Point and Delete Anchor Point tool glyphs: Lucide `pen-tool` plus a + or − mark | Lucide Icons and Contributors; marks by PhotoCraft contributors | Derived from <https://github.com/lucide-icons/lucide> `icons/pen-tool.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/painting-symmetry.svg` | Painting symmetry glyph: Lucide `heart` with a central axis | Lucide Icons and Contributors; adapted by @shorbank | Derived from <https://github.com/lucide-icons/lucide> `icons/heart.svg` | ISC, [`assets/icons/LICENSE-lucide.txt`](assets/icons/LICENSE-lucide.txt) |
+| `assets/icons/symmetry-{vertical,horizontal,dual,diagonal}.svg` | Painting symmetry axis glyphs | @shorbank | Original work; supplied SVG line geometry centred on a common square canvas, stroke adjusted to match the painting-symmetry glyph | MIT OR Apache-2.0, [`assets/icons/LICENSE-symmetry-axes.txt`](assets/icons/LICENSE-symmetry-axes.txt) |
+| `assets/icons/lasso-magnetic.svg` | Magnetic Lasso tool glyph, adapted from "Magnetic Lasso Tool" (redrawn on the 24 px toolbar grid) | Lil' Seal (Noun Project); adapted by PhotoCraft contributors | <https://thenounproject.com/icon/magnetic-lasso-tool-177513/> | CC BY 3.0, [`assets/icons/LICENSE-noun-magnetic-lasso.txt`](assets/icons/LICENSE-noun-magnetic-lasso.txt) |
+| `assets/dict/en_US-scowl-50.txt.gz` | English word list for Check Spelling (SCOWL 2020.12.07, size 50, en_US; 72,403 words) | Kevin Atkinson and the SCOWL contributors | <http://wordlist.aspell.net/> | SCOWL license (permissive, keep the notice), [`assets/dict/LICENSE-SCOWL.txt`](assets/dict/LICENSE-SCOWL.txt), which also has the build recipe |
+| `crates/cms/profiles/photocraft-coated-cmyk.icc` | PhotoCraft Coated CMYK (synthetic) ICC profile | PhotoCraft contributors (generated by `photocraft-cms`, `src/synth.rs`) | Original work, see [`crates/cms/README.md`](crates/cms/README.md) | CC0-1.0 |
+| `assets/app-icon/` (all files) | PhotoCraft app icon (nine-tailed kitsune) | The project owner (drawn in ArtCraft, vectorised) | Original work, see [`assets/app-icon/README.md`](assets/app-icon/README.md) | MIT OR Apache-2.0, [`assets/app-icon/LICENSE.txt`](assets/app-icon/LICENSE.txt) |
+| `packaging/macos/dmg/` (all files) | PhotoCraft DMG window background and layout | @XusBadia, from the PhotoCraft app icon | Original work, see [`packaging/macos/dmg/README.md`](packaging/macos/dmg/README.md) | MIT OR Apache-2.0, like the code |
+| `crates/ui-egui/src/theme.rs` (Solarized Dark palette) | Solarized colour scheme used by the Solarized Dark theme | Ethan Schoonover | <https://ethanschoonover.com/solarized/> | MIT, [`LICENSE-solarized.txt`](crates/ui-egui/src/LICENSE-solarized.txt) |
+| `crates/ui-egui/src/theme.rs` (Breeze Light and Breeze Dark themes) | The Breeze Light and Breeze Dark themes are original colour values on PhotoCraft's Studio layout, chosen to look close to KDE Plasma's Breeze (cool blue-greys, blue accent, 5 px frame radius) so the app blends into a Plasma desktop. None of Breeze's colour values, files or code are copied; the values are a few levels away from its schemes and tuned for text contrast | PhotoCraft contributors | Inspired by the look of KDE Breeze, <https://invent.kde.org/plasma/breeze> (its colour schemes are LGPL-2.0-or-later) | Original work |
+| `crates/ui-egui/src/theme.rs` (Soft Dark and Soft Light themes) | Original colour values and radii for two low-contrast themes on PhotoCraft's Studio layout; no third-party palette, file or code is used | PhotoCraft contributors | Original | Original work |
+| `crates/algo/data/libfacedetection.bin` (face detection weights, read by `crates/algo/src/faces.rs`, whose network code is a port of the library's) | libfacedetection CNN (YuNet design) weights and inference code, weights converted to half precision | Shiqi Yu | [ShiqiYu/libfacedetection](https://github.com/ShiqiYu/libfacedetection) (`src/facedetectcnn-data.cpp`, `facedetectcnn.cpp`, `facedetectcnn-model.cpp`) | BSD-3-Clause, [`LICENSE-libfacedetection.txt`](crates/algo/data/LICENSE-libfacedetection.txt) |
+
