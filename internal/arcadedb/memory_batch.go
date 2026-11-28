@@ -259,6 +259,9 @@ type memoryBatchState struct {
 	// Mentions are read-only here: they decide which names still hold, and Persist
 	// removes the ones whose fact it deletes.
 	Mentions []memoryBatchMention
+	// Named holds the entities a forget removed by name. A mention does not hold those,
+	// so Persist prunes them on their FACT edges alone.
+	Named map[string]bool
 }
 
 // memoryBatchMention is a MENTIONS edge: the statement of fact FactRID names Target.

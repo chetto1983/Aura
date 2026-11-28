@@ -1,7 +1,6 @@
 package arcadedb
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -54,12 +53,12 @@ func TestStringActiveFactKey(t *testing.T) {
 }
 
 func TestApplyMemoryBatchForgetRemovesAnEntityNoFactHolds(t *testing.T) {
-	state := memoryBatchState{
+	state := cloneMemoryBatchState(memoryBatchState{
 		Entities: map[string]memoryBatchEntity{"Paolo": {}, "Davide": {}, "Monica": {}},
 		Facts: map[string]memoryBatchFact{"#1:0": {RID: "#1:0", Fact: Fact{
 			Subject: "Davide", Predicate: "is_married_to", Object: "Monica",
 		}}},
-	}
+	})
 	forget := func(filter ForgetFilter) (MemoryBatchOperationResult, error) {
 		return applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
 	}
@@ -95,7 +94,7 @@ func TestApplyMemoryBatchForgetClearsAFactlessEntityWhateverTheNarrowing(t *test
 		{Entity: "Paolo", Predicate: "lives_in"},
 		{Entity: "Paolo", SourceRunID: "run-9"},
 	} {
-		state := memoryBatchState{Entities: map[string]memoryBatchEntity{"Paolo": {}}, Facts: map[string]memoryBatchFact{}}
+		state := cloneMemoryBatchState(memoryBatchState{Entities: map[string]memoryBatchEntity{"Paolo": {}}})
 		got, err := applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
 		if err != nil || got.Entities != 1 {
 			t.Fatalf("forget %+v = %+v, %v; want the fact-less name removed", filter, got, err)
@@ -103,27 +102,46 @@ func TestApplyMemoryBatchForgetClearsAFactlessEntityWhateverTheNarrowing(t *test
 	}
 }
 
-// A mention of a surviving fact holds the name; once that fact goes, so does the hold,
-// and the name it held is pruned with the fact's endpoints.
-func TestApplyMemoryBatchForgetKeepsANameAnotherFactStillMentions(t *testing.T) {
-	state := memoryBatchState{
-		Entities: map[string]memoryBatchEntity{"Acme": {}, "Monica": {}, "Davide": {}},
-		Facts: map[string]memoryBatchFact{"#1:0": {RID: "#1:0", Fact: Fact{
-			Subject: "Monica", Predicate: "met", Object: "Davide", Statement: "Monica met Davide at Acme.",
-		}}},
-		Mentions: []memoryBatchMention{{Source: "Monica", Target: "Acme", FactRID: "#1:0"}},
+// A mention of a surviving fact holds a name through a removal that did not name it; a
+// removal that names it takes it, and leaves the fact that mentions it. Once the
+// mentioning fact goes, so does the hold.
+func TestApplyMemoryBatchForgetAndTheNamesOtherFactsMention(t *testing.T) {
+	mentioned := func() memoryBatchState {
+		return cloneMemoryBatchState(memoryBatchState{
+			Entities: map[string]memoryBatchEntity{"Acme": {}, "Group": {}, "Monica": {}, "Davide": {}},
+			Facts: map[string]memoryBatchFact{
+				"#1:0": {RID: "#1:0", Fact: Fact{Subject: "Monica", Predicate: "met", Object: "Davide"}},
+				"#1:1": {RID: "#1:1", Fact: Fact{Subject: "Acme", Predicate: "part_of", Object: "Group"}},
+			},
+			Mentions: []memoryBatchMention{{Source: "Monica", Target: "Acme", FactRID: "#1:0"}},
+		})
 	}
-	forget := func(filter ForgetFilter) (MemoryBatchOperationResult, error) {
-		return applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
+	forget := func(state memoryBatchState, filter ForgetFilter) MemoryBatchOperationResult {
+		t.Helper()
+		got, err := applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
+		if err != nil {
+			t.Fatalf("forget %+v: %v", filter, err)
+		}
+		return got
 	}
-	if _, err := forget(ForgetFilter{Entity: "Acme"}); err == nil || !strings.Contains(err.Error(), "still name it") {
-		t.Fatalf("forget of a still-mentioned name = %v, want a refusal that says why", err)
+
+	state := mentioned()
+	if got := forget(state, ForgetFilter{Subject: "Acme"}); got.Entities != 1 {
+		t.Fatalf("implicit removal = %+v: want Group removed and the mentioned Acme kept", got)
 	}
-	got, err := forget(ForgetFilter{Subject: "Monica"})
-	if err != nil {
-		t.Fatalf("forget Monica's fact: %v", err)
+	if _, kept := state.Entities["Acme"]; !kept {
+		t.Fatal("a name another fact mentions went with a removal that did not name it")
 	}
-	if got.Entities != 3 {
+	if got := forget(state, ForgetFilter{Entity: "Acme"}); got.Entities != 1 || !state.Named["Acme"] {
+		t.Fatalf("named removal = %+v named=%v: want Acme removed by name", got, state.Named)
+	}
+	if _, kept := state.Facts["#1:0"]; !kept {
+		t.Fatal("removing the name deleted the fact that mentions it")
+	}
+
+	state = mentioned()
+	forget(state, ForgetFilter{Subject: "Acme"})
+	if got := forget(state, ForgetFilter{Subject: "Monica"}); got.Entities != 3 {
 		t.Fatalf("result = %+v, want Monica, Davide and the no-longer-mentioned Acme removed", got)
 	}
 }

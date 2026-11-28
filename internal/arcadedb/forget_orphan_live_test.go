@@ -5,7 +5,6 @@ package arcadedb
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 )
@@ -189,11 +188,6 @@ func TestMemoryBatchLive_KeepsAnEntityAnotherFactStillNames(t *testing.T) {
 	if first.Operations[0].Entities != 1 || !entityExists(t, client, "MenAcme") {
 		t.Fatalf("forget run 1 = %+v: want only MenGroup counted and MenAcme kept", first.Operations)
 	}
-	var batchErr *MemoryBatchError
-	if _, err := forget("men-2", ForgetFilter{Entity: "MenAcme"}); !errors.As(err, &batchErr) ||
-		!strings.Contains(err.Error(), "still name it") {
-		t.Fatalf("forget of a still-named entity = %v, want a refusal that says why", err)
-	}
 	second, err := forget("men-3", ForgetFilter{SourceRunID: "men-r2"})
 	if err != nil {
 		t.Fatalf("forget run 2: %v", err)
@@ -201,5 +195,49 @@ func TestMemoryBatchLive_KeepsAnEntityAnotherFactStillNames(t *testing.T) {
 	if second.Operations[0].Entities != 3 || entityExists(t, client, "MenAcme") {
 		t.Fatalf("forget run 2 = %+v: want Monica, Davide and the no-longer-named MenAcme removed",
 			second.Operations)
+	}
+}
+
+// Naming an entity is asking for it to go. A MENTIONS edge keeps a name only through a
+// removal that did not name it; asked by name, the entity goes with its MENTIONS edges, and
+// the facts whose statements name it stay. Measured on the lab VM on 2026-11-28: with the
+// edge holding the name against an explicit forget, the only way to clear "Email" was to
+// delete the operator's real preference that mentions it.
+func TestForgetLive_ExplicitForgetRemovesAMentionedNameButNotItsFacts(t *testing.T) {
+	for _, viaBatch := range []bool{false, true} {
+		client, _ := mentionedEntity(t)
+		ctx := context.Background()
+		if _, err := client.Forget(ctx, ForgetFilter{SourceRunID: "men-r1"}); err != nil {
+			t.Fatalf("strand MenAcme: %v", err)
+		}
+		removed := 0
+		if viaBatch {
+			got, err := client.ApplyMemoryBatch(ctx, MemoryBatchActor{IdentityID: "men", WriterRole: WriterParent},
+				MemoryBatchRequest{IdempotencyKey: "men-explicit", Operations: []MemoryBatchOperation{
+					{Type: MemoryBatchForget, Forget: &ForgetFilter{Entity: "MenAcme"}},
+				}}, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("batch forget MenAcme: %v", err)
+			}
+			removed = got.Operations[0].Entities
+		} else {
+			dry, err := client.Forget(ctx, ForgetFilter{Entity: "MenAcme", DryRun: true})
+			if err != nil || dry.Entities != 1 {
+				t.Fatalf("dry run = %+v, %v; want 1 entity", dry, err)
+			}
+			got, err := client.Forget(ctx, ForgetFilter{Entity: "MenAcme"})
+			if err != nil {
+				t.Fatalf("forget MenAcme: %v", err)
+			}
+			removed = got.Entities
+		}
+		if removed != 1 || entityExists(t, client, "MenAcme") {
+			t.Fatalf("batch=%v: removed %d, MenAcme exists=%v; want it gone", viaBatch, removed,
+				entityExists(t, client, "MenAcme"))
+		}
+		hits, err := client.FactsAbout(ctx, "MenMonica", "", 10, time.Time{}, FactsAboutDirect)
+		if err != nil || len(hits) != 1 {
+			t.Fatalf("batch=%v: the fact naming MenAcme = %+v, %v; want it kept", viaBatch, hits, err)
+		}
 	}
 }

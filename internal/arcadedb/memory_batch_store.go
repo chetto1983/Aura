@@ -296,8 +296,11 @@ func (tx *clientMemoryBatchTx) Persist(
 		if _, keep := after.Entities[name]; keep {
 			continue
 		}
-		if _, err := tx.client.commandInTx(ctx, tx.sessionID,
-			pruneOrphanEntityStatement, map[string]any{"name": name}); err != nil {
+		prune := pruneOrphanEntityStatement
+		if after.Named[name] {
+			prune = pruneNamedEntityStatement
+		}
+		if _, err := tx.client.commandInTx(ctx, tx.sessionID, prune, map[string]any{"name": name}); err != nil {
 			return fmt.Errorf("prune entity %q: %w", name, err)
 		}
 	}

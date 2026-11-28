@@ -797,7 +797,7 @@
                 "description": "payload for forget",
                 "properties": {
                   "entity": {
-                    "description": "remove every fact touching this entity, and the entity itself; an entity with no facts is removed outright unless the statements of other facts still name it",
+                    "description": "remove every fact touching this entity, and the entity itself, even when other facts' statements mention it; those facts stay",
                     "maxLength": 512,
                     "type": "string"
                   },

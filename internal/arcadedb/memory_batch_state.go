@@ -11,8 +11,10 @@ import (
 func cloneMemoryBatchState(state memoryBatchState) memoryBatchState {
 	clone := memoryBatchState{
 		Entities: map[string]memoryBatchEntity{}, Facts: map[string]memoryBatchFact{}, Mentions: state.Mentions,
+		Named: map[string]bool{},
 	}
 	maps.Copy(clone.Entities, state.Entities)
+	maps.Copy(clone.Named, state.Named)
 	for key, fact := range state.Facts {
 		fact.Sources = cloneFactSources(fact.Sources)
 		clone.Facts[key] = fact
@@ -264,7 +266,7 @@ func applyMemoryBatchForget(
 	}
 	if len(matches) == 0 && !forgetsAnOrphanEntity(state, filter) {
 		return MemoryBatchOperationResult{}, memoryBatchOperationError(
-			index, "target_not_found", forgetMatchedNothing(state, filter))
+			index, "target_not_found", fmt.Errorf("forget filter matched no facts"))
 	}
 	endpoints := []string{}
 	for _, key := range matches {
@@ -293,9 +295,17 @@ func applyMemoryBatchForget(
 	removedEntities := 0
 	if !filter.KeepOrphans {
 		for _, entity := range endpoints {
-			if _, exists := state.Entities[entity]; exists && !memoryBatchEntityReferenced(state, entity) {
+			named := entity == filter.Entity
+			held := memoryBatchEntityReferenced(state, entity)
+			if named {
+				held = memoryBatchEntityHasFacts(state, entity)
+			}
+			if _, exists := state.Entities[entity]; exists && !held {
 				delete(state.Entities, entity)
 				removedEntities++
+				if named {
+					state.Named[entity] = true
+				}
 			}
 		}
 	}
@@ -304,23 +314,15 @@ func applyMemoryBatchForget(
 	}, nil
 }
 
-// A forget that names an entity no fact holds removes the entity itself: it matches
-// no fact, and refusing it left the orphan with no tool able to remove it.
+// A forget that names an entity no fact holds removes the entity itself, even when other
+// facts' statements mention it: it matches no fact, and refusing it left the name with no
+// tool able to remove it but the deletion of the facts that mention it.
 func forgetsAnOrphanEntity(state memoryBatchState, filter ForgetFilter) bool {
 	if filter.Entity == "" || filter.KeepOrphans {
 		return false
 	}
 	_, exists := state.Entities[filter.Entity]
-	return exists && !memoryBatchEntityReferenced(state, filter.Entity)
-}
-
-func forgetMatchedNothing(state memoryBatchState, filter ForgetFilter) error {
-	if _, exists := state.Entities[filter.Entity]; exists && !filter.KeepOrphans &&
-		memoryBatchEntityMentioned(state, filter.Entity) {
-		return fmt.Errorf("entity %q holds no facts, but the statements of other facts still name it; "+
-			"it stays while they do", filter.Entity)
-	}
-	return fmt.Errorf("forget filter matched no facts")
+	return exists && !memoryBatchEntityHasFacts(state, filter.Entity)
 }
 
 func validateMemoryBatchFinalState(state memoryBatchState, limits MemoryLimits, now time.Time) error {

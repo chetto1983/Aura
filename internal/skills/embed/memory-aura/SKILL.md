@@ -490,9 +490,9 @@ matches nothing is the likeliest outcome — and it reports that as a plain `0`,
 error. **If a forget reports that it matched no facts and removed no entity, the filter
 is wrong; sending it again unchanged cannot make it right.** (A forget by `entity` on a
 name that holds no facts removes the name itself: that reports `facts: 0, entities: 1`,
-and it is the right way to clear a name left behind. A name the statements of other
-facts still name stays, and reports `entities: 0`: it goes with the last of them.) Go
-and look: `memory_entities` for the exact
+and it is the right way to clear a name left behind, even one the statements of other
+facts mention: those facts stay. A removal by run or by subject, which does not name it,
+leaves such a mentioned name in place.) Go and look: `memory_entities` for the exact
 spelling, or `memory_search` for the `fact_key` and the `run_id` a recall hit already
 carries. Provenance is usually the strongest handle there is; a whole import is one
 `run_id`, where the same removal by entity is dozens of calls.

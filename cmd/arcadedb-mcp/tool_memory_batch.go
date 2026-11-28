@@ -54,7 +54,7 @@ type MemoryBatchMergeInput struct {
 // MemoryBatchForgetInput names destructive fact evidence to remove.
 type MemoryBatchForgetInput struct {
 	SourceRunID        string `json:"source_run_id,omitempty" jsonschema:"detach evidence written by this existing source run"`
-	Entity             string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, and the entity itself; an entity with no facts is removed outright unless the statements of other facts still name it"`
+	Entity             string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, and the entity itself, even when other facts' statements mention it; those facts stay"`
 	Subject            string `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
 	Predicate          string `json:"predicate,omitempty" jsonschema:"optional relation filter"`
 	Object             string `json:"object,omitempty" jsonschema:"optional object filter"`

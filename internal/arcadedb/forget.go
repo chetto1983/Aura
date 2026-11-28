@@ -95,7 +95,7 @@ func (c *Client) Forget(ctx context.Context, filter ForgetFilter) (ForgetResult,
 	if filter.DryRun {
 		orphans := 0
 		if !filter.KeepOrphans {
-			orphans, err = c.countStrandableByRIDs(ctx, endpoints, deleteRIDs)
+			orphans, err = c.countStrandableByRIDs(ctx, endpoints, deleteRIDs, filter.Entity)
 			if err != nil {
 				return ForgetResult{}, err
 			}
@@ -121,7 +121,7 @@ func (c *Client) Forget(ctx context.Context, filter ForgetFilter) (ForgetResult,
 	}
 	removed := 0
 	if !filter.KeepOrphans {
-		if removed, err = c.pruneOrphans(ctx, endpoints); err != nil {
+		if removed, err = c.pruneOrphans(ctx, endpoints, filter.Entity); err != nil {
 			return ForgetResult{Facts: len(facts)}, err
 		}
 	}

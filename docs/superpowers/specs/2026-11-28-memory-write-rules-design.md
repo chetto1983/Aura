@@ -90,8 +90,12 @@ Measured, not assumed:
      paths, so it never holds a name after its fact is gone, and the names it touched join
      the prune candidates.
    - `memory_batch` `forget {entity}` on an entity with no facts removes the entity. A name
-     that does not exist is still `target_not_found`; a name other facts still mention is
-     refused with that reason.
+     that does not exist is still `target_not_found`.
+   - Amended again after the lab VM run, 2026-11-28 (conversation `01a222e1`): a forget that
+     NAMES the entity removes it once no `FACT` edge holds it, `MENTIONS` included, and the
+     facts whose statements mention it stay. Only a removal that does not name it (by run,
+     by subject) keeps a mentioned name. Held against an explicit forget, the only way to
+     clear `Email` was to delete the operator's real preference that mentions it.
    - The batch model and the delete then use the same condition, so the reported count is
      what was removed. A live test checks the entity no longer exists.
 
