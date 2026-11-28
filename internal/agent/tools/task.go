@@ -123,6 +123,8 @@ type taskStore interface {
 	RunScheduledTaskNow(ctx context.Context, id string) error
 	PauseScheduledTask(ctx context.Context, id string) error
 	ResumeScheduledTask(ctx context.Context, id string) (time.Time, error)
+	// ListTaskRuns reads the caller's task's runs, newest first, cancelled tasks included.
+	ListTaskRuns(ctx context.Context, id string, limit int) ([]TaskRun, error)
 }
 
 // taskArgs is the wire shape of the task tool arguments. Only `action` is
@@ -141,6 +143,7 @@ type taskArgs struct {
 	StepBudget   int             `json:"step_budget"`
 	Notify       string          `json:"notify"`
 	TaskID       string          `json:"task_id"`
+	Limit        int             `json:"limit"`
 	// TelegramRecipients is the operator's choice among the linked Telegram accounts.
 	TelegramRecipients []int64 `json:"telegram_recipients"`
 }
@@ -153,7 +156,7 @@ type taskArgs struct {
 const taskParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now", "pause", "resume"], "description": "The scheduler operation: schedule (create a task), list (show active, paused and awaiting-approval tasks), cancel (stop a task for good by id; call it directly, the tool asks the operator itself when needed), run_now (fire a task immediately by id), pause (stop an active task from firing until resumed, by id), resume (reactivate a paused task from now, by id)."},
+    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now", "pause", "resume", "history"], "description": "The scheduler operation: schedule (create a task), list (show active, paused and awaiting-approval tasks), cancel (stop a task for good by id; call it directly, the tool asks the operator itself when needed), run_now (fire a task immediately by id), pause (stop an active task from firing until resumed, by id), resume (reactivate a paused task from now, by id), history (read what a task's recent runs produced, by id: start time, status, summary, error)."},
     "schedule_kind": {"type": "string", "enum": ["at", "every", "cron"], "description": "Required when action=schedule. at=one-shot at a fixed instant; every=fixed interval in minutes; cron=a cron expression evaluated in the task timezone."},
     "cron": {"type": "string", "description": "Required when action=schedule and schedule_kind=cron. A standard 5-field cron expression, e.g. '30 9 * * 1-5'."},
     "at": {"type": "string", "description": "Required when action=schedule and schedule_kind=at. An RFC-3339 instant, e.g. '2030-01-01T09:30:00Z'."},
@@ -164,7 +167,8 @@ const taskParamsSchema = `{
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
     "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Optional when action=schedule. Where the task output is delivered. If the request names no channel, omit notify: the operator's default channel is applied, and when none is set a delivery_choice_required directive comes back. none keeps the outcome only in the run ledger; telegram is an intentional push to the linked Telegram accounts named in telegram_recipients; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
     "telegram_recipients": {"type": "array", "items": {"type": "integer"}, "description": "Optional, only with notify=telegram. The Telegram user ids of the linked accounts the task reaches. With two or more linked and none named, nothing is persisted and a telegram_recipients_required choice directive comes back: relay it with ask_user(kind=choice)."},
-    "task_id": {"type": "string", "description": "Required when action=cancel, run_now, pause or resume. The id of the target task."}
+    "task_id": {"type": "string", "description": "Required when action=cancel, run_now, pause, resume or history. The id of the target task."},
+    "limit": {"type": "integer", "description": "Optional when action=history. How many recent runs to read; default 5, maximum 20."}
   },
   "required": ["action"]
 }`
@@ -214,6 +218,7 @@ func (t *TaskTool) actionRouter() *ActionRouter {
 			"run_now":  t.actionRunNow,
 			"pause":    t.actionPause,
 			"resume":   t.actionResume,
+			"history":  t.actionHistory,
 		})
 	})
 	return t.router
@@ -412,7 +417,7 @@ func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolR
 	if err := t.Store.RunScheduledTaskNow(ctx, id); err != nil {
 		return ToolResult{}, fmt.Errorf("task run_now: %w", err)
 	}
-	s := "running task " + id + " now"
+	s := "running task " + id + " now. Its outcome is recorded in this conversation, and an agent_job's report also reaches this turn after your next tool call; task action=history reads it. Do not sleep or poll to wait for it."
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
 }
 

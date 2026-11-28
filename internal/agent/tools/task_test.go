@@ -30,6 +30,9 @@ type fakeTaskStore struct {
 	resumed   string
 	resumeAt  time.Time
 	resumeErr error
+	runs      []TaskRun
+	runsID    string
+	runsLimit int
 }
 
 func (f *fakeTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInput) (ScheduledTask, error) {
@@ -60,6 +63,10 @@ func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error 
 func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error {
 	f.ranNow = id
 	return f.runNowErr
+}
+func (f *fakeTaskStore) ListTaskRuns(_ context.Context, id string, limit int) ([]TaskRun, error) {
+	f.runsID, f.runsLimit = id, limit
+	return f.runs, nil
 }
 func (f *fakeTaskStore) PauseScheduledTask(_ context.Context, id string) error {
 	f.paused = id
@@ -111,7 +118,7 @@ func TestTaskSchema(t *testing.T) {
 	if err := json.Unmarshal(props["action"], &action); err != nil {
 		t.Fatalf("action property is not an object: %v", err)
 	}
-	wantActions := []string{"schedule", "list", "cancel", "run_now", "pause", "resume"}
+	wantActions := []string{"schedule", "list", "cancel", "run_now", "pause", "resume", "history"}
 	if len(action.Enum) != len(wantActions) {
 		t.Fatalf("action enum = %v, want %v", action.Enum, wantActions)
 	}

@@ -99,6 +99,10 @@ func (*toolPipeTaskStore) ResumeScheduledTask(context.Context, string) (time.Tim
 	return time.Time{}, nil
 }
 
+func (*toolPipeTaskStore) ListTaskRuns(context.Context, string, int) ([]tools.TaskRun, error) {
+	return nil, nil
+}
+
 func TestRunToolPipeCommandUsesRuntimeAndCloses(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(toolPipeEcho{})

@@ -51,6 +51,10 @@ func (*agentJobTaskStore) CancelScheduledTask(context.Context, string) error { r
 
 func (*agentJobTaskStore) RunScheduledTaskNow(context.Context, string) error { return nil }
 
+func (*agentJobTaskStore) ListTaskRuns(context.Context, string, int) ([]tools.TaskRun, error) {
+	return nil, nil
+}
+
 func (*agentJobTaskStore) PauseScheduledTask(context.Context, string) error { return nil }
 
 func (*agentJobTaskStore) ResumeScheduledTask(context.Context, string) (time.Time, error) {
