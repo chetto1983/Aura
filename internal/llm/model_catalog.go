@@ -42,10 +42,13 @@ type ollamaTagsWire struct {
 // TopProviderContextWindow is OpenRouter's top_provider.context_length, 0 when absent. It
 // can be lower than ContextWindow -- qwen/qwen3-embedding-8b publishes 32768 and 32000
 // (measured 2026-09-14) -- and an embedding input must fit the provider that serves it.
+//
+// MaxOutputTokens is the largest max_tokens the model accepts, 0 when unpublished.
 type ModelCatalogEntry struct {
 	ID                        string
 	DisplayName               string
 	ContextWindow             int
+	MaxOutputTokens           int
 	TopProviderContextWindow  int
 	Price                     Price
 	HasPrice                  bool

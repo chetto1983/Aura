@@ -443,6 +443,7 @@ func assembleChatEnv(
 		slog.Warn("model profile unresolved; using configured fallback",
 			"provider", cfg.LLM.Provider, "model", cfg.LLM.Model, "err", err)
 	}
+	credentials := serviceCredentials(cfg, pool)
 	chatGPTPlan := newChatGPTPlan(cfg)
 	if cfg.LLM.Provider == llm.ChatGPTProvider {
 		owner, err := chatGPTBootOwner(ctx, cfg.LLM.Model, pool)
@@ -453,7 +454,8 @@ func assembleChatEnv(
 			slog.Warn("ChatGPT model profile unresolved; using configured fallback")
 		}
 	}
-	client := newLLMClient(cfg.LLM, chatGPTTokenSourceOrNil(chatGPTPlan))
+	bootAnthropicProfile(ctx, &cfg.LLM, credentials.AnthropicKey)
+	client := newLLMClient(cfg.LLM, llmClientDeps{chatGPT: chatGPTTokenSourceOrNil(chatGPTPlan), anthropicKey: credentials.AnthropicKey})
 	llmRuntime := llm.NewRuntime(client, cfg.LLM)
 	// The mid-turn steer inbox (amendment #132, D-01/D-12): ONE
 	// *steer.PostgresStore instance for the whole process, gated on its own
@@ -468,7 +470,6 @@ func assembleChatEnv(
 		memoryContext = newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond)
 	}
 	toolHandles.MemoryContext = memoryContext
-	credentials := serviceCredentials(cfg, pool)
 	memoryDense := memoryEmbedder(cfg, credentials)
 	// The reasoning classifier embeds on the document query route.
 	documentQuery := newQueryEmbedder(cfg, credentials)

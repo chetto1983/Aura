@@ -43,7 +43,7 @@ func TestChatGPTFactoryAndPersistenceFailClosed(t *testing.T) {
 	if service == nil || chatGPTTokenSourceOrNil(service) == nil {
 		t.Fatal("connection service not created")
 	}
-	client := newLLMClient(llm.Config{Provider: llm.ChatGPTProvider, APIKey: "unrelated-key"}, missingChatGPTToken{})
+	client := newLLMClient(llm.Config{Provider: llm.ChatGPTProvider, APIKey: "unrelated-key"}, llmClientDeps{chatGPT: missingChatGPTToken{}})
 	if _, err := client.Stream(context.Background(), llm.Request{}); err == nil {
 		t.Fatal("missing ChatGPT token borrowed OpenRouter key")
 	}

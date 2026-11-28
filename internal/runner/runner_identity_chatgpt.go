@@ -15,7 +15,7 @@ type identityScopedLLMClient struct {
 
 func (c *identityScopedLLMClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
 	if c.client == nil {
-		return nil, errors.New("ChatGPT plan client is unavailable")
+		return nil, errors.New("route client is unavailable")
 	}
 	return c.client.Stream(identityctx.WithIdentityID(ctx, c.identityID), req)
 }

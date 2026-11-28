@@ -72,3 +72,37 @@ func TestChatGPTSnapshotUsesTheSelectedIdentityWithoutOpenRouterCredit(t *testin
 		t.Fatal("unwired ChatGPT client accepted a turn")
 	}
 }
+
+// On the Claude route every identity spends the one house key: no identity's OpenRouter key
+// is loaded, no credit decision runs, and each stream still carries its own identity.
+func TestIdentitiesShareTheHouseRoute(t *testing.T) {
+	client := &chatGPTScopeRecorder{}
+	loader := &forbiddenOpenRouterLoader{}
+	cfg := llm.Config{Provider: llm.AnthropicProvider, BaseURL: llm.AnthropicBaseURL, APIKey: "services-key", Model: "claude-sonnet-5-5"}
+	runtime := llm.NewRuntime(client, cfg)
+	resolver := NewIdentityLLMResolver(loader, runtime, cfg, nil, nil)
+	for _, owner := range []string{"identity-a", "identity-b"} {
+		snapshot, err := resolver.SnapshotFor(context.Background(), owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snapshot.Config.APIKey != "" || snapshot.Config.Model != cfg.Model {
+			t.Fatalf("snapshot %#v: wrong route or the services key leaked", snapshot.Config)
+		}
+		scoped, ok := snapshot.Client.(*identityScopedLLMClient)
+		if !ok || scoped.client != client {
+			t.Fatalf("identity %s got %T, not the house route's client", owner, snapshot.Client)
+		}
+		_, _ = snapshot.Client.Stream(identityctx.WithIdentityID(context.Background(), "foreign-context"), llm.Request{})
+		if client.owner != owner {
+			t.Fatalf("stream scoped to %q instead of %q", client.owner, owner)
+		}
+	}
+	if loader.calls != 0 {
+		t.Fatal("the Claude route loaded an OpenRouter identity key")
+	}
+	_, err := (&identityScopedLLMClient{}).Stream(context.Background(), llm.Request{})
+	if err == nil || err.Error() != "route client is unavailable" {
+		t.Fatalf("unwired route client error %v", err)
+	}
+}

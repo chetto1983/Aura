@@ -46,11 +46,11 @@ func newClient(cfg llm.Config, key KeySource, hc *http.Client, baseURL string) *
 	return &Client{cfg: cfg, key: key, httpClient: hc, baseURL: baseURL, logger: slog.Default}
 }
 
-func (c *Client) readKey(ctx context.Context) (string, error) {
-	if c.key == nil {
+func readHouseKey(ctx context.Context, source KeySource) (string, error) {
+	if source == nil {
 		return "", ErrNoKey
 	}
-	key, err := c.key(ctx)
+	key, err := source(ctx)
 	if err != nil {
 		return "", fmt.Errorf("anthropic: read the Claude API key: %w", err)
 	}
@@ -63,7 +63,7 @@ func (c *Client) readKey(ctx context.Context) (string, error) {
 
 // Stream sends one request and succeeds only after message_stop.
 func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
-	key, err := c.readKey(ctx)
+	key, err := readHouseKey(ctx, c.key)
 	if err != nil {
 		return nil, err
 	}

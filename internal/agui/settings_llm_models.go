@@ -1,28 +1,35 @@
 package agui
 
 // settings_llm_models.go answers "what can this endpoint actually serve" for the cockpit's
-// model box (GET /api/settings/llm-models). All three supported providers publish an
-// OpenAI-compatible catalogue, so one route covers OpenRouter, llama.cpp and Ollama; only
+// model box (GET /api/settings/llm-models). OpenRouter, llama.cpp and Ollama publish an
+// OpenAI-compatible catalogue; ChatGPT and Claude list the account's own models. Only
 // OpenRouter publishes rates, and those ride along because choosing a model without seeing
-// its price is how a routing decision becomes a bill nobody predicted.
+// its price is how a routing decision becomes a bill nobody predicted: Claude's list prices
+// are joined from OpenRouter's public catalogue, read with no key.
 //
 // The probe target is the base URL the operator has in the FORM, not the one in
 // aura.settings: the point is to check a route before saving it. That makes this GET an
 // outbound request to an operator-supplied host carrying the OpenRouter key, so it takes the
 // admin gate of the settings writes: the same principal who may point the daemon's chat
 // traffic at a host may point this probe at it. The OpenRouter key never comes from the
-// client; it is read server-side from aura.settings, then the environment.
+// client; it is read server-side from aura.settings, then the environment. The Claude house
+// key is read from aura.settings alone (storeOnlySettingKeys) and sent only to
+// api.anthropic.com.
 
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/anthropic"
 	"github.com/chetto1983/aura/internal/llm/chatgpt"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // modelCatalogTimeout bounds the probe. OpenRouter's catalogue is ~600 KB over the wire
@@ -31,7 +38,7 @@ import (
 const modelCatalogTimeout = 20 * time.Second
 
 var errUnsupportedCatalogProvider = errors.New(
-	"provider must be openrouter, llamacpp, ollama, or chatgpt",
+	"provider must be openrouter, llamacpp, ollama, chatgpt, or anthropic",
 )
 
 // modelCatalogFetcher is the outbound seam (llm.FetchModelCatalog in production). Tests
@@ -67,7 +74,7 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("provider")))
 	baseURL := strings.TrimSpace(r.URL.Query().Get("base_url"))
 	switch provider {
-	case "openrouter", "llamacpp", "ollama", llm.ChatGPTProvider:
+	case "openrouter", "llamacpp", "ollama", llm.ChatGPTProvider, llm.AnthropicProvider:
 	default:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": errUnsupportedCatalogProvider.Error()})
 		return
@@ -76,9 +83,13 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if provider == llm.AnthropicProvider && baseURL != llm.AnthropicBaseURL {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "the Claude route requires the official Anthropic endpoint"})
+		return
+	}
 	apiKey := ""
-	if provider == "openrouter" {
-		value, err := s.effectiveSettingValue(r.Context(), "OPENROUTER_API_KEY")
+	if keyName, ok := catalogKeySetting[provider]; ok {
+		value, err := s.effectiveSettingValue(r.Context(), keyName)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 			return
@@ -101,6 +112,9 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 		// the container is down. Both are about a host they typed themselves.
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
+	}
+	if provider == llm.AnthropicProvider {
+		entries = s.withClaudeListPrices(ctx, entries)
 	}
 	out := modelCatalogDTO{
 		Provider: provider,
@@ -127,11 +141,41 @@ func (s *Server) fetchModelCatalog(
 	if s.modelCatalog != nil {
 		return s.modelCatalog(ctx, provider, baseURL, apiKey)
 	}
-	if provider == llm.ChatGPTProvider {
+	switch provider {
+	case llm.ChatGPTProvider:
 		return chatgpt.FetchModels(ctx, s.chatGPTPlan)
+	case llm.AnthropicProvider:
+		return anthropic.FetchModels(ctx, func(context.Context) (string, error) { return apiKey, nil })
 	}
 	client := &http.Client{Timeout: modelCatalogTimeout}
 	return llm.FetchModelCatalog(ctx, client, provider, baseURL, apiKey)
+}
+
+// catalogKeySetting names the stored credential each catalogue is read with.
+var catalogKeySetting = map[string]string{
+	"openrouter":          "OPENROUTER_API_KEY",
+	llm.AnthropicProvider: settings.AnthropicKeySetting,
+}
+
+// withClaudeListPrices joins each Claude model with its list price from OpenRouter's public
+// catalogue, read with no key. An unreachable list leaves the models unpriced, never refused.
+func (s *Server) withClaudeListPrices(ctx context.Context, entries []llm.ModelCatalogEntry) []llm.ModelCatalogEntry {
+	listed, err := s.fetchModelCatalog(ctx, "openrouter", llm.DefaultBaseURL, "")
+	if err != nil {
+		slog.Warn("Claude list prices unavailable; the model picker shows no rates", "err", err)
+		return entries
+	}
+	byID := make(map[string]llm.ModelCatalogEntry, len(listed))
+	for _, entry := range listed {
+		byID[entry.ID] = entry
+	}
+	priced := slices.Clone(entries)
+	for i := range priced {
+		if match, ok := byID[anthropic.OpenRouterID(priced[i].ID)]; ok {
+			priced[i].Price, priced[i].HasPrice = match.Price, match.HasPrice
+		}
+	}
+	return priced
 }
 
 // validateCatalogBaseURL mirrors the primary-route check in cmd/aura/serve_settings.go: an

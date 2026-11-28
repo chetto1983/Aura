@@ -129,7 +129,9 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 	if rs.runtime == nil {
 		base = rs.base
 	}
-	if base.Provider == llm.ChatGPTProvider {
+	// The ChatGPT plan and the Claude house key are not OpenRouter credit: every identity
+	// shares the route's client, scoped to itself for attribution, with no key lookup.
+	if base.Provider == llm.ChatGPTProvider || base.Provider == llm.AnthropicProvider {
 		snapshot := route
 		snapshot.Config.APIKey = ""
 		snapshot.Client = &identityScopedLLMClient{client: snapshot.Client, identityID: identityID}

@@ -6,13 +6,14 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/anthropic"
 	"github.com/chetto1983/aura/internal/llm/chatgpt"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
 const (
 	llmNotConfiguredCode = "llm_not_configured"
-	llmNotConfiguredHint = "connect OpenRouter or pick a local route in Settings, then retry"
+	llmNotConfiguredHint = "connect a model in Settings, then retry"
 
 	// creditExhaustedCode/Hint are CRED-05's clean pre-flight refusal: a zero-credit
 	// identity is refused before the model is called, with the SAME machine-readable
@@ -44,13 +45,19 @@ type chatGPTTokenSource interface {
 	AccessToken(context.Context) (string, error)
 }
 
-func newLLMClient(cfg llm.Config, sources ...chatGPTTokenSource) llm.Client {
-	if cfg.Provider == llm.ChatGPTProvider {
-		var source chatGPTTokenSource
-		if len(sources) > 0 {
-			source = sources[0]
-		}
-		return chatgpt.New(cfg, source)
+// llmClientDeps carries the credentials of the routes that do not use cfg.APIKey: the
+// ChatGPT account token and the Claude house key, both read per call.
+type llmClientDeps struct {
+	chatGPT      chatGPTTokenSource
+	anthropicKey anthropic.KeySource
+}
+
+func newLLMClient(cfg llm.Config, deps llmClientDeps) llm.Client {
+	switch cfg.Provider {
+	case llm.ChatGPTProvider:
+		return chatgpt.New(cfg, deps.chatGPT)
+	case llm.AnthropicProvider:
+		return anthropicRouteClient{inner: anthropic.New(cfg, deps.anthropicKey)}
 	}
 	if strings.TrimSpace(cfg.APIKey) == "" && !llm.IsKeylessLocalBaseURL(cfg.BaseURL) {
 		return llmNotConfiguredClient{}
@@ -64,7 +71,7 @@ func (llmNotConfiguredClient) Stream(context.Context, llm.Request) (<-chan llm.C
 
 func (llmNotConfiguredError) Error() string {
 	return marshalRefusalPayload(llmNotConfiguredCode, llmNotConfiguredHint,
-		`{"error":"llm_not_configured","hint":"connect OpenRouter or pick a local route in Settings, then retry"}`)
+		`{"error":"llm_not_configured","hint":"connect a model in Settings, then retry"}`)
 }
 
 func (creditExhaustedClient) Stream(context.Context, llm.Request) (<-chan llm.Chunk, error) {

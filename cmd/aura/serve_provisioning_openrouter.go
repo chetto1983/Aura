@@ -116,11 +116,12 @@ func (a openRouterMintingAdapter) Revoke(ctx context.Context, hash string) error
 	return openrouterprovision.RevokeKey(ctx, a.client, a.baseURL, managementKey, hash)
 }
 
-// liveRouteBills reports whether the primary route the operator runs right now bills.
+// liveRouteBills reports whether the primary route the operator runs right now bills
+// OpenRouter credit: the ChatGPT plan and the Claude house key do not.
 func liveRouteBills(chat *chatEnv) func() bool {
 	return func() bool {
 		cfg := chat.llmRuntime.Snapshot().Config
-		return cfg.Provider != llm.ChatGPTProvider && !llm.IsKeylessLocalBaseURL(cfg.BaseURL)
+		return cfg.Provider != llm.ChatGPTProvider && cfg.Provider != llm.AnthropicProvider && !llm.IsKeylessLocalBaseURL(cfg.BaseURL)
 	}
 }
 

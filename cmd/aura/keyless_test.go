@@ -76,7 +76,7 @@ func TestChatBootStillRequiresAPIKey(t *testing.T) {
 }
 
 func TestLLMNotConfiguredClientFailsClosed(t *testing.T) {
-	client := newLLMClient(llm.Config{})
+	client := newLLMClient(llm.Config{}, llmClientDeps{})
 
 	ch, err := client.Stream(context.Background(), llm.Request{})
 	if err == nil {
@@ -96,13 +96,13 @@ func TestLLMNotConfiguredClientFailsClosed(t *testing.T) {
 	if payload.Error != "llm_not_configured" {
 		t.Fatalf("payload.error = %q, want llm_not_configured", payload.Error)
 	}
-	if !strings.Contains(payload.Hint, "connect OpenRouter") {
-		t.Fatalf("payload.hint = %q, want guidance to connect OpenRouter", payload.Hint)
+	if !strings.Contains(payload.Hint, "connect a model in Settings") {
+		t.Fatalf("payload.hint = %q, want guidance to connect a model in Settings", payload.Hint)
 	}
 }
 
 func TestLLMConfiguredClientBypassesKeylessGuard(t *testing.T) {
-	client := newLLMClient(llm.Config{APIKey: "sk-test"})
+	client := newLLMClient(llm.Config{APIKey: "sk-test"}, llmClientDeps{})
 	if _, guarded := client.(llmNotConfiguredClient); guarded {
 		t.Fatal("configured LLM client should not use the keyless guard")
 	}
@@ -115,7 +115,7 @@ func TestLLMLocalOpenAICompatClientAllowsEmptyCloudKey(t *testing.T) {
 		"http://aura-vllm-chat:8000/v1",
 		"http://192.168.1.40:11434/v1",
 	} {
-		client := newLLMClient(llm.Config{BaseURL: baseURL})
+		client := newLLMClient(llm.Config{BaseURL: baseURL}, llmClientDeps{})
 		if _, guarded := client.(llmNotConfiguredClient); guarded {
 			t.Fatalf("local base URL %q should not require OPENROUTER_API_KEY", baseURL)
 		}
