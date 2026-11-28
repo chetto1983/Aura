@@ -52,8 +52,12 @@ The sort row was reset from the cockpit (`Ripristina`), so `aura.settings` holds
     Logs page does not show the request's provider object.
 
   A fresh conversation was not tried.
-- **The 90 s and 180 s route bounds.** No call stalled, so the longer window was never exercised. It is
-  pinned by `TestRouteTimeoutsFollowTheRoute` and `TestPrimaryLLMRouteReloaderSwitchesRouteTimeouts`.
+- **The 90 s and 180 s route bounds.** They were not in force on the VM. `compose.yaml` forwarded
+  `AURA_LLM_TOTAL_TIMEOUT_SEC:-120` and `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60`, so both timeouts were
+  explicitly set inside the container and the route defaults never applied. The final review found it
+  and the compose lines were left empty in the next commit. No call stalled in this run either way. The
+  bounds are pinned by `TestRouteTimeoutsFollowTheRoute` and
+  `TestPrimaryLLMRouteReloaderSwitchesRouteTimeouts`.
 - **The morning's slowness on this model.** The slow provider and the 95k-token prompt belonged to
   `inkling-2-mini`. On `tencent/hy4-flash` the thread's prompt was 17-29k tokens and no call took more
   than 7 s.

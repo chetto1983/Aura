@@ -237,7 +237,7 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	// would be dead-on-arrival, and the deterministic stub fallback would never even
 	// be reached because BOTH synthesis attempts fail instantly (fix-plan 1.1,
 	// CONFIRMED high). context.WithoutCancel severs the expired deadline (keeping any
-	// request-scoped values) so this call gets its own FRESH TotalTimeoutSec window.
+	// request-scoped values) so this call gets its own FRESH CallTimeout window.
 	// The derived ctx is cancelled only after the channel is fully drained below, so
 	// partial chunks are never dropped.
 	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ic.Ctx), a.cfg.CallTimeout())

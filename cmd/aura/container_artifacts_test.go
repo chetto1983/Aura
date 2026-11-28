@@ -43,7 +43,8 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"aura:",
 		"dockerfile: docker/aura/Dockerfile",
-		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
+		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-}",
+		"AURA_LLM_TOTAL_TIMEOUT_SEC: ${AURA_LLM_TOTAL_TIMEOUT_SEC:-}",
 		"AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-30000}",
 		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}",
 		"AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}",

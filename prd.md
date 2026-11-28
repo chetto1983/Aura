@@ -940,8 +940,10 @@ showed the same session as the morning's turns and a 10 ms routing with no fallb
 default stays empty.
 
 This does not establish that `sort` moves a provider. A sticky session, `data_collection: deny` or
-a request without the field would all give that result, and a fresh conversation was not tried. No
-call stalled, so the 90 s window is pinned by unit tests only.
+a request without the field would all give that result, and a fresh conversation was not tried. The
+VM ran at 60 s / 120 s, not on the route defaults: `compose.yaml` forwarded both timeouts with 60/120
+fallbacks, so the container always set them. The compose lines are now empty, so the route decides.
+No call stalled, so the 90 s window is pinned by unit tests only.
 
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
