@@ -283,8 +283,7 @@ func (tx *clientMemoryBatchTx) Persist(
 			continue
 		}
 		if _, err := tx.client.commandInTx(ctx, tx.sessionID,
-			"DELETE FROM Entity WHERE name = :name AND bothE().size() = 0",
-			map[string]any{"name": name}); err != nil {
+			pruneOrphanEntityStatement, map[string]any{"name": name}); err != nil {
 			return fmt.Errorf("prune entity %q: %w", name, err)
 		}
 	}

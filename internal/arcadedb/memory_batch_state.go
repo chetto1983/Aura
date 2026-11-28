@@ -260,7 +260,7 @@ func applyMemoryBatchForget(
 			matches = append(matches, key)
 		}
 	}
-	if len(matches) == 0 {
+	if len(matches) == 0 && !forgetsAnOrphanEntity(state, filter) {
 		return MemoryBatchOperationResult{}, memoryBatchOperationError(
 			index, "target_not_found", fmt.Errorf("forget filter matched no facts"))
 	}
@@ -294,6 +294,16 @@ func applyMemoryBatchForget(
 	return MemoryBatchOperationResult{
 		Type: operation.Type, Facts: len(matches), Entities: removedEntities,
 	}, nil
+}
+
+// A forget that names an entity no fact holds removes the entity itself: it matches
+// no fact, and refusing it left the orphan with no tool able to remove it.
+func forgetsAnOrphanEntity(state memoryBatchState, filter ForgetFilter) bool {
+	if filter.Entity == "" || filter.KeepOrphans {
+		return false
+	}
+	_, exists := state.Entities[filter.Entity]
+	return exists && !memoryBatchEntityReferenced(state, filter.Entity)
 }
 
 func validateMemoryBatchFinalState(state memoryBatchState, limits MemoryLimits, now time.Time) error {

@@ -235,12 +235,20 @@ func appendUnique(names []string, name string) []string {
 	return append(names, name)
 }
 
+// An entity is an orphan when no FACT edge holds it. A bare bothE() also counts the
+// TOUCHED edges the runner writes after every memory call that names the entity,
+// memory_forget included, so the entity was never an orphan to the database while
+// every listing showed it with no facts (lab VM, 2026-11-28). Deleting the vertex
+// takes those edges with it: "a vertex is deleted with its edges all the same"
+// (ArcadeDB docs, reference/sql/sql-delete.adoc).
+const factDegree = "bothE('" + factEdgeType + "').size()"
+
+const pruneOrphanEntityStatement = "DELETE FROM Entity WHERE name = :name AND " + factDegree + " = 0"
+
 func (c *Client) pruneOrphans(ctx context.Context, names []string) (int, error) {
 	removed := 0
 	for _, name := range names {
-		rows, err := c.Command(ctx,
-			"DELETE FROM Entity WHERE name = :name AND bothE().size() = 0",
-			map[string]any{"name": name})
+		rows, err := c.Command(ctx, pruneOrphanEntityStatement, map[string]any{"name": name})
 		if err != nil {
 			return removed, fmt.Errorf("arcadedb: prune entity %q: %w", name, err)
 		}
@@ -257,7 +265,7 @@ func (c *Client) countStrandableByRIDs(
 	stranded := 0
 	for _, name := range names {
 		total, err := c.Query(ctx,
-			"SELECT bothE().size() AS degree FROM Entity WHERE name = :name",
+			"SELECT "+factDegree+" AS degree FROM Entity WHERE name = :name",
 			map[string]any{"name": name})
 		if err != nil {
 			return 0, fmt.Errorf("arcadedb: read degree of %q: %w", name, err)

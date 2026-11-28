@@ -51,3 +51,38 @@ func TestStringActiveFactKey(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyMemoryBatchForgetRemovesAnEntityNoFactHolds(t *testing.T) {
+	state := memoryBatchState{
+		Entities: map[string]memoryBatchEntity{"Paolo": {}, "Davide": {}, "Monica": {}},
+		Facts: map[string]memoryBatchFact{"#1:0": {RID: "#1:0", Fact: Fact{
+			Subject: "Davide", Predicate: "is_married_to", Object: "Monica",
+		}}},
+	}
+	forget := func(filter ForgetFilter) (MemoryBatchOperationResult, error) {
+		return applyMemoryBatchForget(state, MemoryBatchOperation{Type: MemoryBatchForget, Forget: &filter}, 0)
+	}
+
+	for _, filter := range []ForgetFilter{
+		{Entity: "Nobody"},
+		{Entity: "Paolo", KeepOrphans: true},
+		{Subject: "Paolo"},
+	} {
+		if _, err := forget(filter); err == nil {
+			t.Fatalf("forget %+v matched nothing and still succeeded", filter)
+		}
+	}
+	got, err := forget(ForgetFilter{Entity: "Paolo"})
+	if err != nil {
+		t.Fatalf("forget the orphan: %v", err)
+	}
+	if got.Entities != 1 || got.Facts != 0 {
+		t.Fatalf("result = %+v, want 1 entity and no facts", got)
+	}
+	if _, kept := state.Entities["Paolo"]; kept {
+		t.Fatal("the orphan is still in the batch state")
+	}
+	if _, kept := state.Entities["Davide"]; !kept {
+		t.Fatal("an entity a fact still holds was removed")
+	}
+}

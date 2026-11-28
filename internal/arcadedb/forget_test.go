@@ -95,7 +95,7 @@ func forgetResponder(request recordedRequest) testResponse {
 			{"rid":"#1:0","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m1"]}]},
 			{"rid":"#1:1","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m2"]}]}
 		]}`}
-	case strings.Contains(statement, "bothE().size() AS degree"):
+	case strings.Contains(statement, factDegree+" AS degree"):
 		if params["name"] == "A" {
 			return testResponse{Body: `{"result":[{"degree":2}]}`}
 		}
@@ -179,5 +179,13 @@ func TestForgetSurfacesEndpointAndPruneFailures(t *testing.T) {
 	})
 	if _, err := client.Forget(context.Background(), ForgetFilter{Subject: "A"}); err == nil || !strings.Contains(err.Error(), "prune entity") {
 		t.Fatalf("prune error = %v", err)
+	}
+}
+
+// TOUCHED edges from the reasoning graph must not keep an entity alive.
+func TestOrphanConditionCountsFactEdgesOnly(t *testing.T) {
+	if strings.Contains(pruneOrphanEntityStatement, "bothE()") ||
+		!strings.Contains(pruneOrphanEntityStatement, "bothE('"+factEdgeType+"')") {
+		t.Fatalf("prune counts edges other than FACT: %s", pruneOrphanEntityStatement)
 	}
 }
