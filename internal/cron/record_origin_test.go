@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/steer"
 )
 
 // reminderPrefix is the author line every record of task "task-1", a reminder, starts with.
-const reminderPrefix = "[Scheduled task report — reminder task-1]\n"
+const reminderPrefix = "[Scheduled task reminder task-1]\n"
 
 // fakeConversationRecorder captures what a finished run wrote back to the
 // conversation it was scheduled from.
@@ -69,23 +67,23 @@ func TestCompletedRunLandsInItsOriginConversation(t *testing.T) {
 	}
 }
 
-// fakeSteerPublisher captures what a finished run pushed onto the steer queue.
-type fakeSteerPublisher struct {
-	pushed []pushedSteer
-	err    error
+// fakeReportSteerer captures what a finished run steered to its origin conversation.
+type fakeReportSteerer struct {
+	steered []steeredReport
+	err     error
 }
 
-type pushedSteer struct{ conv, source, text string }
+type steeredReport struct{ identity, conv, text string }
 
-func (f *fakeSteerPublisher) Push(conv, source, text string) error {
+func (f *fakeReportSteerer) SteerReport(identityID, conversationID, text string) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.pushed = append(f.pushed, pushedSteer{conv: conv, source: source, text: text})
+	f.steered = append(f.steered, steeredReport{identity: identityID, conv: conversationID, text: text})
 	return nil
 }
 
-func dispatchRecorded(t *testing.T, kind TaskKind, pub SteerPublisher) *fakeConversationRecorder {
+func dispatchRecorded(t *testing.T, kind TaskKind, pub ReportSteerer) *fakeConversationRecorder {
 	t.Helper()
 	recorder := &fakeConversationRecorder{}
 	d := NewDispatch(map[TaskKind]Handler{kind: &fakeHandler{summary: "Nessuna anomalia rilevata"}}, DispatchDeps{
@@ -93,7 +91,7 @@ func dispatchRecorded(t *testing.T, kind TaskKind, pub SteerPublisher) *fakeConv
 		ConversationRecorder: recorder,
 		Steer:                pub,
 	})
-	task := Task{ID: "01a221d9-2502-7170-afd4-b4ae70dbd81c", Kind: kind, NotifyRoute: "stdout", OriginConversationID: "conv-1"}
+	task := Task{ID: "01a221d9-2502-7170-afd4-b4ae70dbd81c", Kind: kind, NotifyRoute: "stdout", IdentityID: "id-1", OriginConversationID: "conv-1"}
 	if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
@@ -108,18 +106,18 @@ func dispatchRecorded(t *testing.T, kind TaskKind, pub SteerPublisher) *fakeConv
 // and polled, and that turn never saw it. The steer copy reaches it after its next tool call.
 func TestAgentJobRecordIsSteeredToItsConversation(t *testing.T) {
 	t.Parallel()
-	pub := &fakeSteerPublisher{}
+	pub := &fakeReportSteerer{}
 	recorder := dispatchRecorded(t, KindAgentJob, pub)
 
-	want := "[Scheduled task report — agent_job 01a221d9]\nNessuna anomalia rilevata"
+	want := "[Scheduled task agent_job 01a221d9-2502-7170-afd4-b4ae70dbd81c]\nNessuna anomalia rilevata"
 	if recorder.appended[0].text != want {
 		t.Fatalf("record = %q, want %q", recorder.appended[0].text, want)
 	}
-	if len(pub.pushed) != 1 {
-		t.Fatalf("pushed %d steer row(s), want 1", len(pub.pushed))
+	if len(pub.steered) != 1 {
+		t.Fatalf("steered %d report(s), want 1", len(pub.steered))
 	}
-	if got := pub.pushed[0]; got != (pushedSteer{conv: "conv-1", source: steer.SourceScheduler, text: want}) {
-		t.Fatalf("pushed %+v, want the record text on conv-1 under source %q", got, steer.SourceScheduler)
+	if got := pub.steered[0]; got != (steeredReport{identity: "id-1", conv: "conv-1", text: want}) {
+		t.Fatalf("steered %+v, want the record text to the owner id-1 on conv-1", got)
 	}
 }
 
@@ -127,19 +125,19 @@ func TestAgentJobRecordIsSteeredToItsConversation(t *testing.T) {
 // (Runner.deliverLeftoverSteer), so a watch that runs every few minutes must not push.
 func TestWatchRecordIsNotSteered(t *testing.T) {
 	t.Parallel()
-	pub := &fakeSteerPublisher{}
+	pub := &fakeReportSteerer{}
 	dispatchRecorded(t, KindPIMWatch, pub)
-	if len(pub.pushed) != 0 {
-		t.Fatalf("a pim_watch pushed %d steer row(s), want 0", len(pub.pushed))
+	if len(pub.steered) != 0 {
+		t.Fatalf("a pim_watch steered %d report(s), want 0", len(pub.steered))
 	}
 }
 
 func TestSteerRefusalKeepsTheRecord(t *testing.T) {
 	t.Parallel()
-	dispatchRecorded(t, KindAgentJob, &fakeSteerPublisher{err: steer.ErrTooLarge})
+	dispatchRecorded(t, KindAgentJob, &fakeReportSteerer{err: errors.New("steer: message exceeds max size")})
 }
 
-func TestNilSteerPublisherRecordsOnly(t *testing.T) {
+func TestNilReportSteererRecordsOnly(t *testing.T) {
 	t.Parallel()
 	dispatchRecorded(t, KindAgentJob, nil)
 }

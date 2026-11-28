@@ -16,7 +16,7 @@ import (
 // when a finished video job's runtime notification showed up as a chat bubble the operator
 // never typed. The swarm had the rule; shell and media did not, and a backgrounded tool call
 // joined them with it.
-var runtimeSources = []string{steer.SourceWorker, steer.SourceShell, steer.SourceMedia, steer.SourceTool}
+var runtimeSources = []string{steer.SourceWorker, steer.SourceShell, steer.SourceMedia, steer.SourceTool, steer.SourceScheduler}
 
 func TestLeftoverRuntimeFactKeepsUntrustedSourceAndNoUserDuplicate(t *testing.T) {
 	for _, source := range runtimeSources {

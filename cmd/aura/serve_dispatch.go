@@ -160,17 +160,37 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		TaskConversations: conversationRecorder{store: chat.conv, runner: chat.run},
 		// The record is read on the next turn; the steer copy reaches the turn already
 		// running there (measured 2026-11-28: a run_now job's turn polled and never saw it).
-		Steer: schedulerSteerOrNil(chat.steer),
+		Steer: schedulerSteerOrNil(chat.steer, chat.run),
 	})
 }
 
-// schedulerSteerOrNil keeps a nil store a nil interface: a nil *steer.PostgresStore boxed
-// into cron.SteerPublisher would read as configured and be dereferenced on the first push.
-func schedulerSteerOrNil(s *steer.PostgresStore) cron.SteerPublisher {
-	if s == nil {
+// schedulerSteer adapts the steer queue onto cron.ReportSteerer, binding the scheduler source
+// so cron imports no steer package, and pushes only while the owner's turn runs in the
+// conversation: a row left for a later turn would reach it a second time beside the record
+// already in its history, or start an unrequested follow-on turn.
+type schedulerSteer struct {
+	pusher interface {
+		Push(conv, source, text string) error
+	}
+	live interface {
+		TurnLive(identityID, convID string) bool
+	}
+}
+
+func (s schedulerSteer) SteerReport(identityID, conversationID, text string) error {
+	if !s.live.TurnLive(identityID, conversationID) {
 		return nil
 	}
-	return s
+	return s.pusher.Push(conversationID, steer.SourceScheduler, text)
+}
+
+// schedulerSteerOrNil keeps a missing store or runner a nil interface: a nil pointer boxed into
+// cron.ReportSteerer would read as configured and be dereferenced on the first report.
+func schedulerSteerOrNil(store *steer.PostgresStore, run *runner.Runner) cron.ReportSteerer {
+	if store == nil || run == nil {
+		return nil
+	}
+	return schedulerSteer{pusher: store, live: run}
 }
 
 // conversationRecorder adapts the conversation store onto cron's two conversation seams,

@@ -46,10 +46,10 @@ type DispatchDeps struct {
 	// on the task all along (origin_conversation_id) and only the approval-pause path
 	// read it. LibreChat's rule (D-00): the conversation IS the channel.
 	ConversationRecorder ConversationRecorder
-	// Steer carries a finished agent_job's record to the turn running in its origin
+	// Steer carries a finished agent_job's record to the turn its owner is running in the origin
 	// conversation, which never re-reads the store mid-turn (dispatch_record.go). Nil → the
 	// record alone, read on the next turn.
-	Steer SteerPublisher
+	Steer ReportSteerer
 	// TaskConversations and TaskOrigins move a task whose conversation was deleted, or an
 	// agent_job that never had one, into one of its own (task_home.go). TaskOrigins defaults
 	// from Store; either nil → the task keeps its origin, deleted or absent.

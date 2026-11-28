@@ -89,6 +89,14 @@ func (r *Runner) trackSession(ctx context.Context, convID string, cancel context
 	return func() { r.sessions.Delete(key) }
 }
 
+// TurnLive reports whether a turn of identityID is running in convID right now. A scheduled
+// agent_job's report is steered only then: a steer row left for a later turn would reach it a
+// second time beside the record already in its history, or start an unrequested follow-on turn.
+func (r *Runner) TurnLive(identityID, convID string) bool {
+	_, ok := r.sessions.Load(keyForIdentity(identityID, convID))
+	return ok
+}
+
 // cancelSession fires the in-flight turn's ctx-cancel for (identityID, convID), aborting an
 // active turn before its conversation is deleted. It is a no-op when no turn is live for that
 // key — already finished, or a foreign caller whose (identity, session) key does not match

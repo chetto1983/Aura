@@ -74,22 +74,30 @@ the background-completion wake (see Non-goals). Steer rows expire after
 1. `steer.SourceScheduler = "scheduler"`, accepted by `steer.IsRuntimeSource` and given an
    envelope name in `runtimeSteerEnvelopes`. The text is generated content, so it takes the
    untrusted tool-output envelope like the other runtime sources.
-2. `cron.Dispatch` gets an optional steer publisher (a consumer-declared one-method
-   interface). `recordToOrigin` pushes the same text after the append. A push failure is a
-   WARN, like a record failure: the work is done and is on the ledger. Wiring is in
-   `cmd/aura/serve_dispatch.go`, from the steer store the agent already drains.
-3. The record text is prefixed with its author, for example
-   `[Scheduled task report — agent_job 01a221d9]`. The steer copy carries the same prefix
-   inside its envelope, because the kind and the task id let the model match the report to
-   its `run_now` (amended while planning). The notification text is unchanged.
-4. `repairToolPairs`: when an assistant message with tool calls is followed by one or more
-   messages that are not tool results, and the results for those call ids follow them, emit the
-   call, its results, then the intruders. The rewrite applies only when every result is found.
-   Otherwise today's recovery path runs.
+2. `cron.Dispatch` gets an optional `ReportSteerer` (a consumer-declared one-method
+   interface taking the owner's identity). `recordToOrigin` hands it the same text after the
+   append. A push failure is a WARN, like a record failure: the work is done and is on the
+   ledger. The adapter in `cmd/aura/serve_dispatch.go` binds the `scheduler` source, so cron
+   imports no steer package, and pushes only while `Runner.TurnLive` says the owner's turn runs
+   in that conversation (amended after the final review, 2026-11-28): a row left for a later
+   turn would reach it a second time beside the record already in its history, or start an
+   unrequested follow-on turn.
+3. The record text is prefixed with its author and the whole task id, for example
+   `[Scheduled task agent_job 01a221d9-2502-7170-afd4-b4ae70dbd81c]`: the id is what
+   `task action=history` takes, and a UUIDv7's first characters are only its timestamp
+   (amended after the final review). The steer copy carries the same prefix inside its
+   envelope. The notification text is unchanged.
+4. `repairToolPairs`: when an assistant message with tool calls has turns written out of band
+   among its results, even between two results of one parallel batch, emit the call, its
+   results, then those turns. The rewrite applies only when every result is found; otherwise
+   today's recovery path runs. On the history snapshot each moved message keeps the slot's
+   `Seq`/`ParentSeq`, so the thread stays one chain (amended after the final review).
 5. `task action=history`: `task_id` (required), `limit` (default 5, max 20). Summary bounded
    per run. Ownership checked the way `run_now` checks it.
-6. `run_now` result text: the report is recorded in this conversation and reaches the running
-   turn after its next tool call; `task action=history` reads it; do not sleep to wait for it.
+6. `run_now` result text: the outcome is recorded in the conversation the task was scheduled
+   from unless it notifies none; an agent_job's report reaches this turn after a tool call if
+   the turn is still running then; `task action=history` reads it; do not sleep to wait for it.
+   The gateway grades `history` Safe, like `list`.
 
 ## What this does not prove
 

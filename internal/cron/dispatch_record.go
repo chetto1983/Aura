@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-
-	"github.com/chetto1983/aura/internal/steer"
 )
 
-// SteerPublisher queues a message for the turn running in a conversation, delivered after its
-// next tool round. *steer.PostgresStore satisfies it.
-type SteerPublisher interface {
-	Push(conv, source, text string) error
+// ReportSteerer hands a finished run's record to the turn its owner is running in the conversation,
+// delivered after that turn's next tool round. The composition root adapts the steer queue and
+// the runner's live-turn registry onto it, so cron imports neither.
+type ReportSteerer interface {
+	SteerReport(identityID, conversationID, text string) error
 }
 
 // recordToOrigin writes the run's outcome into the conversation it was scheduled
@@ -60,18 +59,16 @@ func (d *Dispatch) steerToOrigin(task Task, text string) {
 	if task.Kind != KindAgentJob || d.deps.Steer == nil {
 		return
 	}
-	if err := d.deps.Steer.Push(task.OriginConversationID, steer.SourceScheduler, text); err != nil {
+	if err := d.deps.Steer.SteerReport(task.IdentityID, task.OriginConversationID, text); err != nil {
 		slog.Warn("cron: could not steer the run outcome to its origin conversation",
 			"kind", task.Kind, "conversation", task.OriginConversationID, "err", err)
 	}
 }
 
 // scheduledRecordText prefixes a record with its author, so a later turn reading the history
-// does not take the report for its own words.
+// does not take the report for its own words. The id is whole: it is what task action=history
+// takes, and a UUIDv7's first characters are only its timestamp, shared by a task and the one
+// that replaced it a minute later.
 func scheduledRecordText(task Task, text string) string {
-	id := task.ID
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	return fmt.Sprintf("[Scheduled task report — %s %s]\n%s", task.Kind, id, text)
+	return fmt.Sprintf("[Scheduled task %s %s]\n%s", task.Kind, task.ID, text)
 }

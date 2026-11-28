@@ -27,9 +27,16 @@ import type { SteerNotice as SteerFramePayload } from './sseAdapter';
 // and a run with no id yet, hands the text back to the composer.
 
 // The steer sources Aura generates itself (internal/steer IsRuntimeSource): a worker report, a
-// background shell exit, a detached video outcome, a backgrounded tool call's result. The
-// operator redirected nothing, so none of them earns a "redirected" notice.
-const RUNTIME_STEER_SOURCES: ReadonlySet<string> = new Set(['swarm', 'shell', 'media', 'tool']);
+// background shell exit, a detached video outcome, a backgrounded tool call's result, a
+// scheduled agent_job's report. The operator redirected nothing, so none of them earns a
+// "redirected" notice.
+const RUNTIME_STEER_SOURCES: ReadonlySet<string> = new Set([
+  'swarm',
+  'shell',
+  'media',
+  'tool',
+  'scheduler',
+]);
 
 export interface SteerNoticeView {
   readonly id: string;
