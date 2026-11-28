@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -339,21 +340,36 @@ func TestTooLargeFollowsTheDocumentedLimits(t *testing.T) {
 	}
 }
 
-// Without the loaded-history position the uploads still go to the current user message,
-// never to the per-round hint after it, so they stay put from one round to the next.
-func TestUploadsStayOnTheCurrentUserMessage(t *testing.T) {
+// Without the loaded-history position the uploads go to the turn's opening message. This
+// route keeps each round's hint in the history, so the last user message moves every round;
+// the opening message, and the merged wire message it starts, must not.
+func TestUploadsStayOnTheTurnsOpeningMessage(t *testing.T) {
 	server := newMediaServer(t, catalogJSON(true, true), textReply("ok"))
 	loader := fakeLoader{"ref1": {ID: "ref1", MIMEType: "image/png", Bytes: pngBytes}}
-	req := turnRequest(&llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"ref1"}}, nil)
-	req.LoadedHistoryMessages = 0
-	req.StablePrefixMessages = len(req.Messages) - 1
-	current := blocksOf(t, messagesOf(t, server.send(t, req))[2])
-	if !reflect.DeepEqual(typesOf(current), []string{"text", "image"}) || current[0]["text"] != "look at this" {
-		t.Fatalf("current user message %#v", current)
+	projection := &llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"ref1"}}
+	opening := []llm.Message{
+		{Role: llm.RoleSystem, Content: "S"}, {Role: llm.RoleUser, Content: "old"}, {Role: llm.RoleAssistant, Content: "a"},
+		{Role: llm.RoleUser, Content: "look at this"}, {Role: llm.RoleUser, Content: "hint1"},
 	}
-	req.StablePrefixMessages = 0
-	if last := blocksOf(t, messagesOf(t, server.send(t, req))[4]); last[len(last)-1]["type"] != "image" {
-		t.Fatalf("without either position the last user message carries it: %#v", last)
+	first := llm.Request{Model: "claude-sonnet-5-5", ContentProjection: projection, Messages: opening}
+	second := first
+	second.Messages = append(slices.Clone(opening),
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("t1", "lookup", "{}")}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "t1", Content: "r1"},
+		llm.Message{Role: llm.RoleUser, Content: "hint2"})
+	round1 := messagesOf(t, server.send(t, first))[2]
+	round2 := messagesOf(t, server.send(t, second))[2]
+	if got := blocksOf(t, round1); !reflect.DeepEqual(typesOf(got), []string{"text", "image", "text"}) || got[0]["text"] != "look at this" || got[2]["text"] != "hint1" {
+		t.Fatalf("round 1 opening message %#v", got)
+	}
+	if !reflect.DeepEqual(round1, round2) {
+		t.Fatalf("the opening message changed between rounds:\nround 1 %#v\nround 2 %#v", round1, round2)
+	}
+	// With no answered turn before it, the first user message opens the turn.
+	describe := llm.Request{Model: "claude-sonnet-5-5", ContentProjection: projection,
+		Messages: []llm.Message{{Role: llm.RoleUser, Content: "q"}, {Role: llm.RoleUser, Content: "hint"}}}
+	if got := blocksOf(t, messagesOf(t, server.send(t, describe))[0]); !reflect.DeepEqual(typesOf(got), []string{"text", "image", "text"}) {
+		t.Fatalf("first-turn message %#v", got)
 	}
 }
 

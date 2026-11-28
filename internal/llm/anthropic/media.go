@@ -180,10 +180,12 @@ func mediaBlock(part llm.ProjectedRequestPart) (*anthropic.BetaImageBlockParam, 
 	}}, nil, nil
 }
 
-// uploadTarget is the current user message, which must be the same message in every round
-// of a turn or the uploads would move and change the replayed prefix: the one right after
-// the loaded history when the builder recorded it, else the last user message inside the
-// stable prefix (the per-round hint lies after it), else the last user message.
+// uploadTarget is the turn's opening user message, which must be the same message in every
+// round or the uploads would move and change the replayed prefix: the one right after the
+// loaded history when the builder recorded it, else the first user message after the last
+// assistant answer without tool calls (the turns before it are done), else the first user
+// message. Each round's hint is kept in the history on this route, so the last user message
+// is never stable.
 func uploadTarget(req llm.Request, needed bool) (int, error) {
 	if !needed {
 		return -1, nil
@@ -191,12 +193,15 @@ func uploadTarget(req llm.Request, needed bool) (int, error) {
 	if n := req.LoadedHistoryMessages; n > 0 && n < len(req.Messages) && req.Messages[n].Role == llm.RoleUser {
 		return n, nil
 	}
-	messages := req.Messages
-	if n := req.StablePrefixMessages; n > 0 && n < len(messages) {
-		messages = messages[:n]
+	start := 0
+	for i, message := range slices.Backward(req.Messages) {
+		if message.Role == llm.RoleAssistant && len(message.ToolCalls) == 0 {
+			start = i + 1
+			break
+		}
 	}
-	for i, message := range slices.Backward(messages) {
-		if message.Role == llm.RoleUser {
+	for i := start; i < len(req.Messages); i++ {
+		if req.Messages[i].Role == llm.RoleUser {
 			return i, nil
 		}
 	}
