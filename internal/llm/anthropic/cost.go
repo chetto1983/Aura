@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"context"
 	"errors"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
@@ -54,7 +55,14 @@ func (c *Client) logRequest(built builtRequest, message *anthropic.BetaMessage, 
 // logRequest's. message is what arrived before the failure, nil when the request was
 // refused before its stream opened. err is never logged: its text carries the provider's
 // body. Its status and request id are, and they are already scrubbed of the key.
-func (c *Client) logFailure(built builtRequest, message *anthropic.BetaMessage, err error) {
+//
+// A caller that canceled ctx stopped the turn; the request did not fail, and like the other
+// routes it leaves no line, wherever the cancel landed. A deadline, or the idle watchdog
+// canceling only the stream's own context, is a failure and is logged.
+func (c *Client) logFailure(ctx context.Context, built builtRequest, message *anthropic.BetaMessage, err error) {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
 	status, requestID := 0, ""
 	if httpErr, ok := errors.AsType[*openai_compat.HTTPError](err); ok {
 		status, requestID = httpErr.StatusCode, httpErr.RequestID

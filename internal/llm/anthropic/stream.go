@@ -29,7 +29,7 @@ func (c *Client) consume(ctx context.Context, stream *messageStream, firedIdle f
 	}
 	var message anthropic.BetaMessage
 	fail := func(err error) {
-		c.logFailure(built, &message, err)
+		c.logFailure(ctx, built, &message, err)
 		emit(llm.Chunk{Err: err})
 	}
 	for stream.Next() {

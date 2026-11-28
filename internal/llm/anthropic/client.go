@@ -86,7 +86,7 @@ func (c *Client) open(ctx context.Context, key string, built builtRequest) (<-ch
 		_ = stream.Close()
 		cleanup()
 		err = providerError(err, key)
-		c.logFailure(built, nil, err)
+		c.logFailure(ctx, built, nil, err)
 		return nil, err
 	}
 	out := make(chan llm.Chunk, 16)
