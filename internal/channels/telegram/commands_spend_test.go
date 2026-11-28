@@ -167,3 +167,19 @@ func TestCostLabelsOllamaCloudAsSubscriptionIncluded(t *testing.T) {
 		t.Fatalf("subscription route consulted a numeric estimate %d times", est.calls)
 	}
 }
+
+// On the Claude route a day whose turns carry no provider cost has no honest figure: the
+// client priced every call it could, so /cost says n/a rather than a rate-table estimate.
+func TestCostLeavesAnUnpricedClaudeDayUnknown(t *testing.T) {
+	est := &countingCost{prompt: 1_000_000, completion: 1_000_000}
+	runtime := llm.NewRuntime(nil, llm.Config{
+		Provider: llm.AnthropicProvider, BaseURL: llm.AnthropicBaseURL, Model: "claude-sonnet-5-5",
+		Prices: map[string]llm.Price{"claude-sonnet-5-5": {InputPer1M: 2, OutputPer1M: 10}},
+	})
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: est, Runtime: runtime})
+
+	_, reply := cmds.dispatch(context.Background(), 42, "/cost")
+	if !strings.Contains(reply, "n/a") || strings.Contains(reply, "$") {
+		t.Fatalf("unpriced Claude /cost = %q, want n/a", reply)
+	}
+}

@@ -279,8 +279,8 @@ func (c *commands) whoami(ctx context.Context) string {
 // measured traffic mix. When the provider figure is used, the token counts still ride
 // along — they explain the number rather than producing it.
 func (c *commands) cost(ctx context.Context) string {
-	prices, model, costStatus, spendBackend := c.activeModelProfile(ctx)
-	if costStatus == llm.CostStatusSubscriptionIncluded {
+	route, spendBackend := c.activeModelProfile(ctx)
+	if route.CostStatus == llm.CostStatusSubscriptionIncluded {
 		return "Costo modello incluso nell'abbonamento Ollama; importo non disponibile dal provider."
 	}
 	if spend, err := c.spendFromProvider(ctx, spendBackend); err == nil {
@@ -293,7 +293,7 @@ func (c *commands) cost(ctx context.Context) string {
 	if err != nil {
 		return "Costo non disponibile per ora."
 	}
-	display, _ := llm.CostUSD(prices, model, llm.Usage{
+	display, _ := llm.CostUSD(route.Provider, route.Prices, route.Model, llm.Usage{
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 		Cost:             provider,
@@ -316,8 +316,8 @@ func (c *commands) spendFromProvider(ctx context.Context, backend spendBackend) 
 		s.Daily, s.Weekly, s.Monthly, s.Total), nil
 }
 
-// activeModelProfile resolves the price table, model name, cost status and spend
-// backend a /cost render uses, in priority order (CRED-07/D-11 extended to this
+// activeModelProfile resolves the route (provider, price table, model, cost status) and
+// the spend backend a /cost render uses, in priority order (CRED-07/D-11 extended to this
 // channel's own spend display, T-02-08b):
 //
 //  1. c.deps.Resolver + the chat's linked identity (identityctx.IdentityID(ctx)):
@@ -326,25 +326,25 @@ func (c *commands) spendFromProvider(ctx context.Context, backend spendBackend) 
 //  2. c.deps.Runtime, when set: a fresh process-wide snapshot (today's
 //     behavior, unchanged when no Resolver is wired or the chat has no linked
 //     identity on ctx).
-//  3. Neither: the static Prices/Model this dispatcher was constructed with.
+//  3. Neither: the static Prices/Model this dispatcher was constructed with, on no
+//     named provider.
 //
 // *llm.Config satisfies spendBackend directly (see that interface's doc
 // comment), so branches 1 and 2 both return &cfg with no adapter.
-func (c *commands) activeModelProfile(ctx context.Context) (map[string]llm.Price, string, llm.CostStatus, spendBackend) {
+func (c *commands) activeModelProfile(ctx context.Context) (llm.Config, spendBackend) {
 	if c.deps.Resolver != nil {
 		if identityID := identityctx.IdentityID(ctx); identityID != "" {
 			if snapshot, err := c.deps.Resolver.SnapshotFor(ctx, identityID); err == nil {
 				cfg := snapshot.Config
-				return cfg.Prices, cfg.Model, cfg.CostStatus, &cfg
+				return cfg, &cfg
 			}
 		}
 	}
 	if c.deps.Runtime == nil {
-		return c.deps.Prices, c.deps.Model, llm.CostStatusUnknown, c.deps.Spend
+		return llm.Config{Prices: c.deps.Prices, Model: c.deps.Model, CostStatus: llm.CostStatusUnknown}, c.deps.Spend
 	}
-	snapshot := c.deps.Runtime.Snapshot()
-	cfg := snapshot.Config
-	return cfg.Prices, cfg.Model, cfg.CostStatus, &cfg
+	cfg := c.deps.Runtime.Snapshot().Config
+	return cfg, &cfg
 }
 
 // searchRich reuses conversations.SearchConversationTurns byte-for-byte and renders

@@ -307,7 +307,7 @@ func TestPrimaryLLMRouteReloaderApplyPublishesRuntimeSnapshot(t *testing.T) {
 	if got.ContextWindow != 81920 {
 		t.Fatalf("context window = %d, want live llama.cpp n_ctx 81920", got.ContextWindow)
 	}
-	if display, ok := llm.CostUSD(got.Prices, got.Model, llm.Usage{PromptTokens: 100}); !ok || display != "$0.000000" {
+	if display, ok := llm.CostUSD(got.Provider, got.Prices, got.Model, llm.Usage{PromptTokens: 100}); !ok || display != "$0.000000" {
 		t.Fatalf("local cost = (%q,%v), want explicit included zero", display, ok)
 	}
 }

@@ -102,10 +102,10 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 
 // costFooterFromFinish renders the per-turn cost footer from the conversation
 // config + usage (the finish_reason is accepted for future surfacing; the footer
-// itself is the token+USD summary). It wraps costFooter with the config's price
-// table + model so the REPL stays a one-liner.
+// itself is the token+USD summary). It wraps costFooter with the config's route
+// (provider, price table, model) so the REPL stays a one-liner.
 func costFooterFromFinish(cfg *config.Config, usage llm.Usage, _ string) string {
-	return costFooter(cfg.LLM.Prices, cfg.LLM.Model, usage, 0)
+	return costFooter(cfg.LLM, usage, 0)
 }
 
 // discardStreamed erases the partial prose a failed stream attempt already showed
@@ -144,9 +144,9 @@ func renderToolActivity(w io.Writer, calls []llm.ToolCall) {
 // costFooter renders the per-turn footer (D-11): `· {tok} tok ({in} in / {out}
 // out) · ${usd} · {lat}s`. USD comes from llm.CostUSD (provider cost preferred,
 // resolved-rate fallback, honest "n/a" for an unresolved model — never $0).
-func costFooter(prices map[string]llm.Price, model string, usage llm.Usage, latencySec float64) string {
+func costFooter(route llm.Config, usage llm.Usage, latencySec float64) string {
 	total := usage.PromptTokens + usage.CompletionTokens
-	usd, _ := llm.CostUSD(prices, model, usage)
+	usd, _ := llm.CostUSD(route.Provider, route.Prices, route.Model, usage)
 	return fmt.Sprintf("\x1b[2m· %d tok (%d in / %d out) · %s · %.1fs\x1b[0m",
 		total, usage.PromptTokens, usage.CompletionTokens, usd, latencySec)
 }

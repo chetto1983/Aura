@@ -40,7 +40,8 @@ func TestTelegramTurnResolvesFromLinkedIdentity(t *testing.T) {
 	cmds := newTestCommands(commandDeps{Runtime: runtime, Resolver: resolver})
 
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-b")
-	_, model, _, _ := cmds.activeModelProfile(ctx)
+	route, _ := cmds.activeModelProfile(ctx)
+	model := route.Model
 	if model != "identity-b-model" {
 		t.Fatalf("model = %q, want the linked identity's own model (identity-b-model), not the process-wide runtime's", model)
 	}
@@ -58,7 +59,8 @@ func TestTelegramFallsBackToRuntimeWithNoLinkedIdentity(t *testing.T) {
 
 	cmds := newTestCommands(commandDeps{Runtime: runtime, Resolver: resolver})
 
-	_, model, _, _ := cmds.activeModelProfile(context.Background())
+	route, _ := cmds.activeModelProfile(context.Background())
+	model := route.Model
 	if model != "runtime-model" {
 		t.Fatalf("model = %q, want the process-wide runtime's model when no identity is linked on ctx", model)
 	}

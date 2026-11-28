@@ -15,7 +15,7 @@ func TestCost(t *testing.T) {
 	prices := map[string]llm.Price{"deepseek/deepseek-v4-flash:nitro": v4flash}
 
 	t.Run("provider_cost_present_returns_exact_usd", func(t *testing.T) {
-		got, ok := llm.CostUSD(prices, "any/model", llm.Usage{
+		got, ok := llm.CostUSD("", prices, "any/model", llm.Usage{
 			PromptTokens: 1000, CompletionTokens: 500, Cost: new(0.001234),
 		})
 		if !ok {
@@ -28,7 +28,7 @@ func TestCost(t *testing.T) {
 
 	t.Run("provider_cost_absent_resolved_model_uses_rate", func(t *testing.T) {
 		// 1M prompt @ 0.14 + 1M completion @ 0.28, no cache reads.
-		got, ok := llm.CostUSD(prices, "deepseek/deepseek-v4-flash:nitro", llm.Usage{
+		got, ok := llm.CostUSD("", prices, "deepseek/deepseek-v4-flash:nitro", llm.Usage{
 			PromptTokens: 1_000_000, CompletionTokens: 1_000_000,
 		})
 		if !ok {
@@ -40,7 +40,7 @@ func TestCost(t *testing.T) {
 	})
 
 	t.Run("unresolved_model_reports_na_not_zero", func(t *testing.T) {
-		got, ok := llm.CostUSD(prices, "mystery/model", llm.Usage{PromptTokens: 1000, CompletionTokens: 1000})
+		got, ok := llm.CostUSD("", prices, "mystery/model", llm.Usage{PromptTokens: 1000, CompletionTokens: 1000})
 		if ok {
 			t.Error("ok = true, want false for an unresolved model")
 		}
@@ -142,5 +142,27 @@ func TestPriceForSwitchesAtTheThreshold(t *testing.T) {
 	flat := llm.Price{InputPer1M: 3, OutputPer1M: 15}
 	if got := flat.For(1_000_000); got != flat {
 		t.Fatalf("a flat price changed: %+v", got)
+	}
+}
+
+// The Claude client prices every call itself, cache writes included, and reports no cost
+// only for a call with no honest number. A turn none of whose calls was priced is therefore
+// unknown on that route, never a table guess; every other route keeps the table fallback.
+func TestTurnCostUSDNeverPricesAnUnpricedClaudeTurn(t *testing.T) {
+	prices := map[string]llm.Price{"m": {InputPer1M: 2, OutputPer1M: 10}}
+	tokens := llm.Usage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000}
+	if usd, ok := llm.TurnCostUSD(llm.AnthropicProvider, prices, "m", tokens); ok || usd != 0 {
+		t.Fatalf("unpriced Claude turn = (%v, %v), want the unknown (0, false)", usd, ok)
+	}
+	priced := tokens
+	priced.Cost = new(0.25)
+	if usd, ok := llm.TurnCostUSD(llm.AnthropicProvider, prices, "m", priced); !ok || usd != 0.25 {
+		t.Fatalf("priced Claude turn = (%v, %v), want (0.25, true)", usd, ok)
+	}
+	if usd, ok := llm.TurnCostUSD("openrouter", prices, "m", tokens); !ok || usd != 12 {
+		t.Fatalf("unpriced OpenRouter turn = (%v, %v), want the table's (12, true)", usd, ok)
+	}
+	if display, ok := llm.CostUSD(llm.AnthropicProvider, prices, "m", tokens); ok || display != "n/a" {
+		t.Fatalf("unpriced Claude display = %q, %v, want n/a", display, ok)
 	}
 }

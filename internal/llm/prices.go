@@ -93,16 +93,31 @@ func CostUSDValue(prices map[string]Price, model string, usage Usage) (usd float
 	return total / 1_000_000, true
 }
 
-// CostUSD reports the turn cost as a display string and an ok flag (D-18/D-23):
+// TurnCostUSD is a turn's cost on provider's route, from the usage its calls summed: the
+// rule every reader of a turn's cost shares (persisted turn, REPL footer, Telegram /cost).
+// It is CostUSDValue's precedence, except that on the anthropic route a turn none of whose
+// calls carried a cost is unknown, never priced from the table: that client prices every
+// call itself, cache writes included, and leaves a call unpriced only when the catalogue has
+// no honest number for it (spec 2026-11-27-anthropic-provider §7.4, plan decision 6).
+func TurnCostUSD(provider string, prices map[string]Price, model string, usage Usage) (usd float64, ok bool) {
+	if usage.Cost == nil && provider == AnthropicProvider {
+		return 0, false
+	}
+	return CostUSDValue(prices, model, usage)
+}
+
+// CostUSD reports the turn cost as a display string and an ok flag (D-18/D-23), by
+// TurnCostUSD:
 //
 //   - usage.Cost non-nil    -> that exact USD (OpenRouter actual cost, preferred)
-//   - else model in prices  -> computed from tokens at the resolved rate
+//   - else model in prices  -> computed from tokens at the resolved rate, except on the
+//     anthropic route
 //   - else                  -> "n/a", ok=false  (NEVER "$0" — do not lie)
 //
 // ok is true only when a real number was produced (provider or table); it is false for
-// the unresolved-model case so the caller can render the honest "n/a".
-func CostUSD(prices map[string]Price, model string, usage Usage) (display string, ok bool) {
-	usd, ok := CostUSDValue(prices, model, usage)
+// the unknown case so the caller can render the honest "n/a".
+func CostUSD(provider string, prices map[string]Price, model string, usage Usage) (display string, ok bool) {
+	usd, ok := TurnCostUSD(provider, prices, model, usage)
 	if !ok {
 		return "n/a", false
 	}
