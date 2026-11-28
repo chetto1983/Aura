@@ -25,13 +25,16 @@ Measured, not assumed:
   every request.
 - The skill opens with the same rules as a short section, and gains the two missing ones:
   predicate naming and statement length.
+- `memory_entities` also returns the predicates in use, so the call the rules already require
+  before writing shows both the names and the relations to reuse (added on the operator's word,
+  2026-11-28: no memory tool listed predicates, so "reuse the predicate" could not be followed).
 - Measured before and after on the lab VM with the operator's Sonnet route.
 
 ## Non-goals
 
 - No change to compaction, and no pinning of skill results.
-- No new tool to list predicates in use, and no server-side rejection of bad predicates. A
-  predicate rule the model cannot check against a list is weaker; that is noted, not built.
+- No server-side rejection of a bad predicate: the rule and the listing come first, and a
+  rejection is decided only if the measurement shows they are not enough.
 - No cleanup of the existing memory: that is Aura's job in the cockpit, on the operator's word.
 
 ## Approaches
@@ -59,6 +62,11 @@ Measured, not assumed:
    predicate and a statement subsection under Writing. The rest unchanged.
 4. The wording lives once in Go (a constant the two tools share); the skill repeats it in prose,
    and a test keeps the skill's section naming each rule.
+5. `memory_entities` gains `predicates`: each predicate of a currently valid fact with how many
+   such facts use it, most used first, capped like the entity list, with its own total so a
+   truncated list is not read as complete. `arcadedb.Client.ListEntities` runs one more
+   grouped query over the FACT edges (the ArcadeDB SQL `GROUP BY` page is read before writing
+   it). The tool description says the list is there to reuse a predicate before coining one.
 
 ## Measurement
 
@@ -67,7 +75,7 @@ cockpit conversation on Sonnet: the operator states four durable facts in Italia
 of the session. Counted from `aura.tool_invocations` and the memory:
 
 - `memory_entities` called before the first write;
-- predicates in English snake_case, and reused where one exists;
+- predicates in English snake_case, and reused where one exists (with the listing, after);
 - subjects and objects that are names, not descriptions;
 - statement length in characters;
 - whether the session detail was written.
