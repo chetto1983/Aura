@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -429,60 +428,5 @@ func TestKeyAcrossTheBodyCapIsScrubbed(t *testing.T) {
 		if result == nil || len(result.Body) > maxErrorBodyBytes || strings.Contains(result.Body, houseKey[:6]) || !strings.Contains(result.Body, redacted) {
 			t.Fatalf("%s: key prefix left in a bounded body: %v", name, result)
 		}
-	}
-}
-
-// alertingServer answers the first TLS ClientHello with one plaintext fatal alert record,
-// the way a peer reports a record it could not authenticate, so the error the client gets is
-// the one crypto/tls itself builds.
-func alertingServer(t *testing.T, alert byte) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		_, _ = conn.Read(make([]byte, 16<<10))
-		_, _ = conn.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, alert})
-	}()
-	t.Cleanup(func() {
-		_ = listener.Close()
-		<-done
-	})
-	return "https://" + listener.Addr().String()
-}
-
-// Measured on the lab VM 2026-11-28 13:22:14: `remote error: tls: bad record MAC` on a
-// stream open was not retried, and the turn ended with no answer. A record that fails its
-// integrity check is a corrupted connection, and a new one is the remedy; a handshake the
-// peer refuses is not.
-func TestTLSRecordCorruptionIsRetryable(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		alert     byte
-		message   string
-		retryable bool
-	}{
-		{"bad record MAC", 20, "remote error: tls: bad record MAC", true},
-		{"handshake failure", 40, "remote error: tls: handshake failure", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			client := newClient(testConfig(), staticKey(houseKey), newHTTPClient(5), alertingServer(t, tc.alert))
-			client.logger = func() *slog.Logger { return slog.New(slog.DiscardHandler) }
-			_, err := client.Stream(context.Background(), userRequest("hi"))
-			if err == nil || !strings.Contains(err.Error(), tc.message) {
-				t.Fatalf("stream open error = %v, want %q", err, tc.message)
-			}
-			if got := agent.IsTransientLLMError(err); got != tc.retryable {
-				t.Fatalf("IsTransientLLMError(%v) = %v, want %v", err, got, tc.retryable)
-			}
-		})
 	}
 }

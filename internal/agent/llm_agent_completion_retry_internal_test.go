@@ -321,19 +321,22 @@ func TestRetryableStreamOpenError_IdleTimeout(t *testing.T) {
 // side (this client failing to authenticate a server record) is the same alert under the
 // op crypto/tls names "local error".
 func TestRetryableStreamOpenError_TLSRecordCorruption(t *testing.T) {
-	for _, tc := range []struct {
-		op        string
-		alert     tls.AlertError
+	alert := func(op string, code tls.AlertError) error { return &net.OpError{Op: op, Err: code} }
+	for name, tc := range map[string]struct {
+		err       error
 		retryable bool
 	}{
-		{"remote error", 20, true},
-		{"local error", 20, true},
-		{"remote error", 40, false},
-		{"read", 20, false},
+		"remote":           {alert("remote error", 20), true},
+		"local":            {alert("local error", 20), true},
+		"other alert":      {alert("remote error", 40), false},
+		"other op":         {alert("read", 20), false},
+		"behind a proxy":   {&net.OpError{Op: "proxyconnect", Net: "tcp", Err: alert("remote error", 20)}, true},
+		"proxy, other one": {&net.OpError{Op: "proxyconnect", Net: "tcp", Err: alert("remote error", 40)}, false},
+		"joined":           {errors.Join(errors.New("upstream"), alert("local error", 20)), true},
 	} {
-		err := &url.Error{Op: "Post", URL: "https://api.anthropic.com/v1/messages", Err: &net.OpError{Op: tc.op, Err: tc.alert}}
+		err := &url.Error{Op: "Post", URL: "https://api.anthropic.com/v1/messages", Err: tc.err}
 		if got := retryableStreamOpenError(err); got != tc.retryable {
-			t.Errorf("%s alert %d: retryable = %v, want %v", tc.op, tc.alert, got, tc.retryable)
+			t.Errorf("%s: retryable = %v, want %v (%v)", name, got, tc.retryable, err)
 		}
 	}
 }

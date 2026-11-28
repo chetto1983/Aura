@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -131,18 +132,29 @@ func retryableStreamOpenError(err error) bool {
 // connection corrupted in transit produces, and a new connection is the remedy. Measured on
 // the lab VM 2026-11-28: `remote error: tls: bad record MAC` on a Claude stream open ended
 // the turn with no answer.
+//
+// It is retryable wherever it arrives, the handshake included, deliberately: a peer that
+// answers a ClientHello with it is as likely a corrupted connection as a broken server, and
+// the cost of being wrong is bounded by the loop (one more open, one mid-stream salvage).
 const badRecordMAC tls.AlertError = 20
 
-// isTLSRecordCorruption matches that alert whichever side raised it. Over TCP crypto/tls
-// reports an alert as a *net.OpError ("remote error" or "local error") around its
-// unexported alert type (crypto/tls/conn.go); the exported tls.AlertError is what QUIC
+// isTLSRecordCorruption matches that alert whichever side raised it, at any depth: behind an
+// HTTPS proxy net/http wraps it in an outer *net.OpError{Op: "proxyconnect"}. Over TCP
+// crypto/tls reports an alert as a *net.OpError ("remote error" or "local error") around
+// its unexported alert type (crypto/tls/conn.go); the exported tls.AlertError is what QUIC
 // returns, so errors.As cannot reach it here and the alert is compared by its text.
 func isTLSRecordCorruption(err error) bool {
-	opErr, ok := errors.AsType[*net.OpError](err)
-	if !ok || opErr.Err == nil || (opErr.Op != "remote error" && opErr.Op != "local error") {
+	switch e := err.(type) {
+	case nil:
 		return false
+	case *net.OpError:
+		if (e.Op == "remote error" || e.Op == "local error") && e.Err != nil && e.Err.Error() == badRecordMAC.Error() {
+			return true
+		}
+	case interface{ Unwrap() []error }:
+		return slices.ContainsFunc(e.Unwrap(), isTLSRecordCorruption)
 	}
-	return opErr.Err.Error() == badRecordMAC.Error()
+	return isTLSRecordCorruption(errors.Unwrap(err))
 }
 
 func llmErrorKind(prefix string, err error) string {
