@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/utf8cut"
 )
@@ -66,7 +67,8 @@ func (t *ReadFile) Spec() Spec {
 			"boundary with a next_offset hint to continue from. If the path does not exist, similar filenames in the same " +
 			"directory are suggested. Jupyter notebooks (.ipynb), Word documents (.docx), and Excel workbooks (.xlsx) are " +
 			"auto-extracted to readable text. Images (JPEG, PNG, GIF, WebP) are shown to you: the image is attached " +
-			"right after the result so you can look at it. Other binary files are refused with a pointer to shell_exec " +
+			"right after the result so you can look at it. A PDF up to 2 MiB is attached the same way for a model that " +
+			"reads PDFs. Other binary files are refused with a pointer to shell_exec " +
 			"or send_file instead. Read a file with this tool BEFORE patching it — `patch` matches against the exact bytes " +
 			"returned here. Example: {\"path\":\"cmd/aura/main.go\"} for a whole file, or " +
 			"{\"path\":\"app.log\",\"offset\":2000,\"limit\":200} to read just a window.",
@@ -162,6 +164,11 @@ func (t *ReadFile) readContent(ctx context.Context, h usersandbox.BoxHandle, box
 	// Sniffed before the text cap: an image is judged against its own, larger cap.
 	if mimeType := visionImageType(b); mimeType != "" {
 		reply, err := t.attachImage(ctx, h, boxPath, mimeType, b, readCap)
+		return fileContent{reply: reply}, err
+	}
+	// Outside a chat turn there is no model to show a PDF to, and it reads as it always has.
+	if media := llm.ToolMediaFromContext(ctx); media != nil && isPDF(b) {
+		reply, err := t.attachPDF(ctx, h, media, boxPath, b, readCap)
 		return fileContent{reply: reply}, err
 	}
 	if err := overReadCap("read_file", boxPath, b, readCap); err != nil {

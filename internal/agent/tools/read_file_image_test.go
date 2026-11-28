@@ -152,7 +152,7 @@ func TestReadFileRefusesWhatItCannotShow(t *testing.T) {
 		carrier bool
 		want    string
 	}{
-		"a PDF":                        {[]byte("%PDF-1.7\n\x00\x01binary"), true, "cannot read binary file"},
+		"a PDF with no turn":           {[]byte("%PDF-1.7\n\x00\x01binary"), false, "cannot read binary file"},
 		"other binary":                 {[]byte("\x7fELF\x02\x01\x01\x00\x00\x00"), true, "cannot read binary file"},
 		"an image with no turn":        {testPNG(t, 2, 2), false, "cannot read binary file"},
 		"an image over the cap":        {oversized, true, strconv.Itoa(mcp.MaxFileBytes) + "-byte image cap"},
