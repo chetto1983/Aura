@@ -264,7 +264,7 @@ func TestHTTPErrorsKeepTheirClass(t *testing.T) {
 		retryAfter        int
 	}{
 		{401, "authentication_error", "", false, []string{"Settings"}, 0},
-		{403, "permission_error", "", false, []string{"Settings"}, 0},
+		{403, "permission_error", "", false, []string{"refused the request", "Console"}, 0},
 		{402, "billing_error", "", false, []string{"Settings", "Console"}, 0},
 		{400, "invalid_request_error", "", false, nil, 0},
 		{429, "rate_limit_error", "2", true, nil, 2},
@@ -298,6 +298,9 @@ func TestHTTPErrorsKeepTheirClass(t *testing.T) {
 				if !strings.Contains(err.Error(), word) {
 					t.Fatalf("%v does not name %s", err, word)
 				}
+			}
+			if tc.status == http.StatusForbidden && strings.Contains(err.Error(), "API key") {
+				t.Fatalf("a permission error blamed the key: %v", err)
 			}
 		})
 	}
@@ -395,8 +398,35 @@ func TestErrorsAreScrubbedAndBounded(t *testing.T) {
 	if err := apiErr.UnmarshalJSON([]byte(`{"type":"error","error":{"type":"api_error","message":"` + strings.Repeat("y", 70<<10) + `"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	result := fromAPIError(apiErr)
-	if result.StatusCode != 500 || len(result.Body) != maxErrorBodyBytes || len(result.RequestID) != maxRequestIDBytes {
-		t.Fatalf("unbounded error: status %d body %d id %d", result.StatusCode, len(result.Body), len(result.RequestID))
+	result, ok := errors.AsType[*openai_compat.HTTPError](providerError(apiErr, houseKey))
+	if !ok || result.StatusCode != 500 || len(result.Body) != maxErrorBodyBytes || len(result.RequestID) != maxRequestIDBytes {
+		t.Fatalf("unbounded error: %#v", result)
+	}
+}
+
+// keyAcrossTheCap is an error body whose house key starts 10 bytes before the 64 KiB cap.
+func keyAcrossTheCap(errorType string) string {
+	head := `{"type":"error","error":{"type":"` + errorType + `","message":"`
+	return head + strings.Repeat("y", maxErrorBodyBytes-len(head)-10) + houseKey + `"}}`
+}
+
+func TestKeyAcrossTheBodyCapIsScrubbed(t *testing.T) {
+	apiErr := &anthropic.Error{StatusCode: http.StatusOK}
+	if err := apiErr.UnmarshalJSON([]byte(keyAcrossTheCap("api_error"))); err != nil {
+		t.Fatal(err)
+	}
+	streamed, _ := errors.AsType[*openai_compat.HTTPError](providerError(apiErr, houseKey))
+	client := fixtureClient(t, testConfig(), func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, keyAcrossTheCap("api_error"))
+	})
+	_, err := client.Stream(context.Background(), userRequest("hi"))
+	opened, _ := errors.AsType[*openai_compat.HTTPError](err)
+	for name, result := range map[string]*openai_compat.HTTPError{"mid-stream": streamed, "non-2xx": opened} {
+		if result == nil || len(result.Body) > maxErrorBodyBytes || strings.Contains(result.Body, houseKey[:6]) || !strings.Contains(result.Body, redacted) {
+			t.Fatalf("%s: key prefix left in a bounded body: %v", name, result)
+		}
 	}
 }
