@@ -126,10 +126,9 @@ type Client interface {
 // Request is one chat-completion call. Caching is primarily a property of how
 // the caller constructs Messages (a byte-stable prefix earns the implicit
 // prompt-cache discount); that assembly decision lives in the prompt builder,
-// not here. ToolsCacheControl is the one explicit knob: it is wire-shape only
-// (an Anthropic-direct cache_control marker), set by the builder's provider
-// branch and dormant — empty under OpenRouter, the day-1 default. The wire
-// layer serializes it but never decides whether to inject it (D-03/D-03a).
+// not here. ToolsCacheControl and the two prefix positions below are the explicit
+// knobs: the builder sets them on the anthropic route only, and the wire client
+// turns them into breakpoints but never decides whether to set them (D-03/D-03a).
 type Request struct {
 	Model       string
 	Messages    []Message
@@ -152,8 +151,9 @@ type Request struct {
 
 	// ToolsCacheControl, when non-empty, is the Anthropic-direct cache_control
 	// marker for the tools+system prefix breakpoint (e.g. "ephemeral"). It is set
-	// only by the provider branch in internal/agent/prompt; the OpenAI-compat wire
-	// client ignores it (Slice 13 LLMRouter does the Anthropic-native translation).
+	// only by the provider branch in internal/agent/prompt; the Claude client
+	// (internal/llm/anthropic) puts it on the last tool and the last system block,
+	// and every other client ignores it.
 	ToolsCacheControl string
 
 	// StablePrefixMessages and LoadedHistoryMessages are set by the builder on the
@@ -168,10 +168,11 @@ type Request struct {
 
 	// ToolChoice is a provider-neutral tool-selection directive interpreted at the
 	// wire layer, not here. Empty (the default) means "auto" — byte-identical to
-	// the historical hardcoded behavior. "none" forces a tool-free synthesis turn:
-	// the wire layer omits the tools array entirely and the answer is read from the
-	// assistant content. No json tag — this struct is projected by buildWireRequest,
-	// never marshalled directly.
+	// the historical hardcoded behavior. "none" forces a tool-free synthesis turn,
+	// the answer read from the assistant content: the OpenAI-compatible and ChatGPT
+	// clients drop the tools array, while the Claude client keeps it (it is part of
+	// the cached prefix) and sends tool_choice none. No json tag: a command hook's
+	// stdin carries the request with the field under its Go name.
 	ToolChoice string
 
 	// ContentProjection is request-scoped authorization for explicit media refs. It
