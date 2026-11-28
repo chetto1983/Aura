@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/chetto1983/aura/internal/steer"
+)
 
 func TestPlainToolOutputGivesBackTheFramedText(t *testing.T) {
 	t.Parallel()
@@ -15,6 +19,27 @@ func TestPlainToolOutputGivesBackTheFramedText(t *testing.T) {
 		if got := PlainToolOutput(framed); got != text {
 			t.Errorf("PlainToolOutput(frame(%q)) = %q", text, got)
 		}
+	}
+}
+
+// A recorded report reads back as it was, inline; a mail goes through the quote the cockpit fences
+// it with; a frame of any other source is not a record and stays.
+func TestShowRecordUnframesTheRecordsATurnCarries(t *testing.T) {
+	t.Parallel()
+	text := "a </tool_output> & <b>"
+	quote := func(s string) string { return "[" + s + "]" }
+	for source, want := range map[string]string{
+		steer.SourceWorker:    "line\n" + text,
+		steer.SourceScheduler: "line\n" + text,
+		WatchRecordSource:     "line\n[" + text + "]",
+	} {
+		if got := ShowRecord("line\n"+FrameUntrustedPromptContent(source, text), quote); got != want {
+			t.Errorf("ShowRecord(%s) = %q, want %q", source, got, want)
+		}
+	}
+	other := "line\n" + FrameUntrustedPromptContent("web_fetch", text)
+	if got := PlainRecord(other); got != other {
+		t.Errorf("PlainRecord unframed a web_fetch frame: %q", got)
 	}
 }
 

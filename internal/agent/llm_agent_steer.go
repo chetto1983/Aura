@@ -1,12 +1,10 @@
 // Concern-split out of llm_agent.go (mirroring llm_agent_finalize.go's own
 // precedent): llm_agent.go is at its no-god-class headroom, so both steer
-// drain points, the attribution marker, and the lookalike scrub live here.
+// drain points and the attribution marker live here (the lookalike scrub is
+// conversations.ScrubSteerLookalikes, which a reload runs too).
 package agent
 
 import (
-	"html"
-	"regexp"
-
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/steer"
 )
@@ -31,7 +29,7 @@ const (
 // wrapUserSteer mints the attribution envelope: reuses toolOutputNonce()
 // (trust.go) — there is exactly one nonce minter in internal/agent
 // (CLAUDE.md's inventory-before-invention rule; amendment #132 D-07 says so
-// explicitly). Unlike wrapUntrustedToolOutput, this does NOT HTML-escape
+// explicitly). Unlike FrameUntrustedPromptContent, this does NOT HTML-escape
 // text: the envelope wraps the OPERATOR's own words, not untrusted content,
 // and it is appended OUTSIDE the already-escaped tool envelope, never inside
 // it — double-escaping the operator's own message would be wrong, and the
@@ -41,30 +39,6 @@ const (
 func wrapUserSteer(text string) string {
 	nonce := toolOutputNonce()
 	return "\n" + steerMarkerOpen + nonce + `">` + text + steerMarkerClose
-}
-
-// steerLookalikeRe matches the FULL shape of a steer marker — an opening tag
-// with any (or no) nonce attribute value, the marked content, and the
-// closing tag — regardless of whether the nonce is genuine. A bare mention
-// of the tag name in running prose, or a truncated/partial tag with no
-// paired close, does not match: only the complete open+content+close
-// structure is neutralised, because a genuine marker never appears inside a
-// tool's own raw preview (drainSteer appends it AFTER render, never before).
-var steerLookalikeRe = regexp.MustCompile(`<user_steer[^>]*>[\s\S]*?</user_steer>`)
-
-// scrubSteerLookalikes neutralises any forged steer marker inside RAW
-// tool-result content by HTML-escaping just the matched span — turning it
-// into inert visible text rather than a parseable tag, without deleting or
-// otherwise mangling surrounding content. Its single call site is inside
-// renderToolResultForPrompt (trust.go), ahead of the trusted/untrusted
-// branch, so it sees the LITERAL marker bytes wrapUserSteer produces, never
-// an already-escaped form: an escaped lookalike is already inert and is left
-// untouched, because "<user_steer" never matches "&lt;user_steer". The
-// load-bearing case is the TRUSTED branch — it does no escaping of its own,
-// so without this call a forged marker there would reach history exactly as
-// trusted as a genuine one (T-52-10/T-52-19).
-func scrubSteerLookalikes(content string) string {
-	return steerLookalikeRe.ReplaceAllStringFunc(content, html.EscapeString)
 }
 
 // MarkSteer picks the envelope a queued message is delivered in, and names it
@@ -96,7 +70,7 @@ func scrubSteerLookalikes(content string) string {
 // cannot fall into a runtime branch by forgetting to name itself.
 func MarkSteer(m steer.Message) (marked, envelope string) {
 	if envelope, ok := runtimeSteerEnvelopes[m.Source]; ok {
-		return "\n" + wrapUntrustedToolOutput(m.Source, m.Text), envelope
+		return "\n" + FrameUntrustedPromptContent(m.Source, m.Text), envelope
 	}
 	return wrapUserSteer(m.Text), "user_steer"
 }

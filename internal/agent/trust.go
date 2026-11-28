@@ -10,6 +10,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 // trustedToolNames is the explicit allowlist of genuinely-safe built-ins whose
@@ -29,7 +31,7 @@ var trustedToolNames = map[string]struct{}{
 }
 
 func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
-	// The steer-marker scrub (llm_agent_steer.go) runs AHEAD of the
+	// The steer-marker scrub (conversations.ScrubSteerLookalikes) runs AHEAD of the
 	// trusted/untrusted branch, on the raw preview, and is never written back
 	// to res.Preview (T-52-06: the dedup/progress-veto hash reads res.Preview
 	// separately and must stay byte-identical). Ahead of the branch it matches
@@ -38,7 +40,7 @@ func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
 	// silently no-op (T-52-19). The TRUSTED branch is the one that matters: it
 	// does no escaping of its own, so without this call a forged marker there
 	// would reach history exactly as trusted as a genuine one (T-52-10).
-	scrubbed := scrubSteerLookalikes(res.Preview)
+	scrubbed := conversations.ScrubSteerLookalikes(res.Preview)
 	source, ok := untrustedSource(toolName, res)
 	if !ok {
 		return scrubbed
@@ -69,15 +71,18 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 
 // WatchRecordSource names the frame around a mail's sender and subject in a watch's conversation
 // record. A plain line and the refs stay outside the frame. A path that shows a turn to a person
-// goes through ShowWatchRecord.
+// goes through ShowRecord.
 const WatchRecordSource = "mail_watch"
 
 // frameTail is the rest of the envelope FrameUntrustedPromptContent writes after its source.
 // The content is escaped, so a forged closing tag cannot end a match early.
 const frameTail = `" trust="untrusted" nonce="[0-9a-f]+">\n(.*?)\n</tool_output>`
 
-// watchRecordFrame matches the envelope around a record, wherever it sits in a turn.
-var watchRecordFrame = regexp.MustCompile(`(?s)<tool_output source="` + regexp.QuoteMeta(WatchRecordSource) + frameTail)
+// recordFrame matches the envelope around the text an assistant turn records from someone else,
+// wherever it sits in the turn: a mail's sender and subject, a delegated worker's report, a
+// scheduled agent_job's report. Group 1 is the source, group 2 the escaped text.
+var recordFrame = regexp.MustCompile(`(?s)<tool_output source="(` + regexp.QuoteMeta(WatchRecordSource) + `|` +
+	regexp.QuoteMeta(steer.SourceWorker) + `|` + regexp.QuoteMeta(steer.SourceScheduler) + `)` + frameTail)
 
 // toolOutputFrame matches a tool turn that is one envelope from end to end, as a persisted
 // untrusted result is.
@@ -85,7 +90,7 @@ var toolOutputFrame = regexp.MustCompile(`(?s)\A<tool_output source="[^"]*` + fr
 
 // PlainToolOutput gives a person the text of a tool result the model read framed, unescaped.
 // A trusted result, or one persisted before the frame was (2026-11-28), has no frame and comes
-// back as it is. Like ShowWatchRecord, its output never goes back to a model.
+// back as it is. Like ShowRecord, its output never goes back to a model.
 func PlainToolOutput(content string) string {
 	quoted := toolOutputFrame.FindStringSubmatch(content)
 	if quoted == nil {
@@ -94,32 +99,34 @@ func PlainToolOutput(content string) string {
 	return unescapePromptText(quoted[1])
 }
 
-// ShowWatchRecord rewrites a turn for a person: each record's frame gives way to show(its text,
-// unescaped). That text is attacker text again and never goes back to a model.
-func ShowWatchRecord(content string, show func(text string) string) string {
-	return watchRecordFrame.ReplaceAllStringFunc(content, func(frame string) string {
-		quoted := watchRecordFrame.FindStringSubmatch(frame)[1]
-		return show(unescapePromptText(quoted))
+// ShowRecord rewrites a turn for a person: each record's frame gives way to its text, unescaped.
+// A mail's text goes through quoteMail, which the cockpit uses to fence it; a worker's or a
+// scheduled run's report reads as it did before it was framed. That text is someone else's
+// again and never goes back to a model.
+func ShowRecord(content string, quoteMail func(text string) string) string {
+	return recordFrame.ReplaceAllStringFunc(content, func(frame string) string {
+		match := recordFrame.FindStringSubmatch(frame)
+		text := unescapePromptText(match[2])
+		if match[1] == WatchRecordSource {
+			return quoteMail(text)
+		}
+		return text
 	})
 }
 
-// PlainWatchRecord is ShowWatchRecord for a path that already prints a turn as text.
-func PlainWatchRecord(content string) string {
-	return ShowWatchRecord(content, func(text string) string { return text })
+// PlainRecord is ShowRecord for a path that already prints a turn as text.
+func PlainRecord(content string) string {
+	return ShowRecord(content, func(text string) string { return text })
 }
 
 // FrameUntrustedPromptContent wraps model-facing untrusted data in the shared
-// nonce-bearing envelope used for tool output and delegated input.
+// nonce-bearing envelope used for tool output, delegated input and recorded reports.
 func FrameUntrustedPromptContent(source, content string) string {
 	nonce := toolOutputNonce()
 	escapedSource := html.EscapeString(source)
 	escapedContent := EscapePromptText(content)
 	return `<tool_output source="` + escapedSource + `" trust="untrusted" nonce="` + nonce + `">` +
 		"\n" + escapedContent + "\n</tool_output>"
-}
-
-func wrapUntrustedToolOutput(source, content string) string {
-	return FrameUntrustedPromptContent(source, content)
 }
 
 // promptTextEscaper escapes the three characters that can forge or close a tag in element

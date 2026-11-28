@@ -162,7 +162,7 @@ func snapshotContent(m llm.Message) string {
 	case llm.RoleUser:
 		return stripAuraContextEnvelope(m.Content)
 	case llm.RoleAssistant:
-		return displayWatchRecord(m.Content)
+		return displayRecord(m.Content)
 	case llm.RoleTool:
 		return agent.PlainToolOutput(m.Content)
 	default:
@@ -225,12 +225,12 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 }
 
 // rederiveDisplaysWithFacts walks the persisted history in order and re-derives a display.Payload
-// per recognized tool-result turn (a RoleTool turn carries ToolCallID + the result the model
-// read as Content, unframed here into the preview live derived from). It returns the map
-// keyed by tool_call_id. A single shared
-// registry accumulates across all web turns so cross-turn source RefIDs are stable —
-// identical to the live per-run registry (Pitfall 4 parity). facts are the thread's
-// ledger rows, which supply the inputs a preview alone does not carry.
+// per recognized tool-result turn. A RoleTool turn carries ToolCallID and, as Content, the
+// result the model read, unframed here into the preview the live card was derived from. It
+// returns the map keyed by tool_call_id. A single shared registry accumulates across all web
+// turns so cross-turn source RefIDs are stable — identical to the live per-run registry
+// (Pitfall 4 parity). facts are the thread's ledger rows, which supply the inputs a preview
+// alone does not carry.
 func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]*display.Payload {
 	reg := display.NewRegistry()
 	inputs := previewInputsByCallIDWithFacts(hist, conversationID, facts)

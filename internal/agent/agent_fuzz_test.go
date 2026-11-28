@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/canonicaljson"
+	"github.com/chetto1983/aura/internal/conversations"
 )
 
 // FuzzParseTextResponse fuzzes the terminal-tool argument parser (D-13). The
@@ -128,7 +129,7 @@ func FuzzWrapUntrustedToolOutput(f *testing.F) {
 	f.Add("s", strings.Repeat("A", 4096))
 
 	f.Fuzz(func(t *testing.T, source, content string) {
-		out := wrapUntrustedToolOutput(source, content)
+		out := FrameUntrustedPromptContent(source, content)
 
 		if !toolOutputFrameRe.MatchString(out) {
 			t.Fatalf("opening frame malformed for source=%q content=%q:\n%q", source, content, out)
@@ -156,11 +157,11 @@ func FuzzWrapUntrustedToolOutput(f *testing.F) {
 // FuzzRenderToolResultForPrompt fuzzes the full provenance-aware render path: an
 // untrusted result must be wrapped in the envelope; a trusted/unspecified result
 // passes its preview through verbatim EXCEPT for a live steer-marker lookalike,
-// which scrubSteerLookalikes neutralises ahead of the branch (52-02-PLAN.md
+// which conversations.ScrubSteerLookalikes neutralises ahead of the branch (52-02-PLAN.md
 // T-52-10/T-52-19). Invariant: never panic, and the untrusted-vs-passthrough
 // decision matches untrustedSource for every input. The trusted-passthrough leg
 // was `out != preview` before this phase's steer scrub; that is no longer true
-// by design, so it is restated against scrubSteerLookalikes(preview) rather than
+// by design, so it is restated against conversations.ScrubSteerLookalikes(preview) rather than
 // weakened to a tautology.
 func FuzzRenderToolResultForPrompt(f *testing.F) {
 	f.Add("web_fetch", "body", true, "src")
@@ -182,8 +183,8 @@ func FuzzRenderToolResultForPrompt(f *testing.F) {
 			if !toolOutputFrameRe.MatchString(out) {
 				t.Fatalf("untrusted result not framed: tool=%q out=%q", toolName, out)
 			}
-		} else if want := scrubSteerLookalikes(preview); out != want {
-			t.Fatalf("trusted passthrough diverged from scrubSteerLookalikes(preview): in=%q out=%q want=%q", preview, out, want)
+		} else if want := conversations.ScrubSteerLookalikes(preview); out != want {
+			t.Fatalf("trusted passthrough diverged from conversations.ScrubSteerLookalikes(preview): in=%q out=%q want=%q", preview, out, want)
 		}
 	})
 }

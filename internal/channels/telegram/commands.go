@@ -368,7 +368,7 @@ func (c *commands) searchRich(ctx context.Context, chatID int64, query string) c
 	}
 	lines := make([]string, 0, len(hits))
 	for _, h := range hits {
-		lines = append(lines, fmt.Sprintf("• [%d] %s", h.Seq, conversations.Excerpt(agent.PlainWatchRecord(h.Content), query)))
+		lines = append(lines, fmt.Sprintf("• [%d] %s", h.Seq, conversations.Excerpt(agent.PlainRecord(h.Content), query)))
 	}
 	pages := paginateSearchLines(lines)
 	if len(pages) <= 1 {

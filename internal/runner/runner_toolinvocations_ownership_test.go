@@ -36,6 +36,7 @@ func toolEvent(kind string, requestID uuid.UUID) *agent.Event {
 		ti.EndedAt = &at
 		ti.Status = "ok"
 		ti.ResultPreview = "hi\n"
+		ti.HistoryContent = ti.ResultPreview
 	}
 	return &agent.Event{RequestID: requestID, Actions: agent.Actions{ToolInvocation: ti}}
 }

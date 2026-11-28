@@ -367,7 +367,7 @@ func TestPersistToolTurn_EndAppendError(t *testing.T) {
 	end := start.Add(time.Millisecond)
 	ti := &agent.ToolInvocation{
 		Event: agent.ToolInvocationEnd, ToolCallID: "c1", ToolName: "shell_exec",
-		StartedAt: &start, EndedAt: &end, ResultPreview: "out",
+		StartedAt: &start, EndedAt: &end, ResultPreview: "out", HistoryContent: "out",
 	}
 	if err := r.persistToolTurn(context.Background(), tr, ti); err == nil {
 		t.Fatal("expected the RoleTool-result AppendTurn error to surface")

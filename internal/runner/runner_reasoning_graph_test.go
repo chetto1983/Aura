@@ -82,7 +82,7 @@ func reasoningGraphToolEvents(
 		Event: agent.ToolInvocationEnd, ToolCallID: callID, ToolName: toolName,
 		Arguments: arguments, ArgsBytes: len(arguments), StartedAt: &startedAt, EndedAt: &endedAt,
 		DurationMS: 250, Status: status, ResultPreview: preview, PreviewBytes: len(preview),
-		ResultBytes: len(preview), Meta: meta,
+		ResultBytes: len(preview), Meta: meta, HistoryContent: preview,
 	}
 	return []*agent.Event{start, end}
 }

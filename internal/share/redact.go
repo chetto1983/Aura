@@ -58,11 +58,11 @@ func projectTurns(msgs []llm.Message) []SnapshotTurn {
 	return turns
 }
 
-// turnText is the turn a recipient reads. The public page prints it as text, so a mail watch's
-// record only loses the frame the model reads it in.
+// turnText is the turn a recipient reads. The public page prints it as text, so a recorded
+// mail or report only loses the frame the model reads it in.
 func turnText(m llm.Message) string {
 	if m.Role == llm.RoleAssistant {
-		return agent.PlainWatchRecord(m.Content)
+		return agent.PlainRecord(m.Content)
 	}
 	return m.Content
 }

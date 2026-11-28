@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
@@ -42,6 +43,19 @@ func TestAFramedToolTurnShowsAndRederivesItsResult(t *testing.T) {
 	lb, _ := json.Marshal(live)
 	if string(gb) != string(lb) {
 		t.Fatalf("replay of a framed turn diverged from live:\n replay=%s\n   live=%s", gb, lb)
+	}
+}
+
+// A worker's or a scheduled run's report is recorded framed and reads in the cockpit as it did
+// before: inline, rendered like the rest of the turn, while a mail keeps its plain-text block.
+func TestARecordedReportShowsInlineWithoutItsFrame(t *testing.T) {
+	t.Parallel()
+	report := "**Done** & checked <3 pages"
+	for _, source := range []string{steer.SourceWorker, steer.SourceScheduler} {
+		content := "[Scheduled task agent_job t-1]\n" + agent.FrameUntrustedPromptContent(source, report)
+		if got := snapshotContent(llm.Message{Role: llm.RoleAssistant, Content: content}); got != "[Scheduled task agent_job t-1]\n"+report {
+			t.Errorf("%s record shows %q", source, got)
+		}
 	}
 }
 

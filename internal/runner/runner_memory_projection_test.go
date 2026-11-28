@@ -471,7 +471,7 @@ func TestConversationProjectionPostCommit(t *testing.T) {
 		if err := r.persistEvent(ctx, tr, &agent.Event{Actions: agent.Actions{
 			ToolInvocation: &agent.ToolInvocation{
 				Event: event, ToolCallID: "call-1", ToolName: "shell_exec",
-				BatchSize: 1, ResultPreview: "tool output",
+				BatchSize: 1, ResultPreview: "tool output", HistoryContent: "tool output",
 			},
 		}}); err != nil {
 			t.Fatalf("persist %s tool event: %v", event, err)

@@ -525,7 +525,7 @@ func toMessages(turns []Turn) []llm.Message {
 		}
 		msg, err := turnToMessage(t)
 		if err != nil {
-			msg = llm.Message{Role: t.Role, Content: t.Content, ToolCallID: t.ToolCallID}
+			msg = llm.Message{Role: t.Role, Content: modelContent(t), ToolCallID: t.ToolCallID}
 		}
 		out = append(out, msg)
 	}

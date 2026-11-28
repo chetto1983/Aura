@@ -276,7 +276,7 @@ func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	for i := range hits {
-		hits[i].Content = agent.PlainWatchRecord(hits[i].Content)
+		hits[i].Content = agent.PlainRecord(hits[i].Content)
 	}
 	writeJSON(w, hits)
 }

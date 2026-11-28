@@ -11,8 +11,8 @@ import (
 )
 
 // webSearchTurn builds the (assistant tool-call, tool-result) pair for a web_search call
-// whose result is the raw {"results":[…]} JSON, as a row persisted before the untrusted
-// frame was reads.
+// whose result is the raw {"results":[…]} JSON. A row persisted before 2026-11-28 reads like
+// this; a newer one carries the same JSON inside the untrusted frame.
 func webSearchTurn(callID string, results []web.Result) []llm.Message {
 	preview, _ := json.Marshal(map[string]any{"results": results})
 	var call llm.ToolCall

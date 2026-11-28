@@ -226,6 +226,7 @@ func TestPersistEvent_RecordsAToolEndAfterTheTurnIsCancelled(t *testing.T) {
 	end := call(agent.ToolInvocationEnd)
 	end.Actions.ToolInvocation.Status = "error"
 	end.Actions.ToolInvocation.ResultPreview = "context canceled"
+	end.Actions.ToolInvocation.HistoryContent = "context canceled"
 
 	if err := r.persistEvent(ctx, tr, end); err != nil {
 		t.Fatalf("persist end after the cancel: %v", err)
