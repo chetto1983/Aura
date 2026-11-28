@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -110,37 +111,31 @@ func firstTurnRequest(t *testing.T, history []llm.Message) []byte {
 	return <-bodies
 }
 
-// The next turn reads the previous turn's stored history from the cache. MEASURED on the
-// lab VM, conversation 01a2223e, 2026-11-28: every new turn read exactly tools + system
-// (20,873) and wrote the whole history again, because the loaded-history breakpoint sat on
-// the memory block the runner puts before each user message. No later turn replays that
-// block, so the entry was never read. The histories are the ladder's shape: the always-block
-// first, stored turns without thinking or hints, the memory block right before the question.
-func TestNextTurnReadsThePreviousTurnsHistory(t *testing.T) {
-	head := []llm.Message{
-		{Role: llm.RoleUser, Content: "## Skills\n- memory-aura\n\n## Operator profile\nname: Davide"},
-		{Role: llm.RoleUser, Content: "come ti trovi in questo ambiente?"},
-		{Role: llm.RoleAssistant, Content: "Bene, nel senso pratico."},
-	}
-	question := llm.Message{Role: llm.RoleUser, Content: "si finirti è da maggio che lavoro su Aura"}
-	memory := func(facts string) llm.Message {
-		return llm.Message{Role: llm.RoleUser, Content: "<memory_context>\n" + facts + "\n</memory_context>"}
-	}
-	turnN := append(append([]llm.Message(nil), head...), memory("28 facts about 27 entities"), question)
-	stored := []llm.Message{
-		question,
-		{Role: llm.RoleAssistant, Content: "Lo segno.", ToolCalls: []llm.ToolCall{toolCall("toolu_01", "memory__memory_upsert_fact", `{"subject":"Davide"}`)}},
-		{Role: llm.RoleTool, ToolCallID: "toolu_01", Content: `{"classified":[{"name":"Davide"}]}`},
-		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("toolu_02", "memory__memory_digest", `{}`), toolCall("toolu_03", "memory__memory_facts_about", `{"entity":"Aura"}`)}},
-		{Role: llm.RoleTool, ToolCallID: "toolu_02", Content: `{"facts":29}`},
-		{Role: llm.RoleTool, ToolCallID: "toolu_03", Content: `{"facts":[]}`},
-		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("toolu_04", "memory__memory_batch", `{}`)}},
-		{Role: llm.RoleTool, ToolCallID: "toolu_04", Content: `{"applied":1}`},
-		{Role: llm.RoleAssistant, Content: "Ah, allora conosci Aura molto meglio di me."},
-	}
-	turnN1 := append(append(append([]llm.Message(nil), head...), stored...),
-		memory("29 facts about 27 entities"), llm.Message{Role: llm.RoleUser, Content: "difatti ti uso per fare debug da dentro"})
+// The histories below are the context ladder's shape, which
+// conversations.TestTransientMemoryStaysOutOfTheReplayedPrefix pins on the real ladder: the
+// always-block first, stored turns without thinking or hints, the transient memory block
+// right before the question, and everything before that block replayed unchanged next turn.
+var turnHead = []llm.Message{
+	{Role: llm.RoleUser, Content: "## Skills\n- memory-aura\n\n## Operator profile\nname: Davide"},
+	{Role: llm.RoleUser, Content: "come ti trovi in questo ambiente?"},
+	{Role: llm.RoleAssistant, Content: "Bene, nel senso pratico."},
+}
 
+var previousQuestion = llm.Message{Role: llm.RoleUser, Content: "si finirti è da maggio che lavoro su Aura"}
+
+func memoryBlock(facts string) llm.Message {
+	return llm.Message{Role: llm.RoleUser, Content: "<memory_context>\n" + facts + "\n</memory_context>"}
+}
+
+// nextTurnReach runs turn N (head, memory, question) and turn N+1 (head, the stored turn N,
+// memory, a new question). It fails unless turn N+1 is byte-identical to turn N up to turn
+// N's loaded-history entry, and reports whether a breakpoint of turn N+1 reaches that entry
+// within the lookback.
+func nextTurnReach(t *testing.T, storedTurn []llm.Message) bool {
+	t.Helper()
+	turnN := append(append([]llm.Message(nil), turnHead...), memoryBlock("28 facts about 27 entities"), previousQuestion)
+	turnN1 := append(append(append([]llm.Message(nil), turnHead...), storedTurn...),
+		memoryBlock("29 facts about 27 entities"), llm.Message{Role: llm.RoleUser, Content: "difatti ti uso per fare debug da dentro"})
 	before := parseWire(t, firstTurnRequest(t, turnN))
 	after := parseWire(t, firstTurnRequest(t, turnN1))
 	if before.tools != after.tools || before.system != after.system {
@@ -165,10 +160,54 @@ func TestNextTurnReadsThePreviousTurnsHistory(t *testing.T) {
 	}
 	for i := written; i < len(after.blocks); i++ {
 		if after.blocks[i].cached && positions(after.blocks, written, i) <= lookbackPositions {
-			return
+			return true
 		}
 	}
-	t.Fatalf("no breakpoint of turn N+1 reaches turn N's entry at block %d within %d positions", written, lookbackPositions)
+	return false
+}
+
+// The next turn reads the previous turn's stored history from the cache. MEASURED on the
+// lab VM, conversation 01a2223e, 2026-11-28: every new turn read exactly tools + system
+// (20,873) and wrote the whole history again, because the loaded-history breakpoint sat on
+// the memory block the runner puts before each user message. No later turn replays that
+// block, so the entry was never read.
+func TestNextTurnReadsThePreviousTurnsHistory(t *testing.T) {
+	stored := []llm.Message{
+		previousQuestion,
+		{Role: llm.RoleAssistant, Content: "Lo segno.", ToolCalls: []llm.ToolCall{toolCall("toolu_01", "memory__memory_upsert_fact", `{"subject":"Davide"}`)}},
+		{Role: llm.RoleTool, ToolCallID: "toolu_01", Content: `{"classified":[{"name":"Davide"}]}`},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("toolu_02", "memory__memory_digest", `{}`), toolCall("toolu_03", "memory__memory_facts_about", `{"entity":"Aura"}`)}},
+		{Role: llm.RoleTool, ToolCallID: "toolu_02", Content: `{"facts":29}`},
+		{Role: llm.RoleTool, ToolCallID: "toolu_03", Content: `{"facts":[]}`},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("toolu_04", "memory__memory_batch", `{}`)}},
+		{Role: llm.RoleTool, ToolCallID: "toolu_04", Content: `{"applied":1}`},
+		{Role: llm.RoleAssistant, Content: "Ah, allora conosci Aura molto meglio di me."},
+	}
+	if !nextTurnReach(t, stored) {
+		t.Fatalf("no breakpoint of turn N+1 reaches turn N's entry within %d positions", lookbackPositions)
+	}
+}
+
+// The limit of the fix, pinned: turn N+1's loaded-history breakpoint reaches turn N's entry
+// across its final answer, its question, the entry itself and two positions per tool round
+// (the tool_use run and the tool_result run), so 3 + 2 rounds <= 20. After a turn of nine
+// rounds the next turn re-writes its history once.
+func TestLookbackReachesAPreviousTurnOfEightToolRounds(t *testing.T) {
+	storedTurn := func(rounds int) []llm.Message {
+		stored := []llm.Message{previousQuestion}
+		for i := range rounds {
+			id := fmt.Sprintf("toolu_%02d", i)
+			stored = append(stored,
+				llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall(id, "memory__memory_digest", `{}`)}},
+				llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: `{"facts":29}`})
+		}
+		return append(stored, llm.Message{Role: llm.RoleAssistant, Content: "Fatto."})
+	}
+	for rounds, want := range map[int]bool{8: true, 9: false} {
+		if got := nextTurnReach(t, storedTurn(rounds)); got != want {
+			t.Fatalf("after a turn of %d tool rounds: reached = %v, want %v", rounds, got, want)
+		}
+	}
 }
 
 func TestPositionsCountToolRunsOnce(t *testing.T) {

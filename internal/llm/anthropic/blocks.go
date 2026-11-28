@@ -119,11 +119,14 @@ func (c *conversation) mark(count int) {
 }
 
 // markHistory puts the loaded-history breakpoint on the wire message before the one that
-// opens the turn. The user-role messages right before the turn's question merge with it
-// into that opening message (the runner puts the turn's memory block there), and the next
-// turn replays the question without them: a breakpoint among them writes an entry no later
+// opens the turn. Every user-role message right before the turn's question merges with it
+// into that opening message, and among them is the runner's transient memory block, which
+// the next turn does not replay: a breakpoint on or after it writes an entry no later
 // request reads. Measured on the lab VM, conversation 01a2223e, 2026-11-28: every new turn
-// read only tools + system and wrote its whole history again.
+// read only tools + system and wrote its whole history again. The others are stored and
+// replayed (a tool_result, an unanswered question, the always-block of a first turn), so
+// moving the breakpoint back past them too is conservative: the wire cannot tell them from
+// the memory block, and the cost is that the next turn re-writes them once.
 func (c *conversation) markHistory(count int) {
 	if count < 1 || count > len(c.ends) {
 		return

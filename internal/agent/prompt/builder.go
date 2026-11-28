@@ -49,10 +49,11 @@ type Budget struct {
 	// 5.8k-token prefix, a live turn still called shell_exec unloaded and spent 2.6s
 	// on the refusal.
 	DeferredTools string
-	// LoadedHistory is how many leading history messages came from the conversation
-	// store, recorded once when the run starts. It is never rendered and never makes
-	// the hint present: the builder only copies it to Request.LoadedHistoryMessages on
-	// the anthropic route.
+	// LoadedHistory is how many leading history messages precede the current user
+	// message, recorded once when the run starts: the system prompt, the conversation
+	// store's turns, and the transient memory block the runner puts right before the
+	// question. It is never rendered and never makes the hint present: the builder only
+	// copies it to Request.LoadedHistoryMessages on the anthropic route.
 	LoadedHistory int
 }
 

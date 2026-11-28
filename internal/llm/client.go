@@ -160,9 +160,11 @@ type Request struct {
 	// anthropic route only; zero elsewhere. StablePrefixMessages counts the leading
 	// messages that reach the next request of the run byte for byte (everything but the
 	// per-round hint); LoadedHistoryMessages counts the leading messages before the
-	// current user message: the conversation store's, plus the memory block the runner
-	// puts right before that message. Both are positions in Messages, and the wire client
-	// puts a cache breakpoint at the end of each, the loaded one before that memory block.
+	// current user message: the system prompt, the conversation store's turns and the
+	// transient memory block the runner puts right before that message. Both are positions
+	// in Messages, and the wire client puts a cache breakpoint at the end of each; on the
+	// anthropic wire the loaded one goes before the whole user message the question opens,
+	// which the memory block and any stored user-role neighbour merge into.
 	// omitempty keeps a command hook's stdin unchanged on every other route.
 	StablePrefixMessages  int `json:",omitempty"`
 	LoadedHistoryMessages int `json:",omitempty"`

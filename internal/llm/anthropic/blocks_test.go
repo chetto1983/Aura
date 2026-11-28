@@ -363,21 +363,38 @@ func TestCacheBreakpointsLandOnToolsSystemLoadedHistoryAndTheStablePrefix(t *tes
 // opening wire message, which the next turn replays without it: the loaded-history marker
 // goes on the message before, the last one the next turn sends unchanged.
 func TestLoadedHistoryMarkerStaysOutOfTheTurnsOpeningMessage(t *testing.T) {
-	req := cachedRequest(5, 4)
-	req.Messages = []llm.Message{
-		{Role: llm.RoleSystem, Content: "S"},
-		{Role: llm.RoleUser, Content: "q1"},
-		{Role: llm.RoleAssistant, Content: "a1"},
-		{Role: llm.RoleUser, Content: "memory"},
-		{Role: llm.RoleUser, Content: "q2"},
-		{Role: llm.RoleUser, Content: "hint"},
-	}
-	if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, []string{"tool:other:1", "system:S", "text:a1", "text:q2"}) {
-		t.Fatalf("markers %v", got)
-	}
-	req.Messages[2].Role = llm.RoleUser
-	if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, []string{"tool:other:1", "system:S", "text:q2"}) {
-		t.Fatalf("with no message before the opening one: %v", got)
+	system := llm.Message{Role: llm.RoleSystem, Content: "S"}
+	user := func(text string) llm.Message { return llm.Message{Role: llm.RoleUser, Content: text} }
+	answer := func(text string) llm.Message { return llm.Message{Role: llm.RoleAssistant, Content: text} }
+	call := llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("t1", "lookup", "{}")}}
+	result := llm.Message{Role: llm.RoleTool, ToolCallID: "t1", Content: "r1"}
+	for _, tc := range []struct {
+		name   string
+		stored []llm.Message
+		want   string
+	}{
+		{"after an answer", []llm.Message{system, user("q1"), answer("a1")}, "text:a1"},
+		// A run that died after its tool results and wrote no answer: the results merge into
+		// the opening message, so the marker goes back to the call.
+		{"after tool results", []llm.Message{system, user("q1"), call, result}, "tool_use:t1"},
+		// The ladder pairs a question that got no answer with an assistant marker, as the
+		// runner's own interruption notice does (01a2223e seq 35, the TLS failure).
+		{"after an unanswered question the ladder marked", []llm.Message{system, user("q1"), answer("a1"), user("q-lost"), answer("[no answer]")}, "text:[no answer]"},
+		{"after a bare unanswered question", []llm.Message{system, user("q1"), answer("a1"), user("q-lost")}, "text:a1"},
+		{"with no message before the opening one", []llm.Message{system, user("always-block")}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := cachedRequest(0, 0)
+			req.Messages = append(append(append([]llm.Message(nil), tc.stored...), user("memory")), user("q2"), user("hint"))
+			req.LoadedHistoryMessages, req.StablePrefixMessages = len(tc.stored)+1, len(tc.stored)+2
+			want := []string{"tool:other:1", "system:S", "text:q2"}
+			if tc.want != "" {
+				want = []string{"tool:other:1", "system:S", tc.want, "text:q2"}
+			}
+			if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, want) {
+				t.Fatalf("markers %v, want %v", got, want)
+			}
+		})
 	}
 }
 
