@@ -183,25 +183,32 @@ func mustStore(t *testing.T, pool *pgxpool.Pool) *Store {
 }
 
 // TestSecretRowsAreStoredEncrypted proves the table holds ciphertext while every reader of
-// the store gets the plaintext back.
+// the store gets the plaintext back. The Claude house key is sealed by the same allowlist
+// flag, and is checked here on the row itself rather than on the flag.
 func TestSecretRowsAreStoredEncrypted(t *testing.T) {
 	pool := migratedPool(t)
 	store := mustStore(t, pool)
 	ctx := context.Background()
-	t.Cleanup(func() { _ = store.Delete(context.Background(), "TELEGRAM_BOT_TOKEN") })
-
-	if _, err := store.Upsert(ctx, "TELEGRAM_BOT_TOKEN", "123:plain-token", "test"); err != nil {
-		t.Fatalf("Upsert: %v", err)
-	}
-	var stored string
-	if err := pool.QueryRow(ctx, `SELECT value FROM aura.settings WHERE key = 'TELEGRAM_BOT_TOKEN'`).Scan(&stored); err != nil {
-		t.Fatalf("read the raw row: %v", err)
-	}
-	if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, "plain-token") {
-		t.Fatalf("stored value = %q, want ciphertext", stored)
-	}
-	if got, err := store.Secret(ctx, "TELEGRAM_BOT_TOKEN"); err != nil || got != "123:plain-token" {
-		t.Fatalf("Secret = %q, %v; want the plaintext", got, err)
+	for key, plain := range map[string]string{
+		"TELEGRAM_BOT_TOKEN": "123:plain-token",
+		AnthropicKeySetting:  "sk-ant-api03-plain-house-key",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Cleanup(func() { _ = store.Delete(context.Background(), key) })
+			if _, err := store.Upsert(ctx, key, plain, "test"); err != nil {
+				t.Fatalf("Upsert: %v", err)
+			}
+			var stored string
+			if err := pool.QueryRow(ctx, `SELECT value FROM aura.settings WHERE key = $1`, key).Scan(&stored); err != nil {
+				t.Fatalf("read the raw row: %v", err)
+			}
+			if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, plain) {
+				t.Fatalf("stored value = %q, want ciphertext", stored)
+			}
+			if got, err := store.Secret(ctx, key); err != nil || got != plain {
+				t.Fatalf("Secret = %q, %v; want the plaintext", got, err)
+			}
+		})
 	}
 }
 
