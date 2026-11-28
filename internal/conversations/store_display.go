@@ -57,6 +57,11 @@ var displayPairs = toolPairs[DisplayTurn]{
 	recovered: func(assistant DisplayTurn, call llm.ToolCall) DisplayTurn {
 		return DisplayTurn{ParentSeq: assistant.Seq, Message: recoveredToolResult(assistant.Message, call)}
 	},
+	// A moved message keeps the slot's place in the tree, so a reorder leaves the thread one
+	// chain instead of hanging the result before its own parent.
+	inSlot: func(slot, item DisplayTurn) DisplayTurn {
+		return DisplayTurn{Seq: slot.Seq, ParentSeq: slot.ParentSeq, Message: item.Message}
+	},
 }
 
 // repairDisplayTurns runs the model's tool-pair repair and hangs every turn it keeps from the

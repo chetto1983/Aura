@@ -211,11 +211,15 @@ type toolPairs[T any] struct {
 	recovered func(assistant T, call llm.ToolCall) T
 	// pointer keeps a compacted tool turn as plain memory. Nil drops it with the orphans.
 	pointer func(T) T
+	// inSlot puts the message of item at the position of slot, when a reorder moves turns.
+	inSlot func(slot, item T) T
 }
 
-var managedMessagePairs = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult, pointer: managedToolPointerMessage}
+var managedMessagePairs = toolPairs[llm.Message]{message: bareMessage, recovered: recoveredToolResult, pointer: managedToolPointerMessage, inSlot: movedMessage}
 
 func bareMessage(m llm.Message) llm.Message { return m }
+
+func movedMessage(_, item llm.Message) llm.Message { return item }
 
 func recoveredToolResult(_ llm.Message, call llm.ToolCall) llm.Message {
 	return llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: RecoveryToolResultContent(call)}
@@ -250,11 +254,11 @@ func repairToolPairs[T any](in []T, p toolPairs[T]) []T {
 			continue
 		}
 
-		if start := resultsBehindOutOfBandTurns(msgs, i); start > 0 {
-			end := start + len(m.ToolCalls)
+		if order, end, ok := outOfBandReorder(msgs, i); ok {
 			out = append(out, in[i])
-			out = append(out, in[start:end]...)
-			out = append(out, in[i+1:start]...)
+			for k, from := range order {
+				out = append(out, p.inSlot(in[i+1+k], in[from]))
+			}
 			i = end
 			continue
 		}
@@ -348,35 +352,49 @@ func managedToolPointerMessage(m llm.Message) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Content: m.Content}
 }
 
-func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
-	return toolResultGroupAt(in, assistantIdx, assistantIdx+1)
-}
-
-// resultsBehindOutOfBandTurns returns where an assistant's complete result group starts when
-// turns written outside the turn loop landed between the call and its results, or -1. A
-// scheduled run's or a delegated worker's record is appended under the conversation's row lock
-// with the next seq, so it can land while the turn still waits on a tool: measured on the lab
-// VM on 2026-11-28 (turns #129–#131), where reload then dropped the real result as an orphan.
-func resultsBehindOutOfBandTurns(in []llm.Message, assistantIdx int) int {
-	start := assistantIdx + 1
-	for start < len(in) && outOfBandTurn(in[start]) {
-		start++
+// outOfBandReorder finds an assistant's results when turns written outside the turn loop landed
+// among them, and returns the positions in the order to emit them (the results, then those
+// turns) and where the group ends. A scheduled run's or a delegated worker's record is appended
+// with the next seq, so it can land while the turn still waits on a tool, even between two
+// results of one parallel batch: measured on the lab VM on 2026-11-28 (turns #129–#131), where
+// reload then dropped the real result as an orphan. ok is false when a call stays unanswered or
+// something else interrupts the group, which leaves the recovery path to it.
+func outOfBandReorder(in []llm.Message, assistantIdx int) (order []int, end int, ok bool) {
+	calls := in[assistantIdx].ToolCalls
+	if !validToolCallIDs(calls) {
+		return nil, 0, false
 	}
-	if start == assistantIdx+1 || !toolResultGroupAt(in, assistantIdx, start) {
-		return -1
+	pending := make(map[string]bool, len(calls))
+	for _, call := range calls {
+		pending[call.ID] = true
 	}
-	return start
+	var results, landed []int
+	end = assistantIdx + 1
+	for ; end < len(in) && len(pending) > 0; end++ {
+		m := in[end]
+		switch {
+		case m.Role == llm.RoleTool && pending[m.ToolCallID]:
+			delete(pending, m.ToolCallID)
+			results = append(results, end)
+		case outOfBandTurn(m):
+			landed = append(landed, end)
+		default:
+			return nil, 0, false
+		}
+	}
+	if len(pending) > 0 || len(landed) == 0 {
+		return nil, 0, false
+	}
+	return append(results, landed...), end, true
 }
 
 func outOfBandTurn(m llm.Message) bool {
 	return m.Role == llm.RoleUser || (m.Role == llm.RoleAssistant && len(m.ToolCalls) == 0)
 }
 
-// toolResultGroupAt reports whether the messages from start answer every call of the assistant
-// at assistantIdx exactly once, and nothing else.
-func toolResultGroupAt(in []llm.Message, assistantIdx, start int) bool {
+func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
 	calls := in[assistantIdx].ToolCalls
-	if start+len(calls) > len(in) {
+	if assistantIdx+len(calls) >= len(in) {
 		return false
 	}
 	want := make(map[string]bool, len(calls))
@@ -387,7 +405,7 @@ func toolResultGroupAt(in []llm.Message, assistantIdx, start int) bool {
 		want[call.ID] = false
 	}
 	for j := range calls {
-		msg := in[start+j]
+		msg := in[assistantIdx+1+j]
 		if msg.Role != llm.RoleTool {
 			return false
 		}

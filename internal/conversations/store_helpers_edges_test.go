@@ -311,3 +311,40 @@ func TestRepairDisplayShowsTheRealResultBehindARecord(t *testing.T) {
 		t.Fatalf("display = %+v, want the real result second", shown)
 	}
 }
+
+// TestRepairMovesARecordBetweenParallelResults: each result of a parallel batch is its own
+// AppendTurn, so a record can land between two of them.
+func TestRepairMovesARecordBetweenParallelResults(t *testing.T) {
+	t.Parallel()
+	in := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "a"}, {ID: "b"}}},
+		{Role: llm.RoleTool, ToolCallID: "a", Content: "result a"},
+		{Role: llm.RoleAssistant, Content: "record"},
+		{Role: llm.RoleTool, ToolCallID: "b", Content: "result b"},
+	}
+	got := repairManagedToolMessagePairs(in)
+	want := []llm.Message{in[0], in[1], in[3], in[2]}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("repair = %+v\nwant both real results, then the record: %+v", got, want)
+	}
+}
+
+// TestRepairDisplayKeepsTheChainLinear: the history snapshot hangs each turn from ParentSeq, so a
+// moved turn must keep the thread one chain, not open a branch the operator never made.
+func TestRepairDisplayKeepsTheChainLinear(t *testing.T) {
+	t.Parallel()
+	msgs := append(recordBetweenCallAndResult(), llm.Message{Role: llm.RoleAssistant, Content: "reply"})
+	in := make([]DisplayTurn, len(msgs))
+	for i, m := range msgs {
+		in[i] = DisplayTurn{Seq: 129 + i, ParentSeq: 128 + i, Message: m}
+	}
+	got := repairDisplayTurns(in)
+	for i, turn := range got {
+		if want := 128 + i; turn.ParentSeq != want || turn.Seq != want+1 {
+			t.Fatalf("turn %d = seq %d parent %d, want a linear chain seq %d parent %d: %+v", i, turn.Seq, turn.ParentSeq, want+1, want, got)
+		}
+	}
+	if got[1].Message.Content != "waited" || got[2].Message.Content != in[1].Message.Content {
+		t.Fatalf("display = %+v, want the real result under the call, then the record", DisplayMessages(got))
+	}
+}
