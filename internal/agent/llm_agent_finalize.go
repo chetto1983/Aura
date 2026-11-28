@@ -220,7 +220,7 @@ func toolNamesByCallID(history []llm.Message) map[string]string {
 func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Usage, err error) {
 	finalizeHistory := append(append([]llm.Message(nil), a.history...),
 		llm.Message{Role: llm.RoleUser, Content: finalizeNudge})
-	req := a.builder.Build(finalizeHistory, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{}, a.activated)
+	req := a.builder.Build(finalizeHistory, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{LoadedHistory: a.loadedHistory}, a.activated)
 	req.ToolChoice = "none"
 	req.SessionID = a.sessionID
 	withTurnMedia(ic.Ctx, &req)

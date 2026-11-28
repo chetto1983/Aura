@@ -171,6 +171,28 @@ func TestLoadedHistoryCountExcludesTheCurrentTurn(t *testing.T) {
 	}
 }
 
+// The finalize synthesis is one more call on the same prefix: it marks the stored
+// history where every round did, so it reads that history from the cache.
+func TestFinalizeSynthesisCarriesTheLoadedHistory(t *testing.T) {
+	stored := []llm.Message{
+		{Role: llm.RoleUser, Content: "prima domanda"},
+		{Role: llm.RoleAssistant, Content: "prima risposta"},
+	}
+	turns := append(append([]llm.Message(nil), stored...), llm.Message{Role: llm.RoleUser, Content: "e adesso?"})
+	client := &routeClient{}
+	a := NewLlmAgent(LlmAgentConfig{
+		Client: client, LLM: anthropicRouteConfig(), Registry: tools.NewRegistry(),
+		SessionID: uuid.Must(uuid.NewV7()).String(), UserTurns: turns,
+	})
+	if _, _, err := a.synthesize(InvocationContext{Ctx: context.Background()}); err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	const systemMessages = 1
+	if got := client.requests[0].LoadedHistoryMessages; got != len(stored)+systemMessages {
+		t.Fatalf("finalize LoadedHistoryMessages = %d, want %d", got, len(stored)+systemMessages)
+	}
+}
+
 func TestLoadedHistoryIsZeroWithoutAUserMessage(t *testing.T) {
 	hist := []llm.Message{{Role: llm.RoleSystem, Content: "s"}, {Role: llm.RoleAssistant, Content: "a"}}
 	if got := loadedHistoryCount(hist); got != 0 {
