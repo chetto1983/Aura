@@ -121,14 +121,29 @@ export function ModelSettingsPanel({
   // AURA_LLM_PROVIDER still probes as the provider its base URL points at.
   const provider = resolveProvider(loaded?.values.AURA_LLM_PROVIDER ?? '', formBaseURL);
   const [chatGPTReady, setChatGPTReady] = useState(false);
-  // The daemon lists a Claude account's models with the stored house key, never a typed one.
   const claudeKeyStored = loaded?.rows.ANTHROPIC_API_KEY?.has_value === true;
+  // An account route lists exactly what the account may run, so a typed id is never offered, and
+  // nothing is listed until the account is reachable: a connected ChatGPT plan, or a stored Claude
+  // key (the daemon lists with the stored house key, never a typed one).
+  const accountModels: Partial<Record<ProviderChoice, Partial<PickerBinding>>> = {
+    chatgpt: {
+      allowCustom: false,
+      disabled: !chatGPTReady,
+      noPriceLabel: t('settings.chatgpt.planUsage'),
+    },
+    claude: {
+      allowCustom: false,
+      disabled: !claudeKeyStored,
+      noPriceLabel: t('settings.claude.priceUnknown'),
+    },
+  };
+  const accountModel = accountModels[provider];
   // The catalogue follows the FORM route, not the saved one, so the model list is the list
   // of the endpoint the operator is currently pointing at.
   const catalog = useModelCatalog(
     providerIDOf(provider),
     formBaseURL,
-    provider === 'chatgpt' ? chatGPTReady : provider !== 'claude' || claudeKeyStored,
+    accountModel?.disabled !== true,
   );
   // Every picker below lists from OpenRouter whatever the chat route is: generation, cloud
   // speech and cloud embeddings all run there. Only the pane on screen asks for its lists.
@@ -190,23 +205,8 @@ export function ModelSettingsPanel({
     const currentVoice = loaded.values.AURA_TTS_CLOUD_VOICE ?? '';
     if (!voices.includes(currentVoice)) setValue('AURA_TTS_CLOUD_VOICE', voices[0] ?? '');
   };
-  // An account route lists exactly what the account may run, so a typed id is never offered.
-  const accountModels: Partial<PickerBinding> =
-    provider === 'chatgpt'
-      ? {
-          allowCustom: false,
-          disabled: !chatGPTReady,
-          noPriceLabel: t('settings.chatgpt.planUsage'),
-        }
-      : provider === 'claude'
-        ? {
-            allowCustom: false,
-            disabled: !claudeKeyStored,
-            noPriceLabel: t('settings.claude.priceUnknown'),
-          }
-        : {};
   const pickers: PickerBindings = {
-    AURA_LLM_MODEL: { catalog, formatRow, ...accountModels },
+    AURA_LLM_MODEL: { catalog, formatRow, ...accountModel },
     AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
     AURA_VIDEO_MODEL: { catalog: videoCatalog, formatRow },
     // Empty is the LOCAL embedding sidecar, exactly as it is for STT and TTS: the model is
