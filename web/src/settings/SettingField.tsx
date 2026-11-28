@@ -199,7 +199,10 @@ function SettingField({
           id={inputId}
           value={value}
           onValueChange={onChange}
-          options={def.options.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
+          options={def.options.map((option) => ({
+            value: option.value,
+            label: t(option.labelKey),
+          }))}
           className="text-[13px]"
         />
       ) : def.secret ? (
