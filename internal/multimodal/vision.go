@@ -21,8 +21,9 @@ var ErrNoVisionRoute = errors.New("vision: no route accepts images")
 
 // ImageReader reads one image with the operator-selected model through that model's own
 // client, for a route the HTTP primary arm cannot speak: the ChatGPT plan, whose token only
-// the Responses API accepts. A wrapped llm.ErrMandatoryModalityUnavailable says the image
-// cannot be read there; any other error is a failure.
+// the Responses API accepts, and Claude, which speaks Messages. A wrapped
+// llm.ErrMandatoryModalityUnavailable says the image cannot be read there; any other error
+// is a failure.
 type ImageReader interface {
 	Describe(ctx context.Context, image []byte, mimeType, prompt string) (string, error)
 }

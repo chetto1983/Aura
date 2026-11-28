@@ -32,6 +32,7 @@ type Client struct {
 	// logger is resolved at each request, so the request line follows the default logger
 	// the process installs after the client was built.
 	logger func() *slog.Logger
+	caps   capabilityCache
 }
 
 var _ llm.Client = (*Client)(nil)
@@ -66,10 +67,18 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 	if err != nil {
 		return nil, err
 	}
-	built, err := c.buildRequest(ctx, req)
+	media, err := c.projectMedia(ctx, key, c.model(req), req)
 	if err != nil {
 		return nil, err
 	}
+	built, err := c.buildRequest(req, media)
+	if err != nil {
+		return nil, err
+	}
+	return c.open(ctx, key, built)
+}
+
+func (c *Client) open(ctx context.Context, key string, built builtRequest) (<-chan llm.Chunk, error) {
 	streamCtx, firedIdle, cleanup := openai_compat.StreamIdleContext(ctx, c.cfg.StreamIdleTimeout())
 	sdk := newSDK(key, c.httpClient, c.baseURL)
 	stream := sdk.Beta.Messages.NewStreaming(streamCtx, built.params)

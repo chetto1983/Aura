@@ -67,7 +67,7 @@ func (v *liveVision) current() liveVisionRoute {
 			version: snapshot.Version,
 			llm:     snapshot.Config,
 			source:  llm.NewContentCapabilitySource(snapshot.Config, visionCapabilityTTL),
-			reader:  chatGPTImageReader(snapshot.Config, v.plan),
+			reader:  primaryImageReader(snapshot.Config, v.plan, v.creds.AnthropicKey),
 		}
 	}
 	return v.route

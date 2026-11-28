@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/anthropic"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -218,5 +221,50 @@ func TestLiveVisionReadsWithOpenRouterAfterASwitch(t *testing.T) {
 	text, model, err = describeOnce(t, vision)
 	if err != nil || text != "read by the sidecar" || model != "glm-ocr" {
 		t.Fatalf("a text-only OpenRouter model = %q, %q, %v; want the sidecar", text, model, err)
+	}
+}
+
+// secretLog is a settings store with no rows that records which sealed keys were read.
+type secretLog struct {
+	mu   sync.Mutex
+	read []string
+}
+
+func (s *secretLog) Secret(_ context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.read = append(s.read, key)
+	return "", nil
+}
+
+// The wire request Claude is sent is pinned in internal/llm/anthropic (describe_test.go); here
+// the route is followed to the Claude client, which reads the house key from the store and,
+// with none set, hands the image to the sidecar without dialing.
+func TestLiveVisionUsesClaudeOnTheAnthropicRoute(t *testing.T) {
+	route, _ := ollamaVision(t, "gemma4", "read by gemma")
+	sidecar, calls := visionSidecar(t)
+	store := &secretLog{}
+	runtime := llm.NewRuntime(nil, route)
+	vision := liveImageReader(&chatEnv{
+		cfg:         &config.Config{MultimodalTimeoutSec: 5, MultimodalBaseURL: sidecar, MultimodalModel: "glm-ocr"},
+		credentials: settings.Credentials{Store: store}, llmRuntime: runtime,
+	})
+	if _, model, err := describeOnce(t, vision); err != nil || model != "gemma4" {
+		t.Fatalf("boot route read model %q, err %v; want gemma4", model, err)
+	}
+
+	runtime.Replace(nil, llm.Config{Provider: llm.AnthropicProvider, BaseURL: llm.AnthropicBaseURL, Model: "claude-sonnet-5-5"})
+	text, model, err := describeOnce(t, vision)
+	if err != nil || text != "read by the sidecar" || model != "glm-ocr" {
+		t.Fatalf("Claude without a house key = %q, %q, %v; want the sidecar", text, model, err)
+	}
+	if _, ok := vision.current().reader.(*anthropic.Client); !ok {
+		t.Fatalf("the anthropic route reads with %T, want the Claude client", vision.current().reader)
+	}
+	store.mu.Lock()
+	read := slices.Clone(store.read)
+	store.mu.Unlock()
+	if !slices.Equal(read, []string{settings.AnthropicKeySetting}) || calls.Load() != 1 {
+		t.Fatalf("the Claude read asked the store for %v and the sidecar %d times; want the house key once", read, calls.Load())
 	}
 }

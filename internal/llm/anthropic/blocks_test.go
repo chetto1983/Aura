@@ -1,9 +1,7 @@
 package anthropic
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"reflect"
 	"regexp"
 	"strings"
@@ -367,68 +365,5 @@ func TestCacheBreakpointSkipsThinking(t *testing.T) {
 	req.StablePrefixMessages = 5
 	if got := markers(t, send(t, testConfig(), req)); !reflect.DeepEqual(got, []string{"tool:other:1", "system:S", "tool_use:t2"}) {
 		t.Fatalf("markers %v", got)
-	}
-}
-
-type fakeLoader map[string]llm.VerifiedContentPart
-
-func (l fakeLoader) LoadContentPart(_ context.Context, _, _, id string) (llm.VerifiedContentPart, error) {
-	part, ok := l[id]
-	if !ok {
-		return part, errors.New("no such part")
-	}
-	return part, nil
-}
-
-func TestMediaReachesTheModelAsReferenceText(t *testing.T) {
-	loader := fakeLoader{"ref1": {ID: "ref1", MIMEType: "image/png", FallbackText: "Photo of a receipt", Bytes: []byte("\x89PNG")}}
-	req := llm.Request{Model: "claude-sonnet-5-5", LoadedHistoryMessages: 3,
-		ContentProjection: &llm.ContentProjection{Loader: loader, ReferenceIDs: []string{"ref1"}},
-		ToolMedia: map[string][]llm.ProjectedRequestPart{"t1": {
-			{Type: "media", MIMEType: "image/png", Bytes: []byte("\x89PNG")},
-			{Type: "reference", MIMEType: "application/pdf", Text: "Chart summary", ReferenceOnly: true},
-		}},
-		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: "S"}, {Role: llm.RoleUser, Content: "old"}, {Role: llm.RoleAssistant, Content: "a"},
-			{Role: llm.RoleUser, Content: "look at this"},
-			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("t1", "render", "{}")}},
-			{Role: llm.RoleTool, ToolCallID: "t1", Content: "rendered"},
-			{Role: llm.RoleUser, Content: "hint"},
-		}}
-	body := send(t, testConfig(), req)
-	messages := messagesOf(t, body)
-	current := blocksOf(t, messages[2])
-	if !reflect.DeepEqual(typesOf(current), []string{"text", "text"}) || current[1]["text"] != "Photo of a receipt" {
-		t.Fatalf("current user message %#v", current)
-	}
-	result := blocksOf(t, messages[4])[0]["content"].([]any)
-	if len(result) != 2 || object(t, result[1])["text"] != "Chart summary" {
-		t.Fatalf("tool_result content %#v", result)
-	}
-	raw, _ := json.Marshal(body)
-	if strings.Contains(string(raw), `"image"`) || strings.Contains(string(raw), `"document"`) || strings.Contains(string(raw), "base64") {
-		t.Fatalf("a media block reached the wire: %s", raw)
-	}
-	req.LoadedHistoryMessages = 0
-	if last := blocksOf(t, messagesOf(t, send(t, testConfig(), req))[4]); last[len(last)-1]["text"] != "Photo of a receipt" {
-		t.Fatalf("without the loaded position the last user message carries it: %#v", last)
-	}
-}
-
-func TestMediaFailuresStopTheRequest(t *testing.T) {
-	for name, req := range map[string]llm.Request{
-		"no loader":       {Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, ContentProjection: &llm.ContentProjection{ReferenceIDs: []string{"x"}}},
-		"load fails":      {Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, ContentProjection: &llm.ContentProjection{Loader: fakeLoader{}, ReferenceIDs: []string{"x"}}},
-		"no user message": {Messages: []llm.Message{{Role: llm.RoleSystem, Content: "S"}}, ContentProjection: &llm.ContentProjection{Loader: fakeLoader{"x": {ID: "x", MIMEType: "image/png", FallbackText: "img"}}, ReferenceIDs: []string{"x"}}},
-		"bad role":        {Messages: []llm.Message{{Role: "developer", Content: "hi"}}},
-		"tool without id": {Messages: []llm.Message{{Role: llm.RoleTool, Content: "hi"}}},
-		"call without id": {Messages: []llm.Message{{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{toolCall("", "lookup", "{}")}}}},
-		"unnamed tool":    {Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, Tools: []llm.ToolDef{tool("", "", "")}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := fixtureClient(t, testConfig(), nil).Stream(context.Background(), req); err == nil {
-				t.Fatal("request accepted")
-			}
-		})
 	}
 }

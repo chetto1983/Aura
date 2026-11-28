@@ -2,14 +2,12 @@ package anthropic
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
@@ -45,6 +43,14 @@ func convert(req llm.Request, media requestMedia) (conversation, error) {
 	if err != nil {
 		return conv, err
 	}
+	// A call's media go only with the last result that answers it: they are this turn's,
+	// and a fallback call id built from name, arguments and position can recur across turns.
+	answer := map[string]int{}
+	for i, message := range req.Messages {
+		if message.Role == llm.RoleTool {
+			answer[message.ToolCallID] = i
+		}
+	}
 	for i, message := range req.Messages {
 		var blocks []anthropic.BetaContentBlockParamUnion
 		user := true
@@ -70,7 +76,11 @@ func convert(req llm.Request, media requestMedia) (conversation, error) {
 				return conv, err
 			}
 		case llm.RoleTool:
-			block, err := toolResult(message, media.tools[message.ToolCallID])
+			var shown []anthropic.BetaToolResultBlockParamContentUnion
+			if answer[message.ToolCallID] == i {
+				shown = media.tools[message.ToolCallID]
+			}
+			block, err := toolResult(message, shown)
 			if err != nil {
 				return conv, err
 			}
@@ -221,67 +231,4 @@ func wireToolID(id string) string {
 		prefix = prefix[:47]
 	}
 	return prefix + "_" + hex.EncodeToString(sum[:8])
-}
-
-// requestMedia is what Request.ContentProjection and Request.ToolMedia add to the
-// conversation: blocks after the current user message's text, and blocks inside each
-// call's tool_result.
-type requestMedia struct {
-	uploads []anthropic.BetaContentBlockParamUnion
-	tools   map[string][]anthropic.BetaToolResultBlockParamContentUnion
-}
-
-// projectMedia is the seam the image and document blocks replace (plan Task 8). Until
-// then every part reaches the model as its stored reference text, because no media
-// capability is declared to llm.ProjectContentPart.
-func projectMedia(ctx context.Context, req llm.Request) (requestMedia, error) {
-	media := requestMedia{tools: map[string][]anthropic.BetaToolResultBlockParamContentUnion{}}
-	projection := req.ContentProjection
-	if projection == nil {
-		if p, ok := llm.ContentProjectionFromContext(ctx); ok {
-			projection = &p
-		}
-	}
-	if projection != nil && len(projection.ReferenceIDs) > 0 {
-		if projection.Loader == nil {
-			return media, errors.New("anthropic: content projection has no loader")
-		}
-		for _, id := range projection.ReferenceIDs {
-			part, err := llm.ProjectContentPart(ctx, projection.Loader, projection.Principal, id, llm.ProviderContentCapabilities{})
-			if err != nil {
-				return media, err
-			}
-			media.uploads = append(media.uploads, textBlocks(part.Text)...)
-		}
-	}
-	tools := req.ToolMedia
-	if tools == nil {
-		tools = llm.ToolMediaFromContext(ctx).Snapshot()
-	}
-	for id, parts := range tools {
-		for _, part := range parts {
-			if strings.TrimSpace(part.Text) != "" {
-				media.tools[id] = append(media.tools[id], anthropic.BetaToolResultBlockParamContentUnion{OfText: &anthropic.BetaTextBlockParam{Text: part.Text}})
-			}
-		}
-	}
-	return media, nil
-}
-
-// uploadTarget is the current user message: the one right after the loaded history when
-// the builder recorded it (the last user message is then the per-round hint), else the
-// last user message.
-func uploadTarget(req llm.Request, needed bool) (int, error) {
-	if !needed {
-		return -1, nil
-	}
-	if n := req.LoadedHistoryMessages; n > 0 && n < len(req.Messages) && req.Messages[n].Role == llm.RoleUser {
-		return n, nil
-	}
-	for i, message := range slices.Backward(req.Messages) {
-		if message.Role == llm.RoleUser {
-			return i, nil
-		}
-	}
-	return -1, errors.New("anthropic: media requires a user message")
 }

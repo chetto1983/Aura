@@ -41,26 +41,61 @@ func fetchModels(ctx context.Context, source KeySource, hc *http.Client, baseURL
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
-	defer cancel()
-	sdk := newSDK(key, hc, baseURL)
-	// The wire probe (2026-11-27) measured only the bare list, with no lifecycle query and
-	// no lifecycle field recorded, so the list is asked for as measured and a row is
-	// dropped only when it names a lifecycle other than active.
-	pager := sdk.Models.ListAutoPaging(ctx, anthropic.ModelListParams{}, option.WithMiddleware(boundedCatalog))
+	models, err := listModels(ctx, key, hc, baseURL)
+	if err != nil {
+		return nil, err
+	}
 	var entries []llm.ModelCatalogEntry
-	for pager.Next() {
-		model := pager.Current()
+	for _, model := range models {
+		// The wire probe (2026-11-27) measured only the bare list, with no lifecycle query
+		// and no lifecycle field recorded, so the list is asked for as measured and a row is
+		// dropped only when it names a lifecycle other than active.
 		inactive := model.Lifecycle != "" && model.Lifecycle != anthropic.ModelInfoLifecycleActive
 		if inactive || strings.TrimSpace(model.ID) == "" {
 			continue
 		}
 		entries = append(entries, catalogEntry(model))
 	}
+	return entries, nil
+}
+
+// listModels reads every page of the account's /v1/models, the one response both the
+// model picker and the content capabilities come from.
+func listModels(ctx context.Context, key string, hc *http.Client, baseURL string) ([]anthropic.ModelInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+	sdk := newSDK(key, hc, baseURL)
+	pager := sdk.Models.ListAutoPaging(ctx, anthropic.ModelListParams{}, option.WithMiddleware(boundedCatalog))
+	var models []anthropic.ModelInfo
+	for pager.Next() {
+		models = append(models, pager.Current())
+	}
 	if err := pager.Err(); err != nil {
 		return nil, fmt.Errorf("%w: %w", llm.ErrModelCatalogUnavailable, providerError(err, key))
 	}
-	return entries, nil
+	return models, nil
+}
+
+// contentCapabilities is what the catalogue lets model read natively. Only exact MIME
+// types are declared, never the image modality: SupportsMIME would admit every image/*
+// type through it, and an image block's source takes only these four, so SVG, BMP and
+// TIFF stay reference text. A model the account does not list reads text only.
+func contentCapabilities(models []anthropic.ModelInfo, model string) llm.ProviderContentCapabilities {
+	caps := llm.ProviderContentCapabilities{Modalities: map[string]bool{"text": true}, MIMETypes: map[string]bool{}}
+	for _, info := range models {
+		if info.ID != model {
+			continue
+		}
+		if info.Capabilities.ImageInput.Supported {
+			for _, mediaType := range imageMIMETypes {
+				caps.MIMETypes[string(mediaType)] = true
+			}
+		}
+		if info.Capabilities.PDFInput.Supported {
+			caps.MIMETypes[pdfMIMEType] = true
+		}
+	}
+	return caps
 }
 
 func catalogEntry(model anthropic.ModelInfo) llm.ModelCatalogEntry {

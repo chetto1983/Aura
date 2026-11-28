@@ -1,7 +1,6 @@
 package anthropic
 
 import (
-	"context"
 	"fmt"
 	"slices"
 
@@ -26,11 +25,14 @@ type builtRequest struct {
 	replayed int
 }
 
-func (c *Client) buildRequest(ctx context.Context, req llm.Request) (builtRequest, error) {
-	model := req.Model
-	if model == "" {
-		model = c.cfg.Model
+func (c *Client) model(req llm.Request) string {
+	if req.Model != "" {
+		return req.Model
 	}
+	return c.cfg.Model
+}
+
+func (c *Client) buildRequest(req llm.Request, media requestMedia) (builtRequest, error) {
 	effort, err := c.effort(req.Reasoning.Effort)
 	if err != nil {
 		return builtRequest{}, err
@@ -39,10 +41,6 @@ func (c *Client) buildRequest(ctx context.Context, req llm.Request) (builtReques
 		return builtRequest{}, fmt.Errorf("anthropic: unsupported tool choice %q", req.ToolChoice)
 	}
 	tools, err := convertTools(req.Tools)
-	if err != nil {
-		return builtRequest{}, err
-	}
-	media, err := projectMedia(ctx, req)
 	if err != nil {
 		return builtRequest{}, err
 	}
@@ -65,7 +63,7 @@ func (c *Client) buildRequest(ctx context.Context, req llm.Request) (builtReques
 		display = anthropic.BetaThinkingConfigAdaptiveDisplaySummarized
 	}
 	params := anthropic.BetaMessageNewParams{
-		Model:     model,
+		Model:     c.model(req),
 		MaxTokens: int64(c.maxTokens(req.MaxTokens)),
 		System:    conv.system,
 		Messages:  conv.params(),

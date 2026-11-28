@@ -53,7 +53,7 @@ type mediaRuntime struct {
 // the edge so construction stays pure and the route needs no network to be decided. creds
 // gives the cloud speech leg the services key, and the primary vision route the same key only
 // when that route is OpenRouter. reader, when not nil, is the chosen model reading images
-// through its own client (chatGPTRoute).
+// through its own client (chatGPTRoute, anthropicRoute).
 func newMediaRuntime(
 	cfg *config.Config, creds settings.Credentials, client *http.Client, primaryAcceptsImages bool,
 	reader multimodal.ImageReader,
@@ -248,7 +248,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// ChatGPT store, which a new ingest image under an old compose file does not have.
 	var reader multimodal.ImageReader
 	if mediaKind(*kind) == mediaKindImage || mediaKind(*kind) == mediaKindPDF {
-		if ctx, reader, err = chatGPTRoute(ctx, cfg, os.Getenv); err != nil {
+		if ctx, reader, err = chatGPTRoute(ctx, cfg, os.Getenv); err == nil && reader == nil {
+			reader, err = anthropicRoute(cfg, creds)
+		}
+		if err != nil {
 			_, _ = fmt.Fprintln(stderr, err)
 			return 1
 		}
