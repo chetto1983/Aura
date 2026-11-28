@@ -23,9 +23,9 @@ Everything else fails exactly as today.
 
 ## Global Constraints
 
-- **djpeg argv, exactly:** `-scale 1/N -bmp -maxmemory 310378 -maxscans 100 -strict`. Input on stdin, output on stdout, `cmd.Env = []string{}`, no shell.
+- **djpeg argv, exactly:** `-scale 1/N -bmp -maxmemory <K> -maxscans 100 -strict`, where `K = (djpegBudgetBytes - djpegBaseBytes - maxBMPBytes) / 1000`, per image. For 8064×6048: `K = 303329`. Input on stdin, output on stdout into a buffer grown to `maxBMPBytes` before the exec, `cmd.Env = []string{}`, no shell.
 - **djpeg constants:**
-  - `djpegMaxMemoryBytes = 296 << 20` (passed as `/1000` = `310378`);
+  - `djpegBudgetBytes = 300 << 20` and `djpegBaseBytes = 2 << 20` (lowered only if Task 1 measures a larger RSS − arrays margin);
   - `djpegMaxScans = 100`;
   - `djpegTimeout = 30 * time.Second`, started after the slot is taken;
   - `cmd.WaitDelay = 2 * time.Second`;
@@ -46,7 +46,7 @@ Everything else fails exactly as today.
 - **PhotoCraft argv, exactly:** `run <tmp>/in.png --cmd image.imageSize --params {"width":1024}|{"height":1024} --out <tmp>/out.jpg --quality 85 --no-gpu`.
   - `width` when `w >= h`.
   - The timeout is 2 min.
-  - Any failure hands the original bytes on, with one `slog.Warn`.
+  - Any failure hands the original bytes on, with one `slog.Warn`; a success logs one `slog.Info` with `photocraft_ms`.
 - **PhotoCraft 0.23.1 tarball pins:** the sandbox's, verbatim:
   - x86_64 `4383aef67a07cc370ad250a6ed60015205d3e6c463faf3ff4b0f67b8178ccfc8`;
   - aarch64 `fcc81c38ae62c72fa9f4fd1ec3d18396493ba261662792d6995cc35905ce71d2`.
@@ -116,20 +116,28 @@ Everything else fails exactly as today.
   Each image gets the spike's seed and method.
 - [ ] **Step 2: Write `35_followup.sh`.** It uses the same container limits and the `rss.go` wrapper as `30_measure.sh`, with the Global Constraints argv, and emits one `ROW|` per case:
   - RSS against arrays + 2 MiB for each new JPEG, and the PSNR of the finish against Pillow LANCZOS (`40_verify.py`);
-  - 8160×6120 4:4:4: does it pass, and at what RSS;
-  - `djpeg < in > out` against `-outfile`, both beside the 452 MiB ballast, with the cgroup peak;
-  - `jpegtran -scans` files of 100 and 101 scans at 48 MP 4:2:0: the 101-scan file is refused; the 100-scan file's wall time on 1 CPU, which must be under 30 s;
+  - 8064×6048 and 8160×6120 4:4:4 at their per-image `-maxmemory`: does each pass, and at what RSS;
+  - the pipe as `runDjpeg` will run it: a small Go harness (`//go:build ignore`, like `baseline.go`) in the same container as the 452 MiB ballast. It feeds p48_444_progressive on stdin, holds stdout in a buffer pre-sized to `maxBMPBytes`, then runs the finish. Record the cgroup peak, beside a `-outfile` run;
+  - `jpegtran -scans` files of 100 and 101 scans at 48 MP 4:2:0: the 101-scan file is refused; the 100-scan file's wall time on 1 CPU;
   - a header-only progressive JPEG with a complete SOS header, 8300×6300 4:4:4: is it refused with "Backing store not supported" before any scan data? (Task 2's fixture depends on it);
   - the 48 MP 4:2:0 progressive cut at 60%: does `-strict` exit non-zero;
   - PhotoCraft in `python:3.15-slim-bookworm` with `HOME=/tmp`: the transparent PNG's left-half colour, and the portrait's output size with `{"height":1024}`.
 - [ ] **Step 3: Run it** from Git Bash: `timeout 900 env MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash /mnt/d/Aura/spikes/vision-large-photo-downscale/35_followup.sh > spikes/vision-large-photo-downscale/results/35_followup.txt 2>&1`.
   - Expected: one ROW per case, no harness error.
   - Run `20_build.sh` first and `60_cleanup.sh` after.
-- [ ] **Step 4: Record it.**
-  - The README follow-up gets a verdict per family: gray and CMYK VALIDATED only if RSS ≤ arrays + 4 MiB and PSNR within 0.5 dB of the YCbCr rows. It also says what the follow-up does not prove.
-  - The spec is amended with the eligible set, the 4:4:4 edge and the alpha rule. If any RSS − arrays margin is over 4 MiB, the spec also gets a lower `djpegMaxMemoryBytes`, and Global Constraints are updated.
+- [ ] **Step 4: Judge each row against its pass rule.**
+  - **4:2:2.** RSS ≤ arrays + 4 MiB, and PSNR within 0.5 dB of the 4:2:0 rows. **If it fails, STOP and ask the operator.** 4:2:2 is `YCbCrModel` like 4:2:0, and with no SOF scan it cannot be excluded.
+  - **Gray and CMYK.** The same rule. A family that passes is VALIDATED and joins the djpeg set. A family that fails keeps its old bound; that is not a stop.
+  - **8064×6048 and 8160×6120 4:4:4.** Either outcome is acceptable. The spec's §2 table is corrected to what was measured.
+  - **The pipe.** The cgroup peak must be ≤ ballast + 300 MiB (752 MiB) with no OOM. **Otherwise STOP and ask.**
+  - **100 scans.** Wall time under 10 s on 1 CPU, a third of the timeout. **Otherwise STOP and ask**, proposing a lower `-maxscans` that does pass.
+  - **RSS − arrays margin.** If any row is over 2 MiB, raise `djpegBaseBytes` to the largest measured margin.
+  - **Header-only refusal, `-strict`, and PhotoCraft's portrait output.** Record each outcome; Task 2's and Task 5's fixtures follow it.
+- [ ] **Step 5: Record it.**
+  - The README follow-up gets the verdicts and what the follow-up does not prove.
+  - The spec is amended, dated "amended after Task 1": the eligible set, the §2 table, `djpegBaseBytes` and the alpha rule. Global Constraints here are updated to match.
   - The PRD paragraph records the spike, the follow-up and the design in one bullet block, with the date and "what it does not prove".
-- [ ] **Step 5: Commit** by pathspec: `spike(vision): measure the colour models, pipes and limits the resize spec left open`.
+- [ ] **Step 6: Commit** by pathspec: `spike(vision): measure the colour models, pipes and limits the resize spec left open`.
 
 ### Task 2: djpeg shrinks a JPEG over the cap
 
@@ -155,6 +163,7 @@ Everything else fails exactly as today.
   - `func acquireDecodeSlot(ctx context.Context) (release func(), err error)`;
   - `func prepareDecoded(img image.Image, format string, raw []byte, cfg image.Config, maxBytes int) (VisionImage, error)`, today's `:127-146`, unchanged.
 
+- [ ] **Step 0: Put the binaries in WSL.** Run `wsl -u root apt-get install -y libjpeg-turbo-progs`, then `djpeg -help 2>&1 | grep -c maxscans` → 1. Without them, every real-binary test below skips locally and RED/GREEN proves nothing. From Step 3 on, run with `-v` and check that no djpeg test reports SKIP.
 - [ ] **Step 1: Write the failing pure tests** (`vision_djpeg_plan_test.go`)
   - `TestPlanDjpegPicksTheLargestScaleThatKeeps1024`:
     - 8064×6048 → 4, 2016×1512;
@@ -169,7 +178,7 @@ Everything else fails exactly as today.
     - 25440×25440 → ok (3180²);
     - 25441×25440 → `ErrImageTooManyPixels`;
     - 65535×20000 → `ErrImageTooManyPixels`.
-  - `TestDjpegArgs`: N=4 → `[]string{"-scale","1/4","-bmp","-maxmemory","310378","-maxscans","100","-strict"}`.
+  - `TestDjpegArgs`: the plan for 8064×6048 → `[]string{"-scale","1/4","-bmp","-maxmemory","303329","-maxscans","100","-strict"}`.
   - `TestMaxBMPBytes`: 2016×1512 → `9145654`; 1025×13 → `1078+3076*13`.
   - `TestBoundedBufferRefusesPastItsLimit`: limit 4, a write of 5 → an error, and `Len() <= 4`.
   - `TestDjpegEligible`:
@@ -210,7 +219,7 @@ Everything else fails exactly as today.
 
 **Files:**
 - Modify:
-  - `internal/assets/turn_media_loader.go`: the comment at `:96-102` says that a JPEG over the cap is shrunk by djpeg, and that what cannot be shrunk reaches the model as text.
+  - `internal/assets/turn_media_loader.go`: the comment at `:97-102` says that a JPEG over the cap is shrunk by djpeg, and that what cannot be shrunk reaches the model as text.
   - `.github/workflows/ci.yml`:
     - `race-db-integration-gates`: an install step before `:2633`;
     - `go-mutation`: an install step before `:2061`, and `vision_djpeg` added to the elicitation-boundaries `scopes` with its comment line;
@@ -302,7 +311,7 @@ Everything else fails exactly as today.
 - [ ] **Step 3: Implement** per spec §6:
   - a private `os.MkdirTemp` directory, `in.png` with mode 0600, `exec.CommandContext` with a 2 min timeout and `CombinedOutput`, the `#nosec G204` reason as `main.go:143-145`;
   - `checkResizedJPEG` on `out.jpg`;
-  - on every failure, `fitLargePNG` logs `slog.Warn` and returns the input.
+  - on every failure, `fitLargePNG` logs `slog.Warn` and returns the input; on success it logs the `slog.Info` with `photocraft_ms`.
 - [ ] **Step 4: Run it** (WSL): `go vet ./cmd/aura-media-index/ ./internal/multimodal/ && go build ./... && go test -race -count=1 ./cmd/aura-media-index/ ./internal/multimodal/`, then `golangci-lint run` on both, then `bash scripts/deadcode_production_gate.sh`. Expected: PASS, 0 issues, exit 0.
 - [ ] **Step 5: Commit** by pathspec: `feat(ingest): resize a PNG over the vision pixel cap with PhotoCraft`.
 
@@ -331,9 +340,11 @@ Everything else fails exactly as today.
     - a peak under 768 MiB;
     - `oom_kill` unchanged.
 - [ ] **Step 4: Indexer legs.**
-  - The same photo indexes, and its description chunk is present in the identity's ArcadeDB.
-  - The spike's synthetic 48 MP PNG indexes with a description.
-  - `aura-ingest`'s cgroup is sampled for both.
+  - First read on the VM how an upload reaches the indexed bucket. If a chat upload does not, the operator adds the photo through the cockpit's documents. Record the route.
+  - The discriminating run, with the operator's ok, because it bills one vision call: `docker exec aura-ingest aura-media-index -kind image -name <name> <path>` with stderr kept. Expected: the djpeg Info line on stderr, and exit 0. A chunk existing proves nothing, because the fallback also produces one.
+  - The automatic run's description chunk is present in the identity's ArcadeDB.
+  - The spike's synthetic 48 MP PNG goes the same way. Expected: the PhotoCraft Info line in its hand run.
+  - `aura-ingest`'s cgroup is sampled during each run.
   - The same PNG in chat still reads as reference text.
 - [ ] **Step 5: Write the verification file** per spec §Live acceptance.
   - It holds header facts and counts only: no photo, no EXIF/GPS, no description text (the repo is public). It also says what the run does not prove.

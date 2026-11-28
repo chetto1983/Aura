@@ -97,10 +97,21 @@ These are measured facts, and the spike's figures fit them:
   287.8 MiB and an RSS of 296,764 KiB (289.8 MiB); p48_baseline has arrays of 8.7 MiB and an RSS
   of 10.8 MiB.
 
-**Decision: `-maxmemory` is the only memory gate.** The value is `djpegMaxMemoryBytes = 296 MiB`
-(310,378,496 B, passed as `-maxmemory 310378`). Child RSS then stays at about 298 MiB or less,
-inside the 300 MiB that the in-process bounds give one decode beside aura's heap. The code does
-not parse the SOF to predict the coefficient bytes. The reasons:
+**Decision: `-maxmemory` is the only memory gate, and it is set per image** (amended
+2026-11-28, before any code).
+
+- **The budget.** One decode gets 300 MiB over aura's heap, as the in-process bounds give it:
+  `djpegBudgetBytes = 300 << 20`.
+- **What the budget holds during the exec:**
+  - the child, whose RSS is its arrays + `djpegBaseBytes = 2 << 20` (measured);
+  - aura's stdout buffer, pre-sized to `maxBMPBytes` so that it never doubles while it grows.
+- **The value passed.** `-maxmemory = (djpegBudgetBytes − djpegBaseBytes − maxBMPBytes) / 1000`,
+  computed for each image.
+- **The measured worst case.** For 8064×6048 at 1/4: (314,572,800 − 2,097,152 − 9,145,654) / 1000 =
+  303329, that is 289.3 MiB. Its arrays measured 287.8 MiB, so it passes as long as
+  `already_allocated` stays under about 1.5 MiB. Task 1 confirms this.
+
+The code does not parse the SOF to predict the coefficient bytes. The reasons:
 
 - `image.DecodeConfig` reports neither sampling nor progressive mode.
 - The SOF scan would be a bespoke marker parser. It would duplicate libjpeg's own accounting and
@@ -117,15 +128,17 @@ pixel count must therefore be at most `maxPixelsOther` (3180² = 10.11 MP), the 
 measured for the costliest RGBA decode. This is what caps baseline JPEG: at N = 8, up to about
 647 MP.
 
-The bounds that follow from the budget (worked out, not measured beyond 48.8 MP):
+The bounds that follow from the budget (worked out, not measured beyond 48.8 MP). The output is
+counted twice: once in djpeg's inversion array and once in aura's buffer, the latter at the 24-bit
+bound.
 
-| JPEG | Coefficient B/px | + output B/px | Largest photo admitted |
+| JPEG | Coefficient B/px | + output B/px (child + aura) | Largest photo admitted |
 |---|---:|---:|---|
-| baseline, single interleaved scan | 0 | 3/N² | output ≤ 10.11 MP, about 647 MP at 1/8 |
-| progressive 4:2:0 | 3 | 3/16 at 1/4 | about 97 MP (about 100 MP at 1/8) |
-| progressive 4:2:2 | 4 | 3/16 | about 74 MP |
-| progressive 4:4:4 | 6 | 3/16 | about 50 MP. 8064×6048 (48.8 MP) measured at 289.8 MiB. 8160×6120 works out to 294.7 MiB of arrays before `already_allocated`: Task 1 settles it |
-| gray / CMYK progressive (if Task 1 admits them) | 2 / 8 | 1/16 / 3/16 | about 150 MP / about 38 MP |
+| baseline, single interleaved scan | 0 | 6/N² | output ≤ 10.11 MP, about 647 MP at 1/8 |
+| progressive 4:2:0 | 3 | 6/16 at 1/4 | about 93 MP (about 100 MP at 1/8) |
+| progressive 4:2:2 | 4 | 6/16 | about 71 MP |
+| progressive 4:4:4 | 6 | 6/16 | about 49 MP. 8064×6048 (48.8 MP) passes by about 1.5 MiB. 8160×6120 works out about 5.6 MiB over and is refused: Task 1 confirms both |
+| gray / CMYK progressive (if Task 1 admits them) | 2 / 8 | 4/16 / 6/16 | about 139 MP / about 37 MP |
 
 ### 3. The scale
 
@@ -136,15 +149,18 @@ with M > 1 was not measured and is not used.
 ### 4. Exec safety
 
 - **No shell.** The command is `exec.CommandContext(runCtx, path, "-scale", "1/N", "-bmp",
-  "-maxmemory", "310378", "-maxscans", "100", "-strict")`. `path` comes from `exec.LookPath("djpeg")`.
+  "-maxmemory", "<per image, §2>", "-maxscans", "100", "-strict")`. `path` comes from `exec.LookPath("djpeg")`.
   No file name and no user text reaches argv.
 - **Pipes, not temp files.** The JPEG goes in on stdin (`bytes.NewReader(raw)`) and the BMP
   comes out on stdout. There is nothing to write, clean up or leave behind, and the input is never
-  in page cache charged to the cgroup. The spike measured file to file only, so pipes are a design
-  choice that the live acceptance measures.
-- **Stdout is bounded.** The bound is the 24-bit BMP size of the predicted output: 1078 header
-  bytes + the 4-byte-padded row × `outH`. One byte more fails the write, and djpeg dies on the
-  broken pipe. Stderr is kept up to 4 KiB, for the error text.
+  in page cache charged to the cgroup. The spike measured file to file only. Task 1 measures the
+  pipe with a reader process inside the cgroup holding the output, and the live acceptance
+  measures it again.
+- **Stdout is bounded and pre-sized.** The bound is the 24-bit BMP size of the predicted output
+  (`maxBMPBytes`): 1078 header bytes + the 4-byte-padded row × `outH`. The buffer is grown to that
+  size before the exec, so it never re-allocates, and the bound is part of the budget (§2). One
+  byte more fails the write, and djpeg dies on the broken pipe. Stderr is kept up to 4 KiB, for the
+  error text.
 - **Empty environment.** `cmd.Env = []string{}`. aura's environment carries API keys, and libjpeg
   reads `JSIMD_*` from it.
 - **Timeout.** `djpegTimeout = 30 s`, started after the decode slot is taken. Waiting in the queue
@@ -163,7 +179,7 @@ with M > 1 was not measured and is not used.
   the predicted `outW × outH`. After that, `bmp.Decode` runs (called by name: `golang.org/x/image/bmp`,
   already in `go.mod` and already imported at `internal/documents/preview_raster.go:10`). The two
   peaks never overlap. While djpeg runs, aura's own extra memory is the stdout buffer (9 MB for a
-  48 MP photo, at most 30 MB).
+  48 MP photo, at most 30 MB), and §2 subtracts it from `-maxmemory`.
 - **BMP over PNM.** The reasons:
   - `x/image/bmp` is a dependency already present;
   - it decodes djpeg's 24-bit and 8-bit paletted output;
@@ -227,7 +243,9 @@ The rule: an image over the bound comes back resized, or fails exactly as it did
   `slog.Warn`. The reasons:
   - PhotoCraft's admission depends on the host's free memory at that moment;
   - a hard failure would retry the file forever on a host that never has the memory.
-  The Warn reaches stderr, which `media.py` drops on success. Whether to retry instead is an open
+  A success logs one `slog.Info` ("aura ingest: photocraft resized a PNG over the pixel cap", with
+  width, height and `photocraft_ms`). Both lines reach stderr, which `media.py` drops on success,
+  so the acceptance reads them from a hand run (below). Whether to retry instead is an open
   question.
 - **Alpha.** Task 1 measures how PhotoCraft flattens a transparent PNG. If the result is not white,
   `resizePNG` takes only PNGs with no alpha channel: `DecodeConfig` model `RGBAModel`, `GrayModel`,
@@ -246,7 +264,7 @@ The rule: an image over the bound comes back resized, or fails exactly as it did
     one too old for `-maxscans`, then fails to build. This is where djpeg-in-`aura` is asserted;
     `aura` has no image contract script.
   - The comment at `:162-166` names `pdftoppm in cmd/aura-media-index`, which does not run in this
-    image (it builds only `cmd/aura`, `:77,90`). It is corrected on touch.
+    image (it builds only `cmd/aura`, `:78,90`). It is corrected on touch.
 - **`docker/aura-ingest/Dockerfile`.**
   - `libjpeg-turbo-progs` joins the apt list (`:61-65`).
   - PhotoCraft 0.23.1 comes from a new builder stage, because the runtime stage has no curl. That
@@ -286,6 +304,11 @@ So every job that runs them installs `libjpeg-turbo-progs` beside its `poppler-u
 - `race-db-integration-gates`, for `./internal/assets/...` (`:2633-2636`; it installs nothing today);
 - `go-mutation`.
 
+These are all the jobs that run tests in those packages. `skills.yml` and `live-outward.yml`
+reach neither package, and `release.yml` runs no Go test (checked with `grep` on 2026-11-28).
+WSL needs the package too (`wsl -u root apt-get install -y libjpeg-turbo-progs`). Without it, the
+local RED/GREEN runs and `coverage_docker.sh` skip the tests that would exercise the path.
+
 The pure logic is the scale, the output bound, the argv, the stdout bound and the error mapping.
 It lives in its own file with daemon-free tests, and that file becomes the mutation scope
 `vision_djpeg`.
@@ -303,11 +326,20 @@ drives the cockpit; no test identity is created.
      the description matches.
    - Meanwhile a VM script samples `memory.current` of aura's cgroup every 100 ms and reads
      `memory.events` before and after.
-2. **Indexer.** The same photo is indexed from the identity's bucket. Its description chunk is
-   read from the identity's ArcadeDB. While it indexes, `aura-ingest`'s cgroup is sampled the
-   same way.
-3. **PNG leg.** The spike's synthetic 48 MP PNG (`gen_images.py`) goes through the indexer the
-   same way. The same PNG uploaded in chat must still read as reference text.
+2. **Indexer.** First, read on the VM how the photo reaches the indexer. Whether a chat upload
+   lands in the indexed bucket was never checked. If it does not, the operator adds the photo
+   through the cockpit's documents. Record the route.
+   - A description chunk existing does not tell a resize from the fallback: both describe
+     something.
+   - The observable that tells them apart is a hand run:
+     `docker exec aura-ingest aura-media-index -kind image -name <name> <path>`, with stderr kept.
+     Its stderr must carry the djpeg Info line. The operator agrees to it first, because it bills
+     one vision call.
+   - While it runs, `aura-ingest`'s cgroup is sampled the same way. The automatic run's chunk is
+     then read from the identity's ArcadeDB.
+3. **PNG leg.** The spike's synthetic 48 MP PNG (`gen_images.py`) takes the same route. The same
+   hand run must show the PhotoCraft Info line, and the same PNG uploaded in chat must still read
+   as reference text.
 
 The dated file `docs/superpowers/verification/<date>-vision-large-photo-resize.md` shows:
 
@@ -315,7 +347,9 @@ The dated file `docs/superpowers/verification/<date>-vision-large-photo-resize.m
 - `djpeg -help | grep maxscans` and `photocraft-cli --version` in each container;
 - the photo's header facts only: dimensions, progressive or baseline, sampling
   (`djpeg -verbose`), byte size;
-- the Info log line, with scale and `djpeg_ms`;
+- the Info log lines: djpeg in `aura` (scale and `djpeg_ms`), and djpeg and PhotoCraft from the
+  indexer's hand runs;
+- the route by which the photo reached the indexer;
 - the sampled peak of each cgroup against 768 MiB or the host, and `oom_kill` unchanged;
 - the route and model;
 - the description chunk's length;
