@@ -1,0 +1,295 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import i18n from '../../i18n/i18n';
+import { ModelSettingsPanel } from '../ModelSettingsPanel';
+import {
+  CLAUDE_BASE_URL,
+  PROVIDER_OPTIONS,
+  resolveProvider,
+  routeForProvider,
+} from '../modelSettingsDefs';
+
+// The Claude route on the routing pane: the house key the admin types (sealed, never shown), and
+// the account's models, which the daemon can only list once that key is stored. A first setup
+// therefore saves the key alone, then the route once a model is picked.
+
+const FAKE_KEY = 'sk-ant-test-fake';
+const KEY_LABEL = 'Claude API key';
+const SAVE = 'Save runtime settings';
+const CLOUD = {
+  provider: 'openrouter',
+  base_url: 'https://openrouter.ai/api/v1',
+  model: 'deepseek/deepseek-v4-flash:nitro',
+};
+const MODELS = [
+  {
+    id: 'claude-sonnet-5-5',
+    display_name: 'Claude Sonnet 5.5',
+    context_window: 1_000_000,
+    input_per_1m: 2,
+    output_per_1m: 10,
+    has_price: true,
+  },
+  { id: 'claude-haiku-5-5', display_name: 'Claude Haiku 5.5', has_price: false },
+];
+
+interface Call {
+  readonly method: string;
+  readonly url: string;
+  readonly body: unknown;
+}
+
+function urlOf(input: RequestInfo | URL): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status });
+}
+
+function row(key: string, value: string, secret = false, stored = value !== '') {
+  return {
+    key,
+    label: key,
+    value,
+    kind: 'string',
+    secret,
+    has_value: stored,
+    overridden: stored,
+    applied: 'live',
+  };
+}
+
+function setup({ keyStored = false, onClaude = false } = {}) {
+  let stored = keyStored;
+  let route = onClaude
+    ? { provider: 'anthropic', base_url: CLAUDE_BASE_URL, model: 'claude-sonnet-5-5' }
+    : CLOUD;
+  const calls: Call[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = urlOf(input);
+      const method = init?.method ?? 'GET';
+      const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ method, url, body });
+      if (url === '/api/settings/ANTHROPIC_API_KEY' && method === 'PUT') {
+        stored = true;
+        return Promise.resolve(json(row('ANTHROPIC_API_KEY', '', true, true)));
+      }
+      if (url === '/api/settings/ANTHROPIC_API_KEY' && method === 'DELETE') {
+        stored = false;
+        return Promise.resolve(
+          json({ key: 'ANTHROPIC_API_KEY', deleted: true, restart_required: false }),
+        );
+      }
+      if (url === '/api/settings/llm-profile') {
+        const { settings } = body as { settings: Record<string, string> };
+        route = {
+          provider: settings.AURA_LLM_PROVIDER ?? route.provider,
+          base_url: settings.AURA_LLM_BASE_URL ?? route.base_url,
+          model: settings.AURA_LLM_MODEL ?? route.model,
+        };
+        return Promise.resolve(json({ updated: 3, restart_required: false }));
+      }
+      if (url === '/api/settings/llm-routes') return Promise.resolve(json({ routes: [CLOUD] }));
+      if (url.startsWith('/api/settings/llm-models?provider=anthropic'))
+        return Promise.resolve(
+          stored ? json({ models: MODELS }) : json({ error: 'no Claude API key is set' }, 502),
+        );
+      if (url !== '/api/settings') return Promise.resolve(json({ models: [] }));
+      return Promise.resolve(
+        json({
+          restart_required: false,
+          settings: [
+            row('AURA_LLM_PROVIDER', route.provider),
+            row('AURA_LLM_BASE_URL', route.base_url),
+            row('AURA_LLM_MODEL', route.model),
+            row('ANTHROPIC_API_KEY', '', true, stored),
+          ],
+        }),
+      );
+    }),
+  );
+  const onComplete = vi.fn();
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ModelSettingsPanel groups={['routing']} onComplete={onComplete} />
+    </QueryClientProvider>,
+  );
+  const writes = () => calls.filter((call) => call.method !== 'GET');
+  const catalogueAsked = () =>
+    calls.some((call) => call.url.startsWith('/api/settings/llm-models?provider=anthropic'));
+  return { calls, writes, catalogueAsked, onComplete };
+}
+
+function keyField(): HTMLElement {
+  const field = document.querySelector<HTMLElement>('[data-setting="ANTHROPIC_API_KEY"]');
+  if (field === null) throw new Error('the Claude key field is not on the page');
+  return field;
+}
+
+async function pickModel(name: RegExp) {
+  const model = screen.getByLabelText<HTMLButtonElement>('Primary model');
+  await waitFor(() => {
+    expect(model.disabled).toBe(false);
+  });
+  fireEvent.click(model);
+  fireEvent.click(await screen.findByRole('option', { name }));
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('Claude route on the routing pane', () => {
+  it('forces and hides the base URL, and shows the key only on the Claude route', async () => {
+    const { catalogueAsked } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Cloud' }));
+    expect(screen.queryByLabelText(KEY_LABEL)).toBeNull();
+    expect(screen.getByLabelText('Primary base URL')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
+    expect(screen.queryByLabelText('Primary base URL')).toBeNull();
+    expect(within(keyField()).getByText('Not set')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLButtonElement>('Primary model').disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: SAVE }).disabled).toBe(true);
+    expect(catalogueAsked()).toBe(false);
+  });
+
+  it('shows a stored key as set and never its value', async () => {
+    setup({ keyStored: true, onClaude: true });
+    const input = await screen.findByLabelText<HTMLInputElement>(KEY_LABEL);
+    expect(input.value).toBe('');
+    expect(within(keyField()).getByText('Configured')).toBeTruthy();
+  });
+
+  it('first setup saves the key alone, then the route once a model is picked', async () => {
+    const { writes, catalogueAsked, onComplete } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    fireEvent.change(screen.getByLabelText(KEY_LABEL), { target: { value: FAKE_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+
+    await waitFor(() => {
+      expect(within(keyField()).getByText('Configured')).toBeTruthy();
+    });
+    expect(writes()).toEqual([
+      { method: 'PUT', url: '/api/settings/ANTHROPIC_API_KEY', body: { value: FAKE_KEY } },
+    ]);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(document.body.innerHTML).not.toContain(FAKE_KEY);
+    // The route switch survives the key-only save, so the pane is still on Claude.
+    expect(screen.getByRole('radio', { name: 'Claude' }).getAttribute('data-state')).toBe('on');
+    await waitFor(() => {
+      expect(catalogueAsked()).toBe(true);
+    });
+
+    await pickModel(/Claude Sonnet 5\.5/);
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+    expect(writes().slice(1)).toEqual([
+      {
+        method: 'PUT',
+        url: '/api/settings/llm-profile',
+        body: {
+          settings: {
+            AURA_LLM_MODEL: 'claude-sonnet-5-5',
+            AURA_LLM_BASE_URL: CLAUDE_BASE_URL,
+            AURA_LLM_PROVIDER: 'anthropic',
+          },
+        },
+      },
+    ]);
+  });
+
+  it('with a stored key, saves the profile alone', async () => {
+    const { writes } = setup({ keyStored: true });
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    await pickModel(/Claude Sonnet 5\.5/);
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    expect(writes().map((call) => call.url)).toEqual(['/api/settings/llm-profile']);
+  });
+
+  it('saves a replaced key before the profile that needs it', async () => {
+    const { writes } = setup({ keyStored: true });
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    fireEvent.change(screen.getByLabelText(KEY_LABEL), { target: { value: FAKE_KEY } });
+    await pickModel(/Claude Sonnet 5\.5/);
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    expect(writes().map((call) => call.url)).toEqual([
+      '/api/settings/ANTHROPIC_API_KEY',
+      '/api/settings/llm-profile',
+    ]);
+  });
+
+  it('drops a typed key when the operator leaves the Claude route', async () => {
+    const { writes, onComplete } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    fireEvent.change(screen.getByLabelText(KEY_LABEL), { target: { value: FAKE_KEY } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
+    // Back on the saved Cloud route nothing is left to write, so the button only continues.
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+    expect(writes()).toEqual([]);
+  });
+
+  it('Reset deletes the key', async () => {
+    const { writes } = setup({ keyStored: true, onClaude: true });
+    await screen.findByLabelText(KEY_LABEL);
+    fireEvent.click(within(keyField()).getByRole('button', { name: 'Reset' }));
+    await waitFor(() => {
+      expect(within(keyField()).getByText('Not set')).toBeTruthy();
+    });
+    expect(writes()).toEqual([
+      { method: 'DELETE', url: '/api/settings/ANTHROPIC_API_KEY', body: undefined },
+    ]);
+  });
+
+  it('lists only the account models, with no custom entry and no invented price', async () => {
+    setup({ keyStored: true, onClaude: true });
+    await screen.findByLabelText(KEY_LABEL);
+    const model = screen.getByLabelText<HTMLButtonElement>('Primary model');
+    await waitFor(() => {
+      expect(model.disabled).toBe(false);
+    });
+    fireEvent.click(model);
+    const haiku = await screen.findByRole('option', { name: /Claude Haiku 5\.5/ });
+    expect(haiku.textContent).toContain('price not published');
+    expect(haiku.textContent).not.toContain('no token charge');
+    fireEvent.change(screen.getByPlaceholderText('Search models...'), {
+      target: { value: 'claude-made-up' },
+    });
+    expect(screen.queryByText(/as typed/)).toBeNull();
+  });
+
+  it('speaks Italian and English', async () => {
+    await i18n.changeLanguage('it');
+    try {
+      setup({ onClaude: true });
+      expect(await screen.findByLabelText('Chiave API di Claude')).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Claude' })).toBeTruthy();
+    } finally {
+      await i18n.changeLanguage('en');
+    }
+    expect(await screen.findByLabelText(KEY_LABEL)).toBeTruthy();
+  });
+
+  it('maps the anthropic provider to the Claude button with no invented model', () => {
+    const option = PROVIDER_OPTIONS.find((candidate) => candidate.id === 'claude');
+    if (option === undefined) throw new Error('Claude provider missing');
+    expect(option.provider).toBe('anthropic');
+    expect(resolveProvider('anthropic', CLAUDE_BASE_URL)).toBe('claude');
+    expect(
+      routeForProvider(option, [], { provider: 'openrouter', baseURL: CLOUD.base_url, model: 'x' }),
+    ).toEqual({ baseURL: CLAUDE_BASE_URL, model: '', source: 'fallback' });
+  });
+});

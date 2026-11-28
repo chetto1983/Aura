@@ -15,6 +15,8 @@ export const LOCAL_PROVIDER = 'llamacpp';
 export const OLLAMA_PROVIDER = 'ollama';
 export const CHATGPT_PROVIDER = 'chatgpt';
 export const CHATGPT_BASE_URL = 'https://api.openai.com/v1';
+export const CLAUDE_PROVIDER = 'anthropic';
+export const CLAUDE_BASE_URL = 'https://api.anthropic.com';
 
 export type SettingsKey =
   | 'AURA_LLM_MODEL'
@@ -24,6 +26,7 @@ export type SettingsKey =
   | 'AURA_OPENROUTER_PREFERRED_MAX_LATENCY_SEC'
   | 'AURA_OPENROUTER_SERVICES_CAP_USD'
   | 'AURA_OPENROUTER_MANAGEMENT_KEY'
+  | 'ANTHROPIC_API_KEY'
   | 'AURA_LLM_MAX_TOKENS'
   | 'AURA_MODEL_CONTEXT_WINDOW'
   | 'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT'
@@ -55,6 +58,16 @@ export interface SettingDef {
 }
 
 export const PRIMARY_SETTINGS: readonly SettingDef[] = [
+  // The Claude route's house key, shown on that route only. It comes before the model because
+  // the daemon lists the account's models with the stored key, so a first setup saves it first.
+  {
+    key: 'ANTHROPIC_API_KEY',
+    kind: 'string',
+    secret: true,
+    labelKey: 'settings.claude.apiKey',
+    placeholder: 'sk-ant-...',
+    helpKey: 'settings.claude.apiKeyHelp',
+  },
   {
     key: 'AURA_LLM_MODEL',
     kind: 'string',
@@ -258,7 +271,7 @@ function isOllamaBaseURL(value: string): boolean {
   }
 }
 
-export type ProviderChoice = 'cloud' | 'local' | 'ollama' | 'chatgpt';
+export type ProviderChoice = 'cloud' | 'local' | 'ollama' | 'chatgpt' | 'claude';
 
 /** One routing button: which provider it selects and the route to fall back on. */
 export interface ProviderOption {
@@ -299,7 +312,21 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     fallbackBaseURL: CHATGPT_BASE_URL,
     fallbackModel: '',
   },
+  {
+    id: 'claude',
+    provider: CLAUDE_PROVIDER,
+    labelKey: 'settings.provider.claude',
+    fallbackBaseURL: CLAUDE_BASE_URL,
+    fallbackModel: '',
+  },
 ];
+
+// The routes whose endpoint the daemon refuses to move: the button writes this URL and the
+// pane hides the base URL field.
+export const FIXED_BASE_URLS: Partial<Readonly<Record<ProviderChoice, string>>> = {
+  chatgpt: CHATGPT_BASE_URL,
+  claude: CLAUDE_BASE_URL,
+};
 
 /** The route a provider button writes into the form. */
 export interface ResolvedRoute {
@@ -339,6 +366,7 @@ export function routeForProvider(
 export function resolveProvider(storedProvider: string, baseURL: string): ProviderChoice {
   const normalized = storedProvider.trim().toLowerCase();
   if (normalized === CHATGPT_PROVIDER) return 'chatgpt';
+  if (normalized === CLAUDE_PROVIDER) return 'claude';
   if (normalized === OLLAMA_PROVIDER) return 'ollama';
   if (normalized === LOCAL_PROVIDER) return 'local';
   if (normalized === CLOUD_PROVIDER) return 'cloud';

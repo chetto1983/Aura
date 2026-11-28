@@ -51,7 +51,12 @@ const CALL_TIME_SETTING_KEYS = new Set<SettingsKey>([
   'AURA_IMAGE_MODEL',
   'AURA_VIDEO_MODEL',
   'AURA_DECIDE_MODEL',
+  'ANTHROPIC_API_KEY',
 ]);
+
+// Rows the route profile needs already stored: the daemon checks a Claude route against the
+// account's models, which it can only list with the house key, so the key is written first.
+const PRE_PROFILE_KEYS = new Set<SettingsKey>(['ANTHROPIC_API_KEY']);
 
 function emptyItem(def: SettingDef): SettingItem {
   const live = HOT_LLM_PROFILE_KEYS.has(def.key) || CALL_TIME_SETTING_KEYS.has(def.key);
@@ -96,6 +101,18 @@ function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedStat
   };
 }
 
+// withEdits lays the held edits over the reloaded rows. `initial` stays the stored value, so
+// they remain dirty and the next save sends them.
+function withEdits(
+  state: LoadedState,
+  values: Readonly<Record<string, string>>,
+  keys: readonly SettingsKey[],
+): LoadedState {
+  if (keys.length === 0) return state;
+  const edits = Object.fromEntries(keys.map((key) => [key, values[key] ?? '']));
+  return { ...state, values: { ...state.values, ...edits } };
+}
+
 // errorMessage pulls the human part out of whatever the API layer threw. settingsApi
 // already unwraps the server's {"error": "..."} body, so for a rejected write this is the
 // validation reason itself ("must be an int") rather than a status code.
@@ -122,7 +139,12 @@ export interface ModelSettingsState {
   readonly dirtyKeys: readonly SettingsKey[];
   readonly reload: () => Promise<void>;
   readonly setValue: (key: SettingsKey, value: string) => void;
-  readonly save: (onComplete?: (outcome: SaveOutcome) => void | Promise<void>) => Promise<void>;
+  /** `holdProfile` saves every row but the route profile, and keeps the profile's edits on the
+   *  form: the route cannot be saved yet, so the save is not complete and `onComplete` waits. */
+  readonly save: (
+    onComplete?: (outcome: SaveOutcome) => void | Promise<void>,
+    holdProfile?: boolean,
+  ) => Promise<void>;
   readonly resetSetting: (key: SettingsKey) => Promise<void>;
 }
 
@@ -212,7 +234,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   }, []);
 
   const save = useCallback(
-    async (onComplete?: (outcome: SaveOutcome) => void | Promise<void>) => {
+    async (onComplete?: (outcome: SaveOutcome) => void | Promise<void>, holdProfile = false) => {
       if (loaded === undefined || saving) return;
       if (dirtyKeys.length === 0) {
         await onComplete?.({ openRouterKeys: [] });
@@ -222,9 +244,15 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
       setSaved(false);
       setSaveError(undefined);
       const openRouterKeys: OpenRouterKeysResult[] = [];
+      const putRow = async (key: SettingsKey) => {
+        const written = await putSetting(key, loaded.values[key] ?? '');
+        if (written.openrouter_keys !== undefined) openRouterKeys.push(written.openrouter_keys);
+      };
+      const profileKeys = dirtyKeys.filter((key) => HOT_LLM_PROFILE_KEYS.has(key));
+      const held = holdProfile ? profileKeys : [];
       try {
-        const profileKeys = dirtyKeys.filter((key) => HOT_LLM_PROFILE_KEYS.has(key));
-        if (profileKeys.length > 0) {
+        for (const key of dirtyKeys.filter((key) => PRE_PROFILE_KEYS.has(key))) await putRow(key);
+        if (profileKeys.length > 0 && held.length === 0) {
           const written = await putLLMProfile(
             Object.fromEntries(profileKeys.map((key) => [key, loaded.values[key] ?? ''])),
           );
@@ -234,17 +262,18 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
             queryClient.invalidateQueries({ queryKey: REASONING_CAPABILITIES_QUERY_KEY }),
           ]);
         }
-        for (const key of dirtyKeys.filter((key) => !HOT_LLM_PROFILE_KEYS.has(key))) {
-          const written = await putSetting(key, loaded.values[key] ?? '');
-          if (written.openrouter_keys !== undefined) openRouterKeys.push(written.openrouter_keys);
+        for (const key of dirtyKeys.filter(
+          (key) => !HOT_LLM_PROFILE_KEYS.has(key) && !PRE_PROFILE_KEYS.has(key),
+        )) {
+          await putRow(key);
         }
         const settings = await fetchSettings();
-        setLoaded(buildState(settings));
+        setLoaded(withEdits(buildState(settings), loaded.values, held));
         // The save just wrote this provider's route memory server-side; re-read it so a
         // switch away and back in the same session restores what was actually saved.
         await reloadRoutes();
         setSaved(true);
-        await onComplete?.({ openRouterKeys });
+        if (held.length === 0) await onComplete?.({ openRouterKeys });
       } catch (err) {
         // Deliberately NOT setLoadStatus('error'): that swaps the whole panel for the
         // "couldn't LOAD settings" alert, which throws away everything the operator just

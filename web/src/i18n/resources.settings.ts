@@ -1,5 +1,6 @@
 import { profileDefaultNotifyEn, profileDefaultNotifyIt } from './resources.profileDefaultNotify';
 import { mailEn, mailIt } from './resources.settings.mail';
+import { claudeEn, claudeIt, providerEn, providerIt } from './resources.settings.providers';
 
 export const settingsEn = {
   settings: {
@@ -115,15 +116,10 @@ export const settingsEn = {
     },
     modelRouting: {
       heading: 'Model routing',
-      body: 'Choose OpenRouter, ChatGPT, the local llama.cpp server, or Ollama, then set the model and token budget.',
+      body: 'Choose OpenRouter, ChatGPT, Claude, the local llama.cpp server, or Ollama, then set the model and token budget.',
     },
-    provider: {
-      label: 'Primary model provider',
-      cloud: 'Cloud',
-      local: 'Local',
-      ollama: 'Ollama',
-      chatgpt: 'ChatGPT',
-    },
+    provider: providerEn,
+    claude: claudeEn,
     chatgpt: {
       accountHeading: 'Your ChatGPT account',
       accountBody: 'Connect your ChatGPT plan to Aura.',
@@ -369,15 +365,10 @@ export const settingsIt = {
     },
     modelRouting: {
       heading: 'Instradamento modello',
-      body: 'Scegli OpenRouter, ChatGPT, il server llama.cpp locale oppure Ollama, poi imposta modello e budget token.',
+      body: 'Scegli OpenRouter, ChatGPT, Claude, il server llama.cpp locale oppure Ollama, poi imposta modello e budget token.',
     },
-    provider: {
-      label: 'Provider modello primario',
-      cloud: 'Cloud',
-      local: 'Locale',
-      ollama: 'Ollama',
-      chatgpt: 'ChatGPT',
-    },
+    provider: providerIt,
+    claude: claudeIt,
     chatgpt: {
       accountHeading: 'Il tuo account ChatGPT',
       accountBody: 'Collega il tuo piano ChatGPT ad Aura.',
