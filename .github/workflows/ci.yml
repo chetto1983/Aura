@@ -2103,9 +2103,10 @@ jobs:
     # the measurement that is missing and fails closed.
     if: ${{ !cancelled() }}
     timeout-minutes: 10
-    # REL-02: this is deliberately unconditional. The eighteen independently-scored
-    # boundaries — sixteen Go files, the frontend aggregate and the media frontend on its own
-    # denominator — publish one candidate-bound report on every run; no strong scope can
+    # REL-02: this is deliberately unconditional. Every independently-scored boundary —
+    # each Go file in GO_SCOPES, the frontend aggregate and the media frontend on its own
+    # denominator (scripts/critical_mutation_gate.py REQUIRED_SCOPE_IDS) — publishes one
+    # candidate-bound report on every run; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
     # A Go scope is re-measured only when its input closure changed (2026-09-28): the result
     # measured on a byte-identical closure (scripts/go_mutation_cache.py fingerprints the
