@@ -1,5 +1,7 @@
 # OpenRouter provider speed preferences Implementation Plan
 
+**Status (2026-11-28, measured on the lab VM):** SUPERSEDED. Tasks 1-3 landed (b782503b5, 60530c1c3, 0422273e3). Task 4 ran on the VM (`docs/superpowers/verification/2026-11-28-openrouter-provider-speed.md`, PRD amendment #229): neither threshold moved the Telegram thread off Darkbloom, so the defaults stayed 0 and the operator's settings were reset. The operator then chose to replace the thresholds with a provider sort and a longer OpenRouter stream window; see `2026-11-28-openrouter-provider-sort.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Two cockpit settings make Aura send OpenRouter's `provider.preferred_min_throughput` and `provider.preferred_max_latency`, so a slow cheap provider is deprioritized and a fast one keeps the traffic.

@@ -912,6 +912,18 @@ capped member's monthly allowance restarts with it; a member's replacement was c
 unit tests only, the VM holding one admin; and when the new management key belongs to
 another account, the keys the old account still holds are replaced here but stay live there.
 
+**OpenRouter's speed thresholds did not move a sticky thread (2026-11-28, amendment #229).** Two
+hot settings sent `provider.preferred_min_throughput` and `provider.preferred_max_latency`
+(`b782503b5`, `60530c1c3`, `0422273e3`). On the lab VM's Telegram thread (about 95k tokens, one
+OpenRouter session), neither 20 tok/s nor 10 s moved the answer off Darkbloom
+(`docs/superpowers/verification/2026-11-28-openrouter-provider-speed.md`). The same run found where a
+slow turn goes. On two of three turns Darkbloom answered `504` after 78 s, and OpenRouter fell back
+to PrimeIntellect. But Aura's 60 s stream watchdog had already closed the stream, because no byte
+arrives during that wait, so Aura retried and landed on Darkbloom again. This does not establish what
+the thresholds do on a fresh session or under `provider.sort`: OpenRouter's guide is silent on how
+sticky routing ranks against them. The live request body was not seen, and how often Darkbloom
+answers `504` was measured on one thread in one hour.
+
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
 from the fixed, unauthenticated `https://ollama.com/api/tags` endpoint, deduplicating
