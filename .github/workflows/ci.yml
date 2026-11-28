@@ -2011,7 +2011,11 @@ jobs:
     # elicitation-boundaries 2935 s, far under its estimate. example_bank, urgency_centroid and
     # shadow_report (2026-11-26) ride with elicitation-boundaries: 82, 90 and 286 s measured cold
     # in a cloud container, not on a runner, so about 3393 s for the group, 153 minutes at 2.7,
-    # under the 290 kept until a run measures the new three.
+    # under the 290 kept until a run measures the new three. anthropic_request, anthropic_stream
+    # and anthropic_cost (2026-11-28, the Claude route) ride with them too, not measured yet:
+    # 324 lines, estimated at about 150 mutants at about 8 s each (the package's suite
+    # takes a few seconds), so about 1200 s more, 4593 s for the group, 207 minutes at 2.7,
+    # still under the 290 kept until a run says otherwise.
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -2028,7 +2032,7 @@ jobs:
             scopes: turn_reading task_approval task_message message_fire lapsed_approval
             timeout: 95
           - group: elicitation-boundaries
-            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire mail_repair pim_account_relay pim_secret_fingerprint example_bank urgency_centroid shadow_report
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation ssrf decide_floor decide_tick decide_wire mail_repair pim_account_relay pim_secret_fingerprint example_bank urgency_centroid shadow_report anthropic_request anthropic_stream anthropic_cost
             timeout: 290
           - group: media
             scopes: media_clamp media_watcher signin_flow signin_options signin_proxy

@@ -142,6 +142,19 @@ class GoMutationParserTest(unittest.TestCase):
                 self.assertEqual(critical_mutation_gate.GO_SCOPES.get(scope), relative)
                 self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
 
+    def test_the_claude_route_files_are_scoped(self) -> None:
+        # The request the Claude route sends, the stream it accepts as complete, and the
+        # price and the log line each call leaves (plan 2026-11-27-anthropic-provider, Task 10).
+        expected = {
+            "anthropic_request": "internal/llm/anthropic/request.go",
+            "anthropic_stream": "internal/llm/anthropic/stream.go",
+            "anthropic_cost": "internal/llm/anthropic/cost.go",
+        }
+        for scope, relative in expected.items():
+            with self.subTest(scope=scope):
+                self.assertEqual(critical_mutation_gate.GO_SCOPES.get(scope), relative)
+                self.assertIn(scope, critical_mutation_gate.REQUIRED_SCOPE_IDS)
+
     def test_the_scheduled_delivery_files_are_scoped(self) -> None:
         expected = {
             "task_approval": "internal/agent/tools/task_approval.go",

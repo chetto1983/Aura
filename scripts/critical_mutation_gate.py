@@ -42,6 +42,9 @@ GO_SCOPES = {
     "example_bank": "internal/examplebank/bank.go",
     "urgency_centroid": "internal/pimwatch/centroid.go",
     "shadow_report": "internal/pimwatch/shadow_report.go",
+    "anthropic_request": "internal/llm/anthropic/request.go",
+    "anthropic_stream": "internal/llm/anthropic/stream.go",
+    "anthropic_cost": "internal/llm/anthropic/cost.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -90,6 +93,9 @@ REQUIRED_SCOPE_IDS = frozenset(
         "example_bank",
         "urgency_centroid",
         "shadow_report",
+        "anthropic_request",
+        "anthropic_stream",
+        "anthropic_cost",
         "frontend",
         "media_frontend",
     }
