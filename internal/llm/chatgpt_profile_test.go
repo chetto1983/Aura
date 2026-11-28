@@ -24,7 +24,7 @@ func TestChatGPTProfileDoesNotInheritCloudPricesOrWindow(t *testing.T) {
 	if cfg.APIKey != "" || len(cfg.Headers) != 0 || cfg.CostStatus != llm.CostStatusSubscriptionIncluded {
 		t.Fatal("ChatGPT profile retained another provider's authentication or pricing status")
 	}
-	if _, known := llm.CostUSDValue(cfg.Prices, cfg.Model, llm.Usage{PromptTokens: 100}); known {
+	if _, known := llm.TurnCostUSD("", cfg.Prices, cfg.Model, llm.Usage{PromptTokens: 100}); known {
 		t.Fatal("subscription quota was represented as a per-token USD bill")
 	}
 }

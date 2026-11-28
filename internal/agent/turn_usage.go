@@ -43,10 +43,11 @@ func (t *turnUsage) add(u llm.Usage) {
 // total projects the accumulated calls onto the llm.Usage the terminal Event carries.
 //
 // Cost stays nil unless at least one call reported one, preserving the D-18/D-23 honest
-// absence: a turn whose calls all omitted cost must fall back to the rate table rather
-// than publish an authoritative-looking 0. A partial sum (some calls priced, some not)
-// still returns non-nil — it is the provider's own figure for the calls that carried it,
-// and understating a known cost is better than discarding it.
+// absence: a turn whose calls all omitted cost must not publish an authoritative-looking 0.
+// llm.TurnCostUSD then falls back to the rate table, except on the anthropic route, whose
+// client prices every call it can and leaves the rest unknown. A partial sum (some calls
+// priced, some not) still returns non-nil — it is the provider's own figure for the calls
+// that carried it, and understating a known cost is better than discarding it.
 func (t *turnUsage) total() llm.Usage {
 	out := llm.Usage{
 		PromptTokens:     t.prompt,

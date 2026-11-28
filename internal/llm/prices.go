@@ -58,9 +58,9 @@ func (p Price) For(promptTokens int) Price {
 	return Price{InputPer1M: long.InputPer1M, OutputPer1M: long.OutputPer1M, CacheReadPer1M: long.CacheReadPer1M, CacheWritePer1M: long.CacheWritePer1M}
 }
 
-// CostUSDValue reports the numeric turn cost in USD and an ok flag, with the D-18/D-23
-// precedence below. It is the shared core for both the displayed footer (CostUSD) and
-// the persisted cost (runner persistence), so the two never disagree.
+// costUSDValue reports the numeric turn cost in USD and an ok flag, with the D-18/D-23
+// precedence below. It is TurnCostUSD's core on every route, so the displayed footer
+// (CostUSD) and the persisted cost (runner persistence) never disagree.
 //
 //   - usage.Cost non-nil    -> that exact USD (OpenRouter actual cost, preferred)
 //   - else model in prices  -> computed from tokens at the resolved rate
@@ -69,7 +69,7 @@ func (p Price) For(promptTokens int) Price {
 //
 // It takes the whole Usage rather than loose token counts so that adding a token class
 // cannot silently transpose two int arguments at a call site.
-func CostUSDValue(prices map[string]Price, model string, usage Usage) (usd float64, ok bool) {
+func costUSDValue(prices map[string]Price, model string, usage Usage) (usd float64, ok bool) {
 	if usage.Cost != nil {
 		return *usage.Cost, true
 	}
@@ -95,7 +95,7 @@ func CostUSDValue(prices map[string]Price, model string, usage Usage) (usd float
 
 // TurnCostUSD is a turn's cost on provider's route, from the usage its calls summed: the
 // rule every reader of a turn's cost shares (persisted turn, REPL footer, Telegram /cost).
-// It is CostUSDValue's precedence, except that on the anthropic route a turn none of whose
+// It is costUSDValue's precedence, except that on the anthropic route a turn none of whose
 // calls carried a cost is unknown, never priced from the table: that client prices every
 // call itself, cache writes included, and leaves a call unpriced only when the catalogue has
 // no honest number for it (spec 2026-11-27-anthropic-provider §7.4, plan decision 6).
@@ -103,7 +103,7 @@ func TurnCostUSD(provider string, prices map[string]Price, model string, usage U
 	if usage.Cost == nil && provider == AnthropicProvider {
 		return 0, false
 	}
-	return CostUSDValue(prices, model, usage)
+	return costUSDValue(prices, model, usage)
 }
 
 // CostUSD reports the turn cost as a display string and an ok flag (D-18/D-23), by

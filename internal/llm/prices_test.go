@@ -57,7 +57,7 @@ func TestCost(t *testing.T) {
 // The 30-day shape measured on the live account: 54.86M prompt of which 40.55M were
 // cache reads, 0.64M completion, real charge $2.889. This pins the reason CacheReadPer1M
 // exists — the same tokens priced without it land at $7.86, a 2.7x over-report.
-func TestCostUSDValueChargesCacheReadsAtTheCacheRate(t *testing.T) {
+func TestTurnCostUSDChargesCacheReadsAtTheCacheRate(t *testing.T) {
 	const (
 		prompt     = 54_863_096
 		cached     = 40_546_101
@@ -65,7 +65,7 @@ func TestCostUSDValueChargesCacheReadsAtTheCacheRate(t *testing.T) {
 	)
 	usage := llm.Usage{PromptTokens: prompt, CachedTokens: cached, CompletionTokens: completion}
 
-	withCache, ok := llm.CostUSDValue(map[string]llm.Price{"m": v4flash}, "m", usage)
+	withCache, ok := llm.TurnCostUSD("", map[string]llm.Price{"m": v4flash}, "m", usage)
 	if !ok {
 		t.Fatal("ok = false for a resolved model")
 	}
@@ -74,7 +74,7 @@ func TestCostUSDValueChargesCacheReadsAtTheCacheRate(t *testing.T) {
 	}
 
 	blind := llm.Price{InputPer1M: 0.14, OutputPer1M: 0.28} // no published cache rate
-	without, _ := llm.CostUSDValue(map[string]llm.Price{"m": blind}, "m", usage)
+	without, _ := llm.TurnCostUSD("", map[string]llm.Price{"m": blind}, "m", usage)
 	if math.Abs(without-7.859242) > 0.000_01 {
 		t.Errorf("usd = %v, want ~7.859242 when cache reads bill at the full input rate", without)
 	}
@@ -86,10 +86,10 @@ func TestCostUSDValueChargesCacheReadsAtTheCacheRate(t *testing.T) {
 
 // cached_tokens is a SUBSET of prompt_tokens, never an addend. A count exceeding the
 // prompt (or a negative one) must not produce a negative fresh-token charge.
-func TestCostUSDValueClampsCachedTokens(t *testing.T) {
+func TestTurnCostUSDClampsCachedTokens(t *testing.T) {
 	prices := map[string]llm.Price{"m": v4flash}
 
-	over, ok := llm.CostUSDValue(prices, "m", llm.Usage{PromptTokens: 100, CachedTokens: 900})
+	over, ok := llm.TurnCostUSD("", prices, "m", llm.Usage{PromptTokens: 100, CachedTokens: 900})
 	if !ok {
 		t.Fatal("ok = false for a resolved model")
 	}
@@ -98,17 +98,17 @@ func TestCostUSDValueClampsCachedTokens(t *testing.T) {
 		t.Errorf("usd = %v, want %v — cached above prompt must clamp to prompt", over, want)
 	}
 
-	neg, _ := llm.CostUSDValue(prices, "m", llm.Usage{PromptTokens: 100, CachedTokens: -5})
+	neg, _ := llm.TurnCostUSD("", prices, "m", llm.Usage{PromptTokens: 100, CachedTokens: -5})
 	if neg < 0 {
 		t.Errorf("usd = %v, want a non-negative charge for a negative cached count", neg)
 	}
 }
 
-func TestCostUSDValue(t *testing.T) {
+func TestTurnCostUSD(t *testing.T) {
 	prices := map[string]llm.Price{"deepseek/deepseek-v4-flash:nitro": v4flash}
 
 	t.Run("provider_cost_present_wins", func(t *testing.T) {
-		got, ok := llm.CostUSDValue(prices, "any/model", llm.Usage{
+		got, ok := llm.TurnCostUSD("", prices, "any/model", llm.Usage{
 			PromptTokens: 1000, CompletionTokens: 500, Cost: new(0.001234),
 		})
 		if !ok || got != 0.001234 {
@@ -117,7 +117,7 @@ func TestCostUSDValue(t *testing.T) {
 	})
 
 	t.Run("unresolved_model_zero_not_ok", func(t *testing.T) {
-		got, ok := llm.CostUSDValue(prices, "mystery/model", llm.Usage{PromptTokens: 1000, CompletionTokens: 1000})
+		got, ok := llm.TurnCostUSD("", prices, "mystery/model", llm.Usage{PromptTokens: 1000, CompletionTokens: 1000})
 		if ok {
 			t.Error("ok = true, want false for an unresolved model (caller must not store a fabricated $0)")
 		}

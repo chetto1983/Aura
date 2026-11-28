@@ -18,7 +18,7 @@ func (t tokens) prompt() int { return t.input + t.read + t.write }
 // callCost prices one call from the catalogue, at the long-prompt rates when this call's
 // prompt reaches them. Nil means no honest number exists: the model has no price, or
 // the call wrote to the cache and the catalogue publishes no write rate (plan decision
-// 6). Cache reads with no published read rate bill at the input rate, as llm.CostUSDValue
+// 6). Cache reads with no published read rate bill at the input rate, as llm.TurnCostUSD
 // does.
 func callCost(prices map[string]llm.Price, model string, used tokens) *float64 {
 	price, ok := prices[model]

@@ -194,6 +194,40 @@ func TestTurn_TerminalAnswerCostFromPriceTable(t *testing.T) {
 	}
 }
 
+// TestTurn_AnthropicCostNeverFallsBackToThePriceTable: the Claude client prices every call
+// itself, cache writes included, so a turn whose calls all report no cost has no honest
+// price (spec §7.4, plan decision 6). The table cannot supply one: it knows no cache-write
+// rate and would bill the whole prompt as fresh input. The turn persists the unknown 0.
+func TestTurn_AnthropicCostNeverFallsBackToThePriceTable(t *testing.T) {
+	client := agenttest.NewFakeClient(
+		agenttest.WithUsage(
+			agenttest.ToolCallTurn(textResponseCall("call-1", "Done.")),
+			llm.Usage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+		),
+	)
+	cfg := llm.Config{
+		Provider:        llm.AnthropicProvider,
+		Model:           "claude-sonnet-5-5",
+		ContextWindow:   1000000,
+		MaxOutputTokens: 32768,
+		Prices:          map[string]llm.Price{"claude-sonnet-5-5": {InputPer1M: 2.0, OutputPer1M: 10.0}},
+	}
+	r, conv, _ := newTestRunnerCfg(t, client, cfg)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	c, err := conv.Get(ctx, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TotalCostUSD != 0 {
+		t.Fatalf("persisted cost = %v, want the unknown 0, not a price-table figure", c.TotalCostUSD)
+	}
+}
+
 // TestPersistPause_AppendError surfaces an AppendTurn failure during the pause
 // assistant-turn persist (before the paused_states row is written).
 func TestPersistPause_AppendError(t *testing.T) {

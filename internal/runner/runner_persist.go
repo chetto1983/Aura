@@ -418,8 +418,9 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	// at boot from /models (D-23, amendment #93) when the provider omits it, so a priced
 	// turn never persists $0 while the displayed footer (same llm.CostUSD precedence)
 	// shows the computed price. An unresolved model stays 0.0 — the honest numeric "n/a".
+	// On the anthropic route an unpriced turn stays the unknown 0 (llm.TurnCostUSD).
 	cost := 0.0
-	if v, ok := llm.CostUSDValue(runtime.Config.Prices, runtime.Config.Model, u); ok {
+	if v, ok := llm.TurnCostUSD(runtime.Config.Provider, runtime.Config.Prices, runtime.Config.Model, u); ok {
 		cost = v
 	}
 	reasoning, reasoningDurationMS := tr.persistedReasoning()
