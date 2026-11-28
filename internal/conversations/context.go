@@ -350,10 +350,17 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 	return out
 }
 
-// toolSearchResultIDs returns the tool_call ids answered by a tool_search result, by
-// pairing each assistant turn's tool_calls with the RoleTool turn that carries the same id
-// — the same anchoring agent.deriveActivated uses, and for the same reason: matching on
-// result TEXT would let any tool mint an exemption by echoing a spec block.
+// toolSearchResultIDs returns the tool_call ids of tool_search calls, so L1 can exempt the
+// RoleTool turns carrying them. It anchors on the call, not the result TEXT, which would let
+// any tool buy an exemption by echoing a spec block.
+//
+// It pairs by id over the whole history, not positionally like tools.ResultCalls (the
+// pairing agent.deriveActivated/deriveEverLoaded use). On a route that reuses call ids, a
+// later ordinary result under a tool_search id is exempt too: an over-protection that
+// costs tokens, never a schema. A dispatch-gate refusal, which also loads a tool, is not
+// exempt. It stays inline below DefaultTurnCapBytes (64 KiB) and so is never sidecar-backed.
+// A larger one can be evicted, and its grant then decays with its text: the gate refuses
+// once more and re-sends the schema.
 func toolSearchResultIDs(turns []Turn) map[string]struct{} {
 	ids := make(map[string]struct{})
 	for _, t := range turns {

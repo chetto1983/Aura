@@ -8,15 +8,17 @@ import (
 )
 
 // This file holds the full-promotion deferred-tool state helpers (Claude Code /
-// OpenAI Agents parity): a deferred tool is not callable until tool_search loads
-// its schema. a.activated is the promoted set — written here (from the serial
-// dispatch result loop and from the rehydration below) and read by buildRequest and
-// the dispatch gate.
+// OpenAI Agents parity): a deferred tool is not callable until its schema has been
+// read, from a tool_search result or from the dispatch gate's refusal. Two sets hold
+// that state, both written only from the serial dispatch result loop and from the
+// rehydration below:
+//   - a.activated, the MANIFEST set: buildRequest renders it, and it forgets on purpose;
+//   - a.everLoaded, every tool whose schema the model has read: the gate admits it.
 //
 // The grant is CONVERSATION-scoped, not turn-scoped. The runner builds a fresh
-// LlmAgent per turn but seeds it with the rehydrated history, and a tool_search
-// result carries the loaded schema in its text — so the schema outlives the turn
-// that fetched it. deriveActivated re-reads those results at construction, keeping
+// LlmAgent per turn but seeds it with the rehydrated history, and the loading result
+// carries the schema in its text — so the schema outlives the turn that fetched it.
+// deriveActivated and deriveEverLoaded re-read those results at construction, keeping
 // permission and schema in sync: without it the model saw a schema it was forbidden
 // to use, and had to re-run tool_search every single turn to get the permission back.
 
@@ -44,10 +46,11 @@ func lastCalled(order []string, n int) []string {
 // tool loaded in an EARLIER turn stays callable while its schema is still readable.
 //
 // A grant is anchored to the tool_call that PRODUCED the result, never to result text
-// alone: only a RoleTool message whose ToolCallID belongs to a tool_search call is
-// read. Otherwise any tool able to emit text could mint its own permissions (a bare
-// `echo "## send_file"`) and then call that tool with fabricated arguments — the exact
-// hallucination full-promotion exists to stop.
+// alone: only a RoleTool message answering a tool_search call is read, and only the
+// specs it renders whole count (tools.Registry.LoadedBy). Otherwise any tool able to
+// emit text could mint its own permissions (a bare `echo "## send_file"`) and then call
+// that tool with fabricated arguments — the exact hallucination full-promotion exists
+// to stop.
 func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{} {
 	activated := make(map[string]struct{})
 	if reg == nil {
@@ -139,6 +142,13 @@ func deriveEverLoaded(hist []llm.Message, reg *tools.Registry) map[string]struct
 // through the same rule deriveEverLoaded applies on reload, so the live set and the
 // reloaded one are the same function of the history. Called only from the serial result
 // loop, so the map write is race-free.
+//
+// Today it changes no gate decision: live admission also rides Meta into activated
+// (promoteFromMeta). It is kept as the invariant the deferred-tools plan's Task 3 relies on
+// — everLoaded equals deriveEverLoaded(a.history) at every point of a turn — and it is the
+// one that holds when they diverge: an AfterTool hook that rewrites a result's Meta (drops
+// MetaActivatedTools, or lists a tool the text does not carry) moves activated, never
+// everLoaded, which follows the text the model reads and the store keeps.
 func (a *LlmAgent) recordLoaded(calledTool, content string) {
 	if a.registry == nil {
 		return

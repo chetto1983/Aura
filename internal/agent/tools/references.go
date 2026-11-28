@@ -1,47 +1,28 @@
 package tools
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// NotLoadedPrefix opens the dispatch gate's refusal of a deferred tool called before its
-// schema was read. The refusal carries that schema, so it loads the tool exactly as a
-// tool_search result does, and References recognises it by this prefix.
-const NotLoadedPrefix = "error: tool_not_loaded: "
+// notLoadedPrefix opens the dispatch gate's refusal; the bytes are part of what the model
+// has learned to read, so they do not change.
+const notLoadedPrefix = "error: tool_not_loaded: "
 
-// LoadedSchemas returns the tool names whose FULL spec block is present in a tool result
-// — a "## <name>" header followed by a non-empty "Parameters:" body before the next
-// header — mirroring the layout RenderSpec writes.
-//
-// Requiring the Parameters body is what makes a grant decay together with its schema:
-// when the preview cap truncates a batch select mid-block, the half-written tool is not
-// granted, so the model is never left holding a permission for a tool whose arguments it
-// can no longer read.
-func LoadedSchemas(content string) []string {
-	var out []string
-	var name string
-	inBody := false
-	for line := range strings.SplitSeq(content, "\n") {
-		if header, ok := strings.CutPrefix(line, "## "); ok {
-			name, inBody = strings.TrimSpace(header), false
-			continue
-		}
-		if name == "" {
-			continue
-		}
-		if line == "Parameters:" {
-			inBody = true
-			continue
-		}
-		if inBody && strings.TrimSpace(line) != "" {
-			out = append(out, name)
-			name, inBody = "", false
-		}
-	}
-	return out
+// NotLoadedRefusal is the dispatch gate's answer to a call to a deferred tool whose schema
+// was never read: the call did not run, and the schema follows so the retry can be written
+// against it. The refusal therefore loads the tool exactly as a tool_search result does,
+// and LoadedBy recognises it by these bytes.
+func NotLoadedRefusal(s Spec) string {
+	return fmt.Sprintf(
+		notLoadedPrefix+"%q was called before its schema was read, so the arguments "+
+			"could not be trusted and the call did NOT run. Its schema follows and the tool is "+
+			"now loaded — call %s again using exactly these parameters. Do not call tool_search "+
+			"for it.\n\n%s",
+		s.Name, s.Name, RenderSpec(s))
 }
 
 // ResultCalls maps the index of each tool result in history to the name of the call it
@@ -81,29 +62,45 @@ func (r *Registry) References(history []llm.Message) map[int][]string {
 
 // LoadedBy returns the deferred tools that a result of a call to calledTool loaded.
 //
-// A grant is anchored to the call that produced the result, never to its text alone:
-// otherwise any tool able to print a spec block could mint its own permissions and then be
-// called with fabricated arguments. Two calls load tools. tool_search loads every deferred
-// tool whose full spec it rendered. The dispatch gate's refusal of a call to X loads X, and
-// only X: it must start with NotLoadedPrefix and carry exactly X's spec.
+// A grant is anchored twice. To the call that produced the result: only tool_search and
+// the gate's refusal load tools, so no other tool can mint a permission by printing a spec.
+// And to the tool's CURRENT schema, byte for byte: a tool is granted only where the result
+// holds RenderSpec of its registered spec in full.
+//   - tool_search loads each deferred tool whose full RenderSpec it carries. A "## " line
+//     only nominates a candidate, because a spec's own description is markdown: reading
+//     headings as specs lost every tool whose description has one, and let a description
+//     forge a "## other\nParameters:" block for a different tool.
+//   - The refusal of a call to X loads X alone, and only if the result opens with
+//     NotLoadedRefusal(X's spec). Text appended after it (a steer message) adds nothing.
+//
+// The byte match is also what makes a grant decay with its schema: a select truncated by
+// the preview cap grants only the specs it rendered whole, and a spec that changed since
+// the result was written no longer grants.
 func (r *Registry) LoadedBy(calledTool, content string) []string {
-	var out []string
-	switch {
-	case calledTool == toolSearchName:
-		for _, name := range LoadedSchemas(content) {
-			if r.isDeferred(name) && !slices.Contains(out, name) {
-				out = append(out, name)
-			}
+	if calledTool != toolSearchName {
+		if spec, ok := r.deferredSpec(calledTool); ok && strings.HasPrefix(content, NotLoadedRefusal(spec)) {
+			return []string{calledTool}
 		}
-	case strings.HasPrefix(content, NotLoadedPrefix):
-		if slices.Equal(LoadedSchemas(content), []string{calledTool}) && r.isDeferred(calledTool) {
-			out = []string{calledTool}
+		return nil
+	}
+	var out []string
+	for line := range strings.SplitSeq(content, "\n") {
+		name, ok := strings.CutPrefix(line, "## ")
+		if !ok || slices.Contains(out, name) {
+			continue
+		}
+		if spec, ok := r.deferredSpec(name); ok && strings.Contains(content, RenderSpec(spec)) {
+			out = append(out, name)
 		}
 	}
 	return out
 }
 
-func (r *Registry) isDeferred(name string) bool {
+func (r *Registry) deferredSpec(name string) (Spec, bool) {
 	tool, ok := r.Get(name)
-	return ok && tool.Spec().Deferred
+	if !ok {
+		return Spec{}, false
+	}
+	spec := tool.Spec()
+	return spec, spec.Deferred
 }

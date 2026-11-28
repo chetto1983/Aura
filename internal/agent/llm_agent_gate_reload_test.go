@@ -18,16 +18,26 @@ import (
 // counted. The tool stayed callable only while it was among the last
 // maxPromotedDeferredTools calls of the conversation, through `activated`; past that, the
 // model was refused a tool it had been told was loaded, and spent a round trip on it.
+//
+// The reload here is rebuilt by storeShapedHistory from the turn's events, the way
+// runner_persist.go writes them; it is not the real AppendTurn -> LoadHistory round trip.
 
 // gateReloadFillers is one more than the manifest cap, so the tool the model loaded falls
 // out of the recently-called window that keeps it in `activated`.
 const gateReloadFillers = maxPromotedDeferredTools + 1
 
+// refusalPrefix pins the bytes the gate's refusal opens with on every route.
+const refusalPrefix = "error: tool_not_loaded: "
+
+// alphaDescription is markdown with headings, as MCP tool descriptions routinely are: a
+// grant rule that reads "## " lines as spec headers loses the tool on it.
+const alphaDescription = "Does alpha.\n## Usage\nCall it with no arguments.\n## Notes\nParameters: none."
+
 func gateReloadRegistry() *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
-	reg.Register(decayTool{name: "alpha", deferred: true})
+	reg.Register(decayTool{name: "alpha", deferred: true, description: alphaDescription})
 	for i := range gateReloadFillers {
 		reg.Register(decayTool{name: fmt.Sprintf("filler_%02d", i)})
 	}
@@ -134,7 +144,7 @@ func gateReloadScenario(t *testing.T, cfg llm.Config, load llm.ToolCall, fillers
 		turn1 = append(turn1, modelRoundToolTurn(gateReloadFillerCalls()...))
 	}
 	events1, _ := runGateReloadTurn(t, cfg, reg, []llm.Message{{Role: llm.RoleUser, Content: user1}}, turn1)
-	if got := toolResultPreview(t, events1, "run-alpha"); strings.HasPrefix(got, tools.NotLoadedPrefix) {
+	if got := toolResultPreview(t, events1, "run-alpha"); strings.HasPrefix(got, refusalPrefix) {
 		t.Fatalf("turn 1: alpha was refused after being loaded: %q", got)
 	}
 
@@ -167,10 +177,10 @@ func TestGateLoadedToolStaysLoadedAfterReload(t *testing.T) {
 	t.Parallel()
 	forEachGateReloadCase(t, func(t *testing.T, cfg llm.Config, fillers bool) {
 		got := gateReloadScenario(t, cfg, modelRoundToolCall("cold-alpha", "alpha", `{"invented":true}`), fillers)
-		if !strings.HasPrefix(got.loaded, tools.NotLoadedPrefix) {
+		if !strings.HasPrefix(got.loaded, refusalPrefix) {
 			t.Fatalf("precondition: the gate did not refuse the cold call to alpha: %q", got.loaded)
 		}
-		if strings.HasPrefix(got.again, tools.NotLoadedPrefix) {
+		if strings.HasPrefix(got.again, refusalPrefix) {
 			t.Fatalf("turn 2 refused alpha, which the gate loaded in turn 1 and whose schema is still in the history:\n%s", got.again)
 		}
 		// Only the gate learns the refusal: the manifest still forgets a tool past the cap,
@@ -190,7 +200,7 @@ func TestSearchLoadedToolStaysLoadedAfterReload(t *testing.T) {
 		if !strings.Contains(got.loaded, "## alpha") {
 			t.Fatalf("precondition: tool_search did not load alpha: %q", got.loaded)
 		}
-		if strings.HasPrefix(got.again, tools.NotLoadedPrefix) {
+		if strings.HasPrefix(got.again, refusalPrefix) {
 			t.Fatalf("turn 2 refused alpha, loaded by tool_search in turn 1:\n%s", got.again)
 		}
 	})
@@ -198,6 +208,12 @@ func TestSearchLoadedToolStaysLoadedAfterReload(t *testing.T) {
 
 // The live set and the reloaded one must be the same function of the history: after a
 // gate refusal, the agent that ran it and the derivation over its history agree.
+//
+// It compares LIVE bytes only (a.history), not the store's. The two differ for an
+// untrusted tool: live holds its nonce envelope, the store its raw preview. A raw preview
+// can begin with a refusal of the very tool that produced it, which would grant that tool
+// on reload alone. That is harmless: the tool had already run, and the grant names only it
+// and requires its exact current spec.
 func TestLiveLoadedSetEqualsTheReloadedOne(t *testing.T) {
 	t.Parallel()
 	reg := gateReloadRegistry()

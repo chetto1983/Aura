@@ -167,16 +167,11 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	// promoteFromMeta in the SERIAL result loop after executeBatch has joined — so
 	// this stays race-free while dispatch runs concurrently. The gate's own grant is the
 	// refusal text: tools.Registry.LoadedBy reads it back from the history, live and on
-	// reload, so the "now loaded" below holds in every later turn too.
+	// reload, so the "now loaded" it says holds in every later turn too.
 	if a.isDeferredUnloaded(call.Function.Name) {
 		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
-		run.Preview = fmt.Sprintf(
-			tools.NotLoadedPrefix+"%q was called before its schema was read, so the arguments "+
-				"could not be trusted and the call did NOT run. Its schema follows and the tool is "+
-				"now loaded — call %s again using exactly these parameters. Do not call tool_search "+
-				"for it.\n\n%s",
-			call.Function.Name, call.Function.Name, tools.RenderSpec(tool.Spec()))
+		run.Preview = tools.NotLoadedRefusal(tool.Spec())
 		meta := tools.ToolResultMeta{tools.MetaActivatedTools: []string{call.Function.Name}}
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview), Meta: &meta}
 		endToolSpan(span, "")

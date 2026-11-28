@@ -34,9 +34,9 @@ func promoteAgentWithHistory(t *testing.T, hist []llm.Message) *LlmAgent {
 	})
 }
 
-// webSearchSchemaResult mirrors the shape tools.ToolSearch.Execute writes for one
-// match: a "## <name>" header, the description, then the Parameters block.
-const webSearchSchemaResult = "## web_search\nSearch the web.\n\nParameters:\n{\"type\":\"object\"}\n\n"
+// webSearchSchemaResult is what tools.ToolSearch.Execute writes for one match: the
+// registered tool's RenderSpec, which a grant must find byte for byte.
+var webSearchSchemaResult = tools.RenderSpec((&tools.WebSearch{}).Spec())
 
 // call builds one assistant-emitted tool_call (the nested Function struct is
 // anonymous, so it cannot be filled with a composite literal).

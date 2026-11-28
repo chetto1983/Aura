@@ -14,16 +14,18 @@ import (
 // decayTool is a deferred tool whose only job is to exist in the registry so
 // deriveActivated can resolve a name to a spec.
 type decayTool struct {
-	name     string
-	deferred bool
+	name        string
+	deferred    bool
+	description string
 }
 
 func (d decayTool) Spec() tools.Spec {
 	return tools.Spec{
-		Name:       d.name,
-		Summary:    "fixture",
-		Parameters: json.RawMessage(`{"type":"object"}`),
-		Deferred:   d.deferred,
+		Name:        d.name,
+		Summary:     "fixture",
+		Description: d.description,
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+		Deferred:    d.deferred,
 	}
 }
 
@@ -31,12 +33,12 @@ func (decayTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, er
 	return tools.ToolResult{}, nil
 }
 
-// searchResult renders a tool_search result the way ToolSearch.Execute does — a
-// "## <name>" header with a non-empty Parameters body — so loadedSchemas parses it.
+// searchResult renders a tool_search result the way ToolSearch.Execute does: RenderSpec of
+// each deferred decayTool, which is what a grant must find byte for byte.
 func searchResult(names ...string) string {
 	var out strings.Builder
 	for _, n := range names {
-		out.WriteString("## " + n + "\nParameters:\n  {\"type\":\"object\"}\n\n")
+		out.WriteString(tools.RenderSpec(decayTool{name: n, deferred: true}.Spec()))
 	}
 	return out.String()
 }
