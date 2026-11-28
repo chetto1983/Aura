@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // withProviderState inserts the state chunk where a provider client sends it: alone,
@@ -75,6 +78,40 @@ func TestEveryRoundReplaysItsOwnBlocks(t *testing.T) {
 	}
 	if got := toolCallStates(reqs[3]); !reflect.DeepEqual(got, []string{`"s1"`, `"s2"`, `"s3"`}) {
 		t.Fatalf("fourth request tool-call states = %q, want s1,s2,s3 in round order", got)
+	}
+}
+
+// The state can hold thinking blocks: the trace row records its size and the trace file
+// never holds a byte of it.
+func TestTraceRecordsTheStatesSizeNeverItsBytes(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "trace.jsonl")
+	t.Setenv(reasoningtrace.Env, "1")
+	t.Setenv("AURA_REASONING_TRACE_FILE", tracePath)
+	const marker = "thinking-block-must-not-reach-the-trace"
+	state := `{"blocks":["` + marker + `"]}`
+	runProviderStateScript(t,
+		withProviderState(echoRound("c1", "one"), state),
+		agenttest.TextChunks("stop", "Fatto."),
+	)
+	raw, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	if strings.Contains(string(raw), marker) {
+		t.Fatalf("trace file holds the provider state's bytes:\n%s", raw)
+	}
+	var sizes []any
+	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
+		var row map[string]any
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("trace row %q: %v", line, err)
+		}
+		if row["stage"] == "agent_consume_provider_state_chunk" {
+			sizes = append(sizes, row["bytes"])
+		}
+	}
+	if !reflect.DeepEqual(sizes, []any{float64(len(state))}) {
+		t.Fatalf("provider state rows bytes = %v, want one row of %d", sizes, len(state))
 	}
 }
 
