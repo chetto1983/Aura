@@ -1,5 +1,9 @@
 # OpenRouter provider sort and route timeouts Implementation Plan
 
+**Status (2026-11-28, measured on the lab VM):** DONE. Tasks 1-3 landed (c656f2590, 15bde6498, 33e905569, plus the Prettier fix 943e476bb). Task 4 ran on the VM at 031fdc60c (`docs/superpowers/verification/2026-11-28-openrouter-provider-sort.md`, PRD amendment #230). On `tencent/hy4-flash`, the operator's model by then, every sort value went to Tencent in 4-7 s a call, so the default stays empty and the operator's settings were reset. Open:
+- whether `sort` moves a fresh session;
+- whether the 90 s window lets a real fallback finish.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A hot cockpit choice sends OpenRouter's `provider.sort`, replacing the two speed thresholds. On the OpenRouter route the stream idle window and call timeout default to 90 s and 180 s, so OpenRouter's fallback can answer.

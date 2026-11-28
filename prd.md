@@ -924,6 +924,25 @@ the thresholds do on a fresh session or under `provider.sort`: OpenRouter's guid
 sticky routing ranks against them. The live request body was not seen, and how often Darkbloom
 answers `504` was measured on one thread in one hour.
 
+**A provider sort in place of the thresholds, and room for OpenRouter's fallback (2026-11-28,
+amendment #230).** The thresholds are gone. One hot setting, `AURA_OPENROUTER_PROVIDER_SORT`
+(`price`, `throughput`, `latency` or empty), sends `provider.sort` (`c656f2590`, `33e905569`).
+Unset, the OpenRouter route now bounds a stream at 90 s and a call at 180 s, and every other route
+keeps 60 s and 120 s. The bounds are resolved at use time, so a hot route switch follows them
+(`15bde6498`). An explicit `AURA_LLM_STREAM_IDLE_TIMEOUT_SEC` or `AURA_LLM_TOTAL_TIMEOUT_SEC` still
+wins.
+
+Measured on the lab VM's Telegram thread, on the model the operator had switched to
+(`tencent/hy4-flash`, nine endpoints): every sort value, `price` included, went to Tencent in
+4-7 s a call, never to Darkbloom, the cheapest endpoint
+(`docs/superpowers/verification/2026-11-28-openrouter-provider-sort.md`). OpenRouter's Logs page
+showed the same session as the morning's turns and a 10 ms routing with no fallback. The shipped
+default stays empty.
+
+This does not establish that `sort` moves a provider. A sticky session, `data_collection: deny` or
+a request without the field would all give that result, and a fresh conversation was not tried. No
+call stalled, so the 90 s window is pinned by unit tests only.
+
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
 from the fixed, unauthenticated `https://ollama.com/api/tags` endpoint, deduplicating
