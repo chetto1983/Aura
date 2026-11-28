@@ -61,8 +61,11 @@ function row(key: string, value: string, secret = false, stored = value !== '') 
   };
 }
 
-function setup({ keyStored = false, onClaude = false } = {}) {
+const MINTED = { services_label: 'sk-or-v1-abc...xyz', identities_minted: [], limits_aligned: [] };
+
+function setup({ keyStored = false, onClaude = false, keyRefused = false } = {}) {
   let stored = keyStored;
+  let refused = keyRefused;
   let route = onClaude
     ? { provider: 'anthropic', base_url: CLAUDE_BASE_URL, model: 'claude-sonnet-5-5' }
     : CLOUD;
@@ -76,8 +79,16 @@ function setup({ keyStored = false, onClaude = false } = {}) {
       calls.push({ method, url, body });
       if (url === '/api/settings/ANTHROPIC_API_KEY' && method === 'PUT') {
         stored = true;
+        refused = false;
         return Promise.resolve(json(row('ANTHROPIC_API_KEY', '', true, true)));
       }
+      if (url === '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY' && method === 'PUT')
+        return Promise.resolve(
+          json({
+            ...row('AURA_OPENROUTER_MANAGEMENT_KEY', '', true, true),
+            openrouter_keys: MINTED,
+          }),
+        );
       if (url === '/api/settings/ANTHROPIC_API_KEY' && method === 'DELETE') {
         stored = false;
         return Promise.resolve(
@@ -96,7 +107,11 @@ function setup({ keyStored = false, onClaude = false } = {}) {
       if (url === '/api/settings/llm-routes') return Promise.resolve(json({ routes: [CLOUD] }));
       if (url.startsWith('/api/settings/llm-models?provider=anthropic'))
         return Promise.resolve(
-          stored ? json({ models: MODELS }) : json({ error: 'no Claude API key is set' }, 502),
+          !stored
+            ? json({ error: 'no Claude API key is set' }, 502)
+            : refused
+              ? json({ error: 'Claude refused the API key' }, 502)
+              : json({ models: MODELS }),
         );
       if (url !== '/api/settings') return Promise.resolve(json({ models: [] }));
       return Promise.resolve(
@@ -180,6 +195,7 @@ describe('Claude route on the routing pane', () => {
       { method: 'PUT', url: '/api/settings/ANTHROPIC_API_KEY', body: { value: FAKE_KEY } },
     ]);
     expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLInputElement>(KEY_LABEL).value).toBe('');
     expect(document.body.innerHTML).not.toContain(FAKE_KEY);
     // The route switch survives the key-only save, so the pane is still on Claude.
     expect(screen.getByRole('radio', { name: 'Claude' }).getAttribute('data-state')).toBe('on');
@@ -227,6 +243,42 @@ describe('Claude route on the routing pane', () => {
       '/api/settings/ANTHROPIC_API_KEY',
       '/api/settings/llm-profile',
     ]);
+  });
+
+  // The management key's PUT runs the reconciler even when the route waits for a model, so the
+  // keys it minted reach the first-run step through the save that completes.
+  it('reports what a held save minted when the route is saved', async () => {
+    const { writes, onComplete } = setup();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Claude' }));
+    fireEvent.change(screen.getByLabelText(KEY_LABEL), { target: { value: FAKE_KEY } });
+    fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
+      target: { value: 'sk-or-v1-test-fake' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    await waitFor(() => {
+      expect(within(keyField()).getByText('Configured')).toBeTruthy();
+    });
+    expect(writes().map((call) => call.url)).toEqual([
+      '/api/settings/ANTHROPIC_API_KEY',
+      '/api/settings/AURA_OPENROUTER_MANAGEMENT_KEY',
+    ]);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await pickModel(/Claude Sonnet 5\.5/);
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+    expect(onComplete).toHaveBeenCalledWith({ openRouterKeys: [MINTED] });
+  });
+
+  it('lists the models again once a refused key is replaced', async () => {
+    setup({ keyStored: true, onClaude: true, keyRefused: true });
+    expect(await screen.findByText(/Claude refused the API key/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(KEY_LABEL), { target: { value: FAKE_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: SAVE }));
+    expect(await screen.findByText('2 models published here')).toBeTruthy();
+    expect(screen.queryByText(/Claude refused the API key/)).toBeNull();
   });
 
   it('drops a typed key when the operator leaves the Claude route', async () => {

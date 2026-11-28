@@ -381,7 +381,15 @@ export function ModelSettingsPanel({
           type="button"
           disabled={saving || routeBlocked}
           aria-busy={saving}
-          onClick={() => void save(onComplete, holdProfile)}
+          onClick={() => {
+            // A replaced key may list an account the old one could not: ask again rather than
+            // leave the old key's refusal under the picker. A first key needs no call here, the
+            // catalogue starts listing once the stored key enables it.
+            const replacedKey = claudeKeyTyped && claudeKeyStored;
+            void save(onComplete, holdProfile).then(() => {
+              if (replacedKey) catalog.reload();
+            });
+          }}
         >
           {saving ? <Spinner /> : <Save aria-hidden="true" />}
           {saveButtonLabel}

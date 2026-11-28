@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { REASONING_CAPABILITIES_QUERY_KEY } from '../chat/composer/useReasoningCapabilities';
 import {
@@ -161,6 +161,20 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
   const [saved, setSaved] = useState(false);
   // Separate from loadStatus on purpose — a save that fails is not a load that failed.
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  // A held save still runs the reconciler (the management key, the services cap): its runs are
+  // reported by the save that completes, so the first-run step sees the keys it minted.
+  const heldRuns = useRef<OpenRouterKeysResult[]>([]);
+  const completeWith = useCallback(
+    async (
+      onComplete: ((outcome: SaveOutcome) => void | Promise<void>) | undefined,
+      runs: readonly OpenRouterKeysResult[],
+    ) => {
+      const openRouterKeys = [...heldRuns.current, ...runs];
+      heldRuns.current = [];
+      await onComplete?.({ openRouterKeys });
+    },
+    [],
+  );
 
   // The route memory is loaded beside the settings but never gates them: a daemon without
   // it (or a failing read) leaves the panel on its built-in fallbacks rather than on the
@@ -237,7 +251,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     async (onComplete?: (outcome: SaveOutcome) => void | Promise<void>, holdProfile = false) => {
       if (loaded === undefined || saving) return;
       if (dirtyKeys.length === 0) {
-        await onComplete?.({ openRouterKeys: [] });
+        await completeWith(onComplete, []);
         return;
       }
       setSaving(true);
@@ -273,7 +287,8 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         // switch away and back in the same session restores what was actually saved.
         await reloadRoutes();
         setSaved(true);
-        if (held.length === 0) await onComplete?.({ openRouterKeys });
+        if (held.length === 0) await completeWith(onComplete, openRouterKeys);
+        else heldRuns.current.push(...openRouterKeys);
       } catch (err) {
         // Deliberately NOT setLoadStatus('error'): that swaps the whole panel for the
         // "couldn't LOAD settings" alert, which throws away everything the operator just
@@ -284,7 +299,7 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
         setSaving(false);
       }
     },
-    [dirtyKeys, loaded, queryClient, reloadRoutes, saving],
+    [completeWith, dirtyKeys, loaded, queryClient, reloadRoutes, saving],
   );
 
   const resetSetting = useCallback(

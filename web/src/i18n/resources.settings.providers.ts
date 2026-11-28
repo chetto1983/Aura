@@ -22,13 +22,13 @@ export const providerIt = {
 export const claudeEn = {
   apiKey: 'Claude API key',
   apiKeyHelp:
-    "The Claude Console key every person's chat spends. Save it first: the models of the account are listed once it is stored.",
+    "The Claude Console key whose credit every person's chat uses. Save it first: the account's models are listed once it is stored.",
   priceUnknown: 'price not published',
 };
 
 export const claudeIt = {
   apiKey: 'Chiave API di Claude',
   apiKeyHelp:
-    'La chiave della Claude Console che spende la chat di ogni persona. Salvala prima: i modelli dell’account compaiono quando è salvata.',
+    'La chiave della Claude Console su cui pesa la chat di ogni persona. Salvala prima: i modelli dell’account compaiono quando è salvata.',
   priceUnknown: 'prezzo non pubblicato',
 };
