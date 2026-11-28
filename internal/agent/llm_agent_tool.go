@@ -165,12 +165,14 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	//
 	// MetaActivatedTools is the same promotion channel tool_search uses, drained by
 	// promoteFromMeta in the SERIAL result loop after executeBatch has joined — so
-	// this stays race-free while dispatch runs concurrently.
+	// this stays race-free while dispatch runs concurrently. The gate's own grant is the
+	// refusal text: tools.Registry.LoadedBy reads it back from the history, live and on
+	// reload, so the "now loaded" below holds in every later turn too.
 	if a.isDeferredUnloaded(call.Function.Name) {
 		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
 		run.Preview = fmt.Sprintf(
-			"error: tool_not_loaded: %q was called before its schema was read, so the arguments "+
+			tools.NotLoadedPrefix+"%q was called before its schema was read, so the arguments "+
 				"could not be trusted and the call did NOT run. Its schema follows and the tool is "+
 				"now loaded — call %s again using exactly these parameters. Do not call tool_search "+
 				"for it.\n\n%s",

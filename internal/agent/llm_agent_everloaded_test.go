@@ -71,7 +71,7 @@ func TestDispatchGateAcceptsATranscriptGroundedCall(t *testing.T) {
 }
 
 // Load-then-call inside ONE turn cannot wait for the next construction to rebuild the set
-// from history — promoteFromMeta has to seed both.
+// from history — promoteFromMeta seeds activated, which the gate reads as well.
 func TestPromoteFromMetaSeedsTheGateWithinTheTurn(t *testing.T) {
 	t.Parallel()
 	a := &LlmAgent{registry: decayRegistry()}

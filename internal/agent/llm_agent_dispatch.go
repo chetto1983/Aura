@@ -145,6 +145,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, requestID stri
 				return false, err
 			}
 			a.history = append(a.history, historyMessage)
+			a.recordLoaded(calls[i].Function.Name, historyMessage.Content)
 			// Dedup hashes the RAW result preview, not run.Preview: the prompt-facing
 			// rendering wraps untrusted output in a per-call random nonce envelope
 			// (AG-052), which would make every identical result look different and

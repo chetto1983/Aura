@@ -2,7 +2,6 @@ package agent
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -21,8 +20,9 @@ import (
 // permission and schema in sync: without it the model saw a schema it was forbidden
 // to use, and had to re-run tool_search every single turn to get the permission back.
 
-// searchTool is the discovery hook. Its results are the ONLY authority for a
-// deferred-tool grant — see deriveActivated.
+// searchTool is the discovery hook. Its results are the only authority for a MANIFEST
+// grant (deriveActivated); the gate's refusal also loads a tool, for the gate alone
+// (deriveEverLoaded).
 const searchTool = "tool_search"
 
 // maxPromotedDeferredTools bounds how many USED deferred tools keep their full schema in
@@ -53,9 +53,7 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 	if reg == nil {
 		return activated
 	}
-	// Wire-valid history always places an assistant tool_call before its RoleTool
-	// result, so one forward pass suffices to pair them.
-	searchCalls := make(map[string]struct{})
+	searchCalls := tools.SearchCallIDs(hist)
 	// calledOrder is least-recently-used first, so the tail is what the cap keeps. A
 	// re-call moves the name to the end rather than duplicating it.
 	var calledOrder []string
@@ -63,7 +61,6 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 	for _, m := range hist {
 		for _, tc := range m.ToolCalls {
 			if tc.Function.Name == searchTool {
-				searchCalls[tc.ID] = struct{}{}
 				continue
 			}
 			calledOrder = append(slices.DeleteFunc(calledOrder, func(n string) bool {
@@ -76,12 +73,7 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 		if _, ok := searchCalls[m.ToolCallID]; !ok {
 			continue
 		}
-		lastLoaded = nil
-		for _, name := range loadedSchemas(m.Content) {
-			if tool, ok := reg.Get(name); ok && tool.Spec().Deferred {
-				lastLoaded = append(lastLoaded, name)
-			}
-		}
+		lastLoaded = reg.LoadedBy(searchTool, m.Content)
 	}
 	// USE promotes, a lookup alone does not. Rebuilding the grant from every
 	// tool_search result ever seen made the promoted set grow monotonically: a tool
@@ -118,9 +110,10 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 }
 
 // deriveEverLoaded rebuilds the set of deferred tools whose schema the model has READ at
-// any point in this conversation. Same anchoring as deriveActivated — only a RoleTool
-// message answering a tool_search call counts, so a tool cannot mint its own permission by
-// echoing a spec block — but with no expiry and no use-promotes split.
+// any point in this conversation: every tool a tool_search result or a dispatch-gate refusal
+// loaded (tools.Registry.References, which anchors each grant to the call that produced the
+// result, so a tool cannot mint its own permission by echoing a spec block). It has no expiry
+// and no use-promotes split.
 //
 // The two sets answer different questions and must not be merged. activated decides what
 // goes in the MANIFEST, and it has to forget, or the manifest grows without bound (the
@@ -128,63 +121,38 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 // decides whether a CALL is grounded, and forgetting there buys nothing: the schema is
 // still sitting in the transcript the model is reading, so bouncing the call only spends an
 // LLM round trip to tell it something it can already see.
+//
+// The gate refusal counts because it carries the schema and tells the model the tool "is now
+// loaded". Before it counted, a tool loaded that way stayed callable after a reload only while
+// it was among the last maxPromotedDeferredTools calls, through activated; past that the
+// model was refused a tool it had been told was loaded.
 func deriveEverLoaded(hist []llm.Message, reg *tools.Registry) map[string]struct{} {
 	loaded := make(map[string]struct{})
 	if reg == nil {
 		return loaded
 	}
-	searchCalls := make(map[string]struct{})
-	for _, m := range hist {
-		for _, tc := range m.ToolCalls {
-			if tc.Function.Name == searchTool {
-				searchCalls[tc.ID] = struct{}{}
-			}
-		}
-		if m.Role != llm.RoleTool {
-			continue
-		}
-		if _, ok := searchCalls[m.ToolCallID]; !ok {
-			continue
-		}
-		for _, name := range loadedSchemas(m.Content) {
-			if tool, ok := reg.Get(name); ok && tool.Spec().Deferred {
-				loaded[name] = struct{}{}
-			}
+	for _, names := range reg.References(hist) {
+		for _, name := range names {
+			loaded[name] = struct{}{}
 		}
 	}
 	return loaded
 }
 
-// loadedSchemas returns the tool names whose FULL spec block is present in a
-// tool_search result — a "## <name>" header followed by a non-empty "Parameters:"
-// body before the next header — mirroring the layout ToolSearch.Execute writes.
-//
-// Requiring the Parameters body is what makes a grant decay together with its schema:
-// when the preview cap truncates a batch select mid-block, the half-written tool is
-// not granted, so the model is never left holding a permission for a tool whose
-// arguments it can no longer read.
-func loadedSchemas(content string) []string {
-	var out []string
-	var name string
-	inBody := false
-	for line := range strings.SplitSeq(content, "\n") {
-		if header, ok := strings.CutPrefix(line, "## "); ok {
-			name, inBody = strings.TrimSpace(header), false
-			continue
-		}
-		if name == "" {
-			continue
-		}
-		if line == "Parameters:" {
-			inBody = true
-			continue
-		}
-		if inBody && strings.TrimSpace(line) != "" {
-			out = append(out, name)
-			name, inBody = "", false
-		}
+// recordLoaded adds the deferred tools a just-appended tool result loaded to everLoaded,
+// through the same rule deriveEverLoaded applies on reload, so the live set and the
+// reloaded one are the same function of the history. Called only from the serial result
+// loop, so the map write is race-free.
+func (a *LlmAgent) recordLoaded(calledTool, content string) {
+	if a.registry == nil {
+		return
 	}
-	return out
+	for _, name := range a.registry.LoadedBy(calledTool, content) {
+		if a.everLoaded == nil {
+			a.everLoaded = make(map[string]struct{})
+		}
+		a.everLoaded[name] = struct{}{}
+	}
 }
 
 // promoteFromMeta reads a tool_search result's Meta and promotes the loaded tool
@@ -203,14 +171,8 @@ func (a *LlmAgent) promoteFromMeta(meta *tools.ToolResultMeta) {
 	if a.activated == nil {
 		a.activated = make(map[string]struct{}, len(names))
 	}
-	if a.everLoaded == nil {
-		a.everLoaded = make(map[string]struct{}, len(names))
-	}
 	for _, n := range names {
 		a.activated[n] = struct{}{}
-		// Within the turn that loaded it, too: the gate reads everLoaded, and a
-		// load-then-call in the same turn must not depend on the next construction.
-		a.everLoaded[n] = struct{}{}
 	}
 }
 

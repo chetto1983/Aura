@@ -342,9 +342,9 @@ func TestRunChildResumeContinuesFromPersistedHistory(t *testing.T) {
 // regression: the tool_search assistant ToolCalls entry AND its paired RoleTool result
 // (matched by ToolCallID) must both survive a payload jsonb marshal/unmarshal
 // (delegationPayloadMap -> delegationPayloadFromJob), byte-identical, because that pair
-// -- and nothing else -- is what deriveActivated/deriveEverLoaded re-grant a deferred
-// tool from at rebuild. Losing either half silently un-grants every deferred tool the
-// worker had loaded.
+// (or a dispatch-gate refusal's call/result pair) is what deriveActivated/deriveEverLoaded
+// re-grant a deferred tool from at rebuild. Losing either half silently un-grants every
+// deferred tool the worker had loaded.
 func TestDelegationResumeStateHistoryRoundTripsTheToolSearchPair(t *testing.T) {
 	searchArgs, _ := json.Marshal(map[string]string{"query": "select:special_tool"})
 	searchResult := "## special_tool\nParameters:\n  {\"type\":\"object\"}\n\n"
