@@ -200,10 +200,13 @@ func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *
 		if err := r.flushToolCalls(ctx, tr); err != nil {
 			return err
 		}
+		// The model-facing rendering, not the raw preview: a reload that dropped the
+		// untrusted envelope and the steer scrub handed a page's forged <user_steer> to
+		// every later turn verbatim (measured 2026-11-28).
 		turn := conversations.AppendTurnParams{
 			ConversationID: tr.convID,
 			Role:           llm.RoleTool,
-			Content:        ti.ResultPreview,
+			Content:        ti.HistoryContent,
 			ToolCallID:     ti.ToolCallID,
 		}
 		if err := r.Conv.AppendTurn(ctx, turn); err != nil {

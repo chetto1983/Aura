@@ -110,7 +110,8 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, run too
 	// The event projection surfaces the RAW tool preview (run.Result.Preview), not
 	// the nonce-wrapped prompt rendering (run.Preview): the UI/REPL/AG-UI consumer
 	// and the audit ToolInvocation want the clean tool output, while only the
-	// model-facing history carries the untrusted envelope (AG-052).
+	// model-facing history carries the untrusted envelope (AG-052), here and once
+	// persisted (ToolInvocation.HistoryContent).
 	rawPreview := run.Result.Preview
 	ev.LLMResponse = &LLMResponse{Content: rawPreview}
 	// Stamp the tool_call_id so a prose consumer (the REPL renderer) can tell this
@@ -158,6 +159,7 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, run too
 		ResultSidecarPath: run.Result.FullPath,
 		ExitCode:          exitCodeFromMeta(run.Result.Meta),
 		Meta:              resultMeta,
+		HistoryContent:    run.Preview,
 	}
 	// A tool (send_file) may carry a channel-agnostic artifact descriptor on its
 	// Meta. Lift it onto Actions.ArtifactDelta (the named emit seam D-06): this is

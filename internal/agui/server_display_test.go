@@ -10,8 +10,9 @@ import (
 	"github.com/chetto1983/aura/internal/web"
 )
 
-// webSearchTurn builds the persisted (assistant tool-call, tool-result) pair for a
-// web_search call whose result preview is the {"results":[…]} JSON the runner persists.
+// webSearchTurn builds the (assistant tool-call, tool-result) pair for a web_search call
+// whose result is the raw {"results":[…]} JSON, as a row persisted before the untrusted
+// frame was reads.
 func webSearchTurn(callID string, results []web.Result) []llm.Message {
 	preview, _ := json.Marshal(map[string]any{"results": results})
 	var call llm.ToolCall

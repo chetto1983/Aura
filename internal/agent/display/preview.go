@@ -19,9 +19,9 @@ type PreviewInput struct {
 
 // NormalizeToolPreview is the SINGLE decode+normalize site shared by the live agent
 // loop and the replay snapshot projection (D-06, "one normalizer for live + replay").
-// It reverses a typed tool's model-visible result preview — the exact string the runner
-// persists as the RoleTool turn Content AND streams as the live TOOL_CALL_RESULT — back
-// into the concrete value Normalize switches on, then runs the shared normalizer with
+// It reverses a typed tool's raw result preview — the string the live TOOL_CALL_RESULT
+// streams, and the persisted RoleTool turn once the replay strips its untrusted frame —
+// back into the concrete value Normalize switches on, then runs the shared normalizer with
 // the caller-owned per-turn registry. Because live and replay both consume the SAME
 // preview shape, the re-derived Payload is identical by construction (Pitfall 4: no
 // preview-vs-full-bytes drift).

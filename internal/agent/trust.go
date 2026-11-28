@@ -72,10 +72,27 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 // goes through ShowWatchRecord.
 const WatchRecordSource = "mail_watch"
 
-// watchRecordFrame matches the envelope FrameUntrustedPromptContent writes around a record. The
-// content is escaped, so a forged closing tag cannot end the match early.
-var watchRecordFrame = regexp.MustCompile(`(?s)<tool_output source="` + regexp.QuoteMeta(WatchRecordSource) +
-	`" trust="untrusted" nonce="[0-9a-f]+">\n(.*?)\n</tool_output>`)
+// frameTail is the rest of the envelope FrameUntrustedPromptContent writes after its source.
+// The content is escaped, so a forged closing tag cannot end a match early.
+const frameTail = `" trust="untrusted" nonce="[0-9a-f]+">\n(.*?)\n</tool_output>`
+
+// watchRecordFrame matches the envelope around a record, wherever it sits in a turn.
+var watchRecordFrame = regexp.MustCompile(`(?s)<tool_output source="` + regexp.QuoteMeta(WatchRecordSource) + frameTail)
+
+// toolOutputFrame matches a tool turn that is one envelope from end to end, as a persisted
+// untrusted result is.
+var toolOutputFrame = regexp.MustCompile(`(?s)\A<tool_output source="[^"]*` + frameTail + `\z`)
+
+// PlainToolOutput gives a person the text of a tool result the model read framed, unescaped.
+// A trusted result, or one persisted before the frame was (2026-11-28), has no frame and comes
+// back as it is. Like ShowWatchRecord, its output never goes back to a model.
+func PlainToolOutput(content string) string {
+	quoted := toolOutputFrame.FindStringSubmatch(content)
+	if quoted == nil {
+		return content
+	}
+	return unescapePromptText(quoted[1])
+}
 
 // ShowWatchRecord rewrites a turn for a person: each record's frame gives way to show(its text,
 // unescaped). That text is attacker text again and never goes back to a model.

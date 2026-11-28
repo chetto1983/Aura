@@ -156,6 +156,10 @@ type ToolInvocation struct {
 	ResultSidecarPath string         `json:"result_sidecar_path,omitempty"`
 	ExitCode          *int           `json:"exit_code,omitempty"`
 	Meta              map[string]any `json:"meta,omitempty"`
+	// HistoryContent is the tool message the model read: ResultPreview behind the untrusted
+	// envelope (AG-052) and the steer scrub. The runner persists it, so every later turn
+	// replays the same bytes; only the runner reads it, and the wire keeps the raw preview.
+	HistoryContent string `json:"-"`
 }
 
 // AwaitingInput is the pause payload an ask_user Event carries (D-A1-03). It is

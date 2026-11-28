@@ -9,6 +9,7 @@ import (
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/gateway"
@@ -162,6 +163,8 @@ func snapshotContent(m llm.Message) string {
 		return stripAuraContextEnvelope(m.Content)
 	case llm.RoleAssistant:
 		return displayWatchRecord(m.Content)
+	case llm.RoleTool:
+		return agent.PlainToolOutput(m.Content)
 	default:
 		return m.Content
 	}
@@ -222,8 +225,9 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 }
 
 // rederiveDisplaysWithFacts walks the persisted history in order and re-derives a display.Payload
-// per recognized tool-result turn (a RoleTool turn carries ToolCallID + the persisted
-// ResultPreview as Content). It returns the map keyed by tool_call_id. A single shared
+// per recognized tool-result turn (a RoleTool turn carries ToolCallID + the result the model
+// read as Content, unframed here into the preview live derived from). It returns the map
+// keyed by tool_call_id. A single shared
 // registry accumulates across all web turns so cross-turn source RefIDs are stable —
 // identical to the live per-run registry (Pitfall 4 parity). facts are the thread's
 // ledger rows, which supply the inputs a preview alone does not carry.
@@ -240,7 +244,7 @@ func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts 
 		if !found || in.ToolName == "" {
 			continue
 		}
-		in.ResultPreview = m.Content
+		in.ResultPreview = agent.PlainToolOutput(m.Content)
 		if p, ok := display.NormalizeToolPreview(in, reg); ok {
 			payload := p
 			out[m.ToolCallID] = &payload
@@ -316,17 +320,19 @@ func matchingEndFacts(inputs map[string]display.PreviewInput, conversationID str
 // conversation. New host-owned result facts carry a digest of the original
 // model-facing result so replay matching still works beyond the 2 KiB ledger
 // cap, even when prompt rendering scrubbed a control marker from the raw result.
-func matchingPreview(fact toolinvocations.Event, preview string) bool {
+// stored is that model-facing result as the turn persisted it; the ledger's own
+// preview is the raw one.
+func matchingPreview(fact toolinvocations.Event, stored string) bool {
 	if raw, present := fact.Meta["aura_display_preview_sha256"]; present {
 		digest, ok := raw.(string)
 		if !ok || len(digest) != 64 {
 			return false
 		}
-		sum := sha256.Sum256([]byte(preview))
+		sum := sha256.Sum256([]byte(stored))
 		actual := hex.EncodeToString(sum[:])
 		return subtle.ConstantTimeCompare([]byte(digest), []byte(actual)) == 1
 	}
-	return fact.ResultPreview == preview
+	return fact.ResultPreview == agent.PlainToolOutput(stored)
 }
 
 // Rehydrate a host-owned MCP Apps descriptor beside the read card. The view

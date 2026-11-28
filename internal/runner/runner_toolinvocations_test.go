@@ -42,6 +42,7 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 	}
 
 	exitCode := 0
+	framed := agent.FrameUntrustedPromptContent("shell_exec", "hi\n")
 	end := &agent.Event{
 		RequestID: requestID,
 		Actions: agent.Actions{ToolInvocation: &agent.ToolInvocation{
@@ -61,6 +62,7 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 			ResultSidecarPath: "",
 			ExitCode:          &exitCode,
 			Meta:              map[string]any{"exit_code": 0},
+			HistoryContent:    framed,
 		}},
 	}
 	if err := r.persistEvent(context.Background(), tr, end); err != nil {
@@ -76,7 +78,8 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 		t.Fatalf("start ledger row = %+v", got)
 	}
 	if got := ledger.events[1]; got.Event != toolinvocations.EventEnd || got.Status != "ok" ||
-		got.ResultBytes != 3 || got.PreviewBytes != 3 || got.ExitCode == nil || *got.ExitCode != 0 {
+		got.ResultBytes != 3 || got.PreviewBytes != 3 || got.ExitCode == nil || *got.ExitCode != 0 ||
+		got.ResultPreview != "hi\n" {
 		t.Fatalf("end ledger row = %+v", got)
 	}
 
@@ -93,7 +96,8 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 		got.ToolCalls[0].Function.Arguments != `{"command":"echo hi"}` {
 		t.Fatalf("assistant tool_calls turn = %+v", got)
 	}
-	if got := hist[1]; got.Role != llm.RoleTool || got.ToolCallID != "call-1" || got.Content != "hi\n" {
+	// The ledger keeps the raw preview; the conversation keeps what the model read.
+	if got := hist[1]; got.Role != llm.RoleTool || got.ToolCallID != "call-1" || got.Content != framed {
 		t.Fatalf("tool result turn = %+v", got)
 	}
 }
